@@ -1,0 +1,163 @@
+/* App chrome (screen only) */
+:root {
+  --bg: #0f1115;
+  --panel: #171a21;
+  --text: #ffffff;
+  --muted: #aab0bd;
+  --accent: #4da3ff;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  background: var(--bg);
+  color: var(--text);
+}
+
+.app {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 20px 20px 60px 20px;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid #242938;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.controls .row { display: flex; gap: 8px; align-items: center; }
+.controls label { color: var(--muted); font-size: 14px; }
+.controls input[type="text"], .controls select, .controls input[type="number"] {
+  width: 100%;
+  padding: 8px 10px;
+  background: #0f1320;
+  color: var(--text);
+  border: 1px solid #2a3145;
+  border-radius: 8px;
+}
+.controls .checkbox { display: flex; gap: 8px; align-items: center; }
+
+.btn {
+  appearance: none;
+  background: var(--accent);
+  color: #0a0d14;
+  border: none;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn.secondary {
+  background: #2a3145;
+  color: var(--text);
+}
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.helper {
+  font-size: 12px; color: var(--muted);
+}
+
+/* Preview area (screen) */
+.preview-wrap {
+  background: #0a0d14;
+  border: 1px dashed #2a3145;
+  border-radius: 12px;
+  padding: 12px;
+  overflow: auto;
+  max-height: 60vh;
+}
+.preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.preview-label {
+  background: #fff;
+  color: #000;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+  padding: 0;
+  width: 300px;           /* screen preview scale */
+  height: 450px;          /* 4x6 aspect (portrait) */
+  overflow: hidden;
+}
+
+/* === PRINT LAYOUT === */
+
+/* The printed page size is enforced here */
+@page {
+  size: 4in 6in;         /* default portrait; JS toggles class for landscape */
+  margin: 0;
+}
+.print-root {
+  display: none;         /* hidden on screen */
+}
+
+/* Label page container — each becomes its own printed page */
+.print-page {
+  page-break-after: always;
+  width: 4in;
+  height: 6in;
+  margin: 0;
+  padding: 0;
+  background: #ffffff;
+  color: #000000;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Safe-area (keeps text away from printer edges; ~0.2" inset) */
+.label-inner {
+  position: absolute;
+  inset: 0.2in;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.08in;
+  text-align: center;
+}
+
+/* Typographic hierarchy — JavaScript may resize down if needed */
+.line1 { font-weight: 900; }
+.line2, .line3 { font-weight: 700; }
+
+.line1, .line2, .line3 {
+  margin: 0;
+  line-height: 1.05;
+  word-break: break-word;
+  hyphens: auto;
+}
+
+/* Initial sizes; auto-fit will reduce as needed */
+.line1 { font-size: 90pt; }
+.line2 { font-size: 36pt; }
+.line3 { font-size: 36pt; }
+
+/* Optional logo and QR placeholders */
+.brand {
+  position: absolute; top: 0.2in; left: 0.2in;
+  width: 0.7in; height: 0.7in; object-fit: contain;
+}
+.qr {
+  position: absolute; right: 0.2in; bottom: 0.2in;
+  width: 1.2in; height: 1.2in;
+}
+
+
+/* Print-only: show print pages, hide app chrome */
+@media print {
+  body { background: #fff; }
+  .app, .preview-wrap { display: none !important; }
+  .print-root { display: block; }
+}
