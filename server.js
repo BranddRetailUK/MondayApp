@@ -46,13 +46,6 @@ app.get("/debug/env", (req, res) => {
 app.get("/auth", (req, res) => {
   const authUrl = buildAuthorizeUrl();
   console.log("🔑 Redirecting to Monday OAuth URL:", authUrl);
-  console.log("CLIENT_ID length:", CLIENT_ID.length);
-  console.log("REDIRECT_URI:", REDIRECT_URI);
-
-  if (!CLIENT_ID) return res.status(500).send("Missing MONDAY_CLIENT_ID");
-  if (!CLIENT_SECRET) return res.status(500).send("Missing MONDAY_CLIENT_SECRET");
-  if (!REDIRECT_URI) return res.status(500).send("Missing MONDAY_REDIRECT_URI");
-
   res.redirect(authUrl);
 });
 
@@ -85,7 +78,7 @@ app.get("/callback", async (req, res) => {
   }
 });
 
-// API route to fetch board data
+// API route to fetch board data with groups + items + column values
 app.get("/api/board", async (req, res) => {
   if (!mondayAccessToken) {
     return res.status(401).json({ error: "Not authenticated. Visit /auth first." });
@@ -101,10 +94,17 @@ app.get("/api/board", async (req, res) => {
           id
           name
           state
-          items_page {
+          groups {
+            id
+            title
             items {
               id
               name
+              column_values {
+                id
+                title
+                text
+              }
             }
           }
         }

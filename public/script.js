@@ -22,15 +22,33 @@ async function loadBoard() {
     const board = data.data.boards[0];
     let html = `<h2>${board.name} (ID: ${board.id})</h2>`;
     html += `<p>State: ${board.state}</p>`;
-    html += "<h3>Items:</h3>";
 
-    if (board.items_page && board.items_page.items.length > 0) {
-      html += board.items_page.items
-        .map(i => `<div class="item">${i.name} (ID: ${i.id})</div>`)
-        .join("");
+    if (board.groups && board.groups.length > 0) {
+      board.groups.forEach(group => {
+        html += `<h3>${group.title}</h3>`;
+        if (group.items && group.items.length > 0) {
+          html += group.items
+            .map(item => {
+              let cols = "";
+              if (item.column_values && item.column_values.length > 0) {
+                cols = "<ul>" + item.column_values
+                  .map(cv => `<li><strong>${cv.title}:</strong> ${cv.text || "-"}</li>`)
+                  .join("") + "</ul>";
+              }
+              return `<div class="item">
+                        <p><strong>${item.name}</strong> (ID: ${item.id})</p>
+                        ${cols}
+                      </div>`;
+            })
+            .join("");
+        } else {
+          html += "<p>No items in this group.</p>";
+        }
+      });
     } else {
-      html += "<p>No items found on this board.</p>";
+      html += "<p>No groups found.</p>";
     }
+
     boardDiv.innerHTML = html;
   } catch (err) {
     boardDiv.innerHTML = `<p style="color:red">Failed to load board</p>`;
