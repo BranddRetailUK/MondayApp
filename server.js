@@ -28,12 +28,20 @@ function buildAuthorizeUrl() {
   return u.toString();
 }
 
+// Start OAuth login
 app.get("/auth", (req, res) => {
   res.redirect(buildAuthorizeUrl());
 });
 
+// OAuth callback
 app.get("/callback", async (req, res) => {
-  const { code } = req.query;
+  const { code, error, error_description } = req.query;
+
+  if (error) {
+    console.error("OAuth error:", error, error_description);
+    return res.status(400).send(`OAuth error: ${error_description || error}`);
+  }
+
   if (!code) return res.status(400).send("No code received");
 
   try {
@@ -54,6 +62,7 @@ app.get("/callback", async (req, res) => {
   }
 });
 
+// API route to fetch board data (columns + groups + items)
 app.get("/api/board", async (req, res) => {
   if (!mondayAccessToken) {
     return res.status(401).json({ error: "Not authenticated. Visit /auth first." });
@@ -69,6 +78,10 @@ app.get("/api/board", async (req, res) => {
           id
           name
           state
+          columns {
+            id
+            title
+          }
           groups {
             id
             title
@@ -78,8 +91,8 @@ app.get("/api/board", async (req, res) => {
                 name
                 column_values {
                   id
-                  title
                   text
+                  type
                 }
               }
             }
