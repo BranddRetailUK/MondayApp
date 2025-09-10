@@ -6,6 +6,15 @@ async function loadBoard() {
     const res = await fetch("/api/board");
     const data = await res.json();
 
+    if (res.status === 401) {
+      // Not authenticated → show Connect button
+      boardDiv.innerHTML = `
+        <p style="color:red">Not connected to Monday.</p>
+        <a href="/auth" class="btn">Connect to Monday</a>
+      `;
+      return;
+    }
+
     if (data.errors) {
       boardDiv.innerHTML = `<p style="color:red">Error: ${data.errors[0].message}</p>`;
       return;
@@ -23,3 +32,6 @@ async function loadBoard() {
     console.error(err);
   }
 }
+
+// Auto-try loading the board on page load
+window.onload = loadBoard;
