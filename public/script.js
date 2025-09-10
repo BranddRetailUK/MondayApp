@@ -1,82 +1,132 @@
 async function loadBoard() {
-  const boardDiv = document.getElementById("board");
-  boardDiv.innerHTML = "Loading...";
-
   try {
-    const res = await fetch("/api/board");
+    const res = await fetch('/api/data');
     const data = await res.json();
 
-    if (res.status === 401) {
-      boardDiv.innerHTML = `
-        <p style="color:red">Not connected to Monday.</p>
-        <a href="/auth" class="btn">Connect to Monday</a>
-      `;
-      return;
-    }
-
-    if (data.errors) {
-      boardDiv.innerHTML = `<p style="color:red">Error: ${data.errors[0].message}</p>`;
-      return;
-    }
-
-    const board = data.data.boards[0];
-    let html = `<h1>${board.name}</h1>`;
-    html += `<p>State: ${board.state}</p>`;
-
-    const columnMap = {};
-    board.columns.forEach(col => {
-      columnMap[col.id] = col.title;
-    });
-
-    if (board.groups && board.groups.length > 0) {
-      board.groups.forEach(group => {
-        html += `<h3>${group.title}</h3>`;
-
-        // Build header row
-        html += `<table><thead><tr>`;
-        html += `<th>Job</th>`;
-        board.columns.forEach(col => {
-          html += `<th>${col.title}</th>`;
-        });
-        html += `</tr></thead><tbody>`;
-
-        if (group.items_page && group.items_page.items.length > 0) {
-          group.items_page.items.forEach(item => {
-            html += `<tr>`;
-            html += `<td><strong>${item.name}</strong><br><small>ID: ${item.id}</small></td>`;
-
-            board.columns.forEach(col => {
-              const cv = item.column_values.find(v => v.id === col.id);
-              let value = cv && cv.text ? cv.text : "-";
-
-              // Special handling for Files column
-              if (col.title.toLowerCase().includes("file") && value !== "-") {
-                const links = value.split(",").map((url, idx) => {
-                  const trimmed = url.trim();
-                  if (!trimmed) return "";
-                  return `<a href="${trimmed}" target="_blank">File ${idx + 1}</a>`;
-                });
-                value = links.join(", ");
-              }
-
-              html += `<td>${value}</td>`;
-            });
-
-            html += `</tr>`;
-          });
-        } else {
-          html += `<tr><td colspan="${board.columns.length + 1}">No items in this group</td></tr>`;
-        }
-
-        html += `</tbody></table>`;
-      });
-    }
-
-    boardDiv.innerHTML = html;
+    renderBoard(data);
   } catch (err) {
-    boardDiv.innerHTML = `<p style="color:red">Failed to load board</p>`;
-    console.error(err);
+    console.error('Error loading board data:', err);
   }
 }
 
-window.onload = loadBoard;
+function renderBoard(collections) {
+  const boardDiv = document.getElementById('board');
+  boardDiv.innerHTML = '';
+
+  // collections is an object: { "Pre-Production": [...], "Print": [...], ... }
+  for (const [collectionName, items] of Object.entries(collections)) {
+    const sectionTitle = document.createElement('h3');
+    sectionTitle.textContent = collectionName;
+    boardDiv.appendChild(sectionTitle);
+
+    const table = document.createElement('table');
+
+    // Table header
+    const thead = document.createElement('thead');
+    thead.innerHTML = `
+      <tr>
+        <th>Print</th>
+        <th>Order #</th>
+        <th>Customer</th>
+        <th>Job Title</th>
+        <th>Priority</th>
+        <th>Status</th>
+        <th>Date</th>
+        <th>Files</th>
+      </tr>
+    `;
+    table.appendChild(thead);
+
+    // Table body
+    const tbody = document.createElement('tbody');
+
+    items.forEach(item => {
+      const tr = document.createElement('tr');
+
+      // Print button column
+      const printTd = document.createElement('td');
+      const printBtn = document.createElement('button');
+      printBtn.textContent = '🖨️ Print';
+      printBtn.classList.add('print-btn');
+      printBtn.addEventListener('click', () => printLabel(item));
+      printTd.appendChild(printBtn);
+      tr.appendChild(printTd);
+
+      // Other columns
+      tr.innerHTML += `
+        <td>${item.orderNumber || ''}</td>
+        <td>${item.customerName || ''}</td>
+        <td>${item.jobTitle || ''}</td>
+        <td>${item.priority || ''}</td>
+        <td>${item.status || ''}</td>
+        <td>${item.date || ''}</td>
+        <td>${renderFiles(item.files)}</td>
+      `;
+
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    boardDiv.appendChild(table);
+  }
+}
+
+function renderFiles(files) {
+  if (!files || files.length === 0) return '';
+  return files.map(f => `<a href="${f.url}" target="_blank">${f.name}</a>`).join('<br>');
+}
+
+function printLabel(item) {
+  const orderNumber = item.orderNumber || '';
+  const customerName = item.customerName || '';
+  const jobTitle = (item.jobTitle || '').replace(/-/g, ' ');
+
+  const labelHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Shipping Label</title>
+      <style>
+        body {
+          width: 384px; /* 4in at 96dpi */
+          height: 576px; /* 6in at 96dpi */
+          margin: 0;
+          padding: 20px;
+          font-family: Arial, sans-serif;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: flex-start;
+        }
+        h2 {
+          margin: 10px 0 2px;
+          font-size: 16px;
+        }
+        p {
+          margin: 0 0 10px;
+          font-size: 18px;
+          font-weight: bold;
+        }
+      </style>
+    </head>
+    <body>
+      <h2>ORDER NUMBER</h2>
+      <p>${orderNumber}</p>
+      <h2>CUSTOMER NAME</h2>
+      <p>${customerName}</p>
+      <h2>JOB TITLE</h2>
+      <p>${jobTitle}</p>
+      <script>
+        window.onload = function() {
+          window.print();
+        };
+      </script>
+    </body>
+    </html>
+  `;
+
+  const printWin = window.open('', '', 'width=400,height=600');
+  printWin.document.open();
+  printWin.document.write(labelHtml);
+  printWin.document.close();
+}
