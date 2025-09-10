@@ -1,57 +1,76 @@
-// ---- Endpoints (tweak if your server uses different paths) ----
-const ENDPOINTS = {
+// ==============================
+// Monday Dashboard Frontend
+// - No hardcoded /auth/login
+// - Smart auth discovery (status/url)
+// - Preserves collections -> tables render
+// - Adds 4"x6" print label per row
+// ==============================
+
+const API = {
   data: '/api/data',
-  // These are optional; script works even if they don't exist:
-  authStatus: '/api/auth/status',
-  authUrl: '/api/auth/url',
-  // Fallback if neither status nor authUrl is available:
-  authLogin: '/auth/login'
+  // Discovery candidates (the script will try these in order):
+  authStatus: ['/api/auth/status', '/auth/status'],
+  authUrl: ['/api/auth/url', '/auth/url', '/api/auth/start', '/auth/start']
 };
 
-// Build the auth UI and check status as soon as the DOM is ready
+let AUTH = {
+  connected: false,
+  authUrl: null
+};
+
+// Build Connect button + status row and try to discover auth on load
 document.addEventListener('DOMContentLoaded', () => {
   ensureAuthUI();
-  checkAuthAndToggleUI();
+  discoverAuth().then(updateAuthUI);
 });
 
-// Called by the existing "Load Board Info" button in index.html
+// Expose for the "Load Board Info" button in index.html
+window.loadBoard = loadBoard;
+
+// ------------------------------
+// Main: Load board
+// ------------------------------
 async function loadBoard() {
   try {
-    const res = await fetch(ENDPOINTS.data);
+    const res = await fetch(API.data, { cache: 'no-store' });
     if (res.status === 401 || res.status === 403) {
-      showConnectUI();
+      // Not authorized → try rediscovery and surface Connect
+      await discoverAuth();
+      updateAuthUI();
       return;
     }
     const data = await res.json();
     renderBoard(data);
   } catch (err) {
     console.error('Error loading board data:', err);
-    showConnectUI();
+    // If anything fails, give user a way to connect
+    await discoverAuth();
+    updateAuthUI();
   }
 }
 
-/* =========================
-   Auth UI (no index changes)
-   ========================= */
+// ------------------------------
+// Auth: UI
+// ------------------------------
 function ensureAuthUI() {
   const loadBtn = document.getElementById('loadBtn');
   if (!loadBtn) return;
 
-  // Status text (above buttons)
+  // Status line
   if (!document.getElementById('authStatus')) {
-    const statusEl = document.createElement('div');
-    statusEl.id = 'authStatus';
-    statusEl.style.margin = '10px 0';
-    statusEl.style.fontSize = '14px';
-    loadBtn.insertAdjacentElement('beforebegin', statusEl);
+    const status = document.createElement('div');
+    status.id = 'authStatus';
+    status.style.margin = '10px 0';
+    status.style.fontSize = '14px';
+    loadBtn.insertAdjacentElement('beforebegin', status);
   }
 
-  // Connect button (inserted before Load)
+  // Connect button
   if (!document.getElementById('connectBtn')) {
-    const connectBtn = document.createElement('button');
-    connectBtn.id = 'connectBtn';
-    connectBtn.textContent = 'Connect to Monday';
-    Object.assign(connectBtn.style, {
+    const btn = document.createElement('button');
+    btn.id = 'connectBtn';
+    btn.textContent = 'Connect to Monday';
+    Object.assign(btn.style, {
       marginRight: '10px',
       padding: '8px 12px',
       background: '#0078d7',
@@ -60,88 +79,106 @@ function ensureAuthUI() {
       borderRadius: '4px',
       cursor: 'pointer'
     });
-    // Fallback action; may be overridden when we fetch a specific authUrl
-    connectBtn.onclick = () => (window.location.href = ENDPOINTS.authLogin);
-    loadBtn.insertAdjacentElement('beforebegin', connectBtn);
+    btn.addEventListener('click', async () => {
+      // On click, re-run discovery in case URL just became available
+      await discoverAuth();
+      if (AUTH.authUrl) {
+        window.location.href = AUTH.authUrl;
+      } else {
+        alert('Unable to find an authorization URL from the server.');
+      }
+    });
+    loadBtn.insertAdjacentElement('beforebegin', btn);
   }
 }
 
-async function checkAuthAndToggleUI() {
+function updateAuthUI() {
   const loadBtn = document.getElementById('loadBtn');
   const connectBtn = document.getElementById('connectBtn');
   const statusEl = document.getElementById('authStatus');
 
-  // Default state: not connected
-  if (statusEl) statusEl.textContent = 'Not connected to Monday.';
-  if (connectBtn) connectBtn.style.display = 'inline-block';
-  if (loadBtn) loadBtn.disabled = true;
+  if (AUTH.connected) {
+    if (statusEl) statusEl.textContent = 'Connected to Monday.';
+    if (connectBtn) connectBtn.style.display = 'none';
+    if (loadBtn) loadBtn.disabled = false;
+  } else {
+    if (statusEl) statusEl.textContent = 'Not connected to Monday.';
+    if (connectBtn) {
+      connectBtn.style.display = 'inline-block';
+      // Only enable the button if we truly have a URL to send the user to.
+      connectBtn.disabled = !AUTH.authUrl;
+      connectBtn.style.opacity = AUTH.authUrl ? '1' : '0.6';
+      connectBtn.title = AUTH.authUrl ? '' : 'Waiting for server to provide an auth URL…';
+    }
+    if (loadBtn) loadBtn.disabled = true;
+  }
+}
 
-  // Preferred: ask server for status
-  try {
-    const r = await fetch(ENDPOINTS.authStatus);
-    if (r.ok) {
-      const { connected, account, authUrl } = await r.json();
-      if (connected) {
-        if (connectBtn) connectBtn.style.display = 'none';
-        if (loadBtn) loadBtn.disabled = false;
-        if (statusEl) statusEl.textContent = account ? `Connected: ${account}` : 'Connected to Monday.';
-        return;
-      } else {
-        // Wire the connect button if server provides an authUrl
-        if (authUrl && connectBtn) {
-          connectBtn.onclick = () => (window.location.href = authUrl);
+// ------------------------------
+// Auth: Discovery
+// ------------------------------
+async function discoverAuth() {
+  AUTH = { connected: false, authUrl: null };
+
+  // Try a status endpoint that may also provide authUrl
+  for (const path of API.authStatus) {
+    try {
+      const r = await fetch(path, { cache: 'no-store' });
+      if (r.ok) {
+        const json = await r.json().catch(() => ({}));
+        const connected = !!json.connected;
+        const url = json.authUrl || json.url || json.authorizationUrl || null;
+
+        if (connected) {
+          AUTH.connected = true;
+          return AUTH;
+        }
+        if (url) {
+          AUTH.authUrl = url;
+          // keep looking for a "connected" = true, but we have a URL now
+          break;
         }
       }
-    }
-  } catch (_) {
-    // ignore; we'll try other methods below
+    } catch (_) { /* ignore */ }
   }
 
-  // If server exposes a clean auth URL endpoint
-  try {
-    const r2 = await fetch(ENDPOINTS.authUrl);
-    if (r2.ok) {
-      const { authUrl } = await r2.json();
-      if (authUrl && connectBtn) {
-        connectBtn.onclick = () => (window.location.href = authUrl);
+  // If we still don't have an authUrl, try explicit URL endpoints
+  if (!AUTH.authUrl) {
+    for (const path of API.authUrl) {
+      try {
+        const r = await fetch(path, { cache: 'no-store' });
+        if (r.ok) {
+          const json = await r.json().catch(() => ({}));
+          const url = json.authUrl || json.url || json.authorizationUrl || null;
+          if (url) {
+            AUTH.authUrl = url;
+            break;
+          }
+        }
+      } catch (_) { /* ignore */ }
+    }
+  }
+
+  // Final probe: maybe already authorized and no status endpoint exposed
+  if (!AUTH.connected) {
+    try {
+      const probe = await fetch(API.data, { method: 'HEAD', cache: 'no-store' });
+      if (probe.ok) {
+        AUTH.connected = true;
       }
-    }
-  } catch (_) { /* ignore */ }
+    } catch (_) { /* ignore */ }
+  }
 
-  // Probe data endpoint in case we already have a session
-  try {
-    const head = await fetch(ENDPOINTS.data, { method: 'HEAD' });
-    if (head.ok) {
-      if (connectBtn) connectBtn.style.display = 'none';
-      if (loadBtn) loadBtn.disabled = false;
-      if (statusEl) statusEl.textContent = 'Connected to Monday.';
-      return;
-    }
-  } catch (_) { /* ignore */ }
-
-  // If we reach here, we likely need to connect
-  showConnectUI();
+  return AUTH;
 }
 
-function showConnectUI() {
-  const loadBtn = document.getElementById('loadBtn');
-  const connectBtn = document.getElementById('connectBtn');
-  const statusEl = document.getElementById('authStatus');
-  if (statusEl) statusEl.textContent = 'Not connected to Monday.';
-  if (connectBtn) connectBtn.style.display = 'inline-block';
-  if (loadBtn) loadBtn.disabled = true;
-}
-
-/* =========================
-   Board rendering
-   ========================= */
+// ------------------------------
+// Rendering (collections -> tables)
+// ------------------------------
 function renderBoard(data) {
   const boardDiv = document.getElementById('board');
   boardDiv.innerHTML = '';
 
-  // Accept either:
-  // 1) Object keyed by collection: { "Pre-Production": [...], "Print": [...] }
-  // 2) Array of items with a grouping key (collection/group)
   const collections = normalizeToCollections(data);
 
   for (const [collectionName, items] of Object.entries(collections)) {
@@ -151,7 +188,6 @@ function renderBoard(data) {
 
     const table = document.createElement('table');
 
-    // Header
     const thead = document.createElement('thead');
     thead.innerHTML = `
       <tr>
@@ -167,12 +203,12 @@ function renderBoard(data) {
     `;
     table.appendChild(thead);
 
-    // Body
     const tbody = document.createElement('tbody');
-    (items || []).forEach((item) => {
+
+    (items || []).forEach(item => {
       const tr = document.createElement('tr');
 
-      // Print button first column
+      // Print button (first column)
       const printTd = document.createElement('td');
       const printBtn = document.createElement('button');
       printBtn.textContent = '🖨️ Print';
@@ -188,7 +224,7 @@ function renderBoard(data) {
       printTd.appendChild(printBtn);
       tr.appendChild(printTd);
 
-      // Remaining cells
+      // Remaining columns
       tr.innerHTML += `
         <td>${safe(item.orderNumber)}</td>
         <td>${safe(item.customerName)}</td>
@@ -208,10 +244,7 @@ function renderBoard(data) {
 }
 
 function normalizeToCollections(data) {
-  // If it's already an object keyed by collection, use it directly
   if (data && typeof data === 'object' && !Array.isArray(data)) return data;
-
-  // If it's an array, group by common keys: collection | group | status_group
   const arr = Array.isArray(data) ? data : [];
   return arr.reduce((acc, item) => {
     const key =
@@ -227,9 +260,8 @@ function normalizeToCollections(data) {
 
 function renderFiles(files) {
   if (!files || files.length === 0) return '';
-  // Support either [{name, url}] or raw URL strings
   return files
-    .map((f) => {
+    .map(f => {
       const url = typeof f === 'string' ? f : f.url;
       const name = typeof f === 'string' ? extractFileName(f) : (f.name || extractFileName(f.url));
       return `<a href="${encodeURI(url)}" target="_blank" rel="noopener">${escapeHtml(name)}</a>`;
@@ -243,9 +275,8 @@ function extractFileName(url = '') {
     const parts = u.pathname.split('/');
     return parts[parts.length - 1] || 'File';
   } catch {
-    // Fallback if not a valid URL
-    const hash = (url || '').split('?')[0].split('#')[0];
-    const parts = hash.split('/');
+    const clean = (url || '').split('?')[0].split('#')[0];
+    const parts = clean.split('/');
     return parts[parts.length - 1] || 'File';
   }
 }
@@ -263,9 +294,9 @@ function escapeHtml(s) {
     .replaceAll("'", '&#39;');
 }
 
-/* =========================
-   Print label (4" × 6")
-   ========================= */
+// ------------------------------
+// Print label (4" × 6")
+// ------------------------------
 function printLabel(item) {
   const orderNumber = item?.orderNumber ? String(item.orderNumber) : '';
   const customerName = item?.customerName ? String(item.customerName) : '';
@@ -284,7 +315,7 @@ function printLabel(item) {
         }
         body {
           margin: 0;
-          padding: 0.25in; /* quarter inch padding inside the label */
+          padding: 0.25in;
           font-family: Arial, sans-serif;
           display: flex;
           flex-direction: column;
@@ -319,12 +350,9 @@ function printLabel(item) {
     </html>
   `;
 
-  const printWin = window.open('', '', 'width=480,height=760'); // slightly larger to accommodate browser chrome
+  const printWin = window.open('', '', 'width=480,height=760');
   if (!printWin) return;
   printWin.document.open();
   printWin.document.write(labelHtml);
   printWin.document.close();
 }
-
-// Optional: expose for debugging from console
-window.loadBoard = loadBoard;
