@@ -58,7 +58,7 @@ async function loadBoard() {
       return;
     }
     const payload = await res.json();
-    renderBoardMinimal(payload);
+    renderBoard(payload);
     const connectBtn = document.getElementById('connectBtn');
     if (connectBtn) connectBtn.style.display = 'none';
     if (statusEl) statusEl.textContent = 'Connected to Monday.';
@@ -67,7 +67,7 @@ async function loadBoard() {
   }
 }
 
-function renderBoardMinimal(payload) {
+function renderBoard(payload) {
   const boardDiv = document.getElementById('board');
   boardDiv.innerHTML = '';
   const board = unwrapFirstBoard(payload);
@@ -128,7 +128,7 @@ function renderBoardMinimal(payload) {
         borderRadius: '4px',
         cursor: 'pointer'
       });
-      printBtn.addEventListener('click', () => printLabelFromTitle(jobTitle));
+      printBtn.addEventListener('click', () => printLabel(item.id, jobTitle));
       printTd.appendChild(printBtn);
       tr.appendChild(printTd);
 
@@ -172,14 +172,23 @@ function parseTitle(raw) {
     return { orderNumber, customerName, jobTitle };
   }
   const m = t.match(/^\s*(\d+)\s*[-–—]\s*(.+?)\s*[-–—]\s*(.+)$/);
-  if (m) {
-    return { orderNumber: m[1].trim(), customerName: m[2].trim(), jobTitle: m[3].trim().replace(/[-–—]/g, ' ') };
-  }
+  if (m) return { orderNumber: m[1].trim(), customerName: m[2].trim(), jobTitle: m[3].trim().replace(/[-–—]/g, ' ') };
   return { orderNumber: '', customerName: '', jobTitle: t.replace(/[-–—]/g, ' ') };
 }
 
-function printLabelFromTitle(rawTitle) {
+async function printLabel(itemId, rawTitle) {
   const { orderNumber, customerName, jobTitle } = parseTitle(rawTitle);
+  let scanUrl = '';
+  try {
+    const r = await fetch(`/api/scan-url?itemId=${encodeURIComponent(itemId)}&status=${encodeURIComponent('Done')}`);
+    if (r.ok) {
+      const j = await r.json();
+      scanUrl = j.url || '';
+    }
+  } catch {}
+
+  const qrImg = scanUrl ? `<img class="qr" src="/api/qr?data=${encodeURIComponent(scanUrl)}" alt="QR">` : '';
+
   const blocks = [
     { head: 'JOB NUMBER', value: orderNumber, ratio: 0.62 },
     { head: 'CUSTOMER', value: customerName, ratio: 0.46 },
@@ -195,10 +204,11 @@ function printLabelFromTitle(rawTitle) {
       <style>
         @media print { @page { size: 4in 6in; margin: 0; } html,body { width: 4in; height: 6in; } }
         html,body { margin: 0; padding: 0; }
-        .wrap { box-sizing: border-box; width: calc(4in - 0.30in); height: 6in; padding: 0.15in; }
+        .wrap { position: relative; box-sizing: border-box; width: calc(4in - 0.30in); height: 6in; padding: 0.15in; }
         .block { margin: 0 0 0.35in 0; }
         .head { font-family: Arial, sans-serif; font-size: 14pt; font-weight: 800; margin: 0 0 6px 0; }
         .value { font-family: Arial, sans-serif; font-weight: 900; margin: 0; white-space: nowrap; overflow: hidden; width: 100%; line-height: 1.05; }
+        .qr { position: absolute; right: 0.15in; bottom: 0.15in; width: 1.3in; height: 1.3in; }
       </style>
     </head>
     <body>
@@ -209,6 +219,7 @@ function printLabelFromTitle(rawTitle) {
             <div class="value" data-ratio="${b.ratio}">${escapeHtml(b.value)}</div>
           </div>
         `).join('')}
+        ${qrImg}
       </div>
       <script>
         (function(){
@@ -235,28 +246,11 @@ function printLabelFromTitle(rawTitle) {
     </html>
   `;
 
-  let printWin = null;
-  try { printWin = window.open('', '', 'width=480,height=760'); } catch {}
-  if (printWin && typeof printWin.document !== 'undefined') {
-    printWin.document.open();
-    printWin.document.write(body);
-    printWin.document.close();
-    return;
+  let win = null;
+  try { win = window.open('', '', 'width=480,height=760'); } catch {}
+  if (win && win.document) {
+    win.document.open();
+    win.document.write(body);
+    win.document.close();
   }
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  document.body.appendChild(iframe);
-  const doc = iframe.contentDocument || iframe.contentWindow.document;
-  doc.open();
-  doc.write(body);
-  doc.close();
-  setTimeout(() => {
-    try { iframe.contentWindow.focus(); iframe.contentWindow.print(); } catch {}
-    setTimeout(() => { try { document.body.removeChild(iframe); } catch {} }, 1500);
-  }, 100);
 }
