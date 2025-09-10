@@ -7,7 +7,6 @@ async function loadBoard() {
     const data = await res.json();
 
     if (res.status === 401) {
-      // Not authenticated → show Connect button
       boardDiv.innerHTML = `
         <p style="color:red">Not connected to Monday.</p>
         <a href="/auth" class="btn">Connect to Monday</a>
@@ -25,7 +24,13 @@ async function loadBoard() {
     html += `<p>State: ${board.state}</p>`;
     html += "<h3>Items:</h3>";
 
-    html += board.items.map(i => `<div class="item">${i.name} (ID: ${i.id})</div>`).join("");
+    if (board.items_page && board.items_page.items.length > 0) {
+      html += board.items_page.items
+        .map(i => `<div class="item">${i.name} (ID: ${i.id})</div>`)
+        .join("");
+    } else {
+      html += "<p>No items found on this board.</p>";
+    }
     boardDiv.innerHTML = html;
   } catch (err) {
     boardDiv.innerHTML = `<p style="color:red">Failed to load board</p>`;
@@ -33,5 +38,5 @@ async function loadBoard() {
   }
 }
 
-// Auto-try loading the board on page load
+// Auto-load on page open
 window.onload = loadBoard;
