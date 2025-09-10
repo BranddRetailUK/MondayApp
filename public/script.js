@@ -139,6 +139,39 @@ function renderBoard(payload) {
       tr.appendChild(titleTd);
 
       tbody.appendChild(tr);
+
+      // render subitems if any
+      if (item.subitems && item.subitems.length > 0) {
+        for (const sub of item.subitems) {
+          const subTr = document.createElement('tr');
+
+          const subPrintTd = document.createElement('td');
+          subPrintTd.style.border = '1px solid #ddd';
+          subPrintTd.style.padding = '8px';
+          const subPrintBtn = document.createElement('button');
+          subPrintBtn.textContent = 'Print';
+          Object.assign(subPrintBtn.style, {
+            padding: '6px 10px',
+            background: '#555',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          });
+          subPrintBtn.addEventListener('click', () => printLabel(sub.id, sub.name || ''));
+          subPrintTd.appendChild(subPrintBtn);
+          subTr.appendChild(subPrintTd);
+
+          const subTitleTd = document.createElement('td');
+          subTitleTd.style.border = '1px solid #ddd';
+          subTitleTd.style.padding = '8px';
+          subTitleTd.style.paddingLeft = '30px';
+          subTitleTd.innerHTML = `↳ ${escapeHtml(sub.name || '')}`;
+          subTr.appendChild(subTitleTd);
+
+          tbody.appendChild(subTr);
+        }
+      }
     }
 
     table.appendChild(tbody);
@@ -195,91 +228,89 @@ async function printLabel(itemId, rawTitle) {
     { head: 'JOB TITLE', value: jobTitle, ratio: 0.50 }
   ];
 
-const body = `
-  <!doctype html>
-  <html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Shipping Label</title>
-    <style>
-      @media print { 
-        @page { size: 4in 6in; margin: 0; } 
-        html,body { width: 4in; height: 6in; margin: 0; padding: 0; }
-      }
-      html,body {
-        width: 4in; height: 6in;
-        margin: 0; padding: 0;
-        overflow: hidden;
-      }
-      .wrap {
-        box-sizing: border-box;
-        width: 4in;
-        height: 6in;
-        padding: 0.15in;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-      }
-      .content {
-        flex: 1 1 auto;
-        overflow: hidden;
-      }
-      .block { margin: 0 0 0.25in 0; }
-      .head { font-family: Arial, sans-serif; font-size: 14pt; font-weight: 800; margin: 0 0 6px 0; }
-      .value { font-family: Arial, sans-serif; font-weight: 900; margin: 0; white-space: nowrap; overflow: hidden; width: 100%; line-height: 1.05; }
-      .qr-container {
-        flex: 0 0 auto;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 1.6in;
-      }
-      .qr {
-        width: 1.4in;
-        height: 1.4in;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="wrap">
-      <div class="content">
-        ${blocks.map(b=>`
-          <div class="block">
-            <div class="head">${escapeHtml(b.head)}</div>
-            <div class="value" data-ratio="${b.ratio}">${escapeHtml(b.value)}</div>
-          </div>
-        `).join('')}
-      </div>
-      <div class="qr-container">
-        ${qrImg}
-      </div>
-    </div>
-    <script>
-      (function(){
-        function fit(el, ratio, min){
-          var parent = el.parentElement;
-          var w = parent.clientWidth || parent.getBoundingClientRect().width;
-          var size = Math.max(min, Math.floor(w * ratio));
-          el.style.fontSize = size + 'px';
-          var guard = 0;
-          while ((el.scrollWidth > parent.clientWidth) && size > min && guard < 200){
-            size -= 1;
-            el.style.fontSize = size + 'px';
-            guard++;
-          }
+  const body = `
+    <!doctype html>
+    <html>
+    <head>
+      <meta charset="utf-8" />
+      <title>Shipping Label</title>
+      <style>
+        @media print { 
+          @page { size: 4in 6in; margin: 0; } 
+          html,body { width: 4in; height: 6in; margin: 0; padding: 0; }
         }
-        Array.prototype.slice.call(document.querySelectorAll('.value')).forEach(function(v){
-          var ratio = parseFloat(v.getAttribute('data-ratio')) || 0.4;
-          fit(v, ratio, 10);
-        });
-        try { window.print(); } catch(e) {}
-      })();
-    </script>
-  </body>
-  </html>
-`;
-
-
+        html,body {
+          width: 4in; height: 6in;
+          margin: 0; padding: 0;
+          overflow: hidden;
+        }
+        .wrap {
+          box-sizing: border-box;
+          width: 4in;
+          height: 6in;
+          padding: 0.15in;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+        }
+        .content {
+          flex: 1 1 auto;
+          overflow: hidden;
+        }
+        .block { margin: 0 0 0.25in 0; }
+        .head { font-family: Arial, sans-serif; font-size: 14pt; font-weight: 800; margin: 0 0 6px 0; }
+        .value { font-family: Arial, sans-serif; font-weight: 900; margin: 0; white-space: nowrap; overflow: hidden; width: 100%; line-height: 1.05; }
+        .qr-container {
+          flex: 0 0 auto;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          height: 1.6in;
+        }
+        .qr {
+          width: 1.4in;
+          height: 1.4in;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="wrap">
+        <div class="content">
+          ${blocks.map(b=>`
+            <div class="block">
+              <div class="head">${escapeHtml(b.head)}</div>
+              <div class="value" data-ratio="${b.ratio}">${escapeHtml(b.value)}</div>
+            </div>
+          `).join('')}
+        </div>
+        <div class="qr-container">
+          ${qrImg}
+        </div>
+      </div>
+      <script>
+        (function(){
+          function fit(el, ratio, min){
+            var parent = el.parentElement;
+            var w = parent.clientWidth || parent.getBoundingClientRect().width;
+            var size = Math.max(min, Math.floor(w * ratio));
+            el.style.fontSize = size + 'px';
+            var guard = 0;
+            while ((el.scrollWidth > parent.clientWidth) && size > min && guard < 200){
+              size -= 1;
+              el.style.fontSize = size + 'px';
+              guard++;
+            }
+          }
+          Array.prototype.slice.call(document.querySelectorAll('.value')).forEach(function(v){
+            var ratio = parseFloat(v.getAttribute('data-ratio')) || 0.4;
+            fit(v, ratio, 10);
+          });
+          try { window.print(); } catch(e) {}
+        })();
+      </script>
+    </body>
+    </html>
+  `;
 
   let win = null;
   try { win = window.open('', '', 'width=480,height=760'); } catch {}

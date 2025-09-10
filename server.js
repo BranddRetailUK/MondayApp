@@ -105,7 +105,15 @@ async function fetchBoardLitePaged() {
         boards(ids: $boardId) {
           items_page(limit: $limit, cursor: $cursor) {
             cursor
-            items { id name group { title } }
+            items {
+              id
+              name
+              group { title }
+              subitems {
+                id
+                name
+              }
+            }
           }
         }
       }
@@ -140,7 +148,7 @@ async function fetchBoardLitePaged() {
   for (const it of items) {
     const title = it?.group?.title || "Ungrouped";
     if (!grouped[title]) grouped[title] = [];
-    grouped[title].push({ id: it.id, name: it.name });
+    grouped[title].push({ id: it.id, name: it.name, subitems: it.subitems || [] });
   }
 
   const groups = Object.entries(grouped).map(([title, arr]) => ({
@@ -152,15 +160,13 @@ async function fetchBoardLitePaged() {
   return { boards: [{ groups }] };
 }
 
-
 app.get("/api/scan-url", (req, res) => {
-  const { itemId, status } = req.query;
+  const { itemId } = req.query;
   if (!itemId) return res.status(400).json({ error: "itemId required" });
   const ts = Date.now().toString();
   const sig = signPayload(itemId, ts);
-  const s = status || STATUS_LABEL;
   const base = `${req.protocol}://${req.get("host")}`;
-  const url = `${base}/scan?i=${encodeURIComponent(itemId)}&s=${encodeURIComponent(s)}&ts=${ts}&sig=${sig}`;
+  const url = `${base}/scan?i=${encodeURIComponent(itemId)}&ts=${ts}&sig=${sig}`;
   res.json({ url });
 });
 
@@ -175,8 +181,8 @@ app.get("/scan", async (req, res) => {
     let value;
 
     if (STATUS_COLUMN_ID.startsWith("checkbox")) {
-      // Step 1: fetch current value
-      const query = `
+      // fetch current checkbox value
+      const q = `
         query($boardId: [ID!], $itemId: [ID!]) {
           boards(ids: $boardId) {
             items(ids: $itemId) {
@@ -188,10 +194,10 @@ app.get("/scan", async (req, res) => {
           }
         }
       `;
-      const variables = { boardId: [BOARD_ID], itemId: [i] };
+      const vars = { boardId: [BOARD_ID], itemId: [i] };
       const resp = await axios.post(
         "https://api.monday.com/v2",
-        { query, variables },
+        { query: q, variables: vars },
         { headers: { Authorization: mondayAccessToken, "Content-Type": "application/json" } }
       );
 
@@ -201,7 +207,6 @@ app.get("/scan", async (req, res) => {
         currentVal = valObj.checked === "true";
       } catch {}
 
-      // Step 2: toggle it
       value = JSON.stringify({ checked: currentVal ? "false" : "true" });
     } else {
       // fallback: status column
@@ -210,7 +215,6 @@ app.get("/scan", async (req, res) => {
         : JSON.stringify({ label: STATUS_LABEL });
     }
 
-    // Step 3: update the column
     const mutation = `
       mutation ChangeValue($board: ID!, $item: ID!, $col: String!, $val: JSON!) {
         change_column_value(board_id: $board, item_id: $item, column_id: $col, value: $val) { id }
@@ -234,16 +238,13 @@ app.get("/scan", async (req, res) => {
       return res.status(500).send("Failed to update column (see logs).");
     }
 
-    console.log(`Scan OK → item ${i} column ${STATUS_COLUMN_ID} toggled`);
+    console.log(`Scan OK → item ${i} column ${STATUS_COLUMN_ID} updated`);
     res.send("<html><body style='font-family:Arial;padding:20px'>Checkbox toggled ✔️</body></html>");
   } catch (e) {
     console.error("Scan update failed:", e.response?.data || e.message || e);
     res.status(500).send("Failed to update column");
   }
 });
-
-
-
 
 app.get("/api/qr", async (req, res) => {
   const data = req.query.data || "";
