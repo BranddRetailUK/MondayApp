@@ -20,10 +20,9 @@ async function loadBoard() {
     }
 
     const board = data.data.boards[0];
-    let html = `<h2>${board.name}</h2>`;
+    let html = `<h1>${board.name}</h1>`;
     html += `<p>State: ${board.state}</p>`;
 
-    // Build a map of column id → title
     const columnMap = {};
     board.columns.forEach(col => {
       columnMap[col.id] = col.title;
@@ -33,31 +32,44 @@ async function loadBoard() {
       board.groups.forEach(group => {
         html += `<h3>${group.title}</h3>`;
 
+        // Build header row
+        html += `<table><thead><tr>`;
+        html += `<th>Job</th>`;
+        board.columns.forEach(col => {
+          html += `<th>${col.title}</th>`;
+        });
+        html += `</tr></thead><tbody>`;
+
         if (group.items_page && group.items_page.items.length > 0) {
-          html += "<ul>";
           group.items_page.items.forEach(item => {
-            html += `<li><strong>${item.name}</strong> (ID: ${item.id})<br/>`;
+            html += `<tr>`;
+            html += `<td><strong>${item.name}</strong><br><small>ID: ${item.id}</small></td>`;
 
-            if (item.column_values && item.column_values.length > 0) {
-              html += "<ul>";
-              item.column_values.forEach(cv => {
-                const label = columnMap[cv.id] || cv.id;
-                html += `<li><em>${label}:</em> ${cv.text || "-"}</li>`;
-              });
-              html += "</ul>";
-            } else {
-              html += "<em>No column data</em>";
-            }
+            board.columns.forEach(col => {
+              const cv = item.column_values.find(v => v.id === col.id);
+              let value = cv && cv.text ? cv.text : "-";
 
-            html += "</li>";
+              // Special handling for Files column
+              if (col.title.toLowerCase().includes("file") && value !== "-") {
+                const links = value.split(",").map((url, idx) => {
+                  const trimmed = url.trim();
+                  if (!trimmed) return "";
+                  return `<a href="${trimmed}" target="_blank">File ${idx + 1}</a>`;
+                });
+                value = links.join(", ");
+              }
+
+              html += `<td>${value}</td>`;
+            });
+
+            html += `</tr>`;
           });
-          html += "</ul>";
         } else {
-          html += "<p>No items in this group.</p>";
+          html += `<tr><td colspan="${board.columns.length + 1}">No items in this group</td></tr>`;
         }
+
+        html += `</tbody></table>`;
       });
-    } else {
-      html += "<p>No groups found.</p>";
     }
 
     boardDiv.innerHTML = html;
