@@ -58,16 +58,16 @@ async function loadBoard() {
       return;
     }
     const payload = await res.json();
-    renderBoardFromMonday(payload);
+    renderBoardMinimal(payload);
     const connectBtn = document.getElementById('connectBtn');
     if (connectBtn) connectBtn.style.display = 'none';
     if (statusEl) statusEl.textContent = 'Connected to Monday.';
-  } catch (err) {
+  } catch {
     boardDiv.textContent = 'Failed to load board: Failed to fetch board';
   }
 }
 
-function renderBoardFromMonday(payload) {
+function renderBoardMinimal(payload) {
   const boardDiv = document.getElementById('board');
   boardDiv.innerHTML = '';
   const board = unwrapFirstBoard(payload);
@@ -79,11 +79,6 @@ function renderBoardFromMonday(payload) {
     }
     return;
   }
-
-  const idToTitle = {};
-  (board.columns || []).forEach(col => {
-    idToTitle[col.id] = col.title || col.id;
-  });
 
   for (const group of (board.groups || [])) {
     const collectionName = group.title || 'Untitled Group';
@@ -99,13 +94,7 @@ function renderBoardFromMonday(payload) {
     thead.innerHTML = `
       <tr>
         <th>Print</th>
-        <th>Order #</th>
-        <th>Customer</th>
         <th>Job Title</th>
-        <th>Priority</th>
-        <th>Status</th>
-        <th>Date</th>
-        <th>Files</th>
       </tr>
     `;
     table.appendChild(thead);
@@ -113,16 +102,7 @@ function renderBoardFromMonday(payload) {
     const tbody = document.createElement('tbody');
 
     for (const item of items) {
-      const cv = indexColumnValues(item.column_values, idToTitle);
-      const orderNumber = pick(cv, ['order number', 'order', 'order id']);
-      const customerName = pick(cv, ['customer', 'client', 'customer name']);
       const jobTitle = item.name || '';
-      const priority = pick(cv, ['priority']);
-      const status = pick(cv, ['status', 'state']);
-      const date = pick(cv, ['date', 'due date', 'delivery date']);
-      const filesText = pick(cv, ['files', 'file', 'links', 'attachments']);
-      const files = parseUrls(filesText);
-
       const tr = document.createElement('tr');
 
       const printTd = document.createElement('td');
@@ -136,18 +116,12 @@ function renderBoardFromMonday(payload) {
         borderRadius: '4px',
         cursor: 'pointer'
       });
-      printBtn.addEventListener('click', () => printLabel({ orderNumber, customerName, jobTitle }));
+      printBtn.addEventListener('click', () => printLabel({ jobTitle }));
       printTd.appendChild(printBtn);
       tr.appendChild(printTd);
 
       tr.innerHTML += `
-        <td>${escapeHtml(orderNumber)}</td>
-        <td>${escapeHtml(customerName)}</td>
         <td>${escapeHtml(jobTitle)}</td>
-        <td>${escapeHtml(priority)}</td>
-        <td>${escapeHtml(status)}</td>
-        <td>${escapeHtml(date)}</td>
-        <td>${renderFiles(files)}</td>
       `;
 
       tbody.appendChild(tr);
@@ -165,54 +139,6 @@ function unwrapFirstBoard(payload) {
   return null;
 }
 
-function indexColumnValues(columnValues, idToTitle) {
-  const map = {};
-  (columnValues || []).forEach(cv => {
-    const title = idToTitle[cv.id] || cv.id;
-    map[normalize(title)] = cv.text || '';
-  });
-  return map;
-}
-
-function pick(cvMap, candidates) {
-  for (const c of candidates) {
-    const key = normalize(c);
-    if (cvMap[key]) return cvMap[key];
-  }
-  return '';
-}
-
-function renderFiles(urls) {
-  if (!urls || urls.length === 0) return '';
-  return urls
-    .map(u => `<a href="${encodeURI(u)}" target="_blank" rel="noopener">${escapeHtml(fileName(u))}</a>`)
-    .join('<br>');
-}
-
-function fileName(url) {
-  try {
-    const u = new URL(url);
-    const p = u.pathname.split('/');
-    return p[p.length - 1] || 'File';
-  } catch {
-    const p = (url || '').split('?')[0].split('#')[0].split('/');
-    return p[p.length - 1] || 'File';
-  }
-}
-
-function parseUrls(text) {
-  if (!text) return [];
-  const re = /(https?:\/\/[^\s]+)/g;
-  const out = [];
-  let m;
-  while ((m = re.exec(text)) !== null) out.push(m[1]);
-  return out;
-}
-
-function normalize(s) {
-  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-}
-
 function escapeHtml(s) {
   return String(s || '')
     .replaceAll('&', '&amp;')
@@ -223,9 +149,13 @@ function escapeHtml(s) {
 }
 
 function printLabel(item) {
-  const orderNumber = item?.orderNumber ? String(item.orderNumber) : '';
-  const customerName = item?.customerName ? String(item.customerName) : '';
+  const orderNumber = '';
+  const customerName = '';
   const jobTitle = item?.jobTitle ? String(item.jobTitle).replace(/-/g, ' ') : '';
+  const blocks = [];
+  if (orderNumber) blocks.push(`<div class="block"><div class="head">ORDER NUMBER</div><div class="value">${escapeHtml(orderNumber)}</div></div>`);
+  if (customerName) blocks.push(`<div class="block"><div class="head">CUSTOMER NAME</div><div class="value">${escapeHtml(customerName)}</div></div>`);
+  if (jobTitle) blocks.push(`<div class="block"><div class="head">JOB TITLE</div><div class="value">${escapeHtml(jobTitle)}</div></div>`);
   const labelHtml = `
     <!doctype html>
     <html>
@@ -241,9 +171,7 @@ function printLabel(item) {
       </style>
     </head>
     <body>
-      <div class="block"><div class="head">ORDER NUMBER</div><div class="value">${escapeHtml(orderNumber)}</div></div>
-      <div class="block"><div class="head">CUSTOMER NAME</div><div class="value">${escapeHtml(customerName)}</div></div>
-      <div class="block"><div class="head">JOB TITLE</div><div class="value">${escapeHtml(jobTitle)}</div></div>
+      ${blocks.join('')}
       <script>window.onload=function(){try{window.print()}catch(e){}};</script>
     </body>
     </html>
