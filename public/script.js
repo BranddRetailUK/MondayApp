@@ -180,7 +180,7 @@ async function printLabel(itemId, rawTitle) {
   const { orderNumber, customerName, jobTitle } = parseTitle(rawTitle);
   let scanUrl = '';
   try {
-    const r = await fetch(`/api/scan-url?itemId=${encodeURIComponent(itemId)}&status=${encodeURIComponent('Done')}`);
+    const r = await fetch(`/api/scan-url?itemId=${encodeURIComponent(itemId)}`);
     if (r.ok) {
       const j = await r.json();
       scanUrl = j.url || '';

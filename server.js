@@ -21,15 +21,12 @@ const STATUS_COLUMN_ID = (process.env.STATUS_COLUMN_ID || "").trim();
 const STATUS_INDEX = process.env.STATUS_INDEX !== undefined ? parseInt(process.env.STATUS_INDEX, 10) : null;
 const STATUS_LABEL = (process.env.STATUS_LABEL || "Done").trim();
 
-const BOARD_PAGE_LIMIT = parseInt(process.env.BOARD_PAGE_LIMIT || '50', 10);
-const BOARD_MAX_PAGES = parseInt(process.env.BOARD_MAX_PAGES || '2', 10);
-const BOARD_CACHE_MS = parseInt(process.env.BOARD_CACHE_MS || '300000', 10);
-
+const BOARD_PAGE_LIMIT = parseInt(process.env.BOARD_PAGE_LIMIT || "50", 10);
+const BOARD_MAX_PAGES = parseInt(process.env.BOARD_MAX_PAGES || "2", 10);
+const BOARD_CACHE_MS = parseInt(process.env.BOARD_CACHE_MS || "300000", 10);
 
 let mondayAccessToken = null;
-
 let boardCache = { data: null, expires: 0, inFlight: null };
-
 
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -60,11 +57,13 @@ app.get("/callback", async (req, res) => {
       code,
       client_id: CLIENT_ID,
       client_secret: CLIENT_SECRET,
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: REDIRECT_URI
     });
     mondayAccessToken = response.data.access_token;
+    console.log("Got Monday access token");
     res.send("Authentication successful! <a href='/'>Go to Dashboard</a>");
   } catch (err) {
+    console.error("OAuth token exchange error:", err.response?.data || err.message || err);
     res.status(500).send("Failed to authenticate (see logs).");
   }
 });
@@ -87,6 +86,7 @@ app.get("/api/board", async (req, res) => {
     boardCache.expires = Date.now() + BOARD_CACHE_MS;
     return res.json(data);
   } catch (err) {
+    console.error("Error in /api/board:", err.response?.data || err.message || err);
     return res.status(500).json({ error: "Failed to fetch board" });
   } finally {
     boardCache.inFlight = null;
@@ -97,7 +97,9 @@ async function fetchBoardLitePaged() {
   let limit = BOARD_PAGE_LIMIT;
   let cursor = null;
   let items = [];
-  for (let page = 0; page < BOARD_MAX_PAGES; page++) {
+  let pages = 0;
+
+  while (pages < BOARD_MAX_PAGES) {
     const query = `
       query($boardId: [Int!], $limit: Int!, $cursor: String) {
         boards(ids: $boardId) {
@@ -108,7 +110,7 @@ async function fetchBoardLitePaged() {
         }
       }
     `;
-    const variables = { boardId: parseInt(BOARD_ID, 10), limit, cursor };
+    const variables = { boardId: [parseInt(BOARD_ID, 10)], limit, cursor };
     const resp = await axios.post(
       "https://api.monday.com/v2",
       { query, variables },
@@ -118,18 +120,19 @@ async function fetchBoardLitePaged() {
     if (resp.data?.errors?.length) {
       const msg = String(resp.data.errors[0]?.message || "");
       if (msg.includes("Complexity budget exhausted")) {
-        await new Promise(r => setTimeout(r, 3000));
-        limit = Math.max(50, Math.floor(limit / 2));
-        page--;
-        continue;
+        console.warn("Complexity exhausted — returning partial data");
+        break;
       }
       throw new Error(msg);
     }
 
     const pageObj = resp.data?.data?.boards?.[0]?.items_page;
     if (!pageObj) break;
+
     items = items.concat(pageObj.items || []);
     cursor = pageObj.cursor || null;
+    pages++;
+
     if (!cursor) break;
   }
 
@@ -145,6 +148,7 @@ async function fetchBoardLitePaged() {
     items_page: { items: arr }
   }));
 
+  console.log(`Fetched ${items.length} items across ${pages} page(s)`);
   return { boards: [{ groups }] };
 }
 
@@ -179,8 +183,10 @@ app.get("/scan", async (req, res) => {
       { query: mutation, variables },
       { headers: { Authorization: mondayAccessToken, "Content-Type": "application/json" } }
     );
+    console.log(`Scan OK → item ${i} updated`);
     res.send("<html><body style='font-family:Arial;padding:20px'>Status updated. You can close this tab.</body></html>");
   } catch (e) {
+    console.error("Scan update failed:", e.response?.data || e.message || e);
     res.status(500).send("Failed to update status");
   }
 });
@@ -192,8 +198,11 @@ app.get("/api/qr", async (req, res) => {
     res.set("Content-Type", "image/png");
     res.send(buf);
   } catch (e) {
+    console.error("QR generation error:", e.message || e);
     res.status(400).send("Invalid QR data");
   }
 });
 
-app.listen(PORT, () => {});
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
