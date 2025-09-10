@@ -1,56 +1,28 @@
 // ==============================
-// Monday Dashboard Frontend
-// - No hardcoded /auth/login
-// - Smart auth discovery (status/url)
-// - Preserves collections -> tables render
-// - Adds 4"x6" print label per row
+// Monday Dashboard Frontend (matches server routes)
+// - Data: GET /api/board
+// - Auth:  GET /auth
+// - Groups -> tables
+// - Files as clickable links
+// - 4"×6" print label button per row
 // ==============================
 
-const API = {
-  data: '/api/data',
-  // Discovery candidates (the script will try these in order):
-  authStatus: ['/api/auth/status', '/auth/status'],
-  authUrl: ['/api/auth/url', '/auth/url', '/api/auth/start', '/auth/start']
+const ENDPOINTS = {
+  data: '/api/board',
+  auth: '/auth'
 };
 
-let AUTH = {
-  connected: false,
-  authUrl: null
-};
-
-// Build Connect button + status row and try to discover auth on load
+// Build auth UI immediately and probe connection
 document.addEventListener('DOMContentLoaded', () => {
   ensureAuthUI();
-  discoverAuth().then(updateAuthUI);
+  probeConnection();
 });
 
-// Expose for the "Load Board Info" button in index.html
+// Expose for index.html button
 window.loadBoard = loadBoard;
 
 // ------------------------------
-// Main: Load board
-// ------------------------------
-async function loadBoard() {
-  try {
-    const res = await fetch(API.data, { cache: 'no-store' });
-    if (res.status === 401 || res.status === 403) {
-      // Not authorized → try rediscovery and surface Connect
-      await discoverAuth();
-      updateAuthUI();
-      return;
-    }
-    const data = await res.json();
-    renderBoard(data);
-  } catch (err) {
-    console.error('Error loading board data:', err);
-    // If anything fails, give user a way to connect
-    await discoverAuth();
-    updateAuthUI();
-  }
-}
-
-// ------------------------------
-// Auth: UI
+// Auth UI
 // ------------------------------
 function ensureAuthUI() {
   const loadBtn = document.getElementById('loadBtn');
@@ -62,6 +34,7 @@ function ensureAuthUI() {
     status.id = 'authStatus';
     status.style.margin = '10px 0';
     status.style.fontSize = '14px';
+    status.textContent = 'Checking connection…';
     loadBtn.insertAdjacentElement('beforebegin', status);
   }
 
@@ -79,112 +52,93 @@ function ensureAuthUI() {
       borderRadius: '4px',
       cursor: 'pointer'
     });
-    btn.addEventListener('click', async () => {
-      // On click, re-run discovery in case URL just became available
-      await discoverAuth();
-      if (AUTH.authUrl) {
-        window.location.href = AUTH.authUrl;
-      } else {
-        alert('Unable to find an authorization URL from the server.');
-      }
+    btn.addEventListener('click', () => {
+      // Directly use server's /auth route (server is known-good)
+      window.location.href = ENDPOINTS.auth;
     });
     loadBtn.insertAdjacentElement('beforebegin', btn);
   }
 }
 
-function updateAuthUI() {
+async function probeConnection() {
   const loadBtn = document.getElementById('loadBtn');
   const connectBtn = document.getElementById('connectBtn');
   const statusEl = document.getElementById('authStatus');
 
-  if (AUTH.connected) {
-    if (statusEl) statusEl.textContent = 'Connected to Monday.';
-    if (connectBtn) connectBtn.style.display = 'none';
-    if (loadBtn) loadBtn.disabled = false;
-  } else {
-    if (statusEl) statusEl.textContent = 'Not connected to Monday.';
-    if (connectBtn) {
-      connectBtn.style.display = 'inline-block';
-      // Only enable the button if we truly have a URL to send the user to.
-      connectBtn.disabled = !AUTH.authUrl;
-      connectBtn.style.opacity = AUTH.authUrl ? '1' : '0.6';
-      connectBtn.title = AUTH.authUrl ? '' : 'Waiting for server to provide an auth URL…';
+  try {
+    // HEAD works with Express for GET routes; if blocked, GET will also work
+    const r = await fetch(ENDPOINTS.data, { method: 'HEAD', cache: 'no-store' });
+    if (r.ok) {
+      if (statusEl) statusEl.textContent = 'Connected to Monday.';
+      if (connectBtn) connectBtn.style.display = 'none';
+      if (loadBtn) loadBtn.disabled = false;
+      return;
     }
-    if (loadBtn) loadBtn.disabled = true;
+  } catch (_) {}
+
+  // Not connected
+  if (statusEl) statusEl.textContent = 'Not connected to Monday.';
+  if (connectBtn) connectBtn.style.display = 'inline-block';
+  if (loadBtn) loadBtn.disabled = true;
+}
+
+// ------------------------------
+// Load board
+// ------------------------------
+async function loadBoard() {
+  try {
+    const res = await fetch(ENDPOINTS.data, { cache: 'no-store' });
+
+    if (res.status === 401 || res.status === 403) {
+      // Not authenticated; show connect
+      const statusEl = document.getElementById('authStatus');
+      if (statusEl) statusEl.textContent = 'Not connected to Monday.';
+      const connectBtn = document.getElementById('connectBtn');
+      const loadBtn = document.getElementById('loadBtn');
+      if (connectBtn) connectBtn.style.display = 'inline-block';
+      if (loadBtn) loadBtn.disabled = true;
+      return;
+    }
+
+    const payload = await res.json();
+    renderBoardFromMonday(payload);
+  } catch (err) {
+    console.error('Error loading board data:', err);
+    const statusEl = document.getElementById('authStatus');
+    if (statusEl) statusEl.textContent = 'Failed to load board (see console).';
   }
 }
 
 // ------------------------------
-// Auth: Discovery
+// Transform Monday payload -> collections
+// Server returns response.data from axios, i.e. { data: { boards: [...] } }
 // ------------------------------
-async function discoverAuth() {
-  AUTH = { connected: false, authUrl: null };
-
-  // Try a status endpoint that may also provide authUrl
-  for (const path of API.authStatus) {
-    try {
-      const r = await fetch(path, { cache: 'no-store' });
-      if (r.ok) {
-        const json = await r.json().catch(() => ({}));
-        const connected = !!json.connected;
-        const url = json.authUrl || json.url || json.authorizationUrl || null;
-
-        if (connected) {
-          AUTH.connected = true;
-          return AUTH;
-        }
-        if (url) {
-          AUTH.authUrl = url;
-          // keep looking for a "connected" = true, but we have a URL now
-          break;
-        }
-      }
-    } catch (_) { /* ignore */ }
-  }
-
-  // If we still don't have an authUrl, try explicit URL endpoints
-  if (!AUTH.authUrl) {
-    for (const path of API.authUrl) {
-      try {
-        const r = await fetch(path, { cache: 'no-store' });
-        if (r.ok) {
-          const json = await r.json().catch(() => ({}));
-          const url = json.authUrl || json.url || json.authorizationUrl || null;
-          if (url) {
-            AUTH.authUrl = url;
-            break;
-          }
-        }
-      } catch (_) { /* ignore */ }
-    }
-  }
-
-  // Final probe: maybe already authorized and no status endpoint exposed
-  if (!AUTH.connected) {
-    try {
-      const probe = await fetch(API.data, { method: 'HEAD', cache: 'no-store' });
-      if (probe.ok) {
-        AUTH.connected = true;
-      }
-    } catch (_) { /* ignore */ }
-  }
-
-  return AUTH;
-}
-
-// ------------------------------
-// Rendering (collections -> tables)
-// ------------------------------
-function renderBoard(data) {
+function renderBoardFromMonday(payload) {
   const boardDiv = document.getElementById('board');
   boardDiv.innerHTML = '';
 
-  const collections = normalizeToCollections(data);
+  const board = payload?.data?.boards?.[0];
+  if (!board) {
+    boardDiv.textContent = 'No board data.';
+    return;
+  }
 
-  for (const [collectionName, items] of Object.entries(collections)) {
+  // Build column maps (id <-> title)
+  const idToTitle = {};
+  const titleToId = {};
+  (board.columns || []).forEach(col => {
+    idToTitle[col.id] = col.title || col.id;
+    titleToId[normalize(col.title || col.id)] = col.id;
+  });
+
+  // Collections by group title
+  for (const group of (board.groups || [])) {
+    const collectionName = group.title || 'Untitled Group';
+    const items = group.items_page?.items || [];
+
     const sectionTitle = document.createElement('h3');
     sectionTitle.textContent = collectionName;
-    boardDiv.appendChild(sectionTitle);
+    document.getElementById('board').appendChild(sectionTitle);
 
     const table = document.createElement('table');
 
@@ -205,10 +159,24 @@ function renderBoard(data) {
 
     const tbody = document.createElement('tbody');
 
-    (items || []).forEach(item => {
+    for (const item of items) {
+      const cv = indexColumnValues(item.column_values, idToTitle);
+
+      // Try to find columns by friendly title
+      const orderNumber = pick(cv, ['order number', 'order', 'order id']);
+      const customerName = pick(cv, ['customer', 'client', 'customer name']);
+      const jobTitle = item.name || '';
+      const priority = pick(cv, ['priority']);
+      const status = pick(cv, ['status', 'state']);
+      const date = pick(cv, ['date', 'due date', 'delivery date']);
+
+      // Files: accept columns whose text looks like URLs
+      const filesText = pick(cv, ['files', 'file', 'links', 'attachments']);
+      const files = parseUrls(filesText);
+
       const tr = document.createElement('tr');
 
-      // Print button (first column)
+      // Print button
       const printTd = document.createElement('td');
       const printBtn = document.createElement('button');
       printBtn.textContent = '🖨️ Print';
@@ -220,73 +188,92 @@ function renderBoard(data) {
         borderRadius: '4px',
         cursor: 'pointer'
       });
-      printBtn.addEventListener('click', () => printLabel(item));
+      printBtn.addEventListener('click', () =>
+        printLabel({
+          orderNumber: orderNumber,
+          customerName: customerName,
+          jobTitle: jobTitle
+        })
+      );
       printTd.appendChild(printBtn);
       tr.appendChild(printTd);
 
-      // Remaining columns
+      // Remaining cells
       tr.innerHTML += `
-        <td>${safe(item.orderNumber)}</td>
-        <td>${safe(item.customerName)}</td>
-        <td>${safe(item.jobTitle)}</td>
-        <td>${safe(item.priority)}</td>
-        <td>${safe(item.status)}</td>
-        <td>${safe(item.date)}</td>
-        <td>${renderFiles(item.files)}</td>
+        <td>${escapeHtml(orderNumber)}</td>
+        <td>${escapeHtml(customerName)}</td>
+        <td>${escapeHtml(jobTitle)}</td>
+        <td>${escapeHtml(priority)}</td>
+        <td>${escapeHtml(status)}</td>
+        <td>${escapeHtml(date)}</td>
+        <td>${renderFiles(files)}</td>
       `;
 
       tbody.appendChild(tr);
-    });
+    }
 
     table.appendChild(tbody);
-    boardDiv.appendChild(table);
+    document.getElementById('board').appendChild(table);
   }
 }
 
-function normalizeToCollections(data) {
-  if (data && typeof data === 'object' && !Array.isArray(data)) return data;
-  const arr = Array.isArray(data) ? data : [];
-  return arr.reduce((acc, item) => {
-    const key =
-      item.collection ||
-      item.group ||
-      item.status_group ||
-      'Uncategorized';
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(item);
-    return acc;
-  }, {});
+// Build a map of normalized column title -> text value
+function indexColumnValues(columnValues, idToTitle) {
+  const map = {};
+  (columnValues || []).forEach(cv => {
+    const title = idToTitle[cv.id] || cv.id;
+    map[normalize(title)] = cv.text || '';
+  });
+  return map;
 }
 
-function renderFiles(files) {
-  if (!files || files.length === 0) return '';
-  return files
-    .map(f => {
-      const url = typeof f === 'string' ? f : f.url;
-      const name = typeof f === 'string' ? extractFileName(f) : (f.name || extractFileName(f.url));
-      return `<a href="${encodeURI(url)}" target="_blank" rel="noopener">${escapeHtml(name)}</a>`;
-    })
+// Pick first non-empty value from a list of candidate column titles
+function pick(cvMap, candidates) {
+  for (const c of candidates) {
+    const key = normalize(c);
+    if (cvMap[key]) return cvMap[key];
+  }
+  return '';
+}
+
+// Render files (array of URLs) as clickable links
+function renderFiles(urls) {
+  if (!urls || urls.length === 0) return '';
+  return urls
+    .map(u => `<a href="${encodeURI(u)}" target="_blank" rel="noopener">${escapeHtml(fileName(u))}</a>`)
     .join('<br>');
 }
 
-function extractFileName(url = '') {
+function fileName(url) {
   try {
-    const u = new URL(url, window.location.origin);
-    const parts = u.pathname.split('/');
-    return parts[parts.length - 1] || 'File';
+    const u = new URL(url);
+    const p = u.pathname.split('/');
+    return p[p.length - 1] || 'File';
   } catch {
-    const clean = (url || '').split('?')[0].split('#')[0];
-    const parts = clean.split('/');
-    return parts[parts.length - 1] || 'File';
+    const p = (url || '').split('?')[0].split('#')[0].split('/');
+    return p[p.length - 1] || 'File';
   }
 }
 
-function safe(val) {
-  return val == null ? '' : escapeHtml(String(val));
+// Extract URLs from a text blob (space or newline separated)
+function parseUrls(text) {
+  if (!text) return [];
+  const re = /(https?:\/\/[^\s]+)/g;
+  const out = [];
+  let m;
+  while ((m = re.exec(text)) !== null) out.push(m[1]);
+  return out;
+}
+
+function normalize(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 }
 
 function escapeHtml(s) {
-  return s
+  return String(s || '')
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
@@ -342,9 +329,7 @@ function printLabel(item) {
         <div class="value">${escapeHtml(jobTitle)}</div>
       </div>
       <script>
-        window.onload = function() {
-          try { window.print(); } catch (e) {}
-        };
+        window.onload = function() { try { window.print(); } catch (e) {} };
       </script>
     </body>
     </html>
