@@ -167,47 +167,65 @@ function printLabel(item) {
   const customerName = '';
   const jobTitle = item?.jobTitle ? String(item.jobTitle).replace(/-/g, ' ') : '';
   const blocks = [];
-  if (orderNumber) blocks.push(`<div class="block"><div class="head">ORDER NUMBER</div><div class="value">${escapeHtml(orderNumber)}</div></div>`);
-  if (customerName) blocks.push(`<div class="block"><div class="head">CUSTOMER NAME</div><div class="value">${escapeHtml(customerName)}</div></div>`);
-  if (jobTitle) blocks.push(`<div class="block"><div class="head">JOB TITLE</div><div class="value">${escapeHtml(jobTitle)}</div></div>`);
-  const labelHtml = `
+  if (orderNumber) blocks.push({ head: 'ORDER NUMBER', value: orderNumber });
+  if (customerName) blocks.push({ head: 'CUSTOMER NAME', value: customerName });
+  if (jobTitle) blocks.push({ head: 'JOB TITLE', value: jobTitle });
+
+  const body = `
     <!doctype html>
     <html>
     <head>
       <meta charset="utf-8" />
       <title>Shipping Label</title>
       <style>
-        @media print { @page { size: 4in 6in; margin: 0; } body { width: 4in; height: 6in; } }
-        body { margin: 0; padding: 0.25in; font-family: Arial, sans-serif; display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch; box-sizing: border-box; }
-        .block { margin-bottom: 0.25in; }
-        .head { font-size: 14pt; font-weight: 700; letter-spacing: 0.5px; margin: 0 0 6px; }
-        .value { font-size: 18pt; font-weight: 800; margin: 0; word-break: break-word; }
+        @media print { @page { size: 4in 6in; margin: 0; } html,body { width: 4in; height: 6in; } }
+        html,body { margin: 0; padding: 0; }
+        .wrap { box-sizing: border-box; width: calc(4in - 0.30in); height: 6in; padding: 0.15in; }
+        .block { margin-bottom: 0.20in; }
+        .head { font-family: Arial, sans-serif; font-size: 12pt; font-weight: 700; margin: 0 0 6px 0; }
+        .value { font-family: Arial, sans-serif; font-weight: 900; margin: 0; white-space: nowrap; overflow: hidden; }
       </style>
     </head>
     <body>
-      ${blocks.join('')}
+      <div class="wrap" id="wrap">
+        ${blocks.map(b => `
+          <div class="block">
+            <div class="head">${escapeHtml(b.head)}</div>
+            <div class="value">${escapeHtml(b.value)}</div>
+          </div>
+        `).join('')}
+      </div>
+      <script>
+        (function(){
+          function fit(el, max, min){
+            var size = max;
+            el.style.fontSize = size + 'px';
+            var parentWidth = el.clientWidth || el.getBoundingClientRect().width;
+            while ((el.scrollWidth > parentWidth) && size > min){
+              size -= 1;
+              el.style.fontSize = size + 'px';
+            }
+          }
+          var values = Array.prototype.slice.call(document.querySelectorAll('.value'));
+          values.forEach(function(v){
+            var container = v.parentElement;
+            var w = container.clientWidth;
+            var guess = Math.max(12, Math.min(120, Math.floor(w * 0.38)));
+            fit(v, guess, 10);
+          });
+          try { window.print(); } catch(e) {}
+        })();
+      </script>
     </body>
     </html>
   `;
+
   let printWin = null;
-  try {
-    printWin = window.open('', '', 'width=480,height=760');
-  } catch {}
+  try { printWin = window.open('', '', 'width=480,height=760'); } catch {}
   if (printWin && typeof printWin.document !== 'undefined') {
     printWin.document.open();
-    printWin.document.write(labelHtml);
+    printWin.document.write(body);
     printWin.document.close();
-    const tick = () => {
-      try {
-        if (printWin.document && printWin.document.readyState === 'complete') {
-          printWin.focus();
-          printWin.print();
-        } else {
-          setTimeout(tick, 50);
-        }
-      } catch { setTimeout(tick, 50); }
-    };
-    setTimeout(tick, 50);
     return;
   }
   const iframe = document.createElement('iframe');
@@ -220,14 +238,10 @@ function printLabel(item) {
   document.body.appendChild(iframe);
   const doc = iframe.contentDocument || iframe.contentWindow.document;
   doc.open();
-  doc.write(labelHtml);
+  doc.write(body);
   doc.close();
-  const printIframe = () => {
-    try {
-      iframe.contentWindow.focus();
-      iframe.contentWindow.print();
-    } catch { setTimeout(printIframe, 50); }
-  };
-  setTimeout(printIframe, 100);
-  setTimeout(() => document.body.removeChild(iframe), 2000);
+  setTimeout(() => {
+    try { iframe.contentWindow.focus(); iframe.contentWindow.print(); } catch {}
+    setTimeout(() => { try { document.body.removeChild(iframe); } catch {} }, 1500);
+  }, 100);
 }
