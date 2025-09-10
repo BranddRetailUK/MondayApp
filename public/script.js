@@ -2,7 +2,6 @@ const ENDPOINTS = { data: '/api/board', auth: '/auth' };
 
 document.addEventListener('DOMContentLoaded', () => {
   ensureAuthUI();
-  probeConnection();
 });
 
 window.loadBoard = loadBoard;
@@ -15,7 +14,7 @@ function ensureAuthUI() {
     status.id = 'authStatus';
     status.style.margin = '10px 0';
     status.style.fontSize = '14px';
-    status.textContent = 'Checking connection…';
+    status.textContent = 'Ready. Click "Load Board Info".';
     loadBtn.insertAdjacentElement('beforebegin', status);
   }
   if (!document.getElementById('connectBtn')) {
@@ -36,26 +35,9 @@ function ensureAuthUI() {
   }
 }
 
-async function probeConnection() {
-  const loadBtn = document.getElementById('loadBtn');
-  const connectBtn = document.getElementById('connectBtn');
-  const statusEl = document.getElementById('authStatus');
-  try {
-    const r = await fetch(ENDPOINTS.data, { method: 'HEAD', cache: 'no-store' });
-    if (r.ok) {
-      if (statusEl) statusEl.textContent = 'Connected to Monday.';
-      if (connectBtn) connectBtn.style.display = 'none';
-      if (loadBtn) loadBtn.disabled = false;
-      return;
-    }
-  } catch {}
-  if (statusEl) statusEl.textContent = 'Not connected to Monday.';
-  if (connectBtn) connectBtn.style.display = 'inline-block';
-  if (loadBtn) loadBtn.disabled = true;
-}
-
 async function loadBoard() {
   const boardDiv = document.getElementById('board');
+  const statusEl = document.getElementById('authStatus');
   try {
     const res = await fetch(ENDPOINTS.data, { cache: 'no-store' });
     if (!res.ok) {
@@ -67,17 +49,19 @@ async function loadBoard() {
       } catch {}
       boardDiv.textContent = msg;
       if (res.status === 401 || res.status === 403) {
-        const statusEl = document.getElementById('authStatus');
         if (statusEl) statusEl.textContent = 'Not connected to Monday.';
         const connectBtn = document.getElementById('connectBtn');
         const loadBtn = document.getElementById('loadBtn');
         if (connectBtn) connectBtn.style.display = 'inline-block';
-        if (loadBtn) loadBtn.disabled = true;
+        if (loadBtn) loadBtn.disabled = false;
       }
       return;
     }
     const payload = await res.json();
     renderBoardFromMonday(payload);
+    const connectBtn = document.getElementById('connectBtn');
+    if (connectBtn) connectBtn.style.display = 'none';
+    if (statusEl) statusEl.textContent = 'Connected to Monday.';
   } catch (err) {
     boardDiv.textContent = 'Failed to load board: Failed to fetch board';
   }
