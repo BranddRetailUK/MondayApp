@@ -25,6 +25,12 @@ app.get("/auth", (req, res) => {
   const authUrl = `https://auth.monday.com/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(
     REDIRECT_URI
   )}`;
+
+  // Debug logs
+  console.log("🔑 Redirecting to Monday OAuth URL:", authUrl);
+  console.log("CLIENT_ID:", CLIENT_ID);
+  console.log("REDIRECT_URI:", REDIRECT_URI);
+
   res.redirect(authUrl);
 });
 
@@ -91,6 +97,11 @@ app.get("/api/board", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`✅ Server running at http://localhost:${PORT}`);
-  console.log(`👉 Go to http://localhost:${PORT}/auth to start the OAuth flow`);
+  console.log(`✅ Server running on port ${PORT}`);
+
+  if (process.env.RAILWAY_STATIC_URL) {
+    console.log(`👉 Visit ${process.env.RAILWAY_STATIC_URL}/auth to start OAuth`);
+  } else {
+    console.log(`👉 Visit http://localhost:${PORT}/auth to start OAuth`);
+  }
 });
