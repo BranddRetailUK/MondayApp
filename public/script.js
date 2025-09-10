@@ -86,15 +86,25 @@ function renderBoardMinimal(payload) {
 
     const sectionTitle = document.createElement('h3');
     sectionTitle.textContent = collectionName;
+    sectionTitle.style.marginTop = '20px';
+    sectionTitle.style.padding = '8px 12px';
+    sectionTitle.style.background = '#0a67c3';
+    sectionTitle.style.color = '#fff';
+    sectionTitle.style.borderRadius = '4px';
     boardDiv.appendChild(sectionTitle);
 
     const table = document.createElement('table');
+    table.style.width = '100%';
+    table.style.borderCollapse = 'collapse';
+    table.style.marginBottom = '20px';
+    table.style.background = '#fff';
+    table.style.border = '1px solid #ddd';
 
     const thead = document.createElement('thead');
     thead.innerHTML = `
       <tr>
-        <th>Print</th>
-        <th>Job Title</th>
+        <th style="text-align:left;border:1px solid #ddd;padding:8px;width:90px">Print</th>
+        <th style="text-align:left;border:1px solid #ddd;padding:8px">Job Title</th>
       </tr>
     `;
     table.appendChild(thead);
@@ -106,10 +116,12 @@ function renderBoardMinimal(payload) {
       const tr = document.createElement('tr');
 
       const printTd = document.createElement('td');
+      printTd.style.border = '1px solid #ddd';
+      printTd.style.padding = '8px';
       const printBtn = document.createElement('button');
-      printBtn.textContent = '🖨️ Print';
+      printBtn.textContent = 'Print';
       Object.assign(printBtn.style, {
-        padding: '5px 10px',
+        padding: '6px 10px',
         background: '#0078d7',
         color: '#fff',
         border: 'none',
@@ -120,9 +132,11 @@ function renderBoardMinimal(payload) {
       printTd.appendChild(printBtn);
       tr.appendChild(printTd);
 
-      tr.innerHTML += `
-        <td>${escapeHtml(jobTitle)}</td>
-      `;
+      const titleTd = document.createElement('td');
+      titleTd.style.border = '1px solid #ddd';
+      titleTd.style.padding = '8px';
+      titleTd.innerHTML = escapeHtml(jobTitle);
+      tr.appendChild(titleTd);
 
       tbody.appendChild(tr);
     }
@@ -172,13 +186,48 @@ function printLabel(item) {
     </head>
     <body>
       ${blocks.join('')}
-      <script>window.onload=function(){try{window.print()}catch(e){}};</script>
     </body>
     </html>
   `;
-  const printWin = window.open('', '', 'width=480,height=760');
-  if (!printWin) return;
-  printWin.document.open();
-  printWin.document.write(labelHtml);
-  printWin.document.close();
+  let printWin = null;
+  try {
+    printWin = window.open('', '', 'width=480,height=760');
+  } catch {}
+  if (printWin && typeof printWin.document !== 'undefined') {
+    printWin.document.open();
+    printWin.document.write(labelHtml);
+    printWin.document.close();
+    const tick = () => {
+      try {
+        if (printWin.document && printWin.document.readyState === 'complete') {
+          printWin.focus();
+          printWin.print();
+        } else {
+          setTimeout(tick, 50);
+        }
+      } catch { setTimeout(tick, 50); }
+    };
+    setTimeout(tick, 50);
+    return;
+  }
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  document.body.appendChild(iframe);
+  const doc = iframe.contentDocument || iframe.contentWindow.document;
+  doc.open();
+  doc.write(labelHtml);
+  doc.close();
+  const printIframe = () => {
+    try {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    } catch { setTimeout(printIframe, 50); }
+  };
+  setTimeout(printIframe, 100);
+  setTimeout(() => document.body.removeChild(iframe), 2000);
 }
