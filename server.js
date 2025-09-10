@@ -112,6 +112,10 @@ async function fetchBoardLitePaged() {
               subitems {
                 id
                 name
+                column_values(ids: ["size", "qty"]) {
+                  id
+                  text
+                }
               }
             }
           }
@@ -148,7 +152,11 @@ async function fetchBoardLitePaged() {
   for (const it of items) {
     const title = it?.group?.title || "Ungrouped";
     if (!grouped[title]) grouped[title] = [];
-    grouped[title].push({ id: it.id, name: it.name, subitems: it.subitems || [] });
+    grouped[title].push({
+      id: it.id,
+      name: it.name,
+      subitems: it.subitems || []
+    });
   }
 
   const groups = Object.entries(grouped).map(([title, arr]) => ({
@@ -159,6 +167,7 @@ async function fetchBoardLitePaged() {
   console.log(`Fetched ${items.length} items across ${pages} page(s)`);
   return { boards: [{ groups }] };
 }
+
 
 app.get("/api/scan-url", (req, res) => {
   const { itemId } = req.query;

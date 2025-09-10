@@ -140,38 +140,42 @@ function renderBoard(payload) {
 
       tbody.appendChild(tr);
 
-      // render subitems if any
-      if (item.subitems && item.subitems.length > 0) {
-        for (const sub of item.subitems) {
-          const subTr = document.createElement('tr');
+     if (item.subitems && item.subitems.length > 0) {
+  for (const sub of item.subitems) {
+    const subTr = document.createElement('tr');
 
-          const subPrintTd = document.createElement('td');
-          subPrintTd.style.border = '1px solid #ddd';
-          subPrintTd.style.padding = '8px';
-          const subPrintBtn = document.createElement('button');
-          subPrintBtn.textContent = 'Print';
-          Object.assign(subPrintBtn.style, {
-            padding: '6px 10px',
-            background: '#555',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer'
-          });
-          subPrintBtn.addEventListener('click', () => printLabel(sub.id, sub.name || ''));
-          subPrintTd.appendChild(subPrintBtn);
-          subTr.appendChild(subPrintTd);
+    const subPrintTd = document.createElement('td');
+    subPrintTd.style.border = '1px solid #ddd';
+    subPrintTd.style.padding = '8px';
+    const subPrintBtn = document.createElement('button');
+    subPrintBtn.textContent = 'Print';
+    Object.assign(subPrintBtn.style, {
+      padding: '6px 10px',
+      background: '#555',
+      color: '#fff',
+      border: 'none',
+      borderRadius: '4px',
+      cursor: 'pointer'
+    });
+    subPrintBtn.addEventListener('click', () => printLabel(sub.id, sub.name || ''));
+    subPrintTd.appendChild(subPrintBtn);
+    subTr.appendChild(subPrintTd);
 
-          const subTitleTd = document.createElement('td');
-          subTitleTd.style.border = '1px solid #ddd';
-          subTitleTd.style.padding = '8px';
-          subTitleTd.style.paddingLeft = '30px';
-          subTitleTd.innerHTML = `↳ ${escapeHtml(sub.name || '')}`;
-          subTr.appendChild(subTitleTd);
+    // extract size and qty values
+    const size = sub.column_values?.find(c => c.id === "size")?.text || "";
+    const qty = sub.column_values?.find(c => c.id === "qty")?.text || "";
 
-          tbody.appendChild(subTr);
-        }
-      }
+    const subTitleTd = document.createElement('td');
+    subTitleTd.style.border = '1px solid #ddd';
+    subTitleTd.style.padding = '8px';
+    subTitleTd.style.paddingLeft = '30px';
+    subTitleTd.innerHTML = `↳ ${escapeHtml(sub.name || '')} | Size: ${escapeHtml(size)} | Qty: ${escapeHtml(qty)}`;
+    subTr.appendChild(subTitleTd);
+
+    tbody.appendChild(subTr);
+  }
+}
+
     }
 
     table.appendChild(tbody);
