@@ -21,9 +21,10 @@ const STATUS_COLUMN_ID = (process.env.STATUS_COLUMN_ID || "").trim();
 const STATUS_INDEX = process.env.STATUS_INDEX !== undefined ? parseInt(process.env.STATUS_INDEX, 10) : null;
 const STATUS_LABEL = (process.env.STATUS_LABEL || "Done").trim();
 
-const BOARD_PAGE_LIMIT = parseInt(process.env.BOARD_PAGE_LIMIT || '200', 10);
-const BOARD_MAX_PAGES = parseInt(process.env.BOARD_MAX_PAGES || '3', 10);
-const BOARD_CACHE_MS = parseInt(process.env.BOARD_CACHE_MS || '60000', 10);
+const BOARD_PAGE_LIMIT = parseInt(process.env.BOARD_PAGE_LIMIT || '50', 10);
+const BOARD_MAX_PAGES = parseInt(process.env.BOARD_MAX_PAGES || '2', 10);
+const BOARD_CACHE_MS = parseInt(process.env.BOARD_CACHE_MS || '300000', 10);
+
 
 let mondayAccessToken = null;
 
