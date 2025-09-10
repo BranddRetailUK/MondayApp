@@ -165,32 +165,85 @@ app.get("/api/scan-url", (req, res) => {
 });
 
 app.get("/scan", async (req, res) => {
-  const { i, s, ts, sig } = req.query;
+  const { i, ts, sig } = req.query;
   if (!i || !ts || !sig) return res.status(400).send("Invalid scan URL");
   if (sig !== signPayload(i, ts)) return res.status(403).send("Signature check failed");
   if (!mondayAccessToken) return res.status(401).send("Not authenticated");
   if (!STATUS_COLUMN_ID) return res.status(400).send("STATUS_COLUMN_ID not configured");
 
   try {
-    const value = STATUS_INDEX !== null ? JSON.stringify({ index: STATUS_INDEX }) : JSON.stringify({ label: s || STATUS_LABEL });
+    let value;
+
+    if (STATUS_COLUMN_ID.startsWith("checkbox")) {
+      // Step 1: fetch current value
+      const query = `
+        query($boardId: [ID!], $itemId: [ID!]) {
+          boards(ids: $boardId) {
+            items(ids: $itemId) {
+              column_values(ids: ["${STATUS_COLUMN_ID}"]) {
+                id
+                value
+              }
+            }
+          }
+        }
+      `;
+      const variables = { boardId: [BOARD_ID], itemId: [i] };
+      const resp = await axios.post(
+        "https://api.monday.com/v2",
+        { query, variables },
+        { headers: { Authorization: mondayAccessToken, "Content-Type": "application/json" } }
+      );
+
+      let currentVal = false;
+      try {
+        const valObj = JSON.parse(resp.data.data.boards[0].items[0].column_values[0].value || "{}");
+        currentVal = valObj.checked === "true";
+      } catch {}
+
+      // Step 2: toggle it
+      value = JSON.stringify({ checked: currentVal ? "false" : "true" });
+    } else {
+      // fallback: status column
+      value = Number.isInteger(STATUS_INDEX)
+        ? JSON.stringify({ index: STATUS_INDEX })
+        : JSON.stringify({ label: STATUS_LABEL });
+    }
+
+    // Step 3: update the column
     const mutation = `
-      mutation ChangeStatus($board:Int!,$item:Int!,$col:String!,$val:JSON!) {
-        change_column_value(board_id:$board,item_id:$item,column_id:$col,value:$val){ id }
+      mutation ChangeValue($board: ID!, $item: ID!, $col: String!, $val: JSON!) {
+        change_column_value(board_id: $board, item_id: $item, column_id: $col, value: $val) { id }
       }
     `;
-    const variables = { board: parseInt(BOARD_ID, 10), item: parseInt(i, 10), col: STATUS_COLUMN_ID, val: value };
-    await axios.post(
+    const variables2 = {
+      board: String(BOARD_ID),
+      item: String(i),
+      col: STATUS_COLUMN_ID,
+      val: value
+    };
+
+    const updateResp = await axios.post(
       "https://api.monday.com/v2",
-      { query: mutation, variables },
+      { query: mutation, variables: variables2 },
       { headers: { Authorization: mondayAccessToken, "Content-Type": "application/json" } }
     );
-    console.log(`Scan OK → item ${i} updated`);
-    res.send("<html><body style='font-family:Arial;padding:20px'>Status updated. You can close this tab.</body></html>");
+
+    if (updateResp.data?.errors?.length) {
+      console.error("Scan update error:", updateResp.data.errors);
+      return res.status(500).send("Failed to update column (see logs).");
+    }
+
+    console.log(`Scan OK → item ${i} column ${STATUS_COLUMN_ID} toggled`);
+    res.send("<html><body style='font-family:Arial;padding:20px'>Checkbox toggled ✔️</body></html>");
   } catch (e) {
     console.error("Scan update failed:", e.response?.data || e.message || e);
-    res.status(500).send("Failed to update status");
+    res.status(500).send("Failed to update column");
   }
 });
+
+
+
 
 app.get("/api/qr", async (req, res) => {
   const data = req.query.data || "";

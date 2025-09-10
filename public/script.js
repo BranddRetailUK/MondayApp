@@ -195,56 +195,84 @@ async function printLabel(itemId, rawTitle) {
     { head: 'JOB TITLE', value: jobTitle, ratio: 0.50 }
   ];
 
-  const body = `
-    <!doctype html>
-    <html>
-    <head>
-      <meta charset="utf-8" />
-      <title>Shipping Label</title>
-      <style>
-        @media print { @page { size: 4in 6in; margin: 0; } html,body { width: 4in; height: 6in; } }
-        html,body { margin: 0; padding: 0; }
-        .wrap { position: relative; box-sizing: border-box; width: calc(4in - 0.30in); height: 6in; padding: 0.15in; }
-        .block { margin: 0 0 0.35in 0; }
-        .head { font-family: Arial, sans-serif; font-size: 14pt; font-weight: 800; margin: 0 0 6px 0; }
-        .value { font-family: Arial, sans-serif; font-weight: 900; margin: 0; white-space: nowrap; overflow: hidden; width: 100%; line-height: 1.05; }
-        .qr { position: absolute; right: 0.15in; bottom: 0.15in; width: 1.3in; height: 1.3in; }
-      </style>
-    </head>
-    <body>
-      <div class="wrap">
+const body = `
+  <!doctype html>
+  <html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Shipping Label</title>
+    <style>
+      @media print { 
+        @page { size: 4in 6in; margin: 0; } 
+        html,body { width: 4in; height: 6in; } 
+      }
+      html,body { margin: 0; padding: 0; }
+      .wrap {
+        box-sizing: border-box;
+        width: calc(4in - 0.3in);
+        height: 6in;
+        padding: 0.15in;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+      .content {
+        flex: 1 1 auto;
+      }
+      .block { margin: 0 0 0.35in 0; }
+      .head { font-family: Arial, sans-serif; font-size: 14pt; font-weight: 800; margin: 0 0 6px 0; }
+      .value { font-family: Arial, sans-serif; font-weight: 900; margin: 0; white-space: nowrap; overflow: hidden; width: 100%; line-height: 1.05; }
+      .qr-container {
+        flex: 0 0 auto;
+        display: flex;
+        justify-content: center;
+        margin-top: 0.2in;
+      }
+      .qr {
+        width: 1.5in;
+        height: 1.5in;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="content">
         ${blocks.map(b=>`
           <div class="block">
             <div class="head">${escapeHtml(b.head)}</div>
             <div class="value" data-ratio="${b.ratio}">${escapeHtml(b.value)}</div>
           </div>
         `).join('')}
+      </div>
+      <div class="qr-container">
         ${qrImg}
       </div>
-      <script>
-        (function(){
-          function fit(el, ratio, min){
-            var parent = el.parentElement;
-            var w = parent.clientWidth || parent.getBoundingClientRect().width;
-            var size = Math.max(min, Math.floor(w * ratio));
+    </div>
+    <script>
+      (function(){
+        function fit(el, ratio, min){
+          var parent = el.parentElement;
+          var w = parent.clientWidth || parent.getBoundingClientRect().width;
+          var size = Math.max(min, Math.floor(w * ratio));
+          el.style.fontSize = size + 'px';
+          var guard = 0;
+          while ((el.scrollWidth > parent.clientWidth) && size > min && guard < 200){
+            size -= 1;
             el.style.fontSize = size + 'px';
-            var guard = 0;
-            while ((el.scrollWidth > parent.clientWidth) && size > min && guard < 200){
-              size -= 1;
-              el.style.fontSize = size + 'px';
-              guard++;
-            }
+            guard++;
           }
-          Array.prototype.slice.call(document.querySelectorAll('.value')).forEach(function(v){
-            var ratio = parseFloat(v.getAttribute('data-ratio')) || 0.4;
-            fit(v, ratio, 10);
-          });
-          try { window.print(); } catch(e) {}
-        })();
-      </script>
-    </body>
-    </html>
-  `;
+        }
+        Array.prototype.slice.call(document.querySelectorAll('.value')).forEach(function(v){
+          var ratio = parseFloat(v.getAttribute('data-ratio')) || 0.4;
+          fit(v, ratio, 10);
+        });
+        try { window.print(); } catch(e) {}
+      })();
+    </script>
+  </body>
+  </html>
+`;
+
 
   let win = null;
   try { win = window.open('', '', 'width=480,height=760'); } catch {}
