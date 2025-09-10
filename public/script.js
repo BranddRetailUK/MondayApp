@@ -161,9 +161,9 @@ function renderBoard(payload) {
     subPrintTd.appendChild(subPrintBtn);
     subTr.appendChild(subPrintTd);
 
-    // extract size and qty values
-    const size = sub.column_values?.find(c => c.id === "size")?.text || "";
-    const qty = sub.column_values?.find(c => c.id === "qty")?.text || "";
+const size = sub.column_values?.find(c => c.id === "dropdown_mkr73m5s")?.text || "";
+const qty  = sub.column_values?.find(c => c.id === "text_mkr31cjs")?.text || "";
+
 
     const subTitleTd = document.createElement('td');
     subTitleTd.style.border = '1px solid #ddd';

@@ -112,7 +112,7 @@ async function fetchBoardLitePaged() {
               subitems {
                 id
                 name
-                column_values(ids: ["size", "qty"]) {
+                column_values(ids: ["dropdown_mkr73m5s", "text_mkr31cjs"]) {
                   id
                   text
                 }
