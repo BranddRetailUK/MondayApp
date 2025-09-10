@@ -80,6 +80,11 @@ function renderBoardMinimal(payload) {
     return;
   }
 
+  const idToTitle = {};
+  (board.columns || []).forEach(col => {
+    idToTitle[col.id] = col.title || col.id;
+  });
+
   for (const group of (board.groups || [])) {
     const collectionName = group.title || 'Untitled Group';
     const items = group.items_page?.items || [];
@@ -112,7 +117,11 @@ function renderBoardMinimal(payload) {
     const tbody = document.createElement('tbody');
 
     for (const item of items) {
+      const cvMap = indexColumnValues(item.column_values, idToTitle);
+      const orderNumber = pick(cvMap, ['order number', 'order', 'job number', 'order id']);
+      const customerName = pick(cvMap, ['customer', 'client', 'customer name']);
       const jobTitle = item.name || '';
+
       const tr = document.createElement('tr');
 
       const printTd = document.createElement('td');
@@ -128,7 +137,7 @@ function renderBoardMinimal(payload) {
         borderRadius: '4px',
         cursor: 'pointer'
       });
-      printBtn.addEventListener('click', () => printLabel({ jobTitle }));
+      printBtn.addEventListener('click', () => printLabel({ orderNumber, customerName, jobTitle }));
       printTd.appendChild(printBtn);
       tr.appendChild(printTd);
 
@@ -153,6 +162,27 @@ function unwrapFirstBoard(payload) {
   return null;
 }
 
+function indexColumnValues(columnValues, idToTitle) {
+  const map = {};
+  (columnValues || []).forEach(cv => {
+    const title = idToTitle[cv.id] || cv.id;
+    map[normalize(title)] = cv.text || '';
+  });
+  return map;
+}
+
+function pick(cvMap, candidates) {
+  for (const c of candidates) {
+    const key = normalize(c);
+    if (cvMap[key]) return cvMap[key];
+  }
+  return '';
+}
+
+function normalize(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
 function escapeHtml(s) {
   return String(s || '')
     .replaceAll('&', '&amp;')
@@ -163,13 +193,14 @@ function escapeHtml(s) {
 }
 
 function printLabel(item) {
-  const orderNumber = '';
-  const customerName = '';
+  const orderNumber = item?.orderNumber ? String(item.orderNumber) : '';
+  const customerName = item?.customerName ? String(item.customerName) : '';
   const jobTitle = item?.jobTitle ? String(item.jobTitle).replace(/-/g, ' ') : '';
-  const blocks = [];
-  if (orderNumber) blocks.push({ head: 'ORDER NUMBER', value: orderNumber });
-  if (customerName) blocks.push({ head: 'CUSTOMER NAME', value: customerName });
-  if (jobTitle) blocks.push({ head: 'JOB TITLE', value: jobTitle });
+  const blocks = [
+    { head: 'JOB NUMBER', value: orderNumber, ratio: 0.58 },
+    { head: 'CUSTOMER', value: customerName, ratio: 0.40 },
+    { head: 'JOB TITLE', value: jobTitle, ratio: 0.44 }
+  ];
 
   const body = `
     <!doctype html>
@@ -181,37 +212,37 @@ function printLabel(item) {
         @media print { @page { size: 4in 6in; margin: 0; } html,body { width: 4in; height: 6in; } }
         html,body { margin: 0; padding: 0; }
         .wrap { box-sizing: border-box; width: calc(4in - 0.30in); height: 6in; padding: 0.15in; }
-        .block { margin-bottom: 0.20in; }
-        .head { font-family: Arial, sans-serif; font-size: 12pt; font-weight: 700; margin: 0 0 6px 0; }
-        .value { font-family: Arial, sans-serif; font-weight: 900; margin: 0; white-space: nowrap; overflow: hidden; }
+        .block { margin: 0 0 0.35in 0; }
+        .head { font-family: Arial, sans-serif; font-size: 14pt; font-weight: 800; margin: 0 0 6px 0; }
+        .value { font-family: Arial, sans-serif; font-weight: 900; margin: 0; white-space: nowrap; overflow: hidden; width: 100%; line-height: 1.05; }
       </style>
     </head>
     <body>
-      <div class="wrap" id="wrap">
-        ${blocks.map(b => `
+      <div class="wrap">
+        ${blocks.map((b,i)=>`
           <div class="block">
             <div class="head">${escapeHtml(b.head)}</div>
-            <div class="value">${escapeHtml(b.value)}</div>
+            <div class="value" data-ratio="${b.ratio}">${escapeHtml(b.value)}</div>
           </div>
         `).join('')}
       </div>
       <script>
         (function(){
-          function fit(el, max, min){
-            var size = max;
+          function fit(el, ratio, min){
+            var parent = el.parentElement;
+            var w = parent.clientWidth || parent.getBoundingClientRect().width;
+            var size = Math.max(min, Math.floor(w * ratio));
             el.style.fontSize = size + 'px';
-            var parentWidth = el.clientWidth || el.getBoundingClientRect().width;
-            while ((el.scrollWidth > parentWidth) && size > min){
+            var guard = 0;
+            while ((el.scrollWidth > parent.clientWidth) && size > min && guard < 200){
               size -= 1;
               el.style.fontSize = size + 'px';
+              guard++;
             }
           }
-          var values = Array.prototype.slice.call(document.querySelectorAll('.value'));
-          values.forEach(function(v){
-            var container = v.parentElement;
-            var w = container.clientWidth;
-            var guess = Math.max(12, Math.min(120, Math.floor(w * 0.38)));
-            fit(v, guess, 10);
+          Array.prototype.slice.call(document.querySelectorAll('.value')).forEach(function(v){
+            var ratio = parseFloat(v.getAttribute('data-ratio')) || 0.4;
+            fit(v, ratio, 10);
           });
           try { window.print(); } catch(e) {}
         })();
