@@ -204,12 +204,16 @@ const body = `
     <style>
       @media print { 
         @page { size: 4in 6in; margin: 0; } 
-        html,body { width: 4in; height: 6in; } 
+        html,body { width: 4in; height: 6in; margin: 0; padding: 0; }
       }
-      html,body { margin: 0; padding: 0; }
+      html,body {
+        width: 4in; height: 6in;
+        margin: 0; padding: 0;
+        overflow: hidden;
+      }
       .wrap {
         box-sizing: border-box;
-        width: calc(4in - 0.3in);
+        width: 4in;
         height: 6in;
         padding: 0.15in;
         display: flex;
@@ -218,19 +222,21 @@ const body = `
       }
       .content {
         flex: 1 1 auto;
+        overflow: hidden;
       }
-      .block { margin: 0 0 0.35in 0; }
+      .block { margin: 0 0 0.25in 0; }
       .head { font-family: Arial, sans-serif; font-size: 14pt; font-weight: 800; margin: 0 0 6px 0; }
       .value { font-family: Arial, sans-serif; font-weight: 900; margin: 0; white-space: nowrap; overflow: hidden; width: 100%; line-height: 1.05; }
       .qr-container {
         flex: 0 0 auto;
         display: flex;
         justify-content: center;
-        margin-top: 0.2in;
+        align-items: center;
+        height: 1.6in;
       }
       .qr {
-        width: 1.5in;
-        height: 1.5in;
+        width: 1.4in;
+        height: 1.4in;
       }
     </style>
   </head>
@@ -272,6 +278,7 @@ const body = `
   </body>
   </html>
 `;
+
 
 
   let win = null;
