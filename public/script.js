@@ -26,14 +26,17 @@ async function loadBoard() {
     if (board.groups && board.groups.length > 0) {
       board.groups.forEach(group => {
         html += `<h3>${group.title}</h3>`;
-        if (group.items && group.items.length > 0) {
-          html += group.items
+        if (group.items_page && group.items_page.items.length > 0) {
+          html += group.items_page.items
             .map(item => {
               let cols = "";
               if (item.column_values && item.column_values.length > 0) {
-                cols = "<ul>" + item.column_values
-                  .map(cv => `<li><strong>${cv.title}:</strong> ${cv.text || "-"}</li>`)
-                  .join("") + "</ul>";
+                cols =
+                  "<ul>" +
+                  item.column_values
+                    .map(cv => `<li><strong>${cv.title}:</strong> ${cv.text || "-"}</li>`)
+                    .join("") +
+                  "</ul>";
               }
               return `<div class="item">
                         <p><strong>${item.name}</strong> (ID: ${item.id})</p>
@@ -56,5 +59,4 @@ async function loadBoard() {
   }
 }
 
-// Auto-load on page open
 window.onload = loadBoard;
