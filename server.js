@@ -101,7 +101,7 @@ async function fetchBoardLitePaged() {
 
   while (pages < BOARD_MAX_PAGES) {
     const query = `
-      query($boardId: [Int!], $limit: Int!, $cursor: String) {
+      query($boardId: [ID!], $limit: Int!, $cursor: String) {
         boards(ids: $boardId) {
           items_page(limit: $limit, cursor: $cursor) {
             cursor
@@ -110,7 +110,7 @@ async function fetchBoardLitePaged() {
         }
       }
     `;
-    const variables = { boardId: [parseInt(BOARD_ID, 10)], limit, cursor };
+    const variables = { boardId: [BOARD_ID], limit, cursor };
     const resp = await axios.post(
       "https://api.monday.com/v2",
       { query, variables },
@@ -151,6 +151,7 @@ async function fetchBoardLitePaged() {
   console.log(`Fetched ${items.length} items across ${pages} page(s)`);
   return { boards: [{ groups }] };
 }
+
 
 app.get("/api/scan-url", (req, res) => {
   const { itemId, status } = req.query;
