@@ -80,11 +80,6 @@ function renderBoardMinimal(payload) {
     return;
   }
 
-  const idToTitle = {};
-  (board.columns || []).forEach(col => {
-    idToTitle[col.id] = col.title || col.id;
-  });
-
   for (const group of (board.groups || [])) {
     const collectionName = group.title || 'Untitled Group';
     const items = group.items_page?.items || [];
@@ -117,11 +112,7 @@ function renderBoardMinimal(payload) {
     const tbody = document.createElement('tbody');
 
     for (const item of items) {
-      const cvMap = indexColumnValues(item.column_values, idToTitle);
-      const orderNumber = pick(cvMap, ['order number', 'order', 'job number', 'order id']);
-      const customerName = pick(cvMap, ['customer', 'client', 'customer name']);
       const jobTitle = item.name || '';
-
       const tr = document.createElement('tr');
 
       const printTd = document.createElement('td');
@@ -137,7 +128,7 @@ function renderBoardMinimal(payload) {
         borderRadius: '4px',
         cursor: 'pointer'
       });
-      printBtn.addEventListener('click', () => printLabel({ orderNumber, customerName, jobTitle }));
+      printBtn.addEventListener('click', () => printLabelFromTitle(jobTitle));
       printTd.appendChild(printBtn);
       tr.appendChild(printTd);
 
@@ -162,27 +153,6 @@ function unwrapFirstBoard(payload) {
   return null;
 }
 
-function indexColumnValues(columnValues, idToTitle) {
-  const map = {};
-  (columnValues || []).forEach(cv => {
-    const title = idToTitle[cv.id] || cv.id;
-    map[normalize(title)] = cv.text || '';
-  });
-  return map;
-}
-
-function pick(cvMap, candidates) {
-  for (const c of candidates) {
-    const key = normalize(c);
-    if (cvMap[key]) return cvMap[key];
-  }
-  return '';
-}
-
-function normalize(s) {
-  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-}
-
 function escapeHtml(s) {
   return String(s || '')
     .replaceAll('&', '&amp;')
@@ -192,14 +162,28 @@ function escapeHtml(s) {
     .replaceAll("'", '&#39;');
 }
 
-function printLabel(item) {
-  const orderNumber = item?.orderNumber ? String(item.orderNumber) : '';
-  const customerName = item?.customerName ? String(item.customerName) : '';
-  const jobTitle = item?.jobTitle ? String(item.jobTitle).replace(/-/g, ' ') : '';
+function parseTitle(raw) {
+  const t = String(raw || '').trim();
+  const parts = t.split(/\s*[-–—]\s*/);
+  if (parts.length >= 3) {
+    const orderNumber = (parts[0].match(/^\d+/) || [parts[0]])[0].trim();
+    const customerName = parts[1].trim();
+    const jobTitle = parts.slice(2).join(' - ').trim().replace(/[-–—]/g, ' ');
+    return { orderNumber, customerName, jobTitle };
+  }
+  const m = t.match(/^\s*(\d+)\s*[-–—]\s*(.+?)\s*[-–—]\s*(.+)$/);
+  if (m) {
+    return { orderNumber: m[1].trim(), customerName: m[2].trim(), jobTitle: m[3].trim().replace(/[-–—]/g, ' ') };
+  }
+  return { orderNumber: '', customerName: '', jobTitle: t.replace(/[-–—]/g, ' ') };
+}
+
+function printLabelFromTitle(rawTitle) {
+  const { orderNumber, customerName, jobTitle } = parseTitle(rawTitle);
   const blocks = [
-    { head: 'JOB NUMBER', value: orderNumber, ratio: 0.58 },
-    { head: 'CUSTOMER', value: customerName, ratio: 0.40 },
-    { head: 'JOB TITLE', value: jobTitle, ratio: 0.44 }
+    { head: 'JOB NUMBER', value: orderNumber, ratio: 0.62 },
+    { head: 'CUSTOMER', value: customerName, ratio: 0.46 },
+    { head: 'JOB TITLE', value: jobTitle, ratio: 0.50 }
   ];
 
   const body = `
@@ -219,7 +203,7 @@ function printLabel(item) {
     </head>
     <body>
       <div class="wrap">
-        ${blocks.map((b,i)=>`
+        ${blocks.map(b=>`
           <div class="block">
             <div class="head">${escapeHtml(b.head)}</div>
             <div class="value" data-ratio="${b.ratio}">${escapeHtml(b.value)}</div>
