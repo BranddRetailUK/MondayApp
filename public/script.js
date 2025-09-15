@@ -3,20 +3,24 @@ const ENDPOINTS = { data: '/api/board', auth: '/auth' };
 
 document.addEventListener('DOMContentLoaded', () => {
   ensureAuthUI();
-  try { setupScanner(); } catch (e) { console.warn('scanner init error', e); }
+  try { setupScanner(); } catch (e) {}
+  loadBoard();
 });
 window.loadBoard = loadBoard;
 
 function ensureAuthUI() {
   const loadBtn = document.getElementById('loadBtn');
-  if (!loadBtn) return;
+  if (loadBtn) {
+    loadBtn.textContent = 'Update board info';
+    loadBtn.onclick = () => loadBoard();
+  }
   if (!document.getElementById('authStatus')) {
     const status = document.createElement('div');
     status.id = 'authStatus';
     status.style.margin = '10px 0';
     status.style.fontSize = '14px';
-    status.textContent = 'Ready. Click "Load Board Info".';
-    loadBtn.insertAdjacentElement('beforebegin', status);
+    status.textContent = 'Ready.';
+    if (loadBtn) loadBtn.insertAdjacentElement('beforebegin', status);
   }
   if (!document.getElementById('connectBtn')) {
     const btn = document.createElement('button');
@@ -32,12 +36,12 @@ function ensureAuthUI() {
       cursor: 'pointer'
     });
     btn.addEventListener('click', () => (window.location.href = ENDPOINTS.auth));
-    loadBtn.insertAdjacentElement('beforebegin', btn);
+    if (loadBtn) loadBtn.insertAdjacentElement('beforebegin', btn);
   }
 }
 
 async function loadBoard() {
-  const boardDiv = document.getElementById('board');
+  const boardDiv = document.getElementById('board') || document.body;
   const statusEl = document.getElementById('authStatus');
   try {
     const res = await fetch(ENDPOINTS.data, { cache: 'no-store' });
@@ -45,16 +49,14 @@ async function loadBoard() {
       let msg = `Failed to load board (HTTP ${res.status})`;
       try {
         const errJson = await res.json();
-        if (errJson?.error) msg = `Failed to load board: ${errJson.error}`;
-        else if (errJson?.errors) msg = `Failed to load board: ${JSON.stringify(errJson.errors)}`;
+        if (errJson && errJson.error) msg = `Failed to load board: ${errJson.error}`;
+        else if (errJson && errJson.errors) msg = `Failed to load board: ${JSON.stringify(errJson.errors)}`;
       } catch {}
       boardDiv.textContent = msg;
       if (res.status === 401 || res.status === 403) {
         if (statusEl) statusEl.textContent = 'Not connected to Monday.';
         const connectBtn = document.getElementById('connectBtn');
-        const loadBtn = document.getElementById('loadBtn');
         if (connectBtn) connectBtn.style.display = 'inline-block';
-        if (loadBtn) loadBtn.disabled = false;
       }
       return;
     }
@@ -64,16 +66,16 @@ async function loadBoard() {
     if (connectBtn) connectBtn.style.display = 'none';
     if (statusEl) statusEl.textContent = 'Connected to Monday.';
   } catch {
-    boardDiv.textContent = 'Failed to load board: Failed to fetch board';
+    boardDiv.textContent = 'Failed to load board: fetch error';
   }
 }
 
 function renderBoard(payload) {
-  const boardDiv = document.getElementById('board');
+  const boardDiv = document.getElementById('board') || document.body;
   boardDiv.innerHTML = '';
   const board = unwrapFirstBoard(payload);
   if (!board) {
-    if (payload?.errors?.length) {
+    if (payload && payload.errors && payload.errors.length) {
       boardDiv.textContent = `GraphQL error: ${payload.errors.map(e => e.message || e).join('; ')}`;
     } else {
       boardDiv.textContent = 'No board data.';
@@ -82,7 +84,7 @@ function renderBoard(payload) {
   }
   for (const group of (board.groups || [])) {
     const collectionName = group.title || 'Untitled Group';
-    const items = group.items_page?.items || [];
+    const items = (group.items_page && group.items_page.items) || [];
     const sectionTitle = document.createElement('h3');
     sectionTitle.textContent = collectionName;
     sectionTitle.style.marginTop = '20px';
@@ -91,12 +93,14 @@ function renderBoard(payload) {
     sectionTitle.style.color = '#fff';
     sectionTitle.style.borderRadius = '4px';
     boardDiv.appendChild(sectionTitle);
+
     const table = document.createElement('table');
     table.style.width = '100%';
     table.style.borderCollapse = 'collapse';
     table.style.marginBottom = '20px';
     table.style.background = '#fff';
     table.style.border = '1px solid #ddd';
+
     const thead = document.createElement('thead');
     thead.innerHTML = `
       <tr>
@@ -105,10 +109,13 @@ function renderBoard(payload) {
       </tr>
     `;
     table.appendChild(thead);
+
     const tbody = document.createElement('tbody');
+
     for (const item of items) {
       const jobTitle = item.name || '';
       const tr = document.createElement('tr');
+
       const printTd = document.createElement('td');
       printTd.style.border = '1px solid #ddd';
       printTd.style.padding = '8px';
@@ -125,15 +132,19 @@ function renderBoard(payload) {
       printBtn.addEventListener('click', () => printLabel(item.id, jobTitle));
       printTd.appendChild(printBtn);
       tr.appendChild(printTd);
+
       const titleTd = document.createElement('td');
       titleTd.style.border = '1px solid #ddd';
       titleTd.style.padding = '8px';
       titleTd.innerHTML = escapeHtml(jobTitle);
       tr.appendChild(titleTd);
+
       tbody.appendChild(tr);
+
       if (item.subitems && item.subitems.length > 0) {
         for (const sub of item.subitems) {
           const subTr = document.createElement('tr');
+
           const subPrintTd = document.createElement('td');
           subPrintTd.style.border = '1px solid #ddd';
           subPrintTd.style.padding = '8px';
@@ -150,27 +161,31 @@ function renderBoard(payload) {
           subPrintBtn.addEventListener('click', () => printLabel(sub.id, sub.name || ''));
           subPrintTd.appendChild(subPrintBtn);
           subTr.appendChild(subPrintTd);
-          const size = sub.column_values?.find(c => c.id === "dropdown_mkr73m5s")?.text || "";
-          const qty = sub.column_values?.find(c => c.id === "text_mkr31cjs")?.text || "";
+
+          const size = (sub.column_values || []).find(c => c.id === 'dropdown_mkr73m5s')?.text || '';
+          const qty = (sub.column_values || []).find(c => c.id === 'text_mkr31cjs')?.text || '';
+
           const subTitleTd = document.createElement('td');
           subTitleTd.style.border = '1px solid #ddd';
           subTitleTd.style.padding = '8px';
           subTitleTd.style.paddingLeft = '30px';
           subTitleTd.innerHTML = `↳ ${escapeHtml(sub.name || '')} | Size: ${escapeHtml(size)} | Qty: ${escapeHtml(qty)}`;
           subTr.appendChild(subTitleTd);
+
           tbody.appendChild(subTr);
         }
       }
     }
+
     table.appendChild(tbody);
     boardDiv.appendChild(table);
   }
 }
 
 function unwrapFirstBoard(payload) {
-  if (payload?.data?.boards?.length) return payload.data.boards[0];
-  if (payload?.boards?.length) return payload.boards[0];
-  if (payload?.data?.data?.boards?.length) return payload.data.data.boards[0];
+  if (payload && payload.data && payload.data.boards && payload.data.boards.length) return payload.data.boards[0];
+  if (payload && payload.boards && payload.boards.length) return payload.boards[0];
+  if (payload && payload.data && payload.data.data && payload.data.data.boards && payload.data.data.boards.length) return payload.data.data.boards[0];
   return null;
 }
 
@@ -279,114 +294,123 @@ async function printLabel(itemId, rawTitle) {
   }
 }
 
+let __scanPump = null;
+let __scanLastInputAt = 0;
+
 function setupScanner() {
-  const { input, pillText } = ensureScannerElements();
+  const ctx = ensureScannerElements();
+  const input = ctx && ctx.input;
+  const pillText = ctx && ctx.pillText;
   if (!input) return;
+
   const setPill = (txt) => { if (pillText) pillText.textContent = txt; };
-  const focusInput = () => {
-    if (document.activeElement !== input) input.focus();
-    input.select();
-  };
+  const focusInput = () => { if (document.activeElement !== input) input.focus(); input.select(); };
+
   focusInput();
-  window.addEventListener('click', focusInput);
-  setInterval(focusInput, 3000);
+  window.addEventListener('click', focusInput, true);
+  window.addEventListener('focus', focusInput, true);
+  window.addEventListener('keydown', focusInput, true);
+  setInterval(focusInput, 250);
+
+  window.addEventListener('keydown', (e) => {
+    if (document.activeElement === input) {
+      if ((e.shiftKey && e.key === '?') || (e.shiftKey && e.key === '/')) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    }
+  }, true);
+
   let idleTimer = null;
-  const IDLE_MS = 250;
+  const IDLE_MS = 220;
+
   input.addEventListener('keydown', (e) => {
+    const now = Date.now();
+    const gap = now - __scanLastInputAt;
+    const startingNewScan = gap > 400 || input.value.length === 0;
+    if (startingNewScan && !__scanPump) {
+      try { __scanPump = window.open('', 'scanpump', 'width=1,height=1,left=-10000,top=-10000,noopener,noreferrer'); } catch {}
+    }
     if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
       flush('suffix:' + e.key);
     }
   });
+
   input.addEventListener('input', () => {
+    __scanLastInputAt = Date.now();
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => flush('idle'), IDLE_MS);
   });
+
   async function flush(reason) {
     const raw = input.value.trim();
     input.value = '';
     if (!raw) return;
-    console.log('[SCAN]', reason, raw);
     setPill('processing…');
     try {
-      const { ok, message } = await processScan(raw);
+      const { ok, message } = await processScan(raw, reason);
       setPill(ok ? 'checked in ✔' : (message || 'failed'));
-    } catch (err) {
-      console.error('scan error', err);
+    } catch {
       setPill('failed');
     } finally {
+      setTimeout(() => setPill('ready'), 800);
       focusInput();
-      setTimeout(() => setPill('ready'), 1200);
     }
   }
 }
 
-function ensureScannerElements() {
-  let input = document.getElementById('scannerInput');
-  if (!input) {
-    input = document.createElement('input');
-    input.id = 'scannerInput';
-    input.type = 'text';
-    input.autocomplete = 'off';
-    input.setAttribute('inputmode', 'text');
-    Object.assign(input.style, { position: 'absolute', left: '-9999px', width: '1px', height: '1px', opacity: '0' });
-    document.body.appendChild(input);
-  }
-  let pillText = document.getElementById('scannerPillText');
-  if (!pillText) {
-    const pill = document.createElement('div');
-    pill.id = 'scannerPill';
-    Object.assign(pill.style, {
-      position: 'fixed', right: '12px', bottom: '12px',
-      background: '#111', color: '#fff',
-      padding: '6px 10px', borderRadius: '999px',
-      font: '12px/1 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial'
-    });
-    pill.innerHTML = `Scanner: <span id="scannerPillText">ready</span>`;
-    document.body.appendChild(pill);
-    pillText = document.getElementById('scannerPillText');
-  }
-  return { input, pillText };
-}
-
-async function processScan(raw) {
+async function processScan(raw, reason) {
   const cleaned = String(raw).trim();
   let scanUrl = normalizeScanUrl(cleaned);
+
   if (!scanUrl && /^\d+$/.test(cleaned)) {
     try {
-      const r = await fetch(`${PROD_ORIGIN}/api/scan-url?itemId=${encodeURIComponent(cleaned)}`, { credentials: 'omit' });
+      const r = await fetch(`${PROD_ORIGIN}/api/scan-url?itemId=${encodeURIComponent(cleaned)}`, { credentials: 'omit', cache: 'no-store' });
       if (r.ok) {
         const j = await r.json();
-        if (j?.url) scanUrl = j.url;
+        if (j && j.url) scanUrl = j.url;
       }
-    } catch (e) {
-      console.warn('Could not mint signed URL (likely CORS). Numeric-ID scans require running from your app origin.', e);
-    }
+    } catch {}
   }
   if (!scanUrl) return { ok:false, message:'unrecognized code' };
-  try {
-    await fetch(scanUrl, { method: 'GET', mode: 'no-cors' });
-    console.log('[SCAN→fetch(no-cors)]', scanUrl);
-  } catch (e) {
-    console.warn('scan fetch error (will fallback to window.open):', e);
-    try { window.open(scanUrl, '_blank'); } catch {}
+
+  if (__scanPump && !__scanPump.closed) {
+    try {
+      __scanPump.location.replace(scanUrl);
+      setTimeout(() => { try { __scanPump.close(); } catch {} __scanPump = null; }, 1800);
+      return { ok:true };
+    } catch {
+      try { __scanPump.close(); } catch {}
+      __scanPump = null;
+    }
   }
+
+  if (reason === 'suffix:Enter' || reason === 'suffix:Tab') {
+    try {
+      const w = window.open(scanUrl, '_blank', 'noopener,noreferrer,width=1,height=1,left=-10000,top=-10000');
+      if (w) setTimeout(() => { try { w.close(); } catch {} }, 1800);
+      return { ok:true };
+    } catch {}
+  }
+
+  try {
+    await fetch(scanUrl, { method: 'GET', mode: 'no-cors', cache: 'no-store', keepalive: true, credentials: 'omit' });
+    return { ok:true };
+  } catch {}
+
+  try {
+    const img = new Image();
+    img.referrerPolicy = 'no-referrer';
+    img.src = scanUrl + (scanUrl.includes('?') ? '&' : '?') + '_imgping=' + Date.now();
+  } catch {}
+
   return { ok:true };
 }
 
 function normalizeScanUrl(input) {
-  if (/^https?:\/\//i.test(input)) {
-    try {
-      const u = new URL(input);
-      const host = new URL(PROD_ORIGIN);
-      u.protocol = 'https:';
-      u.host = host.host;
-      u.pathname = '/scan';
-      if (!u.searchParams.get('i') || !u.searchParams.get('ts') || !u.searchParams.get('sig')) return null;
-      return u.toString();
-    } catch { return null; }
-  }
-  if (/(^|[?&])i=\d+/.test(input) && /sig=/.test(input) && /ts=/.test(input)) {
+  if (/^https?:\/\/.+\/scan\?.*i=\d+.*ts=\d+.*sig=[a-f0-9]+/i.test(input)) return input;
+  if (/(^|[?&])i=\d+/.test(input) && /ts=\d+/.test(input) && /sig=/.test(input)) {
     return `${PROD_ORIGIN}/scan?${input.replace(/^[^?]*\?/, '')}`;
   }
   return null;
