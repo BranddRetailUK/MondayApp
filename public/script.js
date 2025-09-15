@@ -357,6 +357,8 @@ function ensureScannerElements() {
 async function processScan(raw) {
   const cleaned = String(raw).trim();
   let scanUrl = normalizeScanUrl(cleaned);
+
+  // if plain numeric, try minting a signed URL
   if (!scanUrl && /^\d+$/.test(cleaned)) {
     try {
       const r = await fetch(`${PROD_ORIGIN}/api/scan-url?itemId=${encodeURIComponent(cleaned)}`, { credentials: 'omit' });
@@ -368,16 +370,25 @@ async function processScan(raw) {
       console.warn('Could not mint signed URL (likely CORS). Numeric-ID scans require running from your app origin.', e);
     }
   }
+
   if (!scanUrl) return { ok:false, message:'unrecognized code' };
+
   try {
+    // fire-and-forget fetch
     await fetch(scanUrl, { method: 'GET', mode: 'no-cors' });
     console.log('[SCAN→fetch(no-cors)]', scanUrl);
+
+    // guaranteed fallback → open in hidden window
+    const w = window.open(scanUrl, '_blank', 'width=1,height=1,left=-1000,top=-1000');
+    if (w) setTimeout(() => w.close(), 2000);
   } catch (e) {
-    console.warn('scan fetch error (will fallback to window.open):', e);
+    console.warn('scan fetch error (fallback to window.open):', e);
     try { window.open(scanUrl, '_blank'); } catch {}
   }
+
   return { ok:true };
 }
+
 
 function normalizeScanUrl(input) {
   try {
