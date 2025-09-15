@@ -408,24 +408,28 @@ async function processScan(raw) {
 function normalizeScanUrl(input) {
   try {
     const u = new URL(input);
-    // accept any https URL that points to /scan and has i, ts, sig
-    if (u.protocol.startsWith("http") &&
-        u.pathname.includes("/scan") &&
-        u.searchParams.get("i") &&
-        u.searchParams.get("ts") &&
-        u.searchParams.get("sig")) {
+
+    // accept any https://…/scan URL with i, ts, sig params
+    if (
+      u.protocol.startsWith("http") &&
+      u.pathname.endsWith("/scan") &&
+      u.searchParams.has("i") &&
+      u.searchParams.has("ts") &&
+      u.searchParams.has("sig")
+    ) {
       return u.toString();
     }
   } catch (e) {
     // ignore parse errors
   }
 
-  // fallback: raw query string form
+  // fallback: if scanner only outputs query string
   if (/(^|[?&])i=\d+/.test(input) && /sig=/.test(input) && /ts=/.test(input)) {
     return `${PROD_ORIGIN}/scan?${input.replace(/^[^?]*\?/, '')}`;
   }
 
   return null;
 }
+
 
 
