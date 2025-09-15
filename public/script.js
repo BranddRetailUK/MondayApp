@@ -289,22 +289,24 @@ function setupScanner() {
   if (!input) return;
 
   const setPill = (txt) => { if (pillText) pillText.textContent = txt; };
-
   const focusInput = () => {
-    if (document.activeElement !== input) {
-      input.focus();
-      input.select();
-    }
+    if (document.activeElement !== input) input.focus();
+    input.select();
   };
 
-  // Immediately focus
   focusInput();
-
-  // Keep grabbing focus aggressively
   window.addEventListener('click', focusInput);
-  window.addEventListener('keydown', focusInput);
-  window.addEventListener('focus', focusInput);
-  setInterval(focusInput, 500); // tighter interval (0.5s)
+  setInterval(focusInput, 500);
+
+  // Stop Monday’s global “?” shortcut while scanning
+  // (capture phase, only when our input is focused)
+  window.addEventListener('keydown', (e) => {
+    if (document.activeElement === input) {
+      if ((e.shiftKey && e.key === '?') || (e.shiftKey && e.key === '/')) {
+        e.stopPropagation();
+      }
+    }
+  }, true);
 
   let idleTimer = null;
   const IDLE_MS = 250;
@@ -328,7 +330,7 @@ function setupScanner() {
     console.log('[SCAN]', reason, raw);
     setPill('processing…');
     try {
-      const { ok, message } = await processScan(raw);
+      const { ok, message } = await processScan(raw, reason);
       setPill(ok ? 'checked in ✔' : (message || 'failed'));
     } catch (err) {
       console.error('scan error', err);
@@ -340,40 +342,10 @@ function setupScanner() {
   }
 }
 
-
-function ensureScannerElements() {
-  let input = document.getElementById('scannerInput');
-  if (!input) {
-    input = document.createElement('input');
-    input.id = 'scannerInput';
-    input.type = 'text';
-    input.autocomplete = 'off';
-    input.setAttribute('inputmode', 'text');
-    Object.assign(input.style, { position: 'absolute', left: '-9999px', width: '1px', height: '1px', opacity: '0' });
-    document.body.appendChild(input);
-  }
-  let pillText = document.getElementById('scannerPillText');
-  if (!pillText) {
-    const pill = document.createElement('div');
-    pill.id = 'scannerPill';
-    Object.assign(pill.style, {
-      position: 'fixed', right: '12px', bottom: '12px',
-      background: '#111', color: '#fff',
-      padding: '6px 10px', borderRadius: '999px',
-      font: '12px/1 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial'
-    });
-    pill.innerHTML = `Scanner: <span id="scannerPillText">ready</span>`;
-    document.body.appendChild(pill);
-    pillText = document.getElementById('scannerPillText');
-  }
-  return { input, pillText };
-}
-
-async function processScan(raw) {
+async function processScan(raw, reason) {
   const cleaned = String(raw).trim();
   let scanUrl = normalizeScanUrl(cleaned);
 
-  // if plain numeric, try minting a signed URL
   if (!scanUrl && /^\d+$/.test(cleaned)) {
     try {
       const r = await fetch(`${PROD_ORIGIN}/api/scan-url?itemId=${encodeURIComponent(cleaned)}`, { credentials: 'omit' });
@@ -388,21 +360,44 @@ async function processScan(raw) {
 
   if (!scanUrl) return { ok:false, message:'unrecognized code' };
 
-  try {
-    // fire-and-forget fetch
-    await fetch(scanUrl, { method: 'GET', mode: 'no-cors' });
-    console.log('[SCAN→fetch(no-cors)]', scanUrl);
-
-    // guaranteed fallback → open in hidden window
-    const w = window.open(scanUrl, '_blank', 'width=1,height=1,left=-1000,top=-1000');
-    if (w) setTimeout(() => w.close(), 2000);
-  } catch (e) {
-    console.warn('scan fetch error (fallback to window.open):', e);
-    try { window.open(scanUrl, '_blank'); } catch {}
+  // If triggered by Enter/Tab, open immediately (user gesture → no popup block)
+  if (reason === 'suffix:Enter' || reason === 'suffix:Tab') {
+    try {
+      window.open(scanUrl, '_blank', 'noopener,noreferrer');
+      console.log('[SCAN→open]', scanUrl);
+      return { ok:true };
+    } catch (e) {
+      console.warn('window.open failed, will fallback beacons:', e);
+      // fall-through to beacon/fetch
+    }
   }
 
-  return { ok:true };
+  // Fire-and-forget: try fetch (some CSPs allow), then an <img> beacon (often allowed even when fetch is blocked)
+  try {
+    await fetch(scanUrl, { method: 'GET', mode: 'no-cors', cache: 'no-store', keepalive: true, credentials: 'omit' });
+    console.log('[SCAN→fetch(no-cors)]', scanUrl);
+    return { ok:true };
+  } catch (e) {
+    console.warn('fetch blocked, using img beacon:', e);
+  }
+
+  try {
+    const ping = new Image();
+    ping.referrerPolicy = 'no-referrer';
+    ping.src = scanUrl + (scanUrl.includes('?') ? '&' : '?') + '_imgping=' + Date.now();
+    console.log('[SCAN→img]', ping.src);
+    // no reliable completion callback needed; just return ok
+    return { ok:true };
+  } catch (e) {
+    console.error('img beacon failed:', e);
+  }
+
+  // Last-ditch attempt: navigate current tab (only if you’re okay leaving the Monday page)
+  // location.assign(scanUrl);
+
+  return { ok:false, message:'could not dispatch request' };
 }
+
 
 
 function normalizeScanUrl(input) {
