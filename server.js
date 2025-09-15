@@ -173,6 +173,12 @@ async function fetchBoardLitePaged() {
   return { boards: [{ groups }] };
 }
 
+// serve /launch (extensionless)
+app.get('/launch', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'launch.html'));
+});
+
+
 app.get("/api/scan-url", (req, res) => {
   const { itemId } = req.query;
   if (!itemId) return res.status(400).json({ error: "itemId required" });
