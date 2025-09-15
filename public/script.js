@@ -224,31 +224,13 @@ async function printLabel(itemId, rawTitle) {
           @page { size: 4in 6in; margin: 0; } 
           html,body { width: 4in; height: 6in; margin: 0; padding: 0; }
         }
-        html,body {
-          width: 4in; height: 6in;
-          margin: 0; padding: 0;
-          overflow: hidden;
-        }
-        .wrap {
-          box-sizing: border-box;
-          width: 4in;
-          height: 6in;
-          padding: 0.15in;
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
-        }
+        html,body { width: 4in; height: 6in; margin: 0; padding: 0; overflow: hidden; }
+        .wrap { box-sizing: border-box; width: 4in; height: 6in; padding: 0.15in; display: flex; flex-direction: column; justify-content: space-between; }
         .content { flex: 1 1 auto; overflow: hidden; }
         .block { margin: 0 0 0.25in 0; }
         .head { font-family: Arial, sans-serif; font-size: 14pt; font-weight: 800; margin: 0 0 6px 0; }
         .value { font-family: Arial, sans-serif; font-weight: 900; margin: 0; white-space: nowrap; overflow: hidden; width: 100%; line-height: 1.05; }
-        .qr-container {
-          flex: 0 0 auto;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          height: 1.6in;
-        }
+        .qr-container { flex: 0 0 auto; display: flex; justify-content: center; align-items: center; height: 1.6in; }
         .qr { width: 1.4in; height: 1.4in; }
       </style>
     </head>
@@ -262,9 +244,7 @@ async function printLabel(itemId, rawTitle) {
             </div>
           `).join('')}
         </div>
-        <div class="qr-container">
-          ${qrImg}
-        </div>
+        <div class="qr-container">${qrImg}</div>
       </div>
       <script>
         (function(){

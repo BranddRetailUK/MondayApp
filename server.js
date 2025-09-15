@@ -8,13 +8,17 @@ const QRCode = require("qrcode");
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+app.set("trust proxy", 1);
+
+const PORT = parseInt(process.env.PORT || "3000", 10);
 
 const CLIENT_ID = (process.env.MONDAY_CLIENT_ID || "").trim();
 const CLIENT_SECRET = (process.env.MONDAY_CLIENT_SECRET || "").trim();
 const REDIRECT_URI = (process.env.MONDAY_REDIRECT_URI || "http://localhost:3000/callback").trim();
 const BOARD_ID = (process.env.BOARD_ID || "").trim();
 const SCOPES = (process.env.MONDAY_SCOPES || "").trim();
+
+const MONDAY_API_TOKEN = (process.env.MONDAY_API_TOKEN || "").trim();
 
 const SCAN_SECRET = (process.env.SCAN_SECRET || "change-me").trim();
 const STATUS_COLUMN_ID = (process.env.STATUS_COLUMN_ID || "").trim();
@@ -25,7 +29,7 @@ const BOARD_PAGE_LIMIT = parseInt(process.env.BOARD_PAGE_LIMIT || "50", 10);
 const BOARD_MAX_PAGES = parseInt(process.env.BOARD_MAX_PAGES || "2", 10);
 const BOARD_CACHE_MS = parseInt(process.env.BOARD_CACHE_MS || "300000", 10);
 
-let mondayAccessToken = null;
+let mondayAccessToken = MONDAY_API_TOKEN || null;
 let boardCache = { data: null, expires: 0, inFlight: null };
 
 app.use(express.static(path.join(__dirname, "public")));
@@ -60,7 +64,7 @@ app.get("/callback", async (req, res) => {
       redirect_uri: REDIRECT_URI
     });
     mondayAccessToken = response.data.access_token;
-    console.log("Got Monday access token");
+    console.log("Got Monday access token (OAuth)");
     res.send("Authentication successful! <a href='/'>Go to Dashboard</a>");
   } catch (err) {
     console.error("OAuth token exchange error:", err.response?.data || err.message || err);
@@ -168,19 +172,26 @@ async function fetchBoardLitePaged() {
   return { boards: [{ groups }] };
 }
 
-
 app.get("/api/scan-url", (req, res) => {
   const { itemId } = req.query;
   if (!itemId) return res.status(400).json({ error: "itemId required" });
   const ts = Date.now().toString();
   const sig = signPayload(itemId, ts);
-  const base = `${req.protocol}://${req.get("host")}`;
+  const base = `https://${req.get("host")}`;
   const url = `${base}/scan?i=${encodeURIComponent(itemId)}&ts=${ts}&sig=${sig}`;
   res.json({ url });
 });
 
 app.get("/scan", async (req, res) => {
   const { i, ts, sig } = req.query;
+  console.log("SCAN HIT", {
+    ip: req.ip,
+    ua: req.get("user-agent"),
+    xfwd: req.get("x-forwarded-proto"),
+    host: req.get("host"),
+    query: req.query
+  });
+
   if (!i || !ts || !sig) return res.status(400).send("Invalid scan URL");
   if (sig !== signPayload(i, ts)) return res.status(403).send("Signature check failed");
   if (!mondayAccessToken) return res.status(401).send("Not authenticated");
@@ -190,7 +201,6 @@ app.get("/scan", async (req, res) => {
     let value;
 
     if (STATUS_COLUMN_ID.startsWith("checkbox")) {
-      // fetch current checkbox value
       const q = `
         query($boardId: [ID!], $itemId: [ID!]) {
           boards(ids: $boardId) {
@@ -218,7 +228,6 @@ app.get("/scan", async (req, res) => {
 
       value = JSON.stringify({ checked: currentVal ? "false" : "true" });
     } else {
-      // fallback: status column
       value = Number.isInteger(STATUS_INDEX)
         ? JSON.stringify({ index: STATUS_INDEX })
         : JSON.stringify({ label: STATUS_LABEL });
