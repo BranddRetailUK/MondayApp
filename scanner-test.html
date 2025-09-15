@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Scanner Test</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 24px; }
+    #wrap { max-width: 720px; }
+    #scan { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+    .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #eef; margin-left: 8px; font-size: 12px; }
+    pre { background: #111; color: #0f0; padding: 12px; border-radius: 8px; max-height: 320px; overflow:auto; }
+    .muted { color:#666; font-size: 12px; }
+    button { padding: 6px 10px; border: 1px solid #ccc; border-radius: 6px; background: #fff; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <h1>Bluetooth Scanner Test <span class="pill" id="status">ready</span></h1>
+    <p class="muted">Click anywhere on the page to (re)focus the hidden input, then scan a QR/barcode. Scans will appear below and in the browser console.</p>
+    <p>
+      <button id="focusBtn">Refocus Scanner Input</button>
+      <button id="clearBtn">Clear Log</button>
+    </p>
+    <input id="scan" type="text" autocomplete="off" inputmode="text" />
+    <h3>Scans</h3>
+    <pre id="log"></pre>
+    <h3>Key Debug</h3>
+    <pre id="dbg"></pre>
+  </div>
+
+  <script>
+    const input  = document.getElementById('scan');
+    const log    = document.getElementById('log');
+    const dbg    = document.getElementById('dbg');
+    const status = document.getElementById('status');
+
+    const focusInput = () => { if (document.activeElement !== input) input.focus(); input.select(); };
+    document.body.addEventListener('click', focusInput);
+    document.getElementById('focusBtn').addEventListener('click', focusInput);
+    document.getElementById('clearBtn').addEventListener('click', () => { log.textContent=''; dbg.textContent=''; console.clear(); });
+    focusInput();
+    setInterval(focusInput, 3000); // keep focus sticky
+
+    const ts = () => new Date().toLocaleTimeString();
+
+    function printLine(target, text) {
+      target.textContent = `[${ts()}] ${text}\n` + target.textContent;
+    }
+
+    function parseDesc(value) {
+      try {
+        if (/^https?:\/\//i.test(value)) {
+          const u = new URL(value);
+          const id = u.searchParams.get('i');
+          if (id) return `URL → /scan item ${id}`;
+          return `URL → ${u.pathname}${u.search}`;
+        }
+        if (/(^|[?&])i=\d+/.test(value)) {
+          const m = value.match(/(?:^|[?&])i=(\d+)/);
+          return `Query → item ${m?.[1] ?? '?'}`;
+        }
+        if (/^\d+$/.test(value)) return `Plain ID → ${value}`;
+      } catch {}
+      return 'Raw text';
+    }
+
+    // Fire when Enter or Tab is sent; also support idle-finish
+    let idleTimer = null;
+    const IDLE_MS = 200; // if your scanner sends no suffix, bump to 300–400ms
+
+    input.addEventListener('keydown', (e) => {
+      printLine(dbg, `key="${e.key}" code="${e.code}" value="${input.value}"`);
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        flush('suffix:' + e.key);
+      }
+    });
+
+    input.addEventListener('input', () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => flush('idle'), IDLE_MS);
+    });
+
+    function flush(source) {
+      const value = input.value.trim();
+      input.value = '';
+      if (!value) return;
+      const desc = parseDesc(value);
+      printLine(log, `SCAN (${source}) → ${value}  |  ${desc}`);
+      console.log(`[SCAN ${source}]`, value, { desc });
+      status.textContent = 'last: OK';
+    }
+
+    // Optional: Esc clears current buffer quickly
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { input.value=''; status.textContent='ready'; }
+    });
+
+    // Show that page is armed
+    status.textContent = 'armed';
+  </script>
+</body>
+</html>

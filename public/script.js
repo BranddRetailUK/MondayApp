@@ -2,7 +2,8 @@ const ENDPOINTS = { data: '/api/board', auth: '/auth' };
 
 document.addEventListener('DOMContentLoaded', () => {
   ensureAuthUI();
-  setupScannerInput(); // NEW: enable Bluetooth scanner support
+  // NEW: enable Bluetooth scanner support
+  try { setupScanner(); } catch (e) { console.warn('scanner init error', e); }
 });
 
 window.loadBoard = loadBoard;
@@ -318,122 +319,101 @@ async function printLabel(itemId, rawTitle) {
   }
 }
 
-/* ===========================
-   SCANNER SUPPORT (NEW)
-   =========================== */
+/* ==========================================
+   SCANNER SUPPORT (Bluetooth HID keyboard)
+   ========================================== */
 
-function setupScannerInput() {
+function setupScanner() {
   const input = document.getElementById('scannerInput');
-  const dot = document.getElementById('scannerDot');
-  const status = document.getElementById('scannerStatus');
+  const pill  = document.getElementById('scannerPillText');
   if (!input) return;
 
-  const setState = (state, text) => {
-    if (status && text) status.textContent = text;
-    if (dot) {
-      if (state === 'ok') dot.style.background = '#28a745';      // green
-      else if (state === 'warn') dot.style.background = '#ffc107';// amber
-      else if (state === 'err') dot.style.background = '#dc3545'; // red
-      else dot.style.background = '#28a745'; // default ready
-    }
-  };
+  const setPill = (txt) => { if (pill) pill.textContent = txt; };
 
   const focusInput = () => {
     if (document.activeElement !== input) input.focus();
     input.select();
   };
-  // Keep focus so the scanner always types here
   focusInput();
   window.addEventListener('click', focusInput);
-  window.addEventListener('keydown', () => {
-    if (document.activeElement !== input) focusInput();
-  });
-  setInterval(() => {
-    if (document.activeElement !== input) focusInput();
-  }, 3000);
+  setInterval(focusInput, 3000); // keep focus sticky
 
-  input.addEventListener('keydown', async (e) => {
-    if (e.key === 'Enter') {
+  // Some scanners send Enter/Tab; some send nothing. Support both.
+  let idleTimer = null;
+  const IDLE_MS = 250;
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
-      const raw = input.value.trim();
-      input.value = '';
-      if (!raw) return;
-      setState('warn', 'Processing scan…');
-      try {
-        const result = await handleScan(raw);
-        if (result.ok) {
-          setState('ok', `Checked in ✔ ${result.desc ? `(${result.desc})` : ''}`);
-        } else {
-          setState('err', result.message || 'Scan failed');
-        }
-      } catch (err) {
-        setState('err', err?.message || 'Scan failed');
-      } finally {
-        focusInput();
-      }
+      flush('suffix:' + e.key);
     }
   });
 
-  // Initial
-  setState('ok', 'Scanner ready. Scan a label…');
+  input.addEventListener('input', () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => flush('idle'), IDLE_MS);
+  });
+
+  async function flush(reason) {
+    const raw = input.value.trim();
+    input.value = '';
+    if (!raw) return;
+
+    console.log('[SCAN]', reason, raw);
+    setPill('processing…');
+
+    try {
+      const { ok, message } = await processScan(raw);
+      setPill(ok ? 'checked in ✔' : (message || 'failed'));
+      // Optional: auto-refresh the table to reflect the updated checkbox
+      // await loadBoard();
+    } catch (err) {
+      console.error('scan error', err);
+      setPill('failed');
+    } finally {
+      focusInput();
+      setTimeout(() => setPill('ready'), 1200);
+    }
+  }
 }
 
 /**
  * Accepts:
- *  - Full URL like https://host/scan?i=123&ts=...&sig=...
- *  - Just the query string: i=123&ts=...&sig=...
- *  - Plain numeric item id: 123  (we’ll request /api/scan-url to sign it)
- * Then triggers GET /scan to toggle the checkbox/status server-side.
+ *  - Full URL like https://yourhost/scan?i=123&ts=...&sig=...
+ *  - Query string only: i=123&ts=...&sig=...
+ *  - Plain numeric ID: 123  (we’ll fetch /api/scan-url to sign it)
+ * Then triggers your existing GET /scan route.
  */
-async function handleScan(raw) {
-  const cleaned = String(raw).trim().replace(/\s+/g, '');
-  let url = null;
-  let desc = '';
+async function processScan(raw) {
+  const cleaned = String(raw).trim();
+  let scanUrl = null;
 
-  // Case 1: Absolute URL
+  // Case 1: Absolute /scan URL
   if (/^https?:\/\//i.test(cleaned)) {
     try {
       const u = new URL(cleaned);
-      if (u.pathname === '/scan') {
-        desc = `item ${u.searchParams.get('i') || ''}`;
-        if (u.host !== window.location.host) {
-          // Different host: open in a new tab to let the server handle it there.
-          window.open(cleaned, '_blank', 'noopener,noreferrer');
-          return { ok: true, desc: `opened on ${u.host}` };
-        }
-        url = cleaned;
-      }
+      if (/\/scan$/i.test(u.pathname)) scanUrl = cleaned;
     } catch {}
   }
 
   // Case 2: Query-only form (i=..&ts=..&sig=..)
-  if (!url && /(^|[?&])i=/.test(cleaned) && /sig=/.test(cleaned)) {
-    url = `${window.location.origin}/scan?${cleaned.replace(/^[^?]*\?/, '')}`;
-    try {
-      const u = new URL(url);
-      desc = `item ${u.searchParams.get('i') || ''}`;
-    } catch {}
+  if (!scanUrl && /(^|[?&])i=/.test(cleaned) && /sig=/.test(cleaned)) {
+    scanUrl = `${window.location.origin}/scan?${cleaned.replace(/^[^?]*\?/, '')}`;
   }
 
   // Case 3: Plain numeric item id
-  if (!url && /^\d+$/.test(cleaned)) {
+  if (!scanUrl && /^\d+$/.test(cleaned)) {
     const r = await fetch(`/api/scan-url?itemId=${encodeURIComponent(cleaned)}`);
-    if (!r.ok) return { ok: false, message: `Could not build scan URL (HTTP ${r.status})` };
+    if (!r.ok) return { ok:false, message:`signing failed (${r.status})` };
     const j = await r.json();
-    url = j.url;
-    try {
-      const u = new URL(url);
-      desc = `item ${u.searchParams.get('i') || cleaned}`;
-    } catch {
-      desc = `item ${cleaned}`;
-    }
+    scanUrl = j.url;
   }
 
-  if (!url) return { ok: false, message: 'Unrecognized scan format' };
+  if (!scanUrl) return { ok:false, message:'unrecognized code' };
 
-  // Fire the scan (server toggles checkbox / sets status)
-  // Uses your existing /scan logic in server.js
-  const resp = await fetch(url, { method: 'GET', credentials: 'same-origin' });
-  if (!resp.ok) return { ok: false, message: `Scan failed (HTTP ${resp.status})` };
-  return { ok: true, desc };
+  // Fire the scan – server toggles Monday checkbox/status
+  const resp = await fetch(scanUrl, { method:'GET', credentials:'same-origin' });
+  if (!resp.ok) return { ok:false, message:`scan error (${resp.status})` };
+
+  return { ok:true };
 }
