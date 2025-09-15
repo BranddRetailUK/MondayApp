@@ -4,8 +4,13 @@ const ENDPOINTS = { data: '/api/board', auth: '/auth' };
 document.addEventListener('DOMContentLoaded', () => {
   ensureAuthUI();
   try { setupScanner(); } catch (e) { console.warn('scanner init error', e); }
+
+  // auto-load board on page load
+  loadBoard();
 });
+
 window.loadBoard = loadBoard;
+
 
 function ensureAuthUI() {
   const loadBtn = document.getElementById('loadBtn');

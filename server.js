@@ -65,12 +65,13 @@ app.get("/callback", async (req, res) => {
     });
     mondayAccessToken = response.data.access_token;
     console.log("Got Monday access token (OAuth)");
-    res.send("Authentication successful! <a href='/'>Go to Dashboard</a>");
+    res.redirect("/");  // ⬅️ go straight back to dashboard
   } catch (err) {
     console.error("OAuth token exchange error:", err.response?.data || err.message || err);
     res.status(500).send("Failed to authenticate (see logs).");
   }
 });
+
 
 app.get("/api/board", async (req, res) => {
   if (!mondayAccessToken) return res.status(401).json({ error: "Not authenticated. Visit /auth first." });
