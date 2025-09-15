@@ -2,102 +2,266 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Scanner Test</title>
+  <title>Bluetooth Scanner – Verbose Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 24px; }
-    #wrap { max-width: 720px; }
-    #scan { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
-    .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #eef; margin-left: 8px; font-size: 12px; }
-    pre { background: #111; color: #0f0; padding: 12px; border-radius: 8px; max-height: 320px; overflow:auto; }
-    .muted { color:#666; font-size: 12px; }
-    button { padding: 6px 10px; border: 1px solid #ccc; border-radius: 6px; background: #fff; cursor: pointer; }
+    :root { --bg:#0b0b0b; --fg:#e8e8e8; --muted:#9aa0a6; --acc:#4caf50; --warn:#ffc107; --err:#ff5252; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 20px; color: var(--fg); background: #151515; }
+    h1 { margin: 0 0 8px; font-weight: 700; }
+    .row { display:flex; gap:14px; flex-wrap:wrap; align-items:center; margin: 10px 0 14px; }
+    button, input, select { font: 13px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+    button { padding: 6px 10px; border-radius: 6px; border: 1px solid #3a3a3a; background:#1f1f1f; color:var(--fg); cursor:pointer; }
+    button:hover { background:#232323; }
+    .pill { display:inline-block; padding: 4px 8px; border-radius: 999px; background:#222; border:1px solid #333; color:#ddd; font-size:12px; }
+    .ok    { border-color:#1e7f3a; color:#b7f3c8; }
+    .warn  { border-color:#8f6a00; color:#ffe58f; }
+    .err   { border-color:#7f1e1e; color:#ffb3b3; }
+    .muted { color:var(--muted); }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
+    pre { background: #0c0c0c; border:1px solid #2a2a2a; border-radius:8px; padding:12px; max-height: 45vh; overflow:auto; font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+    #scan { position:absolute; left:-9999px; width:1px; height:1px; opacity:0; }
+    label { display:inline-flex; align-items:center; gap:6px; }
+    .kv { display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; }
+    .kv .g { display:flex; align-items:center; gap:6px; }
+    .sep { height:1px; background:#2b2b2b; margin:10px 0 14px; }
   </style>
 </head>
 <body>
-  <div id="wrap">
-    <h1>Bluetooth Scanner Test <span class="pill" id="status">ready</span></h1>
-    <p class="muted">Click anywhere on the page to (re)focus the hidden input, then scan a QR/barcode. Scans will appear below and in the browser console.</p>
-    <p>
-      <button id="focusBtn">Refocus Scanner Input</button>
-      <button id="clearBtn">Clear Log</button>
-    </p>
-    <input id="scan" type="text" autocomplete="off" inputmode="text" />
-    <h3>Scans</h3>
-    <pre id="log"></pre>
-    <h3>Key Debug</h3>
-    <pre id="dbg"></pre>
+  <h1>Bluetooth Scanner – Verbose Test <span class="pill" id="state">armed</span></h1>
+  <div class="row muted">
+    Click anywhere on the page to (re)focus the hidden input. Scan your code; this logs every event (keydown/keypress/input/keyup/etc.), timing, and the buffer content.
+  </div>
+
+  <div class="row kv">
+    <div class="g"><button id="focusBtn">Refocus</button></div>
+    <div class="g"><button id="clearBtn">Clear Logs</button></div>
+    <div class="g"><button id="copyBtn">Copy Logs</button></div>
+    <div class="g"><button id="downloadBtn">Download .txt</button></div>
+    <div class="g">
+      <label>Idle finish (ms) <input id="idleMs" type="number" min="50" step="50" value="250" style="width:80px;background:#1f1f1f;border:1px solid #3a3a3a;border-radius:6px;color:#fff;padding:4px 6px;"></label>
+    </div>
+    <div class="g">
+      <label><input id="globalKeys" type="checkbox" /> Listen on window (global keys)</label>
+    </div>
+    <div class="g">
+      <label><input id="logConsole" type="checkbox" checked /> Mirror to console</label>
+    </div>
+  </div>
+
+  <div class="sep"></div>
+
+  <input id="scan" type="text" autocomplete="off" inputmode="text" />
+
+  <div class="grid">
+    <div>
+      <h3>Unified Log</h3>
+      <pre id="log"></pre>
+    </div>
+    <div>
+      <h3>Current Buffer + Parsed View</h3>
+      <pre id="buf"></pre>
+      <h3>Event Stream (Raw)</h3>
+      <pre id="raw"></pre>
+    </div>
   </div>
 
   <script>
-    const input  = document.getElementById('scan');
-    const log    = document.getElementById('log');
-    const dbg    = document.getElementById('dbg');
-    const status = document.getElementById('status');
+    // ===== Helpers
+    const input = document.getElementById('scan');
+    const logEl = document.getElementById('log');
+    const rawEl = document.getElementById('raw');
+    const bufEl = document.getElementById('buf');
+    const state = document.getElementById('state');
+    const idleMsEl = document.getElementById('idleMs');
+    const globalKeysEl = document.getElementById('globalKeys');
+    const logConsoleEl = document.getElementById('logConsole');
+
+    const logs = []; // master copy buffer for copy/download
+    const t0 = performance.now();
+
+    const ts = () => {
+      const t = new Date();
+      const ms = String(t.getMilliseconds()).padStart(3,'0');
+      return t.toLocaleTimeString() + '.' + ms;
+    };
+    const dt = () => ((performance.now() - t0)/1000).toFixed(3) + 's';
+
+    const pushLog = (s, targetEl) => {
+      const line = `[${ts()} +${dt()}] ${s}`;
+      logs.push(line);
+      targetEl.textContent = line + '\n' + targetEl.textContent;
+      if (logConsoleEl.checked) console.log(line);
+    };
+
+    const setPill = (txt, cls='') => {
+      state.textContent = txt;
+      state.className = 'pill ' + cls;
+    };
 
     const focusInput = () => { if (document.activeElement !== input) input.focus(); input.select(); };
-    document.body.addEventListener('click', focusInput);
+
+    // ===== Controls
     document.getElementById('focusBtn').addEventListener('click', focusInput);
-    document.getElementById('clearBtn').addEventListener('click', () => { log.textContent=''; dbg.textContent=''; console.clear(); });
+    document.getElementById('clearBtn').addEventListener('click', () => { logEl.textContent=''; rawEl.textContent=''; bufEl.textContent=''; logs.length = 0; console.clear(); });
+    document.getElementById('copyBtn').addEventListener('click', async () => {
+      const text = logs.join('\n');
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          const ta = document.createElement('textarea');
+          ta.value = text; document.body.appendChild(ta);
+          ta.select(); document.execCommand('copy'); ta.remove();
+        }
+        setPill('copied', 'ok');
+        setTimeout(() => setPill('armed'), 1000);
+      } catch (e) {
+        setPill('copy failed', 'err');
+      }
+    });
+    document.getElementById('downloadBtn').addEventListener('click', () => {
+      const blob = new Blob([logs.join('\n')], {type:'text/plain'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `scanner-log-${Date.now()}.txt`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    // ===== Init
     focusInput();
-    setInterval(focusInput, 3000); // keep focus sticky
+    setInterval(focusInput, 2500);
+    pushLog(`Environment: ${navigator.userAgent}`, logEl);
 
-    const ts = () => new Date().toLocaleTimeString();
-
-    function printLine(target, text) {
-      target.textContent = `[${ts()}] ${text}\n` + target.textContent;
-    }
+    // ===== Buffer + parser
+    const updateBufView = () => {
+      const v = input.value;
+      const pretty = [
+        `length: ${v.length}`,
+        `value: ${JSON.stringify(v)}`,
+        parseDesc(v)
+      ].join('\n');
+      bufEl.textContent = pretty;
+    };
 
     function parseDesc(value) {
       try {
         if (/^https?:\/\//i.test(value)) {
           const u = new URL(value);
           const id = u.searchParams.get('i');
-          if (id) return `URL → /scan item ${id}`;
-          return `URL → ${u.pathname}${u.search}`;
+          return `parsed: URL ${u.origin}${u.pathname}  ${id ? 'item='+id : ''}`;
         }
         if (/(^|[?&])i=\d+/.test(value)) {
           const m = value.match(/(?:^|[?&])i=(\d+)/);
-          return `Query → item ${m?.[1] ?? '?'}`;
+          return `parsed: query string, item=${m?.[1] ?? '?'}`;
         }
-        if (/^\d+$/.test(value)) return `Plain ID → ${value}`;
+        if (/^\d+$/.test(value)) return `parsed: numeric id ${value}`;
       } catch {}
-      return 'Raw text';
+      return 'parsed: (no structured match)';
     }
 
-    // Fire when Enter or Tab is sent; also support idle-finish
+    // ===== Idle finish
     let idleTimer = null;
-    const IDLE_MS = 200; // if your scanner sends no suffix, bump to 300–400ms
-
-    input.addEventListener('keydown', (e) => {
-      printLine(dbg, `key="${e.key}" code="${e.code}" value="${input.value}"`);
-      if (e.key === 'Enter' || e.key === 'Tab') {
-        e.preventDefault();
-        flush('suffix:' + e.key);
-      }
-    });
-
-    input.addEventListener('input', () => {
+    const armIdle = () => {
       clearTimeout(idleTimer);
-      idleTimer = setTimeout(() => flush('idle'), IDLE_MS);
-    });
+      const ms = Math.max(50, Number(idleMsEl.value) || 250);
+      idleTimer = setTimeout(() => {
+        pushLog(`IDLE ${ms}ms → flush`, logEl);
+        flush('idle');
+      }, ms);
+    };
 
-    function flush(source) {
+    // ===== Flush (when a scan is presumed complete)
+    function flush(reason) {
       const value = input.value.trim();
       input.value = '';
-      if (!value) return;
-      const desc = parseDesc(value);
-      printLine(log, `SCAN (${source}) → ${value}  |  ${desc}`);
-      console.log(`[SCAN ${source}]`, value, { desc });
-      status.textContent = 'last: OK';
+      updateBufView();
+      if (!value) {
+        pushLog(`FLUSH (${reason}) – empty`, logEl);
+        return;
+      }
+      setPill('read', 'ok');
+      const parsed = parseDesc(value);
+      pushLog(`FLUSH (${reason})  value=${JSON.stringify(value)}  |  ${parsed}`, logEl);
+      setTimeout(() => setPill('armed'), 800);
+      focusInput();
     }
 
-    // Optional: Esc clears current buffer quickly
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { input.value=''; status.textContent='ready'; }
+    // ===== Event listeners on INPUT element
+    input.addEventListener('keydown', (e) => {
+      pushLog(evLine('keydown', e, input.value), rawEl);
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        pushLog(`suffix key → ${e.key} ⇒ flush`, logEl);
+        flush('suffix:'+e.key);
+        return;
+      }
+      armIdle();
     });
 
-    // Show that page is armed
-    status.textContent = 'armed';
+    // Deprecated but useful for some scanners/browsers
+    input.addEventListener('keypress', (e) => {
+      pushLog(evLine('keypress', e, input.value), rawEl);
+      armIdle();
+    });
+
+    input.addEventListener('keyup', (e) => {
+      pushLog(evLine('keyup', e, input.value), rawEl);
+      armIdle();
+    });
+
+    input.addEventListener('beforeinput', (e) => {
+      pushLog(`[beforeinput] type=${e.inputType} data=${JSON.stringify(e.data)} val(pre)=${JSON.stringify(input.value)}`, rawEl);
+    });
+
+    input.addEventListener('input', (e) => {
+      pushLog(`[input] type=${e.inputType} data=${JSON.stringify(e.data)} val(now)=${JSON.stringify(input.value)}`, rawEl);
+      updateBufView();
+      armIdle();
+    });
+
+    input.addEventListener('compositionstart', (e) => pushLog(`[compositionstart] data=${JSON.stringify(e.data)}`, rawEl));
+    input.addEventListener('compositionupdate', (e) => pushLog(`[compositionupdate] data=${JSON.stringify(e.data)}`, rawEl));
+    input.addEventListener('compositionend', (e) => pushLog(`[compositionend] data=${JSON.stringify(e.data)}`, rawEl));
+    input.addEventListener('paste', (e) => pushLog(`[paste] clipboardData? ${!!e.clipboardData}`, rawEl));
+    input.addEventListener('blur', () => pushLog(`[blur] activeElement=${document.activeElement && document.activeElement.tagName}`, rawEl));
+    input.addEventListener('focus', () => pushLog(`[focus]`, rawEl));
+
+    // ===== Optional global listeners (when focus is lost)
+    const winKey = (type) => (e) => {
+      if (!globalKeysEl.checked) return;
+      pushLog(evLine('window:'+type, e, '(n/a)'), rawEl);
+    };
+    window.addEventListener('keydown', winKey('keydown'));
+    window.addEventListener('keyup', winKey('keyup'));
+
+    // ===== Utility to render a rich event line
+    function evLine(type, e, valAtEvent) {
+      const mods = [];
+      if (e.ctrlKey) mods.push('Ctrl');
+      if (e.altKey) mods.push('Alt');
+      if (e.shiftKey) mods.push('Shift');
+      if (e.metaKey) mods.push('Meta');
+      const modStr = mods.length ? ` mods=${mods.join('+')}` : '';
+      const extra = [
+        `code=${e.code}`,
+        `key=${JSON.stringify(e.key)}`,
+        `keyCode=${e.keyCode}`,
+        `which=${e.which}`,
+        `charCode=${e.charCode}`,
+        `loc=${e.location}`,
+        `repeat=${e.repeat}`,
+        `isComp=${e.isComposing}`,
+        `caps=${e.getModifierState && e.getModifierState('CapsLock')}`
+      ].join(' ');
+      return `[${type}] ${extra}${modStr}  val=${JSON.stringify(valAtEvent)}`;
+    }
+
+    // arm
+    setPill('armed');
+    updateBufView();
+    document.body.addEventListener('click', focusInput);
   </script>
 </body>
 </html>
