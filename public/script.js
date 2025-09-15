@@ -2,6 +2,7 @@ const ENDPOINTS = { data: '/api/board', auth: '/auth' };
 
 document.addEventListener('DOMContentLoaded', () => {
   ensureAuthUI();
+  setupScannerInput(); // NEW: enable Bluetooth scanner support
 });
 
 window.loadBoard = loadBoard;
@@ -140,42 +141,40 @@ function renderBoard(payload) {
 
       tbody.appendChild(tr);
 
-     if (item.subitems && item.subitems.length > 0) {
-  for (const sub of item.subitems) {
-    const subTr = document.createElement('tr');
+      if (item.subitems && item.subitems.length > 0) {
+        for (const sub of item.subitems) {
+          const subTr = document.createElement('tr');
 
-    const subPrintTd = document.createElement('td');
-    subPrintTd.style.border = '1px solid #ddd';
-    subPrintTd.style.padding = '8px';
-    const subPrintBtn = document.createElement('button');
-    subPrintBtn.textContent = 'Print';
-    Object.assign(subPrintBtn.style, {
-      padding: '6px 10px',
-      background: '#555',
-      color: '#fff',
-      border: 'none',
-      borderRadius: '4px',
-      cursor: 'pointer'
-    });
-    subPrintBtn.addEventListener('click', () => printLabel(sub.id, sub.name || ''));
-    subPrintTd.appendChild(subPrintBtn);
-    subTr.appendChild(subPrintTd);
+          const subPrintTd = document.createElement('td');
+          subPrintTd.style.border = '1px solid #ddd';
+          subPrintTd.style.padding = '8px';
+          const subPrintBtn = document.createElement('button');
+          subPrintBtn.textContent = 'Print';
+          Object.assign(subPrintBtn.style, {
+            padding: '6px 10px',
+            background: '#555',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          });
+          subPrintBtn.addEventListener('click', () => printLabel(sub.id, sub.name || ''));
+          subPrintTd.appendChild(subPrintBtn);
+          subTr.appendChild(subPrintTd);
 
-const size = sub.column_values?.find(c => c.id === "dropdown_mkr73m5s")?.text || "";
-const qty  = sub.column_values?.find(c => c.id === "text_mkr31cjs")?.text || "";
+          const size = sub.column_values?.find(c => c.id === "dropdown_mkr73m5s")?.text || "";
+          const qty  = sub.column_values?.find(c => c.id === "text_mkr31cjs")?.text || "";
 
+          const subTitleTd = document.createElement('td');
+          subTitleTd.style.border = '1px solid #ddd';
+          subTitleTd.style.padding = '8px';
+          subTitleTd.style.paddingLeft = '30px';
+          subTitleTd.innerHTML = `↳ ${escapeHtml(sub.name || '')} | Size: ${escapeHtml(size)} | Qty: ${escapeHtml(qty)}`;
+          subTr.appendChild(subTitleTd);
 
-    const subTitleTd = document.createElement('td');
-    subTitleTd.style.border = '1px solid #ddd';
-    subTitleTd.style.padding = '8px';
-    subTitleTd.style.paddingLeft = '30px';
-    subTitleTd.innerHTML = `↳ ${escapeHtml(sub.name || '')} | Size: ${escapeHtml(size)} | Qty: ${escapeHtml(qty)}`;
-    subTr.appendChild(subTitleTd);
-
-    tbody.appendChild(subTr);
-  }
-}
-
+          tbody.appendChild(subTr);
+        }
+      }
     }
 
     table.appendChild(tbody);
@@ -257,10 +256,7 @@ async function printLabel(itemId, rawTitle) {
           flex-direction: column;
           justify-content: space-between;
         }
-        .content {
-          flex: 1 1 auto;
-          overflow: hidden;
-        }
+        .content { flex: 1 1 auto; overflow: hidden; }
         .block { margin: 0 0 0.25in 0; }
         .head { font-family: Arial, sans-serif; font-size: 14pt; font-weight: 800; margin: 0 0 6px 0; }
         .value { font-family: Arial, sans-serif; font-weight: 900; margin: 0; white-space: nowrap; overflow: hidden; width: 100%; line-height: 1.05; }
@@ -271,10 +267,7 @@ async function printLabel(itemId, rawTitle) {
           align-items: center;
           height: 1.6in;
         }
-        .qr {
-          width: 1.4in;
-          height: 1.4in;
-        }
+        .qr { width: 1.4in; height: 1.4in; }
       </style>
     </head>
     <body>
@@ -323,4 +316,124 @@ async function printLabel(itemId, rawTitle) {
     win.document.write(body);
     win.document.close();
   }
+}
+
+/* ===========================
+   SCANNER SUPPORT (NEW)
+   =========================== */
+
+function setupScannerInput() {
+  const input = document.getElementById('scannerInput');
+  const dot = document.getElementById('scannerDot');
+  const status = document.getElementById('scannerStatus');
+  if (!input) return;
+
+  const setState = (state, text) => {
+    if (status && text) status.textContent = text;
+    if (dot) {
+      if (state === 'ok') dot.style.background = '#28a745';      // green
+      else if (state === 'warn') dot.style.background = '#ffc107';// amber
+      else if (state === 'err') dot.style.background = '#dc3545'; // red
+      else dot.style.background = '#28a745'; // default ready
+    }
+  };
+
+  const focusInput = () => {
+    if (document.activeElement !== input) input.focus();
+    input.select();
+  };
+  // Keep focus so the scanner always types here
+  focusInput();
+  window.addEventListener('click', focusInput);
+  window.addEventListener('keydown', () => {
+    if (document.activeElement !== input) focusInput();
+  });
+  setInterval(() => {
+    if (document.activeElement !== input) focusInput();
+  }, 3000);
+
+  input.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const raw = input.value.trim();
+      input.value = '';
+      if (!raw) return;
+      setState('warn', 'Processing scan…');
+      try {
+        const result = await handleScan(raw);
+        if (result.ok) {
+          setState('ok', `Checked in ✔ ${result.desc ? `(${result.desc})` : ''}`);
+        } else {
+          setState('err', result.message || 'Scan failed');
+        }
+      } catch (err) {
+        setState('err', err?.message || 'Scan failed');
+      } finally {
+        focusInput();
+      }
+    }
+  });
+
+  // Initial
+  setState('ok', 'Scanner ready. Scan a label…');
+}
+
+/**
+ * Accepts:
+ *  - Full URL like https://host/scan?i=123&ts=...&sig=...
+ *  - Just the query string: i=123&ts=...&sig=...
+ *  - Plain numeric item id: 123  (we’ll request /api/scan-url to sign it)
+ * Then triggers GET /scan to toggle the checkbox/status server-side.
+ */
+async function handleScan(raw) {
+  const cleaned = String(raw).trim().replace(/\s+/g, '');
+  let url = null;
+  let desc = '';
+
+  // Case 1: Absolute URL
+  if (/^https?:\/\//i.test(cleaned)) {
+    try {
+      const u = new URL(cleaned);
+      if (u.pathname === '/scan') {
+        desc = `item ${u.searchParams.get('i') || ''}`;
+        if (u.host !== window.location.host) {
+          // Different host: open in a new tab to let the server handle it there.
+          window.open(cleaned, '_blank', 'noopener,noreferrer');
+          return { ok: true, desc: `opened on ${u.host}` };
+        }
+        url = cleaned;
+      }
+    } catch {}
+  }
+
+  // Case 2: Query-only form (i=..&ts=..&sig=..)
+  if (!url && /(^|[?&])i=/.test(cleaned) && /sig=/.test(cleaned)) {
+    url = `${window.location.origin}/scan?${cleaned.replace(/^[^?]*\?/, '')}`;
+    try {
+      const u = new URL(url);
+      desc = `item ${u.searchParams.get('i') || ''}`;
+    } catch {}
+  }
+
+  // Case 3: Plain numeric item id
+  if (!url && /^\d+$/.test(cleaned)) {
+    const r = await fetch(`/api/scan-url?itemId=${encodeURIComponent(cleaned)}`);
+    if (!r.ok) return { ok: false, message: `Could not build scan URL (HTTP ${r.status})` };
+    const j = await r.json();
+    url = j.url;
+    try {
+      const u = new URL(url);
+      desc = `item ${u.searchParams.get('i') || cleaned}`;
+    } catch {
+      desc = `item ${cleaned}`;
+    }
+  }
+
+  if (!url) return { ok: false, message: 'Unrecognized scan format' };
+
+  // Fire the scan (server toggles checkbox / sets status)
+  // Uses your existing /scan logic in server.js
+  const resp = await fetch(url, { method: 'GET', credentials: 'same-origin' });
+  if (!resp.ok) return { ok: false, message: `Scan failed (HTTP ${resp.status})` };
+  return { ok: true, desc };
 }
