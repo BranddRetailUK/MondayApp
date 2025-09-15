@@ -287,26 +287,40 @@ async function printLabel(itemId, rawTitle) {
 function setupScanner() {
   const { input, pillText } = ensureScannerElements();
   if (!input) return;
+
   const setPill = (txt) => { if (pillText) pillText.textContent = txt; };
+
   const focusInput = () => {
-    if (document.activeElement !== input) input.focus();
-    input.select();
+    if (document.activeElement !== input) {
+      input.focus();
+      input.select();
+    }
   };
+
+  // Immediately focus
   focusInput();
+
+  // Keep grabbing focus aggressively
   window.addEventListener('click', focusInput);
-  setInterval(focusInput, 3000);
+  window.addEventListener('keydown', focusInput);
+  window.addEventListener('focus', focusInput);
+  setInterval(focusInput, 500); // tighter interval (0.5s)
+
   let idleTimer = null;
   const IDLE_MS = 250;
+
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
       flush('suffix:' + e.key);
     }
   });
+
   input.addEventListener('input', () => {
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => flush('idle'), IDLE_MS);
   });
+
   async function flush(reason) {
     const raw = input.value.trim();
     input.value = '';
@@ -325,6 +339,7 @@ function setupScanner() {
     }
   }
 }
+
 
 function ensureScannerElements() {
   let input = document.getElementById('scannerInput');
