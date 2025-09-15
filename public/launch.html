@@ -1,0 +1,92 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Scan Launcher</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
+    .wrap{height:100%;display:flex;align-items:center;justify-content:center;background:#0b1e35}
+    .card{width:min(640px,90vw);background:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.15);padding:24px}
+    h1{margin:0 0 8px 0;font-size:20px}
+    #pill{font-size:12px;color:#3a6}
+    #scanInput{position:absolute;left:-9999px;opacity:0}
+    .hint{margin-top:8px;color:#444;font-size:14px}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Ready to scan</h1>
+      <div id="pill">Focus locked. Scan a QR or type/paste and hit Enter.</div>
+      <div class="hint">Destination: <span class="mono">https://mondayapp-production.up.railway.app</span></div>
+    </div>
+  </div>
+
+  <input id="scanInput" autocomplete="off" autocapitalize="off" spellcheck="false">
+
+  <script>
+    const PROD = 'https://mondayapp-production.up.railway.app';
+    const RETURN_PATH = '/launch'; // bounce back here after /scan
+
+    function normalizeScanUrl(input){
+      const s = String(input||'').trim();
+      try {
+        if (/^https?:\/\//i.test(s)) {
+          const u = new URL(s);
+          u.protocol = 'https:'; // force https
+          u.host = new URL(PROD).host;
+          u.pathname = '/scan';
+          if (u.searchParams.get('i') && u.searchParams.get('ts') && u.searchParams.get('sig')) {
+            return u.toString();
+          }
+          return null;
+        }
+        if (/(^|[?&])i=\d+/.test(s) && /ts=\d+/.test(s) && /sig=/.test(s)) {
+          return PROD + '/scan?' + s.replace(/^[^?]*\?/, '');
+        }
+      } catch {}
+      return null;
+    }
+
+    function focusTrap(){
+      const i = document.getElementById('scanInput');
+      if (document.activeElement !== i) { i.focus(); i.select(); }
+    }
+
+    document.addEventListener('DOMContentLoaded', ()=>{
+      const i = document.getElementById('scanInput');
+      const pill = document.getElementById('pill');
+
+      focusTrap();
+      window.addEventListener('click', focusTrap, true);
+      window.addEventListener('focus', focusTrap, true);
+      window.addEventListener('keydown', (e)=>{
+        // keep keystrokes here and stop other hotkeys
+        if (document.activeElement !== i) { e.stopImmediatePropagation(); e.stopPropagation(); e.preventDefault(); focusTrap(); }
+      }, true);
+      setInterval(focusTrap, 300);
+
+      function go(){
+        const raw = i.value.trim(); i.value='';
+        const url = normalizeScanUrl(raw) || (/^\d+$/.test(raw) ? (PROD + '/api/scan-url?itemId=' + encodeURIComponent(raw)) : null);
+        if (!url) { pill.textContent = 'Unrecognized code'; return; }
+
+        // append a harmless return param (not part of your signature)
+        const withReturn = url + (url.includes('?')?'&':'?') + 'return=' + encodeURIComponent(RETURN_PATH);
+        pill.textContent = 'Opening…';
+        window.location.assign(withReturn); // top-level GET like mobile
+      }
+
+      i.addEventListener('keydown', (e)=>{
+        if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); go(); }
+      });
+
+      // if the scanner doesn't send Enter, flush on idle
+      let t=null; const IDLE=220;
+      i.addEventListener('input', ()=>{ clearTimeout(t); t=setTimeout(go, IDLE); });
+    });
+  </script>
+</body>
+</html>
