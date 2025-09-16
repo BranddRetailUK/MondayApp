@@ -3,7 +3,7 @@ const ENDPOINTS = { data: '/api/board', auth: '/auth' };
 
 document.addEventListener('DOMContentLoaded', () => {
   ensureAuthUI();
-  try { setupScanner(); } catch (e) {}
+  addSerialScannerUI();
   loadBoard();
 });
 window.loadBoard = loadBoard;
@@ -302,127 +302,88 @@ async function printLabel(itemId, rawTitle) {
   }
 }
 
-let __scanPump = null;
-let __scanLastInputAt = 0;
+function addSerialScannerUI() {
+  const loadBtn = document.getElementById('loadBtn');
+  const btn = document.createElement('button');
+  btn.textContent = 'Connect Scanner';
+  Object.assign(btn.style, {
+    marginLeft: '10px',
+    padding: '8px 12px',
+    background: '#0a7',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer'
+  });
+  btn.onclick = connectSerialScanner;
+  if (loadBtn) loadBtn.insertAdjacentElement('afterend', btn);
+}
 
-function setupScanner() {
-  const ctx = ensureScannerElements();
-  const input = ctx && ctx.input;
-  const pillText = ctx && ctx.pillText;
-  if (!input) return;
-
-  const setPill = (txt) => { if (pillText) pillText.textContent = txt; };
-  const focusInput = () => { if (document.activeElement !== input) input.focus(); input.select(); };
-
-  focusInput();
-  window.addEventListener('click', focusInput, true);
-  window.addEventListener('focus', focusInput, true);
-  window.addEventListener('keydown', focusInput, true);
-  setInterval(focusInput, 250);
-
-  window.addEventListener('keydown', (e) => {
-    if (document.activeElement === input) {
-      if ((e.shiftKey && e.key === '?') || (e.shiftKey && e.key === '/')) {
-        e.stopPropagation();
-        e.preventDefault();
+async function connectSerialScanner() {
+  if (!('serial' in navigator)) {
+    alert('Web Serial API not supported. Use Chrome or Edge.');
+    return;
+  }
+  try {
+    const port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 9600 });
+    const decoder = new TextDecoderStream();
+    const reader = port.readable.pipeThrough(decoder).getReader();
+    let buffer = '';
+    (async () => {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += value;
+        let idx;
+        while ((idx = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, idx).trim();
+          buffer = buffer.slice(idx + 1);
+          if (line) handleSerialScan(line);
+        }
       }
-    }
-  }, true);
-
-  let idleTimer = null;
-  const IDLE_MS = 220;
-
-  input.addEventListener('keydown', (e) => {
-    const now = Date.now();
-    const gap = now - __scanLastInputAt;
-    const startingNewScan = gap > 400 || input.value.length === 0;
-    if (startingNewScan && !__scanPump) {
-      try { __scanPump = window.open('', 'scanpump', 'width=1,height=1,left=-10000,top=-10000,noopener,noreferrer'); } catch {}
-    }
-    if (e.key === 'Enter' || e.key === 'Tab') {
-      e.preventDefault();
-      flush('suffix:' + e.key);
-    }
-  });
-
-  input.addEventListener('input', () => {
-    __scanLastInputAt = Date.now();
-    clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => flush('idle'), IDLE_MS);
-  });
-
-  async function flush(reason) {
-    const raw = input.value.trim();
-    input.value = '';
-    if (!raw) return;
-    setPill('processing…');
-    try {
-      const { ok, message } = await processScan(raw, reason);
-      setPill(ok ? (message || 'ok') : (message || 'failed'));
-    } catch {
-      setPill('failed');
-    } finally {
-      setTimeout(() => setPill('ready'), 800);
-      focusInput();
-    }
+    })();
+  } catch (e) {
+    console.error('Serial connect failed', e);
+    alert('Could not open scanner port.');
   }
 }
 
-async function processScan(raw, reason) {
-  const cleaned = String(raw).trim();
-  let scanUrl = normalizeScanUrl(cleaned);
-
-  if (!scanUrl && /^\d+$/.test(cleaned)) {
+async function handleSerialScan(text) {
+  let scanUrl = normalizeScanUrl(text);
+  if (!scanUrl && /^\d+$/.test(text)) {
     try {
-      const r = await fetch(`${PROD_ORIGIN}/api/scan-url?itemId=${encodeURIComponent(cleaned)}`, { credentials: 'omit', cache: 'no-store' });
+      const r = await fetch(`${PROD_ORIGIN}/api/scan-url?itemId=${encodeURIComponent(text)}`);
       if (r.ok) {
         const j = await r.json();
         if (j && j.url) scanUrl = j.url;
       }
     } catch {}
   }
-  if (!scanUrl) return { ok:false, message:'unrecognized code' };
-
+  if (!scanUrl) {
+    updateScanPill('unrecognized code');
+    return;
+  }
   try {
     const url = scanUrl + (scanUrl.includes('?') ? '&' : '?') + 'json=1';
     const r = await fetch(url, { method: 'GET', cache: 'no-store', credentials: 'omit' });
     if (r.ok) {
       const j = await r.json();
-      if (j && j.ok) return { ok:true, message:`Status: ${j.status}` };
+      if (j && j.ok) {
+        updateScanPill(`Status: ${j.status}`);
+        return;
+      }
     }
   } catch {}
+  updateScanPill('processed');
+}
 
-  if (__scanPump && !__scanPump.closed) {
-    try {
-      __scanPump.location.replace(scanUrl);
-      setTimeout(() => { try { __scanPump.close(); } catch {} __scanPump = null; }, 1800);
-      return { ok:true, message:'processed' };
-    } catch {
-      try { __scanPump.close(); } catch {}
-      __scanPump = null;
-    }
+function updateScanPill(msg) {
+  const pill = document.getElementById('scanPillText') || document.querySelector('.scan-pill-text');
+  if (pill) {
+    pill.textContent = msg;
+    setTimeout(() => { pill.textContent = 'ready'; }, 800);
   }
-
-  if (reason === 'suffix:Enter' || reason === 'suffix:Tab') {
-    try {
-      const w = window.open(scanUrl, '_blank', 'noopener,noreferrer,width=1,height=1,left=-10000,top=-10000');
-      if (w) setTimeout(() => { try { w.close(); } catch {} }, 1800);
-      return { ok:true, message:'processed' };
-    } catch {}
-  }
-
-  try {
-    await fetch(scanUrl, { method: 'GET', mode: 'no-cors', cache: 'no-store', keepalive: true, credentials: 'omit' });
-    return { ok:true, message:'processed' };
-  } catch {}
-
-  try {
-    const img = new Image();
-    img.referrerPolicy = 'no-referrer';
-    img.src = scanUrl + (scanUrl.includes('?') ? '&' : '?') + '_imgping=' + Date.now();
-  } catch {}
-
-  return { ok:true, message:'processed' };
 }
 
 function normalizeScanUrl(input) {
@@ -431,13 +392,4 @@ function normalizeScanUrl(input) {
     return `${PROD_ORIGIN}/scan?${input.replace(/^[^?]*\?/, '')}`;
   }
   return null;
-}
-
-function ensureScannerElements() {
-  const existing = document.getElementById('scannerInput');
-  if (existing) {
-    const pill = document.getElementById('scanPillText') || document.querySelector('.scan-pill-text');
-    return { input: existing, pillText: pill || null };
-  }
-  return { input: document.querySelector('input[type="text"]'), pillText: document.getElementById('scanPillText') || document.querySelector('.scan-pill-text') };
 }
