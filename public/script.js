@@ -279,12 +279,22 @@ async function printLabel(itemId, rawTitle) {
             var ratio = parseFloat(v.getAttribute('data-ratio')) || 0.4;
             fit(v, ratio, 10);
           });
-          try { window.print(); } catch(e) {}
+
+          // ✅ Wait for QR image before printing (fix for Chrome on Windows)
+          const qr = document.querySelector('.qr');
+          if (qr) {
+            qr.addEventListener('load', () => {
+              setTimeout(() => window.print(), 150);
+            });
+          } else {
+            setTimeout(() => window.print(), 150);
+          }
         })();
       </script>
     </body>
     </html>
   `;
+
   let win = null;
   try { win = window.open('', '', 'width=480,height=760'); } catch {}
   if (win && win.document) {
