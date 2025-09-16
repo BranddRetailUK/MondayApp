@@ -329,20 +329,23 @@ async function connectSerialScanner() {
     await port.open({ baudRate: 115200 });
     const decoder = new TextDecoderStream();
     const reader = port.readable.pipeThrough(decoder).getReader();
-    let buffer = '';
-    (async () => {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += value;
-        let idx;
-        while ((idx = buffer.indexOf('\n')) >= 0) {
-          const line = buffer.slice(0, idx).trim();
-          buffer = buffer.slice(idx + 1);
-          if (line) handleSerialScan(line);
-        }
+let buffer = '';
+(async () => {
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += value;
+    let idx;
+    while ((idx = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, idx).trim();
+      buffer = buffer.slice(idx + 1);
+      if (line) {
+        console.log("RAW:", line);   // 👈 add this line
+        handleSerialScan(line);      // existing call
       }
-    })();
+    }
+  }
+})();
   } catch (e) {
     console.error('Serial connect failed', e);
     alert('Could not open scanner port.');
