@@ -4,11 +4,13 @@ const path = require("path");
 const dotenv = require("dotenv");
 const crypto = require("crypto");
 const QRCode = require("qrcode");
+const { Pool } = require("pg");
 
 dotenv.config();
 
 const app = express();
 app.set("trust proxy", 1);
+app.use(express.json());
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
 
@@ -22,12 +24,44 @@ const MONDAY_API_TOKEN = (process.env.MONDAY_API_TOKEN || "").trim();
 
 const SCAN_SECRET = (process.env.SCAN_SECRET || "change-me").trim();
 const STATUS_COLUMN_ID = (process.env.STATUS_COLUMN_ID || "").trim();
-const STATUS_INDEX = process.env.STATUS_INDEX !== undefined ? parseInt(process.env.STATUS_INDEX, 10) : null;
-const STATUS_LABEL = (process.env.STATUS_LABEL || "Done").trim();
+const CHECKED_IN_COLUMN_ID = (process.env.CHECKED_IN_COLUMN_ID || "").trim();
+
+const STEP1_STATUS_LABEL = (process.env.STEP1_STATUS_LABEL || "Checked In").trim();
+const STEP2_STATUS_LABEL = (process.env.STEP2_STATUS_LABEL || "In Production").trim();
+const STEP3_STATUS_LABEL = (process.env.STEP3_STATUS_LABEL || "Completed").trim();
 
 const BOARD_PAGE_LIMIT = parseInt(process.env.BOARD_PAGE_LIMIT || "50", 10);
 const BOARD_MAX_PAGES = parseInt(process.env.BOARD_MAX_PAGES || "2", 10);
 const BOARD_CACHE_MS = parseInt(process.env.BOARD_CACHE_MS || "300000", 10);
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.PGSSLMODE === "disable" ? false : { rejectUnauthorized: false }
+});
+
+async function initDb() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS job_scans (
+      id SERIAL PRIMARY KEY,
+      item_id VARCHAR(64) NOT NULL UNIQUE,
+      job_title TEXT,
+      customer_name TEXT,
+      order_number TEXT,
+      scan_count INT NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'Pending',
+      last_scanned_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS job_scan_events (
+      id SERIAL PRIMARY KEY,
+      item_id VARCHAR(64) NOT NULL,
+      scan_number INT NOT NULL,
+      new_status TEXT NOT NULL,
+      scanned_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+}
 
 let mondayAccessToken = MONDAY_API_TOKEN || null;
 let boardCache = { data: null, expires: 0, inFlight: null };
@@ -64,14 +98,11 @@ app.get("/callback", async (req, res) => {
       redirect_uri: REDIRECT_URI
     });
     mondayAccessToken = response.data.access_token;
-    console.log("Got Monday access token (OAuth)");
-    res.redirect("/");  // ⬅️ go straight back to dashboard
-  } catch (err) {
-    console.error("OAuth token exchange error:", err.response?.data || err.message || err);
-    res.status(500).send("Failed to authenticate (see logs).");
+    res.redirect("/");
+  } catch {
+    res.status(500).send("Failed to authenticate");
   }
 });
-
 
 app.get("/api/board", async (req, res) => {
   if (!mondayAccessToken) return res.status(401).json({ error: "Not authenticated. Visit /auth first." });
@@ -90,8 +121,7 @@ app.get("/api/board", async (req, res) => {
     boardCache.data = data;
     boardCache.expires = Date.now() + BOARD_CACHE_MS;
     return res.json(data);
-  } catch (err) {
-    console.error("Error in /api/board:", err.response?.data || err.message || err);
+  } catch {
     return res.status(500).json({ error: "Failed to fetch board" });
   } finally {
     boardCache.inFlight = null;
@@ -134,14 +164,7 @@ async function fetchBoardLitePaged() {
       { headers: { Authorization: mondayAccessToken, "Content-Type": "application/json" } }
     );
 
-    if (resp.data?.errors?.length) {
-      const msg = String(resp.data.errors[0]?.message || "");
-      if (msg.includes("Complexity budget exhausted")) {
-        console.warn("Complexity exhausted — returning partial data");
-        break;
-      }
-      throw new Error(msg);
-    }
+    if (resp.data?.errors?.length) break;
 
     const pageObj = resp.data?.data?.boards?.[0]?.items_page;
     if (!pageObj) break;
@@ -169,15 +192,12 @@ async function fetchBoardLitePaged() {
     items_page: { items: arr }
   }));
 
-  console.log(`Fetched ${items.length} items across ${pages} page(s)`);
   return { boards: [{ groups }] };
 }
 
-// serve /launch (extensionless)
 app.get('/launch', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'launch.html'));
 });
-
 
 app.get("/api/scan-url", (req, res) => {
   const { itemId } = req.query;
@@ -189,85 +209,69 @@ app.get("/api/scan-url", (req, res) => {
   res.json({ url });
 });
 
-app.get("/scan", async (req, res) => {
-  const { i, ts, sig } = req.query;
-  console.log("SCAN HIT", {
-    ip: req.ip,
-    ua: req.get("user-agent"),
-    xfwd: req.get("x-forwarded-proto"),
-    host: req.get("host"),
-    query: req.query
-  });
+async function advanceScan(itemId) {
+  const row = await pool.query("SELECT scan_count FROM job_scans WHERE item_id = $1", [itemId]);
+  if (row.rowCount === 0) {
+    await pool.query("INSERT INTO job_scans (item_id, scan_count, status) VALUES ($1, 0, 'Pending')", [itemId]);
+  }
+  const cur = await pool.query("SELECT scan_count FROM job_scans WHERE item_id = $1", [itemId]);
+  const prev = cur.rows[0].scan_count || 0;
+  const nextCount = prev >= 3 ? 3 : prev + 1;
+  const newStatus = nextCount === 1 ? STEP1_STATUS_LABEL : nextCount === 2 ? STEP2_STATUS_LABEL : STEP3_STATUS_LABEL;
+  await pool.query("UPDATE job_scans SET scan_count = $2, status = $3, last_scanned_at = NOW() WHERE item_id = $1", [itemId, nextCount, newStatus]);
+  await pool.query("INSERT INTO job_scan_events (item_id, scan_number, new_status) VALUES ($1,$2,$3)", [itemId, nextCount, newStatus]);
+  return { scan_count: nextCount, status: newStatus };
+}
 
+app.get("/scan", async (req, res) => {
+  const { i, ts, sig, json } = req.query;
   if (!i || !ts || !sig) return res.status(400).send("Invalid scan URL");
   if (sig !== signPayload(i, ts)) return res.status(403).send("Signature check failed");
   if (!mondayAccessToken) return res.status(401).send("Not authenticated");
-  if (!STATUS_COLUMN_ID) return res.status(400).send("STATUS_COLUMN_ID not configured");
 
   try {
-    let value;
-
-    if (STATUS_COLUMN_ID.startsWith("checkbox")) {
-      const q = `
-        query($boardId: [ID!], $itemId: [ID!]) {
-          boards(ids: $boardId) {
-            items(ids: $itemId) {
-              column_values(ids: ["${STATUS_COLUMN_ID}"]) {
-                id
-                value
-              }
-            }
-          }
-        }
-      `;
-      const vars = { boardId: [BOARD_ID], itemId: [i] };
-      const resp = await axios.post(
-        "https://api.monday.com/v2",
-        { query: q, variables: vars },
-        { headers: { Authorization: mondayAccessToken, "Content-Type": "application/json" } }
-      );
-
-      let currentVal = false;
-      try {
-        const valObj = JSON.parse(resp.data.data.boards[0].items[0].column_values[0].value || "{}");
-        currentVal = valObj.checked === "true";
-      } catch {}
-
-      value = JSON.stringify({ checked: currentVal ? "false" : "true" });
-    } else {
-      value = Number.isInteger(STATUS_INDEX)
-        ? JSON.stringify({ index: STATUS_INDEX })
-        : JSON.stringify({ label: STATUS_LABEL });
-    }
+    const { scan_count, status } = await advanceScan(String(i));
 
     const mutation = `
       mutation ChangeValue($board: ID!, $item: ID!, $col: String!, $val: JSON!) {
         change_column_value(board_id: $board, item_id: $item, column_id: $col, value: $val) { id }
       }
     `;
-    const variables2 = {
-      board: String(BOARD_ID),
-      item: String(i),
-      col: STATUS_COLUMN_ID,
-      val: value
-    };
-
-    const updateResp = await axios.post(
-      "https://api.monday.com/v2",
-      { query: mutation, variables: variables2 },
-      { headers: { Authorization: mondayAccessToken, "Content-Type": "application/json" } }
-    );
-
-    if (updateResp.data?.errors?.length) {
-      console.error("Scan update error:", updateResp.data.errors);
-      return res.status(500).send("Failed to update column (see logs).");
+    async function setCol(colId, val) {
+      const variables = { board: String(BOARD_ID), item: String(i), col: colId, val };
+      await axios.post(
+        "https://api.monday.com/v2",
+        { query: mutation, variables },
+        { headers: { Authorization: mondayAccessToken, "Content-Type": "application/json" } }
+      );
     }
 
-    console.log(`Scan OK → item ${i} column ${STATUS_COLUMN_ID} updated`);
-    res.send("<html><body style='font-family:Arial;padding:20px'>Checkbox toggled ✔️</body></html>");
-  } catch (e) {
-    console.error("Scan update failed:", e.response?.data || e.message || e);
-    res.status(500).send("Failed to update column");
+    if (scan_count === 1 && CHECKED_IN_COLUMN_ID) {
+      await setCol(CHECKED_IN_COLUMN_ID, JSON.stringify({ checked: "true" }));
+    }
+
+    if (scan_count >= 2 && STATUS_COLUMN_ID) {
+      let val;
+      if (scan_count === 2) {
+        val = JSON.stringify({ label: STEP2_STATUS_LABEL });
+      } else {
+        val = JSON.stringify({ label: STEP3_STATUS_LABEL });
+      }
+      await setCol(STATUS_COLUMN_ID, val);
+    }
+
+    if (json) return res.json({ ok: true, scan_count, status });
+
+    res.send(`
+      <html><body style="font-family:Arial;padding:20px">
+        <div>Scan recorded</div>
+        <div>Count: ${scan_count} — Status: <b>${status}</b></div>
+        <script>setTimeout(()=>{ try{window.close()}catch(e){} }, 1200)</script>
+      </body></html>
+    `);
+  } catch {
+    if (json) return res.status(500).json({ ok:false, error:"Failed to update" });
+    res.status(500).send("Failed to update");
   }
 });
 
@@ -277,12 +281,12 @@ app.get("/api/qr", async (req, res) => {
     const buf = await QRCode.toBuffer(data, { width: 384, margin: 0 });
     res.set("Content-Type", "image/png");
     res.send(buf);
-  } catch (e) {
-    console.error("QR generation error:", e.message || e);
+  } catch {
     res.status(400).send("Invalid QR data");
   }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+  try { await initDb(); } catch {}
   console.log(`Server running on port ${PORT}`);
 });

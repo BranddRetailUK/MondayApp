@@ -279,8 +279,6 @@ async function printLabel(itemId, rawTitle) {
             var ratio = parseFloat(v.getAttribute('data-ratio')) || 0.4;
             fit(v, ratio, 10);
           });
-
-          // ✅ Wait for QR image before printing (fix for Chrome on Windows)
           const qr = document.querySelector('.qr');
           if (qr) {
             qr.addEventListener('load', () => {
@@ -360,7 +358,7 @@ function setupScanner() {
     setPill('processing…');
     try {
       const { ok, message } = await processScan(raw, reason);
-      setPill(ok ? 'checked in ✔' : (message || 'failed'));
+      setPill(ok ? (message || 'ok') : (message || 'failed'));
     } catch {
       setPill('failed');
     } finally {
@@ -385,11 +383,20 @@ async function processScan(raw, reason) {
   }
   if (!scanUrl) return { ok:false, message:'unrecognized code' };
 
+  try {
+    const url = scanUrl + (scanUrl.includes('?') ? '&' : '?') + 'json=1';
+    const r = await fetch(url, { method: 'GET', cache: 'no-store', credentials: 'omit' });
+    if (r.ok) {
+      const j = await r.json();
+      if (j && j.ok) return { ok:true, message:`Status: ${j.status}` };
+    }
+  } catch {}
+
   if (__scanPump && !__scanPump.closed) {
     try {
       __scanPump.location.replace(scanUrl);
       setTimeout(() => { try { __scanPump.close(); } catch {} __scanPump = null; }, 1800);
-      return { ok:true };
+      return { ok:true, message:'processed' };
     } catch {
       try { __scanPump.close(); } catch {}
       __scanPump = null;
@@ -400,13 +407,13 @@ async function processScan(raw, reason) {
     try {
       const w = window.open(scanUrl, '_blank', 'noopener,noreferrer,width=1,height=1,left=-10000,top=-10000');
       if (w) setTimeout(() => { try { w.close(); } catch {} }, 1800);
-      return { ok:true };
+      return { ok:true, message:'processed' };
     } catch {}
   }
 
   try {
     await fetch(scanUrl, { method: 'GET', mode: 'no-cors', cache: 'no-store', keepalive: true, credentials: 'omit' });
-    return { ok:true };
+    return { ok:true, message:'processed' };
   } catch {}
 
   try {
@@ -415,7 +422,7 @@ async function processScan(raw, reason) {
     img.src = scanUrl + (scanUrl.includes('?') ? '&' : '?') + '_imgping=' + Date.now();
   } catch {}
 
-  return { ok:true };
+  return { ok:true, message:'processed' };
 }
 
 function normalizeScanUrl(input) {
@@ -424,4 +431,13 @@ function normalizeScanUrl(input) {
     return `${PROD_ORIGIN}/scan?${input.replace(/^[^?]*\?/, '')}`;
   }
   return null;
+}
+
+function ensureScannerElements() {
+  const existing = document.getElementById('scannerInput');
+  if (existing) {
+    const pill = document.getElementById('scanPillText') || document.querySelector('.scan-pill-text');
+    return { input: existing, pillText: pill || null };
+  }
+  return { input: document.querySelector('input[type="text"]'), pillText: document.getElementById('scanPillText') || document.querySelector('.scan-pill-text') };
 }
