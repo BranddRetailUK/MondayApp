@@ -326,7 +326,7 @@ async function connectSerialScanner() {
   }
   try {
     const port = await navigator.serial.requestPort();
-    await port.open({ baudRate: 9600 });
+    await port.open({ baudRate: 115200 });
     const decoder = new TextDecoderStream();
     const reader = port.readable.pipeThrough(decoder).getReader();
     let buffer = '';
