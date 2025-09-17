@@ -230,7 +230,7 @@ async function advanceScan(itemId) {
 
 app.get("/scan", async (req, res) => {
   const { i, ts, sig, json } = req.query;
-  if (json) res.set("Access-Control-Allow-Origin", "*"); // helpful for cross-origin tests
+  if (json) res.set("Access-Control-Allow-Origin", "*");
   if (!i || !ts || !sig) return res.status(400).send("Invalid scan URL");
   if (sig !== signPayload(i, ts)) return res.status(403).send("Signature check failed");
   if (!mondayAccessToken) return res.status(401).send("Not authenticated");
@@ -238,7 +238,6 @@ app.get("/scan", async (req, res) => {
   try {
     const { scan_count, status } = await advanceScan(String(i));
 
-    // Log every scan on the server for visibility while testing
     console.log(`[SCAN] item=${i} -> count=${scan_count}, status=${status}`);
 
     const mutation = `
@@ -281,6 +280,33 @@ app.get("/scan", async (req, res) => {
   } catch {
     if (json) return res.status(500).json({ ok:false, error:"Failed to update" });
     res.status(500).send("Failed to update");
+  }
+});
+
+// ✅ New POST endpoint for scanner devices
+app.post("/api/scanner", async (req, res) => {
+  try {
+    const { scan } = req.body;
+    if (!scan) return res.status(400).json({ error: "No scan data" });
+
+    console.log("📥 Raw scanner input:", scan);
+
+    // Extract itemId, ts, sig from scanned URL
+    const url = new URL(scan.trim());
+    const i = url.searchParams.get("i");
+    const ts = url.searchParams.get("ts");
+    const sig = url.searchParams.get("sig");
+
+    if (!i || !ts || !sig) {
+      return res.status(400).json({ error: "Invalid scan string" });
+    }
+
+    // Forward into same logic as /scan
+    req.query = { i, ts, sig, json: "1" };
+    return app._router.handle(req, res, () => {});
+  } catch (err) {
+    console.error("❌ Error in /api/scanner:", err);
+    res.status(500).json({ error: "Failed to process scan" });
   }
 });
 
