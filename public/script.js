@@ -570,3 +570,26 @@ function normalizeScanUrl(input) {
 window.addEventListener('beforeunload', async () => {
   await disconnectSerialScanner();
 });
+
+// --------------------------- TAB NAVIGATION ---------------------------
+
+document.addEventListener("DOMContentLoaded", () => {
+  const tabs = document.querySelectorAll(".nav-tabs li");
+  const contents = document.querySelectorAll(".tab-content");
+
+  tabs.forEach(tab => {
+    tab.addEventListener("click", () => {
+      const target = tab.getAttribute("data-tab");
+
+      // update active tab
+      tabs.forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+
+      // show corresponding content
+      contents.forEach(c => {
+        c.classList.remove("active");
+        if (c.id === `tab-${target}`) c.classList.add("active");
+      });
+    });
+  });
+});
