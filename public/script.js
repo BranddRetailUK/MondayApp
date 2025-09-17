@@ -535,26 +535,7 @@ async function handleSerialScan(text) {
   let getOk = false;
   let postOk = false;
 
-  // 1) Hit the scan URL in JSON mode so the backend can update Monday and reply
-  try {
-    const url = scanUrl + (scanUrl.includes('?') ? '&' : '?') + 'json=1';
-    const r = await fetch(url, { method: 'GET', cache: 'no-store', credentials: 'include' });
-    if (r.ok) {
-      // try to read JSON but don't explode if it's HTML
-      const ct = r.headers.get('content-type') || '';
-      if (ct.includes('application/json')) {
-        const j = await r.json().catch(() => ({}));
-        if (j && (j.ok || j.status)) getOk = true;
-      } else {
-        // HTML success page counts as ok (mobile-style flow)
-        getOk = true;
-      }
-    }
-  } catch (e) {
-    console.warn('GET of scanned URL failed:', e);
-  }
-
-  // 2) Also POST the raw scan to a structured endpoint
+  // ✅ POST the raw scan to a structured endpoint
   try {
     const r2 = await fetch('/api/scanner', {
       method: 'POST',
@@ -567,12 +548,13 @@ async function handleSerialScan(text) {
     console.warn('POST /api/scanner failed:', e);
   }
 
-  if (getOk || postOk) {
+  if (postOk) {
     updateScanPill('status: ok');
   } else {
     updateScanPill('status: error');
   }
 }
+
 
 function normalizeScanUrl(input) {
   // Accept full URLs your scanner emits, or query fragments (i, ts, sig)

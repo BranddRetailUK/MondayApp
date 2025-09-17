@@ -304,12 +304,16 @@ app.post("/api/scanner", async (req, res) => {
     }
 
     const i = url.searchParams.get("i");
-    const ts = url.searchParams.get("ts");
-    const sig = url.searchParams.get("sig");
+    let ts = url.searchParams.get("ts");
+    let sig = url.searchParams.get("sig");
 
-    if (!i || !ts || !sig) {
-      return res.status(400).json({ error: "Invalid scan string" });
+    if (!i) {
+      return res.status(400).json({ error: "Invalid scan string - no item id" });
     }
+
+    // If scanner didn’t provide ts/sig, generate them
+    if (!ts) ts = Date.now().toString();
+    if (!sig) sig = signPayload(i, ts);
 
     // Forward into the same logic as /scan
     req.query = { i, ts, sig, json: "1" };
@@ -319,6 +323,7 @@ app.post("/api/scanner", async (req, res) => {
     res.status(500).json({ error: "Failed to process scan" });
   }
 });
+
 
 
 app.get("/api/qr", async (req, res) => {
