@@ -283,7 +283,7 @@ app.get("/scan", async (req, res) => {
   }
 });
 
-// ✅ Robust POST endpoint for scanner devices
+// ✅ Robust POST endpoint for scanner devices (no recursion)
 app.post("/api/scanner", async (req, res) => {
   try {
     const { scan } = req.body;
@@ -295,12 +295,10 @@ app.post("/api/scanner", async (req, res) => {
 
     let url;
     try {
-      // Try to parse as full URL
-      url = new URL(scan.trim());
+      url = new URL(scan.trim()); // full URL
     } catch {
-      // If it's just query params, wrap with a fake base + /scan path
       const host = req.get("host") || "localhost";
-      url = new URL(`/scan?${scan.trim()}`, `http://${host}`);
+      url = new URL(`/scan?${scan.trim()}`, `http://${host}`); // query only
     }
 
     const i = url.searchParams.get("i");
@@ -311,18 +309,56 @@ app.post("/api/scanner", async (req, res) => {
       return res.status(400).json({ error: "Invalid scan string - no item id" });
     }
 
-    // If scanner didn’t provide ts/sig, generate them
+    // Generate ts/sig if missing
     if (!ts) ts = Date.now().toString();
     if (!sig) sig = signPayload(i, ts);
 
-    // Forward into the same logic as /scan
-    req.query = { i, ts, sig, json: "1" };
-    return app._router.handle(req, res, () => {});
+    if (!mondayAccessToken) {
+      return res.status(401).json({ error: "Not authenticated with Monday" });
+    }
+
+    // Advance scan status directly
+    const { scan_count, status } = await advanceScan(String(i));
+
+    console.log(`[API/SCANNER] item=${i} -> count=${scan_count}, status=${status}`);
+
+    // Update Monday board columns, same as /scan
+    const mutation = `
+      mutation ChangeValue($board: ID!, $item: ID!, $col: String!, $val: JSON!) {
+        change_column_value(board_id: $board, item_id: $item, column_id: $col, value: $val) { id }
+      }
+    `;
+    async function setCol(colId, val) {
+      const variables = { board: String(BOARD_ID), item: String(i), col: colId, val };
+      await axios.post(
+        "https://api.monday.com/v2",
+        { query: mutation, variables },
+        { headers: { Authorization: mondayAccessToken, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (scan_count === 1 && CHECKED_IN_COLUMN_ID) {
+      await setCol(CHECKED_IN_COLUMN_ID, JSON.stringify({ checked: "true" }));
+    }
+
+    if (scan_count >= 2 && STATUS_COLUMN_ID) {
+      let val;
+      if (scan_count === 2) {
+        val = JSON.stringify({ label: STEP2_STATUS_LABEL });
+      } else {
+        val = JSON.stringify({ label: STEP3_STATUS_LABEL });
+      }
+      await setCol(STATUS_COLUMN_ID, val);
+    }
+
+    // Respond in JSON for scanner flow
+    res.json({ ok: true, scan_count, status });
   } catch (err) {
     console.error("❌ Error in /api/scanner:", err);
     res.status(500).json({ error: "Failed to process scan" });
   }
 });
+
 
 
 
