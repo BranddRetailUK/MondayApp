@@ -283,16 +283,26 @@ app.get("/scan", async (req, res) => {
   }
 });
 
-// ✅ New POST endpoint for scanner devices
+// ✅ Robust POST endpoint for scanner devices
 app.post("/api/scanner", async (req, res) => {
   try {
     const { scan } = req.body;
-    if (!scan) return res.status(400).json({ error: "No scan data" });
+    if (!scan || typeof scan !== "string") {
+      return res.status(400).json({ error: "No scan data" });
+    }
 
     console.log("📥 Raw scanner input:", scan);
 
-    // Extract itemId, ts, sig from scanned URL
-    const url = new URL(scan.trim());
+    let url;
+    try {
+      // Try to parse as full URL
+      url = new URL(scan.trim());
+    } catch {
+      // If it's just query params, wrap with a fake base + /scan path
+      const host = req.get("host") || "localhost";
+      url = new URL(`/scan?${scan.trim()}`, `http://${host}`);
+    }
+
     const i = url.searchParams.get("i");
     const ts = url.searchParams.get("ts");
     const sig = url.searchParams.get("sig");
@@ -301,7 +311,7 @@ app.post("/api/scanner", async (req, res) => {
       return res.status(400).json({ error: "Invalid scan string" });
     }
 
-    // Forward into same logic as /scan
+    // Forward into the same logic as /scan
     req.query = { i, ts, sig, json: "1" };
     return app._router.handle(req, res, () => {});
   } catch (err) {
@@ -309,6 +319,7 @@ app.post("/api/scanner", async (req, res) => {
     res.status(500).json({ error: "Failed to process scan" });
   }
 });
+
 
 app.get("/api/qr", async (req, res) => {
   const data = req.query.data || "";

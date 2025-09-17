@@ -1,4 +1,4 @@
-// --- Monday Dashboard Frontend (updated with robust Web Serial @115200 8N1) ---
+// --- Monday Dashboard Frontend (updated with robust Web Serial @115200 8N1 + dual send) ---
 
 const PROD_ORIGIN = window.location.origin; // dynamic origin
 const ENDPOINTS = { data: '/api/board', auth: '/auth' };
@@ -10,7 +10,8 @@ let __decoder = null;
 let __inputDone = null;
 let __serialBuffer = '';
 let __idleTimer = null;
-const __IDLE_MS = 140; // treat short idle as end-of-scan
+const __IDLE_MS = 140;        // treat short idle as end-of-scan
+const __BUFFER_HARD_LIMIT = 8192; // safety against runaway growth
 
 document.addEventListener('DOMContentLoaded', () => {
   ensureAuthUI();
@@ -58,7 +59,7 @@ async function loadBoard() {
   const boardDiv = document.getElementById('board') || document.body;
   const statusEl = document.getElementById('authStatus');
   try {
-    const res = await fetch(ENDPOINTS.data, { cache: 'no-store' });
+    const res = await fetch(ENDPOINTS.data, { cache: 'no-store', credentials: 'include' });
     if (!res.ok) {
       let msg = `Failed to load board (HTTP ${res.status})`;
       try {
@@ -118,6 +119,7 @@ function renderBoard(payload) {
     table.style.marginBottom = '20px';
     table.style.background = '#fff';
     table.style.border = '1px solid #ddd';
+
 
     const thead = document.createElement('thead');
     thead.innerHTML = `
@@ -181,7 +183,7 @@ function renderBoard(payload) {
           subTr.appendChild(subPrintTd);
 
           const size = (sub.column_values || []).find(c => c.id === 'dropdown_mkr73m5s')?.text || '';
-          const qty = (sub.column_values || []).find(c => c.id === 'text_mkr31cjs')?.text || '';
+          const qty  = (sub.column_values || []).find(c => c.id === 'text_mkr31cjs')?.text || '';
 
           const subTitleTd = document.createElement('td');
           subTitleTd.style.border = '1px solid #ddd';
@@ -236,7 +238,7 @@ async function printLabel(itemId, rawTitle) {
   const { orderNumber, customerName, jobTitle } = parseTitle(rawTitle);
   let scanUrl = '';
   try {
-    const r = await fetch(`/api/scan-url?itemId=${encodeURIComponent(itemId)}`);
+    const r = await fetch(`/api/scan-url?itemId=${encodeURIComponent(itemId)}`, { credentials: 'include' });
     if (r.ok) {
       const j = await r.json();
       scanUrl = j.url || '';
@@ -470,6 +472,12 @@ function startSerialReadLoop(port) {
         if (value) {
           __serialBuffer += value;
 
+          // Hard guard against runaway buffers
+          if (__serialBuffer.length > __BUFFER_HARD_LIMIT) {
+            console.warn('Serial buffer exceeded limit. Flushing.');
+            flush();
+          }
+
           // Split on CR/LF if the scanner sends terminators
           let parts = __serialBuffer.split(/[\r\n]+/);
           __serialBuffer = parts.pop(); // keep the remainder
@@ -479,6 +487,14 @@ function startSerialReadLoop(port) {
               console.log('RAW:', line);
               handleSerialScan(line);
             }
+          }
+
+          // No-terminator fallback: if the remainder looks like a complete QR query, process it
+          if (/([?&]i=\d+).+([?&]sig=[a-f0-9]+)/i.test(__serialBuffer) && !/[\r\n]/.test(__serialBuffer)) {
+            const line = __serialBuffer.trim();
+            __serialBuffer = '';
+            console.log('RAW:', line);
+            handleSerialScan(line);
           }
 
           // Idle flush for scanners that send no terminator
@@ -503,7 +519,7 @@ async function handleSerialScan(text) {
   // If it’s just an item ID (digits), derive the scan URL from backend helper
   if (!scanUrl && /^\d+$/.test(text)) {
     try {
-      const r = await fetch(`/api/scan-url?itemId=${encodeURIComponent(text)}`, { cache: 'no-store' });
+      const r = await fetch(`/api/scan-url?itemId=${encodeURIComponent(text)}`, { cache: 'no-store', credentials: 'include' });
       if (r.ok) {
         const j = await r.json();
         if (j && j.url) scanUrl = j.url;
@@ -516,28 +532,53 @@ async function handleSerialScan(text) {
     return;
   }
 
-  // Hit the scan URL in JSON mode so the backend can update Monday and reply
+  let getOk = false;
+  let postOk = false;
+
+  // 1) Hit the scan URL in JSON mode so the backend can update Monday and reply
   try {
     const url = scanUrl + (scanUrl.includes('?') ? '&' : '?') + 'json=1';
-    const r = await fetch(url, { method: 'GET', cache: 'no-store', credentials: 'omit' });
+    const r = await fetch(url, { method: 'GET', cache: 'no-store', credentials: 'include' });
     if (r.ok) {
-      const j = await r.json().catch(() => ({}));
-      if (j && (j.ok || j.status)) {
-        updateScanPill(`status: ${j.status || 'ok'}`);
-        return;
+      // try to read JSON but don't explode if it's HTML
+      const ct = r.headers.get('content-type') || '';
+      if (ct.includes('application/json')) {
+        const j = await r.json().catch(() => ({}));
+        if (j && (j.ok || j.status)) getOk = true;
+      } else {
+        // HTML success page counts as ok (mobile-style flow)
+        getOk = true;
       }
     }
   } catch (e) {
-    console.error('Process scan failed', e);
+    console.warn('GET of scanned URL failed:', e);
   }
-  updateScanPill('processed');
+
+  // 2) Also POST the raw scan to a structured endpoint
+  try {
+    const r2 = await fetch('/api/scanner', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ scan: text, url: scanUrl })
+    });
+    postOk = r2.ok;
+  } catch (e) {
+    console.warn('POST /api/scanner failed:', e);
+  }
+
+  if (getOk || postOk) {
+    updateScanPill('status: ok');
+  } else {
+    updateScanPill('status: error');
+  }
 }
 
 function normalizeScanUrl(input) {
   // Accept full URLs your scanner emits, or query fragments (i, ts, sig)
   if (/^https?:\/\/.+\/scan\?.*i=\d+.*ts=\d+.*sig=[a-f0-9]+/i.test(input)) return input;
   if (/(^|[?&])i=\d+/.test(input) && /ts=\d+/.test(input) && /sig=/.test(input)) {
-    return `${PROD_ORIGIN}/scan?${input.replace(/^[^?]*\?/, '')}`;
+    return `${PROD_ORIGIN}/scan?${String(input).replace(/^[^?]*\?/, '')}`;
   }
   return null;
 }
