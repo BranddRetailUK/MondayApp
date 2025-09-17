@@ -1,13 +1,26 @@
-// --- Monday Dashboard Frontend (updated) ---
-const PROD_ORIGIN = window.location.origin; // <- dynamic origin (no CORS headaches)
+// --- Monday Dashboard Frontend (updated with robust Web Serial @115200 8N1) ---
+
+const PROD_ORIGIN = window.location.origin; // dynamic origin
 const ENDPOINTS = { data: '/api/board', auth: '/auth' };
+
+// --- Serial globals (so we can reconnect/cleanup properly) ---
+let __serialPort = null;
+let __serialReader = null;
+let __decoder = null;
+let __inputDone = null;
+let __serialBuffer = '';
+let __idleTimer = null;
+const __IDLE_MS = 140; // treat short idle as end-of-scan
 
 document.addEventListener('DOMContentLoaded', () => {
   ensureAuthUI();
   addSerialScannerUI();
+  attachSerialEvents();
   loadBoard();
 });
 window.loadBoard = loadBoard;
+
+// --------------------------- AUTH / LOADING ---------------------------
 
 function ensureAuthUI() {
   const loadBtn = document.getElementById('loadBtn');
@@ -71,6 +84,8 @@ async function loadBoard() {
   }
 }
 
+// --------------------------- RENDER BOARD ---------------------------
+
 function renderBoard(payload) {
   const boardDiv = document.getElementById('board') || document.body;
   boardDiv.innerHTML = '';
@@ -83,9 +98,11 @@ function renderBoard(payload) {
     }
     return;
   }
+
   for (const group of (board.groups || [])) {
     const collectionName = group.title || 'Untitled Group';
     const items = (group.items_page && group.items_page.items) || [];
+
     const sectionTitle = document.createElement('h3');
     sectionTitle.textContent = collectionName;
     sectionTitle.style.marginTop = '20px';
@@ -213,6 +230,8 @@ function parseTitle(raw) {
   return { orderNumber: '', customerName: '', jobTitle: t.replace(/[-–—]/g, ' ') };
 }
 
+// --------------------------- PRINT LABEL ---------------------------
+
 async function printLabel(itemId, rawTitle) {
   const { orderNumber, customerName, jobTitle } = parseTitle(rawTitle);
   let scanUrl = '';
@@ -282,9 +301,7 @@ async function printLabel(itemId, rawTitle) {
           });
           const qr = document.querySelector('.qr');
           if (qr) {
-            qr.addEventListener('load', () => {
-              setTimeout(() => window.print(), 150);
-            });
+            qr.addEventListener('load', () => { setTimeout(() => window.print(), 150); });
           } else {
             setTimeout(() => window.print(), 150);
           }
@@ -303,119 +320,230 @@ async function printLabel(itemId, rawTitle) {
   }
 }
 
+// --------------------------- SERIAL UI ---------------------------
+
 function addSerialScannerUI() {
   const loadBtn = document.getElementById('loadBtn');
-  const btn = document.createElement('button');
-  btn.textContent = 'Connect Scanner';
-  Object.assign(btn.style, {
-    marginLeft: '10px',
-    padding: '8px 12px',
-    background: '#0a7',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer'
-  });
-  btn.onclick = connectSerialScanner;
-  if (loadBtn) loadBtn.insertAdjacentElement('afterend', btn);
+
+  // status pill
+  if (!document.getElementById('scanPill')) {
+    const pill = document.createElement('span');
+    pill.id = 'scanPill';
+    pill.className = 'scan-pill-text';
+    pill.textContent = 'ready';
+    Object.assign(pill.style, {
+      marginLeft: '12px',
+      padding: '6px 10px',
+      background: '#eee',
+      borderRadius: '14px',
+      fontSize: '12px'
+    });
+    if (loadBtn) loadBtn.insertAdjacentElement('afterend', pill);
+  }
+
+  // connect button
+  if (!document.getElementById('connectScannerBtn')) {
+    const btn = document.createElement('button');
+    btn.id = 'connectScannerBtn';
+    btn.textContent = 'Connect Scanner';
+    Object.assign(btn.style, {
+      marginLeft: '10px',
+      padding: '8px 12px',
+      background: '#0a7',
+      color: '#fff',
+      border: 'none',
+      borderRadius: '4px',
+      cursor: 'pointer'
+    });
+    btn.onclick = connectSerialScanner;
+    if (loadBtn) loadBtn.insertAdjacentElement('afterend', btn);
+  }
 }
+
+function attachSerialEvents() {
+  if (!('serial' in navigator)) return;
+  navigator.serial.addEventListener('connect', () => updateScanPill('scanner connected'));
+  navigator.serial.addEventListener('disconnect', async () => {
+    updateScanPill('scanner disconnected');
+    await disconnectSerialScanner();
+  });
+}
+
+function updateScanPill(msg) {
+  const pill = document.getElementById('scanPill') || document.querySelector('.scan-pill-text');
+  if (pill) {
+    pill.textContent = msg;
+    // brief auto-reset
+    if (!/connected|disconnected/i.test(msg)) {
+      setTimeout(() => { pill.textContent = 'ready'; }, 900);
+    }
+  }
+}
+
+// --------------------------- SERIAL CORE ---------------------------
 
 async function connectSerialScanner() {
   if (!('serial' in navigator)) {
     alert('Web Serial API not supported. Use Chrome or Edge.');
     return;
   }
+
+  // If already connected, do nothing
+  if (__serialPort) {
+    updateScanPill('already connected');
+    return;
+  }
+
   try {
+    // Ask user to choose a device (we keep it unfiltered for CH340)
     const port = await navigator.serial.requestPort();
-    await port.open({ baudRate: 115200 });
 
-    // Show quick visual feedback
+    // Open with explicit 8N1 settings (CH340s like these spelled out)
+    await port.open({
+      baudRate: 115200,       // ✅ confirmed
+      dataBits: 8,
+      stopBits: 1,
+      parity: 'none',
+      flowControl: 'none',
+      bufferSize: 255
+    });
+
+    // Some adapters need DTR/RTS asserted
+    try { await port.setSignals({ dataTerminalReady: true, requestToSend: true }); } catch {}
+
+    __serialPort = port;
     updateScanPill('scanner connected');
+    console.log('✅ Scanner connected at 115200 8N1');
 
-    const decoder = new TextDecoderStream();
-    const reader = port.readable.pipeThrough(decoder).getReader();
-
-    let buffer = '';
-    let idleTimer = null;
-    const IDLE_MS = 140; // treat short idle as end-of-scan
-
-    const flush = () => {
-      const line = buffer.trim();
-      buffer = '';
-      if (!line) return;
-      console.log('RAW:', line); // <-- keep this for validation
-      handleSerialScan(line);
-    };
-
-    (async () => {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += value;
-
-        // 1) handle CR or LF from scanners that send terminators
-        let parts = buffer.split(/[\r\n]+/);
-        buffer = parts.pop(); // remainder after last terminator
-        for (const part of parts) {
-          const line = part.trim();
-          if (line) {
-            console.log('RAW:', line);
-            handleSerialScan(line);
-          }
-        }
-
-        // 2) idle flush for scanners that send NO terminator
-        clearTimeout(idleTimer);
-        idleTimer = setTimeout(flush, IDLE_MS);
-      }
-    })();
+    // Start the read loop
+    startSerialReadLoop(port);
   } catch (e) {
     console.error('Serial connect failed', e);
-    alert('Could not open scanner port.');
+    alert('Could not open scanner port. Ensure no other program (e.g., PowerShell, PuTTY) is using it, then try again.');
   }
 }
 
+async function disconnectSerialScanner() {
+  try {
+    if (__serialReader) {
+      try { await __serialReader.cancel(); } catch {}
+      try { __serialReader.releaseLock(); } catch {}
+    }
+    if (__inputDone) {
+      try { await __inputDone.catch(() => {}); } catch {}
+    }
+    if (__decoder) {
+      try { __decoder.readable.cancel(); } catch {}
+    }
+    if (__serialPort) {
+      try { await __serialPort.close(); } catch {}
+    }
+  } finally {
+    __serialReader = null;
+    __decoder = null;
+    __inputDone = null;
+    __serialPort = null;
+    __serialBuffer = '';
+    clearTimeout(__idleTimer);
+  }
+}
+
+function startSerialReadLoop(port) {
+  __decoder = new TextDecoderStream();
+  __inputDone = port.readable.pipeTo(__decoder.writable).catch(() => {});
+  const inputStream = __decoder.readable;
+  __serialReader = inputStream.getReader();
+
+  const flush = () => {
+    const line = __serialBuffer.trim();
+    __serialBuffer = '';
+    if (!line) return;
+    console.log('RAW:', line);
+    handleSerialScan(line);
+  };
+
+  (async () => {
+    try {
+      while (true) {
+        const { value, done } = await __serialReader.read();
+        if (done) break;
+        if (value) {
+          __serialBuffer += value;
+
+          // Split on CR/LF if the scanner sends terminators
+          let parts = __serialBuffer.split(/[\r\n]+/);
+          __serialBuffer = parts.pop(); // keep the remainder
+          for (const part of parts) {
+            const line = part.trim();
+            if (line) {
+              console.log('RAW:', line);
+              handleSerialScan(line);
+            }
+          }
+
+          // Idle flush for scanners that send no terminator
+          clearTimeout(__idleTimer);
+          __idleTimer = setTimeout(flush, __IDLE_MS);
+        }
+      }
+    } catch (err) {
+      console.warn('Serial read loop ended:', err);
+    } finally {
+      try { __serialReader.releaseLock(); } catch {}
+    }
+  })();
+}
+
+// --------------------------- SCAN HANDLING ---------------------------
+
 async function handleSerialScan(text) {
+  // Normalise into a /scan URL your backend understands
   let scanUrl = normalizeScanUrl(text);
+
+  // If it’s just an item ID (digits), derive the scan URL from backend helper
   if (!scanUrl && /^\d+$/.test(text)) {
     try {
-      const r = await fetch(`/api/scan-url?itemId=${encodeURIComponent(text)}`); // relative path
+      const r = await fetch(`/api/scan-url?itemId=${encodeURIComponent(text)}`, { cache: 'no-store' });
       if (r.ok) {
         const j = await r.json();
         if (j && j.url) scanUrl = j.url;
       }
     } catch {}
   }
+
   if (!scanUrl) {
     updateScanPill('unrecognized code');
     return;
   }
+
+  // Hit the scan URL in JSON mode so the backend can update Monday and reply
   try {
     const url = scanUrl + (scanUrl.includes('?') ? '&' : '?') + 'json=1';
     const r = await fetch(url, { method: 'GET', cache: 'no-store', credentials: 'omit' });
     if (r.ok) {
-      const j = await r.json();
-      if (j && j.ok) {
-        updateScanPill(`Status: ${j.status}`);
+      const j = await r.json().catch(() => ({}));
+      if (j && (j.ok || j.status)) {
+        updateScanPill(`status: ${j.status || 'ok'}`);
         return;
       }
     }
-  } catch {}
+  } catch (e) {
+    console.error('Process scan failed', e);
+  }
   updateScanPill('processed');
 }
 
-function updateScanPill(msg) {
-  const pill = document.getElementById('scanPillText') || document.querySelector('.scan-pill-text');
-  if (pill) {
-    pill.textContent = msg;
-    setTimeout(() => { pill.textContent = 'ready'; }, 800);
-  }
-}
-
 function normalizeScanUrl(input) {
+  // Accept full URLs your scanner emits, or query fragments (i, ts, sig)
   if (/^https?:\/\/.+\/scan\?.*i=\d+.*ts=\d+.*sig=[a-f0-9]+/i.test(input)) return input;
   if (/(^|[?&])i=\d+/.test(input) && /ts=\d+/.test(input) && /sig=/.test(input)) {
     return `${PROD_ORIGIN}/scan?${input.replace(/^[^?]*\?/, '')}`;
   }
   return null;
 }
+
+// --------------------------- CLEANUP ---------------------------
+
+window.addEventListener('beforeunload', async () => {
+  await disconnectSerialScanner();
+});
