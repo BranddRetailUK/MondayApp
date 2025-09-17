@@ -1,4 +1,5 @@
-const PROD_ORIGIN = 'https://mondayapp-production.up.railway.app';
+// --- Monday Dashboard Frontend (updated) ---
+const PROD_ORIGIN = window.location.origin; // <- dynamic origin (no CORS headaches)
 const ENDPOINTS = { data: '/api/board', auth: '/auth' };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -327,25 +328,47 @@ async function connectSerialScanner() {
   try {
     const port = await navigator.serial.requestPort();
     await port.open({ baudRate: 115200 });
+
+    // Show quick visual feedback
+    updateScanPill('scanner connected');
+
     const decoder = new TextDecoderStream();
     const reader = port.readable.pipeThrough(decoder).getReader();
-let buffer = '';
-(async () => {
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += value;
-    let idx;
-    while ((idx = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, idx).trim();
-      buffer = buffer.slice(idx + 1);
-      if (line) {
-        console.log("RAW:", line);   // 👈 add this line
-        handleSerialScan(line);      // existing call
+
+    let buffer = '';
+    let idleTimer = null;
+    const IDLE_MS = 140; // treat short idle as end-of-scan
+
+    const flush = () => {
+      const line = buffer.trim();
+      buffer = '';
+      if (!line) return;
+      console.log('RAW:', line); // <-- keep this for validation
+      handleSerialScan(line);
+    };
+
+    (async () => {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += value;
+
+        // 1) handle CR or LF from scanners that send terminators
+        let parts = buffer.split(/[\r\n]+/);
+        buffer = parts.pop(); // remainder after last terminator
+        for (const part of parts) {
+          const line = part.trim();
+          if (line) {
+            console.log('RAW:', line);
+            handleSerialScan(line);
+          }
+        }
+
+        // 2) idle flush for scanners that send NO terminator
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(flush, IDLE_MS);
       }
-    }
-  }
-})();
+    })();
   } catch (e) {
     console.error('Serial connect failed', e);
     alert('Could not open scanner port.');
@@ -356,7 +379,7 @@ async function handleSerialScan(text) {
   let scanUrl = normalizeScanUrl(text);
   if (!scanUrl && /^\d+$/.test(text)) {
     try {
-      const r = await fetch(`${PROD_ORIGIN}/api/scan-url?itemId=${encodeURIComponent(text)}`);
+      const r = await fetch(`/api/scan-url?itemId=${encodeURIComponent(text)}`); // relative path
       if (r.ok) {
         const j = await r.json();
         if (j && j.url) scanUrl = j.url;

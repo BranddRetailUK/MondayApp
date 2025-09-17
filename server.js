@@ -68,6 +68,11 @@ let boardCache = { data: null, expires: 0, inFlight: null };
 
 app.use(express.static(path.join(__dirname, "public")));
 
+// Simple status endpoint for debugging
+app.get("/api/status", (req, res) => {
+  res.json({ ok: true, mondayAuthenticated: Boolean(mondayAccessToken), boardId: BOARD_ID || null });
+});
+
 function buildAuthorizeUrl() {
   const u = new URL("https://auth.monday.com/oauth2/authorize");
   u.searchParams.set("client_id", CLIENT_ID);
@@ -225,12 +230,16 @@ async function advanceScan(itemId) {
 
 app.get("/scan", async (req, res) => {
   const { i, ts, sig, json } = req.query;
+  if (json) res.set("Access-Control-Allow-Origin", "*"); // helpful for cross-origin tests
   if (!i || !ts || !sig) return res.status(400).send("Invalid scan URL");
   if (sig !== signPayload(i, ts)) return res.status(403).send("Signature check failed");
   if (!mondayAccessToken) return res.status(401).send("Not authenticated");
 
   try {
     const { scan_count, status } = await advanceScan(String(i));
+
+    // Log every scan on the server for visibility while testing
+    console.log(`[SCAN] item=${i} -> count=${scan_count}, status=${status}`);
 
     const mutation = `
       mutation ChangeValue($board: ID!, $item: ID!, $col: String!, $val: JSON!) {
