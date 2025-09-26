@@ -1,17 +1,17 @@
-// --- Monday Dashboard Frontend (updated with robust Web Serial @115200 8N1 + dual send) ---
+// --- Monday Dashboard Frontend (with status dots + collapsible groups/subitems) ---
 
-const PROD_ORIGIN = window.location.origin; // dynamic origin
-const ENDPOINTS = { data: '/api/board', auth: '/auth' };
+const PROD_ORIGIN = window.location.origin;
+const ENDPOINTS = { data: '/api/board', auth: '/auth', scans: '/api/scan-states' };
 
-// --- Serial globals (so we can reconnect/cleanup properly) ---
+// --- Serial globals ---
 let __serialPort = null;
 let __serialReader = null;
 let __decoder = null;
 let __inputDone = null;
 let __serialBuffer = '';
 let __idleTimer = null;
-const __IDLE_MS = 140;        // treat short idle as end-of-scan
-const __BUFFER_HARD_LIMIT = 8192; // safety against runaway growth
+const __IDLE_MS = 140;
+const __BUFFER_HARD_LIMIT = 8192;
 
 document.addEventListener('DOMContentLoaded', () => {
   ensureAuthUI();
@@ -32,8 +32,7 @@ function ensureAuthUI() {
   if (!document.getElementById('authStatus')) {
     const status = document.createElement('div');
     status.id = 'authStatus';
-    status.style.margin = '10px 0';
-    status.style.fontSize = '14px';
+    status.className = 'auth-status';
     status.textContent = 'Ready.';
     if (loadBtn) loadBtn.insertAdjacentElement('beforebegin', status);
   }
@@ -41,15 +40,7 @@ function ensureAuthUI() {
     const btn = document.createElement('button');
     btn.id = 'connectBtn';
     btn.textContent = 'Connect to Monday';
-    Object.assign(btn.style, {
-      marginRight: '10px',
-      padding: '8px 12px',
-      background: '#0078d7',
-      color: '#fff',
-      border: 'none',
-      borderRadius: '4px',
-      cursor: 'pointer'
-    });
+    btn.className = 'btn primary';
     btn.addEventListener('click', () => (window.location.href = ENDPOINTS.auth));
     if (loadBtn) loadBtn.insertAdjacentElement('beforebegin', btn);
   }
@@ -59,24 +50,32 @@ async function loadBoard() {
   const boardDiv = document.getElementById('board') || document.body;
   const statusEl = document.getElementById('authStatus');
   try {
-    const res = await fetch(ENDPOINTS.data, { cache: 'no-store', credentials: 'include' });
-    if (!res.ok) {
-      let msg = `Failed to load board (HTTP ${res.status})`;
+    const [resBoard, resScans] = await Promise.all([
+      fetch(ENDPOINTS.data, { cache: 'no-store', credentials: 'include' }),
+      fetch(ENDPOINTS.scans, { cache: 'no-store', credentials: 'include' })
+    ]);
+
+    if (!resBoard.ok) {
+      let msg = `Failed to load board (HTTP ${resBoard.status})`;
       try {
-        const errJson = await res.json();
+        const errJson = await resBoard.json();
         if (errJson && errJson.error) msg = `Failed to load board: ${errJson.error}`;
         else if (errJson && errJson.errors) msg = `Failed to load board: ${JSON.stringify(errJson.errors)}`;
       } catch {}
       boardDiv.textContent = msg;
-      if (res.status === 401 || res.status === 403) {
+      if (resBoard.status === 401 || resBoard.status === 403) {
         if (statusEl) statusEl.textContent = 'Not connected to Monday.';
         const connectBtn = document.getElementById('connectBtn');
         if (connectBtn) connectBtn.style.display = 'inline-block';
       }
       return;
     }
-    const payload = await res.json();
-    renderBoard(payload);
+
+    const payload = await resBoard.json();
+    const scansPayload = resScans.ok ? await resScans.json() : { map: {} };
+    const scanMap = scansPayload.map || {};
+
+    renderBoard(payload, scanMap); // <<< pass scan states
     const connectBtn = document.getElementById('connectBtn');
     if (connectBtn) connectBtn.style.display = 'none';
     if (statusEl) statusEl.textContent = 'Connected to Monday.';
@@ -87,7 +86,7 @@ async function loadBoard() {
 
 // --------------------------- RENDER BOARD ---------------------------
 
-function renderBoard(payload) {
+function renderBoard(payload, scanMap) {
   const boardDiv = document.getElementById('board') || document.body;
   boardDiv.innerHTML = '';
   const board = unwrapFirstBoard(payload);
@@ -104,28 +103,34 @@ function renderBoard(payload) {
     const collectionName = group.title || 'Untitled Group';
     const items = (group.items_page && group.items_page.items) || [];
 
-    const sectionTitle = document.createElement('h3');
-    sectionTitle.textContent = collectionName;
-    sectionTitle.style.marginTop = '20px';
-    sectionTitle.style.padding = '8px 12px';
-    sectionTitle.style.background = '#0a67c3';
-    sectionTitle.style.color = '#fff';
-    sectionTitle.style.borderRadius = '4px';
-    boardDiv.appendChild(sectionTitle);
+    // Group container + header with chevron
+    const groupWrap = document.createElement('section');
+    groupWrap.className = 'group';
+
+    const sectionTitle = document.createElement('button');
+    sectionTitle.className = 'group-title';
+    sectionTitle.type = 'button';
+    sectionTitle.innerHTML = `
+      <span class="chev" aria-hidden="true"></span>
+      <span>${escapeHtml(collectionName)}</span>
+    `;
+    sectionTitle.addEventListener('click', () => {
+      groupWrap.classList.toggle('collapsed');
+    });
+    groupWrap.appendChild(sectionTitle);
+
+    const tableWrap = document.createElement('div');
+    tableWrap.className = 'group-content';
 
     const table = document.createElement('table');
-    table.style.width = '100%';
-    table.style.borderCollapse = 'collapse';
-    table.style.marginBottom = '20px';
-    table.style.background = '#fff';
-    table.style.border = '1px solid #ddd';
-
+    table.className = 'data-table';
 
     const thead = document.createElement('thead');
     thead.innerHTML = `
       <tr>
-        <th style="text-align:left;border:1px solid #ddd;padding:8px;width:90px">Print</th>
-        <th style="text-align:left;border:1px solid #ddd;padding:8px">Job Title</th>
+        <th class="w-90">Print</th>
+        <th>Job Title</th>
+        <th class="w-120">Scan Status</th>
       </tr>
     `;
     table.appendChild(thead);
@@ -134,50 +139,67 @@ function renderBoard(payload) {
 
     for (const item of items) {
       const jobTitle = item.name || '';
-      const tr = document.createElement('tr');
+      const itemId = String(item.id);
+      const scan = scanMap[itemId] || { scan_count: 0, status: 'Pending' };
 
+      const tr = document.createElement('tr');
+      tr.dataset.itemId = itemId;
+
+      // Print button
       const printTd = document.createElement('td');
-      printTd.style.border = '1px solid #ddd';
-      printTd.style.padding = '8px';
       const printBtn = document.createElement('button');
       printBtn.textContent = 'Print';
-      Object.assign(printBtn.style, {
-        padding: '6px 10px',
-        background: '#0078d7',
-        color: '#fff',
-        border: 'none',
-        borderRadius: '4px',
-        cursor: 'pointer'
-      });
+      printBtn.className = 'btn primary';
       printBtn.addEventListener('click', () => printLabel(item.id, jobTitle));
       printTd.appendChild(printBtn);
       tr.appendChild(printTd);
 
+      // Title + row subitem toggler (only if has subitems)
       const titleTd = document.createElement('td');
-      titleTd.style.border = '1px solid #ddd';
-      titleTd.style.padding = '8px';
-      titleTd.innerHTML = escapeHtml(jobTitle);
+      titleTd.className = 'title-cell';
+
+      if (item.subitems && item.subitems.length > 0) {
+        const rowToggle = document.createElement('button');
+        rowToggle.className = 'row-toggle';
+        rowToggle.type = 'button';
+        rowToggle.setAttribute('aria-label', 'Toggle subitems');
+        rowToggle.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const isOpen = rowToggle.classList.toggle('open');
+          toggleSubRows(itemId, isOpen);
+        });
+        titleTd.appendChild(rowToggle);
+      } else {
+        // placeholder to align
+        const spacer = document.createElement('span');
+        spacer.className = 'row-toggle-spacer';
+        titleTd.appendChild(spacer);
+      }
+
+      const titleSpan = document.createElement('span');
+      titleSpan.textContent = jobTitle;
+      titleTd.appendChild(titleSpan);
       tr.appendChild(titleTd);
+
+      // Status dots
+      const statusTd = document.createElement('td');
+      statusTd.appendChild(buildStatusDots(scan.scan_count));
+      statusTd.title = scan.status || '';
+      tr.appendChild(statusTd);
 
       tbody.appendChild(tr);
 
+      // Subitems (initially hidden; shown when parent toggles)
       if (item.subitems && item.subitems.length > 0) {
         for (const sub of item.subitems) {
           const subTr = document.createElement('tr');
+          subTr.className = 'sub-row hidden';
+          subTr.dataset.parent = itemId;
 
           const subPrintTd = document.createElement('td');
-          subPrintTd.style.border = '1px solid #ddd';
-          subPrintTd.style.padding = '8px';
           const subPrintBtn = document.createElement('button');
           subPrintBtn.textContent = 'Print';
-          Object.assign(subPrintBtn.style, {
-            padding: '6px 10px',
-            background: '#555',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer'
-          });
+          subPrintBtn.className = 'btn';
           subPrintBtn.addEventListener('click', () => printLabel(sub.id, sub.name || ''));
           subPrintTd.appendChild(subPrintBtn);
           subTr.appendChild(subPrintTd);
@@ -186,11 +208,15 @@ function renderBoard(payload) {
           const qty  = (sub.column_values || []).find(c => c.id === 'text_mkr31cjs')?.text || '';
 
           const subTitleTd = document.createElement('td');
-          subTitleTd.style.border = '1px solid #ddd';
-          subTitleTd.style.padding = '8px';
-          subTitleTd.style.paddingLeft = '30px';
-          subTitleTd.innerHTML = `↳ ${escapeHtml(sub.name || '')} | Size: ${escapeHtml(size)} | Qty: ${escapeHtml(qty)}`;
+          subTitleTd.colSpan = 1;
+          subTitleTd.innerHTML = `<span class="sub-arrow">↳</span> ${escapeHtml(sub.name || '')} <span class="muted">| Size: ${escapeHtml(size)} | Qty: ${escapeHtml(qty)}</span>`;
           subTr.appendChild(subTitleTd);
+
+          // sub rows use parent's scan state visually (or leave blank)
+          const subStatus = document.createElement('td');
+          subStatus.appendChild(buildStatusDots(scan.scan_count));
+          subStatus.title = scan.status || '';
+          subTr.appendChild(subStatus);
 
           tbody.appendChild(subTr);
         }
@@ -198,8 +224,31 @@ function renderBoard(payload) {
     }
 
     table.appendChild(tbody);
-    boardDiv.appendChild(table);
+    tableWrap.appendChild(table);
+    groupWrap.appendChild(tableWrap);
+
+    boardDiv.appendChild(groupWrap);
   }
+}
+
+function toggleSubRows(parentId, open) {
+  const rows = document.querySelectorAll(`tr.sub-row[data-parent="${CSS.escape(parentId)}"]`);
+  rows.forEach(r => r.classList.toggle('hidden', !open));
+}
+
+function buildStatusDots(count) {
+  // count: 0..3
+  const wrap = document.createElement('div');
+  wrap.className = 'status-dots';
+  // dot1: purple (checked in), dot2: gold (in prod), dot3: bright green (completed)
+  const colors = ['var(--dot-purple)', 'var(--dot-gold)', 'var(--dot-green)'];
+  for (let i = 1; i <= 3; i++) {
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    if (count >= i) dot.style.background = colors[i-1];
+    wrap.appendChild(dot);
+  }
+  return wrap;
 }
 
 function unwrapFirstBoard(payload) {
@@ -322,41 +371,24 @@ async function printLabel(itemId, rawTitle) {
   }
 }
 
-// --------------------------- SERIAL UI ---------------------------
+// --------------------------- SERIAL UI (unchanged core) ---------------------------
 
 function addSerialScannerUI() {
   const loadBtn = document.getElementById('loadBtn');
 
-  // status pill
   if (!document.getElementById('scanPill')) {
     const pill = document.createElement('span');
     pill.id = 'scanPill';
     pill.className = 'scan-pill-text';
     pill.textContent = 'ready';
-    Object.assign(pill.style, {
-      marginLeft: '12px',
-      padding: '6px 10px',
-      background: '#eee',
-      borderRadius: '14px',
-      fontSize: '12px'
-    });
     if (loadBtn) loadBtn.insertAdjacentElement('afterend', pill);
   }
 
-  // connect button
   if (!document.getElementById('connectScannerBtn')) {
     const btn = document.createElement('button');
     btn.id = 'connectScannerBtn';
     btn.textContent = 'Connect Scanner';
-    Object.assign(btn.style, {
-      marginLeft: '10px',
-      padding: '8px 12px',
-      background: '#0a7',
-      color: '#fff',
-      border: 'none',
-      borderRadius: '4px',
-      cursor: 'pointer'
-    });
+    btn.className = 'btn success';
     btn.onclick = connectSerialScanner;
     if (loadBtn) loadBtn.insertAdjacentElement('afterend', btn);
   }
@@ -375,7 +407,6 @@ function updateScanPill(msg) {
   const pill = document.getElementById('scanPill') || document.querySelector('.scan-pill-text');
   if (pill) {
     pill.textContent = msg;
-    // brief auto-reset
     if (!/connected|disconnected/i.test(msg)) {
       setTimeout(() => { pill.textContent = 'ready'; }, 900);
     }
@@ -389,63 +420,30 @@ async function connectSerialScanner() {
     alert('Web Serial API not supported. Use Chrome or Edge.');
     return;
   }
-
-  // If already connected, do nothing
-  if (__serialPort) {
-    updateScanPill('already connected');
-    return;
-  }
+  if (__serialPort) { updateScanPill('already connected'); return; }
 
   try {
-    // Ask user to choose a device (we keep it unfiltered for CH340)
     const port = await navigator.serial.requestPort();
-
-    // Open with explicit 8N1 settings (CH340s like these spelled out)
-    await port.open({
-      baudRate: 115200,       // ✅ confirmed
-      dataBits: 8,
-      stopBits: 1,
-      parity: 'none',
-      flowControl: 'none',
-      bufferSize: 255
-    });
-
-    // Some adapters need DTR/RTS asserted
+    await port.open({ baudRate: 115200, dataBits: 8, stopBits: 1, parity: 'none', flowControl: 'none', bufferSize: 255 });
     try { await port.setSignals({ dataTerminalReady: true, requestToSend: true }); } catch {}
 
     __serialPort = port;
     updateScanPill('scanner connected');
-    console.log('✅ Scanner connected at 115200 8N1');
-
-    // Start the read loop
     startSerialReadLoop(port);
   } catch (e) {
     console.error('Serial connect failed', e);
-    alert('Could not open scanner port. Ensure no other program (e.g., PowerShell, PuTTY) is using it, then try again.');
+    alert('Could not open scanner port. Ensure no other program is using it, then try again.');
   }
 }
 
 async function disconnectSerialScanner() {
   try {
-    if (__serialReader) {
-      try { await __serialReader.cancel(); } catch {}
-      try { __serialReader.releaseLock(); } catch {}
-    }
-    if (__inputDone) {
-      try { await __inputDone.catch(() => {}); } catch {}
-    }
-    if (__decoder) {
-      try { __decoder.readable.cancel(); } catch {}
-    }
-    if (__serialPort) {
-      try { await __serialPort.close(); } catch {}
-    }
+    if (__serialReader) { try { await __serialReader.cancel(); } catch {} try { __serialReader.releaseLock(); } catch {} }
+    if (__inputDone) { try { await __inputDone.catch(() => {}); } catch {} }
+    if (__decoder) { try { __decoder.readable.cancel(); } catch {} }
+    if (__serialPort) { try { await __serialPort.close(); } catch {} }
   } finally {
-    __serialReader = null;
-    __decoder = null;
-    __inputDone = null;
-    __serialPort = null;
-    __serialBuffer = '';
+    __serialReader = null; __decoder = null; __inputDone = null; __serialPort = null; __serialBuffer = '';
     clearTimeout(__idleTimer);
   }
 }
@@ -460,7 +458,6 @@ function startSerialReadLoop(port) {
     const line = __serialBuffer.trim();
     __serialBuffer = '';
     if (!line) return;
-    console.log('RAW:', line);
     handleSerialScan(line);
   };
 
@@ -471,33 +468,21 @@ function startSerialReadLoop(port) {
         if (done) break;
         if (value) {
           __serialBuffer += value;
+          if (__serialBuffer.length > __BUFFER_HARD_LIMIT) flush();
 
-          // Hard guard against runaway buffers
-          if (__serialBuffer.length > __BUFFER_HARD_LIMIT) {
-            console.warn('Serial buffer exceeded limit. Flushing.');
-            flush();
-          }
-
-          // Split on CR/LF if the scanner sends terminators
           let parts = __serialBuffer.split(/[\r\n]+/);
-          __serialBuffer = parts.pop(); // keep the remainder
+          __serialBuffer = parts.pop();
           for (const part of parts) {
             const line = part.trim();
-            if (line) {
-              console.log('RAW:', line);
-              handleSerialScan(line);
-            }
+            if (line) handleSerialScan(line);
           }
 
-          // No-terminator fallback: if the remainder looks like a complete QR query, process it
           if (/([?&]i=\d+).+([?&]sig=[a-f0-9]+)/i.test(__serialBuffer) && !/[\r\n]/.test(__serialBuffer)) {
             const line = __serialBuffer.trim();
             __serialBuffer = '';
-            console.log('RAW:', line);
             handleSerialScan(line);
           }
 
-          // Idle flush for scanners that send no terminator
           clearTimeout(__idleTimer);
           __idleTimer = setTimeout(flush, __IDLE_MS);
         }
@@ -510,13 +495,8 @@ function startSerialReadLoop(port) {
   })();
 }
 
-// --------------------------- SCAN HANDLING ---------------------------
-
 async function handleSerialScan(text) {
-  // Normalise into a /scan URL your backend understands
   let scanUrl = normalizeScanUrl(text);
-
-  // If it’s just an item ID (digits), derive the scan URL from backend helper
   if (!scanUrl && /^\d+$/.test(text)) {
     try {
       const r = await fetch(`/api/scan-url?itemId=${encodeURIComponent(text)}`, { cache: 'no-store', credentials: 'include' });
@@ -526,16 +506,8 @@ async function handleSerialScan(text) {
       }
     } catch {}
   }
+  if (!scanUrl) { updateScanPill('unrecognized code'); return; }
 
-  if (!scanUrl) {
-    updateScanPill('unrecognized code');
-    return;
-  }
-
-  let getOk = false;
-  let postOk = false;
-
-  // ✅ POST the raw scan to a structured endpoint
   try {
     const r2 = await fetch('/api/scanner', {
       method: 'POST',
@@ -543,21 +515,16 @@ async function handleSerialScan(text) {
       credentials: 'include',
       body: JSON.stringify({ scan: text, url: scanUrl })
     });
-    postOk = r2.ok;
+    updateScanPill(r2.ok ? 'status: ok' : 'status: error');
+    // refresh status dots after a successful scan
+    if (r2.ok) loadBoard();
   } catch (e) {
     console.warn('POST /api/scanner failed:', e);
-  }
-
-  if (postOk) {
-    updateScanPill('status: ok');
-  } else {
     updateScanPill('status: error');
   }
 }
 
-
 function normalizeScanUrl(input) {
-  // Accept full URLs your scanner emits, or query fragments (i, ts, sig)
   if (/^https?:\/\/.+\/scan\?.*i=\d+.*ts=\d+.*sig=[a-f0-9]+/i.test(input)) return input;
   if (/(^|[?&])i=\d+/.test(input) && /ts=\d+/.test(input) && /sig=/.test(input)) {
     return `${PROD_ORIGIN}/scan?${String(input).replace(/^[^?]*\?/, '')}`;
@@ -571,7 +538,7 @@ window.addEventListener('beforeunload', async () => {
   await disconnectSerialScanner();
 });
 
-// --------------------------- TAB NAVIGATION ---------------------------
+// --------------------------- TAB NAVIGATION (sidebar) ---------------------------
 
 document.addEventListener("DOMContentLoaded", () => {
   const tabs = document.querySelectorAll(".nav-tabs li");
@@ -580,12 +547,8 @@ document.addEventListener("DOMContentLoaded", () => {
   tabs.forEach(tab => {
     tab.addEventListener("click", () => {
       const target = tab.getAttribute("data-tab");
-
-      // update active tab
       tabs.forEach(t => t.classList.remove("active"));
       tab.classList.add("active");
-
-      // show corresponding content
       contents.forEach(c => {
         c.classList.remove("active");
         if (c.id === `tab-${target}`) c.classList.add("active");

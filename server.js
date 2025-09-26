@@ -68,7 +68,7 @@ let boardCache = { data: null, expires: 0, inFlight: null };
 
 app.use(express.static(path.join(__dirname, "public")));
 
-// Simple status endpoint for debugging
+// Simple status endpoint
 app.get("/api/status", (req, res) => {
   res.json({ ok: true, mondayAuthenticated: Boolean(mondayAccessToken), boardId: BOARD_ID || null });
 });
@@ -86,7 +86,6 @@ function buildAuthorizeUrl() {
 function signPayload(itemId, ts) {
   return crypto.createHmac("sha256", SCAN_SECRET).update(`${itemId}.${ts}`).digest("hex");
 }
-
 
 // --- Update Monday helper ---
 async function updateMondayItem(itemId, columnId, value) {
@@ -113,10 +112,7 @@ async function updateMondayItem(itemId, columnId, value) {
   }
 }
 
-
-app.get("/auth", (req, res) => {
-  res.redirect(buildAuthorizeUrl());
-});
+app.get("/auth", (req, res) => res.redirect(buildAuthorizeUrl()));
 
 app.get("/callback", async (req, res) => {
   const { code, error, error_description } = req.query;
@@ -136,9 +132,7 @@ app.get("/callback", async (req, res) => {
   }
 });
 
-
-
-
+// --- Board data (unchanged behaviour) ---
 app.get("/api/board", async (req, res) => {
   if (!mondayAccessToken) return res.status(401).json({ error: "Not authenticated. Visit /auth first." });
   if (!BOARD_ID) return res.status(400).json({ error: "BOARD_ID is not set." });
@@ -242,6 +236,20 @@ app.get("/api/scan-url", (req, res) => {
   const base = `https://${req.get("host")}`;
   const url = `${base}/scan?i=${encodeURIComponent(itemId)}&ts=${ts}&sig=${sig}`;
   res.json({ url });
+});
+
+// --- NEW: compact scan-state map for the frontend ---
+app.get("/api/scan-states", async (_req, res) => {
+  try {
+    const q = await pool.query("SELECT item_id, scan_count, status FROM job_scans");
+    // return as { [itemId]: {scan_count, status} }
+    const map = {};
+    for (const r of q.rows) map[r.item_id] = { scan_count: r.scan_count, status: r.status };
+    res.json({ ok: true, map });
+  } catch (e) {
+    console.error("scan-states error:", e);
+    res.status(500).json({ ok: false, error: "failed" });
+  }
 });
 
 async function advanceScan(itemId) {
@@ -361,10 +369,6 @@ app.post("/api/scanner", async (req, res) => {
     res.status(500).json({ error: "Failed to process scan" });
   }
 });
-
-
-
-
 
 app.get("/api/qr", async (req, res) => {
   const data = req.query.data || "";
