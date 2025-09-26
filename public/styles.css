@@ -62,6 +62,8 @@ body{
 }
 .group.collapsed .chev{transform:rotate(-135deg)}
 .group-content{padding:10px 12px 14px}
+.group.collapsed .group-content { display: none; }
+
 
 /* Table */
 .data-table{width:100%;border-collapse:collapse;background:#0b1017;border:1px solid var(--border)}
