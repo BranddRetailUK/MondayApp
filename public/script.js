@@ -24,27 +24,49 @@ window.loadBoard = loadBoard;
 // --------------------------- AUTH / LOADING ---------------------------
 
 function ensureAuthUI() {
+  const board = document.getElementById('board') || document.body;
+
+  // Create toolbar container once
+  let bar = document.getElementById('labels-toolbar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'labels-toolbar';
+    board.parentElement.insertBefore(bar, board); // toolbar sits above the board area
+  }
+
+  // Status text
+  let statusEl = document.getElementById('authStatus');
+  if (!statusEl) {
+    statusEl = document.createElement('div');
+    statusEl.id = 'authStatus';
+    bar.appendChild(statusEl);
+  }
+  statusEl.className = 'status-note';
+  statusEl.textContent = 'Connected to Monday.'; // will be updated after loadBoard() too
+
+  // Update button (give it proper styling + move into toolbar)
   const loadBtn = document.getElementById('loadBtn');
   if (loadBtn) {
     loadBtn.textContent = 'Update board info';
     loadBtn.onclick = () => loadBoard();
+    loadBtn.className = 'btn outline';
+    if (loadBtn.parentElement !== bar) bar.appendChild(loadBtn);
   }
-  if (!document.getElementById('authStatus')) {
-    const status = document.createElement('div');
-    status.id = 'authStatus';
-    status.className = 'auth-status';
-    status.textContent = 'Ready.';
-    if (loadBtn) loadBtn.insertAdjacentElement('beforebegin', status);
+
+  // Connect to Monday (only shown if needed)
+  let connectBtn = document.getElementById('connectBtn');
+  if (!connectBtn) {
+    connectBtn = document.createElement('button');
+    connectBtn.id = 'connectBtn';
+    connectBtn.textContent = 'Connect to Monday';
+    connectBtn.className = 'btn primary';
+    connectBtn.addEventListener('click', () => (window.location.href = '/auth'));
   }
-  if (!document.getElementById('connectBtn')) {
-    const btn = document.createElement('button');
-    btn.id = 'connectBtn';
-    btn.textContent = 'Connect to Monday';
-    btn.className = 'btn primary';
-    btn.addEventListener('click', () => (window.location.href = ENDPOINTS.auth));
-    if (loadBtn) loadBtn.insertAdjacentElement('beforebegin', btn);
-  }
+  if (connectBtn.parentElement !== bar) bar.appendChild(connectBtn);
+
+  // Scanner connect button will be inserted by addSerialScannerUI(); keep space updated
 }
+
 
 async function loadBoard() {
   const boardDiv = document.getElementById('board') || document.body;
@@ -374,25 +396,28 @@ async function printLabel(itemId, rawTitle) {
 // --------------------------- SERIAL UI (unchanged core) ---------------------------
 
 function addSerialScannerUI() {
-  const loadBtn = document.getElementById('loadBtn');
+  const bar = document.getElementById('labels-toolbar');
 
-  if (!document.getElementById('scanPill')) {
-    const pill = document.createElement('span');
-    pill.id = 'scanPill';
-    pill.className = 'scan-pill-text';
-    pill.textContent = 'ready';
-    if (loadBtn) loadBtn.insertAdjacentElement('afterend', pill);
-  }
-
+  // Connect Scanner button
   if (!document.getElementById('connectScannerBtn')) {
     const btn = document.createElement('button');
     btn.id = 'connectScannerBtn';
     btn.textContent = 'Connect Scanner';
     btn.className = 'btn success';
     btn.onclick = connectSerialScanner;
-    if (loadBtn) loadBtn.insertAdjacentElement('afterend', btn);
+    if (bar) bar.appendChild(btn);
+  }
+
+  // Small status pill
+  if (!document.getElementById('scanPill')) {
+    const pill = document.createElement('span');
+    pill.id = 'scanPill';
+    pill.className = 'pill';
+    pill.textContent = 'ready';
+    if (bar) bar.appendChild(pill);
   }
 }
+
 
 function attachSerialEvents() {
   if (!('serial' in navigator)) return;

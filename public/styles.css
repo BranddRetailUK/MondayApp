@@ -51,6 +51,34 @@ body{
 .auth-status{margin:10px 0;font-size:14px;color:var(--muted)}
 .scan-pill-text{margin-left:12px;padding:6px 10px;background:#2a313d;border-radius:14px;font-size:12px}
 
+/* --- Labels header toolbar --- */
+#labels-toolbar{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  flex-wrap:wrap;
+  margin:6px 0 18px;
+}
+.status-note{
+  color:var(--muted);
+  font-size:16px;
+  margin-right:auto; /* push buttons to the right */
+}
+.btn.outline{
+  background:transparent;
+  border:1px solid var(--border);
+  color:#fff;
+}
+.btn.outline:hover{ background:#141a24; }
+.pill, .scan-pill-text{ /* keep old class working */
+  background:#2a313d;
+  color:#cbd5e1;
+  padding:6px 10px;
+  border-radius:999px;
+  font-size:12px;
+}
+
+
 /* Groups (Office / Pre-Production / Print etc.) */
 .group{margin:18px 0;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:#0f131a}
 .group-title{
