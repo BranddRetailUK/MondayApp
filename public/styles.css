@@ -1,73 +1,95 @@
-/* Reset & base */
-body, html {
-  margin: 0;
-  padding: 0;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-  background: #f5f6f8;
-  color: #333;
-  height: 100%;
+:root{
+  --bg:#0d0f14;
+  --panel:#11151c;
+  --text:#e6e8ec;
+  --muted:#9aa3b2;
+  --brand:#0a67c3;
+  --brand-2:#0078d7;
+  --ok:#00a870;
+  --border:#1f2430;
+
+  --dot-purple:#8e5cf6; /* checked in */
+  --dot-gold:#ffd700;   /* in production */
+  --dot-green:#00e676;  /* completed */
 }
 
-.app-container {
-  display: flex;
-  min-height: 100vh;
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
 }
 
-/* Sidebar */
-.sidebar {
-  width: 220px;
-  background: #111827;
-  color: #fff;
-  display: flex;
-  flex-direction: column;
-  padding: 20px 0;
+/* Layout */
+.app-container{display:flex;min-height:100vh}
+.sidebar{
+  width:240px;background:var(--panel);border-right:1px solid var(--border);padding:18px 14px;position:sticky;top:0;height:100vh
+}
+.sidebar-logo{margin:0 0 16px;font-size:18px;font-weight:800}
+.nav-tabs{list-style:none;margin:0;padding:0}
+.nav-tabs li{
+  padding:10px 12px;border-radius:10px;color:var(--muted);cursor:pointer;user-select:none
+}
+.nav-tabs li.active,.nav-tabs li:hover{background:#141a24;color:var(--text)}
+
+.main-content{flex:1;padding:22px}
+
+/* Tabs */
+.tab-content{display:none}
+.tab-content.active{display:block}
+#tab-labels h1{margin-top:0}
+
+/* Buttons */
+.btn{
+  appearance:none;border:none;border-radius:8px;padding:8px 12px;background:#2a313d;color:#fff;cursor:pointer
+}
+.btn:hover{filter:brightness(1.04)}
+.btn.primary{background:var(--brand-2)}
+.btn.success{background:var(--ok)}
+.auth-status{margin:10px 0;font-size:14px;color:var(--muted)}
+.scan-pill-text{margin-left:12px;padding:6px 10px;background:#2a313d;border-radius:14px;font-size:12px}
+
+/* Groups (Office / Pre-Production / Print etc.) */
+.group{margin:18px 0;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:#0f131a}
+.group-title{
+  width:100%;text-align:left;display:flex;gap:10px;align-items:center;background:#0f131a;color:#fff;
+  border:none;padding:12px 14px;font-weight:700;cursor:pointer
+}
+.group .chev{
+  width:10px;height:10px;border-right:2px solid #9fb3c8;border-bottom:2px solid #9fb3c8;transform:rotate(-45deg);transition:transform .2s ease
+}
+.group.collapsed .chev{transform:rotate(-135deg)}
+.group-content{padding:10px 12px 14px}
+
+/* Table */
+.data-table{width:100%;border-collapse:collapse;background:#0b1017;border:1px solid var(--border)}
+.data-table th,.data-table td{border:1px solid var(--border);padding:10px}
+.data-table thead th{background:#091120;color:#cfe0ff;text-align:left;font-weight:700}
+.w-90{width:90px}.w-120{width:120px}
+
+.title-cell{display:flex;align-items:center;gap:8px}
+.row-toggle,.row-toggle-spacer{
+  width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;border-radius:4px
+}
+.row-toggle{border:1px solid var(--border);background:#131a25;cursor:pointer;position:relative}
+.row-toggle::before{
+  content:"";width:6px;height:6px;border-right:2px solid #9fb3c8;border-bottom:2px solid #9fb3c8;transform:rotate(-45deg);transition:transform .2s ease
+}
+.row-toggle.open::before{transform:rotate(45deg)}
+.row-toggle-spacer{opacity:0}
+
+.sub-row td{background:#0c1119}
+.sub-row.hidden{display:none}
+.sub-arrow{opacity:.7;margin-right:6px}
+.muted{color:var(--muted)}
+
+/* Status dots */
+.status-dots{display:flex;gap:6px;align-items:center;justify-content:flex-start}
+.status-dots .dot{
+  width:12px;height:12px;border-radius:50%;background:#2a313d;box-shadow:0 0 0 1px rgba(255,255,255,.06) inset
 }
 
-.sidebar-logo {
-  margin: 0 0 20px 20px;
-  font-size: 1.2rem;
-  font-weight: bold;
-  color: #fff;
-}
-
-.nav-tabs {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.nav-tabs li {
-  padding: 12px 20px;
-  cursor: pointer;
-  color: #d1d5db;
-  transition: background 0.2s, color 0.2s;
-}
-
-.nav-tabs li:hover {
-  background: #1f2937;
-  color: #fff;
-}
-
-.nav-tabs li.active {
-  background: #2563eb;
-  color: #fff;
-}
-
-/* Main content */
-.main-content {
-  flex: 1;
-  padding: 20px;
-  background: #f9fafb;
-}
-
-.tab-content {
-  display: none;
-}
-
-.tab-content.active {
-  display: block;
-}
-
-h1 {
-  margin-top: 0;
-}
+/* Headings inside page */
+#board h3{display:none} /* replaced by group UI */
