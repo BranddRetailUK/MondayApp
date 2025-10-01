@@ -5,6 +5,9 @@ const dotenv = require("dotenv");
 const crypto = require("crypto");
 const QRCode = require("qrcode");
 const { Pool } = require("pg");
+const multer = require("multer");
+const fs = require("fs");
+
 
 dotenv.config();
 
@@ -39,8 +42,22 @@ const pool = new Pool({
   ssl: process.env.PGSSLMODE === "disable" ? false : { rejectUnauthorized: false }
 });
 
+const uploadRoot = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadRoot)) fs.mkdirSync(uploadRoot, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadRoot),
+  filename: (_req, file, cb) => {
+    const ts = Date.now();
+    const safe = file.originalname.replace(/[^\w.\-]+/g, "_");
+    cb(null, `${ts}_${safe}`);
+  }
+});
+const upload = multer({ storage });
+
+
 async function initDb() {
-  // Scanner tables (existing)
+  // --- Scanner tables (existing) ---
   await pool.query(`
     CREATE TABLE IF NOT EXISTS job_scans (
       id SERIAL PRIMARY KEY,
@@ -53,6 +70,7 @@ async function initDb() {
       last_scanned_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS job_scan_events (
       id SERIAL PRIMARY KEY,
@@ -63,7 +81,7 @@ async function initDb() {
     )
   `);
 
-  // --- Customers table (NEW)
+  // --- Customers table ---
   await pool.query(`
     CREATE TABLE IF NOT EXISTS customers (
       id SERIAL PRIMARY KEY,
@@ -80,7 +98,8 @@ async function initDb() {
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
   `);
-  // Lightweight trigger to auto-update updated_at (optional)
+
+  // Touch updated_at on UPDATE
   await pool.query(`
     DO $$
     BEGIN
@@ -92,9 +111,8 @@ async function initDb() {
           RETURN NEW;
         END; $BODY$ LANGUAGE plpgsql;
       END IF;
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_trigger WHERE tgname = 'customers_set_updated_at'
-      ) THEN
+
+      IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'customers_set_updated_at') THEN
         CREATE TRIGGER customers_set_updated_at
         BEFORE UPDATE ON customers
         FOR EACH ROW
@@ -103,24 +121,68 @@ async function initDb() {
     END $$;
   `);
 
-  // --- Optional: a stub orders table (only if you don't already have one)
-  // NOTE: Safe if it already exists; comment out if you have a richer schema elsewhere.
+  // --- Orders table (robust; idempotent) ---
   await pool.query(`
     CREATE TABLE IF NOT EXISTS orders (
       id SERIAL PRIMARY KEY,
       customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
-      order_number TEXT,
-      status TEXT,
+      product_code TEXT,
+      garment_type TEXT,
+      product_title TEXT,
+      colour TEXT,
+      size TEXT,
+      status TEXT DEFAULT 'Draft',
+      notes TEXT,
       total TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  // Ensure columns exist if an older minimal "orders" table was present
+  const maybeAdd = async (col, type, defaultSql = "") => {
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='orders' AND column_name='${col}'
+        ) THEN
+          EXECUTE 'ALTER TABLE orders ADD COLUMN ${col} ${type} ${defaultSql}';
+        END IF;
+      END $$;
+    `);
+  };
+  await maybeAdd("product_code", "TEXT");
+  await maybeAdd("garment_type", "TEXT");
+  await maybeAdd("product_title", "TEXT");
+  await maybeAdd("colour", "TEXT");
+  await maybeAdd("size", "TEXT");
+  await maybeAdd("status", "TEXT", "DEFAULT ''");
+  await maybeAdd("notes", "TEXT");
+  await maybeAdd("total", "TEXT");
+
+  // --- Files attached to orders ---
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS order_files (
+      id SERIAL PRIMARY KEY,
+      order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+      filename TEXT NOT NULL,
+      mimetype TEXT,
+      size INTEGER,
+      path TEXT NOT NULL,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
   `);
 }
 
+
 let mondayAccessToken = MONDAY_API_TOKEN || null;
 let boardCache = { data: null, expires: 0, inFlight: null };
 
 app.use(express.static(path.join(__dirname, "public")));
+
+app.use("/uploads", express.static(uploadRoot));
+
 
 // Simple status endpoint
 app.get("/api/status", (req, res) => {
@@ -534,6 +596,102 @@ app.put("/api/customers/:id", async (req, res) => {
   }
 });
 
+// List orders
+app.get("/api/orders", async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit || "50", 10), 200);
+  try {
+    const q = await pool.query(
+      `SELECT o.*,
+              c.business_name AS customer_name
+       FROM orders o
+       LEFT JOIN customers c ON c.id = o.customer_id
+       ORDER BY o.created_at DESC
+       LIMIT $1`,
+      [limit]
+    );
+    res.json(q.rows);
+  } catch (e) {
+    res.status(500).json({ error: "Failed to fetch orders" });
+  }
+});
+
+// Create order (multipart/form-data) + file uploads
+app.post("/api/orders", upload.array("files", 20), async (req, res) => {
+  try {
+    const {
+      customer_id,
+      product_code,
+      garment_type,
+      product_title,
+      colour,
+      size,
+      status,
+      notes
+    } = req.body;
+
+    if (!customer_id) return res.status(400).json({ error: "customer_id is required" });
+
+    const q = await pool.query(
+      `INSERT INTO orders
+       (customer_id, product_code, garment_type, product_title, colour, size, status, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       RETURNING id`,
+      [
+        parseInt(customer_id,10),
+        product_code || null,
+        garment_type || null,
+        product_title || null,
+        colour || null,
+        size || null,
+        status || 'Draft',
+        notes || null
+      ]
+    );
+    const orderId = q.rows[0].id;
+
+    // Save file rows
+    const files = req.files || [];
+    for (const f of files) {
+      await pool.query(
+        `INSERT INTO order_files (order_id, filename, mimetype, size, path)
+         VALUES ($1,$2,$3,$4,$5)`,
+        [orderId, f.filename, f.mimetype || null, f.size || null, `/uploads/${f.filename}`]
+      );
+    }
+
+    res.status(201).json({ id: orderId });
+  } catch (e) {
+    console.error("POST /api/orders failed:", e);
+    res.status(500).json({ error: "Failed to create order" });
+  }
+});
+
+// Get single order (with files)
+app.get("/api/orders/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
+  try {
+    const o = await pool.query(
+      `SELECT o.*, c.business_name AS customer_name
+       FROM orders o
+       LEFT JOIN customers c ON c.id = o.customer_id
+       WHERE o.id=$1`,
+      [id]
+    );
+    if (!o.rowCount) return res.status(404).json({ error: "Not found" });
+
+    const f = await pool.query(
+      `SELECT id, filename, mimetype, size, path, created_at
+       FROM order_files WHERE order_id=$1 ORDER BY created_at ASC`,
+      [id]
+    );
+    res.json({ order: o.rows[0], files: f.rows });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch order" });
+  }
+});
+
+
 // Previous orders for a customer (ready for Orders tab integration)
 app.get("/api/customers/:id/orders", async (req, res) => {
   const id = parseInt(req.params.id, 10);
@@ -554,6 +712,25 @@ app.get("/api/customers/:id/orders", async (req, res) => {
     res.json([]);
   }
 });
+
+app.get("/api/customers/search", async (req, res) => {
+  const q = (req.query.q || "").trim();
+  if (!q) return res.json([]);
+  try {
+    const r = await pool.query(
+      `SELECT id, business_name, contact_name, email
+       FROM customers
+       WHERE business_name ILIKE $1 OR contact_name ILIKE $1 OR email ILIKE $1
+       ORDER BY business_name ASC
+       LIMIT 20`,
+      [`%${q}%`]
+    );
+    res.json(r.rows);
+  } catch {
+    res.json([]);
+  }
+});
+
 
 app.listen(PORT, async () => {
   try { await initDb(); } catch (e) { console.error("DB init error", e); }

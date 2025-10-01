@@ -6,10 +6,10 @@
   <link rel="stylesheet" href="styles.css">
   <script src="script.js" defer></script>
   <script src="customers.js" defer></script>
+  <script src="orders.js" defer></script>
 </head>
 <body>
   <div class="app-container">
-    <!-- Sidebar -->
     <nav class="sidebar">
       <h2 class="sidebar-logo">Ultimate Hub</h2>
       <ul class="nav-tabs">
@@ -22,27 +22,123 @@
       </ul>
     </nav>
 
-    <!-- Main content -->
     <main class="main-content">
       <div id="tab-home" class="tab-content active">
         <h1>Home</h1>
         <p>Welcome to the dashboard.</p>
       </div>
 
+      <!-- ORDERS -->
       <div id="tab-orders" class="tab-content">
         <h1>Orders</h1>
-        <p>Orders content will go here.</p>
+
+        <div id="orders-root" class="grid-2">
+          <!-- Left: Orders list -->
+          <section class="card">
+            <div class="card-head">
+              <h2>Recent Orders</h2>
+            </div>
+            <div class="card-body">
+              <table id="orders-table" class="data-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Customer</th>
+                    <th>Code</th>
+                    <th>Product</th>
+                    <th>Colour/Size</th>
+                    <th>Created</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Right: Create Order form -->
+          <section class="card">
+            <div class="card-head">
+              <h2>Create Order</h2>
+            </div>
+            <div class="card-body">
+              <form id="order-form" class="form-grid">
+                <div class="form-row full">
+                  <label>Customer <span class="req">*</span></label>
+                  <div class="combo">
+                    <input id="order-customer" placeholder="Search customer…" autocomplete="off" />
+                    <button type="button" class="btn" id="add-customer-btn">Add Customer</button>
+                    <div id="order-customer-dd" class="dd"></div>
+                  </div>
+                  <div class="small muted">Start typing to search your customers, then click to select.</div>
+                </div>
+
+                <div class="form-row">
+                  <label>Product Code
+                    <input name="product_code" placeholder="e.g., RX401-FBK" />
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>Garment Type
+                    <input name="garment_type" placeholder="T-Shirt, Hoodie, etc." />
+                  </label>
+                </div>
+
+                <div class="form-row full">
+                  <label>Product Title
+                    <input name="product_title" placeholder="e.g., Heavyweight Oversized Tee" />
+                  </label>
+                </div>
+
+                <div class="form-row">
+                  <label>Colour
+                    <input name="colour" placeholder="e.g., Black" />
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>Size
+                    <input name="size" placeholder="e.g., XL" />
+                  </label>
+                </div>
+
+                <div class="form-row">
+                  <label>Status
+                    <select name="status">
+                      <option value="Draft">Draft</option>
+                      <option value="Confirmed">Confirmed</option>
+                      <option value="In Production">In Production</option>
+                      <option value="Completed">Completed</option>
+                      <option value="Shipped">Shipped</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div class="form-row full">
+                  <label>Notes
+                    <input name="notes" placeholder="Any special instructions…" />
+                  </label>
+                </div>
+
+                <div class="form-row full">
+                  <label>Upload Artwork / Visuals (multiple allowed)
+                    <input type="file" name="files" id="files" multiple />
+                  </label>
+                </div>
+
+                <div class="form-row full">
+                  <button class="btn primary" type="submit">Create Order</button>
+                </div>
+              </form>
+            </div>
+          </section>
+        </div>
       </div>
 
+      <!-- CUSTOMERS (as previously installed) -->
       <div id="tab-customers" class="tab-content">
         <h1>Customers</h1>
-
         <div id="customers-root" class="grid-2">
-          <!-- Left: List -->
           <section id="customers-list" class="card">
-            <div class="card-head">
-              <h2>All Customers</h2>
-            </div>
+            <div class="card-head"><h2>All Customers</h2></div>
             <div class="card-body">
               <table id="customers-table" class="data-table">
                 <thead>
@@ -59,11 +155,8 @@
             </div>
           </section>
 
-          <!-- Right: Add form -->
           <section id="customer-form-wrap" class="card">
-            <div class="card-head">
-              <h2>Add Customer</h2>
-            </div>
+            <div class="card-head"><h2>Add Customer</h2></div>
             <div class="card-body">
               <form id="customer-form" class="form-grid">
                 <div class="form-row full">
@@ -71,7 +164,6 @@
                     <input name="business_name" required />
                   </label>
                 </div>
-
                 <div class="form-row">
                   <label>Contact Name
                     <input name="contact_name" />
@@ -94,68 +186,20 @@
                 </div>
 
                 <div class="form-row full"><h3 class="subhead">Invoice Address</h3></div>
-                <div class="form-row full">
-                  <label>Line 1
-                    <input name="inv_line1" />
-                  </label>
-                </div>
-                <div class="form-row full">
-                  <label>Line 2
-                    <input name="inv_line2" />
-                  </label>
-                </div>
-                <div class="form-row">
-                  <label>City
-                    <input name="inv_city" />
-                  </label>
-                </div>
-                <div class="form-row">
-                  <label>Region/State
-                    <input name="inv_region" />
-                  </label>
-                </div>
-                <div class="form-row">
-                  <label>Postcode
-                    <input name="inv_postcode" />
-                  </label>
-                </div>
-                <div class="form-row">
-                  <label>Country
-                    <input name="inv_country" />
-                  </label>
-                </div>
+                <div class="form-row full"><label>Line 1<input name="inv_line1" /></label></div>
+                <div class="form-row full"><label>Line 2<input name="inv_line2" /></label></div>
+                <div class="form-row"><label>City<input name="inv_city" /></label></div>
+                <div class="form-row"><label>Region/State<input name="inv_region" /></label></div>
+                <div class="form-row"><label>Postcode<input name="inv_postcode" /></label></div>
+                <div class="form-row"><label>Country<input name="inv_country" /></label></div>
 
                 <div class="form-row full"><h3 class="subhead">Shipping Address</h3></div>
-                <div class="form-row full">
-                  <label>Line 1
-                    <input name="ship_line1" />
-                  </label>
-                </div>
-                <div class="form-row full">
-                  <label>Line 2
-                    <input name="ship_line2" />
-                  </label>
-                </div>
-                <div class="form-row">
-                  <label>City
-                    <input name="ship_city" />
-                  </label>
-                </div>
-                <div class="form-row">
-                  <label>Region/State
-                    <input name="ship_region" />
-                  </label>
-                </div>
-                <div class="form-row">
-                  <label>Postcode
-                    <input name="ship_postcode" />
-                  </label>
-                </div>
-                <div class="form-row">
-                  <label>Country
-                    <input name="ship_country" />
-                  </label>
-                </div>
+                <div class="form-row full"><label>Line 1<input name="ship_line1" /></label></div>
+                <div class="form-row full"><label>Line 2<input name="ship_line2" /></label></div>
+                <div class="form-row"><label>City<input name="ship_city" /></label></div>
+                <div class="form-row"><label>Region/State<input name="ship_region" /></label></div>
+                <div class="form-row"><label>Postcode<input name="ship_postcode" /></label></div>
+                <div class="form-row"><label>Country<input name="ship_country" /></label></div>
 
                 <div class="form-row full">
                   <button class="btn primary" type="submit">Save Customer</button>
@@ -164,7 +208,6 @@
             </div>
           </section>
 
-          <!-- Detail View (hidden until a customer is opened) -->
           <section id="customer-detail" class="card" style="display:none">
             <div class="card-head">
               <div>
@@ -177,25 +220,14 @@
             </div>
             <div class="card-body">
               <div class="grid-2">
-                <div>
-                  <h3 class="subhead">Invoice Address</h3>
-                  <p id="cd-invoice" class="address"></p>
-                </div>
-                <div>
-                  <h3 class="subhead">Shipping Address</h3>
-                  <p id="cd-shipping" class="address"></p>
-                </div>
+                <div><h3 class="subhead">Invoice Address</h3><p id="cd-invoice" class="address"></p></div>
+                <div><h3 class="subhead">Shipping Address</h3><p id="cd-shipping" class="address"></p></div>
               </div>
 
               <h3 class="subhead mt">Previous Orders</h3>
               <table id="customer-orders-table" class="data-table">
                 <thead>
-                  <tr>
-                    <th>Order</th>
-                    <th>Status</th>
-                    <th>Total</th>
-                    <th>Created</th>
-                  </tr>
+                  <tr><th>Order</th><th>Status</th><th>Total</th><th>Created</th></tr>
                 </thead>
                 <tbody></tbody>
               </table>
@@ -205,8 +237,7 @@
       </div>
 
       <div id="tab-stock" class="tab-content">
-        <h1>Stock</h1>
-        <p>Stock management content.</p>
+        <h1>Stock</h1><p>Stock management content.</p>
       </div>
 
       <div id="tab-labels" class="tab-content">
@@ -216,8 +247,7 @@
       </div>
 
       <div id="tab-shipping" class="tab-content">
-        <h1>Shipping</h1>
-        <p>Shipping tools will be shown here.</p>
+        <h1>Shipping</h1><p>Shipping tools will be shown here.</p>
       </div>
     </main>
   </div>

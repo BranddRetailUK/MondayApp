@@ -168,3 +168,25 @@ body{
 
 .btn.small{ padding:6px 10px; font-size:12px; }
 
+/* Orders: searchable customer selector */
+.combo{
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+.combo input{
+  width:100%; padding:8px 10px; border-radius:8px;
+  border:1px solid var(--border); background:#0b1017; color:#fff;
+}
+.combo .dd{
+  position:absolute; left:0; right:0; top:100%; margin-top:6px;
+  background:#0f131a; border:1px solid var(--border); border-radius:10px;
+  max-height:240px; overflow:auto; display:none; z-index:10;
+}
+.combo .dd.open{ display:block; }
+.dd-item{ padding:10px 12px; cursor:pointer; }
+.dd-item:hover{ background:#0b1017; }
+.dd-title{ font-weight:600; color:#fff; }
+.dd-sub{ font-size:12px; color:#9db0cc; margin-top:2px; }
