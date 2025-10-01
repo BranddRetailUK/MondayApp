@@ -40,6 +40,7 @@ const pool = new Pool({
 });
 
 async function initDb() {
+  // Scanner tables (existing)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS job_scans (
       id SERIAL PRIMARY KEY,
@@ -60,6 +61,59 @@ async function initDb() {
       new_status TEXT NOT NULL,
       scanned_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
+  `);
+
+  // --- Customers table (NEW)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS customers (
+      id SERIAL PRIMARY KEY,
+      business_name TEXT NOT NULL,
+      contact_name TEXT,
+      email TEXT NOT NULL,
+      phone TEXT,
+      mobile TEXT,
+
+      inv_line1 TEXT, inv_line2 TEXT, inv_city TEXT, inv_region TEXT, inv_postcode TEXT, inv_country TEXT,
+      ship_line1 TEXT, ship_line2 TEXT, ship_city TEXT, ship_region TEXT, ship_postcode TEXT, ship_country TEXT,
+
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+  // Lightweight trigger to auto-update updated_at (optional)
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'customers_touch_updated_at') THEN
+        CREATE OR REPLACE FUNCTION customers_touch_updated_at()
+        RETURNS TRIGGER AS $BODY$
+        BEGIN
+          NEW.updated_at = NOW();
+          RETURN NEW;
+        END; $BODY$ LANGUAGE plpgsql;
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger WHERE tgname = 'customers_set_updated_at'
+      ) THEN
+        CREATE TRIGGER customers_set_updated_at
+        BEFORE UPDATE ON customers
+        FOR EACH ROW
+        EXECUTE FUNCTION customers_touch_updated_at();
+      END IF;
+    END $$;
+  `);
+
+  // --- Optional: a stub orders table (only if you don't already have one)
+  // NOTE: Safe if it already exists; comment out if you have a richer schema elsewhere.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS orders (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+      order_number TEXT,
+      status TEXT,
+      total TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
   `);
 }
 
@@ -87,7 +141,7 @@ function signPayload(itemId, ts) {
   return crypto.createHmac("sha256", SCAN_SECRET).update(`${itemId}.${ts}`).digest("hex");
 }
 
-// --- Update Monday helper ---
+// --- Update Monday helper (existing)
 async function updateMondayItem(itemId, columnId, value) {
   const mutation = `
     mutation ChangeValue($board: ID!, $item: ID!, $col: String!, $val: JSON!) {
@@ -132,7 +186,7 @@ app.get("/callback", async (req, res) => {
   }
 });
 
-// --- Board data (unchanged behaviour) ---
+// --- Board data (existing)
 app.get("/api/board", async (req, res) => {
   if (!mondayAccessToken) return res.status(401).json({ error: "Not authenticated. Visit /auth first." });
   if (!BOARD_ID) return res.status(400).json({ error: "BOARD_ID is not set." });
@@ -238,11 +292,10 @@ app.get("/api/scan-url", (req, res) => {
   res.json({ url });
 });
 
-// --- NEW: compact scan-state map for the frontend ---
+// --- NEW: compact scan-state map (existing)
 app.get("/api/scan-states", async (_req, res) => {
   try {
     const q = await pool.query("SELECT item_id, scan_count, status FROM job_scans");
-    // return as { [itemId]: {scan_count, status} }
     const map = {};
     for (const r of q.rows) map[r.item_id] = { scan_count: r.scan_count, status: r.status };
     res.json({ ok: true, map });
@@ -381,7 +434,128 @@ app.get("/api/qr", async (req, res) => {
   }
 });
 
+/** ---------------------------
+ *       CUSTOMERS API
+ *  ---------------------------
+ */
+
+// List customers
+app.get("/api/customers", async (_req, res) => {
+  try {
+    const q = await pool.query(
+      `SELECT id, business_name, contact_name, email, phone, mobile
+       FROM customers
+       ORDER BY created_at DESC`
+    );
+    res.json(q.rows);
+  } catch (e) {
+    console.error("GET /api/customers error", e);
+    res.status(500).json({ error: "Failed to fetch customers" });
+  }
+});
+
+// Get single customer
+app.get("/api/customers/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
+  try {
+    const q = await pool.query(
+      `SELECT *
+       FROM customers
+       WHERE id = $1`,
+      [id]
+    );
+    if (!q.rowCount) return res.status(404).json({ error: "Not found" });
+    res.json(q.rows[0]);
+  } catch (e) {
+    console.error("GET /api/customers/:id error", e);
+    res.status(500).json({ error: "Failed to fetch customer" });
+  }
+});
+
+// Create customer
+app.post("/api/customers", async (req, res) => {
+  const b = req.body || {};
+  if (!b.business_name || !b.email) {
+    return res.status(400).json({ error: "business_name and email are required" });
+  }
+  try {
+    const q = await pool.query(
+      `INSERT INTO customers
+       (business_name, contact_name, email, phone, mobile,
+        inv_line1, inv_line2, inv_city, inv_region, inv_postcode, inv_country,
+        ship_line1, ship_line2, ship_city, ship_region, ship_postcode, ship_country)
+       VALUES
+       ($1,$2,$3,$4,$5,
+        $6,$7,$8,$9,$10,$11,
+        $12,$13,$14,$15,$16,$17)
+       RETURNING id`,
+      [
+        b.business_name, b.contact_name || null, b.email, b.phone || null, b.mobile || null,
+        b.inv_line1 || null, b.inv_line2 || null, b.inv_city || null, b.inv_region || null, b.inv_postcode || null, b.inv_country || null,
+        b.ship_line1 || null, b.ship_line2 || null, b.ship_city || null, b.ship_region || null, b.ship_postcode || null, b.ship_country || null
+      ]
+    );
+    res.status(201).json({ id: q.rows[0].id });
+  } catch (e) {
+    console.error("POST /api/customers error", e);
+    res.status(500).json({ error: "Failed to create customer" });
+  }
+});
+
+// Update customer (optional but handy)
+app.put("/api/customers/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
+  const b = req.body || {};
+  try {
+    await pool.query(
+      `UPDATE customers SET
+        business_name = COALESCE($1, business_name),
+        contact_name  = COALESCE($2, contact_name),
+        email         = COALESCE($3, email),
+        phone         = COALESCE($4, phone),
+        mobile        = COALESCE($5, mobile),
+        inv_line1=$6, inv_line2=$7, inv_city=$8, inv_region=$9, inv_postcode=$10, inv_country=$11,
+        ship_line1=$12, ship_line2=$13, ship_city=$14, ship_region=$15, ship_postcode=$16, ship_country=$17,
+        updated_at = NOW()
+       WHERE id = $18`,
+      [
+        b.business_name || null, b.contact_name || null, b.email || null, b.phone || null, b.mobile || null,
+        b.inv_line1 || null, b.inv_line2 || null, b.inv_city || null, b.inv_region || null, b.inv_postcode || null, b.inv_country || null,
+        b.ship_line1 || null, b.ship_line2 || null, b.ship_city || null, b.ship_region || null, b.ship_postcode || null, b.ship_country || null,
+        id
+      ]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("PUT /api/customers/:id error", e);
+    res.status(500).json({ error: "Failed to update customer" });
+  }
+});
+
+// Previous orders for a customer (ready for Orders tab integration)
+app.get("/api/customers/:id/orders", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
+  try {
+    const q = await pool.query(
+      `SELECT id, order_number, status, total, created_at
+       FROM orders
+       WHERE customer_id = $1
+       ORDER BY created_at DESC
+       LIMIT 100`,
+      [id]
+    );
+    res.json(q.rows);
+  } catch (e) {
+    // If there's no orders table or another issue, return an empty list gracefully
+    console.warn("GET /api/customers/:id/orders warning", e.message || e);
+    res.json([]);
+  }
+});
+
 app.listen(PORT, async () => {
-  try { await initDb(); } catch {}
+  try { await initDb(); } catch (e) { console.error("DB init error", e); }
   console.log(`Server running on port ${PORT}`);
 });

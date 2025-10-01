@@ -5,6 +5,7 @@
   <title>Ultimate Hub</title>
   <link rel="stylesheet" href="styles.css">
   <script src="script.js" defer></script>
+  <script src="customers.js" defer></script>
 </head>
 <body>
   <div class="app-container">
@@ -27,23 +28,193 @@
         <h1>Home</h1>
         <p>Welcome to the dashboard.</p>
       </div>
+
       <div id="tab-orders" class="tab-content">
         <h1>Orders</h1>
         <p>Orders content will go here.</p>
       </div>
+
       <div id="tab-customers" class="tab-content">
         <h1>Customers</h1>
-        <p>Customer information will go here.</p>
+
+        <div id="customers-root" class="grid-2">
+          <!-- Left: List -->
+          <section id="customers-list" class="card">
+            <div class="card-head">
+              <h2>All Customers</h2>
+            </div>
+            <div class="card-body">
+              <table id="customers-table" class="data-table">
+                <thead>
+                  <tr>
+                    <th>Business</th>
+                    <th>Contact</th>
+                    <th>Email</th>
+                    <th>Phone</th>
+                    <th class="w-90">Actions</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Right: Add form -->
+          <section id="customer-form-wrap" class="card">
+            <div class="card-head">
+              <h2>Add Customer</h2>
+            </div>
+            <div class="card-body">
+              <form id="customer-form" class="form-grid">
+                <div class="form-row full">
+                  <label>Business Name<span class="req">*</span>
+                    <input name="business_name" required />
+                  </label>
+                </div>
+
+                <div class="form-row">
+                  <label>Contact Name
+                    <input name="contact_name" />
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>Email<span class="req">*</span>
+                    <input type="email" name="email" required />
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>Phone
+                    <input name="phone" />
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>Mobile
+                    <input name="mobile" />
+                  </label>
+                </div>
+
+                <div class="form-row full"><h3 class="subhead">Invoice Address</h3></div>
+                <div class="form-row full">
+                  <label>Line 1
+                    <input name="inv_line1" />
+                  </label>
+                </div>
+                <div class="form-row full">
+                  <label>Line 2
+                    <input name="inv_line2" />
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>City
+                    <input name="inv_city" />
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>Region/State
+                    <input name="inv_region" />
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>Postcode
+                    <input name="inv_postcode" />
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>Country
+                    <input name="inv_country" />
+                  </label>
+                </div>
+
+                <div class="form-row full"><h3 class="subhead">Shipping Address</h3></div>
+                <div class="form-row full">
+                  <label>Line 1
+                    <input name="ship_line1" />
+                  </label>
+                </div>
+                <div class="form-row full">
+                  <label>Line 2
+                    <input name="ship_line2" />
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>City
+                    <input name="ship_city" />
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>Region/State
+                    <input name="ship_region" />
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>Postcode
+                    <input name="ship_postcode" />
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>Country
+                    <input name="ship_country" />
+                  </label>
+                </div>
+
+                <div class="form-row full">
+                  <button class="btn primary" type="submit">Save Customer</button>
+                </div>
+              </form>
+            </div>
+          </section>
+
+          <!-- Detail View (hidden until a customer is opened) -->
+          <section id="customer-detail" class="card" style="display:none">
+            <div class="card-head">
+              <div>
+                <h2 id="cd-name">Customer</h2>
+                <div class="muted small">Contact: <span id="cd-contact"></span> · <span id="cd-email"></span> · <span id="cd-phone"></span></div>
+              </div>
+              <div class="card-actions">
+                <button id="customer-back-btn" class="btn outline">Back to list</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="grid-2">
+                <div>
+                  <h3 class="subhead">Invoice Address</h3>
+                  <p id="cd-invoice" class="address"></p>
+                </div>
+                <div>
+                  <h3 class="subhead">Shipping Address</h3>
+                  <p id="cd-shipping" class="address"></p>
+                </div>
+              </div>
+
+              <h3 class="subhead mt">Previous Orders</h3>
+              <table id="customer-orders-table" class="data-table">
+                <thead>
+                  <tr>
+                    <th>Order</th>
+                    <th>Status</th>
+                    <th>Total</th>
+                    <th>Created</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
       </div>
+
       <div id="tab-stock" class="tab-content">
         <h1>Stock</h1>
         <p>Stock management content.</p>
       </div>
+
       <div id="tab-labels" class="tab-content">
         <h1>Labels</h1>
         <button id="loadBtn" onclick="loadBoard()">Update Board Info</button>
         <div id="board"></div>
       </div>
+
       <div id="tab-shipping" class="tab-content">
         <h1>Shipping</h1>
         <p>Shipping tools will be shown here.</p>
