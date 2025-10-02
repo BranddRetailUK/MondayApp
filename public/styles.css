@@ -219,3 +219,31 @@ body{
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* Header row styling */
+.line-grid.horizontal.header-row {
+  font-weight: 600;
+  color: #cfe0ff;
+  background: transparent;
+  border: none;
+  padding: 4px 12px;
+  margin-bottom: 6px;
+}
+.line-grid.horizontal.header-row .col {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+.line-grid.horizontal.header-row .col.actions {
+  justify-content: center;
+}
+
+/* Input rows (already exist, but remove label styles) */
+.line-grid.horizontal .col input {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #0f131a;
+  color: #fff;
+}
