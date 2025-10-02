@@ -72,32 +72,52 @@
                   <div class="small muted">Start typing to search your customers, then click to select.</div>
                 </div>
 
-                <div class="form-row">
-                  <label>Product Code
-                    <input name="product_code" placeholder="e.g., RX401-FBK" />
-                  </label>
-                </div>
-                <div class="form-row">
-                  <label>Garment Type
-                    <input name="garment_type" placeholder="T-Shirt, Hoodie, etc." />
-                  </label>
-                </div>
+                <!-- Products (multi-line) -->
+                <div class="form-row full"><h3 class="subhead">Products</h3></div>
 
-                <div class="form-row full">
-                  <label>Product Title
-                    <input name="product_title" placeholder="e.g., Heavyweight Oversized Tee" />
-                  </label>
-                </div>
+                <div id="order-lines">
+                  <!-- Line row template (hidden, cloned by JS) -->
+                  <div class="line-row line-template" style="display:none">
+                    <div class="line-grid">
+                      <div>
+                        <label>Product Code
+                          <input name="product_code" placeholder="e.g., RX401-FBK" />
+                        </label>
+                      </div>
+                      <div>
+                        <label>Garment Type
+                          <input name="garment_type" placeholder="T-Shirt, Hoodie, etc." />
+                        </label>
+                      </div>
+                      <div class="full">
+                        <label>Product Title
+                          <input name="product_title" placeholder="e.g., Heavyweight Oversized Tee" />
+                        </label>
+                      </div>
+                      <div>
+                        <label>Colour
+                          <input name="colour" placeholder="e.g., Black" />
+                        </label>
+                      </div>
+                      <div>
+                        <label>Size
+                          <input name="size" placeholder="e.g., XL" />
+                        </label>
+                      </div>
+                      <div class="qty">
+                        <label>Qty
+                          <input name="quantity" type="number" min="1" value="1" />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
 
-                <div class="form-row">
-                  <label>Colour
-                    <input name="colour" placeholder="e.g., Black" />
-                  </label>
-                </div>
-                <div class="form-row">
-                  <label>Size
-                    <input name="size" placeholder="e.g., XL" />
-                  </label>
+                  <!-- Lines will be inserted here by JS -->
+                  <div id="order-lines-body"></div>
+
+                  <div class="form-row full">
+                    <button type="button" id="add-line-btn" class="btn outline">+ Add line</button>
+                  </div>
                 </div>
 
                 <div class="form-row">
@@ -133,7 +153,7 @@
         </div>
       </div>
 
-      <!-- CUSTOMERS (as previously installed) -->
+      <!-- CUSTOMERS -->
       <div id="tab-customers" class="tab-content">
         <h1>Customers</h1>
         <div id="customers-root" class="grid-2">
@@ -237,7 +257,8 @@
       </div>
 
       <div id="tab-stock" class="tab-content">
-        <h1>Stock</h1><p>Stock management content.</p>
+        <h1>Stock</h1>
+        <p>Stock management content.</p>
       </div>
 
       <div id="tab-labels" class="tab-content">
@@ -247,7 +268,8 @@
       </div>
 
       <div id="tab-shipping" class="tab-content">
-        <h1>Shipping</h1><p>Shipping tools will be shown here.</p>
+        <h1>Shipping</h1>
+        <p>Shipping tools will be shown here.</p>
       </div>
     </main>
   </div>

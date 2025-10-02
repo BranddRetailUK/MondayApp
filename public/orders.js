@@ -11,9 +11,7 @@
     // Tab activation → refresh orders
     document.querySelectorAll(".nav-tabs li").forEach(t => {
       t.addEventListener("click", () => {
-        if (t.getAttribute("data-tab") === "orders") {
-          refreshOrders();
-        }
+        if (t.getAttribute("data-tab") === "orders") refreshOrders();
       });
     });
 
@@ -42,7 +40,6 @@
 
     // Add customer shortcut
     document.getElementById("add-customer-btn").addEventListener("click", () => {
-      // Jump to Customers tab and focus the form
       document.querySelector('.nav-tabs li[data-tab="customers"]').click();
       setTimeout(() => {
         const el = document.querySelector('#customer-form input[name="business_name"]');
@@ -56,15 +53,19 @@
         custDropdown.classList.remove("open");
       }
     });
+
+    // --- Items repeater ---
+    document.getElementById("add-line-btn").addEventListener("click", addLine);
+    // Add 3 default lines
+    addLine(); addLine(); addLine();
   });
 
+  // ----- Orders list -----
   async function refreshOrders() {
     try {
       const r = await fetch("/api/orders?limit=50", { cache: "no-store" });
       __orders = r.ok ? await r.json() : [];
-    } catch {
-      __orders = [];
-    }
+    } catch { __orders = []; }
     renderOrdersList();
   }
 
@@ -77,18 +78,28 @@
     }
     for (const o of __orders) {
       const tr = document.createElement("tr");
+      // Show first line's quick summary if present (comes from API)
+      const quick = o.first_item
+        ? `${esc(o.first_item.product_title || o.first_item.product_code || '')}`.trim()
+        : (esc(o.product_title || o.product_code || ""));
+
+      const colourSize = o.first_item
+        ? `${esc(o.first_item.colour || "-")} / ${esc(o.first_item.size || "-")}`
+        : `${esc(o.colour || "-")} / ${esc(o.size || "-")}`;
+
       tr.innerHTML = `
         <td>${esc(o.id)}</td>
         <td>${esc(o.customer_name || "-")}</td>
-        <td>${esc(o.product_code || "-")}</td>
-        <td>${esc(o.product_title || "-")}</td>
-        <td>${esc(o.colour || "-")} / ${esc(o.size || "-")}</td>
+        <td>${esc((o.first_item && o.first_item.product_code) || o.product_code || "-")}</td>
+        <td>${quick || "-"}</td>
+        <td>${colourSize}</td>
         <td>${o.created_at ? new Date(o.created_at).toLocaleString() : "-"}</td>
       `;
       tbody.appendChild(tr);
     }
   }
 
+  // ----- Customer search -----
   async function doCustomerSearch(q) {
     const dd = document.getElementById("order-customer-dd");
     dd.innerHTML = `<div class="dd-item muted">Searching…</div>`;
@@ -123,24 +134,85 @@
     }
   }
 
+  // ----- Items repeater helpers -----
+  function addLine() {
+    const tmpl = document.querySelector(".line-template");
+    const body = document.getElementById("order-lines-body");
+    const row = tmpl.cloneNode(true);
+    row.classList.remove("line-template");
+    row.style.display = "";
+
+    // Add a small remove button on each row (after cloning)
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn small";
+    btn.textContent = "Remove";
+    btn.style.marginTop = "6px";
+
+    const grid = row.querySelector(".line-grid");
+    const cell = document.createElement("div");
+    cell.className = "full";
+    cell.appendChild(btn);
+    grid.appendChild(cell);
+
+    btn.addEventListener("click", () => {
+      row.remove();
+    });
+
+    body.appendChild(row);
+  }
+
+  function readLines() {
+    const rows = Array.from(document.querySelectorAll("#order-lines-body .line-row"));
+    const items = [];
+    let lineNo = 1;
+
+    for (const r of rows) {
+      const get = (n) => r.querySelector(`input[name="${n}"]`)?.value.trim() || "";
+      const item = {
+        product_code: get("product_code"),
+        garment_type: get("garment_type"),
+        product_title: get("product_title"),
+        colour: get("colour"),
+        size: get("size"),
+        quantity: Math.max(1, parseInt(get("quantity") || "1", 10))
+      };
+      // Only push non-empty rows
+      if (item.product_code || item.product_title || item.colour || item.size) {
+        item.line_no = lineNo++;
+        items.push(item);
+      }
+    }
+    return items;
+  }
+
+  // ----- Submit -----
   async function onCreateOrder(e) {
     e.preventDefault();
     const form = e.currentTarget;
 
-    // Validate customer
     if (!__selectedCustomer || document.getElementById("order-customer").value.trim() !== __selectedCustomer.business_name) {
       return alert("Please select a customer from the dropdown.");
     }
 
+    const items = readLines();
+    if (!items.length) {
+      return alert("Please enter at least one product line.");
+    }
+
     const fd = new FormData();
     fd.append("customer_id", __selectedCustomer.id);
-    fd.append("product_code", form.product_code.value.trim());
-    fd.append("garment_type", form.garment_type.value.trim());
-    fd.append("product_title", form.product_title.value.trim());
-    fd.append("colour", form.colour.value.trim());
-    fd.append("size", form.size.value.trim());
     fd.append("status", form.status.value);
     fd.append("notes", form.notes.value.trim());
+    fd.append("items", JSON.stringify(items)); // ← send all items
+
+    // Also include first line fields for backward compatibility (ok if ignored server-side)
+    const f = items[0];
+    fd.append("product_code", f.product_code || "");
+    fd.append("garment_type", f.garment_type || "");
+    fd.append("product_title", f.product_title || "");
+    fd.append("colour", f.colour || "");
+    fd.append("size", f.size || "");
 
     const files = form.files.files;
     for (let i = 0; i < files.length; i++) {
@@ -148,19 +220,19 @@
     }
 
     try {
-      const r = await fetch("/api/orders", {
-        method: "POST",
-        body: fd
-      });
+      const r = await fetch("/api/orders", { method: "POST", body: fd });
       if (!r.ok) {
         const j = await r.json().catch(()=>({error:"Failed"}));
         return alert(j.error || "Failed to create order");
       }
-      // Reset form
       form.reset();
       __selectedCustomer = null;
       document.getElementById("order-customer").value = "";
       document.getElementById("order-customer-dd").classList.remove("open");
+
+      // Reset lines to 3 fresh rows
+      document.getElementById("order-lines-body").innerHTML = "";
+      addLine(); addLine(); addLine();
 
       await refreshOrders();
       alert("Order created successfully.");

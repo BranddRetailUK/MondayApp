@@ -190,3 +190,19 @@ body{
 .dd-item:hover{ background:#0b1017; }
 .dd-title{ font-weight:600; color:#fff; }
 .dd-sub{ font-size:12px; color:#9db0cc; margin-top:2px; }
+
+/* --- Order lines repeater --- */
+.line-grid{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:12px 14px;
+  padding:10px 12px;
+  border:1px solid var(--border);
+  border-radius:10px;
+  background:#0b1017;
+  margin-bottom:10px;
+}
+.line-grid .full{ grid-column: 1 / -1; }
+.line-grid .qty{ max-width:140px; }
+#line-lines-body, #order-lines-body { margin-top: 4px; }
+#add-line-btn{ width: 160px; }

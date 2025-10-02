@@ -56,6 +56,8 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 
+
+
 async function initDb() {
   // --- Scanner tables (existing) ---
   await pool.query(`
@@ -161,6 +163,21 @@ async function initDb() {
   await maybeAdd("notes", "TEXT");
   await maybeAdd("total", "TEXT");
 
+  // --- Order line items (AFTER orders) ---
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS order_items (
+      id SERIAL PRIMARY KEY,
+      order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+      line_no INTEGER,
+      product_code TEXT,
+      garment_type TEXT,
+      product_title TEXT,
+      colour TEXT,
+      size TEXT,
+      quantity INTEGER DEFAULT 1
+    );
+  `);
+
   // --- Files attached to orders ---
   await pool.query(`
     CREATE TABLE IF NOT EXISTS order_files (
@@ -174,6 +191,12 @@ async function initDb() {
     );
   `);
 }
+
+
+
+
+
+
 
 
 let mondayAccessToken = MONDAY_API_TOKEN || null;
@@ -485,6 +508,10 @@ app.post("/api/scanner", async (req, res) => {
   }
 });
 
+
+
+
+
 app.get("/api/qr", async (req, res) => {
   const data = req.query.data || "";
   try {
@@ -497,7 +524,7 @@ app.get("/api/qr", async (req, res) => {
 });
 
 /** ---------------------------
- *       CUSTOMERS API
+ *       CUSTOMERS + ORDERS API
  *  ---------------------------
  */
 
@@ -521,12 +548,7 @@ app.get("/api/customers/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
   try {
-    const q = await pool.query(
-      `SELECT *
-       FROM customers
-       WHERE id = $1`,
-      [id]
-    );
+    const q = await pool.query(`SELECT * FROM customers WHERE id = $1`, [id]);
     if (!q.rowCount) return res.status(404).json({ error: "Not found" });
     res.json(q.rows[0]);
   } catch (e) {
@@ -548,14 +570,15 @@ app.post("/api/customers", async (req, res) => {
         inv_line1, inv_line2, inv_city, inv_region, inv_postcode, inv_country,
         ship_line1, ship_line2, ship_city, ship_region, ship_postcode, ship_country)
        VALUES
-       ($1,$2,$3,$4,$5,
-        $6,$7,$8,$9,$10,$11,
-        $12,$13,$14,$15,$16,$17)
+       ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
        RETURNING id`,
       [
-        b.business_name, b.contact_name || null, b.email, b.phone || null, b.mobile || null,
-        b.inv_line1 || null, b.inv_line2 || null, b.inv_city || null, b.inv_region || null, b.inv_postcode || null, b.inv_country || null,
-        b.ship_line1 || null, b.ship_line2 || null, b.ship_city || null, b.ship_region || null, b.ship_postcode || null, b.ship_country || null
+        b.business_name, b.contact_name || null, b.email,
+        b.phone || null, b.mobile || null,
+        b.inv_line1 || null, b.inv_line2 || null, b.inv_city || null,
+        b.inv_region || null, b.inv_postcode || null, b.inv_country || null,
+        b.ship_line1 || null, b.ship_line2 || null, b.ship_city || null,
+        b.ship_region || null, b.ship_postcode || null, b.ship_country || null
       ]
     );
     res.status(201).json({ id: q.rows[0].id });
@@ -565,7 +588,7 @@ app.post("/api/customers", async (req, res) => {
   }
 });
 
-// Update customer (optional but handy)
+// Update customer
 app.put("/api/customers/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
@@ -583,9 +606,12 @@ app.put("/api/customers/:id", async (req, res) => {
         updated_at = NOW()
        WHERE id = $18`,
       [
-        b.business_name || null, b.contact_name || null, b.email || null, b.phone || null, b.mobile || null,
-        b.inv_line1 || null, b.inv_line2 || null, b.inv_city || null, b.inv_region || null, b.inv_postcode || null, b.inv_country || null,
-        b.ship_line1 || null, b.ship_line2 || null, b.ship_city || null, b.ship_region || null, b.ship_postcode || null, b.ship_country || null,
+        b.business_name || null, b.contact_name || null, b.email || null,
+        b.phone || null, b.mobile || null,
+        b.inv_line1 || null, b.inv_line2 || null, b.inv_city || null,
+        b.inv_region || null, b.inv_postcode || null, b.inv_country || null,
+        b.ship_line1 || null, b.ship_line2 || null, b.ship_city || null,
+        b.ship_region || null, b.ship_postcode || null, b.ship_country || null,
         id
       ]
     );
@@ -596,21 +622,43 @@ app.put("/api/customers/:id", async (req, res) => {
   }
 });
 
-// List orders
+// List orders with preview of first line item
 app.get("/api/orders", async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit || "50", 10), 200);
   try {
     const q = await pool.query(
-      `SELECT o.*,
-              c.business_name AS customer_name
+      `WITH first_items AS (
+         SELECT DISTINCT ON (oi.order_id)
+           oi.order_id, oi.product_code, oi.product_title, oi.colour, oi.size
+         FROM order_items oi
+         ORDER BY oi.order_id, COALESCE(oi.line_no, 999999)
+       )
+       SELECT o.*,
+              c.business_name AS customer_name,
+              fi.product_code AS fi_code,
+              fi.product_title AS fi_title,
+              fi.colour AS fi_colour,
+              fi.size AS fi_size
        FROM orders o
        LEFT JOIN customers c ON c.id = o.customer_id
+       LEFT JOIN first_items fi ON fi.order_id = o.id
        ORDER BY o.created_at DESC
        LIMIT $1`,
       [limit]
     );
-    res.json(q.rows);
+
+    const rows = q.rows.map(r => ({
+      ...r,
+      first_item: {
+        product_code: r.fi_code,
+        product_title: r.fi_title,
+        colour: r.fi_colour,
+        size: r.fi_size
+      }
+    }));
+    res.json(rows);
   } catch (e) {
+    console.error("GET /api/orders error", e);
     res.status(500).json({ error: "Failed to fetch orders" });
   }
 });
@@ -618,19 +666,30 @@ app.get("/api/orders", async (req, res) => {
 // Create order (multipart/form-data) + file uploads
 app.post("/api/orders", upload.array("files", 20), async (req, res) => {
   try {
-    const {
-      customer_id,
-      product_code,
-      garment_type,
-      product_title,
-      colour,
-      size,
-      status,
-      notes
-    } = req.body;
-
+    const { customer_id, status, notes } = req.body;
     if (!customer_id) return res.status(400).json({ error: "customer_id is required" });
 
+    let items = [];
+    try {
+      items = JSON.parse(req.body.items || "[]");
+      if (!Array.isArray(items)) items = [];
+    } catch { items = []; }
+
+    if (!items.length && (req.body.product_code || req.body.product_title || req.body.colour || req.body.size)) {
+      items = [{
+        line_no: 1,
+        product_code: req.body.product_code || null,
+        garment_type: req.body.garment_type || null,
+        product_title: req.body.product_title || null,
+        colour: req.body.colour || null,
+        size: req.body.size || null,
+        quantity: 1
+      }];
+    }
+
+    if (!items.length) return res.status(400).json({ error: "At least one order item is required" });
+
+    const first = items[0] || {};
     const q = await pool.query(
       `INSERT INTO orders
        (customer_id, product_code, garment_type, product_title, colour, size, status, notes)
@@ -638,18 +697,35 @@ app.post("/api/orders", upload.array("files", 20), async (req, res) => {
        RETURNING id`,
       [
         parseInt(customer_id,10),
-        product_code || null,
-        garment_type || null,
-        product_title || null,
-        colour || null,
-        size || null,
+        first.product_code || null,
+        first.garment_type || null,
+        first.product_title || null,
+        first.colour || null,
+        first.size || null,
         status || 'Draft',
         notes || null
       ]
     );
     const orderId = q.rows[0].id;
 
-    // Save file rows
+    for (const it of items) {
+      await pool.query(
+        `INSERT INTO order_items
+          (order_id, line_no, product_code, garment_type, product_title, colour, size, quantity)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [
+          orderId,
+          it.line_no || null,
+          it.product_code || null,
+          it.garment_type || null,
+          it.product_title || null,
+          it.colour || null,
+          it.size || null,
+          parseInt(it.quantity || 1, 10)
+        ]
+      );
+    }
+
     const files = req.files || [];
     for (const f of files) {
       await pool.query(
@@ -666,7 +742,28 @@ app.post("/api/orders", upload.array("files", 20), async (req, res) => {
   }
 });
 
-// Get single order (with files)
+// Previous orders for a specific customer
+app.get("/api/customers/:id/orders", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
+
+  try {
+    const q = await pool.query(
+      `SELECT id AS order_number, status, total, created_at
+       FROM orders
+       WHERE customer_id = $1
+       ORDER BY created_at DESC
+       LIMIT 100`,
+      [id]
+    );
+    res.json(q.rows);
+  } catch (e) {
+    console.error("GET /api/customers/:id/orders error", e);
+    res.status(500).json({ error: "Failed to fetch customer orders" });
+  }
+});
+
+// Get single order (with items and files)
 app.get("/api/orders/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
@@ -680,38 +777,28 @@ app.get("/api/orders/:id", async (req, res) => {
     );
     if (!o.rowCount) return res.status(404).json({ error: "Not found" });
 
-    const f = await pool.query(
-      `SELECT id, filename, mimetype, size, path, created_at
-       FROM order_files WHERE order_id=$1 ORDER BY created_at ASC`,
+    const items = await pool.query(
+      `SELECT id, line_no, product_code, garment_type, product_title, colour, size, quantity
+       FROM order_items
+       WHERE order_id=$1
+       ORDER BY COALESCE(line_no, 999999), id`,
       [id]
     );
-    res.json({ order: o.rows[0], files: f.rows });
-  } catch {
+    const files = await pool.query(
+      `SELECT id, filename, mimetype, size, path, created_at
+       FROM order_files
+       WHERE order_id=$1
+       ORDER BY created_at ASC`,
+      [id]
+    );
+
+    res.json({ order: o.rows[0], items: items.rows, files: files.rows });
+  } catch (e) {
+    console.error("GET /api/orders/:id error", e);
     res.status(500).json({ error: "Failed to fetch order" });
   }
 });
 
-
-// Previous orders for a customer (ready for Orders tab integration)
-app.get("/api/customers/:id/orders", async (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
-  try {
-    const q = await pool.query(
-      `SELECT id, order_number, status, total, created_at
-       FROM orders
-       WHERE customer_id = $1
-       ORDER BY created_at DESC
-       LIMIT 100`,
-      [id]
-    );
-    res.json(q.rows);
-  } catch (e) {
-    // If there's no orders table or another issue, return an empty list gracefully
-    console.warn("GET /api/customers/:id/orders warning", e.message || e);
-    res.json([]);
-  }
-});
 
 app.get("/api/customers/search", async (req, res) => {
   const q = (req.query.q || "").trim();
