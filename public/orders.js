@@ -4,8 +4,10 @@
   let __customerSearchTimer = null;
   let __selectedCustomer = null;
 
+  const ACTIVE_STATUSES = new Set(["Draft", "Confirmed", "In Production"]);
+
   document.addEventListener("DOMContentLoaded", () => {
-    const root = document.getElementById("orders-root");
+    const root = document.getElementById("orders-root") || document.getElementById("tab-orders");
     if (!root) return;
 
     // Tab activation → refresh orders
@@ -19,7 +21,29 @@
     const tab = document.getElementById("tab-orders");
     if (tab && tab.classList.contains("active")) refreshOrders();
 
-    // Wire form
+    // View elements
+    const listView = document.getElementById("orders-list-view");
+    const createView = document.getElementById("order-create-view");
+
+    // Open/Back buttons
+    const openCreateBtn = document.getElementById("open-create-order");
+    const backBtn = document.getElementById("order-create-back");
+    openCreateBtn.addEventListener("click", () => {
+      listView.style.display = "none";
+      createView.style.display = "";
+      // initial lines rendered when entering create view
+      ensureDefaultLines();
+      // focus customer field
+      setTimeout(() => document.getElementById("order-customer")?.focus(), 50);
+    });
+    backBtn.addEventListener("click", () => {
+      listView.style.display = "";
+      createView.style.display = "none";
+      resetCreateForm();
+      refreshOrders();
+    });
+
+    // Wire form submit (exists in create view)
     const form = document.getElementById("order-form");
     form.addEventListener("submit", onCreateOrder);
 
@@ -56,15 +80,23 @@
 
     // --- Items repeater ---
     document.getElementById("add-line-btn").addEventListener("click", addLine);
-    // Add 3 default lines
-    addLine(); addLine(); addLine();
+    ensureDefaultLines(); // in case the create view is already visible on load
   });
 
-  // ----- Orders list -----
+  function ensureDefaultLines() {
+    const body = document.getElementById("order-lines-body");
+    if (!body) return;
+    if (body.children.length === 0) {
+      addLine(); addLine(); addLine();
+    }
+  }
+
+  // ----- Orders list (active only) -----
   async function refreshOrders() {
     try {
-      const r = await fetch("/api/orders?limit=50", { cache: "no-store" });
-      __orders = r.ok ? await r.json() : [];
+      const r = await fetch("/api/orders?limit=200", { cache: "no-store" });
+      const all = r.ok ? await r.json() : [];
+      __orders = all.filter(o => ACTIVE_STATUSES.has(o.status || "Draft"));
     } catch { __orders = []; }
     renderOrdersList();
   }
@@ -73,12 +105,11 @@
     const tbody = document.querySelector("#orders-table tbody");
     tbody.innerHTML = "";
     if (!__orders.length) {
-      tbody.innerHTML = `<tr><td colspan="6" class="muted">No orders yet. Create one with the form on the right.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" class="muted">No active orders. Click “Create Order”.</td></tr>`;
       return;
     }
     for (const o of __orders) {
       const tr = document.createElement("tr");
-      // Show first line's quick summary if present (comes from API)
       const quick = o.first_item
         ? `${esc(o.first_item.product_title || o.first_item.product_code || '')}`.trim()
         : (esc(o.product_title || o.product_code || ""));
@@ -93,6 +124,7 @@
         <td>${esc((o.first_item && o.first_item.product_code) || o.product_code || "-")}</td>
         <td>${quick || "-"}</td>
         <td>${colourSize}</td>
+        <td>${esc(o.status || "-")}</td>
         <td>${o.created_at ? new Date(o.created_at).toLocaleString() : "-"}</td>
       `;
       tbody.appendChild(tr);
@@ -134,7 +166,7 @@
     }
   }
 
-  // ----- Items repeater helpers -----
+  // ----- Items repeater helpers (horizontal) -----
   function addLine() {
     const tmpl = document.querySelector(".line-template");
     const body = document.getElementById("order-lines-body");
@@ -142,22 +174,8 @@
     row.classList.remove("line-template");
     row.style.display = "";
 
-    // Add a small remove button on each row (after cloning)
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "btn small";
-    btn.textContent = "Remove";
-    btn.style.marginTop = "6px";
-
-    const grid = row.querySelector(".line-grid");
-    const cell = document.createElement("div");
-    cell.className = "full";
-    cell.appendChild(btn);
-    grid.appendChild(cell);
-
-    btn.addEventListener("click", () => {
-      row.remove();
-    });
+    // remove button
+    row.querySelector(".line-remove").addEventListener("click", () => row.remove());
 
     body.appendChild(row);
   }
@@ -166,7 +184,6 @@
     const rows = Array.from(document.querySelectorAll("#order-lines-body .line-row"));
     const items = [];
     let lineNo = 1;
-
     for (const r of rows) {
       const get = (n) => r.querySelector(`input[name="${n}"]`)?.value.trim() || "";
       const item = {
@@ -177,13 +194,21 @@
         size: get("size"),
         quantity: Math.max(1, parseInt(get("quantity") || "1", 10))
       };
-      // Only push non-empty rows
       if (item.product_code || item.product_title || item.colour || item.size) {
         item.line_no = lineNo++;
         items.push(item);
       }
     }
     return items;
+  }
+
+  function resetCreateForm() {
+    const form = document.getElementById("order-form");
+    form.reset();
+    __selectedCustomer = null;
+    document.getElementById("order-customer").value = "";
+    document.getElementById("order-customer-dd").classList.remove("open");
+    document.getElementById("order-lines-body").innerHTML = "";
   }
 
   // ----- Submit -----
@@ -196,17 +221,15 @@
     }
 
     const items = readLines();
-    if (!items.length) {
-      return alert("Please enter at least one product line.");
-    }
+    if (!items.length) return alert("Please enter at least one product line.");
 
     const fd = new FormData();
     fd.append("customer_id", __selectedCustomer.id);
     fd.append("status", form.status.value);
     fd.append("notes", form.notes.value.trim());
-    fd.append("items", JSON.stringify(items)); // ← send all items
+    fd.append("items", JSON.stringify(items));
 
-    // Also include first line fields for backward compatibility (ok if ignored server-side)
+    // Back-compat single-line fields (ok if ignored server-side)
     const f = items[0];
     fd.append("product_code", f.product_code || "");
     fd.append("garment_type", f.garment_type || "");
@@ -225,17 +248,13 @@
         const j = await r.json().catch(()=>({error:"Failed"}));
         return alert(j.error || "Failed to create order");
       }
-      form.reset();
-      __selectedCustomer = null;
-      document.getElementById("order-customer").value = "";
-      document.getElementById("order-customer-dd").classList.remove("open");
 
-      // Reset lines to 3 fresh rows
-      document.getElementById("order-lines-body").innerHTML = "";
-      addLine(); addLine(); addLine();
-
+      // Return to list, refresh
+      document.getElementById("orders-list-view").style.display = "";
+      document.getElementById("order-create-view").style.display = "none";
+      resetCreateForm();
       await refreshOrders();
-      alert("Order created successfully.");
+      alert("Order created.");
     } catch {
       alert("Failed to create order");
     }

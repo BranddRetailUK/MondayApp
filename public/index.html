@@ -17,12 +17,13 @@
         <li data-tab="orders">Orders</li>
         <li data-tab="customers">Customers</li>
         <li data-tab="stock">Stock</li>
-        <li data-tab="labels">Labels</li>
+        <li data-tab="labels"> Box Labels</li>
         <li data-tab="shipping">Shipping</li>
       </ul>
     </nav>
 
     <main class="main-content">
+      <!-- HOME -->
       <div id="tab-home" class="tab-content active">
         <h1>Home</h1>
         <p>Welcome to the dashboard.</p>
@@ -32,11 +33,14 @@
       <div id="tab-orders" class="tab-content">
         <h1>Orders</h1>
 
-        <div id="orders-root" class="grid-2">
-          <!-- Left: Orders list -->
+        <!-- LIST VIEW -->
+        <div id="orders-list-view">
           <section class="card">
             <div class="card-head">
-              <h2>Recent Orders</h2>
+              <h2>Active Orders</h2>
+              <div class="card-actions">
+                <button id="open-create-order" class="btn primary">Create Order</button>
+              </div>
             </div>
             <div class="card-body">
               <table id="orders-table" class="data-table">
@@ -47,110 +51,119 @@
                     <th>Code</th>
                     <th>Product</th>
                     <th>Colour/Size</th>
+                    <th>Status</th>
                     <th>Created</th>
                   </tr>
                 </thead>
                 <tbody></tbody>
               </table>
-            </div>
-          </section>
-
-          <!-- Right: Create Order form -->
-          <section class="card">
-            <div class="card-head">
-              <h2>Create Order</h2>
-            </div>
-            <div class="card-body">
-              <form id="order-form" class="form-grid">
-                <div class="form-row full">
-                  <label>Customer <span class="req">*</span></label>
-                  <div class="combo">
-                    <input id="order-customer" placeholder="Search customer…" autocomplete="off" />
-                    <button type="button" class="btn" id="add-customer-btn">Add Customer</button>
-                    <div id="order-customer-dd" class="dd"></div>
-                  </div>
-                  <div class="small muted">Start typing to search your customers, then click to select.</div>
-                </div>
-
-                <!-- Products (multi-line) -->
-                <div class="form-row full"><h3 class="subhead">Products</h3></div>
-
-                <div id="order-lines">
-                  <!-- Line row template (hidden, cloned by JS) -->
-                  <div class="line-row line-template" style="display:none">
-                    <div class="line-grid">
-                      <div>
-                        <label>Product Code
-                          <input name="product_code" placeholder="e.g., RX401-FBK" />
-                        </label>
-                      </div>
-                      <div>
-                        <label>Garment Type
-                          <input name="garment_type" placeholder="T-Shirt, Hoodie, etc." />
-                        </label>
-                      </div>
-                      <div class="full">
-                        <label>Product Title
-                          <input name="product_title" placeholder="e.g., Heavyweight Oversized Tee" />
-                        </label>
-                      </div>
-                      <div>
-                        <label>Colour
-                          <input name="colour" placeholder="e.g., Black" />
-                        </label>
-                      </div>
-                      <div>
-                        <label>Size
-                          <input name="size" placeholder="e.g., XL" />
-                        </label>
-                      </div>
-                      <div class="qty">
-                        <label>Qty
-                          <input name="quantity" type="number" min="1" value="1" />
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Lines will be inserted here by JS -->
-                  <div id="order-lines-body"></div>
-
-                  <div class="form-row full">
-                    <button type="button" id="add-line-btn" class="btn outline">+ Add line</button>
-                  </div>
-                </div>
-
-                <div class="form-row">
-                  <label>Status
-                    <select name="status">
-                      <option value="Draft">Draft</option>
-                      <option value="Confirmed">Confirmed</option>
-                      <option value="In Production">In Production</option>
-                      <option value="Completed">Completed</option>
-                      <option value="Shipped">Shipped</option>
-                    </select>
-                  </label>
-                </div>
-
-                <div class="form-row full">
-                  <label>Notes
-                    <input name="notes" placeholder="Any special instructions…" />
-                  </label>
-                </div>
-
-                <div class="form-row full">
-                  <label>Upload Artwork / Visuals (multiple allowed)
-                    <input type="file" name="files" id="files" multiple />
-                  </label>
-                </div>
-
-                <div class="form-row full">
-                  <button class="btn primary" type="submit">Create Order</button>
-                </div>
-              </form>
+              <div class="small muted" style="margin-top:8px;">
+                Showing Draft, Confirmed, and In Production only. Completed/Shipped are hidden.
+              </div>
             </div>
           </section>
         </div>
+
+        <!-- CREATE VIEW -->
+        <section id="order-create-view" class="card" style="display:none">
+          <div class="card-head">
+            <h2>Create Order</h2>
+            <div class="card-actions">
+              <button id="order-create-back" class="btn outline">Back to Orders</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <form id="order-form" class="form-grid">
+              <div class="form-row full">
+                <label>Customer <span class="req">*</span></label>
+                <div class="combo">
+                  <input id="order-customer" autocomplete="off" />
+                  <button type="button" class="btn" id="add-customer-btn">Add Customer</button>
+                  <div id="order-customer-dd" class="dd"></div>
+                </div>
+                <div class="small muted">Search your customers, then click to select.</div>
+              </div>
+
+              <div class="form-row full"><h3 class="subhead">Products</h3></div>
+
+              <div id="order-lines">
+                <!-- Template (hidden; cloned by JS) -->
+                <div class="line-row line-template" style="display:none">
+                  <div class="line-grid horizontal">
+                    <div class="col code">
+                      <label>Product Code
+                        <input name="product_code" />
+                      </label>
+                    </div>
+                    <div class="col type">
+                      <label>Garment Type
+                        <input name="garment_type" />
+                      </label>
+                    </div>
+                    <div class="col title">
+                      <label>Product Title
+                        <input name="product_title" />
+                      </label>
+                    </div>
+                    <div class="col colour">
+                      <label>Colour
+                        <input name="colour" />
+                      </label>
+                    </div>
+                    <div class="col size">
+                      <label>Size
+                        <input name="size" />
+                      </label>
+                    </div>
+                    <div class="col qty">
+                      <label>Qty
+                        <input name="quantity" type="number" min="1" value="1" />
+                      </label>
+                    </div>
+                    <div class="col actions">
+                      <button type="button" class="btn small line-remove">Remove</button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Lines inserted here -->
+                <div id="order-lines-body"></div>
+
+                <div class="form-row full">
+                  <button type="button" id="add-line-btn" class="btn outline">+ Add line</button>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <label>Status
+                  <select name="status">
+                    <option value="Draft">Draft</option>
+                    <option value="Confirmed">Confirmed</option>
+                    <option value="In Production">In Production</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Shipped">Shipped</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="form-row full">
+                <label>Notes
+                  <input name="notes" />
+                </label>
+              </div>
+
+              <div class="form-row full">
+                <label>Upload Artwork / Visuals (multiple)
+                  <input type="file" name="files" id="files" multiple />
+                </label>
+              </div>
+
+              <div class="form-row full">
+                <button class="btn primary" type="submit">Create Order</button>
+              </div>
+            </form>
+          </div>
+        </section>
       </div>
 
       <!-- CUSTOMERS -->
@@ -256,17 +269,20 @@
         </div>
       </div>
 
+      <!-- STOCK -->
       <div id="tab-stock" class="tab-content">
         <h1>Stock</h1>
         <p>Stock management content.</p>
       </div>
 
+      <!-- LABELS -->
       <div id="tab-labels" class="tab-content">
         <h1>Labels</h1>
         <button id="loadBtn" onclick="loadBoard()">Update Board Info</button>
         <div id="board"></div>
       </div>
 
+      <!-- SHIPPING -->
       <div id="tab-shipping" class="tab-content">
         <h1>Shipping</h1>
         <p>Shipping tools will be shown here.</p>

@@ -176,10 +176,7 @@ body{
   gap: 8px;
   align-items: center;
 }
-.combo input{
-  width:100%; padding:8px 10px; border-radius:8px;
-  border:1px solid var(--border); background:#0b1017; color:#fff;
-}
+
 .combo .dd{
   position:absolute; left:0; right:0; top:100%; margin-top:6px;
   background:#0f131a; border:1px solid var(--border); border-radius:10px;
@@ -192,17 +189,33 @@ body{
 .dd-sub{ font-size:12px; color:#9db0cc; margin-top:2px; }
 
 /* --- Order lines repeater --- */
-.line-grid{
+
+#order-lines-body { margin-top: 4px; }
+#add-line-btn{ width: 160px; }
+
+/* Orders list header button spacing */
+.card-head .card-actions .btn { white-space: nowrap; }
+.line-grid.horizontal{
   display:grid;
-  grid-template-columns: 1fr 1fr;
-  gap:12px 14px;
+  grid-template-columns: 140px 160px minmax(220px, 1fr) 120px 100px 90px 110px;
+  gap:10px;
+  align-items:end;
   padding:10px 12px;
   border:1px solid var(--border);
   border-radius:10px;
   background:#0b1017;
   margin-bottom:10px;
 }
-.line-grid .full{ grid-column: 1 / -1; }
-.line-grid .qty{ max-width:140px; }
-#line-lines-body, #order-lines-body { margin-top: 4px; }
-#add-line-btn{ width: 160px; }
+.line-grid.horizontal .col label{
+  display:block; font-weight:600; color:#cfe0ff;
+}
+/* (removed .line-grid.horizontal .col input – .form-grid input already handles inputs) */
+.line-grid.horizontal .actions{ display:flex; align-items:flex-end; }
+.line-grid.horizontal .actions .btn.small{ padding:6px 10px; font-size:12px; }
+
+/* Make it wrap on small screens */
+@media (max-width: 980px){
+  .line-grid.horizontal{
+    grid-template-columns: 1fr 1fr;
+  }
+}
