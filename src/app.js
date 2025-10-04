@@ -4,10 +4,13 @@ const app = express();
 
 const { PORT } = require('./config/env');
 const { getAccessToken } = require('./services/monday');
+const pencarrieRouter = require('./routes/pencarrie');
 
 // Static
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+app.use('/api/pencarrie', pencarrieRouter);
+
 
 // Health/status
 app.get('/api/status', (_req, res) => {
@@ -20,6 +23,7 @@ app.use(require('./routes/board'));
 app.use(require('./routes/scanner'));
 app.use(require('./routes/customers'));
 app.use(require('./routes/orders'));
+
 
 // 404
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));

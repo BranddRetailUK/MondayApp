@@ -7,6 +7,8 @@
   <script src="script.js" defer></script>
   <script src="customers.js" defer></script>
   <script src="orders.js" defer></script>
+  <script src="shipping.js" defer></script>
+
 </head>
 <body>
   <div class="app-container">
@@ -275,13 +277,65 @@
         <div id="board"></div>
       </div>
 
-      <!-- SHIPPING -->
-      <div id="tab-shipping" class="tab-content">
-        <h1>Shipping</h1>
-        <p>Shipping tools will be shown here.</p>
+  <!-- SHIPPING -->
+<div id="tab-shipping" class="tab-content">
+  <h1>Shipping</h1>
+
+  <!-- Stock Orders (PenCarrie) -->
+  <section class="card">
+    <div class="card-head">
+      <h2>Stock Orders (PenCarrie)</h2>
+      <div class="card-actions">
+        <button id="pc-refresh" class="btn outline">Refresh</button>
       </div>
-    </main>
-  </div>
+    </div>
+    <div class="card-body">
+      <table id="pc-orders-table" class="data-table">
+        <thead>
+          <tr>
+            <th class="w-120">PC Order</th>
+            <th>Status</th>
+            <th>Track &amp; Trace</th>
+            <th>Carrier</th>
+            <th>ETA</th>
+            <th class="w-120">Actions</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+
+      <div id="pc-order-detail" class="mt" style="display:none">
+        <h3 class="subhead">Order Detail</h3>
+        <div id="pc-order-header" class="small muted"></div>
+        <table id="pc-lines-table" class="data-table mt-8">
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th>Description</th>
+              <th>Qty</th>
+              <th>Line Ref (cref)</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Outbound Shipments (DPD) -->
+  <section class="card mt">
+    <div class="card-head">
+      <h2>Outbound Shipments (DPD)</h2>
+      <div class="card-actions">
+        <span class="badge">Coming Soon</span>
+      </div>
+    </div>
+    <div class="card-body">
+      <p class="muted">We’ll show booked consignments, tracking, and labels here.</p>
+    </div>
+  </section>
+</div>
+
 
   <!-- Hidden scanner input + pill -->
   <input id="scannerInput" type="text" autocomplete="off" inputmode="text"
