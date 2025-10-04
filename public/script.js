@@ -581,3 +581,180 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 });
+
+// ================== HOME DASH LOGIC ==================
+document.addEventListener('DOMContentLoaded', initHomeDash);
+
+function initHomeDash(){
+  // click-through to tabs
+  document.querySelectorAll('.home-card[data-goto-tab]').forEach(el=>{
+    el.addEventListener('click', () => {
+      const tab = el.getAttribute('data-goto-tab');
+      const btn = document.querySelector(`.nav-tabs li[data-tab="${tab}"]`);
+      if (btn) btn.click();
+    });
+  });
+
+  // initial load + gentle refresh interval
+  loadHomeMetrics();
+  // optional: refresh every 5 minutes
+  setInterval(loadHomeMetrics, 5 * 60 * 1000);
+}
+
+async function loadHomeMetrics(){
+  // parallel fetches; each card handles its own errors gracefully
+  await Promise.all([
+    hydratePenCarrieCard(),
+    hydrateLabelsCard(),
+    hydrateOrdersCard(),
+    hydrateCustomersCard()
+  ]);
+}
+
+// ---- Card: PenCarrie (Stock Orders) ----
+async function hydratePenCarrieCard(){
+  const elTotal = document.getElementById('hc-pc-total');
+  const elInProg = document.getElementById('hc-pc-inprog');
+  const elShipped = document.getElementById('hc-pc-shipped');
+  const elFoot = document.getElementById('hc-pc-foot');
+
+  try{
+    const r = await fetch('/api/pencarrie/orders', { cache:'no-store', credentials:'include' });
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const j = await r.json();
+    const orders = Array.isArray(j.orders) ? j.orders : [];
+
+    const total = orders.length;
+
+    // naive buckets: anything with "shipped" in status/trackntrace -> shipped
+    let shipped = 0;
+    for(const o of orders){
+      const s = (o.status || '').toLowerCase() + ' ' + (o.trackntrace || '').toLowerCase();
+      if (/\bshipped|despatched|dispatched|complete\b/.test(s)) shipped++;
+    }
+    const inprog = Math.max(total - shipped, 0);
+
+    bumpNumber(elTotal, total);
+    bumpNumber(elInProg, inprog);
+    bumpNumber(elShipped, shipped);
+
+    if (elFoot) elFoot.textContent = total ? 'Live orders synced from PenCarrie' : 'No live stock orders';
+  }catch(e){
+    if (elTotal) elTotal.textContent = '—';
+    if (elInProg) elInProg.textContent = '—';
+    if (elShipped) elShipped.textContent = '—';
+    if (elFoot) elFoot.textContent = 'Unable to fetch PenCarrie orders';
+  }
+}
+
+// ---- Card: Labels / Production (Board + Scan States) ----
+async function hydrateLabelsCard(){
+  const elItems = document.getElementById('hc-lb-items');
+  const elChecked = document.getElementById('hc-lb-checkedin');
+  const elInProd = document.getElementById('hc-lb-inprod');
+  const elDone = document.getElementById('hc-lb-done');
+
+  try{
+    const [resBoard, resScans] = await Promise.all([
+      fetch('/api/board', { cache:'no-store', credentials:'include' }),
+      fetch('/api/scan-states', { cache:'no-store', credentials:'include' })
+    ]);
+    if (!resBoard.ok) throw new Error('board '+resBoard.status);
+    const payload = await resBoard.json();
+    const scans = resScans.ok ? await resScans.json() : { map:{} };
+    const scanMap = scans.map || {};
+
+    const board = unwrapFirstBoard(payload) || {};
+    const groups = board.groups || [];
+    let items = 0;
+
+    // quick rollup across items
+    let c1=0, c2=0, c3=0;
+    for(const g of groups){
+      const its = (g.items_page && g.items_page.items) || [];
+      items += its.length;
+      for (const it of its){
+        const id = String(it.id);
+        const sc = scanMap[id]?.scan_count || 0;
+        if (sc >= 1) c1++;
+        if (sc >= 2) c2++;
+        if (sc >= 3) c3++;
+      }
+    }
+
+    bumpNumber(elItems, items);
+    bumpNumber(elChecked, c1);
+    bumpNumber(elInProd, c2);
+    bumpNumber(elDone, c3);
+  }catch(e){
+    if (elItems) elItems.textContent = '—';
+    if (elChecked) elChecked.textContent = '—';
+    if (elInProd) elInProd.textContent = '—';
+    if (elDone) elDone.textContent = '—';
+  }
+}
+
+// ---- Card: Orders (app orders) ----
+async function hydrateOrdersCard(){
+  const elOpen = document.getElementById('hc-odr-open');
+  const elInProd = document.getElementById('hc-odr-inprod');
+  const elDraft = document.getElementById('hc-odr-draft');
+
+  try{
+    const r = await fetch('/api/orders', { cache:'no-store', credentials:'include' });
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    const j = await r.json();
+    const rows = Array.isArray(j.orders) ? j.orders : (Array.isArray(j) ? j : []);
+    // Count buckets (fallback to reasonable field names)
+    let open=0, inprod=0, draft=0;
+    for(const o of rows){
+      const s = (o.status || o.order_status || '').toLowerCase();
+      if (/in production/.test(s)) inprod++;
+      if (/draft/.test(s)) draft++;
+      if (/confirmed|in production|draft/.test(s)) open++;
+    }
+    bumpNumber(elOpen, open || rows.length || 0);
+    bumpNumber(elInProd, inprod);
+    bumpNumber(elDraft, draft);
+  }catch(e){
+    if (elOpen) elOpen.textContent = '—';
+    if (elInProd) elInProd.textContent = '—';
+    if (elDraft) elDraft.textContent = '—';
+  }
+}
+
+// ---- Card: Customers ----
+async function hydrateCustomersCard(){
+  const elTotal = document.getElementById('hc-cus-total');
+  const elRecent = document.getElementById('hc-cus-recent');
+
+  try{
+    const r = await fetch('/api/customers', { cache:'no-store', credentials:'include' });
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    const j = await r.json();
+    const rows = Array.isArray(j.customers) ? j.customers : (Array.isArray(j) ? j : []);
+    const total = rows.length;
+
+    // simple “new this month” using created_at / created fields if present
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    let recent = 0;
+    for (const c of rows){
+      const d = c.created_at || c.created || c.updated_at || null;
+      if (d && String(d).startsWith(ym)) recent++;
+    }
+
+    bumpNumber(elTotal, total);
+    bumpNumber(elRecent, recent);
+  }catch(e){
+    if (elTotal) elTotal.textContent = '—';
+    if (elRecent) elRecent.textContent = '—';
+  }
+}
+
+// small helper for number "pop" animation + safe text set
+function bumpNumber(el, val){
+  if (!el) return;
+  el.textContent = typeof val === 'number' ? val.toLocaleString() : String(val);
+  el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
+}

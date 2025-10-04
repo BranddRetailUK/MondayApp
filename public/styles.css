@@ -267,3 +267,108 @@ body{
   text-decoration:none; color:#e2e8f0; font-size:13px;
 }
 .file-chip:hover { border-color:#3b4250; }
+
+
+/* ===== HOME DASH ===== */
+.home-grid{
+  display:grid;
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+  gap:16px;
+  margin-top:12px;
+}
+@media (max-width: 1100px){
+  .home-grid{ grid-template-columns: 1fr; }
+}
+
+.home-card{
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  padding:18px 16px;
+  border-radius:18px;
+  background:linear-gradient(135deg, #0f131a, #0b1017);
+  border:1px solid var(--border);
+  text-decoration:none;
+  color:var(--text);
+  transform:translateY(6px) scale(.985);
+  opacity:0;
+  animation: cardIn .45s ease forwards;
+  box-shadow: 0 10px 30px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.03);
+  overflow:hidden;
+}
+.home-card:hover{
+  transform: translateY(0) scale(1);
+  transition: transform .25s ease, filter .25s ease;
+  filter: saturate(1.1);
+}
+.home-card:nth-child(1){ animation-delay: .02s; }
+.home-card:nth-child(2){ animation-delay: .08s; }
+.home-card:nth-child(3){ animation-delay: .14s; }
+.home-card:nth-child(4){ animation-delay: .20s; }
+
+@keyframes cardIn{
+  to { transform:translateY(0) scale(1); opacity:1; }
+}
+
+.hc-top{
+  display:flex; align-items:center; justify-content:space-between;
+}
+.hc-title{ font-weight:900; font-size:16px; letter-spacing:.2px; }
+.hc-pill{
+  font-size:12px; background:#1e293b; color:#cfe0ff;
+  padding:4px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.06);
+}
+.hc-metric{
+  font-weight:900;
+  font-size:44px;
+  line-height:1;
+  letter-spacing:-.5px;
+  margin-top:2px;
+  text-shadow: 0 4px 18px rgba(0,0,0,.35);
+}
+.hc-sub{
+  display:flex; flex-wrap:wrap; gap:10px; align-items:center;
+  color:#cbd5e1; font-size:13px;
+}
+.hc-sub .dot{
+  display:inline-block; width:10px; height:10px; border-radius:999px; margin-right:6px;
+  background:#2a313d; vertical-align:middle;
+}
+.hc-sub .dot-purple{ background: var(--dot-purple); }
+.hc-sub .dot-gold{ background: var(--dot-gold); }
+.hc-sub .dot-green{ background: var(--dot-green); }
+
+.hc-foot{
+  margin-top:6px;
+  border-top:1px solid rgba(255,255,255,.06);
+  padding-top:8px;
+}
+.hc-foot-text{ color:var(--muted); font-size:12px; }
+
+/* Soft animated gradients per-card */
+.gradient-blue::before,
+.gradient-purple::before,
+.gradient-green::before,
+.gradient-orange::before{
+  content:"";
+  position:absolute; inset:-2px;
+  z-index:-1;
+  background: radial-gradient(1200px 300px at -10% 0%, rgba(32,139,255,.18), transparent 60%),
+              radial-gradient(900px 250px at 110% 100%, rgba(0,255,199,.14), transparent 60%);
+  filter: blur(0);
+}
+.gradient-blue{ background: linear-gradient(180deg, #0c1220, #0b1017); }
+.gradient-purple{ background: linear-gradient(180deg, #110f1a, #0b1017); }
+.gradient-green{ background: linear-gradient(180deg, #0f1a14, #0b1017); }
+.gradient-orange{ background: linear-gradient(180deg, #1a140f, #0b1017); }
+
+/* number “pop” on update */
+.pop{
+  animation: pop .35s cubic-bezier(.2, .8, .2, 1);
+}
+@keyframes pop{
+  0%{ transform:scale(.92); opacity:.8; }
+  70%{ transform:scale(1.04); opacity:1; }
+  100%{ transform:scale(1); }
+}

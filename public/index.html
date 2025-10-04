@@ -25,11 +25,79 @@
     </nav>
 
     <main class="main-content">
-      <!-- HOME -->
-      <div id="tab-home" class="tab-content active">
-        <h1>Home</h1>
-        <p>Welcome to the dashboard.</p>
+   <!-- HOME -->
+<div id="tab-home" class="tab-content active">
+  <h1>Home</h1>
+
+  <div class="home-grid">
+    <!-- Stock Orders (PenCarrie) -->
+    <a class="home-card home-card--pc gradient-blue" data-goto-tab="shipping" href="javascript:void(0)">
+      <div class="hc-top">
+        <span class="hc-title">Stock Orders (PenCarrie)</span>
+        <span class="hc-pill">Live</span>
       </div>
+      <div class="hc-metric" id="hc-pc-total">—</div>
+      <div class="hc-sub">
+        <span><strong id="hc-pc-inprog">—</strong> in progress</span>
+        <span>·</span>
+        <span><strong id="hc-pc-shipped">—</strong> shipped</span>
+      </div>
+      <div class="hc-foot">
+        <span class="hc-foot-text" id="hc-pc-foot">Fetching latest delivery statuses…</span>
+      </div>
+    </a>
+
+    <!-- Production / Labels (Monday board) -->
+    <a class="home-card home-card--labels gradient-purple" data-goto-tab="labels" href="javascript:void(0)">
+      <div class="hc-top">
+        <span class="hc-title">Production (Labels)</span>
+        <span class="hc-pill">Today</span>
+      </div>
+      <div class="hc-metric"><span id="hc-lb-items">—</span></div>
+      <div class="hc-sub">
+        <span><span class="dot dot-purple"></span> <strong id="hc-lb-checkedin">—</strong></span>
+        <span><span class="dot dot-gold"></span> <strong id="hc-lb-inprod">—</strong></span>
+        <span><span class="dot dot-green"></span> <strong id="hc-lb-done">—</strong></span>
+      </div>
+      <div class="hc-foot">
+        <span class="hc-foot-text">Scanned status across board items</span>
+      </div>
+    </a>
+
+    <!-- Orders -->
+    <a class="home-card home-card--orders gradient-green" data-goto-tab="orders" href="javascript:void(0)">
+      <div class="hc-top">
+        <span class="hc-title">Active Orders</span>
+        <span class="hc-pill">Open</span>
+      </div>
+      <div class="hc-metric" id="hc-odr-open">—</div>
+      <div class="hc-sub">
+        <span><strong id="hc-odr-inprod">—</strong> in production</span>
+        <span>·</span>
+        <span><strong id="hc-odr-draft">—</strong> drafts</span>
+      </div>
+      <div class="hc-foot">
+        <span class="hc-foot-text">Draft, Confirmed, In Production</span>
+      </div>
+    </a>
+
+    <!-- Customers -->
+    <a class="home-card home-card--customers gradient-orange" data-goto-tab="customers" href="javascript:void(0)">
+      <div class="hc-top">
+        <span class="hc-title">Customers</span>
+        <span class="hc-pill">Total</span>
+      </div>
+      <div class="hc-metric" id="hc-cus-total">—</div>
+      <div class="hc-sub">
+        <span><strong id="hc-cus-recent">—</strong> new this month</span>
+      </div>
+      <div class="hc-foot">
+        <span class="hc-foot-text">Manage contacts & addresses</span>
+      </div>
+    </a>
+  </div>
+</div>
+
 
       <!-- ORDERS -->
       <div id="tab-orders" class="tab-content">
