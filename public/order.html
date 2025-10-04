@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Order Detail</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="styles.css" />
+  <script defer src="order-detail.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <main class="main-content" style="max-width: 1100px; margin: 24px auto;">
+      <a href="./" class="btn outline">&larr; Back to Dashboard</a>
+
+      <section class="card mt">
+        <div class="card-head">
+          <h2 id="od-title">Order #</h2>
+          <div class="card-actions">
+            <span class="badge" id="od-status">Status</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="grid-2 gap">
+            <div>
+              <h3 class="subhead">Customer</h3>
+              <p class="tight"><strong id="c-name">—</strong></p>
+              <p class="muted small">
+                <span id="c-contact">—</span>
+                <span id="c-email" style="margin-left:8px;">—</span>
+                <span id="c-phone" style="margin-left:8px;">—</span>
+              </p>
+            </div>
+            <div>
+              <h3 class="subhead">Created</h3>
+              <p class="tight" id="od-created">—</p>
+              <h3 class="subhead mt-8">Notes</h3>
+              <p class="tight" id="od-notes">—</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card mt">
+        <div class="card-head">
+          <h2>Items</h2>
+        </div>
+        <div class="card-body">
+          <table class="data-table" id="items-table">
+            <thead>
+              <tr>
+                <th class="w-70">Line</th>
+                <th>Code</th>
+                <th>Garment</th>
+                <th>Title</th>
+                <th>Colour</th>
+                <th>Size</th>
+                <th class="w-80">Qty</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card mt" id="files-card" style="display:none">
+        <div class="card-head"><h2>Files</h2></div>
+        <div class="card-body">
+          <div id="files-list" class="files-grid"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

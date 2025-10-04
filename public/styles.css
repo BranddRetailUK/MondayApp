@@ -247,3 +247,23 @@ body{
   background: #0f131a;
   color: #fff;
 }
+
+
+.w-120 { width:120px; }
+.w-80  { width:80px; }
+.w-70  { width:70px; }
+
+.mt { margin-top: 16px; }
+.mt-8 { margin-top: 8px; }
+
+.badge {
+  display:inline-block; padding:4px 10px; border-radius:999px;
+  background:#1e293b; color:#e2e8f0; font-size:12px;
+}
+
+.files-grid { display:flex; flex-wrap:wrap; gap:8px; }
+.file-chip {
+  display:inline-block; padding:8px 10px; border:1px solid #2a2f3a; border-radius:10px;
+  text-decoration:none; color:#e2e8f0; font-size:13px;
+}
+.file-chip:hover { border-color:#3b4250; }

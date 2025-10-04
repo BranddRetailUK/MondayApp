@@ -101,38 +101,35 @@
     renderOrdersList();
   }
 
-  function renderOrdersList() {
-    const tbody = document.querySelector("#orders-table tbody");
-    tbody.innerHTML = "";
-    if (!__orders.length) {
-      tbody.innerHTML = `<tr><td colspan="7" class="muted">No active orders. Click “Create Order”.</td></tr>`;
-      return;
-    }
-    for (const o of __orders) {
-      const tr = document.createElement("tr");
-
-      // Prefer Job Title, fall back to first line product title/code
-      const quickFromLine = o.first_item
-        ? `${esc(o.first_item.product_title || o.first_item.product_code || '')}`.trim()
-        : (esc(o.product_title || o.product_code || ""));
-      const displayTitle = (o.job_title && o.job_title.trim()) ? o.job_title : quickFromLine || "-";
-
-      const colourSize = o.first_item
-        ? `${esc(o.first_item.colour || "-")} / ${esc(o.first_item.size || "-")}`
-        : `${esc(o.colour || "-")} / ${esc(o.size || "-")}`;
-
-      tr.innerHTML = `
-        <td>${esc(o.id)}</td>
-        <td>${esc(o.customer_name || "-")}</td>
-        <td>${esc(displayTitle)}</td>
-        <td>${esc((o.first_item && o.first_item.product_code) || o.product_code || "-")}</td>
-        <td>${colourSize}</td>
-        <td>${esc(o.status || "-")}</td>
-        <td>${o.created_at ? new Date(o.created_at).toLocaleString() : "-"}</td>
-      `;
-      tbody.appendChild(tr);
-    }
+function renderOrdersList() {
+  const tbody = document.querySelector("#orders-table tbody");
+  tbody.innerHTML = "";
+  if (!__orders.length) {
+    tbody.innerHTML = `<tr><td colspan="6" class="muted">No active orders. Click “Create Order”.</td></tr>`;
+    return;
   }
+  for (const o of __orders) {
+    const tr = document.createElement("tr");
+
+    const quickFromLine = o.first_item
+      ? `${esc(o.first_item.product_title || o.first_item.product_code || '')}`.trim()
+      : (esc(o.product_title || o.product_code || ""));
+    const displayTitle = (o.job_title && o.job_title.trim()) ? o.job_title : quickFromLine || "-";
+
+    tr.innerHTML = `
+      <td>${esc(o.id)}</td>
+      <td>${esc(o.customer_name || "-")}</td>
+      <td>${esc(displayTitle)}</td>
+      <td>${esc(o.status || "-")}</td>
+      <td>${o.created_at ? new Date(o.created_at).toLocaleString() : "-"}</td>
+      <td>
+        <a class="btn small" href="order.html?id=${encodeURIComponent(o.id)}">View</a>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
 
   // ----- Customer search -----
   async function doCustomerSearch(q) {
