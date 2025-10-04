@@ -110,9 +110,12 @@
     }
     for (const o of __orders) {
       const tr = document.createElement("tr");
-      const quick = o.first_item
+
+      // Prefer Job Title, fall back to first line product title/code
+      const quickFromLine = o.first_item
         ? `${esc(o.first_item.product_title || o.first_item.product_code || '')}`.trim()
         : (esc(o.product_title || o.product_code || ""));
+      const displayTitle = (o.job_title && o.job_title.trim()) ? o.job_title : quickFromLine || "-";
 
       const colourSize = o.first_item
         ? `${esc(o.first_item.colour || "-")} / ${esc(o.first_item.size || "-")}`
@@ -121,8 +124,8 @@
       tr.innerHTML = `
         <td>${esc(o.id)}</td>
         <td>${esc(o.customer_name || "-")}</td>
+        <td>${esc(displayTitle)}</td>
         <td>${esc((o.first_item && o.first_item.product_code) || o.product_code || "-")}</td>
-        <td>${quick || "-"}</td>
         <td>${colourSize}</td>
         <td>${esc(o.status || "-")}</td>
         <td>${o.created_at ? new Date(o.created_at).toLocaleString() : "-"}</td>
@@ -225,9 +228,10 @@
 
     const fd = new FormData();
     fd.append("customer_id", __selectedCustomer.id);
+    fd.append("job_title", form.job_title.value.trim()); // NEW
     fd.append("status", form.status.value);
     fd.append("notes", form.notes.value.trim());
-    fd.append("items", JSON.stringify(items));
+    fd.append("items", JSON.stringify(items)); // sends ALL lines
 
     // Back-compat single-line fields (ok if ignored server-side)
     const f = items[0];

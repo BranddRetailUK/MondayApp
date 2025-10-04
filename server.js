@@ -8,7 +8,6 @@ const { Pool } = require("pg");
 const multer = require("multer");
 const fs = require("fs");
 
-
 dotenv.config();
 
 const app = express();
@@ -54,9 +53,6 @@ const storage = multer.diskStorage({
   }
 });
 const upload = multer({ storage });
-
-
-
 
 async function initDb() {
   // --- Scanner tables (existing) ---
@@ -123,11 +119,12 @@ async function initDb() {
     END $$;
   `);
 
-  // --- Orders table (robust; idempotent) ---
+  // --- Orders table (ensure columns) ---
   await pool.query(`
     CREATE TABLE IF NOT EXISTS orders (
       id SERIAL PRIMARY KEY,
       customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+      job_title TEXT,
       product_code TEXT,
       garment_type TEXT,
       product_title TEXT,
@@ -140,7 +137,7 @@ async function initDb() {
     );
   `);
 
-  // Ensure columns exist if an older minimal "orders" table was present
+  // Ensure columns exist when upgrading older table
   const maybeAdd = async (col, type, defaultSql = "") => {
     await pool.query(`
       DO $$
@@ -154,6 +151,7 @@ async function initDb() {
       END $$;
     `);
   };
+  await maybeAdd("job_title", "TEXT");          // NEW
   await maybeAdd("product_code", "TEXT");
   await maybeAdd("garment_type", "TEXT");
   await maybeAdd("product_title", "TEXT");
@@ -192,20 +190,11 @@ async function initDb() {
   `);
 }
 
-
-
-
-
-
-
-
 let mondayAccessToken = MONDAY_API_TOKEN || null;
 let boardCache = { data: null, expires: 0, inFlight: null };
 
 app.use(express.static(path.join(__dirname, "public")));
-
 app.use("/uploads", express.static(uploadRoot));
-
 
 // Simple status endpoint
 app.get("/api/status", (req, res) => {
@@ -252,7 +241,6 @@ async function updateMondayItem(itemId, columnId, value) {
 }
 
 app.get("/auth", (req, res) => res.redirect(buildAuthorizeUrl()));
-
 app.get("/callback", async (req, res) => {
   const { code, error, error_description } = req.query;
   if (error) return res.status(400).send(`OAuth error: ${error_description || error}`);
@@ -508,10 +496,6 @@ app.post("/api/scanner", async (req, res) => {
   }
 });
 
-
-
-
-
 app.get("/api/qr", async (req, res) => {
   const data = req.query.data || "";
   try {
@@ -666,7 +650,7 @@ app.get("/api/orders", async (req, res) => {
 // Create order (multipart/form-data) + file uploads
 app.post("/api/orders", upload.array("files", 20), async (req, res) => {
   try {
-    const { customer_id, status, notes } = req.body;
+    const { customer_id, job_title, status, notes } = req.body;
     if (!customer_id) return res.status(400).json({ error: "customer_id is required" });
 
     let items = [];
@@ -692,11 +676,12 @@ app.post("/api/orders", upload.array("files", 20), async (req, res) => {
     const first = items[0] || {};
     const q = await pool.query(
       `INSERT INTO orders
-       (customer_id, product_code, garment_type, product_title, colour, size, status, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       (customer_id, job_title, product_code, garment_type, product_title, colour, size, status, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        RETURNING id`,
       [
         parseInt(customer_id,10),
+        job_title || null,               // NEW
         first.product_code || null,
         first.garment_type || null,
         first.product_title || null,
@@ -708,6 +693,7 @@ app.post("/api/orders", upload.array("files", 20), async (req, res) => {
     );
     const orderId = q.rows[0].id;
 
+    // Insert ALL items
     for (const it of items) {
       await pool.query(
         `INSERT INTO order_items
@@ -799,7 +785,6 @@ app.get("/api/orders/:id", async (req, res) => {
   }
 });
 
-
 app.get("/api/customers/search", async (req, res) => {
   const q = (req.query.q || "").trim();
   if (!q) return res.json([]);
@@ -817,7 +802,6 @@ app.get("/api/customers/search", async (req, res) => {
     res.json([]);
   }
 });
-
 
 app.listen(PORT, async () => {
   try { await initDb(); } catch (e) { console.error("DB init error", e); }

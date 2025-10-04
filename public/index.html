@@ -48,8 +48,8 @@
                   <tr>
                     <th>ID</th>
                     <th>Customer</th>
+                    <th>Title</th><!-- changed from Product -->
                     <th>Code</th>
-                    <th>Product</th>
                     <th>Colour/Size</th>
                     <th>Status</th>
                     <th>Created</th>
@@ -84,75 +84,81 @@
                 <div class="small muted">Search your customers, then click to select.</div>
               </div>
 
+              <!-- NEW: Job Title -->
+              <div class="form-row full">
+                <label>Job Title
+                  <input name="job_title" id="order-job-title" placeholder="e.g. Hoodies for Freshers Week" />
+                </label>
+              </div>
+
               <div class="form-row full"><h3 class="subhead">Products</h3></div>
 
               <div id="order-lines">
-<!-- Header row (shown once) -->
-<div class="line-grid horizontal header-row">
-  <div class="col code">Product Code</div>
-  <div class="col type">Garment Type</div>
-  <div class="col title">Product Title</div>
-  <div class="col colour">Colour</div>
-  <div class="col size">Size</div>
-  <div class="col qty">Qty</div>
-  <div class="col actions">Actions</div>
-</div>
+                <!-- Header row (shown once) -->
+                <div class="line-grid horizontal header-row">
+                  <div class="col code">Product Code</div>
+                  <div class="col type">Garment Type</div>
+                  <div class="col title">Product Title</div>
+                  <div class="col colour">Colour</div>
+                  <div class="col size">Size</div>
+                  <div class="col qty">Qty</div>
+                  <div class="col actions">Actions</div>
+                </div>
 
-<!-- Template (hidden; cloned by JS) -->
-<div class="line-row line-template" style="display:none">
-  <div class="line-grid horizontal">
-    <div class="col code"><input name="product_code" /></div>
-    <div class="col type"><input name="garment_type" /></div>
-    <div class="col title"><input name="product_title" /></div>
-    <div class="col colour"><input name="colour" /></div>
-    <div class="col size"><input name="size" /></div>
-    <div class="col qty"><input name="quantity" type="number" min="1" value="1" /></div>
-    <div class="col actions">
-      <button type="button" class="btn small line-remove">Remove</button>
-    </div>
-  </div>
-</div>
+                <!-- Template (hidden; cloned by JS) -->
+                <div class="line-row line-template" style="display:none">
+                  <div class="line-grid horizontal">
+                    <div class="col code"><input name="product_code" /></div>
+                    <div class="col type"><input name="garment_type" /></div>
+                    <div class="col title"><input name="product_title" /></div>
+                    <div class="col colour"><input name="colour" /></div>
+                    <div class="col size"><input name="size" /></div>
+                    <div class="col qty"><input name="quantity" type="number" min="1" value="1" /></div>
+                    <div class="col actions">
+                      <button type="button" class="btn small line-remove">Remove</button>
+                    </div>
+                  </div>
+                </div>
 
-<!-- Lines inserted here -->
-<div id="order-lines-body"></div>
+                <!-- Lines inserted here -->
+                <div id="order-lines-body"></div>
 
-<div class="form-row full">
-  <button type="button" id="add-line-btn" class="btn outline">+ Add line</button>
-</div>
-</div>
+                <div class="form-row full">
+                  <button type="button" id="add-line-btn" class="btn outline">+ Add line</button>
+                </div>
+              </div>
 
-<div class="form-row">
-  <label>Status
-    <select name="status">
-      <option value="Draft">Draft</option>
-      <option value="Confirmed">Confirmed</option>
-      <option value="In Production">In Production</option>
-      <option value="Completed">Completed</option>
-      <option value="Shipped">Shipped</option>
-    </select>
-  </label>
-</div>
+              <div class="form-row">
+                <label>Status
+                  <select name="status">
+                    <option value="Draft">Draft</option>
+                    <option value="Confirmed">Confirmed</option>
+                    <option value="In Production">In Production</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Shipped">Shipped</option>
+                  </select>
+                </label>
+              </div>
 
-<div class="form-row full">
-  <label>Notes
-    <input name="notes" />
-  </label>
-</div>
+              <div class="form-row full">
+                <label>Notes
+                  <input name="notes" />
+                </label>
+              </div>
 
-<div class="form-row full">
-  <label>Upload Artwork / Visuals (multiple)
-    <input type="file" name="files" id="files" multiple />
-  </label>
-</div>
+              <div class="form-row full">
+                <label>Upload Artwork / Visuals (multiple)
+                  <input type="file" name="files" id="files" multiple />
+                </label>
+              </div>
 
-<div class="form-row full">
-  <button class="btn primary" type="submit">Create Order</button>
-</div>
-</form>
-</div>
-</section>
-</div>
-
+              <div class="form-row full">
+                <button class="btn primary" type="submit">Create Order</button>
+              </div>
+            </form>
+          </div>
+        </section>
+      </div>
 
       <!-- CUSTOMERS -->
       <div id="tab-customers" class="tab-content">
