@@ -372,3 +372,10 @@ body{
   70%{ transform:scale(1.04); opacity:1; }
   100%{ transform:scale(1); }
 }
+
+
+/* Optional: tiny helpers if you don't use Tailwind */
+.tab-panel .btn { padding: 6px 10px; border-radius: 8px; background:#5b5bff; color:#fff; }
+.tab-panel .input { padding: 6px 10px; border-radius: 8px; background:#111; color:#eee; border:1px solid #333; }
+.mdb-row .chev { width: 1em; display:inline-block; }
+

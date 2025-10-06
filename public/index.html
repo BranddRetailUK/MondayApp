@@ -8,7 +8,14 @@
   <script src="customers.js" defer></script>
   <script src="orders.js" defer></script>
   <script src="shipping.js" defer></script>
-
+  <!-- MDB Jobs tab logic -->
+  <script>
+    /* Optional: set this later to your deployed Python URL, e.g.:
+       window.MDB_API_BASE = "https://mdb-service.yourdomain.com";
+       Defaults to http://localhost:5005 in mdb-jobs.js if not set. */
+    window.MDB_API_BASE = window.MDB_API_BASE || "";
+  </script>
+  <script src="js/mdb-jobs.js" defer></script>
 </head>
 <body>
   <div class="app-container">
@@ -21,7 +28,7 @@
         <li data-tab="stock">Stock</li>
         <li data-tab="labels"> Box Labels</li>
         <li data-tab="shipping">Shipping</li>
-        <li><a href="#tab-mdb-jobs" class="tab-link">MDB Jobs</a></li>
+        <li data-tab="mdb-jobs">MDB Jobs</li>
       </ul>
     </nav>
 
@@ -405,7 +412,9 @@
   </section>
 </div>
 
-<section id="tab-mdb-jobs" class="tab-panel" style="display:none">
+<!-- MDB JOBS -->
+<section id="tab-mdb-jobs" class="tab-content">
+  <h1>MDB Jobs</h1>
   <div class="flex items-center gap-2 mb-3">
     <input id="mdb-search" class="input" placeholder="Search by Order No, Customer, Title, Type…" />
     <button id="mdb-search-btn" class="btn">Search</button>
