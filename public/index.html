@@ -21,6 +21,7 @@
         <li data-tab="stock">Stock</li>
         <li data-tab="labels"> Box Labels</li>
         <li data-tab="shipping">Shipping</li>
+        <li><a href="#tab-mdb-jobs" class="tab-link">MDB Jobs</a></li>
       </ul>
     </nav>
 
@@ -403,6 +404,17 @@
     </div>
   </section>
 </div>
+
+<section id="tab-mdb-jobs" class="tab-panel" style="display:none">
+  <div class="flex items-center gap-2 mb-3">
+    <input id="mdb-search" class="input" placeholder="Search by Order No, Customer, Title, Type…" />
+    <button id="mdb-search-btn" class="btn">Search</button>
+  </div>
+
+  <div id="mdb-jobs-table" class="table w-full">
+    <!-- filled by JS -->
+  </div>
+</section>
 
 
   <!-- Hidden scanner input + pill -->
