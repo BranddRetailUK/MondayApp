@@ -1,20 +1,42 @@
+// src/routes/scanner.js
 const express = require('express');
-const axios = require('axios');
-const QRCode = require('qrcode');
 const router = express.Router();
 
 const { signPayload, advanceScan } = require('../services/scanner');
 const { getAccessToken, changeColumnValue } = require('../services/monday');
+
+// Use the same config vars you already have wired
 const {
-  BOARD_ID, STATUS_COLUMN_ID, CHECKED_IN_COLUMN_ID
+  BOARD_ID,              // not directly used here but preserved for consistency
+  STATUS_COLUMN_ID,      // e.g. "label__1"
+  CHECKED_IN_COLUMN_ID,  // e.g. "checkbox__1"
 } = require('../config/env');
 
-// Compact states map
+// Align to your KNOWN-WORKING label envs (fall back to sane defaults)
+const STEP2_STATUS_LABEL = process.env.STEP2_STATUS_LABEL || 'IN PRODUCTION';
+const STEP3_STATUS_LABEL = process.env.STEP3_STATUS_LABEL || 'COMPLETED';
+
+// ———————————————————————————————————————————————————————————
+// Utility: apply Monday status by LABEL (using your existing wrapper)
+// ———————————————————————————————————————————————————————————
+async function setStatusByLabel(itemId, label) {
+  // Monday expects a JSON string payload for column value mutations
+  return changeColumnValue(
+    itemId,
+    STATUS_COLUMN_ID,
+    JSON.stringify({ label })
+  );
+}
+
+// ———————————————————————————————————————————————————————————
+// (Optional) compact states map route (unchanged from your setup)
+// ———————————————————————————————————————————————————————————
 router.get('/api/scan-states', async (_req, res) => {
   const pool = require('../db/pool');
   try {
     const q = await pool.query('SELECT item_id, scan_count, status FROM job_scans');
-    const map = {}; for (const r of q.rows) map[r.item_id] = { scan_count: r.scan_count, status: r.status };
+    const map = {};
+    for (const r of q.rows) map[r.item_id] = { scan_count: r.scan_count, status: r.status };
     res.json({ ok: true, map });
   } catch (e) {
     console.error('scan-states error:', e);
@@ -22,34 +44,36 @@ router.get('/api/scan-states', async (_req, res) => {
   }
 });
 
-router.get('/api/scan-url', (req, res) => {
-  const { itemId } = req.query;
-  if (!itemId) return res.status(400).json({ error: 'itemId required' });
-  const ts = Date.now().toString();
-  const sig = signPayload(itemId, ts);
-  const base = `https://${req.get('host')}`;
-  const url = `${base}/scan?i=${encodeURIComponent(itemId)}&ts=${ts}&sig=${sig}`;
-  res.json({ url });
-});
-
+// ———————————————————————————————————————————————————————————
+// GET /scan — used by QR URL; records scan and pushes updates
+// ———————————————————————————————————————————————————————————
 router.get('/scan', async (req, res) => {
   const { i, ts, sig, json } = req.query;
   if (json) res.set('Access-Control-Allow-Origin', '*');
   if (!i || !ts || !sig) return res.status(400).send('Invalid scan URL');
+
   const expected = signPayload(i, ts);
   if (sig !== expected) return res.status(403).send('Signature check failed');
   if (!getAccessToken()) return res.status(401).send('Not authenticated');
 
   try {
     const { scan_count, status } = await advanceScan(String(i));
-    // Monday updates
+
+    // 1) First scan: tick the "checked in" checkbox column
     if (scan_count === 1 && CHECKED_IN_COLUMN_ID) {
       await changeColumnValue(i, CHECKED_IN_COLUMN_ID, JSON.stringify({ checked: 'true' }));
     }
-    if (scan_count >= 2 && STATUS_COLUMN_ID) {
-      const label = scan_count === 2 ? 'In Production' : 'Completed';
-      await changeColumnValue(i, STATUS_COLUMN_ID, JSON.stringify({ label }));
+
+    // 2) Second scan: set STATUS by label from ENV
+    if (scan_count === 2 && STATUS_COLUMN_ID) {
+      await setStatusByLabel(i, STEP2_STATUS_LABEL);
     }
+
+    // 3) Third scan: set STATUS by label from ENV
+    if (scan_count === 3 && STATUS_COLUMN_ID) {
+      await setStatusByLabel(i, STEP3_STATUS_LABEL);
+    }
+
     if (json) return res.json({ ok: true, scan_count, status });
     res.send(`<html><body style="font-family:Arial;padding:20px">
       <div>Scan recorded</div>
@@ -57,12 +81,20 @@ router.get('/scan', async (req, res) => {
       <script>setTimeout(()=>{ try{window.close()}catch(e){} }, 1200)</script>
     </body></html>`);
   } catch (e) {
-    console.error('scan error:', e.message);
-    return json ? res.status(500).json({ ok:false, error:'Failed to update' }) : res.status(500).send('Failed to update');
+    console.error('GET /scan error:', e?.message || e);
+    return json
+      ? res.status(500).json({ ok:false, error:'Failed to update' })
+      : res.status(500).send('Failed to update');
   }
 });
 
-// API endpoint for scanner device posting raw URL fragments
+// ———————————————————————————————————————————————————————————
+/**
+ * POST /api/scanner
+ * Scanner device posts raw query string or full URL; we re-run the same flow.
+ * Still aligns with ENV label logic for steps 2/3.
+ */
+// ———————————————————————————————————————————————————————————
 router.post('/api/scanner', express.json(), async (req, res) => {
   try {
     const { scan } = req.body;
@@ -82,29 +114,29 @@ router.post('/api/scanner', express.json(), async (req, res) => {
     if (!getAccessToken()) return res.status(401).json({ error: 'Not authenticated with Monday' });
 
     const { scan_count, status } = await advanceScan(String(i));
-    if (scan_count === 1 && CHECKED_IN_COLUMN_ID) {
-      await changeColumnValue(i, CHECKED_IN_COLUMN_ID, JSON.stringify({ checked: 'true' }));
+
+    // Apply Monday updates in the same sequence as GET /scan
+    let monday_error = null;
+    try {
+      if (scan_count === 1 && CHECKED_IN_COLUMN_ID) {
+        await changeColumnValue(i, CHECKED_IN_COLUMN_ID, JSON.stringify({ checked: 'true' }));
+      }
+      if (scan_count === 2 && STATUS_COLUMN_ID) {
+        await setStatusByLabel(i, STEP2_STATUS_LABEL);
+      }
+      if (scan_count === 3 && STATUS_COLUMN_ID) {
+        await setStatusByLabel(i, STEP3_STATUS_LABEL);
+      }
+    } catch (mErr) {
+      monday_error = mErr?.message || String(mErr);
+      console.error('Monday update error:', monday_error);
+      // We still return ok:true so the UI can progress; error is surfaced in payload.
     }
-    if (scan_count >= 2 && STATUS_COLUMN_ID) {
-      const label = scan_count === 2 ? 'In Production' : 'Completed';
-      await changeColumnValue(i, STATUS_COLUMN_ID, JSON.stringify({ label }));
-    }
-    res.json({ ok: true, item: i, scan_count, status });
+
+    res.json({ ok: true, item: i, scan_count, status, monday_error });
   } catch (e) {
     console.error('POST /api/scanner error:', e);
     res.status(500).json({ error: 'Failed to process scan' });
-  }
-});
-
-// QR image render
-router.get('/api/qr', async (req, res) => {
-  const data = req.query.data || '';
-  try {
-    const buf = await require('qrcode').toBuffer(data, { width: 384, margin: 0 });
-    res.set('Content-Type', 'image/png');
-    res.send(buf);
-  } catch {
-    res.status(400).send('Invalid QR data');
   }
 });
 
