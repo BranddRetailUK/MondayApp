@@ -6,7 +6,7 @@ const {
 
 let accessToken = MONDAY_API_TOKEN || null;
 
-// OAuth helpers
+// OAuth helpers (unchanged)
 function buildAuthorizeUrl() {
   const u = new URL('https://auth.monday.com/oauth2/authorize');
   u.searchParams.set('client_id', MONDAY_CLIENT_ID);
@@ -25,8 +25,8 @@ async function exchangeCodeForToken(code) {
 }
 function getAccessToken() { return accessToken; }
 
-// GraphQL wrapper
-async function gql(query, variables={}) {
+// GraphQL wrapper (unchanged)
+async function gql(query, variables = {}) {
   if (!accessToken) throw new Error('Not authenticated with Monday');
   const { data } = await axios.post('https://api.monday.com/v2', { query, variables }, {
     headers: { Authorization: accessToken, 'Content-Type': 'application/json' }
@@ -35,7 +35,7 @@ async function gql(query, variables={}) {
   return data.data;
 }
 
-// Change a single column value
+// Change a single column value (unchanged)
 async function changeColumnValue(itemId, columnId, valueJson) {
   const query = `
     mutation ChangeValue($board: ID!, $item: ID!, $col: String!, $val: JSON!) {
@@ -45,9 +45,10 @@ async function changeColumnValue(itemId, columnId, valueJson) {
   return gql(query, { board: String(BOARD_ID), item: String(itemId), col: columnId, val: valueJson });
 }
 
-// Paged board fetch (light)
-async function fetchBoardLitePaged(limit=BOARD_PAGE_LIMIT, maxPages=BOARD_MAX_PAGES) {
+// Paged board fetch with fields your dashboard expects
+async function fetchBoardLitePaged(limit = BOARD_PAGE_LIMIT, maxPages = BOARD_MAX_PAGES) {
   let cursor = null, pages = 0, items = [];
+
   while (pages < maxPages) {
     const query = `
       query($boardId: [ID!], $limit: Int!, $cursor: String) {
@@ -58,40 +59,53 @@ async function fetchBoardLitePaged(limit=BOARD_PAGE_LIMIT, maxPages=BOARD_MAX_PA
               id
               name
               group { title }
+              column_values { id text value }
               subitems {
                 id
                 name
-                column_values(ids: ["dropdown_mkr73m5s", "text_mkr31cjs"]) { id text }
+                column_values { id text value }
               }
             }
           }
         }
       }
     `;
-    const data = await gql(query, { boardId: [BOARD_ID], limit, cursor });
+    const vars = { boardId: [String(BOARD_ID)], limit, cursor };
+    const data = await gql(query, vars);
     const pageObj = data?.boards?.[0]?.items_page;
     if (!pageObj) break;
+
     items = items.concat(pageObj.items || []);
     cursor = pageObj.cursor || null;
     pages++;
     if (!cursor) break;
   }
 
-  // group to keep frontend shape
+  // Group to preserve your existing frontend shape
   const grouped = {};
   for (const it of items) {
     const title = it?.group?.title || 'Ungrouped';
     if (!grouped[title]) grouped[title] = [];
-    grouped[title].push({ id: it.id, name: it.name, subitems: it.subitems || [] });
+    grouped[title].push({
+      id: it.id,
+      name: it.name,
+      column_values: it.column_values || [],
+      subitems: it.subitems || []
+    });
   }
+
   const groups = Object.entries(grouped).map(([title, arr]) => ({
     title,
     items_page: { items: arr }
   }));
+
   return { boards: [{ groups }] };
 }
 
 module.exports = {
-  buildAuthorizeUrl, exchangeCodeForToken, getAccessToken,
-  changeColumnValue, fetchBoardLitePaged
+  buildAuthorizeUrl,
+  exchangeCodeForToken,
+  getAccessToken,
+  changeColumnValue,
+  fetchBoardLitePaged
 };
