@@ -1,18 +1,22 @@
+// src/routes/scanner.js
 const express = require('express');
 const router = express.Router();
+const QRCode = require('qrcode');
 
 const { signPayload, advanceScan } = require('../services/scanner');
 const { getAccessToken, changeColumnValue } = require('../services/monday');
 const {
-  STATUS_COLUMN_ID,
-  CHECKED_IN_COLUMN_ID
+  STATUS_COLUMN_ID,        // e.g. "label__1"
+  CHECKED_IN_COLUMN_ID,    // e.g. "checkbox__1"
 } = require('../config/env');
 
-// Use env labels exactly as configured on Monday
+// Use your known-good labels from ENV (exact caps on Monday)
 const STEP2_STATUS_LABEL = process.env.STEP2_STATUS_LABEL || 'IN PRODUCTION';
 const STEP3_STATUS_LABEL = process.env.STEP3_STATUS_LABEL || 'COMPLETED';
 
-// Compact states map (unchanged)
+/* ------------------------------------------------------------------ */
+/* State map used by the dashboard badge buttons (unchanged shape)     */
+/* ------------------------------------------------------------------ */
 router.get('/api/scan-states', async (_req, res) => {
   const pool = require('../db/pool');
   try {
@@ -26,7 +30,9 @@ router.get('/api/scan-states', async (_req, res) => {
   }
 });
 
-// Generate signed scan URL
+/* ------------------------------------------------------------------ */
+/* Create a signed scan URL for labels                                 */
+/* ------------------------------------------------------------------ */
 router.get('/api/scan-url', (req, res) => {
   const { itemId } = req.query;
   if (!itemId) return res.status(400).json({ error: 'itemId required' });
@@ -37,7 +43,12 @@ router.get('/api/scan-url', (req, res) => {
   res.json({ url });
 });
 
-// Core scan handler (QR opens this directly)
+/* ------------------------------------------------------------------ */
+/* Core scan handler (QR opens this). Also used by handheld scanners.  */
+/* First scan  -> tick CHECKED IN checkbox                             */
+/* Second scan -> set STATUS to STEP2_STATUS_LABEL                     */
+/* Third scan  -> set STATUS to STEP3_STATUS_LABEL                     */
+/* ------------------------------------------------------------------ */
 router.get('/scan', async (req, res) => {
   const { i, ts, sig, json } = req.query;
   if (json) res.set('Access-Control-Allow-Origin', '*');
@@ -50,36 +61,43 @@ router.get('/scan', async (req, res) => {
   try {
     const { scan_count, status } = await advanceScan(String(i));
 
-    // 1) First scan: tick CHECKED IN checkbox
+    // 1) First scan: tick the "Checked In" checkbox
     if (scan_count === 1 && CHECKED_IN_COLUMN_ID) {
       await changeColumnValue(i, CHECKED_IN_COLUMN_ID, JSON.stringify({ checked: 'true' }));
     }
 
-    // 2) Second scan: set STATUS by env label
+    // 2) Second scan: set STATUS by label
     if (scan_count === 2 && STATUS_COLUMN_ID) {
       await changeColumnValue(i, STATUS_COLUMN_ID, JSON.stringify({ label: STEP2_STATUS_LABEL }));
     }
 
-    // 3) Third scan: set STATUS by env label
+    // 3) Third scan: set STATUS by label
     if (scan_count === 3 && STATUS_COLUMN_ID) {
       await changeColumnValue(i, STATUS_COLUMN_ID, JSON.stringify({ label: STEP3_STATUS_LABEL }));
     }
 
     if (json) return res.json({ ok: true, scan_count, status });
-    res.send(`<html><body style="font-family:Arial;padding:20px">
-      <div>Scan recorded</div>
-      <div>Count: ${scan_count} — Status: <b>${status}</b></div>
-      <script>setTimeout(()=>{ try{window.close()}catch(e){} }, 1200)</script>
-    </body></html>`);
+    res.send(
+      `<html><body style="font-family:Arial;padding:20px">
+        <div>Scan recorded</div>
+        <div>Count: ${scan_count} — Status: <b>${status}</b></div>
+        <script>
+          // close handheld popup after print hooks run on opener
+          setTimeout(()=>{ try{window.close()}catch(e){} }, 1200)
+        </script>
+      </body></html>`
+    );
   } catch (e) {
-    console.error('scan error:', e?.message || e);
+    console.error('GET /scan error:', e?.message || e);
     return json
       ? res.status(500).json({ ok:false, error:'Failed to update' })
       : res.status(500).send('Failed to update');
   }
 });
 
-// Scanner device posts raw query or url
+/* ------------------------------------------------------------------ */
+/* Scanner device posts raw query or full URL                          */
+/* ------------------------------------------------------------------ */
 router.post('/api/scanner', express.json(), async (req, res) => {
   try {
     const { scan } = req.body;
@@ -123,6 +141,34 @@ router.post('/api/scanner', express.json(), async (req, res) => {
   }
 });
 
-// (QR image endpoint unchanged)
+/* ------------------------------------------------------------------ */
+/* QR image render (PNG) — used by the label template <img src=...>    */
+/* Restores the previously truncated handler so images load and print  */
+/* dialogs can fire onload again.                                      */
+/* ------------------------------------------------------------------ */
+router.get('/api/qr', async (req, res) => {
+  try {
+    const data = String(req.query.data || '').trim();
+    if (!data) {
+      res.status(400).send('Missing ?data= payload');
+      return;
+    }
+    const size = Math.max(128, Math.min(1024, parseInt(req.query.size || '384', 10) || 384));
+    const margin = Math.max(0, Math.min(4, parseInt(req.query.margin || '0', 10) || 0));
+
+    const buf = await QRCode.toBuffer(data, {
+      width: size,
+      margin,
+      errorCorrectionLevel: 'M'
+    });
+
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    res.send(buf);
+  } catch (err) {
+    console.error('QR render error:', err);
+    res.status(400).send('Invalid QR data');
+  }
+});
 
 module.exports = router;
