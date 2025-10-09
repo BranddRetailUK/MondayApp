@@ -10,9 +10,6 @@
   <script src="shipping.js" defer></script>
   <!-- MDB Jobs tab logic -->
   <script>
-    /* Optional: set this later to your deployed Python URL, e.g.:
-       window.MDB_API_BASE = "https://mdb-service.yourdomain.com";
-       Defaults to http://localhost:5005 in mdb-jobs.js if not set. */
     window.MDB_API_BASE = window.MDB_API_BASE || "";
   </script>
   <script src="js/mdb-jobs.js" defer></script>
@@ -33,79 +30,78 @@
     </nav>
 
     <main class="main-content">
-   <!-- HOME -->
-<div id="tab-home" class="tab-content active">
-  <h1>Home</h1>
+      <!-- HOME -->
+      <div id="tab-home" class="tab-content active">
+        <h1>Home</h1>
 
-  <div class="home-grid">
-    <!-- Stock Orders (PenCarrie) -->
-    <a class="home-card home-card--pc gradient-blue" data-goto-tab="shipping" href="javascript:void(0)">
-      <div class="hc-top">
-        <span class="hc-title">Stock Orders (PenCarrie)</span>
-        <span class="hc-pill">Live</span>
-      </div>
-      <div class="hc-metric" id="hc-pc-total">—</div>
-      <div class="hc-sub">
-        <span><strong id="hc-pc-inprog">—</strong> in progress</span>
-        <span>·</span>
-        <span><strong id="hc-pc-shipped">—</strong> shipped</span>
-      </div>
-      <div class="hc-foot">
-        <span class="hc-foot-text" id="hc-pc-foot">Fetching latest delivery statuses…</span>
-      </div>
-    </a>
+        <div class="home-grid">
+          <!-- Stock Orders (PenCarrie) -->
+          <a class="home-card home-card--pc gradient-blue" data-goto-tab="shipping" href="javascript:void(0)">
+            <div class="hc-top">
+              <span class="hc-title">Stock Orders (PenCarrie)</span>
+              <span class="hc-pill">Live</span>
+            </div>
+            <div class="hc-metric" id="hc-pc-total">—</div>
+            <div class="hc-sub">
+              <span><strong id="hc-pc-inprog">—</strong> in progress</span>
+              <span>·</span>
+              <span><strong id="hc-pc-shipped">—</strong> shipped</span>
+            </div>
+            <div class="hc-foot">
+              <span class="hc-foot-text" id="hc-pc-foot">Fetching latest delivery statuses…</span>
+            </div>
+          </a>
 
-    <!-- Production / Labels (Monday board) -->
-    <a class="home-card home-card--labels gradient-purple" data-goto-tab="labels" href="javascript:void(0)">
-      <div class="hc-top">
-        <span class="hc-title">Production (Labels)</span>
-        <span class="hc-pill">Today</span>
-      </div>
-      <div class="hc-metric"><span id="hc-lb-items">—</span></div>
-      <div class="hc-sub">
-        <span><span class="dot dot-purple"></span> <strong id="hc-lb-checkedin">—</strong></span>
-        <span><span class="dot dot-gold"></span> <strong id="hc-lb-inprod">—</strong></span>
-        <span><span class="dot dot-green"></span> <strong id="hc-lb-done">—</strong></span>
-      </div>
-      <div class="hc-foot">
-        <span class="hc-foot-text">Scanned status across board items</span>
-      </div>
-    </a>
+          <!-- Production / Labels (Monday board) -->
+          <a class="home-card home-card--labels gradient-purple" data-goto-tab="labels" href="javascript:void(0)">
+            <div class="hc-top">
+              <span class="hc-title">Production (Labels)</span>
+              <span class="hc-pill">Today</span>
+            </div>
+            <div class="hc-metric"><span id="hc-lb-items">—</span></div>
+            <div class="hc-sub">
+              <span><span class="dot dot-purple"></span> <strong id="hc-lb-checkedin">—</strong></span>
+              <span><span class="dot dot-gold"></span> <strong id="hc-lb-inprod">—</strong></span>
+              <span><span class="dot dot-green"></span> <strong id="hc-lb-done">—</strong></span>
+            </div>
+            <div class="hc-foot">
+              <span class="hc-foot-text">Scanned status across board items</span>
+            </div>
+          </a>
 
-    <!-- Orders -->
-    <a class="home-card home-card--orders gradient-green" data-goto-tab="orders" href="javascript:void(0)">
-      <div class="hc-top">
-        <span class="hc-title">Active Orders</span>
-        <span class="hc-pill">Open</span>
-      </div>
-      <div class="hc-metric" id="hc-odr-open">—</div>
-      <div class="hc-sub">
-        <span><strong id="hc-odr-inprod">—</strong> in production</span>
-        <span>·</span>
-        <span><strong id="hc-odr-draft">—</strong> drafts</span>
-      </div>
-      <div class="hc-foot">
-        <span class="hc-foot-text">Draft, Confirmed, In Production</span>
-      </div>
-    </a>
+          <!-- Orders -->
+          <a class="home-card home-card--orders gradient-green" data-goto-tab="orders" href="javascript:void(0)">
+            <div class="hc-top">
+              <span class="hc-title">Active Orders</span>
+              <span class="hc-pill">Open</span>
+            </div>
+            <div class="hc-metric" id="hc-odr-open">—</div>
+            <div class="hc-sub">
+              <span><strong id="hc-odr-inprod">—</strong> in production</span>
+              <span>·</span>
+              <span><strong id="hc-odr-draft">—</strong> drafts</span>
+            </div>
+            <div class="hc-foot">
+              <span class="hc-foot-text">Draft, Confirmed, In Production</span>
+            </div>
+          </a>
 
-    <!-- Customers -->
-    <a class="home-card home-card--customers gradient-orange" data-goto-tab="customers" href="javascript:void(0)">
-      <div class="hc-top">
-        <span class="hc-title">Customers</span>
-        <span class="hc-pill">Total</span>
+          <!-- Customers -->
+          <a class="home-card home-card--customers gradient-orange" data-goto-tab="customers" href="javascript:void(0)">
+            <div class="hc-top">
+              <span class="hc-title">Customers</span>
+              <span class="hc-pill">Total</span>
+            </div>
+            <div class="hc-metric" id="hc-cus-total">—</div>
+            <div class="hc-sub">
+              <span><strong id="hc-cus-recent">—</strong> new this month</span>
+            </div>
+            <div class="hc-foot">
+              <span class="hc-foot-text">Manage contacts & addresses</span>
+            </div>
+          </a>
+        </div>
       </div>
-      <div class="hc-metric" id="hc-cus-total">—</div>
-      <div class="hc-sub">
-        <span><strong id="hc-cus-recent">—</strong> new this month</span>
-      </div>
-      <div class="hc-foot">
-        <span class="hc-foot-text">Manage contacts & addresses</span>
-      </div>
-    </a>
-  </div>
-</div>
-
 
       <!-- ORDERS -->
       <div id="tab-orders" class="tab-content">
@@ -348,83 +344,108 @@
 
       <!-- LABELS -->
       <div id="tab-labels" class="tab-content">
-        <h1>Labels</h1>
-        <button id="loadBtn" onclick="loadBoard()">Update Board Info</button>
+        <div class="labels-head">
+          <h1>Labels</h1>
+          <div class="labels-actions">
+            <button id="labels-colours-btn" class="btn outline">Colours</button>
+            <button id="loadBtn" class="btn" onclick="loadBoard()">Update Board Info</button>
+            <span id="labels-sync-state" class="small muted"></span>
+          </div>
+        </div>
+
+        <!-- Colour settings panel -->
+        <div id="labels-colours-panel" class="card" style="display:none">
+          <div class="card-head">
+            <h2>Group Colours</h2>
+            <div class="card-actions">
+              <button id="labels-colours-close" class="btn">Done</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div id="labels-colour-form" class="colour-grid"></div>
+            <div class="small muted mt-8">Tip: these are saved in your browser (localStorage) and applied after each board refresh.</div>
+          </div>
+        </div>
+
+        <!-- Monday board render lands here; we decorate it -->
         <div id="board"></div>
       </div>
 
-  <!-- SHIPPING -->
-<div id="tab-shipping" class="tab-content">
-  <h1>Shipping</h1>
+      <!-- SHIPPING -->
+      <div id="tab-shipping" class="tab-content">
+        <h1>Shipping</h1>
 
-  <!-- Stock Orders (PenCarrie) -->
-  <section class="card">
-    <div class="card-head">
-      <h2>Stock Orders (PenCarrie)</h2>
-      <div class="card-actions">
-        <button id="pc-refresh" class="btn outline">Refresh</button>
+        <section class="card">
+          <div class="card-head">
+            <h2>Stock Orders (PenCarrie)</h2>
+            <div class="card-actions">
+              <button id="pc-refresh" class="btn outline">Refresh</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <table id="pc-orders-table" class="data-table">
+              <thead>
+                <tr>
+                  <th class="w-120">PC Order</th>
+                  <th>Status</th>
+                  <th>Track &amp; Trace</th>
+                  <th>Carrier</th>
+                  <th>ETA</th>
+                  <th class="w-120">Actions</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+
+            <div id="pc-order-detail" class="mt" style="display:none">
+              <h3 class="subhead">Order Detail</h3>
+              <div id="pc-order-header" class="small muted"></div>
+              <table id="pc-lines-table" class="data-table mt-8">
+                <thead>
+                  <tr>
+                    <th>SKU</th>
+                    <th>Description</th>
+                    <th>Qty</th>
+                    <th>Line Ref (cref)</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="card mt">
+          <div class="card-head">
+            <h2>Outbound Shipments (DPD)</h2>
+            <div class="card-actions">
+              <span class="badge">Coming Soon</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <p class="muted">We’ll show booked consignments, tracking, and labels here.</p>
+          </div>
+        </section>
       </div>
-    </div>
-    <div class="card-body">
-      <table id="pc-orders-table" class="data-table">
-        <thead>
-          <tr>
-            <th class="w-120">PC Order</th>
-            <th>Status</th>
-            <th>Track &amp; Trace</th>
-            <th>Carrier</th>
-            <th>ETA</th>
-            <th class="w-120">Actions</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
 
-      <div id="pc-order-detail" class="mt" style="display:none">
-        <h3 class="subhead">Order Detail</h3>
-        <div id="pc-order-header" class="small muted"></div>
-        <table id="pc-lines-table" class="data-table mt-8">
-          <thead>
-            <tr>
-              <th>SKU</th>
-              <th>Description</th>
-              <th>Qty</th>
-              <th>Line Ref (cref)</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </div>
-  </section>
+      <!-- MDB JOBS -->
+      <section id="tab-mdb-jobs" class="tab-content">
+        <h1>MDB Jobs</h1>
 
-  <!-- Outbound Shipments (DPD) -->
-  <section class="card mt">
-    <div class="card-head">
-      <h2>Outbound Shipments (DPD)</h2>
-      <div class="card-actions">
-        <span class="badge">Coming Soon</span>
-      </div>
-    </div>
-    <div class="card-body">
-      <p class="muted">We’ll show booked consignments, tracking, and labels here.</p>
-    </div>
-  </section>
-</div>
+        <div class="flex items-center gap-2 mb-3">
+          <input id="mdb-search" class="input" placeholder="Search by Order No, Customer, Title, Type…" />
+          <button id="mdb-search-btn" class="btn">Search</button>
 
-<!-- MDB JOBS -->
-<section id="tab-mdb-jobs" class="tab-content">
-  <h1>MDB Jobs</h1>
+          <span class="spacer" style="flex:1"></span>
 
-  <div class="flex items-center gap-2 mb-3">
-    <input id="mdb-search" class="input" placeholder="Search by Order No, Customer, Title, Type…" />
-    <button id="mdb-search-btn" class="btn">Search</button>
+          <input type="file" id="mdb-csv" accept=".csv" style="display:none" />
+          <button id="mdb-upload-btn" class="btn outline">Upload CSV</button>
+          <span id="mdb-upload-status" class="small muted"></span>
+        </div>
 
-    <span class="spacer" style="flex:1"></span>
-
-    <input type="file" id="mdb-csv" accept=".csv" style="display:none" />
-    <button id="mdb-upload-btn" class="btn outline">Upload CSV</button>
-    <span id="mdb-upload-status" class="small muted"></span>
+        <div id="mdb-jobs-table" class="table w-full"></div>
+      </section>
+    </main>
   </div>
-
-  <div id="mdb-jobs-table" class="table w-full"></div
+</body>
+</html>
