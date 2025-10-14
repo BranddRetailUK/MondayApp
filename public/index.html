@@ -8,11 +8,7 @@
   <script src="customers.js" defer></script>
   <script src="orders.js" defer></script>
   <script src="shipping.js" defer></script>
-  <!-- MDB Jobs tab logic -->
-  <script>
-    window.MDB_API_BASE = window.MDB_API_BASE || "";
-  </script>
-  <script src="js/mdb-jobs.js" defer></script>
+  <!-- Removed MDB Jobs tab logic & script includes -->
 </head>
 <body>
   <div class="app-container">
@@ -25,7 +21,9 @@
         <li data-tab="stock">Stock</li>
         <li data-tab="labels"> Box Labels</li>
         <li data-tab="shipping">Shipping</li>
-        <li data-tab="mdb-jobs">MDB Jobs</li>
+        <!-- NEW -->
+        <li data-tab="pencarrie">PenCarrie</li>
+        <!-- REMOVED: <li data-tab="mdb-jobs">MDB Jobs</li> -->
       </ul>
     </nav>
 
@@ -36,7 +34,7 @@
 
         <div class="home-grid">
           <!-- Stock Orders (PenCarrie) -->
-          <a class="home-card home-card--pc gradient-blue" data-goto-tab="shipping" href="javascript:void(0)">
+          <a class="home-card home-card--pc gradient-blue" data-goto-tab="pencarrie" href="javascript:void(0)">
             <div class="hc-top">
               <span class="hc-title">Stock Orders (PenCarrie)</span>
               <span class="hc-pill">Live</span>
@@ -428,23 +426,105 @@
         </section>
       </div>
 
-      <!-- MDB JOBS -->
-      <section id="tab-mdb-jobs" class="tab-content">
-        <h1>MDB Jobs</h1>
+      <!-- NEW: PEN CARRIE TAB -->
+      <section id="tab-pencarrie" class="tab-content">
+        <h1>PenCarrie</h1>
 
-        <div class="flex items-center gap-2 mb-3">
-          <input id="mdb-search" class="input" placeholder="Search by Order No, Customer, Title, Type…" />
-          <button id="mdb-search-btn" class="btn">Search</button>
+        <!-- Search & filters -->
+        <section class="card">
+          <div class="card-head">
+            <h2>Line &amp; Order Search</h2>
+            <div class="card-actions">
+              <button id="pc-search-btn" class="btn">Search</button>
+              <button id="pc-clear-btn" class="btn outline">Clear</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="form-row">
+                <label>Line Ref (cref)
+                  <input id="pc-cref" placeholder="e.g. C123456" />
+                </label>
+              </div>
+              <div class="form-row">
+                <label>Ref
+                  <input id="pc-ref" placeholder="Optional" />
+                </label>
+              </div>
+              <div class="form-row">
+                <label>Order Code
+                  <input id="pc-ordercode" placeholder="e.g. 45012345" />
+                </label>
+              </div>
+              <div class="form-row">
+                <label>Date From
+                  <input id="pc-from" type="date" />
+                </label>
+              </div>
+              <div class="form-row">
+                <label>Date To
+                  <input id="pc-to" type="date" />
+                </label>
+              </div>
+            </div>
 
-          <span class="spacer" style="flex:1"></span>
+            <div class="mt">
+              <table id="pc-search-results" class="data-table">
+                <thead>
+                  <tr>
+                    <th>Order</th>
+                    <th>Line Ref</th>
+                    <th>SKU</th>
+                    <th>Description</th>
+                    <th>Qty</th>
+                    <th class="w-120">Actions</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
 
-          <input type="file" id="mdb-csv" accept=".csv" style="display:none" />
-          <button id="mdb-upload-btn" class="btn outline">Upload CSV</button>
-          <span id="mdb-upload-status" class="small muted"></span>
-        </div>
+        <!-- Orders summary -->
+        <section class="card mt">
+          <div class="card-head">
+            <h2>Recent Supplier Orders</h2>
+            <div class="card-actions">
+              <button id="pc-orders-refresh" class="btn outline">Refresh</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <table id="pc-orders-summary" class="data-table">
+              <thead>
+                <tr>
+                  <th class="w-120">PC Order</th>
+                  <th>Status</th>
+                  <th>Carrier</th>
+                  <th>ETA</th>
+                  <th class="w-120">Actions</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
 
-        <div id="mdb-jobs-table" class="table w-full"></div>
+        <!-- Debug/Health -->
+        <section class="card mt">
+          <div class="card-head">
+            <h2>Debug &amp; Health</h2>
+            <div class="card-actions">
+              <button id="pc-whoami" class="btn outline">Check Egress IP</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div id="pc-health" class="small muted">Run checks to verify connectivity and whitelist status.</div>
+          </div>
+        </section>
       </section>
+
+      <!-- REMOVED: MDB JOBS TAB -->
     </main>
   </div>
 </body>
