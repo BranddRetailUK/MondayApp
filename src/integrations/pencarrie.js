@@ -1,6 +1,6 @@
 // src/integrations/pencarrie.js
-// XML gateway client with strict redirect handling, richer diagnostics, DNS/egress checks,
-// optional Host header pinning, and a one-time GET fallback if POST gets a 403 HTML/WAF block.
+// PenCarrie XML gateway client (spec-exact): POST form-encoded, follow redirects,
+// no Origin/Referer, rich diagnostics, optional host assertions, and XML parsing.
 
 const fetch = (...args) => import('node-fetch').then(({ default: f }) => f(...args));
 const { parseStringPromise } = require('xml2js');
@@ -8,17 +8,16 @@ const dns = require('node:dns').promises;
 const { URLSearchParams } = require('node:url');
 
 const {
-  PENCARRIE_ENV = 'live',
-  // Example: https://gateway.pencarrie.com/xml (confirm exact API URL with PenCarrie)
-  PENCARRIE_GATEWAY_URL,
-  PENCARRIE_CUSTOMER_CODE,
-  PENCARRIE_HTTP_TIMEOUT_MS = '20000',
+  // REQUIRED
+  PENCARRIE_GATEWAY_URL,            // e.g. https://pencarrie.com/gateway
+  PENCARRIE_CUSTOMER_CODE,          // e.g. ULMP
 
-  // Optional hard assertions / tweaks
-  PENCARRIE_EXPECT_HOST_REGEX, // e.g. ^gateway\.pencarrie\.com$
-  PENCARRIE_FORCE_HOST_HEADER, // if set, we send `Host: <value>`
-  PENCARRIE_SEND_REFERER = 'true', // some WAFs want a referer/origin
-  PENCARRIE_RETRY_GET_ON_403 = 'true', // try GET once if POST gets 403 HTML
+  // Optional tuning/diagnostics
+  PENCARRIE_ENV = 'live',
+  PENCARRIE_HTTP_TIMEOUT_MS = '20000',
+  PENCARRIE_EXPECT_HOST_REGEX,      // e.g. ^pencarrie\.com$ or ^(sandbox\.)?pencarrie\.com$
+  PENCARRIE_FORCE_HOST_HEADER,      // if set, send Host: <value>
+  PENCARRIE_RETRY_GET_ON_403 = 'false', // keep false to stay spec-exact
 } = process.env;
 
 if (!PENCARRIE_GATEWAY_URL) {
@@ -30,6 +29,7 @@ if (!PENCARRIE_CUSTOMER_CODE) {
 
 function buildForm(fn, params = {}) {
   const form = new URLSearchParams();
+  // Spec: lowercase keys
   form.set('function', fn);
   form.set('code', PENCARRIE_CUSTOMER_CODE);
   for (const [k, v] of Object.entries(params)) {
@@ -44,7 +44,6 @@ function looksLikeHtml(s = '') {
 function looksLikeXml(s = '') {
   return /^<\?xml|^\s*<\w+/i.test(s);
 }
-
 function short(s = '', n = 600) {
   if (!s) return s;
   const one = s.replace(/\s+/g, ' ').trim();
@@ -61,30 +60,23 @@ async function resolveHostDiagnostics(urlStr) {
   }
 }
 
-async function callOnce(method, urlStr, form, noteHeaders = {}) {
+async function callOnce(method, urlStr, form) {
   const u = new URL(urlStr);
 
+  // Match the guide: Accept XML, POST form-encoded, NO Origin/Referer
   const headers = {
-    // Many legacy XML gateways prefer very tight Accepts:
     'Accept': 'application/xml,text/xml;q=0.9,*/*;q=0.1',
     'Content-Type': method === 'POST' ? 'application/x-www-form-urlencoded' : 'application/xml',
     'User-Agent': 'GGApparel-PenCarrie/1.0 (+support@ggapparel.co.uk)',
-    ...noteHeaders,
   };
-
-  if (PENCARRIE_FORCE_HOST_HEADER) {
-    headers['Host'] = PENCARRIE_FORCE_HOST_HEADER;
-  }
-  if (PENCARRIE_SEND_REFERER !== 'false') {
-    headers['Origin'] = `${u.protocol}//${u.host}`;
-    headers['Referer'] = `${u.protocol}//${u.host}/`;
-  }
+  if (PENCARRIE_FORCE_HOST_HEADER) headers['Host'] = PENCARRIE_FORCE_HOST_HEADER;
 
   const opts = {
     method,
     headers,
     body: method === 'POST' ? form.toString() : undefined,
-    redirect: 'manual', // do not silently follow to the public site
+    // Match docs/examples: allow redirects
+    redirect: 'follow',
     signal: AbortSignal.timeout(Number(PENCARRIE_HTTP_TIMEOUT_MS)),
   };
 
@@ -108,7 +100,10 @@ async function callOnce(method, urlStr, form, noteHeaders = {}) {
 
   const contentType = res.headers.get('content-type') || '';
   const location = res.headers.get('location') || null;
-  const raw = await res.text().catch(() => '');
+  let raw = '';
+  try {
+    raw = await res.text();
+  } catch { /* ignore */ }
 
   console.log('[PenCarrie][RES]', {
     status: res.status,
@@ -140,60 +135,40 @@ async function callGateway(fn, params = {}) {
     const re = new RegExp(PENCARRIE_EXPECT_HOST_REGEX);
     if (!re.test(u.hostname)) {
       throw new Error(
-        `[PenCarrie] Host assertion failed. URL host is '${u.hostname}' which does not match '${PENCARRIE_EXPECT_HOST_REGEX}'.`
+        `[PenCarrie] Host assertion failed. URL host '${u.hostname}' does not match '${PENCARRIE_EXPECT_HOST_REGEX}'.`
       );
     }
   }
 
   const form = buildForm(fn, params);
 
-  // Primary attempt: POST (typical for these gateways)
+  // Primary attempt: POST (spec)
   let attempt = await callOnce('POST', PENCARRIE_GATEWAY_URL, form);
 
-  // Manual redirect diagnostics (bounced to website or wrong path)
-  if (attempt.res.status >= 300 && attempt.res.status < 400) {
-    const { location } = attempt;
-    throw new Error(
-      `[PenCarrie] ${attempt.res.status} Redirect received${location ? ` -> ${location}` : ''}. This usually means wrong host/path or the gateway is bouncing you to the public site.`
-    );
-  }
-
-  // 403 handling
-  if (attempt.res.status === 403) {
-    if (looksLikeHtml(attempt.raw)) {
-      // Optional one-time GET retry (some gateways want GET for read-only functions)
-      if (PENCARRIE_RETRY_GET_ON_403 !== 'false') {
-        console.warn('[PenCarrie] 403 HTML on POST — retrying once with GET and query params.');
-        const urlWithQs = new URL(PENCARRIE_GATEWAY_URL);
-        for (const [k, v] of form) urlWithQs.searchParams.set(k, v);
-        attempt = await callOnce('GET', urlWithQs.toString(), form, {});
-      }
-      // If still 403 + HTML, throw a specific error.
-      if (attempt.res.status === 403 && looksLikeHtml(attempt.raw)) {
-        throw new Error(
-          '[PenCarrie] 403 HTML response — likely the public website / WAF block. Confirm API gateway URL and that your current egress IP is whitelisted.'
-        );
-      }
-    } else {
-      throw new Error('[PenCarrie] 403 Forbidden from gateway.');
-    }
+  // If 403 HTML (typically WAF website block) and GET retry explicitly enabled, try once
+  if (
+    attempt.res.status === 403 &&
+    looksLikeHtml(attempt.raw) &&
+    PENCARRIE_RETRY_GET_ON_403 === 'true'
+  ) {
+    console.warn('[PenCarrie] 403 HTML on POST — retrying once with GET and query params (override enabled).');
+    const urlWithQs = new URL(PENCARRIE_GATEWAY_URL);
+    for (const [k, v] of form) urlWithQs.searchParams.set(k, v);
+    attempt = await callOnce('GET', urlWithQs.toString(), form);
   }
 
   // Non-OK handling
   if (!attempt.res.ok) {
     if (looksLikeHtml(attempt.raw)) {
       throw new Error(
-        `[PenCarrie] HTTP ${attempt.res.status} HTML body — likely wrong host/path or blocked by WAF. Snippet: ${short(attempt.raw, 300)}`
+        `[PenCarrie] HTTP ${attempt.res.status} HTML body — likely WAF/website front door (check IP allow-list & code). Snippet: ${short(attempt.raw, 300)}`
       );
     }
-    // Try to parse XML/JSON for details
     if (/json/i.test(attempt.contentType)) {
       try {
         const j = JSON.parse(attempt.raw);
         throw new Error(`[PenCarrie] HTTP ${attempt.res.status}: ${JSON.stringify(j)}`);
-      } catch {
-        // fallthrough
-      }
+      } catch { /* fallthrough */ }
     }
     if (/xml|text\/xml/i.test(attempt.contentType) || looksLikeXml(attempt.raw)) {
       const xml = await parseXmlOrThrow(attempt.raw);
@@ -202,11 +177,10 @@ async function callGateway(fn, params = {}) {
     throw new Error(`[PenCarrie] HTTP ${attempt.res.status}: ${short(attempt.raw, 200) || 'No body'}`);
   }
 
-  // OK path: parse XML first
+  // OK path: prefer XML parse
   if (/xml|text\/xml/i.test(attempt.contentType) || looksLikeXml(attempt.raw)) {
     return parseXmlOrThrow(attempt.raw);
   }
-  // Some endpoints might return JSON on error/special cases
   if (/json/i.test(attempt.contentType)) {
     try {
       return JSON.parse(attempt.raw);
@@ -215,13 +189,12 @@ async function callGateway(fn, params = {}) {
     }
   }
 
-  // Unexpected content-type
   throw new Error(
     `[PenCarrie] Unexpected response type (status ${attempt.res.status}, content-type '${attempt.contentType}'). Body starts: ${short(attempt.raw, 200)}`
   );
 }
 
-// --- High-level helpers (XML gateway functions) ---
+// ===== High-level helpers (XML gateway functions) =====
 
 async function listOrders() {
   const data = await callGateway('pclist');
@@ -269,19 +242,19 @@ async function getOrder(ordcode) {
   };
 }
 
-// --- Diagnostics ---
+// ===== Diagnostics =====
 
 async function checkIpAndHost() {
   const info = { baseUrl: PENCARRIE_GATEWAY_URL || '(unset)', env: PENCARRIE_ENV, egressIp: 'unknown' };
   try {
     const r = await fetch('https://api.ipify.org?format=json', {
       method: 'GET',
-      redirect: 'manual',
+      redirect: 'follow',
       signal: AbortSignal.timeout(8000),
     });
     const j = await r.json();
     info.egressIp = j?.ip || 'unknown';
-  } catch {}
+  } catch { /* ignore */ }
   try {
     const u = new URL(PENCARRIE_GATEWAY_URL);
     info.host = u.hostname;
