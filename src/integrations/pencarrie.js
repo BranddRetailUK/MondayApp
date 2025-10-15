@@ -1,6 +1,5 @@
 // src/integrations/pencarrie.js
-// PenCarrie XML gateway client (spec-exact): POST form-encoded, follow redirects,
-// no Origin/Referer, rich diagnostics, optional host assertions, and XML parsing.
+// PenCarrie XML gateway client (spec-exact + pragmatic fallbacks)
 
 const fetch = (...args) => import('node-fetch').then(({ default: f }) => f(...args));
 const { parseStringPromise } = require('xml2js');
@@ -12,24 +11,24 @@ const {
   PENCARRIE_GATEWAY_URL,            // e.g. https://pencarrie.com/gateway
   PENCARRIE_CUSTOMER_CODE,          // e.g. ULMP
 
-  // Optional tuning/diagnostics
+  // Diagnostics / tuning
   PENCARRIE_ENV = 'live',
   PENCARRIE_HTTP_TIMEOUT_MS = '20000',
-  PENCARRIE_EXPECT_HOST_REGEX,      // e.g. ^pencarrie\.com$ or ^(sandbox\.)?pencarrie\.com$
+  PENCARRIE_EXPECT_HOST_REGEX,      // e.g. ^pencarrie\.com$
   PENCARRIE_FORCE_HOST_HEADER,      // if set, send Host: <value>
-  PENCARRIE_RETRY_GET_ON_403 = 'false', // keep false to stay spec-exact
+
+  // Fallback/compat controls
+  PENCARRIE_RETRY_GET_ON_403 = 'true',     // default: true (helps with strict WAFs)
+  PENCARRIE_METHOD,                        // optional hard override: 'POST' or 'GET'
+  PENCARRIE_USER_AGENT = 'curl/8.5.0',
+  PENCARRIE_ACCEPT_HEADER = 'application/xml,text/xml;q=0.9,*/*;q=0.1',
 } = process.env;
 
-if (!PENCARRIE_GATEWAY_URL) {
-  console.warn('[PenCarrie] Missing PENCARRIE_GATEWAY_URL in env');
-}
-if (!PENCARRIE_CUSTOMER_CODE) {
-  console.warn('[PenCarrie] Missing PENCARRIE_CUSTOMER_CODE in env');
-}
+if (!PENCARRIE_GATEWAY_URL) console.warn('[PenCarrie] Missing PENCARRIE_GATEWAY_URL in env');
+if (!PENCARRIE_CUSTOMER_CODE) console.warn('[PenCarrie] Missing PENCARRIE_CUSTOMER_CODE in env');
 
 function buildForm(fn, params = {}) {
   const form = new URLSearchParams();
-  // Spec: lowercase keys
   form.set('function', fn);
   form.set('code', PENCARRIE_CUSTOMER_CODE);
   for (const [k, v] of Object.entries(params)) {
@@ -61,13 +60,12 @@ async function resolveHostDiagnostics(urlStr) {
 }
 
 async function callOnce(method, urlStr, form) {
-  const u = new URL(urlStr);
+  const dnsInfo = await resolveHostDiagnostics(urlStr);
 
-  // Match the guide: Accept XML, POST form-encoded, NO Origin/Referer
   const headers = {
-    'Accept': 'application/xml,text/xml;q=0.9,*/*;q=0.1',
+    Accept: PENCARRIE_ACCEPT_HEADER,
     'Content-Type': method === 'POST' ? 'application/x-www-form-urlencoded' : 'application/xml',
-    'User-Agent': 'GGApparel-PenCarrie/1.0 (+support@ggapparel.co.uk)',
+    'User-Agent': PENCARRIE_USER_AGENT,
   };
   if (PENCARRIE_FORCE_HOST_HEADER) headers['Host'] = PENCARRIE_FORCE_HOST_HEADER;
 
@@ -75,12 +73,10 @@ async function callOnce(method, urlStr, form) {
     method,
     headers,
     body: method === 'POST' ? form.toString() : undefined,
-    // Match docs/examples: allow redirects
     redirect: 'follow',
     signal: AbortSignal.timeout(Number(PENCARRIE_HTTP_TIMEOUT_MS)),
   };
 
-  const dnsInfo = await resolveHostDiagnostics(urlStr);
   console.log('[PenCarrie][REQ]', {
     env: PENCARRIE_ENV,
     url: urlStr,
@@ -101,9 +97,7 @@ async function callOnce(method, urlStr, form) {
   const contentType = res.headers.get('content-type') || '';
   const location = res.headers.get('location') || null;
   let raw = '';
-  try {
-    raw = await res.text();
-  } catch { /* ignore */ }
+  try { raw = await res.text(); } catch {}
 
   console.log('[PenCarrie][RES]', {
     status: res.status,
@@ -126,9 +120,7 @@ async function parseXmlOrThrow(raw) {
 }
 
 async function callGateway(fn, params = {}) {
-  if (!PENCARRIE_GATEWAY_URL) {
-    throw new Error('[PenCarrie] PENCARRIE_GATEWAY_URL is not set');
-  }
+  if (!PENCARRIE_GATEWAY_URL) throw new Error('[PenCarrie] PENCARRIE_GATEWAY_URL is not set');
 
   const u = new URL(PENCARRIE_GATEWAY_URL);
   if (PENCARRIE_EXPECT_HOST_REGEX) {
@@ -142,22 +134,31 @@ async function callGateway(fn, params = {}) {
 
   const form = buildForm(fn, params);
 
-  // Primary attempt: POST (spec)
-  let attempt = await callOnce('POST', PENCARRIE_GATEWAY_URL, form);
+  // Optional hard method override for testing
+  const primaryMethod = (PENCARRIE_METHOD || 'POST').toUpperCase();
 
-  // If 403 HTML (typically WAF website block) and GET retry explicitly enabled, try once
+  let attempt;
+  if (primaryMethod === 'GET') {
+    const urlWithQs = new URL(PENCARRIE_GATEWAY_URL);
+    for (const [k, v] of form) urlWithQs.searchParams.set(k, v);
+    attempt = await callOnce('GET', urlWithQs.toString(), form);
+  } else {
+    attempt = await callOnce('POST', PENCARRIE_GATEWAY_URL, form);
+  }
+
+  // WAF front-door pattern: HTML 403 — try GET once if enabled and we haven’t already used GET
   if (
     attempt.res.status === 403 &&
     looksLikeHtml(attempt.raw) &&
-    PENCARRIE_RETRY_GET_ON_403 === 'true'
+    PENCARRIE_RETRY_GET_ON_403 === 'true' &&
+    primaryMethod !== 'GET'
   ) {
-    console.warn('[PenCarrie] 403 HTML on POST — retrying once with GET and query params (override enabled).');
+    console.warn('[PenCarrie] 403 HTML on POST — retrying once with GET & query params.');
     const urlWithQs = new URL(PENCARRIE_GATEWAY_URL);
     for (const [k, v] of form) urlWithQs.searchParams.set(k, v);
     attempt = await callOnce('GET', urlWithQs.toString(), form);
   }
 
-  // Non-OK handling
   if (!attempt.res.ok) {
     if (looksLikeHtml(attempt.raw)) {
       throw new Error(
@@ -168,7 +169,7 @@ async function callGateway(fn, params = {}) {
       try {
         const j = JSON.parse(attempt.raw);
         throw new Error(`[PenCarrie] HTTP ${attempt.res.status}: ${JSON.stringify(j)}`);
-      } catch { /* fallthrough */ }
+      } catch {}
     }
     if (/xml|text\/xml/i.test(attempt.contentType) || looksLikeXml(attempt.raw)) {
       const xml = await parseXmlOrThrow(attempt.raw);
@@ -177,16 +178,12 @@ async function callGateway(fn, params = {}) {
     throw new Error(`[PenCarrie] HTTP ${attempt.res.status}: ${short(attempt.raw, 200) || 'No body'}`);
   }
 
-  // OK path: prefer XML parse
   if (/xml|text\/xml/i.test(attempt.contentType) || looksLikeXml(attempt.raw)) {
     return parseXmlOrThrow(attempt.raw);
   }
   if (/json/i.test(attempt.contentType)) {
-    try {
-      return JSON.parse(attempt.raw);
-    } catch (e) {
-      throw new Error(`[PenCarrie] Failed to parse JSON: ${e.message}`);
-    }
+    try { return JSON.parse(attempt.raw); }
+    catch (e) { throw new Error(`[PenCarrie] Failed to parse JSON: ${e.message}`); }
   }
 
   throw new Error(
@@ -254,7 +251,7 @@ async function checkIpAndHost() {
     });
     const j = await r.json();
     info.egressIp = j?.ip || 'unknown';
-  } catch { /* ignore */ }
+  } catch {}
   try {
     const u = new URL(PENCARRIE_GATEWAY_URL);
     info.host = u.hostname;
