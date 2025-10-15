@@ -62,12 +62,15 @@ async function resolveHostDiagnostics(urlStr) {
 async function callOnce(method, urlStr, form) {
   const dnsInfo = await resolveHostDiagnostics(urlStr);
 
-  const headers = {
-    Accept: PENCARRIE_ACCEPT_HEADER,
-    'Content-Type': method === 'POST' ? 'application/x-www-form-urlencoded' : 'application/xml',
-    'User-Agent': PENCARRIE_USER_AGENT,
-  };
-  if (PENCARRIE_FORCE_HOST_HEADER) headers['Host'] = PENCARRIE_FORCE_HOST_HEADER;
+const headers = {
+  Accept: PENCARRIE_ACCEPT_HEADER,
+  'User-Agent': PENCARRIE_USER_AGENT,
+};
+if (method === 'POST') {
+  headers['Content-Type'] = 'application/x-www-form-urlencoded';
+}
+if (PENCARRIE_FORCE_HOST_HEADER) headers['Host'] = PENCARRIE_FORCE_HOST_HEADER;
+
 
   const opts = {
     method,
