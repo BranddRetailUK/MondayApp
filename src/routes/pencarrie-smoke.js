@@ -1,0 +1,82 @@
+// src/routes/pencarrie-smoke.js (CommonJS)
+const express = require('express');
+const axios = require('axios');
+
+const router = express.Router();
+
+const PC_BASE_SANDBOX = 'https://sandbox.pencarrie.com/gateway';
+const PC_BASE_MAIN = 'https://pencarrie.com/gateway';
+
+function pickBaseUrl() {
+  const v = (process.env.PENCARRIE_ENV || '').toLowerCase();
+  if (v === 'live' || v === 'prod' || v === 'production' || v === 'main') return PC_BASE_MAIN;
+  return PC_BASE_SANDBOX;
+}
+
+async function postForm({ baseUrl, params }) {
+  const body = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) body.append(k, v);
+
+  const resp = await axios.post(baseUrl, body.toString(), {
+    headers: {
+      'Accept': 'application/xml',
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    timeout: 15000,
+    maxRedirects: 5,
+    validateStatus: () => true
+  });
+
+  return {
+    status: resp.status,
+    headers: resp.headers,
+    text: typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data)
+  };
+}
+
+// GET /api/pencarrie/whoami
+router.get('/whoami', (_req, res) => {
+  res.json({
+    ok: true,
+    env: process.env.PENCARRIE_ENV || 'sandbox (default)',
+    baseUrl: pickBaseUrl(),
+    note: 'Smoke tester is deployed; use /api/pencarrie/smoke to hit the gateway.'
+  });
+});
+
+// GET /api/pencarrie/smoke?sku=SS11&env=sandbox|main
+router.get('/smoke', async (req, res) => {
+  try {
+    const sku = String(req.query.sku || 'SS11').trim();
+    const env = (req.query.env || '').toLowerCase();
+    const baseUrl = env === 'main' ? PC_BASE_MAIN : pickBaseUrl();
+
+    const out = await postForm({
+      baseUrl,
+      params: {
+        function: 'pcgetstock',
+        code: 'ULPR',
+        'args[0]': sku
+      }
+    });
+
+    const preview = out.text.length > 1200 ? out.text.slice(0, 1200) + '…(truncated)' : out.text;
+
+    res.status(200).json({
+      ok: true,
+      env: baseUrl.includes('sandbox') ? 'sandbox' : 'main',
+      baseUrl,
+      sku,
+      status: out.status,
+      headers: {
+        'content-type': out.headers['content-type'] || null,
+        'cf-ray': out.headers['cf-ray'] || null
+      },
+      bodyPreview: preview
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || String(err) });
+  }
+});
+
+module.exports = router;

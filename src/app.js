@@ -1,3 +1,4 @@
+// app.js
 const path = require('path');
 const express = require('express');
 const app = express();
@@ -5,12 +6,15 @@ const app = express();
 const { PORT } = require('./config/env');
 const { getAccessToken } = require('./services/monday');
 const pencarrieRouter = require('./routes/pencarrie');
+const pencarrieSmoke = require('./routes/pencarrie-smoke'); // smoke tester routes
 
 // Static
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
-app.use('/api/pencarrie', pencarrieRouter);
 
+// PenCarrie routes
+app.use('/api/pencarrie', pencarrieRouter);
+app.use('/api/pencarrie', pencarrieSmoke);
 
 // Health/status
 app.get('/api/status', (_req, res) => {
@@ -23,7 +27,6 @@ app.use(require('./routes/board'));
 app.use(require('./routes/scanner'));
 app.use(require('./routes/customers'));
 app.use(require('./routes/orders'));
-
 
 // 404
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
