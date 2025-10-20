@@ -7,9 +7,9 @@ const router = express.Router();
 const PC_BASE_SANDBOX = 'https://sandbox.pencarrie.com/gateway';
 const PC_BASE_MAIN = 'https://pencarrie.com/gateway';
 
-function pickBaseUrl() {
+function pickBaseUrlFromEnv() {
   const v = (process.env.PENCARRIE_ENV || '').toLowerCase();
-  if (v === 'live' || v === 'prod' || v === 'production' || v === 'main') return PC_BASE_MAIN;
+  if (['live', 'prod', 'production', 'main'].includes(v)) return PC_BASE_MAIN;
   return PC_BASE_SANDBOX;
 }
 
@@ -35,13 +35,22 @@ async function postForm({ baseUrl, params }) {
 }
 
 // GET /api/pencarrie/whoami
-router.get('/whoami', (_req, res) => {
-  res.json({
-    ok: true,
-    env: process.env.PENCARRIE_ENV || 'sandbox (default)',
-    baseUrl: pickBaseUrl(),
-    note: 'Smoke tester is deployed; use /api/pencarrie/smoke to hit the gateway.'
-  });
+router.get('/whoami', async (_req, res) => {
+  try {
+    let egressIp = null;
+    try {
+      const ip = await axios.get('https://api.ipify.org', { timeout: 5000 });
+      egressIp = typeof ip.data === 'string' ? ip.data : null;
+    } catch {}
+    res.json({
+      ok: true,
+      env: process.env.PENCARRIE_ENV || 'sandbox (default)',
+      baseUrl: pickBaseUrlFromEnv(),
+      egressIp
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message || String(e) });
+  }
 });
 
 // GET /api/pencarrie/smoke?sku=SS11&env=sandbox|main
@@ -49,7 +58,11 @@ router.get('/smoke', async (req, res) => {
   try {
     const sku = String(req.query.sku || 'SS11').trim();
     const env = (req.query.env || '').toLowerCase();
-    const baseUrl = env === 'main' ? PC_BASE_MAIN : pickBaseUrl();
+
+    let baseUrl;
+    if (env === 'sandbox') baseUrl = PC_BASE_SANDBOX;
+    else if (env === 'main' || env === 'live' || env === 'production' || env === 'prod') baseUrl = PC_BASE_MAIN;
+    else baseUrl = pickBaseUrlFromEnv();
 
     const out = await postForm({
       baseUrl,
