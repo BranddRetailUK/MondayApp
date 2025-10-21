@@ -1,30 +1,17 @@
-// src/integrations/pencarrie.js
-// PenCarrie XML gateway client (spec-exact + pragmatic WAF-safe fallbacks)
-
 const fetch = (...args) => import('node-fetch').then(({ default: f }) => f(...args));
 const { parseStringPromise } = require('xml2js');
 const dns = require('node:dns').promises;
 const { URLSearchParams } = require('node:url');
 
 const {
-  // REQUIRED
-  PENCARRIE_GATEWAY_URL,            // e.g. https://pencarrie.com/gateway or https://sandbox.pencarrie.com/gateway
-  PENCARRIE_CUSTOMER_CODE,          // e.g. ULMP
-
-  // Diagnostics / tuning
-  PENCARRIE_ENV = 'live',           // 'sandbox' | 'live'
+  PENCARRIE_GATEWAY_URL,
+  PENCARRIE_CUSTOMER_CODE,
+  PENCARRIE_ENV = 'live',
   PENCARRIE_HTTP_TIMEOUT_MS = '20000',
-
-  // Host checks & overrides
-  // If not set, we assert a sane default based on PENCARRIE_ENV
-  PENCARRIE_EXPECT_HOST_REGEX,      // e.g. ^pencarrie\.com$  (override/disable by setting to empty)
-  PENCARRIE_FORCE_HOST_HEADER,      // if set, send Host: <value> (leave UNSET for sandbox)
-
-  // Fallback/compat controls
-  PENCARRIE_RETRY_GET_ON_403 = 'true',     // default: true (helps with strict WAFs — one GET retry)
-  PENCARRIE_METHOD,                        // optional hard override: 'POST' or 'GET'
-
-  // Headers
+  PENCARRIE_EXPECT_HOST_REGEX,
+  PENCARRIE_FORCE_HOST_HEADER,
+  PENCARRIE_RETRY_GET_ON_403 = 'true',
+  PENCARRIE_METHOD,
   PENCARRIE_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
   PENCARRIE_ACCEPT_HEADER = 'application/xml,text/xml;q=0.9,*/*;q=0.1',
 } = process.env;
@@ -82,7 +69,6 @@ function makeHeaders(method) {
   if (method === 'POST') {
     headers['Content-Type'] = 'application/x-www-form-urlencoded';
   }
-  // IMPORTANT: Do NOT force Host for sandbox unless explicitly set
   if (PENCARRIE_FORCE_HOST_HEADER) headers['Host'] = PENCARRIE_FORCE_HOST_HEADER;
   return headers;
 }
@@ -159,7 +145,6 @@ async function callGateway(fn, params = {}) {
 
   const form = buildForm(fn, params);
 
-  // Primary method (POST by default)
   const primaryMethod = (PENCARRIE_METHOD || 'POST').toUpperCase();
 
   let attempt;
@@ -171,7 +156,6 @@ async function callGateway(fn, params = {}) {
     attempt = await callOnce('POST', PENCARRIE_GATEWAY_URL, form);
   }
 
-  // WAF front-door pattern: HTML 403 — try GET once if enabled and we haven’t already used GET
   if (
     attempt.res.status === 403 &&
     looksLikeHtml(attempt.raw) &&
@@ -217,8 +201,6 @@ async function callGateway(fn, params = {}) {
     `[PenCarrie] Unexpected response type (status ${attempt.res.status}, content-type '${attempt.contentType}'). Body starts: ${short(attempt.raw, 200)}`
   );
 }
-
-// ===== High-level helpers (XML gateway functions) =====
 
 async function listOrders() {
   const data = await callGateway('pclist');
@@ -268,11 +250,8 @@ async function getOrder(ordcode) {
 
 async function getStock(sku) {
   if (!sku) throw new Error('[PenCarrie] getStock requires sku');
-  // Function name per PenCarrie docs
-  return callGateway('pcgetstock', { sku });
+  return callGateway('pcgetstock', { 'args[0]': sku });
 }
-
-// ===== Diagnostics =====
 
 async function checkIpAndHost() {
   const info = { baseUrl: PENCARRIE_GATEWAY_URL || '(unset)', env: PENCARRIE_ENV, egressIp: 'unknown' };
