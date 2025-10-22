@@ -54,23 +54,34 @@ router.get('/whoami', async (_req, res) => {
 
 router.get('/smoke', async (req, res) => {
   try {
-    const sku = String(req.query['args[0]'] || req.query.sku || 'SS11').trim();
     const env = (req.query.env || '').toLowerCase();
-
     let baseUrl;
     if (env === 'sandbox') baseUrl = PC_BASE_SANDBOX;
     else if (env === 'main' || env === 'live' || env === 'production' || env === 'prod') baseUrl = PC_BASE_MAIN;
     else baseUrl = pickBaseUrlFromEnv();
 
-    const params = {
-      function: 'pcgetstock',
-      code: PC_CUSTOMER_CODE,
-      'args[0]': sku
-    };
+    const fn = String(req.query.function || 'pcgetstock').trim();
+
+    const sku = String(req.query['args[0]'] || req.query.sku || 'SS11').trim();
+
+    const params = { function: fn, code: PC_CUSTOMER_CODE };
+
+    if (fn === 'pcgetstock') {
+      params['args[0]'] = sku;
+    } else if (fn === 'pcget') {
+      if (req.query.ordcode) params.ordcode = String(req.query.ordcode).trim();
+    } else if (fn === 'pclist') {
+    } else {
+      const skip = new Set(['env', 'function', 'sku']);
+      for (const [k, v] of Object.entries(req.query)) {
+        if (skip.has(k)) continue;
+        params[k] = String(v);
+      }
+    }
+
     const formString = new URLSearchParams(params).toString();
 
     const out = await postForm({ baseUrl, params });
-
     const preview = out.text.length > 1200 ? out.text.slice(0, 1200) + '…(truncated)' : out.text;
 
     res.status(200).json({
@@ -78,7 +89,6 @@ router.get('/smoke', async (req, res) => {
       env: baseUrl.includes('sandbox') ? 'sandbox' : 'main',
       baseUrl,
       payload: { params, body: formString },
-      sku,
       status: out.status,
       headers: {
         'content-type': out.headers['content-type'] || null,
