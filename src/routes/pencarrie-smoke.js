@@ -1,4 +1,3 @@
-// src/routes/pencarrie-smoke.js (CommonJS)
 const express = require('express');
 const axios = require('axios');
 
@@ -6,6 +5,7 @@ const router = express.Router();
 
 const PC_BASE_SANDBOX = 'https://sandbox.pencarrie.com/gateway';
 const PC_BASE_MAIN = 'https://pencarrie.com/gateway';
+const PC_CUSTOMER_CODE = process.env.PENCARRIE_CUSTOMER_CODE || 'ULPR';
 
 function pickBaseUrlFromEnv() {
   const v = (process.env.PENCARRIE_ENV || '').toLowerCase();
@@ -19,7 +19,7 @@ async function postForm({ baseUrl, params }) {
 
   const resp = await axios.post(baseUrl, body.toString(), {
     headers: {
-      'Accept': 'application/xml',
+      Accept: 'application/xml,text/xml;q=0.9,*/*;q=0.1',
       'Content-Type': 'application/x-www-form-urlencoded'
     },
     timeout: 15000,
@@ -34,7 +34,6 @@ async function postForm({ baseUrl, params }) {
   };
 }
 
-// GET /api/pencarrie/whoami
 router.get('/whoami', async (_req, res) => {
   try {
     let egressIp = null;
@@ -53,10 +52,9 @@ router.get('/whoami', async (_req, res) => {
   }
 });
 
-// GET /api/pencarrie/smoke?sku=SS11&env=sandbox|main
 router.get('/smoke', async (req, res) => {
   try {
-    const sku = String(req.query.sku || 'SS11').trim();
+    const sku = String(req.query['args[0]'] || req.query.sku || 'SS11').trim();
     const env = (req.query.env || '').toLowerCase();
 
     let baseUrl;
@@ -64,14 +62,14 @@ router.get('/smoke', async (req, res) => {
     else if (env === 'main' || env === 'live' || env === 'production' || env === 'prod') baseUrl = PC_BASE_MAIN;
     else baseUrl = pickBaseUrlFromEnv();
 
-    const out = await postForm({
-      baseUrl,
-      params: {
-        function: 'pcgetstock',
-        code: 'ULPR',
-        'args[0]': sku
-      }
-    });
+    const params = {
+      function: 'pcgetstock',
+      code: PC_CUSTOMER_CODE,
+      'args[0]': sku
+    };
+    const formString = new URLSearchParams(params).toString();
+
+    const out = await postForm({ baseUrl, params });
 
     const preview = out.text.length > 1200 ? out.text.slice(0, 1200) + '…(truncated)' : out.text;
 
@@ -79,6 +77,7 @@ router.get('/smoke', async (req, res) => {
       ok: true,
       env: baseUrl.includes('sandbox') ? 'sandbox' : 'main',
       baseUrl,
+      payload: { params, body: formString },
       sku,
       status: out.status,
       headers: {
