@@ -32,9 +32,7 @@ router.all('/events', (req, res, next) => {
 // --- Real webhook handler
 router.post('/events', async (req, res) => {
   try {
-    // Normalize Monday payloads:
-    // - Our custom JSON: { boardId, itemId, columnId, newLabel }
-    // - Webhooks app: { event: { boardId, pulseId/itemId, columnId, value:{label} } }
+    // Normalize Monday payloads
     let { boardId, itemId, columnId, newLabel } = req.body || {};
     if (req.body && req.body.event) {
       const ev = req.body.event;
@@ -43,11 +41,10 @@ router.post('/events', async (req, res) => {
       columnId = columnId || ev.columnId || ev.column_id;
       if (!newLabel && ev.value) {
         try {
-          // value might be an object or a JSON string
           const v = typeof ev.value === 'string' ? JSON.parse(ev.value) : ev.value;
           newLabel = v && (v.label || v.text || v.title);
         } catch {
-          // ignore parse issues; label may not exist for non-status changes
+          // ignore
         }
       }
     }
@@ -69,7 +66,7 @@ router.post('/events', async (req, res) => {
       return res.status(200).json({ ok: true, ignored: 'status not START' });
     }
 
-    // Fetch item + columns
+    // Fetch item + columns (also gives us board.id)
     const item = await getItemWithColumns(itemId);
 
     // Optional group gate
@@ -111,8 +108,10 @@ router.post('/events', async (req, res) => {
       return res.status(200).json({ ok: true, blocked: missing });
     }
 
-    // Placeholder action
-    await setStatusLabel(itemId, COLS.STATUS, 'IN PROGRESS');
+    // Placeholder action — now with boardId passed
+    const boardIdForMutation = item.board?.id || boardId;
+    await setStatusLabel(boardIdForMutation, itemId, COLS.STATUS, 'IN PROGRESS');
+
     await postUpdate(
       itemId,
       `⏳ Job queued.<br>` +

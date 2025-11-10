@@ -4,6 +4,8 @@ require('dotenv').config();
 
 const MONDAY_API_URL = process.env.MONDAY_API_URL || 'https://api.monday.com/v2';
 
+// If you have an OAuth token helper, swap this to use it.
+// For now we read MONDAY_API_TOKEN from env.
 async function getAuthHeader() {
   const token = process.env.MONDAY_API_TOKEN;
   if (!token) throw new Error('MONDAY_API_TOKEN not configured and no OAuth token helper wired');
@@ -23,13 +25,14 @@ async function gql(query, variables = {}) {
   return data.data;
 }
 
+/** Read item name (Customer) + all column_values + group + board id */
 async function getItemWithColumns(itemId) {
   const q = `
     query GetItem($id: [ID!]) {
       items (ids: $id) {
         id
         name
-        group { id title }      # <-- group info
+        group { id title }
         board { id }
         column_values {
           id
@@ -45,15 +48,27 @@ async function getItemWithColumns(itemId) {
   return d.items[0];
 }
 
-async function setStatusLabel(itemId, columnId, label) {
+/** Set status by label (requires board_id on your account) */
+async function setStatusLabel(boardId, itemId, columnId, label) {
   const q = `
-    mutation SetStatus($itemId: ID!, $columnId: String!, $value: String!) {
-      change_simple_column_value(item_id: $itemId, column_id: $columnId, value: $value) { id }
+    mutation SetStatus($boardId: ID!, $itemId: ID!, $columnId: String!, $value: String!) {
+      change_simple_column_value(
+        board_id: $boardId,
+        item_id: $itemId,
+        column_id: $columnId,
+        value: $value
+      ) { id }
     }
   `;
-  await gql(q, { itemId: Number(itemId), columnId, value: label });
+  await gql(q, {
+    boardId: Number(boardId),
+    itemId: Number(itemId),
+    columnId,
+    value: label
+  });
 }
 
+/** Post an update (no board_id required) */
 async function postUpdate(itemId, body) {
   const q = `
     mutation AddUpdate($itemId: ID!, $body: String!) {
@@ -63,4 +78,8 @@ async function postUpdate(itemId, body) {
   await gql(q, { itemId: Number(itemId), body });
 }
 
-module.exports = { getItemWithColumns, setStatusLabel, postUpdate };
+module.exports = {
+  getItemWithColumns,
+  setStatusLabel,
+  postUpdate,
+};
