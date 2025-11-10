@@ -4,8 +4,6 @@ require('dotenv').config();
 
 const MONDAY_API_URL = process.env.MONDAY_API_URL || 'https://api.monday.com/v2';
 
-// If your repo already has an OAuth token fetcher, require it here instead.
-// Fallback to MONDAY_API_TOKEN for a service-level token.
 async function getAuthHeader() {
   const token = process.env.MONDAY_API_TOKEN;
   if (!token) throw new Error('MONDAY_API_TOKEN not configured and no OAuth token helper wired');
@@ -25,13 +23,13 @@ async function gql(query, variables = {}) {
   return data.data;
 }
 
-/** Read item name (Customer) + all column_values */
 async function getItemWithColumns(itemId) {
   const q = `
     query GetItem($id: [ID!]) {
       items (ids: $id) {
         id
         name
+        group { id title }      # <-- group info
         board { id }
         column_values {
           id
@@ -47,7 +45,6 @@ async function getItemWithColumns(itemId) {
   return d.items[0];
 }
 
-/** Set status by label (easiest path) */
 async function setStatusLabel(itemId, columnId, label) {
   const q = `
     mutation SetStatus($itemId: ID!, $columnId: String!, $value: String!) {
@@ -57,7 +54,6 @@ async function setStatusLabel(itemId, columnId, label) {
   await gql(q, { itemId: Number(itemId), columnId, value: label });
 }
 
-/** Post an update (activity) on the item */
 async function postUpdate(itemId, body) {
   const q = `
     mutation AddUpdate($itemId: ID!, $body: String!) {
@@ -67,8 +63,4 @@ async function postUpdate(itemId, body) {
   await gql(q, { itemId: Number(itemId), body });
 }
 
-module.exports = {
-  getItemWithColumns,
-  setStatusLabel,
-  postUpdate,
-};
+module.exports = { getItemWithColumns, setStatusLabel, postUpdate };
