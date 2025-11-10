@@ -4,20 +4,37 @@ const router = express.Router();
 const axios = require('axios');
 const multer = require('multer');
 const upload = multer({ limits: { fileSize: 1024 * 1024 * 200 } }); // 200MB
-const { Pool } = require('pg');
 
-const pool = require('../db/pool');   // correct
+const pool = require('../db/pool');
 
+// ---- ENV (prefer existing project var names)
+const MONDAY_API_KEY =
+  process.env.MONDAY_API_TOKEN ||
+  process.env.MONDAY_API_KEY;
 
-// ---- ENV
-const MONDAY_API_KEY = process.env.MONDAY_API_KEY;
-const BOARD_ID_VISUAL = parseInt(process.env.BOARD_ID_VISUAL || '0', 10);
-const STATUS_COLUMN_ID_VISUAL = process.env.STATUS_COLUMN_ID_VISUAL || 'status';
-const FINISHED_VISUAL_COLUMN_ID = process.env.FINISHED_VISUAL_COLUMN_ID || 'files';
+const BOARD_ID_VISUAL = parseInt(
+  process.env.BOARD_ID_VISUAL || process.env.BOARD_ID || '0',
+  10
+);
+
+const STATUS_COLUMN_ID_VISUAL =
+  process.env.STATUS_COLUMN_ID_VISUAL ||
+  process.env.STATUS_COLUMN_ID ||
+  'status';
+
+const FINISHED_VISUAL_COLUMN_ID =
+  process.env.FINISHED_VISUAL_COLUMN_ID ||
+  process.env.FINISHED_VISUAL ||
+  'files';
+
 const VISUAL_WORKER_KEY = process.env.VISUAL_WORKER_KEY;
 const CLAIM_SECS = parseInt(process.env.VISUAL_CLAIM_SECS || '300', 10);
 
-// ---- Monday client (minimal)
+if (!MONDAY_API_KEY) {
+  throw new Error('Missing Monday token: set MONDAY_API_TOKEN or MONDAY_API_KEY');
+}
+
+// ---- Monday client
 const monday = axios.create({
   baseURL: 'https://api.monday.com/v2',
   headers: { Authorization: MONDAY_API_KEY, 'Content-Type': 'application/json' }
@@ -42,12 +59,11 @@ async function setStatusByIndex(boardId, itemId, columnId, index) {
     boardId,
     itemId,
     columnId,
-    val: String(index) // index-based setter expects string index
+    val: String(index)
   });
 }
 
 async function uploadFileToColumn(boardId, itemId, columnId, fileBuffer, filename) {
-  // Monday "add_file_to_column" requires multipart with query + variables + file
   const formData = new (require('form-data'))();
   const query = `
     mutation ($file: File!, $itemId: Int!, $columnId: String!) {
@@ -60,12 +76,12 @@ async function uploadFileToColumn(boardId, itemId, columnId, fileBuffer, filenam
   formData.append('0', fileBuffer, { filename });
 
   const { data } = await axios.post('https://api.monday.com/v2/file', formData, {
-    headers: { 
+    headers: {
       Authorization: MONDAY_API_KEY,
       ...formData.getHeaders()
     },
     maxContentLength: Infinity,
-    maxBodyLength: Infinity,
+    maxBodyLength: Infinity
   });
 
   if (data.errors) {
@@ -75,7 +91,7 @@ async function uploadFileToColumn(boardId, itemId, columnId, fileBuffer, filenam
   return data.data;
 }
 
-// ---- Security helpers
+// ---- Auth for worker
 function requireWorkerKey(req, res, next) {
   const key = req.header('X-Worker-Key');
   if (!VISUAL_WORKER_KEY || key !== VISUAL_WORKER_KEY) {
@@ -133,8 +149,6 @@ router.post('/next', requireWorkerKey, async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Atomically find & claim next available job
-    // Order: status queued, not locked (or lock expired), lowest priority, oldest created
     const claimSql = `
       SELECT id
       FROM visual_jobs
@@ -175,7 +189,7 @@ router.post('/next', requireWorkerKey, async (req, res) => {
   }
 });
 
-// ---- Heartbeat (extend lease)
+// ---- Heartbeat
 router.post('/heartbeat', requireWorkerKey, async (req, res) => {
   try {
     const { jobId, workerId } = req.body || {};
@@ -197,13 +211,12 @@ router.post('/heartbeat', requireWorkerKey, async (req, res) => {
   }
 });
 
-// ---- Complete (upload to Monday + flip status)
+// ---- Complete (upload to Monday + set Done)
 router.post('/complete', requireWorkerKey, upload.single('file'), async (req, res) => {
   try {
     const { jobId, success, notes } = req.body || {};
     if (!jobId) return res.status(400).json({ error: 'jobId required' });
 
-    // Get job
     const jobQ = await pool.query('SELECT * FROM visual_jobs WHERE id=$1', [jobId]);
     if (jobQ.rowCount === 0) return res.status(404).json({ error: 'job_not_found' });
     const job = jobQ.rows[0];
@@ -211,10 +224,8 @@ router.post('/complete', requireWorkerKey, upload.single('file'), async (req, re
     let outputUrl = job.output_url || null;
 
     if (success === 'true' || success === true) {
-      // Require file for success
       if (!req.file) return res.status(400).json({ error: 'file required for success' });
 
-      // 1) Upload file to Monday FINISHED_VISUAL column
       await uploadFileToColumn(
         job.board_id,
         job.item_id,
@@ -223,15 +234,11 @@ router.post('/complete', requireWorkerKey, upload.single('file'), async (req, re
         req.file.originalname || 'visual.pdf'
       );
 
-      // We don’t get a direct public URL back here; that’s fine. Track a pseudo-URL label.
       outputUrl = `monday://board/${job.board_id}/item/${job.item_id}/column/${FINISHED_VISUAL_COLUMN_ID}`;
 
-      // 2) Flip status to "Done" via index (you said “In progress” is index 0 on this board; set “Done” accordingly)
-      // If your "Done" index is something else, change it here.
-      const DONE_INDEX = 1; // <-- adjust if needed
+      const DONE_INDEX = 1; // set to your board's actual "Done" index
       await setStatusByIndex(job.board_id, job.item_id, STATUS_COLUMN_ID_VISUAL, DONE_INDEX);
 
-      // 3) Mark job done
       const upd = await pool.query(
         `UPDATE visual_jobs
          SET status='done', lock_until=NULL, output_url=$1, notes=$2
@@ -241,7 +248,6 @@ router.post('/complete', requireWorkerKey, upload.single('file'), async (req, re
       );
       return res.json({ ok: true, job: upd.rows[0] });
     } else {
-      // Mark failed
       const upd = await pool.query(
         `UPDATE visual_jobs
          SET status='failed', lock_until=NULL, notes=$1
