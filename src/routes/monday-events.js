@@ -10,7 +10,10 @@ const {
   STATUS_COLUMN_ID_VISUAL,
 } = require('../config/mondayFields');
 
-const { getItemWithColumns, setStatusLabel, postUpdate } = require('../services/mondayClient');
+// ✅ Use the index-based setter
+const { getItemWithColumns, setStatusByLabel, postUpdate } = require('../services/mondayClient');
+
+const STATUS_INPROGRESS_LABEL = process.env.STATUS_INPROGRESS_LABEL || 'In progress';
 
 // Parsers
 router.use(express.json({ limit: '1mb' }));
@@ -33,6 +36,7 @@ router.get('/ping', (_req, res) =>
     where: 'monday-events',
     boardIdVisual: String(BOARD_ID_VISUAL || ''),
     usingStatusId: STATUS_COLUMN_ID_VISUAL,
+    inProgressLabel: STATUS_INPROGRESS_LABEL,
   })
 );
 
@@ -54,7 +58,8 @@ router.post('/events', async (req, res) => {
       if (!newLabel && ev.value) {
         try {
           const v = typeof ev.value === 'string' ? JSON.parse(ev.value) : ev.value;
-          newLabel = v && (v.label || v.text || v.title);
+          const lab = v && v.label;
+          newLabel = (typeof lab === 'string' ? lab : (lab && lab.text)) || v.text || v.title || '';
         } catch {}
       }
     }
@@ -112,9 +117,9 @@ router.post('/events', async (req, res) => {
       return res.status(200).json({ ok: true, blocked: missing });
     }
 
-    // Flip to IN PROGRESS on the visual status column
+    // Flip to IN PROGRESS on the visual status column (by index via label)
     const boardIdForMutation = item.board?.id || boardId;
-    await setStatusByLabel(boardIdForMutation, itemId, STATUS_COLUMN_ID_VISUAL, 'IN PROGRESS');
+    await setStatusByLabel(boardIdForMutation, itemId, STATUS_COLUMN_ID_VISUAL, STATUS_INPROGRESS_LABEL);
 
     await postUpdate(
       itemId,
