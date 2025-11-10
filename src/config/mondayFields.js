@@ -1,21 +1,34 @@
 // src/config/mondayFields.js
 require('dotenv').config();
 
-const BOARD_ID = process.env.BOARD_ID || '5082950705';
-const GROUP_ID = process.env.GROUP_ID || ''; // optional gate
+/**
+ * BOARD IDS
+ * - Keep your legacy/main board for existing flows (label printer, etc.)
+ * - Use a separate board id for the VISUAL REQUESTS flow we’re wiring now.
+ */
+const BOARD_ID_MAIN   = process.env.BOARD_ID_MAIN   || process.env.BOARD_ID || '';   // legacy fallback
+const BOARD_ID_VISUAL = process.env.BOARD_ID_VISUAL || '5082950705';                 // <— set in Railway
 
-// Two distinct status columns so you don't stomp the label-printer flow
-const STATUS_COLUMN_ID_LABELPRINTER = process.env.STATUS_COLUMN_ID || process.env.STATUS_COLUMN_ID_LABELPRINTER || 'checkbox__1';
-const STATUS_COLUMN_ID_VISUAL       = process.env.STATUS_COLUMN_ID_VISUAL || 'status'; // <-- set this in Railway
+// Optional group gate for VISUAL; leave blank to accept all groups.
+const GROUP_ID = process.env.GROUP_ID || '';
 
-// Other columns for the VISUAL flow
+/**
+ * STATUS COLUMNS
+ * - Legacy flow keeps using STATUS_COLUMN_ID (checkbox__1).
+ * - VISUAL flow uses STATUS_COLUMN_ID_VISUAL (status / status_1).
+ */
+const STATUS_COLUMN_ID_LABELPRINTER =
+  process.env.STATUS_COLUMN_ID || process.env.STATUS_COLUMN_ID_LABELPRINTER || 'checkbox__1';
+
+const STATUS_COLUMN_ID_VISUAL =
+  process.env.STATUS_COLUMN_ID_VISUAL || 'status'; // <— set in Railway if your column id is different
+
+// VISUAL flow columns (ids you provided)
 const CUSTOMER_IS_ITEM_NAME = (process.env.CUSTOMER_IS_ITEM_NAME || 'true').toLowerCase() === 'true';
 
-// IDs you gave me
 const COLS = {
-  // VISUAL flow columns
-  STATUS_VISUAL: process.env.STATUS_COLUMN_ID_VISUAL || 'status',
-  CUSTOMER: process.env.CUSTOMER_COLUMN_ID || '', // item name is used if empty
+  STATUS_VISUAL: STATUS_COLUMN_ID_VISUAL,
+  CUSTOMER: process.env.CUSTOMER_COLUMN_ID || '', // item name used if blank
   JOB_TITLE: process.env.JOB_TITLE_COLUMN_ID || 'text_mkxe8d9e',
   JOB_NO: process.env.JOB_NO_COLUMN_ID || 'text_mkxj7461',
   FRONT_POS: process.env.FRONT_POS_COLUMN_ID || 'dropdown_mkxjdz5d',
@@ -25,15 +38,21 @@ const COLS = {
   BACK_ART: process.env.BACK_ART_COLUMN_ID || 'file_mkxj6djb',
   FINISHED_VISUAL: process.env.FINISHED_VISUAL_COLUMN_ID || 'file_mkxjpxfp',
 
-  // Keep the legacy/label-printer status id available (not used by this route)
+  // keep legacy id available for other routes
   STATUS_LABELPRINTER: STATUS_COLUMN_ID_LABELPRINTER,
 };
 
 module.exports = {
-  BOARD_ID,
+  // board ids
+  BOARD_ID_MAIN,
+  BOARD_ID_VISUAL,
+
+  // group & columns
   GROUP_ID,
   COLS,
   CUSTOMER_IS_ITEM_NAME,
+
+  // explicit status ids
   STATUS_COLUMN_ID_LABELPRINTER,
   STATUS_COLUMN_ID_VISUAL,
 };

@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 
 const {
-  BOARD_ID,
+  BOARD_ID_VISUAL,
   GROUP_ID,
   COLS,
   CUSTOMER_IS_ITEM_NAME,
@@ -28,8 +28,14 @@ router.use((req, res, next) => {
 
 // Health / debug
 router.get('/ping', (_req, res) =>
-  res.json({ ok: true, where: 'monday-events', usingStatusId: STATUS_COLUMN_ID_VISUAL })
+  res.json({
+    ok: true,
+    where: 'monday-events',
+    boardIdVisual: String(BOARD_ID_VISUAL || ''),
+    usingStatusId: STATUS_COLUMN_ID_VISUAL,
+  })
 );
+
 router.post('/echo', (req, res) => {
   console.log('[monday-events] /echo body:', req.body);
   res.json({ ok: true, body: req.body });
@@ -53,12 +59,19 @@ router.post('/events', async (req, res) => {
       }
     }
 
-    console.log('[monday-events] normalized', { boardId, itemId, columnId, newLabel, expect: STATUS_COLUMN_ID_VISUAL });
+    console.log('[monday-events] normalized', {
+      boardId, itemId, columnId, newLabel,
+      expectBoard: String(BOARD_ID_VISUAL), expectStatus: STATUS_COLUMN_ID_VISUAL
+    });
 
     if (!boardId || !itemId) return res.status(400).json({ ok: false, error: 'Missing boardId or itemId' });
-    if (String(boardId) !== String(BOARD_ID)) return res.status(200).json({ ok: true, ignored: 'different board' });
 
-    // Only react to the VISUAL status column id
+    // Only react for the VISUAL board
+    if (String(boardId) !== String(BOARD_ID_VISUAL)) {
+      return res.status(200).json({ ok: true, ignored: 'different board' });
+    }
+
+    // Only react to the VISUAL status column
     if (columnId && columnId !== STATUS_COLUMN_ID_VISUAL) {
       return res.status(200).json({ ok: true, ignored: `not the visual status column (${STATUS_COLUMN_ID_VISUAL})` });
     }
@@ -67,8 +80,10 @@ router.post('/events', async (req, res) => {
       return res.status(200).json({ ok: true, ignored: 'status not START' });
     }
 
+    // Fetch item + columns (also gives us board.id for mutation)
     const item = await getItemWithColumns(itemId);
 
+    // Optional group gate
     if (GROUP_ID && String(item.group?.id) !== String(GROUP_ID)) {
       await postUpdate(itemId, `ℹ️ Ignored: item is in group **${item.group?.title || item.group?.id}**, not the configured group.`);
       return res.status(200).json({ ok: true, ignored: 'wrong group', group: item.group?.id });
