@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Visual Generator Mock UI</title>
+  <style>
+    :root { --gold:#ffd700; --ink:#f5f5f5; --bg:#121212; --muted:#9aa0a6; }
+    body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto; background:var(--bg); color:var(--ink); margin:0; padding:40px;}
+    h1{color:var(--gold); margin:0 0 24px;}
+    label{display:block; margin-top:16px; font-weight:600;}
+    .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+    select,input[type="text"],input[type="number"]{padding:10px 12px; border-radius:8px; border:1px solid #2a2a2a; background:#1b1b1b; color:var(--ink); width:320px;}
+    input[type="file"]{color:var(--muted);}
+    button{margin-top:24px; padding:12px 20px; border:0; border-radius:10px; background:var(--gold); color:#111; font-weight:700; cursor:pointer;}
+    .swatch{width:36px;height:24px;border-radius:4px;border:1px solid #444;}
+    .muted{font-size:12px; color:var(--muted);}
+    .grid{display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:18px; max-width:820px;}
+    .card{background:#171717; border:1px solid #242424; border-radius:12px; padding:16px;}
+    .hint{font-size:12px; color:var(--muted); margin-top:6px;}
+  </style>
+</head>
+<body>
+  <h1>Mock Visual Job Generator</h1>
+
+  <div class="grid">
+    <div class="card">
+      <label>Customer Name
+        <input type="text" id="customer" value="Test Customer"/>
+      </label>
+
+      <label>Job Title
+        <input type="text" id="jobTitle" value="T-SHIRT ORDER"/>
+      </label>
+
+      <label>Job Ref
+        <input type="text" id="jobRef" value="00000"/>
+      </label>
+
+      <label>Quantity
+        <input type="number" id="jobQty" value="1000" min="1" step="1"/>
+      </label>
+
+      <label>Garment Colour</label>
+      <div class="row">
+        <select id="garmentColour"></select>
+        <div id="garmentSwatch" class="swatch"></div>
+        <span id="garmentRgb" class="muted"></span>
+      </div>
+
+      <p class="hint">Colour list is the same map used by the Illustrator script.</p>
+    </div>
+
+    <div class="card">
+      <label>Front Print Position</label>
+      <select id="frontPosition">
+        <option>None</option>
+        <option>Chest</option>
+        <option>Left Breast</option>
+        <option>Right Breast</option>
+      </select>
+
+      <label>Front Artwork (upload)</label>
+      <input type="file" id="frontUpload" accept=".png,.jpg,.jpeg,.pdf,.ai,.svg"/>
+      <div class="hint" id="frontStatus">No file uploaded.</div>
+
+      <hr style="border:0;border-top:1px solid #2a2a2a;margin:16px 0;">
+
+      <label>Back Print Position</label>
+      <select id="backPosition">
+        <option>None</option>
+        <option>Large Back</option>
+        <option>Outside Nape</option>
+      </select>
+
+      <label>Back Artwork (upload)</label>
+      <input type="file" id="backUpload" accept=".png,.jpg,.jpeg,.pdf,.ai,.svg"/>
+      <div class="hint" id="backStatus">No file uploaded.</div>
+    </div>
+  </div>
+
+  <button id="generateBtn">Generate JSON</button>
+  <span class="muted" id="saveMsg" style="margin-left:12px;"></span>
+
+  <script src="generate.js"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "itemId": "LOCALTEST-1762777209069",
+  "name": "first customer - first t-shirt",
+  "customer": "first customer",
+  "jobTitle": "first t-shirt",
+  "ref": "12345",
+  "quantity": 123,
+  "garmentColour": "Black",
+  "placements": [
+    {
+      "position": "Left Breast",
+      "artworkFile": "27764_MARVIN_WGO__1762777133718.png"
+    },
+    {
+      "position": "Large Back",
+      "artworkFile": "27662_SOUL_SURVIVOR_BLUE__1762777137174.png"
+    }
+  ],
+  "outputFilename": "first_customer_first_t-shirt_proof.pdf"
+}

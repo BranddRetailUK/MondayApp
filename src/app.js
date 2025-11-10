@@ -27,6 +27,8 @@ app.use(require('./routes/board'));
 app.use(require('./routes/scanner'));
 app.use(require('./routes/customers'));
 app.use(require('./routes/orders'));
+app.use('/api/monday', require('./routes/monday-events'));
+
 
 // 404
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
