@@ -1,35 +1,41 @@
-// routes/monday-events.js
+// src/routes/monday-events.js
 const express = require('express');
 const router = express.Router();
 
-const { BOARD_ID, GROUP_ID, COLS, CUSTOMER_IS_ITEM_NAME } = require('../config/mondayFields');
+const {
+  BOARD_ID,
+  GROUP_ID,
+  COLS,
+  CUSTOMER_IS_ITEM_NAME,
+  STATUS_COLUMN_ID_VISUAL,
+} = require('../config/mondayFields');
+
 const { getItemWithColumns, setStatusLabel, postUpdate } = require('../services/mondayClient');
 
-// Accept JSON + form-encoded bodies on this router
+// Parsers
 router.use(express.json({ limit: '1mb' }));
 router.use(express.urlencoded({ extended: true }));
 
-// --- Health / debug
-router.get('/ping', (_req, res) => res.json({ ok: true, where: 'monday-events' }));
+// Global challenge catcher (GET/POST, json/form/query)
+router.use((req, res, next) => {
+  const c =
+    (req.body && (req.body.challenge || req.body['challenge'])) ||
+    (req.query && (req.query.challenge || req.query['challenge'])) ||
+    null;
+  if (typeof c === 'string' && c.length) return res.json({ challenge: c });
+  return next();
+});
+
+// Health / debug
+router.get('/ping', (_req, res) =>
+  res.json({ ok: true, where: 'monday-events', usingStatusId: STATUS_COLUMN_ID_VISUAL })
+);
 router.post('/echo', (req, res) => {
   console.log('[monday-events] /echo body:', req.body);
   res.json({ ok: true, body: req.body });
 });
 
-// --- Challenge responder (handles GET/POST, json/form/query)
-router.all('/events', (req, res, next) => {
-  const challenge =
-    (req.body && (req.body.challenge || req.body['challenge'])) ||
-    (req.query && (req.query.challenge || req.query['challenge'])) ||
-    null;
-
-  if (typeof challenge === 'string' && challenge.length) {
-    return res.json({ challenge });
-  }
-  return next();
-});
-
-// --- Real webhook handler
+// Real webhook handler
 router.post('/events', async (req, res) => {
   try {
     // Normalize Monday payloads
@@ -43,60 +49,43 @@ router.post('/events', async (req, res) => {
         try {
           const v = typeof ev.value === 'string' ? JSON.parse(ev.value) : ev.value;
           newLabel = v && (v.label || v.text || v.title);
-        } catch {
-          // ignore
-        }
+        } catch {}
       }
     }
 
-    if (!boardId || !itemId) {
-      return res.status(400).json({ ok: false, error: 'Missing boardId or itemId' });
+    console.log('[monday-events] normalized', { boardId, itemId, columnId, newLabel, expect: STATUS_COLUMN_ID_VISUAL });
+
+    if (!boardId || !itemId) return res.status(400).json({ ok: false, error: 'Missing boardId or itemId' });
+    if (String(boardId) !== String(BOARD_ID)) return res.status(200).json({ ok: true, ignored: 'different board' });
+
+    // Only react to the VISUAL status column id
+    if (columnId && columnId !== STATUS_COLUMN_ID_VISUAL) {
+      return res.status(200).json({ ok: true, ignored: `not the visual status column (${STATUS_COLUMN_ID_VISUAL})` });
     }
 
-    if (String(boardId) !== String(BOARD_ID)) {
-      return res.status(200).json({ ok: true, ignored: 'different board' });
-    }
-
-    if (columnId && columnId !== COLS.STATUS) {
-      return res.status(200).json({ ok: true, ignored: 'not status column' });
-    }
-
-    const labelUpper = (newLabel || '').toString().toUpperCase();
-    if (labelUpper !== 'START') {
+    if ((String(newLabel) || '').toUpperCase() !== 'START') {
       return res.status(200).json({ ok: true, ignored: 'status not START' });
     }
 
-    // Fetch item + columns (also gives us board.id)
     const item = await getItemWithColumns(itemId);
 
-    // Optional group gate
     if (GROUP_ID && String(item.group?.id) !== String(GROUP_ID)) {
-      await postUpdate(
-        itemId,
-        `ℹ️ Ignored: item is in group **${item.group?.title || item.group?.id}**, not the configured group.`
-      );
+      await postUpdate(itemId, `ℹ️ Ignored: item is in group **${item.group?.title || item.group?.id}**, not the configured group.`);
       return res.status(200).json({ ok: true, ignored: 'wrong group', group: item.group?.id });
     }
 
-    // Build column lookup
-    const cv = {};
-    for (const c of item.column_values) cv[c.id] = c;
+    const cv = {}; for (const c of item.column_values) cv[c.id] = c;
 
-    // Extract fields
-    const customer = CUSTOMER_IS_ITEM_NAME
-      ? (item.name || '').trim()
-      : (cv[COLS.CUSTOMER]?.text || '').trim();
-
-    const jobTitle = (cv[COLS.JOB_TITLE]?.text || '').trim();
-    const jobNo    = (cv[COLS.JOB_NO]?.text || '').trim();
-    const frontPos = (cv[COLS.FRONT_POS]?.text || '').trim();
-    const backPos  = (cv[COLS.BACK_POS]?.text || '').trim();
-    const garmentColor = (cv[COLS.GARMENT_COLOR]?.text || '').trim();
+    const customer   = CUSTOMER_IS_ITEM_NAME ? (item.name || '').trim() : (cv[COLS.CUSTOMER]?.text || '').trim();
+    const jobTitle   = (cv[COLS.JOB_TITLE]?.text || '').trim();
+    const jobNo      = (cv[COLS.JOB_NO]?.text || '').trim();
+    const frontPos   = (cv[COLS.FRONT_POS]?.text || '').trim();
+    const backPos    = (cv[COLS.BACK_POS]?.text || '').trim();
+    const garmentCol = (cv[COLS.GARMENT_COLOR]?.text || '').trim();
 
     const hasFrontArt = !!(cv[COLS.FRONT_ART]?.value && cv[COLS.FRONT_ART].value !== 'null' && cv[COLS.FRONT_ART].value !== '');
     const hasBackArt  = !!(cv[COLS.BACK_ART]?.value && cv[COLS.BACK_ART].value !== 'null' && cv[COLS.BACK_ART].value !== '');
 
-    // Validation
     const missing = [];
     if (!customer) missing.push('Customer (item title)');
     if (!jobTitle) missing.push('JOB TITLE');
@@ -108,9 +97,9 @@ router.post('/events', async (req, res) => {
       return res.status(200).json({ ok: true, blocked: missing });
     }
 
-    // Placeholder action — now with boardId passed
+    // Flip to IN PROGRESS on the visual status column
     const boardIdForMutation = item.board?.id || boardId;
-    await setStatusLabel(boardIdForMutation, itemId, COLS.STATUS, 'IN PROGRESS');
+    await setStatusLabel(boardIdForMutation, itemId, STATUS_COLUMN_ID_VISUAL, 'IN PROGRESS');
 
     await postUpdate(
       itemId,
@@ -118,7 +107,7 @@ router.post('/events', async (req, res) => {
       `Customer: **${customer}**<br>` +
       `Title: **${jobTitle}**<br>` +
       `No: **${jobNo}**<br>` +
-      (garmentColor ? `Colour: **${garmentColor}**<br>` : '') +
+      (garmentCol ? `Colour: **${garmentCol}**<br>` : '') +
       (frontPos ? `Front pos: **${frontPos}**<br>` : '') +
       (backPos ? `Back pos: **${backPos}**<br>` : '')
     );
