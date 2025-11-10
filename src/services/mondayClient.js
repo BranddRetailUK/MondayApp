@@ -1,22 +1,16 @@
-// src/services/mondayClient.js
 const axios = require('axios');
 require('dotenv').config();
 
 const MONDAY_API_URL = process.env.MONDAY_API_URL || 'https://api.monday.com/v2';
 
-// If you have an OAuth token helper, swap this to use it.
-// For now we read MONDAY_API_TOKEN from env.
 async function getAuthHeader() {
   const token = process.env.MONDAY_API_TOKEN;
-  if (!token) throw new Error('MONDAY_API_TOKEN not configured and no OAuth token helper wired');
+  if (!token) throw new Error('MONDAY_API_TOKEN not configured');
   return { Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}` };
 }
 
 async function gql(query, variables = {}) {
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(await getAuthHeader())
-  };
+  const headers = { 'Content-Type': 'application/json', ...(await getAuthHeader()) };
   const { data } = await axios.post(MONDAY_API_URL, { query, variables }, { headers });
   if (data.errors) {
     const msg = data.errors.map(e => e.message).join('; ');
@@ -25,7 +19,6 @@ async function gql(query, variables = {}) {
   return data.data;
 }
 
-/** Read item name (Customer) + all column_values + group + board id */
 async function getItemWithColumns(itemId) {
   const q = `
     query GetItem($id: [ID!]) {
@@ -34,12 +27,7 @@ async function getItemWithColumns(itemId) {
         name
         group { id title }
         board { id }
-        column_values {
-          id
-          text
-          value
-          type
-        }
+        column_values { id text value type }
       }
     }
   `;
@@ -48,27 +36,47 @@ async function getItemWithColumns(itemId) {
   return d.items[0];
 }
 
-/** Set status by label (requires board_id on your account) */
-async function setStatusLabel(boardId, itemId, columnId, label) {
+/** Read the settings_str for a column and map label->index (case-insensitive) */
+async function getStatusIndex(boardId, columnId, targetLabel) {
   const q = `
-    mutation SetStatus($boardId: ID!, $itemId: ID!, $columnId: String!, $value: String!) {
-      change_simple_column_value(
-        board_id: $boardId,
-        item_id: $itemId,
-        column_id: $columnId,
-        value: $value
-      ) { id }
+    query GetColSettings($boardId: [ID!], $colIds: [String!]) {
+      boards (ids: $boardId) {
+        columns (ids: $colIds) { id settings_str }
+      }
     }
   `;
+  const d = await gql(q, { boardId: Number(boardId), colIds: [columnId] });
+  const col = d.boards?.[0]?.columns?.[0];
+  if (!col?.settings_str) throw new Error(`No settings_str for column ${columnId}`);
+  let settings;
+  try { settings = JSON.parse(col.settings_str); } catch {}
+  // settings.labels is an object: { "0":"Working on it", "1":"Done", ... }
+  const labels = settings?.labels || settings?.labels_positions || {};
+  const wanted = String(targetLabel).trim().toLowerCase();
+  for (const [idx, label] of Object.entries(labels)) {
+    if (String(label).trim().toLowerCase() === wanted) return Number(idx);
+  }
+  throw new Error(`Status label "${targetLabel}" not found on column ${columnId}`);
+}
+
+/** Set a status by label, internally resolves to an index and uses change_column_value */
+async function setStatusByLabel(boardId, itemId, columnId, label) {
+  const index = await getStatusIndex(boardId, columnId, label);
+  const valueJson = JSON.stringify({ index });
+  const q = `
+    mutation SetStatus($boardId: ID!, $itemId: ID!, $columnId: String!, $value: JSON!) {
+      change_column_value(board_id: $boardId, item_id: $itemId, column_id: $columnId, value: $value) { id }
+    }
+  `;
+  console.log(`[mondayClient] setStatusByLabel -> label="${label}" index=${index} on column=${columnId}`);
   await gql(q, {
     boardId: Number(boardId),
     itemId: Number(itemId),
     columnId,
-    value: label
+    value: valueJson
   });
 }
 
-/** Post an update (no board_id required) */
 async function postUpdate(itemId, body) {
   const q = `
     mutation AddUpdate($itemId: ID!, $body: String!) {
@@ -80,6 +88,6 @@ async function postUpdate(itemId, body) {
 
 module.exports = {
   getItemWithColumns,
-  setStatusLabel,
+  setStatusByLabel,
   postUpdate,
 };

@@ -114,7 +114,7 @@ router.post('/events', async (req, res) => {
 
     // Flip to IN PROGRESS on the visual status column
     const boardIdForMutation = item.board?.id || boardId;
-    await setStatusLabel(boardIdForMutation, itemId, STATUS_COLUMN_ID_VISUAL, 'IN PROGRESS');
+    await setStatusByLabel(boardIdForMutation, itemId, STATUS_COLUMN_ID_VISUAL, 'IN PROGRESS');
 
     await postUpdate(
       itemId,
