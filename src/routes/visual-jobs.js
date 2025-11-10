@@ -6,7 +6,8 @@ const multer = require('multer');
 const upload = multer({ limits: { fileSize: 1024 * 1024 * 200 } }); // 200MB
 const { Pool } = require('pg');
 
-const pool = require('../db'); // your existing pg Pool export
+const pool = require('../db/pool');   // correct
+
 
 // ---- ENV
 const MONDAY_API_KEY = process.env.MONDAY_API_KEY;
