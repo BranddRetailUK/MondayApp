@@ -7,6 +7,8 @@ const { PORT } = require('./config/env');
 const { getAccessToken } = require('./services/monday');
 const pencarrieRouter = require('./routes/pencarrie');
 const pencarrieSmoke = require('./routes/pencarrie-smoke');
+const visualJobs = require('./routes/visual-jobs');
+
 
 // ---- parse JSON BEFORE routes
 app.use(express.json());
@@ -27,6 +29,7 @@ app.use(require('./routes/board'));
 app.use(require('./routes/scanner'));
 app.use(require('./routes/customers'));
 app.use(require('./routes/orders'));
+app.use('/api/visual-jobs', visualJobs);
 
 // Monday webhook routes
 app.use('/api/monday', require('./routes/monday-events'));
