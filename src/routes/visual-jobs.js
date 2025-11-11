@@ -46,17 +46,23 @@ async function mondayGQL(query, variables = {}) {
   return data.data;
 }
 
+// FIXED: types now match Monday schema (ID!, String!) and value is string index
 async function setStatusByIndex(boardId, itemId, columnId, index) {
   const query = `
-    mutation SetStatus($boardId: Int!, $itemId: Int!, $columnId: String!, $val: JSON!) {
-      change_simple_column_value (board_id: $boardId, item_id: $itemId, column_id: $columnId, value: $val) { id }
+    mutation SetStatus($boardId: ID!, $itemId: ID!, $columnId: String!, $val: String!) {
+      change_simple_column_value(
+        board_id: $boardId,
+        item_id: $itemId,
+        column_id: $columnId,
+        value: $val
+      ) { id }
     }
   `;
   return mondayGQL(query, {
-    boardId,
-    itemId,
+    boardId: String(boardId),
+    itemId: String(itemId),
     columnId,
-    val: String(index)
+    val: String(index),
   });
 }
 
