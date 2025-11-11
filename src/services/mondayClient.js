@@ -1,3 +1,4 @@
+// src/services/mondayClient.js
 const axios = require('axios');
 require('dotenv').config();
 
@@ -50,7 +51,6 @@ async function getStatusIndex(boardId, columnId, targetLabel) {
   if (!col?.settings_str) throw new Error(`No settings_str for column ${columnId}`);
   let settings;
   try { settings = JSON.parse(col.settings_str); } catch {}
-  // settings.labels is an object: { "0":"Working on it", "1":"Done", ... }
   const labels = settings?.labels || settings?.labels_positions || {};
   const wanted = String(targetLabel).trim().toLowerCase();
   for (const [idx, label] of Object.entries(labels)) {

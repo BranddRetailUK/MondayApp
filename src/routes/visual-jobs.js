@@ -7,10 +7,11 @@ const upload = multer({ limits: { fileSize: 1024 * 1024 * 200 } }); // 200MB
 
 const pool = require('../db/pool');
 
-// ---- ENV (prefer existing project var names)
-const MONDAY_API_KEY =
-  process.env.MONDAY_API_TOKEN ||
-  process.env.MONDAY_API_KEY;
+// ---- ENV
+const MONDAY_API_TOKEN = process.env.MONDAY_API_TOKEN;
+if (!MONDAY_API_TOKEN) {
+  throw new Error('Missing Monday token: set MONDAY_API_TOKEN');
+}
 
 const BOARD_ID_VISUAL = parseInt(
   process.env.BOARD_ID_VISUAL || process.env.BOARD_ID || '0',
@@ -30,14 +31,10 @@ const FINISHED_VISUAL_COLUMN_ID =
 const VISUAL_WORKER_KEY = process.env.VISUAL_WORKER_KEY;
 const CLAIM_SECS = parseInt(process.env.VISUAL_CLAIM_SECS || '300', 10);
 
-if (!MONDAY_API_KEY) {
-  throw new Error('Missing Monday token: set MONDAY_API_TOKEN or MONDAY_API_KEY');
-}
-
 // ---- Monday client
 const monday = axios.create({
   baseURL: 'https://api.monday.com/v2',
-  headers: { Authorization: MONDAY_API_KEY, 'Content-Type': 'application/json' }
+  headers: { Authorization: MONDAY_API_TOKEN, 'Content-Type': 'application/json' }
 });
 
 async function mondayGQL(query, variables = {}) {
@@ -77,7 +74,7 @@ async function uploadFileToColumn(boardId, itemId, columnId, fileBuffer, filenam
 
   const { data } = await axios.post('https://api.monday.com/v2/file', formData, {
     headers: {
-      Authorization: MONDAY_API_KEY,
+      Authorization: MONDAY_API_TOKEN,
       ...formData.getHeaders()
     },
     maxContentLength: Infinity,
@@ -236,7 +233,7 @@ router.post('/complete', requireWorkerKey, upload.single('file'), async (req, re
 
       outputUrl = `monday://board/${job.board_id}/item/${job.item_id}/column/${FINISHED_VISUAL_COLUMN_ID}`;
 
-      const DONE_INDEX = 1; // set to your board's actual "Done" index
+      const DONE_INDEX = 1; // adjust if your "Done" index differs
       await setStatusByIndex(job.board_id, job.item_id, STATUS_COLUMN_ID_VISUAL, DONE_INDEX);
 
       const upd = await pool.query(
