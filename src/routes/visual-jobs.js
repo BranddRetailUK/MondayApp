@@ -61,12 +61,15 @@ async function setStatusByIndex(boardId, itemId, columnId, index) {
 }
 
 async function uploadFileToColumn(boardId, itemId, columnId, fileBuffer, filename) {
-  const formData = new (require('form-data'))();
+  const FormData = require('form-data');
+  const formData = new FormData();
+
   const query = `
-    mutation ($file: File!, $itemId: Int!, $columnId: String!) {
+    mutation ($file: File!, $itemId: ID!, $columnId: String!) {
       add_file_to_column (file: $file, item_id: $itemId, column_id: $columnId) { id }
     }
   `;
+
   formData.append('query', query);
   formData.append('variables', JSON.stringify({ itemId, columnId }));
   formData.append('map', JSON.stringify({ "0": ["variables.file"] }));
@@ -120,25 +123,24 @@ router.post('/enqueue', async (req, res) => {
       return res.status(400).json({ error: 'boardId and itemId are required' });
     }
 
-const { rows } = await pool.query(
-  `INSERT INTO visual_jobs
-   (board_id, item_id, group_id, job_title, job_no, customer,
-    front_pos, back_pos, garment_colour, front_art_url, back_art_url,
-    metadata, priority, status)
-   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'queued')
-   ON CONFLICT (board_id, item_id)
-   DO UPDATE SET
-     status='queued',
-     updated_at=now(),
-     attempts=0
-   RETURNING *`,
-  [
-    boardId, itemId, groupId || null, jobTitle || null, jobNo || null,
-    customer || null, frontPos || null, backPos || null, garmentColour || null,
-    frontArtUrl || null, backArtUrl || null, metadata || {}, priority
-  ]
-);
-
+    const { rows } = await pool.query(
+      `INSERT INTO visual_jobs
+       (board_id, item_id, group_id, job_title, job_no, customer,
+        front_pos, back_pos, garment_colour, front_art_url, back_art_url,
+        metadata, priority, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'queued')
+       ON CONFLICT (board_id, item_id)
+       DO UPDATE SET
+         status = 'queued',
+         updated_at = now(),
+         attempts = 0
+       RETURNING *`,
+      [
+        boardId, itemId, groupId || null, jobTitle || null, jobNo || null,
+        customer || null, frontPos || null, backPos || null, garmentColour || null,
+        frontArtUrl || null, backArtUrl || null, metadata || {}, priority
+      ]
+    );
 
     res.json({ ok: true, job: rows[0] });
   } catch (err) {
@@ -241,7 +243,7 @@ router.post('/complete', requireWorkerKey, upload.single('file'), async (req, re
 
       outputUrl = `monday://board/${job.board_id}/item/${job.item_id}/column/${FINISHED_VISUAL_COLUMN_ID}`;
 
-      const DONE_INDEX = 1; // adjust if your "Done" index differs
+      const DONE_INDEX = 1; // "DONE" index on your STATUS column
       await setStatusByIndex(job.board_id, job.item_id, STATUS_COLUMN_ID_VISUAL, DONE_INDEX);
 
       const upd = await pool.query(
