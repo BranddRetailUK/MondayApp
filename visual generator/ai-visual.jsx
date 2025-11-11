@@ -1,26 +1,26 @@
 /* @ts-nocheck */
 #target illustrator
 
-// JSON polyfill
+// JSON polyfill (safe for ExtendScript)
 if (typeof JSON === 'undefined') { JSON = {}; }
 if (typeof JSON.parse !== 'function') { JSON.parse = function (s) { return eval('(' + s + ')'); }; }
 if (typeof JSON.stringify !== 'function') {
-    JSON.stringify = function (o) {
-        var t = typeof o;
-        if (t !== "object" || o === null) {
-            if (t === "string") o = '"' + o + '"';
-            return String(o);
-        } else {
-            var json = [], isArr = (o && o.constructor === Array);
-            for (var n in o) {
-                var v = o[n]; t = typeof v;
-                if (t === "string") v = '"' + v + '"';
-                else if (t === "object" && v !== null) v = JSON.stringify(v);
-                json.push((isArr ? "" : '"' + n + '":') + String(v));
-            }
-            return (isArr ? "[" : "{") + String(json) + (isArr ? "]" : "}");
-        }
-    };
+  JSON.stringify = function (o) {
+    var t = typeof o;
+    if (t !== "object" || o === null) {
+      if (t === "string") o = '"' + o + '"';
+      return String(o);
+    } else {
+      var json = [], isArr = (o && o.constructor === Array);
+      for (var n in o) {
+        var v = o[n]; t = typeof v;
+        if (t === "string") v = '"' + v + '"';
+        else if (t === "object" && v !== null) v = JSON.stringify(v);
+        json.push((isArr ? "" : '"' + n + '":') + String(v));
+      }
+      return (isArr ? "[" : "{") + String(json) + (isArr ? "]" : "}");
+    }
+  };
 }
 
 // ---- PATHS ----
@@ -35,7 +35,6 @@ var OUTPUT_ROOT     = ROOT_PATH + '/VisualOutput';
 function log(m){ $.writeln('[VISUAL] ' + m); }
 function ensureFolder(p){ var f=new Folder(p); if(!f.exists) f.create(); return f; }
 function readFileJSON(p){ var f=new File(p); if(!f.exists) throw new Error('Missing file: '+p); f.open('r'); var t=f.read(); f.close(); return JSON.parse(t); }
-function readJob(){ var j=readFileJSON(JOB_CONFIG_PATH); log('Loaded job '+j.itemId); return j; }
 function readColours(){ try{ return readFileJSON(COLORS_PATH); }catch(e){ log('⚠️ colours missing'); return { 'Black':{r:0,g:0,b:0}, 'White':{r:255,g:255,b:255} }; } }
 
 function toAiColor(rgb){ var c=new RGBColor(); c.red=rgb.r; c.green=rgb.g; c.blue=rgb.b; return c; }
@@ -50,171 +49,112 @@ function getDate(){
 }
 
 function recolourPathItem(pi, col){ try{ pi.filled=true; pi.fillColor=col; }catch(e){} }
-function recolourGroupDeep(g, col, excludeCI){
+function recolourGroupDeep(g, col){
   for(var i=0;i<g.pageItems.length;i++){
-    var it=g.pageItems[i]; var nm=(it.name||"").toLowerCase();
-    if(excludeCI[nm]) continue;
+    var it=g.pageItems[i];
     if(it.typename==="PathItem") recolourPathItem(it,col);
     else if(it.typename==="CompoundPathItem"){ for(var k=0;k<it.pathItems.length;k++) recolourPathItem(it.pathItems[k], col); }
-    else if(it.typename==="GroupItem") recolourGroupDeep(it,col,excludeCI);
+    else if(it.typename==="GroupItem") recolourGroupDeep(it,col);
   }
 }
-function recolourLayerByNameExcluding(doc, layerName, aiColor, excluded){
+function recolourLayer(doc, layerName, aiColor){
   var layer=null; try{ layer=doc.layers.getByName(layerName);}catch(e){}
   if(!layer){ log("⚠️ missing layer "+layerName); return; }
-  var ex={}; for(var i=0;i<excluded.length;i++){ ex[String(excluded[i]).toLowerCase()]=true; }
-
-  for(var p=0;p<layer.pageItems.length;p++){ var it=layer.pageItems[p]; var nm=(it.name||"").toLowerCase(); if(ex[nm]) continue;
-    if(it.typename==="PathItem") recolourPathItem(it, aiColor);
-    else if(it.typename==="CompoundPathItem"){ for(var q=0;q<it.pathItems.length;q++) recolourPathItem(it.pathItems[q], aiColor); }
-    else if(it.typename==="GroupItem") recolourGroupDeep(it, aiColor, ex);
-  }
-  for(var s=0;s<layer.layers.length;s++){ var sub=layer.layers[s]; var sn=(sub.name||"").toLowerCase(); if(ex[sn]) continue;
-    for(var sp=0;sp<sub.pageItems.length;sp++){ var si=sub.pageItems[sp]; var sn2=(si.name||"").toLowerCase(); if(ex[sn2]) continue;
-      if(si.typename==="PathItem") recolourPathItem(si, aiColor);
-      else if(si.typename==="CompoundPathItem"){ for(var t=0;t<si.pathItems.length;t++) recolourPathItem(si.pathItems[t], aiColor); }
-      else if(si.typename==="GroupItem") recolourGroupDeep(si, aiColor, ex);
-    }
-  }
+  recolourGroupDeep(layer, aiColor);
 }
-
 function recolourGarment(doc, colourName, map){
   var rgb = map[colourName] || {r:255,g:255,b:255};
   var main = toAiColor(rgb);
   var base = toAiColor(darken(rgb,20));
-  recolourLayerByNameExcluding(doc, "front_body", main, []);
-  recolourLayerByNameExcluding(doc, "back_body",  main, []);
-  recolourLayerByNameExcluding(doc, "base_layer_front", base, ["SHADING"]);
-  recolourLayerByNameExcluding(doc, "base_layer_back",  base, ["SHADING"]);
+  recolourLayer(doc, "front_body", main);
+  recolourLayer(doc, "back_body",  main);
+  recolourLayer(doc, "base_layer_front", base);
+  recolourLayer(doc, "base_layer_back",  base);
 }
 
-// position mapping → {layer, target}
+// placement mapping
 function resolvePlacement(position){
-  var p = String(position || "");
-  if (p === "Chest")        return { layer: "chest_print_layer",   target: "chest_target" };
-  if (p === "Left Breast")  return { layer: "left_breast_layer",   target: "left_breast_target" };
-  if (p === "Right Breast") return { layer: "right_breast_layer",  target: "right_breast_target" };
-  if (p === "Large Back")   return { layer: "back_print_layer",    target: "back_target" };
-  if (p === "Outside Nape") return { layer: "outside_nape_layer",  target: "outside_nape_target" };
+  var p = String(position || "").toUpperCase();
+  if (p.indexOf("CHEST") !== -1)        return { layer: "chest_print_layer",   target: "chest_target" };
+  if (p.indexOf("LEFT BREAST") !== -1)  return { layer: "left_breast_layer",   target: "left_breast_target" };
+  if (p.indexOf("RIGHT BREAST") !== -1) return { layer: "right_breast_layer",  target: "right_breast_target" };
+  if (p.indexOf("LARGE BACK") !== -1)   return { layer: "back_print_layer",    target: "back_target" };
+  if (p.indexOf("NAPE") !== -1)         return { layer: "outside_nape_layer",  target: "outside_nape_target" };
   throw new Error("Unknown position: " + p);
 }
 
-function placeArtworkAt(doc, artworkFileName, position){
-  if (!artworkFileName) throw new Error("Missing artwork file for " + position);
-  var file = new File(ARTWORK_ROOT + '/' + artworkFileName);
-  if (!file.exists) throw new Error('Artwork not found: ' + file.fsName);
+function placeArtworkAt(doc, artworkFile, position){
+  if (!artworkFile || !position) return;
+  var file = new File(ARTWORK_ROOT + '/' + artworkFile);
+  if (!file.exists){ log('⚠️ artwork missing '+file.fsName); return; }
 
   var m = resolvePlacement(position);
   var layer = doc.layers.getByName(m.layer);
   var target = doc.pageItems.getByName(m.target);
-
   var placed = layer.placedItems.add();
   placed.file = file;
 
-  var maxW = target.width, maxH = target.height;
-  var scaleX = (maxW / placed.width) * 100;
-  var scaleY = (maxH / placed.height) * 100;
+  var scaleX = (target.width / placed.width) * 100;
+  var scaleY = (target.height / placed.height) * 100;
   var scale = Math.min(scaleX, scaleY);
   placed.resize(scale, scale);
-
-  // center horizontally; align top to target top
   placed.left = target.left + (target.width - placed.width) / 2;
   placed.top  = target.top;
-
-  log('Placed ' + position + ' → ' + artworkFileName);
+  log('Placed ' + position + ' → ' + artworkFile);
 }
 
-// --- NEW: classic trim/polyfill + filename helpers ---
-function sTrim(v){ return String(v).replace(/^\s+|\s+$/g, ""); }
-function safeName(s){
-  s = String(s).replace(/[\/\\:*?"<>|]+/g, "");
-  return s.replace(/\s+/g, "_");
-}
-
-// --- print info updater (positions uppercased) ---
-function updatePrintInfo(doc, job){
-  var placements = job.placements || [];
-
-  function findPos(names){
-    for (var i=0;i<placements.length;i++){
-      var p = placements[i] && String(placements[i].position || "");
-      for (var j=0;j<names.length;j++){
-        if (p === names[j]) return p;
-      }
-    }
-    return null;
-  }
-
-  var frontPos = findPos(["Chest","Left Breast","Right Breast"]);
-  var backPos  = findPos(["Large Back","Outside Nape"]);
-
-  function sizeFor(position){
-    if (!position) return null;
-    if (position === "Chest") return "280mm";
-    if (position === "Left Breast" || position === "Right Breast") return "100mm";
-    if (position === "Large Back") return "300mm";
-    if (position === "Outside Nape") return "70mm";
-    return null;
-  }
-
-  setTextFrameByName(doc, "print_position_front", frontPos ? frontPos.toUpperCase() : "—");
-  setTextFrameByName(doc, "print_size_front",     sizeFor(frontPos) || "—");
-
-  setTextFrameByName(doc, "print_position_back",  backPos ? backPos.toUpperCase() : "—");
-  setTextFrameByName(doc, "print_size_back",      sizeFor(backPos) || "—");
-}
-
-function exportProof(doc, job){
-  ensureFolder(OUTPUT_ROOT);
-
-  var customer = job.customer || job.customerName || "";
-  var title    = job.jobTitle || job.job_title || "";
-  var fromJob  = (job.outputFilename != null) ? sTrim(job.outputFilename) : "";
-
-  var filename = fromJob
-    ? fromJob
-    : safeName(customer) + "_" + safeName(title) + "_proof.pdf";
-
-  var out = new File(OUTPUT_ROOT + '/' + filename);
-  var opt = new PDFSaveOptions();
-  opt.preserveEditability = false;
-  doc.saveAs(out, opt);
-  log('Exported → ' + out.fsName);
-}
-
+// ---- main routine ----
 function main(){
   try{
     log('--- Start ---');
-    var job = readJob();
+    var job = readFileJSON(JOB_CONFIG_PATH);
     var colours = readColours();
     var doc = app.open(new File(TEMPLATE_PATH));
 
-    // header text
-    var customer = job.customer || job.customerName || "";
-    var jobTitle = job.jobTitle || "";
-    var ref      = job.ref || "";
-    var qty      = job.quantity != null ? String(job.quantity) : "";
-    setTextFrameByName(doc, "customer",  customer);
-    setTextFrameByName(doc, "job_title", jobTitle);
-    setTextFrameByName(doc, "ref",       ref);
-    setTextFrameByName(doc, "job_qty",   qty);
+    // Header info
+    setTextFrameByName(doc, "customer",  job.customer || "");
+    setTextFrameByName(doc, "job_title", job.job_title || "");
+    setTextFrameByName(doc, "ref",       job.job_no || "");
     setTextFrameByName(doc, "date",      getDate());
+    if (job.quantity) setTextFrameByName(doc, "job_qty", String(job.quantity));
 
-    // garment colours
-    recolourGarment(doc, job.garmentColour, colours);
+    // Garment colour
+    recolourGarment(doc, job.garment_colour, colours);
 
-    // placements (artwork)
-    for (var i=0; i<(job.placements||[]).length; i++){
-      var p = job.placements[i];
-      if (!p || !p.position || p.position === "None") continue;
-      placeArtworkAt(doc, p.artworkFile, p.position);
+    // Print positions and sizes
+    var frontPos = (job.front_pos || "").toUpperCase();
+    var backPos  = (job.back_pos  || "").toUpperCase();
+    setTextFrameByName(doc, "print_position_front", frontPos);
+    setTextFrameByName(doc, "print_position_back",  backPos);
+
+    function sizeFor(pos){
+      if (pos.indexOf("CHEST") !== -1) return "280mm";
+      if (pos.indexOf("BREAST") !== -1) return "100mm";
+      if (pos.indexOf("BACK")   !== -1) return "300mm";
+      if (pos.indexOf("NAPE")   !== -1) return "70mm";
+      return "—";
     }
+    setTextFrameByName(doc, "print_size_front", sizeFor(frontPos));
+    setTextFrameByName(doc, "print_size_back",  sizeFor(backPos));
 
-    // print info tables
-    updatePrintInfo(doc, job);
+    // Artwork placement from downloaded files
+    if (File(ARTWORK_ROOT + '/front_art.png').exists)
+      placeArtworkAt(doc, 'front_art.png', job.front_pos);
+    if (File(ARTWORK_ROOT + '/back_art.png').exists)
+      placeArtworkAt(doc, 'back_art.png', job.back_pos);
 
-    // export & close
-    exportProof(doc, job);
+    // Export proof
+    ensureFolder(OUTPUT_ROOT);
+    var proofFile = new File(
+      OUTPUT_ROOT + '/' +
+      String(job.customer).replace(/[^\w\d_-]+/g, '_') + '_' +
+      String(job.job_title).replace(/[^\w\d_-]+/g, '_') + '_proof.pdf'
+    );
+    var opt = new PDFSaveOptions();
+    opt.preserveEditability = false;
+    doc.saveAs(proofFile, opt);
+    log('Exported → ' + proofFile.fsName);
+
     doc.close(SaveOptions.DONOTSAVECHANGES);
     log('--- Done ---');
   }catch(e){
