@@ -120,17 +120,25 @@ router.post('/enqueue', async (req, res) => {
       return res.status(400).json({ error: 'boardId and itemId are required' });
     }
 
-    const { rows } = await pool.query(
-      `INSERT INTO visual_jobs
-       (board_id, item_id, group_id, job_title, job_no, customer, front_pos, back_pos, garment_colour, front_art_url, back_art_url, metadata, priority, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'queued')
-       RETURNING *`,
-      [
-        boardId, itemId, groupId || null, jobTitle || null, jobNo || null, customer || null,
-        frontPos || null, backPos || null, garmentColour || null,
-        frontArtUrl || null, backArtUrl || null, metadata || {}, priority
-      ]
-    );
+const { rows } = await pool.query(
+  `INSERT INTO visual_jobs
+   (board_id, item_id, group_id, job_title, job_no, customer,
+    front_pos, back_pos, garment_colour, front_art_url, back_art_url,
+    metadata, priority, status)
+   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'queued')
+   ON CONFLICT (board_id, item_id)
+   DO UPDATE SET
+     status='queued',
+     updated_at=now(),
+     attempts=0
+   RETURNING *`,
+  [
+    boardId, itemId, groupId || null, jobTitle || null, jobNo || null,
+    customer || null, frontPos || null, backPos || null, garmentColour || null,
+    frontArtUrl || null, backArtUrl || null, metadata || {}, priority
+  ]
+);
+
 
     res.json({ ok: true, job: rows[0] });
   } catch (err) {
