@@ -170,9 +170,11 @@ router.post('/events', async (req, res) => {
       },
     };
 
-    const baseUrl =
-      process.env.INTERNAL_ENQUEUE_URL || `http://127.0.0.1:${PORT}`;
-    await axios.post(`${baseUrl}/api/visual-jobs/enqueue`, enqueuePayload);
+const baseUrl =
+  process.env.INTERNAL_ENQUEUE_URL ||
+  'https://mondayapp-refactor-production.up.railway.app';
+await axios.post(`${baseUrl}/api/visual-jobs/enqueue`, enqueuePayload);
+
 
     return res.json({
       ok: true,
