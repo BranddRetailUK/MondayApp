@@ -1,16 +1,16 @@
 {
-  "id": "22",
+  "id": "37",
   "board_id": "5082950705",
-  "item_id": "5085038707",
+  "item_id": "5085466704",
   "group_id": "topics",
-  "job_title": "WORKING TSHIRT",
-  "job_no": "23432",
-  "customer": "WORKING TEST",
+  "job_title": "JULIA TSHIRTS",
+  "job_no": "34532",
+  "customer": "HERTFORD OFFSET",
   "front_pos": "CHEST",
-  "back_pos": "LARGE BACK",
+  "back_pos": "OUTSIDE NAPE",
   "garment_colour": "Antique Sapphire",
-  "front_art_url": "{\"files\":[{\"name\":\"27716 SILKY SOUL.png\",\"assetId\":167845335,\"isImage\":\"true\",\"fileType\":\"ASSET\",\"createdAt\":1762865393721,\"createdBy\":\"65458021\"}]}",
-  "back_art_url": "{\"files\":[{\"name\":\"27960 CURTIS HEAD.png\",\"assetId\":167845418,\"isImage\":\"true\",\"fileType\":\"ASSET\",\"createdAt\":1762865405795,\"createdBy\":\"65458021\"}]}",
+  "front_art_url": "{\"files\":[{\"name\":\"GAME ON LOGO.eps\",\"assetId\":168297510,\"isImage\":\"false\",\"fileType\":\"ASSET\",\"createdAt\":1762960659240,\"createdBy\":\"65458021\"}]}",
+  "back_art_url": "{\"files\":[{\"name\":\"GAME ON NUMBER.eps\",\"assetId\":168297547,\"isImage\":\"false\",\"fileType\":\"ASSET\",\"createdAt\":1762960664123,\"createdBy\":\"65458021\"}]}",
   "metadata": {
     "rawColumns": {
       "person": {
@@ -23,19 +23,19 @@
         "id": "status",
         "text": "START",
         "type": "status",
-        "value": "{\"index\":3,\"post_id\":null,\"changed_at\":\"2025-11-11T12:50:21.776Z\"}"
+        "value": "{\"index\":3,\"post_id\":null,\"changed_at\":\"2025-11-12T15:18:16.080Z\"}"
       },
       "file_mkxj6djb": {
         "id": "file_mkxj6djb",
-        "text": "https://ultimatepromotions-company.monday.com/protected_static/25192396/resources/167845418/27960%20CURTIS%20HEAD.png",
+        "text": "https://ultimatepromotions-company.monday.com/protected_static/25192396/resources/168297547/GAME%20ON%20NUMBER.eps",
         "type": "file",
-        "value": "{\"files\":[{\"name\":\"27960 CURTIS HEAD.png\",\"assetId\":167845418,\"isImage\":\"true\",\"fileType\":\"ASSET\",\"createdAt\":1762865405795,\"createdBy\":\"65458021\"}]}"
+        "value": "{\"files\":[{\"name\":\"GAME ON NUMBER.eps\",\"assetId\":168297547,\"isImage\":\"false\",\"fileType\":\"ASSET\",\"createdAt\":1762960664123,\"createdBy\":\"65458021\"}]}"
       },
       "file_mkxjg8eh": {
         "id": "file_mkxjg8eh",
-        "text": "https://ultimatepromotions-company.monday.com/protected_static/25192396/resources/167845335/27716%20SILKY%20SOUL.png",
+        "text": "https://ultimatepromotions-company.monday.com/protected_static/25192396/resources/168297510/GAME%20ON%20LOGO.eps",
         "type": "file",
-        "value": "{\"files\":[{\"name\":\"27716 SILKY SOUL.png\",\"assetId\":167845335,\"isImage\":\"true\",\"fileType\":\"ASSET\",\"createdAt\":1762865393721,\"createdBy\":\"65458021\"}]}"
+        "value": "{\"files\":[{\"name\":\"GAME ON LOGO.eps\",\"assetId\":168297510,\"isImage\":\"false\",\"fileType\":\"ASSET\",\"createdAt\":1762960659240,\"createdBy\":\"65458021\"}]}"
       },
       "file_mkxjpxfp": {
         "id": "file_mkxjpxfp",
@@ -45,15 +45,15 @@
       },
       "text_mkxe8d9e": {
         "id": "text_mkxe8d9e",
-        "text": "WORKING TSHIRT",
+        "text": "JULIA TSHIRTS",
         "type": "text",
-        "value": "\"WORKING TSHIRT\""
+        "value": "\"JULIA TSHIRTS\""
       },
       "text_mkxj7461": {
         "id": "text_mkxj7461",
-        "text": "23432",
+        "text": "34532",
         "type": "text",
-        "value": "\"23432\""
+        "value": "\"34532\""
       },
       "dropdown_mkxjdz5d": {
         "id": "dropdown_mkxjdz5d",
@@ -69,9 +69,9 @@
       },
       "dropdown_mkxjv15t": {
         "id": "dropdown_mkxjv15t",
-        "text": "LARGE BACK",
+        "text": "OUTSIDE NAPE",
         "type": "dropdown",
-        "value": "{\"ids\":[1]}"
+        "value": "{\"ids\":[2]}"
       },
       "subtasks_mkxe7kbk": {
         "id": "subtasks_mkxe7kbk",
@@ -85,9 +85,9 @@
   "priority": 100,
   "attempts": 1,
   "claimed_by": "local-runner",
-  "lock_until": "2025-11-11T12:56:12.223Z",
+  "lock_until": "2025-11-12T15:23:24.643Z",
   "output_url": null,
   "notes": null,
-  "created_at": "2025-11-11T12:50:29.299Z",
-  "updated_at": "2025-11-11T12:51:12.223Z"
+  "created_at": "2025-11-12T15:18:22.905Z",
+  "updated_at": "2025-11-12T15:18:24.643Z"
 }

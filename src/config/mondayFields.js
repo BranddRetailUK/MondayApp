@@ -42,6 +42,13 @@ const COLS = {
   STATUS_LABELPRINTER: STATUS_COLUMN_ID_LABELPRINTER,
 };
 
+const SUBITEM_COLS = {
+  CODE: process.env.SUBITEM_CODE_COLUMN_ID || '',
+  SIZE: process.env.SUBITEM_SIZE_COLUMN_ID || '',
+  COLOUR: process.env.SUBITEM_COLOUR_COLUMN_ID || '',
+  QTY: process.env.SUBITEM_QTY_COLUMN_ID || '',
+};
+
 module.exports = {
   // board ids
   BOARD_ID_MAIN,
@@ -50,6 +57,7 @@ module.exports = {
   // group & columns
   GROUP_ID,
   COLS,
+  SUBITEM_COLS,
   CUSTOMER_IS_ITEM_NAME,
 
   // explicit status ids

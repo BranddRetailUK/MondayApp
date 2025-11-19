@@ -86,8 +86,104 @@ async function postUpdate(itemId, body) {
   await gql(q, { itemId: Number(itemId), body });
 }
 
+async function findItemsByColumnValue(boardId, columnId, compareValue, limit = 5) {
+  const q = `
+    query FindItems($boardId: ID!, $columnId: String!, $value: String!, $limit: Int!) {
+      items_page_by_column_values(
+        board_id: $boardId,
+        columns: [{ column_id: $columnId, column_values: [$value] }],
+        limit: $limit
+      ) {
+        items {
+          id
+          name
+          column_values { id text value }
+        }
+      }
+    }
+  `;
+  const resp = await gql(q, {
+    boardId: Number(boardId),
+    columnId,
+    value: String(compareValue),
+    limit,
+  });
+  const items = resp.items_page_by_column_values?.items || [];
+  return items;
+}
+
+async function createSubitem(parentItemId, itemName, columnValues = {}) {
+  const q = `
+    mutation CreateSubitem($parentId: ID!, $name: String!, $cols: JSON) {
+      create_subitem(parent_item_id: $parentId, item_name: $name, column_values: $cols) { id }
+    }
+  `;
+  const columnsJson =
+    columnValues && Object.keys(columnValues).length > 0
+      ? JSON.stringify(columnValues)
+      : null;
+  const resp = await gql(q, {
+    parentId: Number(parentItemId),
+    name: itemName,
+    cols: columnsJson,
+  });
+  return resp.create_subitem?.id;
+}
+
+async function findItemByNamePrefix(boardId, prefix, { perPage = 100, maxPages = 20 } = {}) {
+  const firstQuery = `
+    query ItemsPage($boardId: [ID!], $limit: Int!) {
+      boards(ids: $boardId) {
+        items_page(limit: $limit) {
+          cursor
+          items {
+            id
+            name
+            column_values { id text value }
+          }
+        }
+      }
+    }
+  `;
+
+  const nextQuery = `
+    query NextItems($cursor: String!) {
+      next_items_page(cursor: $cursor) {
+        cursor
+        items {
+          id
+          name
+          column_values { id text value }
+        }
+      }
+    }
+  `;
+
+  let currentPage = await gql(firstQuery, {
+    boardId: [Number(boardId)],
+    limit: perPage,
+  });
+  let payload = currentPage.boards?.[0]?.items_page;
+  let pagesRead = 0;
+
+  while (payload && pagesRead < maxPages) {
+    pagesRead += 1;
+    const match = payload.items?.find(item => item.name?.startsWith(String(prefix)));
+    if (match) return match;
+
+    if (!payload.cursor) break;
+    const next = await gql(nextQuery, { cursor: payload.cursor });
+    payload = next.next_items_page;
+  }
+
+  return null;
+}
+
 module.exports = {
   getItemWithColumns,
   setStatusByLabel,
   postUpdate,
+  findItemsByColumnValue,
+  createSubitem,
+  findItemByNamePrefix,
 };

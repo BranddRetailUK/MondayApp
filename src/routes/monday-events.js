@@ -12,11 +12,16 @@ const {
   CUSTOMER_IS_ITEM_NAME,
   STATUS_COLUMN_ID_VISUAL,
 } = require('../config/mondayFields');
+const lineItemImporter = require('../services/dropboxLineItemImporter');
+const { processJobNumber } = lineItemImporter;
+const LINEITEM_BOARD_ID = lineItemImporter.BOARD_ID;
+const LINEITEM_JOB_NO_COLUMN_ID = lineItemImporter.JOB_NO_COLUMN_ID;
 
 // ✅ Use the index-based setter
 const { getItemWithColumns, setStatusByLabel, postUpdate } = require('../services/mondayClient');
 
 const STATUS_INPROGRESS_LABEL = process.env.STATUS_INPROGRESS_LABEL || 'In progress';
+const CREATE_ITEM_EVENTS = new Set(['create_pulse', 'create_item']);
 
 // Simple health/echo route so you can test from curl / browser
 router.post('/echo', (req, res) => {
@@ -29,11 +34,13 @@ router.post('/events', async (req, res) => {
   try {
     // Normalize Monday payloads
     let { boardId, itemId, columnId, newLabel } = req.body || {};
+    let eventType = '';
     if (req.body && req.body.event) {
       const ev = req.body.event;
       boardId  = boardId  || ev.boardId || ev.board_id;
       itemId   = itemId   || ev.pulseId || ev.itemId || ev.pulse_id || ev.item_id;
       columnId = columnId || ev.columnId || ev.column_id;
+      eventType = String(ev.type || '').toLowerCase();
       if (!newLabel && ev.value) {
         try {
           const parsed = typeof ev.value === 'string' ? JSON.parse(ev.value) : ev.value;
@@ -55,10 +62,15 @@ router.post('/events', async (req, res) => {
       columnId,
       STATUS_COLUMN_ID_VISUAL,
       BOARD_ID_VISUAL,
+      eventType,
     });
 
     if (!boardId || !itemId) {
       return res.status(400).json({ ok: false, error: 'Missing boardId or itemId' });
+    }
+
+    if (CREATE_ITEM_EVENTS.has(eventType)) {
+      return await handleLineItemWebhook(boardId, itemId, res);
     }
 
     // Only react to the VISUAL board
@@ -188,3 +200,54 @@ await axios.post(`${baseUrl}/api/visual-jobs/enqueue`, enqueuePayload);
 });
 
 module.exports = router;
+
+function extractJobNumberFromText(text) {
+  const match = String(text || '').match(/\b(\d{5})\b/);
+  return match ? match[1] : null;
+}
+
+async function handleLineItemWebhook(boardId, itemId, res) {
+  if (!LINEITEM_BOARD_ID) {
+    return res.status(200).json({ ok: true, ignored: 'line-item importer disabled' });
+  }
+
+  if (String(boardId) !== String(LINEITEM_BOARD_ID)) {
+    return res.status(200).json({ ok: true, ignored: 'not a tracked board' });
+  }
+
+  const item = await getItemWithColumns(itemId);
+  const cv = {};
+  for (const c of item.column_values) cv[c.id] = c;
+
+  let jobNumber = null;
+  if (LINEITEM_JOB_NO_COLUMN_ID && cv[LINEITEM_JOB_NO_COLUMN_ID]?.text) {
+    jobNumber = (cv[LINEITEM_JOB_NO_COLUMN_ID].text || '').trim();
+  }
+  if (!jobNumber) {
+    jobNumber = extractJobNumberFromText(item.name);
+  }
+
+  if (!jobNumber) {
+    return res.status(200).json({ ok: true, ignored: 'job number missing' });
+  }
+
+  const result = await processJobNumber(jobNumber, { targetItemId: itemId });
+  if (!result.ok && result.reason === 'file_not_found') {
+    return res.status(200).json({ ok: true, ignored: 'no matching Dropbox file' });
+  }
+  if (!result.ok) {
+    throw new Error(result.reason || 'line-item import failed');
+  }
+
+  await postUpdate(
+    itemId,
+    `📥 Imported ${result.lineItems} line items from Dropbox file **${result.file}**.`
+  );
+
+  return res.json({
+    ok: true,
+    action: 'lineitems_imported',
+    jobNumber,
+    lineItems: result.lineItems,
+  });
+}
