@@ -29,6 +29,10 @@ async function getItemWithColumns(itemId) {
         group { id title }
         board { id }
         column_values { id text value type }
+        subitems {
+          id
+          name
+        }
       }
     }
   `;

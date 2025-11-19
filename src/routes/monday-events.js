@@ -231,7 +231,14 @@ async function handleLineItemWebhook(boardId, itemId, res) {
     return res.status(200).json({ ok: true, ignored: 'job number missing' });
   }
 
+  if (item.subitems && item.subitems.length > 0) {
+    return res.status(200).json({ ok: true, ignored: 'subitems already exist' });
+  }
+
   const result = await processJobNumber(jobNumber, { targetItemId: itemId });
+  if (!result.ok && result.reason === 'job_in_progress') {
+    return res.status(200).json({ ok: true, ignored: 'job already processing' });
+  }
   if (!result.ok && result.reason === 'file_not_found') {
     return res.status(200).json({ ok: true, ignored: 'no matching Dropbox file' });
   }

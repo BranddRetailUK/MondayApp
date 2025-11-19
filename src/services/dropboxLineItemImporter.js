@@ -165,17 +165,31 @@ async function importAllPending({ dryRun = false } = {}) {
   return results;
 }
 
+const activeJobs = new Set();
+
 async function processJobNumber(jobNumber, { dryRun = false, targetItemId = null } = {}) {
-  const entry = await findFileByJobNumber(jobNumber);
-  if (!entry) {
-    return { ok: false, reason: 'file_not_found', jobNumber };
+  const key = String(jobNumber || '').trim();
+  if (!key) return { ok: false, reason: 'invalid_job_number' };
+
+  if (activeJobs.has(key)) {
+    return { ok: false, reason: 'job_in_progress', jobNumber: key };
   }
 
-  const result = await processDropboxEntry(entry, {
-    dryRun,
-    targetItemId,
-  });
-  return { ok: true, ...result };
+  activeJobs.add(key);
+  try {
+    const entry = await findFileByJobNumber(jobNumber);
+    if (!entry) {
+      return { ok: false, reason: 'file_not_found', jobNumber };
+    }
+
+    const result = await processDropboxEntry(entry, {
+      dryRun,
+      targetItemId,
+    });
+    return { ok: true, ...result };
+  } finally {
+    activeJobs.delete(key);
+  }
 }
 
 module.exports = {
