@@ -134,17 +134,20 @@ async function createSubitem(parentItemId, itemName, columnValues = {}) {
   return resp.create_subitem?.id;
 }
 
-async function findItemByNamePrefix(boardId, prefix, { perPage = 100, maxPages = 20 } = {}) {
+const ITEM_FRAGMENT = `
+  id
+  name
+  group { id title }
+  column_values { id text value }
+`;
+
+async function listBoardItems(boardId, { perPage = 100, maxPages = 20 } = {}) {
   const firstQuery = `
     query ItemsPage($boardId: [ID!], $limit: Int!) {
       boards(ids: $boardId) {
         items_page(limit: $limit) {
           cursor
-          items {
-            id
-            name
-            column_values { id text value }
-          }
+          items { ${ITEM_FRAGMENT} }
         }
       }
     }
@@ -154,11 +157,7 @@ async function findItemByNamePrefix(boardId, prefix, { perPage = 100, maxPages =
     query NextItems($cursor: String!) {
       next_items_page(cursor: $cursor) {
         cursor
-        items {
-          id
-          name
-          column_values { id text value }
-        }
+        items { ${ITEM_FRAGMENT} }
       }
     }
   `;
@@ -169,18 +168,44 @@ async function findItemByNamePrefix(boardId, prefix, { perPage = 100, maxPages =
   });
   let payload = currentPage.boards?.[0]?.items_page;
   let pagesRead = 0;
+  const items = [];
 
   while (payload && pagesRead < maxPages) {
     pagesRead += 1;
-    const match = payload.items?.find(item => item.name?.startsWith(String(prefix)));
-    if (match) return match;
+    if (Array.isArray(payload.items)) items.push(...payload.items);
 
     if (!payload.cursor) break;
     const next = await gql(nextQuery, { cursor: payload.cursor });
     payload = next.next_items_page;
   }
 
-  return null;
+  return items;
+}
+
+async function findItemByNamePrefix(boardId, prefix, options = {}) {
+  const items = await listBoardItems(boardId, options);
+  return items.find(item => item.name?.startsWith(String(prefix))) || null;
+}
+
+async function createItem(boardId, groupId, itemName, columnValues = {}) {
+  const q = `
+    mutation CreateItem($boardId: ID!, $groupId: String, $itemName: String!, $columnValues: JSON) {
+      create_item(board_id: $boardId, group_id: $groupId, item_name: $itemName, column_values: $columnValues) {
+        id
+      }
+    }
+  `;
+  const columnJson =
+    columnValues && Object.keys(columnValues).length > 0
+      ? JSON.stringify(columnValues)
+      : null;
+  const resp = await gql(q, {
+    boardId: Number(boardId),
+    groupId: groupId || null,
+    itemName,
+    columnValues: columnJson,
+  });
+  return resp.create_item?.id;
 }
 
 module.exports = {
@@ -190,4 +215,6 @@ module.exports = {
   findItemsByColumnValue,
   createSubitem,
   findItemByNamePrefix,
+  listBoardItems,
+  createItem,
 };

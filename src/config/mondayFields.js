@@ -11,6 +11,10 @@ const BOARD_ID_VISUAL = process.env.BOARD_ID_VISUAL || '5082950705';            
 
 // Optional group gate for VISUAL; leave blank to accept all groups.
 const GROUP_ID = process.env.GROUP_ID || '';
+const DEFAULT_LINEITEM_GROUP_ID =
+  process.env.LINEITEM_GROUP_ID ||
+  GROUP_ID ||
+  '';
 
 /**
  * STATUS COLUMNS
@@ -31,6 +35,7 @@ const COLS = {
   CUSTOMER: process.env.CUSTOMER_COLUMN_ID || '', // item name used if blank
   JOB_TITLE: process.env.JOB_TITLE_COLUMN_ID || 'text_mkxe8d9e',
   JOB_NO: process.env.JOB_NO_COLUMN_ID || 'text_mkxj7461',
+  JOB_TYPE_STATUS: process.env.JOB_TYPE_STATUS_COLUMN_ID || 'project_status',
   FRONT_POS: process.env.FRONT_POS_COLUMN_ID || 'dropdown_mkxjdz5d',
   BACK_POS: process.env.BACK_POS_COLUMN_ID || 'dropdown_mkxjv15t',
   GARMENT_COLOR: process.env.GARMENT_COLOR_COLUMN_ID || 'dropdown_mkxjed3a',
@@ -56,6 +61,7 @@ module.exports = {
 
   // group & columns
   GROUP_ID,
+  DEFAULT_LINEITEM_GROUP_ID,
   COLS,
   SUBITEM_COLS,
   CUSTOMER_IS_ITEM_NAME,
