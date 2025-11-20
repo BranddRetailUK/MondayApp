@@ -2,20 +2,43 @@
 require('dotenv').config();
 const path = require('path');
 const { Dropbox } = require('dropbox');
+const axios = require('axios');
+const fetch = (...args) => import('node-fetch').then(({ default: fetchFn }) => fetchFn(...args));
 
-const fetch = (...args) =>
-  import('node-fetch').then(({ default: fetchFn }) => fetchFn(...args));
+const APP_KEY = process.env.DROPBOX_APP_KEY;
+const APP_SECRET = process.env.DROPBOX_APP_SECRET;
+const REFRESH_TOKEN = process.env.DROPBOX_REFRESH_TOKEN;
+let ACCESS_TOKEN = process.env.DROPBOX_ACCESS_TOKEN || null;
 
-const ACCESS_TOKEN = process.env.DROPBOX_ACCESS_TOKEN;
-if (!ACCESS_TOKEN) {
-  throw new Error('DROPBOX_ACCESS_TOKEN is required for Dropbox integration');
+async function refreshAccessToken() {
+  if (!REFRESH_TOKEN) {
+    if (!ACCESS_TOKEN) {
+      throw new Error('DROPBOX_ACCESS_TOKEN or DROPBOX_REFRESH_TOKEN required');
+    }
+    return ACCESS_TOKEN;
+  }
+  const params = new URLSearchParams();
+  params.append('grant_type', 'refresh_token');
+  params.append('refresh_token', REFRESH_TOKEN);
+  const auth = Buffer.from(`${APP_KEY}:${APP_SECRET}`).toString('base64');
+  const { data } = await axios.post('https://api.dropboxapi.com/oauth2/token', params, {
+    headers: {
+      Authorization: `Basic ${auth}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+  });
+  ACCESS_TOKEN = data.access_token;
+  return ACCESS_TOKEN;
+}
+
+async function getDropboxClient() {
+  const token = await refreshAccessToken();
+  return new Dropbox({ accessToken: token, fetch });
 }
 
 const IMPORT_FOLDER = process.env.DROPBOX_IMPORT_FOLDER || '/MONDAY';
 const ARCHIVE_FOLDER = process.env.DROPBOX_ARCHIVE_FOLDER || '/MONDAY/archive';
 const ERROR_FOLDER = process.env.DROPBOX_ERROR_FOLDER || '/MONDAY/errors';
-
-const dropbox = new Dropbox({ accessToken: ACCESS_TOKEN, fetch });
 
 function normalizePath(folderPath) {
   if (!folderPath.startsWith('/')) return `/${folderPath}`;
@@ -25,10 +48,12 @@ function normalizePath(folderPath) {
 async function ensureFolder(folderPath) {
   const target = normalizePath(folderPath);
   try {
-    await dropbox.filesGetMetadata({ path: target });
+    const dbx = await getDropboxClient();
+    await dbx.filesGetMetadata({ path: target });
   } catch (err) {
     if (err?.status === 409) {
-      await dropbox.filesCreateFolderV2({ path: target, autorename: false });
+      const dbx = await getDropboxClient();
+      await dbx.filesCreateFolderV2({ path: target, autorename: false });
       return;
     }
     throw err;
@@ -39,9 +64,10 @@ async function listProcessableFiles() {
   const files = [];
   let cursor = null;
   do {
+    const dbx = await getDropboxClient();
     const response = cursor
-      ? await dropbox.filesListFolderContinue({ cursor })
-      : await dropbox.filesListFolder({ path: normalizePath(IMPORT_FOLDER), recursive: false });
+      ? await dbx.filesListFolderContinue({ cursor })
+      : await dbx.filesListFolder({ path: normalizePath(IMPORT_FOLDER), recursive: false });
 
     response.result.entries
       .filter(entry => entry['.tag'] === 'file')
@@ -55,7 +81,8 @@ async function listProcessableFiles() {
 }
 
 async function downloadFile(entryPath) {
-  const { result } = await dropbox.filesDownload({ path: entryPath });
+  const dbx = await getDropboxClient();
+  const { result } = await dbx.filesDownload({ path: entryPath });
   const buffer = Buffer.from(result.fileBinary);
   return { buffer, metadata: result };
 }
@@ -70,7 +97,8 @@ async function moveFile(entryPath, destinationFolder) {
   const fileName = path.posix.basename(entryPath);
   const destinationPath = path.posix.join(dateFolder, fileName);
 
-  await dropbox.filesMoveV2({
+  const dbx = await getDropboxClient();
+  await dbx.filesMoveV2({
     from_path: entryPath,
     to_path: destinationPath,
     autorename: true,
@@ -91,7 +119,8 @@ async function findFileByJobNumber(jobNumber) {
   const query = String(jobNumber || '').trim();
   if (!query) return null;
 
-  const { result } = await dropbox.filesSearchV2({
+  const dbx = await getDropboxClient();
+  const { result } = await dbx.filesSearchV2({
     query,
     options: {
       path: normalizePath(IMPORT_FOLDER),
