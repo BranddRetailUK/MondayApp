@@ -5,13 +5,21 @@ function normalizeLine(line = '') {
   return line.replace(/\r/g, '').trim();
 }
 
+function trimLeadingEmptyCells(parts = []) {
+  let idx = 0;
+  while (idx < parts.length && !parts[idx].trim()) {
+    idx += 1;
+  }
+  return parts.slice(idx);
+}
+
 function extractHeaderValue(line = '') {
-  const [first] = String(line).split(',');
-  return (first || '').trim();
+  const parts = trimLeadingEmptyCells(String(line).split(','));
+  return (parts[0] || '').trim();
 }
 
 function parseLineItem(line) {
-  const parts = line.split(',');
+  const parts = trimLeadingEmptyCells(line.split(','));
   const [qtyStr = '', size = '', colour = '', code = '', ...rest] = parts;
   const description = rest.join(',').trim();
   return {
@@ -41,7 +49,7 @@ function parseOpenOrdersText(text) {
     if (!line) {
       continue;
     }
-    if (line.startsWith('=====')) {
+    if (extractHeaderValue(line).startsWith('=====')) {
       finalizeCurrent();
       continue;
     }
