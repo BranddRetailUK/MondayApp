@@ -33,6 +33,7 @@ app.use('/api/visual-jobs', visualJobs);
 
 // Monday webhook routes
 app.use('/api/monday', require('./routes/monday-events'));
+app.use('/api/dropbox', require('./routes/dropbox-webhook'));
 console.log('[boot] monday-events mounted at /api/monday');
 
 // PenCarrie routes

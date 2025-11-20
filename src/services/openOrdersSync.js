@@ -1,6 +1,7 @@
 // src/services/openOrdersSync.js
 require('dotenv').config();
 
+const fs = require('fs');
 const path = require('path');
 const mondayFields = require('../config/mondayFields');
 const { parseOpenOrdersFile } = require('./openOrdersParser');
@@ -11,6 +12,7 @@ const {
   markJobCreated,
 } = require('./openOrdersState');
 const mondayClient = require('./mondayClient');
+const { downloadFile } = require('./dropboxClient');
 
 const BOARD_ID =
   Number(
@@ -41,6 +43,13 @@ const JOB_TYPE_LABEL_MAP = {
   PRINT: 'PRINT',
   EMBROIDERY: 'EMBROIDERY',
 };
+
+const OPEN_ORDERS_DROPBOX_PATH =
+  process.env.OPEN_ORDERS_DROPBOX_PATH || '/MONDAY/open_orders.csv';
+
+const OPEN_ORDERS_LOCAL_PATH =
+  process.env.OPEN_ORDERS_LOCAL_PATH ||
+  path.join(__dirname, '..', '..', 'tmp', 'open_orders.csv');
 
 function buildSubitemName(line, index) {
   if (line.description) return line.description;
@@ -172,7 +181,25 @@ async function syncOpenOrdersFile(filePath, { dryRun = false } = {}) {
   return results;
 }
 
+async function downloadOpenOrdersFile(destPath = OPEN_ORDERS_LOCAL_PATH) {
+  const { buffer } = await downloadFile(OPEN_ORDERS_DROPBOX_PATH);
+  const targetDir = path.dirname(destPath);
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+  fs.writeFileSync(destPath, buffer);
+  return destPath;
+}
+
+async function syncOpenOrdersFromDropbox(options = {}) {
+  const localPath = await downloadOpenOrdersFile(
+    options.localPath || OPEN_ORDERS_LOCAL_PATH
+  );
+  return syncOpenOrdersFile(localPath, options);
+}
+
 module.exports = {
   syncOpenOrdersFile,
+  syncOpenOrdersFromDropbox,
   fetchExistingJobs,
 };
