@@ -100,14 +100,11 @@ async function createJobOnMonday(job, { dryRun = false } = {}) {
   if (CUSTOMER_COLUMN_ID) columnValues[CUSTOMER_COLUMN_ID] = job.customer || '';
   if (JOB_TITLE_COLUMN_ID) columnValues[JOB_TITLE_COLUMN_ID] = job.jobTitle || '';
 
-  const itemNameParts = [
-    job.jobNumber,
-    job.customer || job.jobType || job.jobTitle,
-    job.jobTitle || job.customer || '',
-  ].filter(Boolean);
-  const itemName = itemNameParts.length
-    ? itemNameParts.join(' - ')
-    : `Job ${job.jobNumber}`;
+  const nameParts = [job.jobNumber];
+  if (job.customer) nameParts.push(job.customer);
+  if (job.jobTitle) nameParts.push(job.jobTitle);
+  else if (job.jobType) nameParts.push(job.jobType);
+  const itemName = nameParts.filter(Boolean).join(' - ') || `Job ${job.jobNumber}`;
 
   if (dryRun) {
     console.log(`[dry-run] would create item "${itemName}" with ${job.lineItems.length} subitems`);

@@ -5,6 +5,11 @@ function normalizeLine(line = '') {
   return line.replace(/\r/g, '').trim();
 }
 
+function extractHeaderValue(line = '') {
+  const [first] = String(line).split(',');
+  return (first || '').trim();
+}
+
 function parseLineItem(line) {
   const parts = line.split(',');
   const [qtyStr = '', size = '', colour = '', code = '', ...rest] = parts;
@@ -42,7 +47,7 @@ function parseOpenOrdersText(text) {
     }
     if (!current) {
       current = {
-        jobNumber: line,
+        jobNumber: extractHeaderValue(line),
         jobType: '',
         customer: '',
         jobTitle: '',
@@ -53,17 +58,17 @@ function parseOpenOrdersText(text) {
     }
 
     if (headerStage === 1) {
-      current.jobType = line;
+      current.jobType = extractHeaderValue(line);
       headerStage = 2;
       continue;
     }
     if (headerStage === 2) {
-      current.customer = line;
+      current.customer = extractHeaderValue(line);
       headerStage = 3;
       continue;
     }
     if (headerStage === 3) {
-      current.jobTitle = line;
+      current.jobTitle = extractHeaderValue(line);
       headerStage = 4;
       continue;
     }
