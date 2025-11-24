@@ -62,10 +62,13 @@ function buildItemName(job) {
 }
 
 function buildSubitemName(line, index) {
-  if (line.description) return line.description;
-  if (line.code && line.size) return `${line.code} ${line.size}`;
-  if (line.code) return line.code;
-  return `Line ${index + 1}`;
+  const base = (() => {
+    if (line.description) return line.description;
+    if (line.code && line.size) return `${line.code} ${line.size}`;
+    if (line.code) return line.code;
+    return `Line ${index + 1}`;
+  })();
+  return String(base).replace(/\s+/g, ' ').replace(/,+\s*$/, '').trim();
 }
 
 function buildSubitemColumnValues(line) {
@@ -158,7 +161,9 @@ async function ensureSubitemMatchesLine(subitem, line, index, jobNumber, parentI
   }
 
   const desiredName = buildSubitemName(line, index);
-  if (subitem.name !== desiredName) {
+  const currentNameNormalized = String(subitem.name || '').replace(/\s+/g, ' ').replace(/,+\s*$/, '').trim();
+  const desiredNameNormalized = String(desiredName || '').replace(/\s+/g, ' ').replace(/,+\s*$/, '').trim();
+  if (currentNameNormalized !== desiredNameNormalized) {
     if (dryRun) {
       console.log(`[dry-run] would delete/replace subitem ${subitem.id} name "${subitem.name}" -> "${desiredName}"`);
     } else {
@@ -299,7 +304,7 @@ async function applyJobTypeStatus(itemId, jobType, { dryRun }) {
 
 async function syncOpenOrdersFile(filePath, { dryRun = false } = {}) {
   const resolved = path.resolve(filePath);
-  const jobs = parseOpenOrdersFile(resolved);
+  const jobs = parseOpenOrdersFile(resolved).reverse(); // process bottom-to-top (newest first)
   const existing = await fetchExistingJobs();
   const state = loadState();
 

@@ -18,10 +18,16 @@ function extractHeaderValue(line = '') {
   return (parts[0] || '').trim();
 }
 
+function cleanDescription(text = '') {
+  // Collapse whitespace and remove trailing commas that appear due to empty trailing cells.
+  const collapsed = String(text).replace(/\s+/g, ' ').trim();
+  return collapsed.replace(/,+\s*$/, '');
+}
+
 function parseLineItem(line) {
   const parts = trimLeadingEmptyCells(line.split(','));
   const [qtyStr = '', size = '', colour = '', code = '', ...rest] = parts;
-  const description = rest.join(',').trim();
+  const description = cleanDescription(rest.join(','));
   return {
     qty: Number(qtyStr.trim()) || 0,
     size: size.trim(),
