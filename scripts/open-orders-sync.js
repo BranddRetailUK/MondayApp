@@ -26,7 +26,10 @@ function handleResults(results) {
   console.log(`[sync] Completed. Success: ${success}, Failed: ${failed}`);
   results.forEach(r => {
     if (r.success) {
-      console.log(`  - Job ${r.job}: ${dryRun ? 'simulated' : `created item ${r.itemId}`}`);
+      const action = r.action || 'processed';
+      const verb = dryRun ? 'simulated' : action;
+      const detail = r.itemId ? `item ${r.itemId}` : 'no item id';
+      console.log(`  - Job ${r.job}: ${verb} (${detail})`);
     } else {
       console.log(`  - Job ${r.job}: error ${r.error}`);
     }

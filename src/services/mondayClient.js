@@ -32,6 +32,8 @@ async function getItemWithColumns(itemId) {
         subitems {
           id
           name
+          board { id }
+          column_values { id text value type }
         }
       }
     }
@@ -79,6 +81,29 @@ async function setStatusByLabel(boardId, itemId, columnId, label) {
     columnId,
     value: valueJson
   });
+}
+
+async function setTextColumnValue(boardId, itemId, columnId, value) {
+  const q = `
+    mutation SetText($boardId: ID!, $itemId: ID!, $columnId: String!, $value: String!) {
+      change_simple_column_value(board_id: $boardId, item_id: $itemId, column_id: $columnId, value: $value) { id }
+    }
+  `;
+  await gql(q, {
+    boardId: Number(boardId),
+    itemId: Number(itemId),
+    columnId,
+    value: value != null ? String(value) : '',
+  });
+}
+
+async function changeItemName(itemId, name) {
+  const q = `
+    mutation Rename($itemId: ID!, $name: String!) {
+      change_item_name (item_id: $itemId, name: $name) { id }
+    }
+  `;
+  await gql(q, { itemId: Number(itemId), name });
 }
 
 async function postUpdate(itemId, body) {
@@ -217,4 +242,6 @@ module.exports = {
   findItemByNamePrefix,
   listBoardItems,
   createItem,
+  setTextColumnValue,
+  changeItemName,
 };

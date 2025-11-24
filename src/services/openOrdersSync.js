@@ -1,6 +1,7 @@
 // src/services/openOrdersSync.js
 require('dotenv').config();
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const mondayFields = require('../config/mondayFields');
@@ -10,6 +11,7 @@ const {
   saveState,
   hasJob: stateHasJob,
   markJobCreated,
+  markJobUpdated,
 } = require('./openOrdersState');
 const mondayClient = require('./mondayClient');
 const { downloadFile } = require('./dropboxClient');
@@ -51,6 +53,14 @@ const OPEN_ORDERS_LOCAL_PATH =
   process.env.OPEN_ORDERS_LOCAL_PATH ||
   path.join(__dirname, '..', '..', 'tmp', 'open_orders.csv');
 
+function buildItemName(job) {
+  const nameParts = [job.jobNumber];
+  if (job.customer) nameParts.push(job.customer);
+  if (job.jobTitle) nameParts.push(job.jobTitle);
+  else if (job.jobType) nameParts.push(job.jobType);
+  return nameParts.filter(Boolean).join(' - ') || `Job ${job.jobNumber}`;
+}
+
 function buildSubitemName(line, index) {
   if (line.description) return line.description;
   if (line.code && line.size) return `${line.code} ${line.size}`;
@@ -83,6 +93,27 @@ function extractJobNumberFromItem(item) {
   return jobNumber;
 }
 
+function normalizeLineItem(line = {}) {
+  return {
+    qty: Number(line.qty) || 0,
+    size: String(line.size || '').trim(),
+    colour: String(line.colour || '').trim(),
+    code: String(line.code || '').trim(),
+    description: String(line.description || '').trim(),
+  };
+}
+
+function computeJobSignature(job) {
+  const normalized = {
+    jobNumber: String(job.jobNumber || '').trim(),
+    jobType: String(job.jobType || '').trim(),
+    customer: String(job.customer || '').trim(),
+    jobTitle: String(job.jobTitle || '').trim(),
+    lineItems: (job.lineItems || []).map(normalizeLineItem),
+  };
+  return crypto.createHash('sha1').update(JSON.stringify(normalized)).digest('hex');
+}
+
 async function fetchExistingJobs() {
   if (!BOARD_ID) throw new Error('LINEITEM board id not configured');
   const items = await mondayClient.listBoardItems(BOARD_ID, { perPage: 200, maxPages: 20 });
@@ -94,17 +125,105 @@ async function fetchExistingJobs() {
   return map;
 }
 
+function getColumnText(columns = [], columnId) {
+  if (!columnId) return '';
+  const match = columns.find(col => col.id === columnId);
+  return match?.text ? String(match.text).trim() : '';
+}
+
+async function ensureItemColumnValue(item, columnId, desired, { dryRun = false } = {}) {
+  if (!columnId) return;
+  const current = getColumnText(item.column_values, columnId);
+  const desiredStr = desired != null ? String(desired).trim() : '';
+  if (current === desiredStr) return;
+  if (dryRun) {
+    console.log(`[dry-run] would set column ${columnId} on item ${item.id} to "${desiredStr}"`);
+    return;
+  }
+  await mondayClient.setTextColumnValue(item.board.id, item.id, columnId, desiredStr);
+}
+
+async function ensureSubitemMatchesLine(subitem, line, index, { dryRun = false } = {}) {
+  const boardId = subitem?.board?.id;
+  if (!boardId) {
+    console.warn(`[sync] Subitem ${subitem.id} missing board id; skipping update.`);
+    return;
+  }
+  const desiredName = buildSubitemName(line, index);
+  if (subitem.name !== desiredName) {
+    if (dryRun) {
+      console.log(`[dry-run] would rename subitem ${subitem.id} to "${desiredName}"`);
+    } else {
+      await mondayClient.changeItemName(subitem.id, desiredName);
+    }
+  }
+
+  const desiredColumns = buildSubitemColumnValues(line);
+  for (const [colId, val] of Object.entries(desiredColumns)) {
+    const current = getColumnText(subitem.column_values, colId);
+    const desiredStr = val != null ? String(val).trim() : '';
+    if (current === desiredStr) continue;
+    if (dryRun) {
+      console.log(`[dry-run] would set subitem ${subitem.id} column ${colId} to "${desiredStr}"`);
+    } else {
+      await mondayClient.setTextColumnValue(boardId, subitem.id, colId, desiredStr);
+    }
+  }
+}
+
+async function syncSubitemsForItem(item, job, { dryRun = false } = {}) {
+  const existingSubitems = item.subitems || [];
+  for (let i = 0; i < job.lineItems.length; i++) {
+    const line = job.lineItems[i];
+    const existing = existingSubitems[i];
+    if (existing) {
+      await ensureSubitemMatchesLine(existing, line, i, { dryRun });
+    } else {
+      const name = buildSubitemName(line, i);
+      const columns = buildSubitemColumnValues(line);
+      if (dryRun) {
+        console.log(`[dry-run] would create subitem under ${item.id}: ${name}`);
+      } else {
+        await mondayClient.createSubitem(item.id, name, columns);
+      }
+    }
+  }
+  if (existingSubitems.length > job.lineItems.length) {
+    const extra = existingSubitems.length - job.lineItems.length;
+    console.log(
+      `[sync] Job ${job.jobNumber} has ${extra} extra subitems not in CSV; leaving unchanged.`
+    );
+  }
+}
+
+async function updateJobOnMonday(job, existingItem, { dryRun = false } = {}) {
+  const itemId = existingItem.id || existingItem;
+  const item = await mondayClient.getItemWithColumns(itemId);
+  const desiredName = buildItemName(job);
+  if (desiredName && item.name !== desiredName) {
+    if (dryRun) {
+      console.log(`[dry-run] would rename item ${item.id} to "${desiredName}"`);
+    } else {
+      await mondayClient.changeItemName(item.id, desiredName);
+    }
+  }
+
+  await ensureItemColumnValue(item, JOB_NO_COLUMN_ID, job.jobNumber, { dryRun });
+  await ensureItemColumnValue(item, CUSTOMER_COLUMN_ID, job.customer, { dryRun });
+  await ensureItemColumnValue(item, JOB_TITLE_COLUMN_ID, job.jobTitle, { dryRun });
+
+  await applyJobTypeStatus(item.id, job.jobType, { dryRun });
+  await syncSubitemsForItem(item, job, { dryRun });
+  return item.id;
+}
+
 async function createJobOnMonday(job, { dryRun = false } = {}) {
   const columnValues = {};
   if (JOB_NO_COLUMN_ID) columnValues[JOB_NO_COLUMN_ID] = job.jobNumber;
   if (CUSTOMER_COLUMN_ID) columnValues[CUSTOMER_COLUMN_ID] = job.customer || '';
   if (JOB_TITLE_COLUMN_ID) columnValues[JOB_TITLE_COLUMN_ID] = job.jobTitle || '';
 
-  const nameParts = [job.jobNumber];
-  if (job.customer) nameParts.push(job.customer);
-  if (job.jobTitle) nameParts.push(job.jobTitle);
-  else if (job.jobType) nameParts.push(job.jobType);
-  const itemName = nameParts.filter(Boolean).join(' - ') || `Job ${job.jobNumber}`;
+  const itemName = buildItemName(job);
 
   if (dryRun) {
     console.log(`[dry-run] would create item "${itemName}" with ${job.lineItems.length} subitems`);
@@ -145,28 +264,56 @@ async function syncOpenOrdersFile(filePath, { dryRun = false } = {}) {
   const existing = await fetchExistingJobs();
   const state = loadState();
 
-  const newJobs = jobs.filter(job => {
-    if (!job.jobNumber) return false;
-    const jobNo = String(job.jobNumber).trim();
-    if (!jobNo) return false;
-    if (existing.has(jobNo)) return false;
-    if (stateHasJob(state, jobNo)) return false;
+  const entries = jobs
+    .map(job => ({
+      job,
+      jobNumber: String(job.jobNumber || '').trim(),
+      signature: computeJobSignature(job),
+    }))
+    .filter(entry => entry.jobNumber);
+
+  const newJobs = entries.filter(entry => {
+    if (existing.has(entry.jobNumber)) return false;
+    if (stateHasJob(state, entry.jobNumber)) return false;
     return true;
   });
+
+  const updates = entries.filter(entry => {
+    if (!existing.has(entry.jobNumber)) return false;
+    const prevSignature = state.jobs?.[entry.jobNumber]?.signature || null;
+    return !prevSignature || prevSignature !== entry.signature;
+  });
+
   console.log(
-    `[sync] Found ${jobs.length} jobs in CSV; ${newJobs.length} need creation (state path ${process.env.OPEN_ORDERS_STATE_PATH || 'default'}).`
+    `[sync] Found ${jobs.length} jobs in CSV; ${newJobs.length} new, ${updates.length} updates (state path ${process.env.OPEN_ORDERS_STATE_PATH || 'default'}).`
   );
 
   const results = [];
-  for (const job of newJobs) {
+  for (const entry of newJobs) {
+    const job = entry.job;
     try {
       const itemId = await createJobOnMonday(job, { dryRun });
       if (!dryRun && itemId) {
-        markJobCreated(state, String(job.jobNumber).trim(), itemId);
+        markJobCreated(state, String(job.jobNumber).trim(), itemId, entry.signature);
       }
-      results.push({ job: job.jobNumber, itemId: itemId || null, success: true });
+      results.push({ job: job.jobNumber, itemId: itemId || null, action: 'created', success: true });
     } catch (err) {
       console.error(`[sync] Failed to create job ${job.jobNumber}:`, err.message);
+      results.push({ job: job.jobNumber, success: false, error: err.message });
+    }
+  }
+
+  for (const entry of updates) {
+    const job = entry.job;
+    const existingItem = existing.get(entry.jobNumber);
+    try {
+      const itemId = await updateJobOnMonday(job, existingItem, { dryRun });
+      if (!dryRun && itemId) {
+        markJobUpdated(state, entry.jobNumber, itemId, entry.signature);
+      }
+      results.push({ job: job.jobNumber, itemId: itemId || null, action: 'updated', success: true });
+    } catch (err) {
+      console.error(`[sync] Failed to update job ${job.jobNumber}:`, err.message);
       results.push({ job: job.jobNumber, success: false, error: err.message });
     }
   }
