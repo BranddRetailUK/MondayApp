@@ -13,9 +13,15 @@ router.get('/webhook', (req, res) => {
 });
 
 router.post('/webhook', async (req, res) => {
+  console.log(
+    `[dropbox-webhook] POST received at ${new Date().toISOString()} from ${
+      req.ip || 'unknown'
+    }`
+  );
   res.status(200).json({ ok: true });
   try {
     await syncOpenOrdersFromDropbox();
+    console.log('[dropbox-webhook] sync finished');
   } catch (err) {
     console.error('[dropbox-webhook] sync failed:', err);
   }
