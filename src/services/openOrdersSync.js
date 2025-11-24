@@ -139,17 +139,18 @@ async function ensureItemColumnValue(item, columnId, desired, { dryRun = false }
   const desiredStr = desired != null ? String(desired).trim() : '';
   if (current === desiredStr) return;
   if (dryRun) {
-    console.log(`[dry-run] would set column ${columnId} on item ${item.id} to "${desiredStr}"`);
+    console.log(`[dry-run] would set column ${columnId} on item ${item.id} to "${desiredStr}" (current "${current}")`);
     return;
   }
   try {
     await mondayClient.setTextColumnValue(item.board.id, item.id, columnId, desiredStr);
+    console.log(`[sync] Set column ${columnId} on item ${item.id} to "${desiredStr}" (was "${current}")`);
   } catch (err) {
     console.warn(`[sync] Failed to set column ${columnId} on item ${item.id}: ${err.message}`);
   }
 }
 
-async function ensureSubitemMatchesLine(subitem, line, index, { dryRun = false } = {}) {
+async function ensureSubitemMatchesLine(subitem, line, index, jobNumber, { dryRun = false } = {}) {
   const boardId = subitem?.board?.id;
   if (!boardId) {
     console.warn(`[sync] Subitem ${subitem.id} missing board id; skipping update.`);
@@ -164,10 +165,11 @@ async function ensureSubitemMatchesLine(subitem, line, index, { dryRun = false }
     const desiredStr = val != null ? String(val).trim() : '';
     if (current === desiredStr) continue;
     if (dryRun) {
-      console.log(`[dry-run] would set subitem ${subitem.id} column ${colId} to "${desiredStr}"`);
+      console.log(`[dry-run] would set subitem ${subitem.id} column ${colId} to "${desiredStr}" (current "${current}")`);
     } else {
       try {
         await mondayClient.setTextColumnValue(boardId, subitem.id, colId, desiredStr);
+        console.log(`[sync] Job ${jobNumber} updated subitem ${subitem.id} col ${colId} -> "${desiredStr}" (was "${current}")`);
       } catch (err) {
         console.warn(`[sync] Failed to set subitem ${subitem.id} column ${colId}: ${err.message}`);
       }
@@ -181,7 +183,7 @@ async function syncSubitemsForItem(item, job, { dryRun = false } = {}) {
     const line = job.lineItems[i];
     const existing = existingSubitems[i];
     if (existing) {
-      await ensureSubitemMatchesLine(existing, line, i, { dryRun });
+      await ensureSubitemMatchesLine(existing, line, i, job.jobNumber, { dryRun });
     } else {
       const name = buildSubitemName(line, i);
       const columns = buildSubitemColumnValues(line);
@@ -189,6 +191,7 @@ async function syncSubitemsForItem(item, job, { dryRun = false } = {}) {
         console.log(`[dry-run] would create subitem under ${item.id}: ${name}`);
       } else {
         await mondayClient.createSubitem(item.id, name, columns);
+        console.log(`[sync] Job ${job.jobNumber} created subitem "${name}" on item ${item.id}`);
       }
     }
   }
@@ -294,12 +297,22 @@ async function syncOpenOrdersFile(filePath, { dryRun = false } = {}) {
   const updates = entries.filter(entry => {
     if (!existing.has(entry.jobNumber)) return false;
     const prevSignature = state.jobs?.[entry.jobNumber]?.signature || null;
+    entry.prevSignature = prevSignature;
     return !prevSignature || prevSignature !== entry.signature;
+  });
+
+  const unchanged = entries.filter(entry => {
+    if (!existing.has(entry.jobNumber)) return false;
+    const prevSignature = state.jobs?.[entry.jobNumber]?.signature || null;
+    return prevSignature && prevSignature === entry.signature;
   });
 
   console.log(
     `[sync] Found ${jobs.length} jobs in CSV; ${newJobs.length} new, ${updates.length} updates (state path ${process.env.OPEN_ORDERS_STATE_PATH || 'default'}).`
   );
+  if (unchanged.length) {
+    console.log(`[sync] Skipping ${unchanged.length} unchanged jobs (signatures match). Examples: ${unchanged.slice(0, 3).map(e => e.jobNumber).join(', ')}`);
+  }
 
   const results = [];
   for (const entry of newJobs) {
@@ -320,6 +333,9 @@ async function syncOpenOrdersFile(filePath, { dryRun = false } = {}) {
     const job = entry.job;
     const existingItem = existing.get(entry.jobNumber);
     try {
+      console.log(
+        `[sync] Updating job ${entry.jobNumber} item ${existingItem.id} (sig ${entry.prevSignature || 'none'} -> ${entry.signature})`
+      );
       const itemId = await updateJobOnMonday(job, existingItem, { dryRun });
       if (!dryRun && itemId) {
         markJobUpdated(state, entry.jobNumber, itemId, entry.signature);
