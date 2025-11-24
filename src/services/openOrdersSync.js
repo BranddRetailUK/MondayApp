@@ -150,10 +150,26 @@ async function ensureItemColumnValue(item, columnId, desired, { dryRun = false }
   }
 }
 
-async function ensureSubitemMatchesLine(subitem, line, index, jobNumber, { dryRun = false } = {}) {
+async function ensureSubitemMatchesLine(subitem, line, index, jobNumber, parentItemId, { dryRun = false } = {}) {
   const boardId = subitem?.board?.id;
   if (!boardId) {
     console.warn(`[sync] Subitem ${subitem.id} missing board id; skipping update.`);
+    return;
+  }
+
+  const desiredName = buildSubitemName(line, index);
+  if (subitem.name !== desiredName) {
+    if (dryRun) {
+      console.log(`[dry-run] would archive/replace subitem ${subitem.id} name "${subitem.name}" -> "${desiredName}"`);
+    } else {
+      try {
+        await mondayClient.archiveItem(subitem.id);
+        await mondayClient.createSubitem(parentItemId, desiredName, buildSubitemColumnValues(line));
+        console.log(`[sync] Job ${jobNumber} replaced subitem ${subitem.id} with "${desiredName}"`);
+      } catch (err) {
+        console.warn(`[sync] Failed to replace subitem ${subitem.id} on job ${jobNumber}: ${err.message}`);
+      }
+    }
     return;
   }
 
@@ -186,7 +202,7 @@ async function syncSubitemsForItem(item, job, { dryRun = false } = {}) {
     const line = job.lineItems[i];
     const existing = existingSubitems[i];
     if (existing) {
-      await ensureSubitemMatchesLine(existing, line, i, job.jobNumber, { dryRun });
+      await ensureSubitemMatchesLine(existing, line, i, job.jobNumber, item.id, { dryRun });
     } else {
       const name = buildSubitemName(line, i);
       const columns = buildSubitemColumnValues(line);
