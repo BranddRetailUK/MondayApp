@@ -106,6 +106,15 @@ async function archiveItem(itemId) {
   await gql(q, { itemId: Number(itemId) });
 }
 
+async function deleteItem(itemId) {
+  const q = `
+    mutation DeleteItem($itemId: ID!) {
+      delete_item (item_id: $itemId) { id }
+    }
+  `;
+  await gql(q, { itemId: Number(itemId) });
+}
+
 async function setItemName(boardId, itemId, name) {
   // Monday’s public API for this workspace does not expose an item-name mutation.
   // Keep the signature so callers can no-op gracefully.
@@ -250,5 +259,6 @@ module.exports = {
   createItem,
   setTextColumnValue,
   archiveItem,
+  deleteItem,
   setItemName,
 };

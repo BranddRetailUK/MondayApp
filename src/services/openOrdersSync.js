@@ -160,10 +160,10 @@ async function ensureSubitemMatchesLine(subitem, line, index, jobNumber, parentI
   const desiredName = buildSubitemName(line, index);
   if (subitem.name !== desiredName) {
     if (dryRun) {
-      console.log(`[dry-run] would archive/replace subitem ${subitem.id} name "${subitem.name}" -> "${desiredName}"`);
+      console.log(`[dry-run] would delete/replace subitem ${subitem.id} name "${subitem.name}" -> "${desiredName}"`);
     } else {
       try {
-        await mondayClient.archiveItem(subitem.id);
+        await mondayClient.deleteItem(subitem.id);
         await mondayClient.createSubitem(parentItemId, desiredName, buildSubitemColumnValues(line));
         console.log(`[sync] Job ${jobNumber} replaced subitem ${subitem.id} with "${desiredName}"`);
       } catch (err) {
@@ -218,13 +218,13 @@ async function syncSubitemsForItem(item, job, { dryRun = false } = {}) {
     const toRemove = existingSubitems.slice(job.lineItems.length);
     for (const sub of toRemove) {
       if (dryRun) {
-        console.log(`[dry-run] would archive extra subitem ${sub.id} on job ${job.jobNumber}`);
+        console.log(`[dry-run] would delete extra subitem ${sub.id} on job ${job.jobNumber}`);
       } else {
         try {
-          await mondayClient.archiveItem(sub.id);
-          console.log(`[sync] Archived extra subitem ${sub.id} on job ${job.jobNumber}`);
+          await mondayClient.deleteItem(sub.id);
+          console.log(`[sync] Deleted extra subitem ${sub.id} on job ${job.jobNumber}`);
         } catch (err) {
-          console.warn(`[sync] Failed to archive extra subitem ${sub.id}: ${err.message}`);
+          console.warn(`[sync] Failed to delete extra subitem ${sub.id}: ${err.message}`);
         }
       }
     }
