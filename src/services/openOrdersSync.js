@@ -220,7 +220,11 @@ async function updateJobOnMonday(job, existingItem, { dryRun = false } = {}) {
     if (dryRun) {
       console.log(`[dry-run] would set item name for ${item.id} to "${desiredName}"`);
     } else {
-      await mondayClient.setItemName(item.board.id, item.id, desiredName);
+      try {
+        await mondayClient.setItemName(item.board.id, item.id, desiredName);
+      } catch (err) {
+        console.warn(`[sync] Could not rename item ${item.id}: ${err.message}`);
+      }
     }
   }
 

@@ -107,21 +107,9 @@ async function archiveItem(itemId) {
 }
 
 async function setItemName(boardId, itemId, name) {
-  const q = `
-    mutation RenameItem($boardId: ID!, $itemId: ID!, $name: String!) {
-      change_multiple_column_values(
-        board_id: $boardId,
-        item_id: $itemId,
-        column_values: "{}",
-        item_name: $name
-      ) { id }
-    }
-  `;
-  await gql(q, {
-    boardId: Number(boardId),
-    itemId: Number(itemId),
-    name,
-  });
+  // Monday’s public API for this workspace does not expose an item-name mutation.
+  // Keep the signature so callers can no-op gracefully.
+  throw new Error('Item renaming not supported on this Monday plan/API');
 }
 
 async function postUpdate(itemId, body) {
