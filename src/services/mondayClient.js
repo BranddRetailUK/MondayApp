@@ -97,15 +97,6 @@ async function setTextColumnValue(boardId, itemId, columnId, value) {
   });
 }
 
-async function changeItemName(itemId, name) {
-  const q = `
-    mutation Rename($itemId: ID!, $name: String!) {
-      change_item_name (item_id: $itemId, name: $name) { id }
-    }
-  `;
-  await gql(q, { itemId: Number(itemId), name });
-}
-
 async function postUpdate(itemId, body) {
   const q = `
     mutation AddUpdate($itemId: ID!, $body: String!) {
@@ -243,5 +234,4 @@ module.exports = {
   listBoardItems,
   createItem,
   setTextColumnValue,
-  changeItemName,
 };
