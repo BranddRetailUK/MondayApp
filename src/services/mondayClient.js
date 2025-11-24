@@ -97,6 +97,33 @@ async function setTextColumnValue(boardId, itemId, columnId, value) {
   });
 }
 
+async function archiveItem(itemId) {
+  const q = `
+    mutation ArchiveItem($itemId: ID!) {
+      archive_item (item_id: $itemId) { id }
+    }
+  `;
+  await gql(q, { itemId: Number(itemId) });
+}
+
+async function setItemName(boardId, itemId, name) {
+  const q = `
+    mutation RenameItem($boardId: ID!, $itemId: ID!, $name: String!) {
+      change_multiple_column_values(
+        board_id: $boardId,
+        item_id: $itemId,
+        column_values: "{}",
+        item_name: $name
+      ) { id }
+    }
+  `;
+  await gql(q, {
+    boardId: Number(boardId),
+    itemId: Number(itemId),
+    name,
+  });
+}
+
 async function postUpdate(itemId, body) {
   const q = `
     mutation AddUpdate($itemId: ID!, $body: String!) {
@@ -234,4 +261,6 @@ module.exports = {
   listBoardItems,
   createItem,
   setTextColumnValue,
+  archiveItem,
+  setItemName,
 };

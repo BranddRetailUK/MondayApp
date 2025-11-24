@@ -134,10 +134,7 @@ function getColumnText(columns = [], columnId) {
 async function ensureItemColumnValue(item, columnId, desired, { dryRun = false } = {}) {
   if (!columnId) return;
   const hasColumn = (item.column_values || []).some(col => col.id === columnId);
-  if (!hasColumn) {
-    console.warn(`[sync] Item ${item.id} missing column ${columnId}; skipping update.`);
-    return;
-  }
+  if (!hasColumn) return;
   const current = getColumnText(item.column_values, columnId);
   const desiredStr = desired != null ? String(desired).trim() : '';
   if (current === desiredStr) return;
@@ -162,10 +159,7 @@ async function ensureSubitemMatchesLine(subitem, line, index, { dryRun = false }
   const desiredColumns = buildSubitemColumnValues(line);
   for (const [colId, val] of Object.entries(desiredColumns)) {
     const hasColumn = (subitem.column_values || []).some(col => col.id === colId);
-    if (!hasColumn) {
-      console.warn(`[sync] Subitem ${subitem.id} missing column ${colId}; skipping.`);
-      continue;
-    }
+    if (!hasColumn) continue;
     const current = getColumnText(subitem.column_values, colId);
     const desiredStr = val != null ? String(val).trim() : '';
     if (current === desiredStr) continue;
@@ -199,16 +193,33 @@ async function syncSubitemsForItem(item, job, { dryRun = false } = {}) {
     }
   }
   if (existingSubitems.length > job.lineItems.length) {
-    const extra = existingSubitems.length - job.lineItems.length;
-    console.log(
-      `[sync] Job ${job.jobNumber} has ${extra} extra subitems not in CSV; leaving unchanged.`
-    );
+    const toRemove = existingSubitems.slice(job.lineItems.length);
+    for (const sub of toRemove) {
+      if (dryRun) {
+        console.log(`[dry-run] would archive extra subitem ${sub.id} on job ${job.jobNumber}`);
+      } else {
+        try {
+          await mondayClient.archiveItem(sub.id);
+          console.log(`[sync] Archived extra subitem ${sub.id} on job ${job.jobNumber}`);
+        } catch (err) {
+          console.warn(`[sync] Failed to archive extra subitem ${sub.id}: ${err.message}`);
+        }
+      }
+    }
   }
 }
 
 async function updateJobOnMonday(job, existingItem, { dryRun = false } = {}) {
   const itemId = existingItem.id || existingItem;
   const item = await mondayClient.getItemWithColumns(itemId);
+  const desiredName = buildItemName(job);
+  if (desiredName && item.name !== desiredName) {
+    if (dryRun) {
+      console.log(`[dry-run] would set item name for ${item.id} to "${desiredName}"`);
+    } else {
+      await mondayClient.setItemName(item.board.id, item.id, desiredName);
+    }
+  }
 
   await ensureItemColumnValue(item, JOB_NO_COLUMN_ID, job.jobNumber, { dryRun });
   await ensureItemColumnValue(item, CUSTOMER_COLUMN_ID, job.customer, { dryRun });
