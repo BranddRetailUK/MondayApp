@@ -160,7 +160,10 @@ async function ensureSubitemMatchesLine(subitem, line, index, jobNumber, { dryRu
   const desiredColumns = buildSubitemColumnValues(line);
   for (const [colId, val] of Object.entries(desiredColumns)) {
     const hasColumn = (subitem.column_values || []).some(col => col.id === colId);
-    if (!hasColumn) continue;
+    if (!hasColumn) {
+      console.log(`[sync] Job ${jobNumber} subitem ${subitem.id} missing column ${colId}; skipping`);
+      continue;
+    }
     const current = getColumnText(subitem.column_values, colId);
     const desiredStr = val != null ? String(val).trim() : '';
     if (current === desiredStr) continue;
@@ -284,6 +287,10 @@ async function syncOpenOrdersFile(filePath, { dryRun = false } = {}) {
   const existing = await fetchExistingJobs();
   const state = loadState();
 
+  console.log(
+    `[sync] Starting open orders sync from ${resolved} (${jobs.length} jobs). Existing Monday items indexed: ${existing.size}.`
+  );
+
   const entries = jobs
     .map(job => ({
       job,
@@ -302,21 +309,19 @@ async function syncOpenOrdersFile(filePath, { dryRun = false } = {}) {
     if (!existing.has(entry.jobNumber)) return false;
     const prevSignature = state.jobs?.[entry.jobNumber]?.signature || null;
     entry.prevSignature = prevSignature;
+    if (prevSignature === entry.signature) {
+      console.log(`[sync] Job ${entry.jobNumber} signature unchanged; skipping`);
+    } else {
+      console.log(
+        `[sync] Job ${entry.jobNumber} signature changed: ${prevSignature || 'none'} -> ${entry.signature}`
+      );
+    }
     return !prevSignature || prevSignature !== entry.signature;
-  });
-
-  const unchanged = entries.filter(entry => {
-    if (!existing.has(entry.jobNumber)) return false;
-    const prevSignature = state.jobs?.[entry.jobNumber]?.signature || null;
-    return prevSignature && prevSignature === entry.signature;
   });
 
   console.log(
     `[sync] Found ${jobs.length} jobs in CSV; ${newJobs.length} new, ${updates.length} updates (state path ${process.env.OPEN_ORDERS_STATE_PATH || 'default'}).`
   );
-  if (unchanged.length) {
-    console.log(`[sync] Skipping ${unchanged.length} unchanged jobs (signatures match). Examples: ${unchanged.slice(0, 3).map(e => e.jobNumber).join(', ')}`);
-  }
 
   const results = [];
   for (const entry of newJobs) {
@@ -327,6 +332,7 @@ async function syncOpenOrdersFile(filePath, { dryRun = false } = {}) {
         markJobCreated(state, String(job.jobNumber).trim(), itemId, entry.signature);
       }
       results.push({ job: job.jobNumber, itemId: itemId || null, action: 'created', success: true });
+      console.log(`[sync] Created Monday item ${itemId || '(dry-run)'} for job ${job.jobNumber}`);
     } catch (err) {
       console.error(`[sync] Failed to create job ${job.jobNumber}:`, err.message);
       results.push({ job: job.jobNumber, success: false, error: err.message });
@@ -345,6 +351,7 @@ async function syncOpenOrdersFile(filePath, { dryRun = false } = {}) {
         markJobUpdated(state, entry.jobNumber, itemId, entry.signature);
       }
       results.push({ job: job.jobNumber, itemId: itemId || null, action: 'updated', success: true });
+      console.log(`[sync] Updated Monday item ${itemId || '(dry-run)'} for job ${job.jobNumber}`);
     } catch (err) {
       console.error(`[sync] Failed to update job ${job.jobNumber}:`, err.message);
       results.push({ job: job.jobNumber, success: false, error: err.message });
