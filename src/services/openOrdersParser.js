@@ -24,13 +24,22 @@ function cleanDescription(text = '') {
   return collapsed.replace(/,+\s*$/, '');
 }
 
+function sanitizeSize(text = '') {
+  const trimmed = String(text).trim();
+  // Prevent Monday auto-converting numeric ranges like "9-11" into dates by swapping the hyphen for a non-breaking hyphen.
+  if (/^\d{1,2}\s*-\s*\d{1,2}$/.test(trimmed)) {
+    return trimmed.replace(/\s*-\s*/, '‑'); // U+2011 non-breaking hyphen
+  }
+  return trimmed;
+}
+
 function parseLineItem(line) {
   const parts = trimLeadingEmptyCells(line.split(','));
   const [qtyStr = '', size = '', colour = '', code = '', ...rest] = parts;
   const description = cleanDescription(rest.join(','));
   return {
     qty: Number(qtyStr.trim()) || 0,
-    size: size.trim(),
+    size: sanitizeSize(size),
     colour: colour.trim(),
     code: code.trim(),
     description,
