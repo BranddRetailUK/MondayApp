@@ -26,6 +26,7 @@ module.exports = {
   STEP1_STATUS_LABEL: (process.env.STEP1_STATUS_LABEL || 'Checked In').trim(),
   STEP2_STATUS_LABEL: (process.env.STEP2_STATUS_LABEL || 'In Production').trim(),
   STEP3_STATUS_LABEL: (process.env.STEP3_STATUS_LABEL || 'Completed').trim(),
+  JOB_FILES_COLUMN_ID: (process.env.JOB_FILES_COLUMN_ID || '').trim(),
 
   // Board paging/cache
   BOARD_PAGE_LIMIT: int(process.env.BOARD_PAGE_LIMIT, 50),

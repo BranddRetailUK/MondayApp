@@ -3,6 +3,10 @@
 const PROD_ORIGIN = window.location.origin;
 const ENDPOINTS = { data: '/api/board', auth: '/auth', scans: '/api/scan-states' };
 
+// --- Camera globals ---
+let __cameraStream = null;
+let __captureDataUrl = null;
+
 // --- Serial globals ---
 let __serialPort = null;
 let __serialReader = null;
@@ -15,6 +19,7 @@ const __BUFFER_HARD_LIMIT = 8192;
 
 document.addEventListener('DOMContentLoaded', () => {
   ensureAuthUI();
+  addCameraUI();
   addSerialScannerUI();
   attachSerialEvents();
   loadBoard();
@@ -65,6 +70,249 @@ function ensureAuthUI() {
   if (connectBtn.parentElement !== bar) bar.appendChild(connectBtn);
 
   // Scanner connect button will be inserted by addSerialScannerUI(); keep space updated
+}
+
+// --------------------------- CAMERA UI ---------------------------
+
+function addCameraUI() {
+  const bar = document.getElementById('labels-toolbar');
+  if (!bar) return;
+
+  ensureCaptureModal();
+
+  if (!document.getElementById('connectCameraBtn')) {
+    const btn = document.createElement('button');
+    btn.id = 'connectCameraBtn';
+    btn.textContent = 'Connect Camera';
+    btn.className = 'btn success';
+    btn.addEventListener('click', connectCamera);
+    const scannerBtn = document.getElementById('connectScannerBtn');
+    if (scannerBtn && scannerBtn.parentElement === bar) {
+      bar.insertBefore(btn, scannerBtn);
+    } else {
+      bar.appendChild(btn);
+    }
+  }
+}
+
+function ensureCaptureModal() {
+  if (document.getElementById('cameraModal')) return;
+  const modal = document.createElement('div');
+  modal.id = 'cameraModal';
+  modal.className = 'modal hidden';
+  modal.innerHTML = `
+    <div class="modal-inner">
+      <div class="modal-head">
+        <h3>Take Image</h3>
+        <button class="modal-close" aria-label="Close" type="button">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="cam-live" id="camLiveWrap">
+          <video id="camVideo" autoplay playsinline muted></video>
+          <div class="cam-overlay" id="camConnectHint">Allow camera access to start.</div>
+        </div>
+        <div class="cam-preview hidden" id="camPreviewBox">
+          <img id="camPreviewImg" alt="Captured preview" />
+        </div>
+      </div>
+      <div class="modal-foot">
+        <div class="modal-actions">
+          <button id="camCancel" class="btn outline" type="button">Close</button>
+          <button id="camReject" class="btn outline hidden" type="button">Reject</button>
+          <button id="camCapture" class="btn success" type="button">Capture</button>
+          <button id="camApprove" class="btn primary hidden" type="button">Approve & Upload</button>
+        </div>
+        <div class="small muted" id="camStatus">Ready when the camera is connected.</div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  modal.querySelector('#camCancel').addEventListener('click', closeCaptureModal);
+  modal.querySelector('.modal-close').addEventListener('click', closeCaptureModal);
+  modal.querySelector('#camCapture').addEventListener('click', captureSnapshot);
+  modal.querySelector('#camReject').addEventListener('click', rejectSnapshot);
+  modal.querySelector('#camApprove').addEventListener('click', approveSnapshot);
+}
+
+async function connectCamera() {
+  const btn = document.getElementById('connectCameraBtn');
+  if (!navigator.mediaDevices?.getUserMedia) {
+    alert('Camera not supported in this browser. Please use Chrome or Edge.');
+    return null;
+  }
+  if (__cameraStream) {
+    if (btn) btn.textContent = 'Camera Ready';
+    attachStreamToVideo(__cameraStream);
+    return __cameraStream;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    __cameraStream = stream;
+    if (btn) btn.textContent = 'Camera Ready';
+    attachStreamToVideo(stream);
+    setCaptureStatus('Camera connected. You can capture an image.');
+    return stream;
+  } catch (err) {
+    console.error('Camera connect failed', err);
+    if (btn) btn.textContent = 'Connect Camera';
+    alert('Could not access the camera. Check permissions and try again.');
+    setCaptureStatus('Camera access denied. Please allow permissions.');
+    return null;
+  }
+}
+
+function attachStreamToVideo(stream) {
+  const video = document.getElementById('camVideo');
+  const hint = document.getElementById('camConnectHint');
+  if (video) {
+    video.srcObject = stream;
+    video.play().catch(() => {});
+  }
+  if (hint) hint.classList.add('hidden');
+}
+
+function openCaptureModal(itemId, jobTitle) {
+  const modal = document.getElementById('cameraModal');
+  if (!modal) return;
+  __captureDataUrl = null;
+  modal.dataset.itemId = itemId;
+  modal.classList.remove('hidden');
+  document.body.classList.add('modal-open');
+  showLiveView();
+  setCaptureStatus(jobTitle ? `Capturing for: ${jobTitle}` : 'Camera ready.');
+  connectCamera();
+}
+
+function closeCaptureModal() {
+  const modal = document.getElementById('cameraModal');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.dataset.itemId = '';
+  }
+  document.body.classList.remove('modal-open');
+  showLiveView();
+  setCaptureStatus('Ready when the camera is connected.');
+}
+
+function showLiveView() {
+  const live = document.getElementById('camLiveWrap');
+  const preview = document.getElementById('camPreviewBox');
+  const capBtn = document.getElementById('camCapture');
+  const approveBtn = document.getElementById('camApprove');
+  const rejectBtn = document.getElementById('camReject');
+  if (live) live.classList.remove('hidden');
+  if (preview) preview.classList.add('hidden');
+  if (capBtn) capBtn.classList.remove('hidden');
+  if (approveBtn) approveBtn.classList.add('hidden');
+  if (rejectBtn) rejectBtn.classList.add('hidden');
+}
+
+function showPreview() {
+  const live = document.getElementById('camLiveWrap');
+  const preview = document.getElementById('camPreviewBox');
+  const capBtn = document.getElementById('camCapture');
+  const approveBtn = document.getElementById('camApprove');
+  const rejectBtn = document.getElementById('camReject');
+  if (live) live.classList.add('hidden');
+  if (preview) preview.classList.remove('hidden');
+  if (capBtn) capBtn.classList.add('hidden');
+  if (approveBtn) approveBtn.classList.remove('hidden');
+  if (rejectBtn) rejectBtn.classList.remove('hidden');
+}
+
+function setCaptureStatus(msg) {
+  const el = document.getElementById('camStatus');
+  if (el) el.textContent = msg || '';
+}
+
+function captureSnapshot() {
+  const video = document.getElementById('camVideo');
+  if (!video || !__cameraStream) {
+    setCaptureStatus('Camera not connected. Please connect and try again.');
+    connectCamera();
+    return;
+  }
+  const width = video.videoWidth || 1280;
+  const height = video.videoHeight || 720;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, width, height);
+  __captureDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+  const img = document.getElementById('camPreviewImg');
+  if (img) img.src = __captureDataUrl;
+  showPreview();
+  setCaptureStatus('Review the preview. Approve to upload or reject to retake.');
+}
+
+function rejectSnapshot() {
+  __captureDataUrl = null;
+  showLiveView();
+  setCaptureStatus('Image rejected. Capture again.');
+}
+
+async function approveSnapshot() {
+  if (!__captureDataUrl) {
+    setCaptureStatus('No image captured yet.');
+    return;
+  }
+  const modal = document.getElementById('cameraModal');
+  const itemId = modal?.dataset?.itemId;
+  if (!itemId) {
+    setCaptureStatus('Missing item reference.');
+    return;
+  }
+
+  try {
+    const blob = dataUrlToBlob(__captureDataUrl);
+    const formData = new FormData();
+    formData.append('file', blob, `capture-${Date.now()}.jpg`);
+    setCaptureStatus('Uploading image to Monday…');
+
+    const res = await fetch(`/api/items/${encodeURIComponent(itemId)}/file`, {
+      method: 'POST',
+      body: formData,
+      credentials: 'include'
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      setCaptureStatus(`Upload failed (${res.status}): ${errText || 'unknown error'}`);
+      return;
+    }
+    const json = await res.json();
+    if (!json?.ok) {
+      setCaptureStatus(json.error || 'Upload failed.');
+      return;
+    }
+    setCaptureStatus('Uploaded and attached to Monday.');
+    setTimeout(closeCaptureModal, 600);
+  } catch (err) {
+    console.error('Upload failed', err);
+    setCaptureStatus('Upload failed. Please try again.');
+  }
+}
+
+function dataUrlToBlob(dataUrl) {
+  const [meta, base64] = dataUrl.split(',');
+  const contentType = (meta.match(/data:(.*);base64/) || [])[1] || 'image/jpeg';
+  const byteChars = atob(base64);
+  const byteNumbers = new Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) {
+    byteNumbers[i] = byteChars.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  return new Blob([byteArray], { type: contentType });
+}
+
+function stopCameraStream() {
+  if (__cameraStream) {
+    try {
+      __cameraStream.getTracks().forEach(t => t.stop());
+    } catch {}
+  }
+  __cameraStream = null;
 }
 
 
@@ -169,11 +417,21 @@ function renderBoard(payload, scanMap) {
 
       // Print button
       const printTd = document.createElement('td');
+      printTd.className = 'print-cell';
       const printBtn = document.createElement('button');
       printBtn.textContent = 'Print';
       printBtn.className = 'btn primary';
       printBtn.addEventListener('click', () => printLabel(item.id, jobTitle));
       printTd.appendChild(printBtn);
+
+      const photoBtn = document.createElement('button');
+      photoBtn.type = 'button';
+      photoBtn.className = 'btn success camera-btn';
+      photoBtn.title = 'Capture image';
+      photoBtn.textContent = '📷';
+      photoBtn.addEventListener('click', () => openCaptureModal(item.id, jobTitle));
+      printTd.appendChild(photoBtn);
+
       tr.appendChild(printTd);
 
       // Title + row subitem toggler (only if has subitems)
@@ -224,6 +482,14 @@ function renderBoard(payload, scanMap) {
           subPrintBtn.className = 'btn';
           subPrintBtn.addEventListener('click', () => printLabel(sub.id, sub.name || ''));
           subPrintTd.appendChild(subPrintBtn);
+
+          const subPhotoBtn = document.createElement('button');
+          subPhotoBtn.type = 'button';
+          subPhotoBtn.className = 'btn success camera-btn';
+          subPhotoBtn.title = 'Capture image';
+          subPhotoBtn.textContent = '📷';
+          subPhotoBtn.addEventListener('click', () => openCaptureModal(sub.id, sub.name || ''));
+          subPrintTd.appendChild(subPhotoBtn);
           subTr.appendChild(subPrintTd);
 
           const size = (sub.column_values || []).find(c => c.id === 'dropdown_mkr73m5s')?.text || '';

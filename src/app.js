@@ -8,6 +8,7 @@ const { getAccessToken } = require('./services/monday');
 const pencarrieRouter = require('./routes/pencarrie');
 const pencarrieSmoke = require('./routes/pencarrie-smoke');
 const visualJobs = require('./routes/visual-jobs');
+const filesRoute = require('./routes/files');
 
 
 // ---- parse JSON BEFORE routes
@@ -30,6 +31,7 @@ app.use(require('./routes/scanner'));
 app.use(require('./routes/customers'));
 app.use(require('./routes/orders'));
 app.use('/api/visual-jobs', visualJobs);
+app.use(filesRoute);
 
 // Monday webhook routes
 app.use('/api/monday', require('./routes/monday-events'));

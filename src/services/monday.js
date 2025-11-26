@@ -102,10 +102,44 @@ async function fetchBoardLitePaged(limit = BOARD_PAGE_LIMIT, maxPages = BOARD_MA
   return { boards: [{ groups }] };
 }
 
+// Upload a file to a Files column for a given item
+async function addFileToColumn(itemId, columnId, fileBuffer, filename) {
+  if (!accessToken) throw new Error('Not authenticated with Monday');
+  const FormData = require('form-data');
+  const formData = new FormData();
+
+  const query = `
+    mutation ($file: File!, $itemId: ID!, $columnId: String!) {
+      add_file_to_column (file: $file, item_id: $itemId, column_id: $columnId) { id }
+    }
+  `;
+
+  formData.append('query', query);
+  formData.append('variables', JSON.stringify({ itemId: String(itemId), columnId }));
+  formData.append('map', JSON.stringify({ "0": ["variables.file"] }));
+  formData.append('0', fileBuffer, { filename });
+
+  const { data } = await axios.post('https://api.monday.com/v2/file', formData, {
+    headers: {
+      Authorization: accessToken,
+      ...formData.getHeaders()
+    },
+    maxContentLength: Infinity,
+    maxBodyLength: Infinity
+  });
+
+  if (data?.errors) {
+    const msg = data.errors.map(e => e.message || e).join('; ');
+    throw new Error(`Monday upload error: ${msg}`);
+  }
+  return data?.data?.add_file_to_column || null;
+}
+
 module.exports = {
   buildAuthorizeUrl,
   exchangeCodeForToken,
   getAccessToken,
   changeColumnValue,
-  fetchBoardLitePaged
+  fetchBoardLitePaged,
+  addFileToColumn
 };
