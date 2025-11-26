@@ -113,8 +113,16 @@ body{
 .data-table td.status-cell { width:120px; text-align:center; }
 .w-90{width:90px}.w-120{width:120px}
 
-.title-cell{display:flex;align-items:center;gap:8px}
-.status-cell .status-dots{justify-content:center}
+.title-cell{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding-left:4px;
+}
+.status-cell{
+  text-align:center;
+}
+.status-cell .status-dots{justify-content:center;margin-left:auto;margin-right:auto;}
 .row-toggle,.row-toggle-spacer{
   width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;border-radius:4px
 }
