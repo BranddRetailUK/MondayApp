@@ -43,7 +43,8 @@ body{
 
 /* Buttons */
 .btn{
-  appearance:none;border:none;border-radius:8px;padding:8px 12px;background:#2a313d;color:#fff;cursor:pointer
+  appearance:none;border:none;border-radius:8px;padding:8px 12px;background:#2a313d;color:#fff;cursor:pointer;
+  line-height:1.1;
 }
 .btn:hover{filter:brightness(1.04)}
 .btn.primary{background:var(--brand-2)}
@@ -98,6 +99,7 @@ body{
 .data-table{width:100%;border-collapse:collapse;background:#0b1017;border:1px solid var(--border)}
 .data-table th,.data-table td{border:1px solid var(--border);padding:10px}
 .data-table thead th{background:#091120;color:#cfe0ff;text-align:left;font-weight:700}
+.data-table td{vertical-align:middle}
 .w-90{width:90px}.w-120{width:120px}
 
 .title-cell{display:flex;align-items:center;gap:8px}
@@ -122,8 +124,18 @@ body{
   width:12px;height:12px;border-radius:50%;background:#2a313d;box-shadow:0 0 0 1px rgba(255,255,255,.06) inset
 }
 
-.print-cell{display:flex;gap:8px;align-items:center}
-.camera-btn{min-width:36px;font-size:16px;line-height:1}
+.print-cell{
+  display:flex;
+  gap:6px;
+  align-items:center;
+  flex-wrap:nowrap;
+}
+.camera-btn{
+  min-width:34px;
+  padding:8px 10px;
+  font-size:16px;
+  line-height:1;
+}
 
 /* Headings inside page */
 #board h3{display:none} /* replaced by group UI */
@@ -253,6 +265,7 @@ body{
 }
 
 .w-120 { width:120px; }
+.w-140 { width:140px; }
 .w-80  { width:80px; }
 .w-70  { width:70px; }
 

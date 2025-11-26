@@ -398,7 +398,7 @@ function renderBoard(payload, scanMap) {
     const thead = document.createElement('thead');
     thead.innerHTML = `
       <tr>
-        <th class="w-90">Print</th>
+        <th class="w-140">Print</th>
         <th>Job Title</th>
         <th class="w-120">Scan Status</th>
       </tr>
