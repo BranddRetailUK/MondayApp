@@ -463,6 +463,7 @@ function renderBoard(payload, scanMap) {
 
       // Status dots
       const statusTd = document.createElement('td');
+      statusTd.className = 'status-cell';
       statusTd.appendChild(buildStatusDots(scan.scan_count));
       statusTd.title = scan.status || '';
       tr.appendChild(statusTd);
@@ -502,6 +503,7 @@ function renderBoard(payload, scanMap) {
 
           // sub rows use parent's scan state visually (or leave blank)
           const subStatus = document.createElement('td');
+          subStatus.className = 'status-cell';
           subStatus.appendChild(buildStatusDots(scan.scan_count));
           subStatus.title = scan.status || '';
           subTr.appendChild(subStatus);
