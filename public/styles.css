@@ -101,13 +101,16 @@ body{
   border-collapse:collapse;
   background:#0b1017;
   border:1px solid var(--border);
+  table-layout: fixed;
 }
 .data-table th,.data-table td{border:1px solid var(--border);padding:10px}
 .data-table thead th{background:#091120;color:#cfe0ff;text-align:left;font-weight:700}
 .data-table td{vertical-align:middle}
 
-.data-table th.w-140 { width:140px; }
-.data-table th.w-120 { width:120px; }
+.data-table th.w-140,
+.data-table td.print-cell { width:140px; }
+.data-table th.w-120,
+.data-table td.status-cell { width:120px; text-align:center; }
 .w-90{width:90px}.w-120{width:120px}
 
 .title-cell{

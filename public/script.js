@@ -395,6 +395,15 @@ function renderBoard(payload, scanMap) {
     const table = document.createElement('table');
     table.className = 'data-table';
 
+    // Ensure consistent column widths across all rows
+    const colgroup = document.createElement('colgroup');
+    colgroup.innerHTML = `
+      <col style="width:140px" />
+      <col />
+      <col style="width:120px" />
+    `;
+    table.appendChild(colgroup);
+
     const thead = document.createElement('thead');
     thead.innerHTML = `
       <tr>
