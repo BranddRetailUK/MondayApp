@@ -476,8 +476,6 @@ function renderBoard(payload, scanMap) {
       statusTd.appendChild(buildStatusDots(scan.scan_count));
       statusTd.title = scan.status || '';
       tr.appendChild(statusTd);
-
-      normalizeRowColumns(tr);
       tbody.appendChild(tr);
 
       // Subitems (initially hidden; shown when parent toggles)
@@ -494,7 +492,8 @@ function renderBoard(payload, scanMap) {
           const size = (sub.column_values || []).find(c => c.id === 'dropdown_mkr73m5s')?.text || '';
           const qty  = (sub.column_values || []).find(c => c.id === 'text_mkr31cjs')?.text || '';
 
-          const subTitleTd = document.createElement('td'); // keep default span so table stays 3 columns
+          const subTitleTd = document.createElement('td');
+          subTitleTd.colSpan = 2;
           subTitleTd.innerHTML = `<span class="sub-arrow">↳</span> ${escapeHtml(sub.name || '')} <span class="muted">| Size: ${escapeHtml(size)} | Qty: ${escapeHtml(qty)}</span>`;
           subTr.appendChild(subTitleTd);
 
@@ -504,8 +503,6 @@ function renderBoard(payload, scanMap) {
           subStatus.appendChild(buildStatusDots(scan.scan_count));
           subStatus.title = scan.status || '';
           subTr.appendChild(subStatus);
-
-          normalizeRowColumns(subTr);
           tbody.appendChild(subTr);
         }
       }
@@ -522,29 +519,6 @@ function renderBoard(payload, scanMap) {
 function toggleSubRows(parentId, open) {
   const rows = document.querySelectorAll(`tr.sub-row[data-parent="${CSS.escape(parentId)}"]`);
   rows.forEach(r => r.classList.toggle('hidden', !open));
-}
-
-// Guard against stray colspans/cell counts so the table always stays 3 columns wide
-function normalizeRowColumns(tr) {
-  if (!tr) return;
-  const isSub = tr.classList.contains('sub-row');
-  const desired = [
-    isSub ? 'print-cell sub-print-cell' : 'print-cell',
-    isSub ? 'title-cell sub-title-cell' : 'title-cell',
-    'status-cell'
-  ];
-
-  // trim/expend to 3 cells
-  while (tr.children.length > 3) tr.removeChild(tr.lastChild);
-  while (tr.children.length < 3) tr.appendChild(document.createElement('td'));
-
-  // enforce classes and clear colspans
-  Array.from(tr.children).forEach((td, idx) => {
-    td.colSpan = 1;
-    td.className = td.className
-      ? Array.from(new Set((td.className + ' ' + desired[idx]).split(/\s+/).filter(Boolean))).join(' ')
-      : desired[idx];
-  });
 }
 
 function buildStatusDots(count) {
