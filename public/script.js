@@ -396,6 +396,14 @@ function renderBoard(payload, scanMap) {
     table.className = 'data-table';
 
     // Ensure consistent column widths across all rows
+    const colgroup = document.createElement('colgroup');
+    colgroup.innerHTML = `
+      <col style="width:120px" />
+      <col />
+      <col style="width:120px" />
+    `;
+    table.appendChild(colgroup);
+
     const thead = document.createElement('thead');
     thead.innerHTML = `
       <tr>
@@ -486,7 +494,7 @@ function renderBoard(payload, scanMap) {
           const qty  = (sub.column_values || []).find(c => c.id === 'text_mkr31cjs')?.text || '';
 
           const subTitleTd = document.createElement('td');
-          subTitleTd.colSpan = 1;
+          subTitleTd.colSpan = 2;
           subTitleTd.innerHTML = `<span class="sub-arrow">↳</span> ${escapeHtml(sub.name || '')} <span class="muted">| Size: ${escapeHtml(size)} | Qty: ${escapeHtml(qty)}</span>`;
           subTr.appendChild(subTitleTd);
 
