@@ -493,7 +493,7 @@ function renderBoard(payload, scanMap) {
           const qty  = (sub.column_values || []).find(c => c.id === 'text_mkr31cjs')?.text || '';
 
           const subTitleTd = document.createElement('td');
-          subTitleTd.className = 'title-cell sub-title-cell';
+          subTitleTd.colSpan = 2;
           subTitleTd.innerHTML = `<span class="sub-arrow">↳</span> ${escapeHtml(sub.name || '')} <span class="muted">| Size: ${escapeHtml(size)} | Qty: ${escapeHtml(qty)}</span>`;
           subTr.appendChild(subTitleTd);
 
