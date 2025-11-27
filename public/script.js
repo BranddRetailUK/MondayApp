@@ -527,10 +527,24 @@ function toggleSubRows(parentId, open) {
 // Guard against stray colspans/cell counts so the table always stays 3 columns wide
 function normalizeRowColumns(tr) {
   if (!tr) return;
-  const cells = Array.from(tr.children);
-  cells.forEach(td => { td.colSpan = 1; });
+  const isSub = tr.classList.contains('sub-row');
+  const desired = [
+    isSub ? 'print-cell sub-print-cell' : 'print-cell',
+    isSub ? 'title-cell sub-title-cell' : 'title-cell',
+    'status-cell'
+  ];
+
+  // trim/expend to 3 cells
   while (tr.children.length > 3) tr.removeChild(tr.lastChild);
   while (tr.children.length < 3) tr.appendChild(document.createElement('td'));
+
+  // enforce classes and clear colspans
+  Array.from(tr.children).forEach((td, idx) => {
+    td.colSpan = 1;
+    td.className = td.className
+      ? Array.from(new Set((td.className + ' ' + desired[idx]).split(/\s+/).filter(Boolean))).join(' ')
+      : desired[idx];
+  });
 }
 
 function buildStatusDots(count) {

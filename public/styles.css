@@ -106,6 +106,8 @@ body{
 .data-table col.col-print{ width:160px; }
 .data-table col.col-title{ width:auto; }
 .data-table col.col-status{ width:140px; }
+.data-table tr > :nth-child(1){ width:160px; min-width:160px; max-width:160px; }
+.data-table tr > :nth-child(3){ width:140px; min-width:140px; max-width:140px; }
 .data-table th,.data-table td{border:1px solid var(--border);padding:10px}
 .data-table thead th{background:#091120;color:#cfe0ff;text-align:left;font-weight:700}
 .data-table td{vertical-align:middle}
@@ -119,6 +121,7 @@ body{
   gap:8px;
   padding-left:4px;
 }
+.sub-title-cell{ padding-left:14px; }
 .status-cell{
   width:140px;
   min-width:140px;
