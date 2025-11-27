@@ -119,6 +119,7 @@ body{
   gap:8px;
   padding-left:4px;
 }
+.sub-title-cell{ padding-left:14px; }
 .status-cell{
   width:140px;
   min-width:140px;
