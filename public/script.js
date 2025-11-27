@@ -395,13 +395,12 @@ function renderBoard(payload, scanMap) {
     const table = document.createElement('table');
     table.className = 'data-table';
 
-    // Ensure consistent column widths across all rows
-    // Ensure consistent column widths across all rows
+    // Fixed 3-column layout: Print | Job Title | Scan Status
     const colgroup = document.createElement('colgroup');
     colgroup.innerHTML = `
-      <col style="width:160px" />
-      <col />
-      <col style="width:140px" />
+      <col class="col-print" />
+      <col class="col-title" />
+      <col class="col-status" />
     `;
     table.appendChild(colgroup);
 
@@ -478,6 +477,7 @@ function renderBoard(payload, scanMap) {
       statusTd.title = scan.status || '';
       tr.appendChild(statusTd);
 
+      normalizeRowColumns(tr);
       tbody.appendChild(tr);
 
       // Subitems (initially hidden; shown when parent toggles)
@@ -505,6 +505,7 @@ function renderBoard(payload, scanMap) {
           subStatus.title = scan.status || '';
           subTr.appendChild(subStatus);
 
+          normalizeRowColumns(subTr);
           tbody.appendChild(subTr);
         }
       }
@@ -521,6 +522,15 @@ function renderBoard(payload, scanMap) {
 function toggleSubRows(parentId, open) {
   const rows = document.querySelectorAll(`tr.sub-row[data-parent="${CSS.escape(parentId)}"]`);
   rows.forEach(r => r.classList.toggle('hidden', !open));
+}
+
+// Guard against stray colspans/cell counts so the table always stays 3 columns wide
+function normalizeRowColumns(tr) {
+  if (!tr) return;
+  const cells = Array.from(tr.children);
+  cells.forEach(td => { td.colSpan = 1; });
+  while (tr.children.length > 3) tr.removeChild(tr.lastChild);
+  while (tr.children.length < 3) tr.appendChild(document.createElement('td'));
 }
 
 function buildStatusDots(count) {

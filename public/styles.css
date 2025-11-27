@@ -103,6 +103,9 @@ body{
   border:1px solid var(--border);
   table-layout: fixed;
 }
+.data-table col.col-print{ width:160px; }
+.data-table col.col-title{ width:auto; }
+.data-table col.col-status{ width:140px; }
 .data-table th,.data-table td{border:1px solid var(--border);padding:10px}
 .data-table thead th{background:#091120;color:#cfe0ff;text-align:left;font-weight:700}
 .data-table td{vertical-align:middle}
@@ -110,6 +113,7 @@ body{
 .w-90{width:90px}.w-120{width:120px}.w-140{width:140px}
 
 .title-cell{
+  width:100%;
   display:flex;
   align-items:center;
   gap:8px;
@@ -117,6 +121,8 @@ body{
 }
 .status-cell{
   width:140px;
+  min-width:140px;
+  max-width:140px;
   text-align:center;
 }
 .status-cell .status-dots{ justify-content:center; margin-left:auto; margin-right:auto; }
@@ -143,6 +149,8 @@ body{
 
 .print-cell{
   width:160px;
+  min-width:160px;
+  max-width:160px;
   display:flex;
   gap:6px;
   align-items:center;
