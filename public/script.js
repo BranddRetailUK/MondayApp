@@ -561,7 +561,7 @@ function renderBoard(payload, scanMap) {
 }
 
 function toggleSubRows(parentId, open) {
-  const rows = document.querySelectorAll(`.sub-row[data-parent="${CSS.escape(parentId)}"]`);
+  const rows = document.querySelectorAll(`.sub-row[data-parent="${CSS.escape(parentId)}"], .sub-head[data-parent="${CSS.escape(parentId)}"]`);
   rows.forEach(r => r.classList.toggle('hidden', !open));
 }
 
