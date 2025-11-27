@@ -396,14 +396,6 @@ function renderBoard(payload, scanMap) {
     table.className = 'data-table';
 
     // Ensure consistent column widths across all rows
-    const colgroup = document.createElement('colgroup');
-    colgroup.innerHTML = `
-      <col style="width:140px" />
-      <col />
-      <col style="width:120px" />
-    `;
-    table.appendChild(colgroup);
-
     const thead = document.createElement('thead');
     thead.innerHTML = `
       <tr>
@@ -487,19 +479,7 @@ function renderBoard(payload, scanMap) {
           subTr.dataset.parent = itemId;
 
           const subPrintTd = document.createElement('td');
-          const subPrintBtn = document.createElement('button');
-          subPrintBtn.textContent = 'Print';
-          subPrintBtn.className = 'btn';
-          subPrintBtn.addEventListener('click', () => printLabel(sub.id, sub.name || ''));
-          subPrintTd.appendChild(subPrintBtn);
-
-          const subPhotoBtn = document.createElement('button');
-          subPhotoBtn.type = 'button';
-          subPhotoBtn.className = 'btn success camera-btn';
-          subPhotoBtn.title = 'Capture image';
-          subPhotoBtn.textContent = '📷';
-          subPhotoBtn.addEventListener('click', () => openCaptureModal(sub.id, sub.name || ''));
-          subPrintTd.appendChild(subPhotoBtn);
+          subPrintTd.className = 'print-cell sub-print-cell';
           subTr.appendChild(subPrintTd);
 
           const size = (sub.column_values || []).find(c => c.id === 'dropdown_mkr73m5s')?.text || '';
