@@ -494,8 +494,7 @@ function renderBoard(payload, scanMap) {
           const size = (sub.column_values || []).find(c => c.id === 'dropdown_mkr73m5s')?.text || '';
           const qty  = (sub.column_values || []).find(c => c.id === 'text_mkr31cjs')?.text || '';
 
-          const subTitleTd = document.createElement('td');
-          subTitleTd.colSpan = 2;
+          const subTitleTd = document.createElement('td'); // keep default span so table stays 3 columns
           subTitleTd.innerHTML = `<span class="sub-arrow">↳</span> ${escapeHtml(sub.name || '')} <span class="muted">| Size: ${escapeHtml(size)} | Qty: ${escapeHtml(qty)}</span>`;
           subTr.appendChild(subTitleTd);
 
