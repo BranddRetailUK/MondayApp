@@ -396,20 +396,21 @@ function renderBoard(payload, scanMap) {
     table.className = 'data-table';
 
     // Ensure consistent column widths across all rows
+    // Ensure consistent column widths across all rows
     const colgroup = document.createElement('colgroup');
     colgroup.innerHTML = `
-      <col style="width:120px" />
+      <col style="width:160px" />
       <col />
-      <col style="width:120px" />
+      <col style="width:140px" />
     `;
     table.appendChild(colgroup);
 
     const thead = document.createElement('thead');
     thead.innerHTML = `
       <tr>
-        <th class="w-140">Print</th>
+        <th>Print</th>
         <th>Job Title</th>
-        <th class="w-120">Scan Status</th>
+        <th>Scan Status</th>
       </tr>
     `;
     table.appendChild(thead);
