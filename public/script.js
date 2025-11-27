@@ -2,6 +2,12 @@
 
 const PROD_ORIGIN = window.location.origin;
 const ENDPOINTS = { data: '/api/board', auth: '/auth', scans: '/api/scan-states' };
+const SUBITEM_COLUMNS = {
+  code: 'text_mkvdj3cd',
+  size: 'text_mkxewsew',
+  colour: 'text_mkxdv9nk',
+  qty: 'text_mkr31cjs'
+};
 
 // --- Camera globals ---
 let __cameraStream = null;
@@ -492,10 +498,10 @@ function renderBoard(payload, scanMap) {
           subRow.appendChild(subActions);
 
           const cols = sub.column_values || [];
-          const size = cols.find(c => c.id === 'dropdown_mkr73m5s')?.text || cols.find(c => /size/i.test(c.title || ''))?.text || '';
-          const qty  = cols.find(c => c.id === 'text_mkr31cjs')?.text || cols.find(c => /qty|quantity/i.test(c.title || ''))?.text || '';
-          const code = cols.find(c => /code/i.test(c.title || ''))?.text || '';
-          const colour = cols.find(c => /colour|color/i.test(c.title || ''))?.text || '';
+          const size = cols.find(c => c.id === SUBITEM_COLUMNS.size)?.text || cols.find(c => /size/i.test(c.title || ''))?.text || '';
+          const qty  = cols.find(c => c.id === SUBITEM_COLUMNS.qty)?.text || cols.find(c => /qty|quantity/i.test(c.title || ''))?.text || '';
+          const code = cols.find(c => c.id === SUBITEM_COLUMNS.code)?.text || cols.find(c => /code/i.test(c.title || ''))?.text || '';
+          const colour = cols.find(c => c.id === SUBITEM_COLUMNS.colour)?.text || cols.find(c => /colour|color/i.test(c.title || ''))?.text || '';
 
           const subJob = document.createElement('div');
           subJob.className = 'grid-cell job-cell sub-title';
