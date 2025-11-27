@@ -399,47 +399,35 @@ function renderBoard(payload, scanMap) {
     const tableWrap = document.createElement('div');
     tableWrap.className = 'group-content';
 
-    const table = document.createElement('table');
-    table.className = 'data-table';
+    const grid = document.createElement('div');
+    grid.className = 'board-grid';
 
-    // Fixed 3-column layout: Print | Job Title | Scan Status
-    const colgroup = document.createElement('colgroup');
-    colgroup.innerHTML = `
-      <col class="col-print" />
-      <col class="col-title" />
-      <col class="col-status" />
+    const headRow = document.createElement('div');
+    headRow.className = 'grid-row grid-head';
+    headRow.innerHTML = `
+      <div class="grid-cell head actions-head">Actions</div>
+      <div class="grid-cell head job-head">Job</div>
+      <div class="grid-cell head sync-head">Sync</div>
     `;
-    table.appendChild(colgroup);
-
-    const thead = document.createElement('thead');
-    thead.innerHTML = `
-      <tr>
-        <th>Actions</th>
-        <th>Job</th>
-        <th>Sync</th>
-      </tr>
-    `;
-    table.appendChild(thead);
-
-    const tbody = document.createElement('tbody');
+    grid.appendChild(headRow);
 
     for (const item of items) {
       const jobTitle = item.name || '';
       const itemId = String(item.id);
       const scan = scanMap[itemId] || { scan_count: 0, status: 'Pending' };
 
-      const tr = document.createElement('tr');
-      tr.dataset.itemId = itemId;
-      tr.className = 'job-row';
+      const row = document.createElement('div');
+      row.dataset.itemId = itemId;
+      row.className = 'grid-row job-row';
 
-      // Print button
-      const printTd = document.createElement('td');
-      printTd.className = 'print-cell';
+      // Actions
+      const actionsCell = document.createElement('div');
+      actionsCell.className = 'grid-cell actions-cell';
       const printBtn = document.createElement('button');
       printBtn.textContent = 'Print';
       printBtn.className = 'job-action primary';
       printBtn.addEventListener('click', () => printLabel(item.id, jobTitle));
-      printTd.appendChild(printBtn);
+      actionsCell.appendChild(printBtn);
 
       const photoBtn = document.createElement('button');
       photoBtn.type = 'button';
@@ -447,13 +435,13 @@ function renderBoard(payload, scanMap) {
       photoBtn.title = 'Capture image';
       photoBtn.textContent = '📷';
       photoBtn.addEventListener('click', () => openCaptureModal(item.id, jobTitle));
-      printTd.appendChild(photoBtn);
+      actionsCell.appendChild(photoBtn);
 
-      tr.appendChild(printTd);
+      row.appendChild(actionsCell);
 
       // Title + row subitem toggler (only if has subitems)
-      const titleTd = document.createElement('td');
-      titleTd.className = 'title-cell';
+      const titleCell = document.createElement('div');
+      titleCell.className = 'grid-cell job-cell title-cell';
       const titleWrap = document.createElement('div');
       titleWrap.className = 'title-wrap';
 
@@ -481,51 +469,48 @@ function renderBoard(payload, scanMap) {
       titleSpan.className = 'job-title';
       titleSpan.textContent = jobTitle;
       titleWrap.appendChild(titleSpan);
-      titleTd.appendChild(titleWrap);
-      tr.appendChild(titleTd);
+      titleCell.appendChild(titleWrap);
+      row.appendChild(titleCell);
 
       // Status dots
-      const statusTd = document.createElement('td');
-      statusTd.className = 'status-cell';
-      statusTd.appendChild(buildStatusDots(scan.scan_count));
-      statusTd.title = scan.status || '';
-      tr.appendChild(statusTd);
-      tbody.appendChild(tr);
+      const statusCell = document.createElement('div');
+      statusCell.className = 'grid-cell sync-cell status-cell';
+      statusCell.appendChild(buildStatusDots(scan.scan_count));
+      statusCell.title = scan.status || '';
+      row.appendChild(statusCell);
+      grid.appendChild(row);
 
       // Subitems (initially hidden; shown when parent toggles)
       if (item.subitems && item.subitems.length > 0) {
         for (const sub of item.subitems) {
-          const subTr = document.createElement('tr');
-          subTr.className = 'sub-row hidden';
-          subTr.dataset.parent = itemId;
+          const subRow = document.createElement('div');
+          subRow.className = 'grid-row sub-row hidden';
+          subRow.dataset.parent = itemId;
 
-          const subPrintTd = document.createElement('td');
-          subPrintTd.className = 'print-cell sub-print-cell';
-          subTr.appendChild(subPrintTd);
+          const subActions = document.createElement('div');
+          subActions.className = 'grid-cell actions-cell sub-print-cell';
+          subRow.appendChild(subActions);
 
           const size = (sub.column_values || []).find(c => c.id === 'dropdown_mkr73m5s')?.text || '';
           const qty  = (sub.column_values || []).find(c => c.id === 'text_mkr31cjs')?.text || '';
 
-          const subTitleTd = document.createElement('td');
-          const subTitleWrap = document.createElement('div');
-          subTitleWrap.className = 'sub-title';
-          subTitleWrap.innerHTML = `<span class="sub-arrow">▸</span><span>${escapeHtml(sub.name || '')}</span> <span class="muted">Size: ${escapeHtml(size)} · Qty: ${escapeHtml(qty)}</span>`;
-          subTitleTd.appendChild(subTitleWrap);
-          subTr.appendChild(subTitleTd);
+          const subJob = document.createElement('div');
+          subJob.className = 'grid-cell job-cell sub-title';
+          subJob.innerHTML = `<span class="sub-arrow">▸</span><span>${escapeHtml(sub.name || '')}</span> <span class="muted">Size: ${escapeHtml(size)} · Qty: ${escapeHtml(qty)}</span>`;
+          subRow.appendChild(subJob);
 
           // sub rows use parent's scan state visually (or leave blank)
-          const subStatus = document.createElement('td');
-          subStatus.className = 'status-cell';
+          const subStatus = document.createElement('div');
+          subStatus.className = 'grid-cell sync-cell status-cell';
           subStatus.appendChild(buildStatusDots(scan.scan_count));
           subStatus.title = scan.status || '';
-          subTr.appendChild(subStatus);
-          tbody.appendChild(subTr);
+          subRow.appendChild(subStatus);
+          grid.appendChild(subRow);
         }
       }
     }
 
-    table.appendChild(tbody);
-    tableWrap.appendChild(table);
+    tableWrap.appendChild(grid);
     groupWrap.appendChild(tableWrap);
 
     boardDiv.appendChild(groupWrap);
@@ -533,7 +518,7 @@ function renderBoard(payload, scanMap) {
 }
 
 function toggleSubRows(parentId, open) {
-  const rows = document.querySelectorAll(`tr.sub-row[data-parent="${CSS.escape(parentId)}"]`);
+  const rows = document.querySelectorAll(`.sub-row[data-parent="${CSS.escape(parentId)}"]`);
   rows.forEach(r => r.classList.toggle('hidden', !open));
 }
 
