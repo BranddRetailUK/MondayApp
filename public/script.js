@@ -488,6 +488,21 @@ function renderBoard(payload, scanMap) {
 
       // Subitems (initially hidden; shown when parent toggles)
       if (item.subitems && item.subitems.length > 0) {
+        // header row for subitems
+        const subHead = document.createElement('div');
+        subHead.className = 'grid-row sub-head hidden';
+        subHead.dataset.parent = itemId;
+        subHead.innerHTML = `
+          <div class="grid-cell actions-cell sub-col"></div>
+          <div class="grid-cell sub-col">Subitem</div>
+          <div class="grid-cell sub-col">Code</div>
+          <div class="grid-cell sub-col">Size</div>
+          <div class="grid-cell sub-col">Colour</div>
+          <div class="grid-cell sub-col">Qty</div>
+          <div class="grid-cell sub-col sync-cell">Sync</div>
+        `;
+        grid.appendChild(subHead);
+
         for (const sub of item.subitems) {
           const subRow = document.createElement('div');
           subRow.className = 'grid-row sub-row hidden';
@@ -503,16 +518,31 @@ function renderBoard(payload, scanMap) {
           const code = cols.find(c => c.id === SUBITEM_COLUMNS.code)?.text || cols.find(c => /code/i.test(c.title || ''))?.text || '';
           const colour = cols.find(c => c.id === SUBITEM_COLUMNS.colour)?.text || cols.find(c => /colour|color/i.test(c.title || ''))?.text || '';
 
-          const subJob = document.createElement('div');
-          subJob.className = 'grid-cell job-cell sub-title';
-          subJob.innerHTML = `
-            <span class="sub-arrow">▸</span>
-            <span class="sub-name">${escapeHtml(sub.name || '')}</span>
-            <span class="muted sub-meta">Code: ${escapeHtml(code || '—')} · Size: ${escapeHtml(size || '—')} · Colour: ${escapeHtml(colour || '—')} · Qty: ${escapeHtml(qty || '—')}</span>
-          `;
-          subRow.appendChild(subJob);
+          const subNameCell = document.createElement('div');
+          subNameCell.className = 'grid-cell sub-cell sub-name-cell';
+          subNameCell.innerHTML = `<span class="sub-arrow">▸</span><span class="sub-name">${escapeHtml(sub.name || '')}</span>`;
+          subRow.appendChild(subNameCell);
 
-          // sub rows use parent's scan state visually (or leave blank)
+          const subCode = document.createElement('div');
+          subCode.className = 'grid-cell sub-cell sub-code-cell';
+          subCode.textContent = code || '—';
+          subRow.appendChild(subCode);
+
+          const subSize = document.createElement('div');
+          subSize.className = 'grid-cell sub-cell sub-size-cell';
+          subSize.textContent = size || '—';
+          subRow.appendChild(subSize);
+
+          const subColour = document.createElement('div');
+          subColour.className = 'grid-cell sub-cell sub-colour-cell';
+          subColour.textContent = colour || '—';
+          subRow.appendChild(subColour);
+
+          const subQtyCell = document.createElement('div');
+          subQtyCell.className = 'grid-cell sub-cell sub-qty-cell';
+          subQtyCell.textContent = qty || '—';
+          subRow.appendChild(subQtyCell);
+
           const subStatus = document.createElement('div');
           subStatus.className = 'grid-cell sync-cell status-cell';
           subStatus.appendChild(buildStatusDots(scan.scan_count));
