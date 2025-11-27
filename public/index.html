@@ -2,357 +2,58 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Ultimate Hub</title>
+  <title>Ultimate Hub · Dashboard</title>
   <link rel="stylesheet" href="styles.css">
   <script src="script.js" defer></script>
-  <script src="customers.js" defer></script>
-  <script src="orders.js" defer></script>
-  <script src="shipping.js" defer></script>
-  <!-- Removed MDB Jobs tab logic & script includes -->
 </head>
-<body>
+<body class="dashboard-only">
   <div class="app-container">
     <nav class="sidebar">
-      <h2 class="sidebar-logo">Ultimate Hub</h2>
-      <ul class="nav-tabs">
-        <li data-tab="home" class="active">Home</li>
-        <li data-tab="orders">Orders</li>
-        <li data-tab="customers">Customers</li>
-        <li data-tab="stock">Stock</li>
-        <li data-tab="labels"> Box Labels</li>
-        <li data-tab="shipping">Shipping</li>
-        <!-- NEW -->
-        <li data-tab="pencarrie">PenCarrie</li>
-        <!-- REMOVED: <li data-tab="mdb-jobs">MDB Jobs</li> -->
-      </ul>
+      <div class="sidebar-top">
+        <div class="logo-mark">UH</div>
+        <div class="logo-text">
+          <div class="sidebar-logo">Ultimate Hub</div>
+          <div class="sidebar-sub">Production</div>
+        </div>
+      </div>
+      <div class="nav-group">
+        <div class="nav-heading">Home</div>
+        <ul class="nav-tabs">
+          <li data-tab="home">Overview</li>
+          <li data-tab="dashboard" class="active">Dashboard</li>
+        </ul>
+      </div>
+      <div class="nav-footer">
+        <span class="nav-foot-label">Workspace</span>
+        <span class="pill pill-muted">Ultimate Promotions</span>
+      </div>
     </nav>
 
     <main class="main-content">
-      <!-- HOME -->
-      <div id="tab-home" class="tab-content active">
-        <h1>Home</h1>
-
-        <div class="home-grid">
-          <!-- Stock Orders (PenCarrie) -->
-          <a class="home-card home-card--pc gradient-blue" data-goto-tab="pencarrie" href="javascript:void(0)">
-            <div class="hc-top">
-              <span class="hc-title">Stock Orders (PenCarrie)</span>
-              <span class="hc-pill">Live</span>
-            </div>
-            <div class="hc-metric" id="hc-pc-total">—</div>
-            <div class="hc-sub">
-              <span><strong id="hc-pc-inprog">—</strong> in progress</span>
-              <span>·</span>
-              <span><strong id="hc-pc-shipped">—</strong> shipped</span>
-            </div>
-            <div class="hc-foot">
-              <span class="hc-foot-text" id="hc-pc-foot">Fetching latest delivery statuses…</span>
-            </div>
-          </a>
-
-          <!-- Production / Labels (Monday board) -->
-          <a class="home-card home-card--labels gradient-purple" data-goto-tab="labels" href="javascript:void(0)">
-            <div class="hc-top">
-              <span class="hc-title">Production (Labels)</span>
-              <span class="hc-pill">Today</span>
-            </div>
-            <div class="hc-metric"><span id="hc-lb-items">—</span></div>
-            <div class="hc-sub">
-              <span><span class="dot dot-purple"></span> <strong id="hc-lb-checkedin">—</strong></span>
-              <span><span class="dot dot-gold"></span> <strong id="hc-lb-inprod">—</strong></span>
-              <span><span class="dot dot-green"></span> <strong id="hc-lb-done">—</strong></span>
-            </div>
-            <div class="hc-foot">
-              <span class="hc-foot-text">Scanned status across board items</span>
-            </div>
-          </a>
-
-          <!-- Orders -->
-          <a class="home-card home-card--orders gradient-green" data-goto-tab="orders" href="javascript:void(0)">
-            <div class="hc-top">
-              <span class="hc-title">Active Orders</span>
-              <span class="hc-pill">Open</span>
-            </div>
-            <div class="hc-metric" id="hc-odr-open">—</div>
-            <div class="hc-sub">
-              <span><strong id="hc-odr-inprod">—</strong> in production</span>
-              <span>·</span>
-              <span><strong id="hc-odr-draft">—</strong> drafts</span>
-            </div>
-            <div class="hc-foot">
-              <span class="hc-foot-text">Draft, Confirmed, In Production</span>
-            </div>
-          </a>
-
-          <!-- Customers -->
-          <a class="home-card home-card--customers gradient-orange" data-goto-tab="customers" href="javascript:void(0)">
-            <div class="hc-top">
-              <span class="hc-title">Customers</span>
-              <span class="hc-pill">Total</span>
-            </div>
-            <div class="hc-metric" id="hc-cus-total">—</div>
-            <div class="hc-sub">
-              <span><strong id="hc-cus-recent">—</strong> new this month</span>
-            </div>
-            <div class="hc-foot">
-              <span class="hc-foot-text">Manage contacts & addresses</span>
-            </div>
-          </a>
-        </div>
-      </div>
-
-      <!-- ORDERS -->
-      <div id="tab-orders" class="tab-content">
-        <h1>Orders</h1>
-
-        <!-- LIST VIEW -->
-        <div id="orders-list-view">
-          <section class="card">
-            <div class="card-head">
-              <h2>Active Orders</h2>
-              <div class="card-actions">
-                <button id="open-create-order" class="btn primary">Create Order</button>
-              </div>
-            </div>
-            <div class="card-body">
-              <table id="orders-table" class="data-table">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Customer</th>
-                    <th>Title</th>
-                    <th>Status</th>
-                    <th>Created</th>
-                    <th class="w-120">Actions</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
-              <div class="small muted" style="margin-top:8px;">
-                Showing Draft, Confirmed, and In Production only. Completed/Shipped are hidden.
-              </div>
-            </div>
-          </section>
-        </div>
-
-        <!-- CREATE VIEW -->
-        <section id="order-create-view" class="card" style="display:none">
-          <div class="card-head">
-            <h2>Create Order</h2>
-            <div class="card-actions">
-              <button id="order-create-back" class="btn outline">Back to Orders</button>
-            </div>
-          </div>
-          <div class="card-body">
-            <form id="order-form" class="form-grid">
-              <div class="form-row full">
-                <label>Customer <span class="req">*</span></label>
-                <div class="combo">
-                  <input id="order-customer" autocomplete="off" />
-                  <button type="button" class="btn" id="add-customer-btn">Add Customer</button>
-                  <div id="order-customer-dd" class="dd"></div>
-                </div>
-                <div class="small muted">Search your customers, then click to select.</div>
-              </div>
-
-              <!-- Job Title -->
-              <div class="form-row full">
-                <label>Job Title
-                  <input name="job_title" id="order-job-title" placeholder="e.g. Hoodies for Freshers Week" />
-                </label>
-              </div>
-
-              <div class="form-row full"><h3 class="subhead">Products</h3></div>
-
-              <div id="order-lines">
-                <!-- Header row (shown once) -->
-                <div class="line-grid horizontal header-row">
-                  <div class="col code">Product Code</div>
-                  <div class="col type">Garment Type</div>
-                  <div class="col title">Product Title</div>
-                  <div class="col colour">Colour</div>
-                  <div class="col size">Size</div>
-                  <div class="col qty">Qty</div>
-                  <div class="col actions">Actions</div>
-                </div>
-
-                <!-- Template (hidden; cloned by JS) -->
-                <div class="line-row line-template" style="display:none">
-                  <div class="line-grid horizontal">
-                    <div class="col code"><input name="product_code" /></div>
-                    <div class="col type"><input name="garment_type" /></div>
-                    <div class="col title"><input name="product_title" /></div>
-                    <div class="col colour"><input name="colour" /></div>
-                    <div class="col size"><input name="size" /></div>
-                    <div class="col qty"><input name="quantity" type="number" min="1" value="1" /></div>
-                    <div class="col actions">
-                      <button type="button" class="btn small line-remove">Remove</button>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Lines inserted here -->
-                <div id="order-lines-body"></div>
-
-                <div class="form-row full">
-                  <button type="button" id="add-line-btn" class="btn outline">+ Add line</button>
-                </div>
-              </div>
-
-              <div class="form-row">
-                <label>Status
-                  <select name="status">
-                    <option value="Draft">Draft</option>
-                    <option value="Confirmed">Confirmed</option>
-                    <option value="In Production">In Production</option>
-                    <option value="Completed">Completed</option>
-                    <option value="Shipped">Shipped</option>
-                  </select>
-                </label>
-              </div>
-
-              <div class="form-row full">
-                <label>Notes
-                  <input name="notes" />
-                </label>
-              </div>
-
-              <div class="form-row full">
-                <label>Upload Artwork / Visuals (multiple)
-                  <input type="file" name="files" id="files" multiple />
-                </label>
-              </div>
-
-              <div class="form-row full">
-                <button class="btn primary" type="submit">Create Order</button>
-              </div>
-            </form>
-          </div>
-        </section>
-      </div>
-
-      <!-- CUSTOMERS -->
-      <div id="tab-customers" class="tab-content">
-        <h1>Customers</h1>
-        <div id="customers-root" class="grid-2">
-          <section id="customers-list" class="card">
-            <div class="card-head"><h2>All Customers</h2></div>
-            <div class="card-body">
-              <table id="customers-table" class="data-table">
-                <thead>
-                  <tr>
-                    <th>Business</th>
-                    <th>Contact</th>
-                    <th>Email</th>
-                    <th>Phone</th>
-                    <th class="w-90">Actions</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
-            </div>
-          </section>
-
-          <section id="customer-form-wrap" class="card">
-            <div class="card-head"><h2>Add Customer</h2></div>
-            <div class="card-body">
-              <form id="customer-form" class="form-grid">
-                <div class="form-row full">
-                  <label>Business Name<span class="req">*</span>
-                    <input name="business_name" required />
-                  </label>
-                </div>
-                <div class="form-row">
-                  <label>Contact Name
-                    <input name="contact_name" />
-                  </label>
-                </div>
-                <div class="form-row">
-                  <label>Email<span class="req">*</span>
-                    <input type="email" name="email" required />
-                  </label>
-                </div>
-                <div class="form-row">
-                  <label>Phone
-                    <input name="phone" />
-                  </label>
-                </div>
-                <div class="form-row">
-                  <label>Mobile
-                    <input name="mobile" />
-                  </label>
-                </div>
-
-                <div class="form-row full"><h3 class="subhead">Invoice Address</h3></div>
-                <div class="form-row full"><label>Line 1<input name="inv_line1" /></label></div>
-                <div class="form-row full"><label>Line 2<input name="inv_line2" /></label></div>
-                <div class="form-row"><label>City<input name="inv_city" /></label></div>
-                <div class="form-row"><label>Region/State<input name="inv_region" /></label></div>
-                <div class="form-row"><label>Postcode<input name="inv_postcode" /></label></div>
-                <div class="form-row"><label>Country<input name="inv_country" /></label></div>
-
-                <div class="form-row full"><h3 class="subhead">Shipping Address</h3></div>
-                <div class="form-row full"><label>Line 1<input name="ship_line1" /></label></div>
-                <div class="form-row full"><label>Line 2<input name="ship_line2" /></label></div>
-                <div class="form-row"><label>City<input name="ship_city" /></label></div>
-                <div class="form-row"><label>Region/State<input name="ship_region" /></label></div>
-                <div class="form-row"><label>Postcode<input name="ship_postcode" /></label></div>
-                <div class="form-row"><label>Country<input name="ship_country" /></label></div>
-
-                <div class="form-row full">
-                  <button class="btn primary" type="submit">Save Customer</button>
-                </div>
-              </form>
-            </div>
-          </section>
-
-          <section id="customer-detail" class="card" style="display:none">
-            <div class="card-head">
-              <div>
-                <h2 id="cd-name">Customer</h2>
-                <div class="muted small">Contact: <span id="cd-contact"></span> · <span id="cd-email"></span> · <span id="cd-phone"></span></div>
-              </div>
-              <div class="card-actions">
-                <button id="customer-back-btn" class="btn outline">Back to list</button>
-              </div>
-            </div>
-            <div class="card-body">
-              <div class="grid-2">
-                <div><h3 class="subhead">Invoice Address</h3><p id="cd-invoice" class="address"></p></div>
-                <div><h3 class="subhead">Shipping Address</h3><p id="cd-shipping" class="address"></p></div>
-              </div>
-
-              <h3 class="subhead mt">Previous Orders</h3>
-              <table id="customer-orders-table" class="data-table">
-                <thead>
-                  <tr><th>Order</th><th>Status</th><th>Total</th><th>Created</th></tr>
-                </thead>
-                <tbody></tbody>
-              </table>
-            </div>
-          </section>
-        </div>
-      </div>
-
-      <!-- STOCK -->
-      <div id="tab-stock" class="tab-content">
-        <h1>Stock</h1>
-        <p>Stock management content.</p>
-      </div>
-
-      <!-- LABELS -->
-      <div id="tab-labels" class="tab-content">
-        <div class="labels-head">
-          <h1>Labels</h1>
-          <div class="labels-actions">
-            <button id="labels-colours-btn" class="btn outline">Colours</button>
-            <button id="loadBtn" class="btn" onclick="loadBoard()">Update Board Info</button>
-            <span id="labels-sync-state" class="small muted"></span>
+      <section id="tab-home" class="tab-content">
+        <div class="hero-card">
+          <p class="eyebrow">Ultimate Promotions</p>
+          <h1>Production Overview</h1>
+          <p class="muted">Jump into Dashboard to monitor jobs, print labels, and capture images directly from Monday.</p>
+          <div class="hero-actions">
+            <button class="btn primary" data-goto-tab="dashboard">Open Dashboard</button>
           </div>
         </div>
+      </section>
 
-        <!-- Colour settings panel -->
-        <div id="labels-colours-panel" class="card" style="display:none">
+      <section id="tab-dashboard" class="tab-content active">
+        <header class="page-header">
+          <div class="header-left">
+            <p class="eyebrow">Ultimate Promotions Job Board</p>
+            <h1>Dashboard</h1>
+            <p class="muted">Live from Monday — grouped by production stage.</p>
+          </div>
+          <div class="header-actions">
+            <button id="labels-colours-btn" class="btn pill-btn">Group colours</button>
+          </div>
+        </header>
+
+        <section id="labels-colours-panel" class="card" style="display:none">
           <div class="card-head">
             <h2>Group Colours</h2>
             <div class="card-actions">
@@ -361,170 +62,27 @@
           </div>
           <div class="card-body">
             <div id="labels-colour-form" class="colour-grid"></div>
-            <div class="small muted mt-8">Tip: these are saved in your browser (localStorage) and applied after each board refresh.</div>
-          </div>
-        </div>
-
-        <!-- Monday board render lands here; we decorate it -->
-        <div id="board"></div>
-      </div>
-
-      <!-- SHIPPING -->
-      <div id="tab-shipping" class="tab-content">
-        <h1>Shipping</h1>
-
-        <section class="card">
-          <div class="card-head">
-            <h2>Stock Orders (PenCarrie)</h2>
-            <div class="card-actions">
-              <button id="pc-refresh" class="btn outline">Refresh</button>
-            </div>
-          </div>
-          <div class="card-body">
-            <table id="pc-orders-table" class="data-table">
-              <thead>
-                <tr>
-                  <th class="w-120">PC Order</th>
-                  <th>Status</th>
-                  <th>Track &amp; Trace</th>
-                  <th>Carrier</th>
-                  <th>ETA</th>
-                  <th class="w-120">Actions</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-
-            <div id="pc-order-detail" class="mt" style="display:none">
-              <h3 class="subhead">Order Detail</h3>
-              <div id="pc-order-header" class="small muted"></div>
-              <table id="pc-lines-table" class="data-table mt-8">
-                <thead>
-                  <tr>
-                    <th>SKU</th>
-                    <th>Description</th>
-                    <th>Qty</th>
-                    <th>Line Ref (cref)</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
-            </div>
+            <div class="small muted mt-8">Saved locally and applied after each refresh.</div>
           </div>
         </section>
 
-        <section class="card mt">
-          <div class="card-head">
-            <h2>Outbound Shipments (DPD)</h2>
-            <div class="card-actions">
-              <span class="badge">Coming Soon</span>
-            </div>
-          </div>
-          <div class="card-body">
-            <p class="muted">We’ll show booked consignments, tracking, and labels here.</p>
-          </div>
-        </section>
-      </div>
-
-      <!-- NEW: PEN CARRIE TAB -->
-      <section id="tab-pencarrie" class="tab-content">
-        <h1>PenCarrie</h1>
-
-        <!-- Search & filters -->
-        <section class="card">
-          <div class="card-head">
-            <h2>Line &amp; Order Search</h2>
-            <div class="card-actions">
-              <button id="pc-search-btn" class="btn">Search</button>
-              <button id="pc-clear-btn" class="btn outline">Clear</button>
-            </div>
-          </div>
-          <div class="card-body">
-            <div class="form-grid">
-              <div class="form-row">
-                <label>Line Ref (cref)
-                  <input id="pc-cref" placeholder="e.g. C123456" />
-                </label>
-              </div>
-              <div class="form-row">
-                <label>Ref
-                  <input id="pc-ref" placeholder="Optional" />
-                </label>
-              </div>
-              <div class="form-row">
-                <label>Order Code
-                  <input id="pc-ordercode" placeholder="e.g. 45012345" />
-                </label>
-              </div>
-              <div class="form-row">
-                <label>Date From
-                  <input id="pc-from" type="date" />
-                </label>
-              </div>
-              <div class="form-row">
-                <label>Date To
-                  <input id="pc-to" type="date" />
-                </label>
+        <section class="board-shell card">
+          <div class="board-shell-head">
+            <div class="board-status">
+              <div class="status-legend">
+                <span><span class="dot dot-purple"></span> Checked In</span>
+                <span><span class="dot dot-gold"></span> In Production</span>
+                <span><span class="dot dot-green"></span> Complete</span>
               </div>
             </div>
-
-            <div class="mt">
-              <table id="pc-search-results" class="data-table">
-                <thead>
-                  <tr>
-                    <th>Order</th>
-                    <th>Line Ref</th>
-                    <th>SKU</th>
-                    <th>Description</th>
-                    <th>Qty</th>
-                    <th class="w-120">Actions</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
+            <div id="labels-toolbar">
+              <div id="authStatus" class="status-note">Connected to Monday.</div>
+              <button id="loadBtn" class="btn outline">Refresh board</button>
             </div>
           </div>
-        </section>
-
-        <!-- Orders summary -->
-        <section class="card mt">
-          <div class="card-head">
-            <h2>Recent Supplier Orders</h2>
-            <div class="card-actions">
-              <button id="pc-orders-refresh" class="btn outline">Refresh</button>
-            </div>
-          </div>
-          <div class="card-body">
-            <table id="pc-orders-summary" class="data-table">
-              <thead>
-                <tr>
-                  <th class="w-120">PC Order</th>
-                  <th>Status</th>
-                  <th>Carrier</th>
-                  <th>ETA</th>
-                  <th class="w-120">Actions</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </section>
-
-        <!-- Debug/Health -->
-        <section class="card mt">
-          <div class="card-head">
-            <h2>Debug &amp; Health</h2>
-            <div class="card-actions">
-              <button id="pc-whoami" class="btn outline">Check Egress IP</button>
-            </div>
-          </div>
-          <div class="card-body">
-            <div id="pc-health" class="small muted">Run checks to verify connectivity and whitelist status.</div>
-          </div>
+          <div id="board"></div>
         </section>
       </section>
-
-      <!-- REMOVED: MDB JOBS TAB -->
     </main>
   </div>
 </body>

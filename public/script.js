@@ -372,20 +372,27 @@ function renderBoard(payload, scanMap) {
   for (const group of (board.groups || [])) {
     const collectionName = group.title || 'Untitled Group';
     const items = (group.items_page && group.items_page.items) || [];
+    const groupKey = collectionName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
     // Group container + header with chevron
     const groupWrap = document.createElement('section');
     groupWrap.className = 'group';
+    groupWrap.dataset.groupKey = groupKey;
 
     const sectionTitle = document.createElement('button');
     sectionTitle.className = 'group-title';
     sectionTitle.type = 'button';
     sectionTitle.innerHTML = `
       <span class="chev" aria-hidden="true"></span>
-      <span>${escapeHtml(collectionName)}</span>
+      <div class="group-meta">
+        <span class="group-name">${escapeHtml(collectionName)}</span>
+        <span class="group-count">${items.length || 0} job${items.length === 1 ? '' : 's'}</span>
+      </div>
     `;
+    sectionTitle.setAttribute('aria-expanded', 'true');
     sectionTitle.addEventListener('click', () => {
-      groupWrap.classList.toggle('collapsed');
+      const collapsed = groupWrap.classList.toggle('collapsed');
+      sectionTitle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
     });
     groupWrap.appendChild(sectionTitle);
 
@@ -407,9 +414,9 @@ function renderBoard(payload, scanMap) {
     const thead = document.createElement('thead');
     thead.innerHTML = `
       <tr>
-        <th>Print</th>
-        <th>Job Title</th>
-        <th>Scan Status</th>
+        <th>Actions</th>
+        <th>Job</th>
+        <th>Sync</th>
       </tr>
     `;
     table.appendChild(thead);
@@ -423,19 +430,20 @@ function renderBoard(payload, scanMap) {
 
       const tr = document.createElement('tr');
       tr.dataset.itemId = itemId;
+      tr.className = 'job-row';
 
       // Print button
       const printTd = document.createElement('td');
       printTd.className = 'print-cell';
       const printBtn = document.createElement('button');
       printBtn.textContent = 'Print';
-      printBtn.className = 'btn primary';
+      printBtn.className = 'job-action primary';
       printBtn.addEventListener('click', () => printLabel(item.id, jobTitle));
       printTd.appendChild(printBtn);
 
       const photoBtn = document.createElement('button');
       photoBtn.type = 'button';
-      photoBtn.className = 'btn success camera-btn';
+      photoBtn.className = 'job-action success camera-btn';
       photoBtn.title = 'Capture image';
       photoBtn.textContent = '📷';
       photoBtn.addEventListener('click', () => openCaptureModal(item.id, jobTitle));
@@ -446,6 +454,8 @@ function renderBoard(payload, scanMap) {
       // Title + row subitem toggler (only if has subitems)
       const titleTd = document.createElement('td');
       titleTd.className = 'title-cell';
+      const titleWrap = document.createElement('div');
+      titleWrap.className = 'title-wrap';
 
       if (item.subitems && item.subitems.length > 0) {
         const rowToggle = document.createElement('button');
@@ -455,19 +465,23 @@ function renderBoard(payload, scanMap) {
         rowToggle.addEventListener('click', (e) => {
           e.stopPropagation();
           const isOpen = rowToggle.classList.toggle('open');
+          rowToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
           toggleSubRows(itemId, isOpen);
         });
-        titleTd.appendChild(rowToggle);
+        rowToggle.setAttribute('aria-expanded', 'false');
+        titleWrap.appendChild(rowToggle);
       } else {
         // placeholder to align
         const spacer = document.createElement('span');
         spacer.className = 'row-toggle-spacer';
-        titleTd.appendChild(spacer);
+        titleWrap.appendChild(spacer);
       }
 
       const titleSpan = document.createElement('span');
+      titleSpan.className = 'job-title';
       titleSpan.textContent = jobTitle;
-      titleTd.appendChild(titleSpan);
+      titleWrap.appendChild(titleSpan);
+      titleTd.appendChild(titleWrap);
       tr.appendChild(titleTd);
 
       // Status dots
@@ -493,8 +507,10 @@ function renderBoard(payload, scanMap) {
           const qty  = (sub.column_values || []).find(c => c.id === 'text_mkr31cjs')?.text || '';
 
           const subTitleTd = document.createElement('td');
-          subTitleTd.colSpan = 2;
-          subTitleTd.innerHTML = `<span class="sub-arrow">↳</span> ${escapeHtml(sub.name || '')} <span class="muted">| Size: ${escapeHtml(size)} | Qty: ${escapeHtml(qty)}</span>`;
+          const subTitleWrap = document.createElement('div');
+          subTitleWrap.className = 'sub-title';
+          subTitleWrap.innerHTML = `<span class="sub-arrow">▸</span><span>${escapeHtml(sub.name || '')}</span> <span class="muted">Size: ${escapeHtml(size)} · Qty: ${escapeHtml(qty)}</span>`;
+          subTitleTd.appendChild(subTitleWrap);
           subTr.appendChild(subTitleTd);
 
           // sub rows use parent's scan state visually (or leave blank)
@@ -850,7 +866,7 @@ document.addEventListener('DOMContentLoaded', initHomeDash);
 
 function initHomeDash(){
   // click-through to tabs
-  document.querySelectorAll('.home-card[data-goto-tab]').forEach(el=>{
+  document.querySelectorAll('[data-goto-tab]').forEach(el=>{
     el.addEventListener('click', () => {
       const tab = el.getAttribute('data-goto-tab');
       const btn = document.querySelector(`.nav-tabs li[data-tab="${tab}"]`);
