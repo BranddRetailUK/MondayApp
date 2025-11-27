@@ -491,12 +491,19 @@ function renderBoard(payload, scanMap) {
           subActions.className = 'grid-cell actions-cell sub-print-cell';
           subRow.appendChild(subActions);
 
-          const size = (sub.column_values || []).find(c => c.id === 'dropdown_mkr73m5s')?.text || '';
-          const qty  = (sub.column_values || []).find(c => c.id === 'text_mkr31cjs')?.text || '';
+          const cols = sub.column_values || [];
+          const size = cols.find(c => c.id === 'dropdown_mkr73m5s')?.text || cols.find(c => /size/i.test(c.title || ''))?.text || '';
+          const qty  = cols.find(c => c.id === 'text_mkr31cjs')?.text || cols.find(c => /qty|quantity/i.test(c.title || ''))?.text || '';
+          const code = cols.find(c => /code/i.test(c.title || ''))?.text || '';
+          const colour = cols.find(c => /colour|color/i.test(c.title || ''))?.text || '';
 
           const subJob = document.createElement('div');
           subJob.className = 'grid-cell job-cell sub-title';
-          subJob.innerHTML = `<span class="sub-arrow">▸</span><span>${escapeHtml(sub.name || '')}</span> <span class="muted">Size: ${escapeHtml(size)} · Qty: ${escapeHtml(qty)}</span>`;
+          subJob.innerHTML = `
+            <span class="sub-arrow">▸</span>
+            <span class="sub-name">${escapeHtml(sub.name || '')}</span>
+            <span class="muted sub-meta">Code: ${escapeHtml(code || '—')} · Size: ${escapeHtml(size || '—')} · Colour: ${escapeHtml(colour || '—')} · Qty: ${escapeHtml(qty || '—')}</span>
+          `;
           subRow.appendChild(subJob);
 
           // sub rows use parent's scan state visually (or leave blank)
