@@ -36,13 +36,23 @@ async function getAssetPublicUrl(assetId) {
     throw new Error(`Failed to fetch asset url: ${msg}`);
   }
   const asset = data?.data?.assets?.[0];
-  return asset?.public_url || asset?.url || null;
+  return {
+    publicUrl: asset?.public_url || null,
+    signedUrl: asset?.url || null
+  };
 }
 
 async function downloadAsset(assetId) {
-  const url = await getAssetPublicUrl(assetId);
+  const { publicUrl, signedUrl } = await getAssetPublicUrl(assetId);
+  const url = publicUrl || signedUrl;
   if (!url) throw new Error('Asset URL missing');
-  const { data } = await axios.get(url, { responseType: 'arraybuffer' });
+
+  const headers = {};
+  if (!publicUrl && MONDAY_API_TOKEN && /monday\.com/i.test(url)) {
+    headers.Authorization = MONDAY_API_TOKEN;
+  }
+
+  const { data } = await axios.get(url, { responseType: 'arraybuffer', headers });
   return Buffer.from(data);
 }
 

@@ -46,17 +46,15 @@ async function runVisionCompare({ capturedDataUrl, proofDataUrl, context = {} })
     response_format: { type: 'json_object' },
   };
 
-  const { data } = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    body,
-    {
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      timeout: 30000
-    }
-  );
+  const { data } = await axios.post('https://api.openai.com/v1/chat/completions', body, {
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    maxContentLength: Infinity,
+    maxBodyLength: Infinity,
+    timeout: 30000
+  });
 
   const raw = data?.choices?.[0]?.message?.content;
   let parsed = { ok: false, confidence: 0, summary: 'No response', findings: [] };

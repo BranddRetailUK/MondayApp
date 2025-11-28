@@ -19,8 +19,10 @@ router.get('/api/visual-approvals/:itemId', async (req, res) => {
     if (!proofFile?.assetId) return res.status(400).json({ ok: false, error: 'No proof/visual found' });
     if (!capturedFile?.assetId) return res.status(400).json({ ok: false, error: 'No captured file found' });
 
-    const proofUrl = await getAssetPublicUrl(proofFile.assetId);
-    const capturedUrl = await getAssetPublicUrl(capturedFile.assetId);
+    const proofMeta = await getAssetPublicUrl(proofFile.assetId);
+    const capturedMeta = await getAssetPublicUrl(capturedFile.assetId);
+    const proofUrl = proofMeta.publicUrl || proofMeta.signedUrl;
+    const capturedUrl = capturedMeta.publicUrl || capturedMeta.signedUrl;
 
     let analysis = null;
     if (analyze) {
