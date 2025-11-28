@@ -92,6 +92,12 @@ async function analyzeItemSide({ itemId, side = SIDE_FRONT, uploadedFilename = n
   if (!capturedFile?.assetId) throw new Error('No captured file found to compare');
 
   const { capturedDataUrl, proofDataUrl } = await prepareDataUrls({ capturedFile, proofFile });
+  console.log('[visualAnalysis] running vision', {
+    itemId,
+    side,
+    proof: { name: proofFile.name, assetId: proofFile.assetId },
+    captured: { name: capturedFile.name, assetId: capturedFile.assetId }
+  });
 
   const context = {
     side,
@@ -101,6 +107,7 @@ async function analyzeItemSide({ itemId, side = SIDE_FRONT, uploadedFilename = n
   };
 
   const { parsed } = await runVisionCompare({ capturedDataUrl, proofDataUrl, context });
+  console.log('[visualAnalysis] vision result', { itemId, side, parsed });
 
   if (!skipUpdate) {
     const summaryLines = [

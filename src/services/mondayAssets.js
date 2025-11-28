@@ -36,6 +36,9 @@ async function getAssetPublicUrl(assetId) {
     throw new Error(`Failed to fetch asset url: ${msg}`);
   }
   const asset = data?.data?.assets?.[0];
+  if (!asset?.public_url && !asset?.url) {
+    console.warn('[mondayAssets] asset has no url/public_url', { assetId });
+  }
   return {
     publicUrl: asset?.public_url || null,
     signedUrl: asset?.url || null
@@ -50,6 +53,9 @@ async function downloadAsset(assetId) {
   const headers = {};
   if (!publicUrl && MONDAY_API_TOKEN && /monday\.com/i.test(url)) {
     headers.Authorization = MONDAY_API_TOKEN;
+    console.log('[mondayAssets] downloading with auth header for asset', assetId);
+  } else {
+    console.log('[mondayAssets] downloading asset', { assetId, public: Boolean(publicUrl) });
   }
 
   const { data } = await axios.get(url, { responseType: 'arraybuffer', headers });
