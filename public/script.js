@@ -1205,6 +1205,7 @@ function renderVAResult(analysis) {
   const findings = wrap.querySelector('.va-findings');
   const proofImg = document.getElementById('va-proof');
   const capImg = document.getElementById('va-captured');
+  const previewCard = document.getElementById('va-preview-card');
   if (conf) {
     if (!analysis) {
       conf.textContent = '';
@@ -1226,9 +1227,11 @@ function renderVAResult(analysis) {
   if (analysis && proofImg && capImg) {
     proofImg.classList.add('va-img-dim');
     capImg.classList.add('va-img-dim');
+    if (previewCard) previewCard.classList.add('dim');
   } else {
     if (proofImg) proofImg.classList.remove('va-img-dim');
     if (capImg) capImg.classList.remove('va-img-dim');
+    if (previewCard) previewCard.classList.remove('dim');
   }
 }
 
@@ -1236,6 +1239,7 @@ function showVAOverlay(label, pct, autoHide = false, animate = false) {
   const overlay = document.getElementById('va-overlay');
   const bar = document.getElementById('va-progress-bar');
   const txt = document.getElementById('va-progress-label');
+  const previewCard = document.getElementById('va-preview-card');
   if (!overlay || !bar || !txt) return;
   overlay.classList.add('show');
   bar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
@@ -1254,6 +1258,9 @@ function showVAOverlay(label, pct, autoHide = false, animate = false) {
     setTimeout(() => {
       overlay.classList.remove('show');
       bar.style.width = '0%';
+      if (previewCard) previewCard.classList.remove('dim');
     }, 600);
+  } else if (previewCard) {
+    previewCard.classList.add('dim');
   }
 }

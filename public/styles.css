@@ -413,22 +413,26 @@ body.modal-open{overflow:hidden}
 .va-confidence .va-confidence-number { font-size: 24px; font-weight: 800; color: #e5edff; }
 .va-findings { font-size: 15px; }
 
-.va-preview-card { position: relative; }
+.va-preview-card { position: relative; overflow: hidden; }
 .va-result-float {
   position:absolute;
-  right:16px;
-  bottom:16px;
-  min-width: 260px;
-  max-width: 380px;
-  padding: 12px 14px;
-  background: rgba(15,22,34,0.9);
+  left:50%;
+  top:50%;
+  transform: translate(-50%,-50%);
+  min-width: 280px;
+  max-width: 420px;
+  padding: 14px 16px;
+  background: rgba(15,22,34,0.92);
   border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: var(--shadow);
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(6px);
+  z-index: 5;
 }
+.va-preview-card.dim .va-img-wrap img { filter: blur(3px) brightness(0.35); }
+.va-preview-card.dim .va-placeholder { filter: blur(1px) brightness(0.4); }
 @media (max-width: 900px){
-  .va-result-float{ position:static; margin-top:12px; }
+  .va-result-float{ position:static; transform:none; margin:12px 0 0 0; }
 }
 @media (max-width: 720px){
   .va-controls { grid-template-columns: 1fr; }

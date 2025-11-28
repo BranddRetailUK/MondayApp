@@ -107,6 +107,11 @@ async function analyzeItemSide({ itemId, side = SIDE_FRONT, uploadedFilename = n
   };
 
   const { parsed } = await runVisionCompare({ capturedDataUrl, proofDataUrl, context });
+  if (parsed && parsed.findings && parsed.findings.length && parsed.ok === false) {
+    const penalty = Math.min(70, parsed.findings.length * 20);
+    const base = Number.isFinite(parsed.confidence) ? parsed.confidence : 50;
+    parsed.confidence = Math.max(5, Math.min(100, base - penalty));
+  }
   console.log('[visualAnalysis] vision result', { itemId, side, parsed });
 
   if (!skipUpdate) {
