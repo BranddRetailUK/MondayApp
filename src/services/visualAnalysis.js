@@ -107,10 +107,17 @@ async function analyzeItemSide({ itemId, side = SIDE_FRONT, uploadedFilename = n
   };
 
   const { parsed } = await runVisionCompare({ capturedDataUrl, proofDataUrl, context });
-  if (parsed && parsed.findings && parsed.findings.length && parsed.ok === false) {
-    const penalty = Math.min(70, parsed.findings.length * 20);
-    const base = Number.isFinite(parsed.confidence) ? parsed.confidence : 50;
-    parsed.confidence = Math.max(5, Math.min(100, base - penalty));
+  // Confidence tuning: keep high scores on clean matches; penalize mismatches proportionally.
+  if (parsed) {
+    const hasFindings = Array.isArray(parsed.findings) && parsed.findings.length > 0;
+    if (parsed.ok && !hasFindings) {
+      const base = Number.isFinite(parsed.confidence) ? parsed.confidence : 90;
+      parsed.confidence = Math.max(base, 95);
+    } else if (!parsed.ok && hasFindings) {
+      const penalty = Math.min(60, parsed.findings.length * 15);
+      const base = Number.isFinite(parsed.confidence) ? parsed.confidence : 70;
+      parsed.confidence = Math.max(5, Math.min(100, base - penalty));
+    }
   }
   console.log('[visualAnalysis] vision result', { itemId, side, parsed });
 
