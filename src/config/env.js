@@ -38,5 +38,12 @@ module.exports = {
   PGSSLMODE: process.env.PGSSLMODE || 'require',
 
   // Flags
-  VERBOSE_SQL: bool(process.env.VERBOSE_SQL, false)
+  VERBOSE_SQL: bool(process.env.VERBOSE_SQL, false),
+
+  // AI / Visual QA
+  OPENAI_API_KEY: (process.env.OPENAI_API_KEY || '').trim(),
+  OPENAI_VISION_MODEL: (process.env.OPENAI_VISION_MODEL || 'gpt-4o-mini-vision').trim(),
+  FINISHED_VISUAL_COLUMN_ID: (process.env.FINISHED_VISUAL_COLUMN_ID || '').trim(),
+  VISUAL_QA_STATUS_COLUMN_ID: (process.env.VISUAL_QA_STATUS_COLUMN_ID || '').trim(),
+  VISUAL_QA_TEXT_COLUMN_ID: (process.env.VISUAL_QA_TEXT_COLUMN_ID || '').trim()
 };

@@ -7,6 +7,7 @@ const upload = multer({ limits: { fileSize: 25 * 1024 * 1024 } }); // 25MB cap f
 
 const { JOB_FILES_COLUMN_ID } = require('../config/env');
 const { getAccessToken, addFileToColumn } = require('../services/monday');
+const { enqueue } = require('../services/imageAnalysisQueue');
 
 router.post('/api/items/:itemId/file', upload.single('file'), async (req, res) => {
   try {
@@ -24,6 +25,14 @@ router.post('/api/items/:itemId/file', upload.single('file'), async (req, res) =
 
     const filename = file.originalname || `capture-${Date.now()}.jpg`;
     const result = await addFileToColumn(itemId, JOB_FILES_COLUMN_ID, file.buffer, filename);
+
+    // Fire-and-forget visual analysis; does not affect response
+    try {
+      const side = req.body?.side || req.query?.side || null;
+      enqueue({ itemId, side, filename });
+    } catch (err) {
+      console.warn('[files] enqueue analysis failed:', err?.message || err);
+    }
 
     return res.json({ ok: true, asset: result });
   } catch (err) {
