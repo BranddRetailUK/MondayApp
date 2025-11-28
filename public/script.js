@@ -1076,12 +1076,16 @@ function initVisualTab() {
   const refreshBtn = document.getElementById('va-refresh');
   const loadBtn = document.getElementById('va-load');
   const analyzeBtn = document.getElementById('va-analyze');
+  const approveBtn = document.getElementById('va-approve');
+  const rejectBtn = document.getElementById('va-reject');
   const sideSel = document.getElementById('va-side');
   const itemSel = document.getElementById('va-item');
 
   if (refreshBtn) refreshBtn.addEventListener('click', () => refreshVisualItemSelect());
   if (loadBtn) loadBtn.addEventListener('click', () => loadVisualAssets(false));
   if (analyzeBtn) analyzeBtn.addEventListener('click', () => loadVisualAssets(true));
+  if (approveBtn) approveBtn.addEventListener('click', () => handleVAApprove());
+  if (rejectBtn) rejectBtn.addEventListener('click', () => handleVAReject());
   if (sideSel) sideSel.addEventListener('change', clearVisualPreview);
   if (itemSel) itemSel.addEventListener('change', clearVisualPreview);
 }
@@ -1131,6 +1135,7 @@ async function loadVisualAssets(runAnalysis = false) {
   const side = sideSel.value || 'front';
   if (!itemId) return;
 
+  setVAStatus('', 'info');
   if (runAnalysis) showVAOverlay('Running analysis…', 10, false, true);
   renderVAResult(null);
 
@@ -1277,4 +1282,80 @@ function hideVAOverlay() {
   if (overlay) overlay.classList.remove('show');
   if (bar) bar.style.width = '0%';
   if (previewCard) previewCard.classList.remove('dim');
+}
+
+function getVASelection() {
+  const itemSel = document.getElementById('va-item');
+  const sideSel = document.getElementById('va-side');
+  return {
+    itemId: itemSel?.value || '',
+    side: sideSel?.value || 'front'
+  };
+}
+
+function setVABusy(disabled) {
+  const ids = ['va-approve', 'va-reject', 'va-load', 'va-analyze', 'va-refresh'];
+  for (const id of ids) {
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = !!disabled;
+  }
+}
+
+function setVAStatus(msg, tone = 'info') {
+  const el = document.getElementById('va-status');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.dataset.tone = tone;
+}
+
+async function handleVAApprove() {
+  const { itemId, side } = getVASelection();
+  if (!itemId) {
+    setVAStatus('Select a job first.', 'error');
+    return;
+  }
+  setVAStatus('Approving…', 'info');
+  setVABusy(true);
+  try {
+    const res = await fetch(`/api/visual-approvals/${encodeURIComponent(itemId)}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ side })
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.ok) throw new Error(json.error || 'Approval failed');
+    setVAStatus('Proof approved and checkbox updated.', 'success');
+  } catch (err) {
+    console.error('Approve failed', err);
+    setVAStatus(err.message || 'Approval failed.', 'error');
+  } finally {
+    setVABusy(false);
+  }
+}
+
+async function handleVAReject() {
+  const { itemId, side } = getVASelection();
+  if (!itemId) {
+    setVAStatus('Select a job first.', 'error');
+    return;
+  }
+  setVAStatus('Moving to Pre-Production…', 'info');
+  setVABusy(true);
+  try {
+    const res = await fetch(`/api/visual-approvals/${encodeURIComponent(itemId)}/reject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ side })
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.ok) throw new Error(json.error || 'Reject failed');
+    setVAStatus('Moved to PRE-PRODUCTION.', 'success');
+  } catch (err) {
+    console.error('Reject failed', err);
+    setVAStatus(err.message || 'Failed to move item.', 'error');
+  } finally {
+    setVABusy(false);
+  }
 }

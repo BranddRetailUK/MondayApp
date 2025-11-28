@@ -3,6 +3,8 @@ const router = express.Router();
 
 const { getAssetPublicUrl } = require('../services/mondayAssets');
 const { analyzeItemSide, resolveFilesForSide, SIDE_FRONT } = require('../services/visualAnalysis');
+const { getItemWithColumns, setCheckboxColumn, moveItemToGroup } = require('../services/mondayClient');
+const { PROOF_APPROVED_COLUMN_ID, PRE_PRODUCTION_GROUP_ID, BOARD_ID } = require('../config/env');
 
 function bool(v) {
   const s = String(v || '').toLowerCase();
@@ -51,6 +53,41 @@ router.get('/api/visual-approvals/:itemId', async (req, res) => {
     });
   } catch (err) {
     console.error('[visual-approvals] error:', err?.message || err);
+    return res.status(500).json({ ok: false, error: err.message || 'internal_error' });
+  }
+});
+
+router.post('/api/visual-approvals/:itemId/approve', async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    if (!PROOF_APPROVED_COLUMN_ID) throw new Error('PROOF_APPROVED_COLUMN_ID not configured');
+    const item = await getItemWithColumns(itemId);
+    const boardId = item?.board?.id || BOARD_ID;
+    if (!boardId) throw new Error('Board id not available for approval');
+
+    await setCheckboxColumn(boardId, itemId, PROOF_APPROVED_COLUMN_ID, true);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[visual-approvals] approve error:', err?.message || err);
+    return res.status(500).json({ ok: false, error: err.message || 'internal_error' });
+  }
+});
+
+router.post('/api/visual-approvals/:itemId/reject', async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    if (!PRE_PRODUCTION_GROUP_ID) throw new Error('PRE_PRODUCTION_GROUP_ID not configured');
+    const item = await getItemWithColumns(itemId);
+    const subitems = Array.isArray(item?.subitems) ? item.subitems : [];
+
+    await moveItemToGroup(itemId, PRE_PRODUCTION_GROUP_ID);
+    for (const sub of subitems) {
+      await moveItemToGroup(sub.id, PRE_PRODUCTION_GROUP_ID);
+    }
+
+    return res.json({ ok: true, movedSubitems: subitems.length });
+  } catch (err) {
+    console.error('[visual-approvals] reject error:', err?.message || err);
     return res.status(500).json({ ok: false, error: err.message || 'internal_error' });
   }
 });

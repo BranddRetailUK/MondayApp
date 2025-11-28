@@ -97,6 +97,25 @@ async function setTextColumnValue(boardId, itemId, columnId, value) {
   });
 }
 
+async function changeColumnValue(boardId, itemId, columnId, value) {
+  const q = `
+    mutation ChangeValue($boardId: ID!, $itemId: ID!, $columnId: String!, $value: JSON!) {
+      change_column_value(board_id: $boardId, item_id: $itemId, column_id: $columnId, value: $value) { id }
+    }
+  `;
+  await gql(q, {
+    boardId: Number(boardId),
+    itemId: Number(itemId),
+    columnId,
+    value
+  });
+}
+
+async function setCheckboxColumn(boardId, itemId, columnId, checked) {
+  const valueJson = JSON.stringify({ checked: checked ? 'true' : 'false' });
+  await changeColumnValue(boardId, itemId, columnId, valueJson);
+}
+
 async function archiveItem(itemId) {
   const q = `
     mutation ArchiveItem($itemId: ID!) {
@@ -248,6 +267,15 @@ async function createItem(boardId, groupId, itemName, columnValues = {}) {
   return resp.create_item?.id;
 }
 
+async function moveItemToGroup(itemId, groupId) {
+  const q = `
+    mutation MoveItem($itemId: ID!, $groupId: String!) {
+      move_item_to_group (item_id: $itemId, group_id: $groupId) { id }
+    }
+  `;
+  await gql(q, { itemId: Number(itemId), groupId });
+}
+
 module.exports = {
   getItemWithColumns,
   setStatusByLabel,
@@ -258,7 +286,10 @@ module.exports = {
   listBoardItems,
   createItem,
   setTextColumnValue,
+  setCheckboxColumn,
+  changeColumnValue,
   archiveItem,
   deleteItem,
   setItemName,
+  moveItemToGroup,
 };

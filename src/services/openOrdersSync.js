@@ -340,8 +340,39 @@ async function syncOpenOrdersFile(filePath, { dryRun = false } = {}) {
     return !prevSignature || prevSignature !== entry.signature;
   });
 
+  const updateMap = new Map();
+  updates.forEach(entry => updateMap.set(entry.jobNumber, entry));
+
+  // Force update if subitem count on Monday does not match CSV, even when signature is unchanged.
+  const unchanged = entries.filter(entry => {
+    if (!existing.has(entry.jobNumber)) return false;
+    const prevSignature = state.jobs?.[entry.jobNumber]?.signature || null;
+    return prevSignature && prevSignature === entry.signature;
+  });
+
+  for (const entry of unchanged) {
+    const jobNumber = entry.jobNumber;
+    if (updateMap.has(jobNumber)) continue; // already scheduled via signature change
+    const existingItem = existing.get(jobNumber);
+    const itemId = state.jobs?.[jobNumber]?.itemId || existingItem?.id;
+    if (!itemId) continue;
+    try {
+      const item = await mondayClient.getItemWithColumns(itemId);
+      const subCount = Array.isArray(item.subitems) ? item.subitems.length : 0;
+      const expected = entry.job.lineItems.length;
+      if (subCount !== expected) {
+        updateMap.set(jobNumber, { ...entry, reason: 'subitem_count_mismatch', itemId });
+        console.log(`[sync] Forcing update of job ${jobNumber}: subitem count ${subCount} != expected ${expected}`);
+      }
+    } catch (err) {
+      console.warn(`[sync] Skipping forced check for job ${jobNumber}: ${err.message}`);
+    }
+  }
+
+  const updatesFinal = Array.from(updateMap.values());
+
   console.log(
-    `[sync] Found ${jobs.length} jobs in CSV; ${newJobs.length} new, ${updates.length} updates (state path ${process.env.OPEN_ORDERS_STATE_PATH || 'default'}).`
+    `[sync] Found ${jobs.length} jobs in CSV; ${newJobs.length} new, ${updatesFinal.length} updates (state path ${process.env.OPEN_ORDERS_STATE_PATH || 'default'}).`
   );
 
   const results = [];
@@ -360,7 +391,7 @@ async function syncOpenOrdersFile(filePath, { dryRun = false } = {}) {
     }
   }
 
-  for (const entry of updates) {
+  for (const entry of updatesFinal) {
     const job = entry.job;
     const existingItem = existing.get(entry.jobNumber);
     try {

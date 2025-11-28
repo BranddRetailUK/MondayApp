@@ -45,5 +45,9 @@ module.exports = {
   OPENAI_VISION_MODEL: (process.env.OPENAI_VISION_MODEL || 'gpt-4o-mini').trim(),
   FINISHED_VISUAL_COLUMN_ID: (process.env.FINISHED_VISUAL_COLUMN_ID || '').trim(),
   VISUAL_QA_STATUS_COLUMN_ID: (process.env.VISUAL_QA_STATUS_COLUMN_ID || '').trim(),
-  VISUAL_QA_TEXT_COLUMN_ID: (process.env.VISUAL_QA_TEXT_COLUMN_ID || '').trim()
+  VISUAL_QA_TEXT_COLUMN_ID: (process.env.VISUAL_QA_TEXT_COLUMN_ID || '').trim(),
+
+  // Visual approvals manual flow
+  PROOF_APPROVED_COLUMN_ID: (process.env.PROOF_APPROVED_COLUMN_ID || 'boolean_mky4fxpj').trim(),
+  PRE_PRODUCTION_GROUP_ID: (process.env.PRE_PRODUCTION_GROUP_ID || 'new_group56764__1').trim()
 };
