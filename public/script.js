@@ -1138,7 +1138,10 @@ async function loadVisualAssets(runAnalysis = false) {
     const url = `/api/visual-approvals/${encodeURIComponent(itemId)}?side=${encodeURIComponent(side)}${runAnalysis ? '&analyze=1' : ''}`;
     const res = await fetch(url, { cache: 'no-store', credentials: 'include' });
     const json = await res.json().catch(() => ({}));
-    if (!res.ok || !json.ok) return;
+    if (!res.ok || !json.ok) {
+      if (runAnalysis) hideVAOverlay();
+      return;
+    }
     const proofImg = document.getElementById('va-proof');
     const capImg = document.getElementById('va-captured');
     const proofName = document.getElementById('va-proof-name');
@@ -1224,6 +1227,7 @@ function renderVAResult(analysis) {
       findings.textContent = analysis.summary || 'No discrepancies reported.';
     }
   }
+  wrap.classList.toggle('hidden', !analysis);
   if (analysis && proofImg && capImg) {
     proofImg.classList.add('va-img-dim');
     capImg.classList.add('va-img-dim');
@@ -1263,4 +1267,14 @@ function showVAOverlay(label, pct, autoHide = false, animate = false) {
   } else if (previewCard) {
     previewCard.classList.add('dim');
   }
+}
+
+function hideVAOverlay() {
+  const overlay = document.getElementById('va-overlay');
+  const bar = document.getElementById('va-progress-bar');
+  const previewCard = document.getElementById('va-preview-card');
+  clearInterval(__vaState.overlayTimer);
+  if (overlay) overlay.classList.remove('show');
+  if (bar) bar.style.width = '0%';
+  if (previewCard) previewCard.classList.remove('dim');
 }

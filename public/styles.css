@@ -346,6 +346,7 @@ body.modal-open{overflow:hidden}
 .va-placeholder { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color: #55607a; font-weight:700; font-size:14px; padding: 0 12px; text-align:center; background:#0b1017; }
 .va-placeholder.hidden { display:none; }
 .va-img-dim { filter: blur(2px) brightness(0.4); }
+.hidden { display: none !important; }
 .va-label { font-weight: 800; font-size: 14px; color: #e5edff; }
 .va-confidence { font-weight: 800; margin-bottom: 6px; }
 .va-findings { color: var(--muted); font-size: 14px; }
