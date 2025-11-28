@@ -121,29 +121,32 @@
               <button id="va-load" class="btn primary">Load images</button>
               <button id="va-analyze" class="btn success">Run analysis</button>
             </div>
-            <div class="va-status">
-              <span id="va-status" class="small muted"></span>
-            </div>
           </div>
         </section>
 
-        <section class="card">
+        <section class="card va-preview-card">
           <div class="card-head">
             <h2>Preview</h2>
           </div>
           <div class="card-body va-grid">
             <div class="va-panel">
               <div class="va-label">Approved Visual</div>
-              <img id="va-proof" alt="Approved visual" />
+              <div class="va-img-wrap">
+                <div class="va-placeholder" id="va-proof-ph">Load an approved visual to preview.</div>
+                <img id="va-proof" alt="Approved visual" />
+              </div>
               <div id="va-proof-name" class="small muted"></div>
             </div>
             <div class="va-panel">
               <div class="va-label">Captured Image</div>
-              <img id="va-captured" alt="Captured image" />
+              <div class="va-img-wrap">
+                <div class="va-placeholder" id="va-captured-ph">Load a captured image to preview.</div>
+                <img id="va-captured" alt="Captured image" />
+              </div>
               <div id="va-captured-name" class="small muted"></div>
             </div>
           </div>
-          <div class="card-foot" id="va-result">
+          <div class="va-result-float" id="va-result-float">
             <div class="va-confidence"></div>
             <div class="va-findings"></div>
           </div>

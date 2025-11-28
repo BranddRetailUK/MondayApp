@@ -1068,7 +1068,7 @@ function bumpNumber(el, val){
 }
 
 // ================== VISUAL APPROVALS TAB ==================
-const __vaState = { items: [], loaded: false };
+const __vaState = { items: [], loaded: false, overlayTimer: null, overlayPct: 0 };
 
 document.addEventListener('DOMContentLoaded', initVisualTab);
 
@@ -1129,39 +1129,51 @@ async function loadVisualAssets(runAnalysis = false) {
   if (!itemSel || !sideSel) return;
   const itemId = itemSel.value;
   const side = sideSel.value || 'front';
-  if (!itemId) {
-    setVAStatus('Select a job first.');
-    return;
-  }
+  if (!itemId) return;
 
-  setVAStatus(runAnalysis ? 'Running analysis…' : 'Loading images…');
-  if (runAnalysis) showVAOverlay('Running analysis…', 20);
+  if (runAnalysis) showVAOverlay('Running analysis…', 10, false, true);
   renderVAResult(null);
 
   try {
     const url = `/api/visual-approvals/${encodeURIComponent(itemId)}?side=${encodeURIComponent(side)}${runAnalysis ? '&analyze=1' : ''}`;
     const res = await fetch(url, { cache: 'no-store', credentials: 'include' });
     const json = await res.json().catch(() => ({}));
-    if (!res.ok || !json.ok) {
-      setVAStatus(json.error || `Request failed (${res.status})`);
-      return;
-    }
+    if (!res.ok || !json.ok) return;
     const proofImg = document.getElementById('va-proof');
     const capImg = document.getElementById('va-captured');
     const proofName = document.getElementById('va-proof-name');
     const capName = document.getElementById('va-captured-name');
 
-    if (proofImg) proofImg.src = json.proof?.url || '';
-    if (capImg) capImg.src = json.captured?.url || '';
+    const phProof = document.getElementById('va-proof-ph');
+    const phCap = document.getElementById('va-captured-ph');
+
+    if (proofImg) {
+      if (json.proof?.url) {
+        proofImg.src = json.proof.url;
+        proofImg.classList.remove('hidden');
+        if (phProof) phProof.classList.add('hidden');
+      } else {
+        proofImg.classList.add('hidden');
+        if (phProof) phProof.classList.remove('hidden');
+      }
+    }
+    if (capImg) {
+      if (json.captured?.url) {
+        capImg.src = json.captured.url;
+        capImg.classList.remove('hidden');
+        if (phCap) phCap.classList.add('hidden');
+      } else {
+        capImg.classList.add('hidden');
+        if (phCap) phCap.classList.remove('hidden');
+      }
+    }
     if (proofName) proofName.textContent = json.proof?.name || '';
     if (capName) capName.textContent = json.captured?.name || '';
 
     renderVAResult(json.analysis);
-    setVAStatus(runAnalysis ? 'Analysis complete.' : 'Images loaded.');
     if (runAnalysis) showVAOverlay('Analysis complete.', 100, true);
   } catch (err) {
     console.error('visual approvals fetch failed', err);
-    setVAStatus('Unable to load visual data.');
     if (runAnalysis) showVAOverlay('Analysis failed.', 100, true);
   }
 }
@@ -1171,21 +1183,19 @@ function clearVisualPreview() {
   const capImg = document.getElementById('va-captured');
   const proofName = document.getElementById('va-proof-name');
   const capName = document.getElementById('va-captured-name');
-  if (proofImg) proofImg.removeAttribute('src');
-  if (capImg) capImg.removeAttribute('src');
+  const phProof = document.getElementById('va-proof-ph');
+  const phCap = document.getElementById('va-captured-ph');
+  if (proofImg) { proofImg.removeAttribute('src'); proofImg.classList.add('hidden'); }
+  if (capImg) { capImg.removeAttribute('src'); capImg.classList.add('hidden'); }
+  if (phProof) phProof.classList.remove('hidden');
+  if (phCap) phCap.classList.remove('hidden');
   if (proofName) proofName.textContent = '';
   if (capName) capName.textContent = '';
   renderVAResult(null);
-  setVAStatus('');
-}
-
-function setVAStatus(msg) {
-  const el = document.getElementById('va-status');
-  if (el) el.textContent = msg || '';
 }
 
 function renderVAResult(analysis) {
-  const wrap = document.getElementById('va-result');
+  const wrap = document.getElementById('va-result-float');
   if (!wrap) return;
   const conf = wrap.querySelector('.va-confidence');
   const findings = wrap.querySelector('.va-findings');
@@ -1209,7 +1219,7 @@ function renderVAResult(analysis) {
   }
 }
 
-function showVAOverlay(label, pct, autoHide = false) {
+function showVAOverlay(label, pct, autoHide = false, animate = false) {
   const overlay = document.getElementById('va-overlay');
   const bar = document.getElementById('va-progress-bar');
   const txt = document.getElementById('va-progress-label');
@@ -1217,5 +1227,17 @@ function showVAOverlay(label, pct, autoHide = false) {
   overlay.classList.add('show');
   bar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
   txt.textContent = label || '';
-  if (autoHide) setTimeout(() => overlay.classList.remove('show'), 800);
+  if (animate) {
+    clearInterval(__vaState.overlayTimer);
+    __vaState.overlayPct = pct;
+    __vaState.overlayTimer = setInterval(() => {
+      __vaState.overlayPct = Math.min(90, __vaState.overlayPct + 2);
+      bar.style.width = `${__vaState.overlayPct}%`;
+    }, 300);
+  }
+  if (autoHide) {
+    clearInterval(__vaState.overlayTimer);
+    bar.style.width = '100%';
+    setTimeout(() => overlay.classList.remove('show'), 600);
+  }
 }
