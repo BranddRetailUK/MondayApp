@@ -13,8 +13,9 @@ function buildPrompt({ side = 'front', jobTitle = '', jobNo = '', garmentColour 
   return [
     `You are a production visual QA assistant.`,
     `Compare the live photo to the approved visual/proof and report mismatches.`,
-    `Primary focus: detect missing letters, incorrect words, spelling/grammar errors, and wrong text layout/placement.`,
-    `Secondary (only if obvious): missing elements or major positional errors; ignore minor colour/shade differences unless critical to the logo/text.`,
+    `Focus ONLY on the common artwork/logo between both images. Ignore guides, measurements, annotations, or text that appears in only one image.`,
+    `Primary: missing letters/words, incorrect words, spelling/grammar errors, wrong layout/placement/orientation of the shared artwork.`,
+    `Secondary: major positional errors of the shared artwork; ignore colour/shade differences unless critical to the logo/text.`,
     `Side: ${side}. Job: ${jobTitle || 'unknown'}. Job No: ${jobNo || 'unknown'}. ${garmentColour ? `Garment colour: ${garmentColour}.` : ''}`,
     `Respond in JSON with keys: ok (boolean), confidence (0-100), summary (short string), findings (array of short strings).`,
     `Keep the response concise.`,
