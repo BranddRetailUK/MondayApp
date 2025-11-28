@@ -1135,6 +1135,7 @@ async function loadVisualAssets(runAnalysis = false) {
   }
 
   setVAStatus(runAnalysis ? 'Running analysis…' : 'Loading images…');
+  if (runAnalysis) showVAOverlay('Running analysis…', 20);
   renderVAResult(null);
 
   try {
@@ -1157,9 +1158,11 @@ async function loadVisualAssets(runAnalysis = false) {
 
     renderVAResult(json.analysis);
     setVAStatus(runAnalysis ? 'Analysis complete.' : 'Images loaded.');
+    if (runAnalysis) showVAOverlay('Analysis complete.', 100, true);
   } catch (err) {
     console.error('visual approvals fetch failed', err);
     setVAStatus('Unable to load visual data.');
+    if (runAnalysis) showVAOverlay('Analysis failed.', 100, true);
   }
 }
 
@@ -1186,7 +1189,15 @@ function renderVAResult(analysis) {
   if (!wrap) return;
   const conf = wrap.querySelector('.va-confidence');
   const findings = wrap.querySelector('.va-findings');
-  if (conf) conf.textContent = analysis ? `${Math.round(analysis.confidence || 0)}% confidence — ${analysis.ok ? 'Match' : 'Differences found'}` : '';
+  if (conf) {
+    if (!analysis) {
+      conf.textContent = '';
+    } else {
+      const pct = Math.round(analysis.confidence || 0);
+      const label = analysis.ok ? 'Match' : 'Differences found';
+      conf.innerHTML = `<span class="va-confidence-number">${pct}%</span> confidence — ${escapeHtml(label)}`;
+    }
+  }
   if (findings) {
     if (!analysis) {
       findings.innerHTML = '';
@@ -1196,4 +1207,15 @@ function renderVAResult(analysis) {
       findings.textContent = analysis.summary || 'No discrepancies reported.';
     }
   }
+}
+
+function showVAOverlay(label, pct, autoHide = false) {
+  const overlay = document.getElementById('va-overlay');
+  const bar = document.getElementById('va-progress-bar');
+  const txt = document.getElementById('va-progress-label');
+  if (!overlay || !bar || !txt) return;
+  overlay.classList.add('show');
+  bar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+  txt.textContent = label || '';
+  if (autoHide) setTimeout(() => overlay.classList.remove('show'), 800);
 }

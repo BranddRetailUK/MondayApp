@@ -100,22 +100,28 @@
             </div>
           </div>
           <div class="card-body va-controls">
-            <div class="form-row">
-              <label>Job
+            <div class="va-select-group">
+              <label class="va-label">Job</label>
+              <div class="va-select">
                 <select id="va-item"></select>
-              </label>
+                <span class="va-select-arrow">▾</span>
+              </div>
             </div>
-            <div class="form-row">
-              <label>Side
+            <div class="va-select-group tight">
+              <label class="va-label">Side</label>
+              <div class="va-select">
                 <select id="va-side">
                   <option value="front">Front</option>
                   <option value="back">Back</option>
                 </select>
-              </label>
+                <span class="va-select-arrow">▾</span>
+              </div>
             </div>
-            <div class="form-row actions">
+            <div class="va-actions">
               <button id="va-load" class="btn primary">Load images</button>
               <button id="va-analyze" class="btn success">Run analysis</button>
+            </div>
+            <div class="va-status">
               <span id="va-status" class="small muted"></span>
             </div>
           </div>
@@ -143,6 +149,18 @@
           </div>
         </section>
       </section>
+
+      <div class="va-overlay" id="va-overlay">
+        <div class="va-overlay-box">
+          <div class="va-overlay-head">
+            <div class="va-label">Analyzing</div>
+            <div class="va-progress-label" id="va-progress-label">Starting…</div>
+          </div>
+          <div class="va-progress">
+            <div class="va-progress-bar" id="va-progress-bar"></div>
+          </div>
+        </div>
+      </div>
 
       <!-- ORDERS -->
       <section id="tab-orders" class="tab-content">

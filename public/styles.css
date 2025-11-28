@@ -345,3 +345,65 @@ body.modal-open{overflow:hidden}
 .va-confidence { font-weight: 800; margin-bottom: 6px; }
 .va-findings { color: var(--muted); font-size: 14px; }
 .va-findings ul { margin: 4px 0 0 18px; padding: 0; }
+
+.va-select-group { display: flex; flex-direction: column; gap: 6px; }
+.va-select-group.tight { max-width: 160px; }
+.va-select { position: relative; }
+.va-select select {
+  width: 100%;
+  appearance: none;
+  background: #0b1017;
+  color: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-weight: 700;
+}
+.va-select-arrow {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+.va-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.va-status { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+
+.va-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.65);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+.va-overlay.show { display: flex; }
+.va-overlay-box {
+  background: #0f1622;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 20px;
+  width: min(380px, 92vw);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.45);
+}
+.va-progress {
+  height: 12px;
+  background: #0b1017;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 12px;
+}
+.va-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), #5f8dfd);
+  transition: width 0.25s ease;
+}
+.va-progress-label { margin-top: 8px; color: #cfe0ff; font-weight: 700; }
+
+.va-confidence { font-size: 18px; }
+.va-confidence .va-confidence-number { font-size: 24px; font-weight: 800; color: #e5edff; }
+.va-findings { font-size: 15px; }
