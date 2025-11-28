@@ -352,6 +352,7 @@ async function loadBoard() {
     const scanMap = scansPayload.map || {};
 
     renderBoard(payload, scanMap); // <<< pass scan states
+    refreshVisualItemSelect(payload);
     const connectBtn = document.getElementById('connectBtn');
     if (connectBtn) connectBtn.style.display = 'none';
     if (statusEl) statusEl.textContent = 'Connected to Monday.';
@@ -1064,4 +1065,135 @@ function bumpNumber(el, val){
   if (!el) return;
   el.textContent = typeof val === 'number' ? val.toLocaleString() : String(val);
   el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
+}
+
+// ================== VISUAL APPROVALS TAB ==================
+const __vaState = { items: [], loaded: false };
+
+document.addEventListener('DOMContentLoaded', initVisualTab);
+
+function initVisualTab() {
+  const refreshBtn = document.getElementById('va-refresh');
+  const loadBtn = document.getElementById('va-load');
+  const analyzeBtn = document.getElementById('va-analyze');
+  const sideSel = document.getElementById('va-side');
+  const itemSel = document.getElementById('va-item');
+
+  if (refreshBtn) refreshBtn.addEventListener('click', () => refreshVisualItemSelect());
+  if (loadBtn) loadBtn.addEventListener('click', () => loadVisualAssets(false));
+  if (analyzeBtn) analyzeBtn.addEventListener('click', () => loadVisualAssets(true));
+  if (sideSel) sideSel.addEventListener('change', clearVisualPreview);
+  if (itemSel) itemSel.addEventListener('change', clearVisualPreview);
+}
+
+function refreshVisualItemSelect(payload) {
+  const sel = document.getElementById('va-item');
+  if (!sel) return;
+
+  let items = [];
+  const board = unwrapFirstBoard(payload || window.__latestBoardPayload);
+  if (board?.groups) {
+    for (const g of board.groups) {
+      const its = (g.items_page && g.items_page.items) || [];
+      items.push(...its);
+    }
+  }
+  __vaState.items = items;
+
+  const current = sel.value;
+  sel.innerHTML = '';
+  if (!items.length) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'No jobs loaded';
+    sel.appendChild(opt);
+    return;
+  }
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = 'Select a job';
+  sel.appendChild(placeholder);
+  for (const it of items) {
+    const opt = document.createElement('option');
+    opt.value = it.id;
+    opt.textContent = it.name || `Item ${it.id}`;
+    sel.appendChild(opt);
+  }
+  if (current) sel.value = current;
+  window.__latestBoardPayload = payload || window.__latestBoardPayload;
+}
+
+async function loadVisualAssets(runAnalysis = false) {
+  const itemSel = document.getElementById('va-item');
+  const sideSel = document.getElementById('va-side');
+  if (!itemSel || !sideSel) return;
+  const itemId = itemSel.value;
+  const side = sideSel.value || 'front';
+  if (!itemId) {
+    setVAStatus('Select a job first.');
+    return;
+  }
+
+  setVAStatus(runAnalysis ? 'Running analysis…' : 'Loading images…');
+  renderVAResult(null);
+
+  try {
+    const url = `/api/visual-approvals/${encodeURIComponent(itemId)}?side=${encodeURIComponent(side)}${runAnalysis ? '&analyze=1' : ''}`;
+    const res = await fetch(url, { cache: 'no-store', credentials: 'include' });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.ok) {
+      setVAStatus(json.error || `Request failed (${res.status})`);
+      return;
+    }
+    const proofImg = document.getElementById('va-proof');
+    const capImg = document.getElementById('va-captured');
+    const proofName = document.getElementById('va-proof-name');
+    const capName = document.getElementById('va-captured-name');
+
+    if (proofImg) proofImg.src = json.proof?.url || '';
+    if (capImg) capImg.src = json.captured?.url || '';
+    if (proofName) proofName.textContent = json.proof?.name || '';
+    if (capName) capName.textContent = json.captured?.name || '';
+
+    renderVAResult(json.analysis);
+    setVAStatus(runAnalysis ? 'Analysis complete.' : 'Images loaded.');
+  } catch (err) {
+    console.error('visual approvals fetch failed', err);
+    setVAStatus('Unable to load visual data.');
+  }
+}
+
+function clearVisualPreview() {
+  const proofImg = document.getElementById('va-proof');
+  const capImg = document.getElementById('va-captured');
+  const proofName = document.getElementById('va-proof-name');
+  const capName = document.getElementById('va-captured-name');
+  if (proofImg) proofImg.removeAttribute('src');
+  if (capImg) capImg.removeAttribute('src');
+  if (proofName) proofName.textContent = '';
+  if (capName) capName.textContent = '';
+  renderVAResult(null);
+  setVAStatus('');
+}
+
+function setVAStatus(msg) {
+  const el = document.getElementById('va-status');
+  if (el) el.textContent = msg || '';
+}
+
+function renderVAResult(analysis) {
+  const wrap = document.getElementById('va-result');
+  if (!wrap) return;
+  const conf = wrap.querySelector('.va-confidence');
+  const findings = wrap.querySelector('.va-findings');
+  if (conf) conf.textContent = analysis ? `${Math.round(analysis.confidence || 0)}% confidence — ${analysis.ok ? 'Match' : 'Differences found'}` : '';
+  if (findings) {
+    if (!analysis) {
+      findings.innerHTML = '';
+    } else if (analysis.findings && analysis.findings.length) {
+      findings.innerHTML = `<div>Findings:</div><ul>${analysis.findings.map(f => `<li>${escapeHtml(f)}</li>`).join('')}</ul>`;
+    } else {
+      findings.textContent = analysis.summary || 'No discrepancies reported.';
+    }
+  }
 }

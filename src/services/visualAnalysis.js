@@ -62,14 +62,18 @@ async function prepareDataUrls({ capturedFile, proofFile }) {
   return { capturedDataUrl, proofDataUrl };
 }
 
-async function analyzeItemSide({ itemId, side = SIDE_FRONT, uploadedFilename = null }) {
+async function resolveFilesForSide({ itemId, side = SIDE_FRONT, uploadedFilename = null }) {
   const item = await getItemWithColumns(itemId);
   if (!item) throw new Error('Item not found for analysis');
 
   const proofFile = pickProofFiles(item, side);
-  if (!proofFile?.assetId) throw new Error('No proof/visual found for analysis');
-
   const capturedFile = pickLatestJobFile(item, uploadedFilename);
+  return { item, proofFile, capturedFile };
+}
+
+async function analyzeItemSide({ itemId, side = SIDE_FRONT, uploadedFilename = null, skipUpdate = false }) {
+  const { item, proofFile, capturedFile } = await resolveFilesForSide({ itemId, side, uploadedFilename });
+  if (!proofFile?.assetId) throw new Error('No proof/visual found for analysis');
   if (!capturedFile?.assetId) throw new Error('No captured file found to compare');
 
   const { capturedDataUrl, proofDataUrl } = await prepareDataUrls({ capturedFile, proofFile });
@@ -83,25 +87,28 @@ async function analyzeItemSide({ itemId, side = SIDE_FRONT, uploadedFilename = n
 
   const { parsed } = await runVisionCompare({ capturedDataUrl, proofDataUrl, context });
 
-  const summaryLines = [
-    parsed.ok ? '✅ Visual matches' : '⚠️ Differences found',
-    `Confidence: ${Math.round(parsed.confidence || 0)}%`,
-    parsed.summary || ''
-  ].filter(Boolean);
+  if (!skipUpdate) {
+    const summaryLines = [
+      parsed.ok ? '✅ Visual matches' : '⚠️ Differences found',
+      `Confidence: ${Math.round(parsed.confidence || 0)}%`,
+      parsed.summary || ''
+    ].filter(Boolean);
 
-  if (parsed.findings?.length) {
-    summaryLines.push('Findings:');
-    for (const f of parsed.findings) summaryLines.push(`• ${f}`);
+    if (parsed.findings?.length) {
+      summaryLines.push('Findings:');
+      for (const f of parsed.findings) summaryLines.push(`• ${f}`);
+    }
+
+    const body = summaryLines.join('<br>');
+    await postUpdate(itemId, body);
   }
 
-  const body = summaryLines.join('<br>');
-  await postUpdate(itemId, body);
-
-  return parsed;
+  return { parsed, proofFile, capturedFile };
 }
 
 module.exports = {
   analyzeItemSide,
+  resolveFilesForSide,
   SIDE_FRONT,
   SIDE_BACK,
 };

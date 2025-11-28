@@ -8,6 +8,7 @@ const { getAccessToken } = require('./services/monday');
 const pencarrieRouter = require('./routes/pencarrie');
 const pencarrieSmoke = require('./routes/pencarrie-smoke');
 const visualJobs = require('./routes/visual-jobs');
+const visualApprovals = require('./routes/visual-approvals');
 const filesRoute = require('./routes/files');
 
 
@@ -31,6 +32,7 @@ app.use(require('./routes/scanner'));
 app.use(require('./routes/customers'));
 app.use(require('./routes/orders'));
 app.use('/api/visual-jobs', visualJobs);
+app.use(visualApprovals);
 app.use(filesRoute);
 
 // Monday webhook routes

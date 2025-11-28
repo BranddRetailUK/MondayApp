@@ -334,3 +334,14 @@ body.modal-open{overflow:hidden}
 .dd-title{ font-weight:600; color:#fff; }
 .dd-sub{ font-size:12px; color:#9db0cc; margin-top:2px; }
 .colour-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+
+/* Visual Approvals */
+.va-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; align-items: end; }
+.va-controls .actions { display: flex; gap: 8px; align-items: center; }
+.va-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.va-panel { background: #0f1622; border: 1px solid var(--border); border-radius: 10px; padding: 12px; min-height: 320px; display: flex; flex-direction: column; gap: 8px; }
+.va-panel img { width: 100%; height: 100%; object-fit: contain; background: #0b1017; border-radius: 8px; border: 1px solid var(--border); min-height: 260px; }
+.va-label { font-weight: 800; font-size: 14px; color: #e5edff; }
+.va-confidence { font-weight: 800; margin-bottom: 6px; }
+.va-findings { color: var(--muted); font-size: 14px; }
+.va-findings ul { margin: 4px 0 0 18px; padding: 0; }

@@ -28,6 +28,7 @@
           <li data-tab="stock">Stock</li>
           <li data-tab="shipping">Shipping</li>
           <li data-tab="pencarrie">PenCarrie</li>
+          <li data-tab="visuals">Visual Approvals</li>
         </ul>
       </div>
       <div class="nav-footer">
@@ -78,6 +79,68 @@
             </div>
           </div>
           <div id="board"></div>
+        </section>
+      </section>
+
+      <!-- VISUAL APPROVALS -->
+      <section id="tab-visuals" class="tab-content">
+        <header class="page-header">
+          <div class="header-left">
+            <p class="eyebrow">Compare</p>
+            <h1>Visual Approvals</h1>
+            <p class="muted">Side-by-side proof vs captured image with confidence.</p>
+          </div>
+        </header>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>Select Job</h2>
+            <div class="card-actions">
+              <button id="va-refresh" class="btn outline small">Refresh list</button>
+            </div>
+          </div>
+          <div class="card-body va-controls">
+            <div class="form-row">
+              <label>Job
+                <select id="va-item"></select>
+              </label>
+            </div>
+            <div class="form-row">
+              <label>Side
+                <select id="va-side">
+                  <option value="front">Front</option>
+                  <option value="back">Back</option>
+                </select>
+              </label>
+            </div>
+            <div class="form-row actions">
+              <button id="va-load" class="btn primary">Load images</button>
+              <button id="va-analyze" class="btn success">Run analysis</button>
+              <span id="va-status" class="small muted"></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>Preview</h2>
+          </div>
+          <div class="card-body va-grid">
+            <div class="va-panel">
+              <div class="va-label">Approved Visual</div>
+              <img id="va-proof" alt="Approved visual" />
+              <div id="va-proof-name" class="small muted"></div>
+            </div>
+            <div class="va-panel">
+              <div class="va-label">Captured Image</div>
+              <img id="va-captured" alt="Captured image" />
+              <div id="va-captured-name" class="small muted"></div>
+            </div>
+          </div>
+          <div class="card-foot" id="va-result">
+            <div class="va-confidence"></div>
+            <div class="va-findings"></div>
+          </div>
         </section>
       </section>
 
