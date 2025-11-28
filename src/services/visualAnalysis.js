@@ -8,7 +8,7 @@ const { bufferToDataUrl, runVisionCompare } = require('./openAiVision');
 const SIDE_FRONT = 'front';
 const SIDE_BACK = 'back';
 
-function pickProofFiles(item, side) {
+function pickProofFiles(item, side, jobFiles = []) {
   const columnValues = item?.column_values || [];
   const byId = {};
   for (const c of columnValues) byId[c.id] = c;
@@ -18,15 +18,25 @@ function pickProofFiles(item, side) {
   const frontFiles = parseFileColumn(byId[COLS.FRONT_ART]?.value);
   const backFiles = parseFileColumn(byId[COLS.BACK_ART]?.value);
 
+  // Preferred: finished visual column
   if (finishedFiles.length) {
     // Assume page 1 = front, page 2 = back when PDFs are used
     if (side === SIDE_BACK && finishedFiles[1]) return finishedFiles[1];
     return finishedFiles[0];
   }
+
+  // Next: side-specific art columns
   if (side === SIDE_BACK && backFiles.length) return backFiles[0];
   if (side === SIDE_FRONT && frontFiles.length) return frontFiles[0];
-  // Fallback to any file
-  return finishedFiles[0] || frontFiles[0] || backFiles[0] || null;
+
+  // Fallback: any art
+  if (frontFiles.length) return frontFiles[0];
+  if (backFiles.length) return backFiles[0];
+
+  // Last resort: a job file (oldest) if nothing else exists
+  if (jobFiles.length) return jobFiles[0];
+
+  return null;
 }
 
 function pickLatestJobFile(item, uploadedFilename) {
@@ -66,8 +76,13 @@ async function resolveFilesForSide({ itemId, side = SIDE_FRONT, uploadedFilename
   const item = await getItemWithColumns(itemId);
   if (!item) throw new Error('Item not found for analysis');
 
-  const proofFile = pickProofFiles(item, side);
-  const capturedFile = pickLatestJobFile(item, uploadedFilename);
+  const columnValues = item?.column_values || [];
+  const jobFiles = JOB_FILES_COLUMN_ID
+    ? parseFileColumn(columnValues.find(c => c.id === JOB_FILES_COLUMN_ID)?.value)
+    : [];
+
+  const proofFile = pickProofFiles(item, side, jobFiles);
+  const capturedFile = pickLatestJobFile({ column_values: columnValues }, uploadedFilename) || (jobFiles.length ? jobFiles[jobFiles.length - 1] : null);
   return { item, proofFile, capturedFile };
 }
 
