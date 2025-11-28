@@ -81,11 +81,19 @@ router.post('/api/visual-approvals/:itemId/reject', async (req, res) => {
     const subitems = Array.isArray(item?.subitems) ? item.subitems : [];
 
     await moveItemToGroup(itemId, PRE_PRODUCTION_GROUP_ID);
+    let movedSubitems = 0;
+    const failedSubitems = [];
     for (const sub of subitems) {
-      await moveItemToGroup(sub.id, PRE_PRODUCTION_GROUP_ID);
+      try {
+        await moveItemToGroup(sub.id, PRE_PRODUCTION_GROUP_ID);
+        movedSubitems++;
+      } catch (err) {
+        console.warn('[visual-approvals] subitem move failed', { subId: sub.id, message: err?.message || err });
+        failedSubitems.push({ id: sub.id, name: sub.name, error: err?.message || 'move_failed' });
+      }
     }
 
-    return res.json({ ok: true, movedSubitems: subitems.length });
+    return res.json({ ok: true, movedSubitems, failedSubitems });
   } catch (err) {
     console.error('[visual-approvals] reject error:', err?.message || err);
     return res.status(500).json({ ok: false, error: err.message || 'internal_error' });

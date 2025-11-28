@@ -1074,7 +1074,6 @@ document.addEventListener('DOMContentLoaded', initVisualTab);
 
 function initVisualTab() {
   const refreshBtn = document.getElementById('va-refresh');
-  const loadBtn = document.getElementById('va-load');
   const analyzeBtn = document.getElementById('va-analyze');
   const approveBtn = document.getElementById('va-approve');
   const rejectBtn = document.getElementById('va-reject');
@@ -1082,12 +1081,14 @@ function initVisualTab() {
   const itemSel = document.getElementById('va-item');
 
   if (refreshBtn) refreshBtn.addEventListener('click', () => refreshVisualItemSelect());
-  if (loadBtn) loadBtn.addEventListener('click', () => loadVisualAssets(false));
   if (analyzeBtn) analyzeBtn.addEventListener('click', () => loadVisualAssets(true));
   if (approveBtn) approveBtn.addEventListener('click', () => handleVAApprove());
   if (rejectBtn) rejectBtn.addEventListener('click', () => handleVAReject());
-  if (sideSel) sideSel.addEventListener('change', clearVisualPreview);
-  if (itemSel) itemSel.addEventListener('change', clearVisualPreview);
+  if (sideSel) sideSel.addEventListener('change', () => {
+    clearVisualPreview();
+    loadVisualAssets(false);
+  });
+  if (itemSel) itemSel.addEventListener('change', () => loadVisualAssets(false));
 }
 
 function refreshVisualItemSelect(payload) {
@@ -1294,7 +1295,7 @@ function getVASelection() {
 }
 
 function setVABusy(disabled) {
-  const ids = ['va-approve', 'va-reject', 'va-load', 'va-analyze', 'va-refresh'];
+  const ids = ['va-approve', 'va-reject', 'va-analyze', 'va-refresh'];
   for (const id of ids) {
     const btn = document.getElementById(id);
     if (btn) btn.disabled = !!disabled;
@@ -1351,7 +1352,11 @@ async function handleVAReject() {
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !json.ok) throw new Error(json.error || 'Reject failed');
-    setVAStatus('Moved to PRE-PRODUCTION.', 'success');
+    if (json.failedSubitems?.length) {
+      setVAStatus(`Moved item; ${json.failedSubitems.length} subitems not moved.`, 'error');
+    } else {
+      setVAStatus('Moved to PRE-PRODUCTION.', 'success');
+    }
   } catch (err) {
     console.error('Reject failed', err);
     setVAStatus(err.message || 'Failed to move item.', 'error');
