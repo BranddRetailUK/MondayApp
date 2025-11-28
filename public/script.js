@@ -1151,9 +1151,11 @@ async function loadVisualAssets(runAnalysis = false) {
       if (json.proof?.url) {
         proofImg.src = json.proof.url;
         proofImg.classList.remove('hidden');
+        proofImg.classList.remove('va-img-dim');
         if (phProof) phProof.classList.add('hidden');
       } else {
         proofImg.classList.add('hidden');
+        proofImg.classList.remove('va-img-dim');
         if (phProof) phProof.classList.remove('hidden');
       }
     }
@@ -1161,9 +1163,11 @@ async function loadVisualAssets(runAnalysis = false) {
       if (json.captured?.url) {
         capImg.src = json.captured.url;
         capImg.classList.remove('hidden');
+        capImg.classList.remove('va-img-dim');
         if (phCap) phCap.classList.add('hidden');
       } else {
         capImg.classList.add('hidden');
+        capImg.classList.remove('va-img-dim');
         if (phCap) phCap.classList.remove('hidden');
       }
     }
@@ -1199,6 +1203,8 @@ function renderVAResult(analysis) {
   if (!wrap) return;
   const conf = wrap.querySelector('.va-confidence');
   const findings = wrap.querySelector('.va-findings');
+  const proofImg = document.getElementById('va-proof');
+  const capImg = document.getElementById('va-captured');
   if (conf) {
     if (!analysis) {
       conf.textContent = '';
@@ -1216,6 +1222,13 @@ function renderVAResult(analysis) {
     } else {
       findings.textContent = analysis.summary || 'No discrepancies reported.';
     }
+  }
+  if (analysis && proofImg && capImg) {
+    proofImg.classList.add('va-img-dim');
+    capImg.classList.add('va-img-dim');
+  } else {
+    if (proofImg) proofImg.classList.remove('va-img-dim');
+    if (capImg) capImg.classList.remove('va-img-dim');
   }
 }
 
@@ -1238,6 +1251,9 @@ function showVAOverlay(label, pct, autoHide = false, animate = false) {
   if (autoHide) {
     clearInterval(__vaState.overlayTimer);
     bar.style.width = '100%';
-    setTimeout(() => overlay.classList.remove('show'), 600);
+    setTimeout(() => {
+      overlay.classList.remove('show');
+      bar.style.width = '0%';
+    }, 600);
   }
 }

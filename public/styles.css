@@ -345,6 +345,7 @@ body.modal-open{overflow:hidden}
 .va-panel img.hidden { display:none; }
 .va-placeholder { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color: #55607a; font-weight:700; font-size:14px; padding: 0 12px; text-align:center; background:#0b1017; }
 .va-placeholder.hidden { display:none; }
+.va-img-dim { filter: blur(2px) brightness(0.4); }
 .va-label { font-weight: 800; font-size: 14px; color: #e5edff; }
 .va-confidence { font-weight: 800; margin-bottom: 6px; }
 .va-findings { color: var(--muted); font-size: 14px; }
@@ -376,11 +377,12 @@ body.modal-open{overflow:hidden}
 .va-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.65);
+  background: rgba(0,0,0,0.6);
   display: none;
   align-items: center;
   justify-content: center;
   z-index: 2000;
+  backdrop-filter: blur(6px);
 }
 .va-overlay.show { display: flex; }
 .va-overlay-box {
@@ -388,7 +390,7 @@ body.modal-open{overflow:hidden}
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 18px 20px;
-  width: min(380px, 92vw);
+  width: min(420px, 92vw);
   box-shadow: 0 16px 40px rgba(0,0,0,0.45);
 }
 .va-progress {

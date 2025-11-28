@@ -13,7 +13,8 @@ function buildPrompt({ side = 'front', jobTitle = '', jobNo = '', garmentColour 
   return [
     `You are a production visual QA assistant.`,
     `Compare the live photo to the approved visual/proof and report mismatches.`,
-    `Focus on: text/letters, spelling, missing elements, logo placement, sizing, and colour accuracy.`,
+    `Primary focus: detect missing letters, incorrect words, spelling/grammar errors, and wrong text layout/placement.`,
+    `Secondary (only if obvious): missing elements or major positional errors; ignore minor colour/shade differences unless critical to the logo/text.`,
     `Side: ${side}. Job: ${jobTitle || 'unknown'}. Job No: ${jobNo || 'unknown'}. ${garmentColour ? `Garment colour: ${garmentColour}.` : ''}`,
     `Respond in JSON with keys: ok (boolean), confidence (0-100), summary (short string), findings (array of short strings).`,
     `Keep the response concise.`,
