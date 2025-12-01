@@ -4,6 +4,8 @@ const router = express.Router();
 
 const { syncOpenOrdersFromDropbox } = require('../services/openOrdersSync');
 
+let syncInFlight = false;
+
 router.get('/webhook', (req, res) => {
   const challenge = req.query.challenge;
   if (challenge) {
@@ -18,12 +20,20 @@ router.post('/webhook', async (req, res) => {
       req.ip || 'unknown'
     }`
   );
+  if (syncInFlight) {
+    console.log('[dropbox-webhook] sync already running; ignoring duplicate webhook');
+    return res.status(200).json({ ok: true, ignored: 'sync_in_progress' });
+  }
+
   res.status(200).json({ ok: true });
+  syncInFlight = true;
   try {
     await syncOpenOrdersFromDropbox();
     console.log('[dropbox-webhook] sync finished');
   } catch (err) {
     console.error('[dropbox-webhook] sync failed:', err);
+  } finally {
+    syncInFlight = false;
   }
 });
 

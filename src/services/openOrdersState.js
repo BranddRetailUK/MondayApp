@@ -33,24 +33,36 @@ function hasJob(state, jobNumber) {
   return Boolean(state.jobs && state.jobs[jobNumber]);
 }
 
-function setJobState(state, jobNumber, { itemId = null, signature = null }) {
+function setJobState(state, jobNumber, { itemId = null, signature = null, status = null }) {
   if (!jobNumber) return;
   const now = new Date().toISOString();
   const existing = state.jobs[jobNumber] || {};
   state.jobs[jobNumber] = {
     itemId: itemId || existing.itemId || null,
     signature: signature || existing.signature || null,
+    status: status || existing.status || null,
     createdAt: existing.createdAt || now,
     updatedAt: now,
   };
 }
 
+function clearJob(state, jobNumber) {
+  if (!jobNumber) return;
+  if (state.jobs && state.jobs[jobNumber]) {
+    delete state.jobs[jobNumber];
+  }
+}
+
+function markJobPending(state, jobNumber, signature = null) {
+  setJobState(state, jobNumber, { itemId: null, signature, status: 'pending' });
+}
+
 function markJobCreated(state, jobNumber, itemId, signature = null) {
-  setJobState(state, jobNumber, { itemId, signature });
+  setJobState(state, jobNumber, { itemId, signature, status: 'created' });
 }
 
 function markJobUpdated(state, jobNumber, itemId, signature = null) {
-  setJobState(state, jobNumber, { itemId, signature });
+  setJobState(state, jobNumber, { itemId, signature, status: 'updated' });
 }
 
 module.exports = {
@@ -58,6 +70,8 @@ module.exports = {
   loadState,
   saveState,
   hasJob,
+  clearJob,
+  markJobPending,
   markJobCreated,
   markJobUpdated,
 };

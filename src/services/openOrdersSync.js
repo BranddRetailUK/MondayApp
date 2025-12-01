@@ -10,6 +10,8 @@ const {
   loadState,
   saveState,
   hasJob: stateHasJob,
+  clearJob,
+  markJobPending,
   markJobCreated,
   markJobUpdated,
 } = require('./openOrdersState');
@@ -52,6 +54,22 @@ const OPEN_ORDERS_DROPBOX_PATH =
 const OPEN_ORDERS_LOCAL_PATH =
   process.env.OPEN_ORDERS_LOCAL_PATH ||
   path.join(__dirname, '..', '..', 'tmp', 'open_orders.csv');
+
+let syncLock = null;
+
+async function runExclusiveSync(fn) {
+  if (syncLock) {
+    throw new Error('open orders sync already running');
+  }
+  syncLock = (async () => {
+    try {
+      return await fn();
+    } finally {
+      syncLock = null;
+    }
+  })();
+  return syncLock;
+}
 
 function buildItemName(job) {
   const nameParts = [job.jobNumber];
@@ -274,16 +292,33 @@ async function createJobOnMonday(job, { dryRun = false } = {}) {
     return null;
   }
 
-  const itemId = await mondayClient.createItem(BOARD_ID, GROUP_ID, itemName, columnValues);
-  for (let i = 0; i < job.lineItems.length; i++) {
-    const line = job.lineItems[i];
-    const name = buildSubitemName(line, i);
-    const columns = buildSubitemColumnValues(line);
-    await mondayClient.createSubitem(itemId, name, columns);
-  }
+  let itemId = null;
+  try {
+    itemId = await mondayClient.createItem(BOARD_ID, GROUP_ID, itemName, columnValues);
+    for (let i = 0; i < job.lineItems.length; i++) {
+      const line = job.lineItems[i];
+      const name = buildSubitemName(line, i);
+      const columns = buildSubitemColumnValues(line);
+      await mondayClient.createSubitem(itemId, name, columns);
+    }
 
-  await applyJobTypeStatus(itemId, job.jobType, { dryRun });
-  return itemId;
+    await applyJobTypeStatus(itemId, job.jobType, { dryRun });
+    return itemId;
+  } catch (err) {
+    if (itemId) {
+      try {
+        await mondayClient.deleteItem(itemId);
+        console.warn(
+          `[sync] Rolled back item ${itemId} for job ${job.jobNumber} after failure: ${err.message}`
+        );
+      } catch (cleanupErr) {
+        console.warn(
+          `[sync] Failed to clean up item ${itemId} for job ${job.jobNumber}: ${cleanupErr.message}`
+        );
+      }
+    }
+    throw err;
+  }
 }
 
 async function applyJobTypeStatus(itemId, jobType, { dryRun }) {
@@ -302,7 +337,7 @@ async function applyJobTypeStatus(itemId, jobType, { dryRun }) {
   );
 }
 
-async function syncOpenOrdersFile(filePath, { dryRun = false } = {}) {
+async function syncOpenOrdersFileUnlocked(filePath, { dryRun = false } = {}) {
   const resolved = path.resolve(filePath);
   const jobs = parseOpenOrdersFile(resolved).reverse(); // process bottom-to-top (newest first)
   const existing = await fetchExistingJobs();
@@ -322,6 +357,11 @@ async function syncOpenOrdersFile(filePath, { dryRun = false } = {}) {
 
   const newJobs = entries.filter(entry => {
     if (existing.has(entry.jobNumber)) return false;
+    const stateEntry = state.jobs?.[entry.jobNumber];
+    if (stateEntry && stateEntry.status === 'pending' && !stateEntry.itemId) {
+      console.log(`[sync] Job ${entry.jobNumber} marked pending previously; retrying creation`);
+      return true;
+    }
     if (stateHasJob(state, entry.jobNumber)) return false;
     return true;
   });
@@ -378,15 +418,26 @@ async function syncOpenOrdersFile(filePath, { dryRun = false } = {}) {
   const results = [];
   for (const entry of newJobs) {
     const job = entry.job;
+    const jobNumber = String(job.jobNumber || '').trim();
     try {
+      if (!dryRun) {
+        markJobPending(state, jobNumber, entry.signature);
+        saveState(state);
+      }
+
       const itemId = await createJobOnMonday(job, { dryRun });
       if (!dryRun && itemId) {
-        markJobCreated(state, String(job.jobNumber).trim(), itemId, entry.signature);
+        markJobCreated(state, jobNumber, itemId, entry.signature);
+        saveState(state);
       }
       results.push({ job: job.jobNumber, itemId: itemId || null, action: 'created', success: true });
       console.log(`[sync] Created Monday item ${itemId || '(dry-run)'} for job ${job.jobNumber}`);
     } catch (err) {
       console.error(`[sync] Failed to create job ${job.jobNumber}:`, err.message);
+      if (!dryRun) {
+        clearJob(state, jobNumber);
+        saveState(state);
+      }
       results.push({ job: job.jobNumber, success: false, error: err.message });
     }
   }
@@ -401,6 +452,7 @@ async function syncOpenOrdersFile(filePath, { dryRun = false } = {}) {
       const itemId = await updateJobOnMonday(job, existingItem, { dryRun });
       if (!dryRun && itemId) {
         markJobUpdated(state, entry.jobNumber, itemId, entry.signature);
+        saveState(state);
       }
       results.push({ job: job.jobNumber, itemId: itemId || null, action: 'updated', success: true });
       console.log(`[sync] Updated Monday item ${itemId || '(dry-run)'} for job ${job.jobNumber}`);
@@ -410,9 +462,7 @@ async function syncOpenOrdersFile(filePath, { dryRun = false } = {}) {
     }
   }
 
-  if (!dryRun && results.some(r => r.success)) {
-    saveState(state);
-  }
+  if (!dryRun) saveState(state);
 
   return results;
 }
@@ -427,11 +477,17 @@ async function downloadOpenOrdersFile(destPath = OPEN_ORDERS_LOCAL_PATH) {
   return destPath;
 }
 
+async function syncOpenOrdersFile(filePath, options = {}) {
+  return runExclusiveSync(() => syncOpenOrdersFileUnlocked(filePath, options));
+}
+
 async function syncOpenOrdersFromDropbox(options = {}) {
-  const localPath = await downloadOpenOrdersFile(
-    options.localPath || OPEN_ORDERS_LOCAL_PATH
-  );
-  return syncOpenOrdersFile(localPath, options);
+  return runExclusiveSync(async () => {
+    const localPath = await downloadOpenOrdersFile(
+      options.localPath || OPEN_ORDERS_LOCAL_PATH
+    );
+    return syncOpenOrdersFileUnlocked(localPath, options);
+  });
 }
 
 module.exports = {
