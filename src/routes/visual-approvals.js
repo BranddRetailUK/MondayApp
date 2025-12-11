@@ -12,6 +12,16 @@ function bool(v) {
   return s === '1' || s === 'true' || s === 'yes';
 }
 
+// Notification count endpoint (must come before param routes)
+router.get('/api/visual-approvals/notifications', (_req, res) => {
+  try {
+    return res.json({ ok: true, count: visualNotifications.count(), items: visualNotifications.list() });
+  } catch (err) {
+    console.error('[visual-approvals] notifications error:', err?.message || err);
+    return res.status(500).json({ ok: false, error: 'failed_notifications' });
+  }
+});
+
 router.get('/api/visual-approvals/:itemId', async (req, res) => {
   try {
     const { itemId } = req.params;
