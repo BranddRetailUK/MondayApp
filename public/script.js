@@ -1134,13 +1134,56 @@ function isPdfFile(name, mime) {
   return /\.pdf(\?|$)/i.test(name || '');
 }
 
-function buildAssetSrc(file) {
+function buildAssetSrc(file, { stripPdfUi = false } = {}) {
   if (!file) return '';
   if (file.assetId) {
     const name = encodeURIComponent(file.name || 'file');
-    return `/api/assets/${encodeURIComponent(file.assetId)}/inline?name=${name}`;
+    const base = `/api/assets/${encodeURIComponent(file.assetId)}/inline?name=${name}`;
+    return stripPdfUi ? `${base}#toolbar=0&navpanes=0&scrollbar=0&view=FitH` : base;
   }
-  return file.url || '';
+  const url = file.url || '';
+  if (stripPdfUi && url) return `${url}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`;
+  return url;
+}
+
+let __pdfJsPromise = null;
+async function ensurePdfJs() {
+  if (window.pdfjsLib) return window.pdfjsLib;
+  if (__pdfJsPromise) return __pdfJsPromise;
+  __pdfJsPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.js';
+    script.async = true;
+    script.onload = () => {
+      if (window.pdfjsLib) {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js';
+        resolve(window.pdfjsLib);
+      } else {
+        reject(new Error('pdfjsLib not available after load'));
+      }
+    };
+    script.onerror = () => reject(new Error('Failed to load pdf.js'));
+    document.head.appendChild(script);
+  });
+  return __pdfJsPromise;
+}
+
+async function renderPdfImage(src, altText = 'PDF') {
+  const pdfjs = await ensurePdfJs();
+  const loadingTask = pdfjs.getDocument(src);
+  const pdf = await loadingTask.promise;
+  const page = await pdf.getPage(1);
+  const viewport = page.getViewport({ scale: 1.4 });
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d', { alpha: false });
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  const img = document.createElement('img');
+  img.src = canvas.toDataURL('image/png');
+  img.alt = altText;
+  img.className = 'va-pdf-img';
+  return img;
 }
 
 function renderProofGrid(proofs) {
@@ -1155,22 +1198,33 @@ function renderProofGrid(proofs) {
     return;
   }
   for (const file of items.slice(0, 4)) {
-    const src = buildAssetSrc(file);
+    const pdf = isPdfFile(file.name, file.mime);
+    const src = buildAssetSrc(file, { stripPdfUi: pdf });
     if (!src) continue;
     const cell = document.createElement('div');
     cell.className = 'va-proof-cell';
-    const pdf = isPdfFile(file.name, file.mime);
-    const node = pdf ? document.createElement('object') : document.createElement('img');
     if (pdf) {
-      node.type = 'application/pdf';
-      node.data = src;
-      node.title = file.name || 'PDF preview';
+      const loader = document.createElement('div');
+      loader.className = 'va-pdf-loading';
+      loader.textContent = 'Rendering PDF…';
+      cell.appendChild(loader);
+      renderPdfImage(src, file.name || 'PDF')
+        .then(img => {
+          if (!cell.isConnected) return;
+          cell.innerHTML = '';
+          cell.appendChild(img);
+        })
+        .catch(() => {
+          if (!cell.isConnected) return;
+          loader.textContent = 'PDF failed to render';
+        });
     } else {
+      const node = document.createElement('img');
       node.src = src;
       node.alt = file.name || 'Finished visual';
       node.loading = 'lazy';
+      cell.appendChild(node);
     }
-    cell.appendChild(node);
     grid.appendChild(cell);
   }
   grid.classList.toggle('single', items.length === 1);
@@ -1183,7 +1237,8 @@ function renderCapturedMedia(media) {
   const phCap = document.getElementById('va-captured-ph');
   if (!frame) return;
   frame.innerHTML = '';
-  const src = buildAssetSrc(media);
+  const pdf = isPdfFile(media?.name, media?.mime);
+  const src = buildAssetSrc(media, { stripPdfUi: pdf });
   const hasUrl = !!src;
   if (!hasUrl) {
     frame.classList.add('hidden');
@@ -1191,18 +1246,28 @@ function renderCapturedMedia(media) {
     if (phCap) phCap.classList.remove('hidden');
     return;
   }
-  const pdf = isPdfFile(media.name, media.mime);
-  const node = pdf ? document.createElement('object') : document.createElement('img');
   if (pdf) {
-    node.type = 'application/pdf';
-    node.data = src;
-    node.title = media.name || 'PDF preview';
+    const loader = document.createElement('div');
+    loader.className = 'va-pdf-loading';
+    loader.textContent = 'Rendering PDF…';
+    frame.appendChild(loader);
+    renderPdfImage(src, media?.name || 'PDF')
+      .then(img => {
+        if (!frame.isConnected) return;
+        frame.innerHTML = '';
+        frame.appendChild(img);
+      })
+      .catch(() => {
+        if (!frame.isConnected) return;
+        loader.textContent = 'PDF failed to render';
+      });
   } else {
+    const node = document.createElement('img');
     node.src = src;
     node.alt = media.name || 'Captured image';
     node.loading = 'lazy';
+    frame.appendChild(node);
   }
-  frame.appendChild(node);
   frame.dataset.type = pdf ? 'pdf' : 'image';
   frame.classList.remove('hidden');
   if (phCap) phCap.classList.add('hidden');
