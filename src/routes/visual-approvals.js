@@ -30,10 +30,20 @@ router.get('/api/visual-approvals/:itemId', async (req, res) => {
       analyze
     });
 
-    const proofTargets = (Array.isArray(finishedFiles) && finishedFiles.length
-      ? finishedFiles
-      : (Array.isArray(jobFiles) && jobFiles.length ? jobFiles : [proofFile])
-    ).filter(Boolean).slice(0, 4);
+    const proofTargetsRaw = []
+      .concat(Array.isArray(finishedFiles) ? finishedFiles : [])
+      .concat(Array.isArray(jobFiles) ? jobFiles : [])
+      .filter(Boolean);
+    const seen = new Set();
+    const proofTargets = [];
+    for (const f of proofTargetsRaw) {
+      const key = f.assetId || f.id || f.name;
+      if (key && seen.has(key)) continue;
+      if (key) seen.add(key);
+      proofTargets.push(f);
+      if (proofTargets.length >= 4) break;
+    }
+    if (!proofTargets.length && proofFile) proofTargets.push(proofFile);
 
     const proofs = await Promise.all(proofTargets.map(async (file) => {
       const meta = await getAssetPublicUrl(file.assetId);
