@@ -1068,7 +1068,7 @@ function bumpNumber(el, val){
 }
 
 // ================== VISUAL APPROVALS TAB ==================
-const __vaState = { items: [], loaded: false, overlayTimer: null, overlayPct: 0 };
+const __vaState = { items: [], loaded: false, overlayTimer: null, overlayPct: 0, pendingIds: new Set() };
 
 document.addEventListener('DOMContentLoaded', initVisualTab);
 
@@ -1102,13 +1102,17 @@ function refreshVisualItemSelect(payload) {
     }
   }
   __vaState.items = items;
+  const pendingIds = __vaState.pendingIds instanceof Set ? __vaState.pendingIds : new Set();
+  if (pendingIds.size) {
+    items = items.filter(it => pendingIds.has(String(it.id)));
+  }
 
   const current = sel.value;
   sel.innerHTML = '';
   if (!items.length) {
     const opt = document.createElement('option');
     opt.value = '';
-    opt.textContent = 'No jobs loaded';
+    opt.textContent = pendingIds.size ? 'No jobs awaiting approval' : 'No jobs loaded';
     sel.appendChild(opt);
     return;
   }
@@ -1527,7 +1531,10 @@ async function refreshVABadgeCount() {
     const res = await fetch('/api/visual-approvals/notifications', { cache: 'no-store', credentials: 'include' });
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !json.ok) return;
+    __vaState.pendingIds = new Set(Array.isArray(json.items) ? json.items.map(String) : []);
     updateVABadge(json.count);
+    // Re-filter select if already loaded
+    refreshVisualItemSelect(window.__latestBoardPayload);
   } catch (err) {
     // ignore badge fetch errors
   }
