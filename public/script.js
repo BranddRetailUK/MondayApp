@@ -1077,17 +1077,12 @@ function initVisualTab() {
   const analyzeBtn = document.getElementById('va-analyze');
   const approveBtn = document.getElementById('va-approve');
   const rejectBtn = document.getElementById('va-reject');
-  const sideSel = document.getElementById('va-side');
   const itemSel = document.getElementById('va-item');
 
   if (refreshBtn) refreshBtn.addEventListener('click', () => refreshVisualItemSelect());
   if (analyzeBtn) analyzeBtn.addEventListener('click', () => loadVisualAssets(true));
   if (approveBtn) approveBtn.addEventListener('click', () => handleVAApprove());
   if (rejectBtn) rejectBtn.addEventListener('click', () => handleVAReject());
-  if (sideSel) sideSel.addEventListener('change', () => {
-    clearVisualPreview();
-    loadVisualAssets(false);
-  });
   if (itemSel) itemSel.addEventListener('change', () => loadVisualAssets(false));
 
   bindLightboxClicks();
@@ -1318,10 +1313,9 @@ function renderCapturedMedia(media) {
 
 async function loadVisualAssets(runAnalysis = false) {
   const itemSel = document.getElementById('va-item');
-  const sideSel = document.getElementById('va-side');
-  if (!itemSel || !sideSel) return;
+  if (!itemSel) return;
   const itemId = itemSel.value;
-  const side = sideSel.value || 'front';
+  const side = 'front';
   if (!itemId) return;
 
   setVAStatus('', 'info');
@@ -1498,10 +1492,9 @@ function hideVAOverlay() {
 
 function getVASelection() {
   const itemSel = document.getElementById('va-item');
-  const sideSel = document.getElementById('va-side');
   return {
     itemId: itemSel?.value || '',
-    side: sideSel?.value || 'front'
+    side: 'front'
   };
 }
 

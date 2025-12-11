@@ -14,7 +14,7 @@ function bool(v) {
 router.get('/api/visual-approvals/:itemId', async (req, res) => {
   try {
     const { itemId } = req.params;
-    const side = (req.query.side || SIDE_FRONT).toString();
+    const side = SIDE_FRONT;
     const analyze = bool(req.query.analyze);
 
     const { proofFile, capturedFile, finishedFiles = [] } = await resolveFilesForSide({ itemId, side });

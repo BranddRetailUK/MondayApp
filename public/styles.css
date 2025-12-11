@@ -338,7 +338,7 @@ body.modal-open{overflow:hidden}
 .colour-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
 
 /* Visual Approvals */
-.va-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) auto; gap: 14px; align-items: end; }
+.va-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)) auto; gap: 14px; align-items: end; }
 .va-actions { display: flex; gap: 10px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
 .va-status { grid-column: 1 / -1; text-align: right; font-weight: 700; min-height: 18px; color: var(--muted); }
 .va-status[data-tone="success"] { color: var(--ok); }
