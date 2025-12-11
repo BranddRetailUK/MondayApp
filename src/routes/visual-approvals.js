@@ -5,6 +5,7 @@ const { getAssetPublicUrl } = require('../services/mondayAssets');
 const { analyzeItemSide, resolveFilesForSide, SIDE_FRONT, inferMimeType } = require('../services/visualAnalysis');
 const { getItemWithColumns, setCheckboxColumn, moveItemToGroup } = require('../services/mondayClient');
 const { PROOF_APPROVED_COLUMN_ID, PRE_PRODUCTION_GROUP_ID, BOARD_ID } = require('../config/env');
+const visualNotifications = require('../services/visualNotifications');
 
 function bool(v) {
   const s = String(v || '').toLowerCase();
@@ -17,7 +18,7 @@ router.get('/api/visual-approvals/:itemId', async (req, res) => {
     const side = SIDE_FRONT;
     const analyze = bool(req.query.analyze);
 
-    const { proofFile, capturedFile, finishedFiles = [] } = await resolveFilesForSide({ itemId, side });
+    const { proofFile, capturedFile, finishedFiles = [], jobFiles = [] } = await resolveFilesForSide({ itemId, side });
     if (!proofFile?.assetId) return res.status(400).json({ ok: false, error: 'No proof/visual found' });
     if (!capturedFile?.assetId) return res.status(400).json({ ok: false, error: 'No captured file found' });
 
@@ -31,7 +32,7 @@ router.get('/api/visual-approvals/:itemId', async (req, res) => {
 
     const proofTargets = (Array.isArray(finishedFiles) && finishedFiles.length
       ? finishedFiles
-      : [proofFile]
+      : (Array.isArray(jobFiles) && jobFiles.length ? jobFiles : [proofFile])
     ).filter(Boolean).slice(0, 4);
 
     const proofs = await Promise.all(proofTargets.map(async (file) => {
@@ -83,6 +84,7 @@ router.post('/api/visual-approvals/:itemId/approve', async (req, res) => {
     if (!boardId) throw new Error('Board id not available for approval');
 
     await setCheckboxColumn(boardId, itemId, PROOF_APPROVED_COLUMN_ID, true);
+    visualNotifications.remove(itemId);
     return res.json({ ok: true });
   } catch (err) {
     console.error('[visual-approvals] approve error:', err?.message || err);
@@ -110,11 +112,16 @@ router.post('/api/visual-approvals/:itemId/reject', async (req, res) => {
       }
     }
 
+    visualNotifications.remove(itemId);
     return res.json({ ok: true, movedSubitems, failedSubitems });
   } catch (err) {
     console.error('[visual-approvals] reject error:', err?.message || err);
     return res.status(500).json({ ok: false, error: err.message || 'internal_error' });
   }
+});
+
+router.get('/api/visual-approvals/notifications', (_req, res) => {
+  return res.json({ ok: true, count: visualNotifications.count(), items: visualNotifications.list() });
 });
 
 module.exports = router;

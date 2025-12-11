@@ -1086,6 +1086,7 @@ function initVisualTab() {
   if (itemSel) itemSel.addEventListener('change', () => loadVisualAssets(false));
 
   bindLightboxClicks();
+  refreshVABadgeCount();
 }
 
 function refreshVisualItemSelect(payload) {
@@ -1123,6 +1124,7 @@ function refreshVisualItemSelect(payload) {
   }
   if (current) sel.value = current;
   window.__latestBoardPayload = payload || window.__latestBoardPayload;
+  refreshVABadgeCount();
 }
 
 function isPdfFile(name, mime) {
@@ -1343,6 +1345,7 @@ async function loadVisualAssets(runAnalysis = false) {
 
     renderVAResult(json.analysis);
     if (runAnalysis) showVAOverlay('Analysis complete.', 100, true);
+    refreshVABadgeCount();
   } catch (err) {
     console.error('visual approvals fetch failed', err);
     if (runAnalysis) showVAOverlay('Analysis failed.', 100, true);
@@ -1506,6 +1509,25 @@ function setVABusy(disabled) {
   }
 }
 
+function updateVABadge(count) {
+  const badge = document.getElementById('va-badge');
+  if (!badge) return;
+  const n = Number(count) || 0;
+  badge.textContent = n > 99 ? '99+' : String(n);
+  badge.classList.toggle('hidden', n <= 0);
+}
+
+async function refreshVABadgeCount() {
+  try {
+    const res = await fetch('/api/visual-approvals/notifications', { cache: 'no-store', credentials: 'include' });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.ok) return;
+    updateVABadge(json.count);
+  } catch (err) {
+    // ignore badge fetch errors
+  }
+}
+
 function setVAStatus(msg, tone = 'info') {
   const el = document.getElementById('va-status');
   if (!el) return;
@@ -1531,6 +1553,7 @@ async function handleVAApprove() {
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !json.ok) throw new Error(json.error || 'Approval failed');
     setVAStatus('Proof approved and checkbox updated.', 'success');
+    refreshVABadgeCount();
   } catch (err) {
     console.error('Approve failed', err);
     setVAStatus(err.message || 'Approval failed.', 'error');
@@ -1561,6 +1584,7 @@ async function handleVAReject() {
     } else {
       setVAStatus('Moved to PRE-PRODUCTION.', 'success');
     }
+    refreshVABadgeCount();
   } catch (err) {
     console.error('Reject failed', err);
     setVAStatus(err.message || 'Failed to move item.', 'error');

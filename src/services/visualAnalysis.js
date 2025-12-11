@@ -88,7 +88,7 @@ async function resolveFilesForSide({ itemId, side = SIDE_FRONT, uploadedFilename
 
   const proofFile = pickProofFiles(item, side, jobFiles, finishedFiles);
   const capturedFile = pickLatestJobFile({ column_values: columnValues }, uploadedFilename) || (jobFiles.length ? jobFiles[jobFiles.length - 1] : null);
-  return { item, proofFile, capturedFile, finishedFiles };
+  return { item, proofFile, capturedFile, finishedFiles, jobFiles };
 }
 
 async function analyzeItemSide({ itemId, side = SIDE_FRONT, uploadedFilename = null, skipUpdate = false }) {
