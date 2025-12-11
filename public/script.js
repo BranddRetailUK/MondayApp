@@ -1157,6 +1157,8 @@ async function ensurePdfJs() {
     script.onload = () => {
       if (window.pdfjsLib) {
         window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js';
+        // Force inline rendering to avoid worker fetch issues
+        window.pdfjsLib.disableWorker = true;
         resolve(window.pdfjsLib);
       } else {
         reject(new Error('pdfjsLib not available after load'));
@@ -1170,10 +1172,21 @@ async function ensurePdfJs() {
 
 async function renderPdfImage(src, altText = 'PDF') {
   const pdfjs = await ensurePdfJs();
-  const loadingTask = pdfjs.getDocument(src);
+  // Fetch buffer first to avoid worker cross-origin fetch issues
+  const resp = await fetch(src, { credentials: 'include', cache: 'no-store' });
+  if (!resp.ok) throw new Error(`PDF fetch failed (${resp.status})`);
+  const buffer = await resp.arrayBuffer();
+
+  const loadingTask = pdfjs.getDocument({
+    data: buffer,
+    useWorkerFetch: false,
+    isEvalSupported: true,
+    disableAutoFetch: true,
+  });
+
   const pdf = await loadingTask.promise;
   const page = await pdf.getPage(1);
-  const viewport = page.getViewport({ scale: 1.4 });
+  const viewport = page.getViewport({ scale: 1.3 });
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { alpha: false });
   canvas.width = viewport.width;
@@ -1214,7 +1227,8 @@ function renderProofGrid(proofs) {
           cell.innerHTML = '';
           cell.appendChild(img);
         })
-        .catch(() => {
+        .catch((err) => {
+          console.error('PDF render failed (proof)', err);
           if (!cell.isConnected) return;
           loader.textContent = 'PDF failed to render';
         });
@@ -1257,7 +1271,8 @@ function renderCapturedMedia(media) {
         frame.innerHTML = '';
         frame.appendChild(img);
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error('PDF render failed (captured)', err);
         if (!frame.isConnected) return;
         loader.textContent = 'PDF failed to render';
       });
