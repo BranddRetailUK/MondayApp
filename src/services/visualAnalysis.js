@@ -8,13 +8,13 @@ const { bufferToDataUrl, runVisionCompare } = require('./openAiVision');
 const SIDE_FRONT = 'front';
 const SIDE_BACK = 'back';
 
-function pickProofFiles(item, side, jobFiles = []) {
+function pickProofFiles(item, side, jobFiles = [], finishedFilesOverride = null) {
   const columnValues = item?.column_values || [];
   const byId = {};
   for (const c of columnValues) byId[c.id] = c;
 
   const finishedId = FINISHED_VISUAL_COLUMN_ID || COLS.FINISHED_VISUAL;
-  const finishedFiles = parseFileColumn(byId[finishedId]?.value);
+  const finishedFiles = finishedFilesOverride ?? parseFileColumn(byId[finishedId]?.value);
   const frontFiles = parseFileColumn(byId[COLS.FRONT_ART]?.value);
   const backFiles = parseFileColumn(byId[COLS.BACK_ART]?.value);
 
@@ -77,13 +77,18 @@ async function resolveFilesForSide({ itemId, side = SIDE_FRONT, uploadedFilename
   if (!item) throw new Error('Item not found for analysis');
 
   const columnValues = item?.column_values || [];
+  const byId = {};
+  for (const c of columnValues) byId[c.id] = c;
+
+  const finishedId = FINISHED_VISUAL_COLUMN_ID || COLS.FINISHED_VISUAL;
+  const finishedFiles = parseFileColumn(byId[finishedId]?.value);
   const jobFiles = JOB_FILES_COLUMN_ID
-    ? parseFileColumn(columnValues.find(c => c.id === JOB_FILES_COLUMN_ID)?.value)
+    ? parseFileColumn(byId[JOB_FILES_COLUMN_ID]?.value)
     : [];
 
-  const proofFile = pickProofFiles(item, side, jobFiles);
+  const proofFile = pickProofFiles(item, side, jobFiles, finishedFiles);
   const capturedFile = pickLatestJobFile({ column_values: columnValues }, uploadedFilename) || (jobFiles.length ? jobFiles[jobFiles.length - 1] : null);
-  return { item, proofFile, capturedFile };
+  return { item, proofFile, capturedFile, finishedFiles };
 }
 
 async function analyzeItemSide({ itemId, side = SIDE_FRONT, uploadedFilename = null, skipUpdate = false }) {
@@ -145,4 +150,5 @@ module.exports = {
   resolveFilesForSide,
   SIDE_FRONT,
   SIDE_BACK,
+  inferMimeType,
 };

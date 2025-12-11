@@ -1128,6 +1128,74 @@ function refreshVisualItemSelect(payload) {
   window.__latestBoardPayload = payload || window.__latestBoardPayload;
 }
 
+function isPdfFile(name, mime) {
+  const lowerMime = (mime || '').toLowerCase();
+  if (lowerMime.includes('pdf')) return true;
+  return /\.pdf(\?|$)/i.test(name || '');
+}
+
+function renderProofGrid(proofs) {
+  const grid = document.getElementById('va-proof-grid');
+  const phProof = document.getElementById('va-proof-ph');
+  if (!grid) return;
+  grid.innerHTML = '';
+  const items = (Array.isArray(proofs) ? proofs : []).filter(f => f && f.url);
+  if (!items.length) {
+    grid.classList.add('hidden');
+    if (phProof) phProof.classList.remove('hidden');
+    return;
+  }
+  for (const file of items.slice(0, 4)) {
+    const cell = document.createElement('div');
+    cell.className = 'va-proof-cell';
+    const pdf = isPdfFile(file.name, file.mime);
+    const node = pdf ? document.createElement('object') : document.createElement('img');
+    if (pdf) {
+      node.type = 'application/pdf';
+      node.data = file.url;
+      node.title = file.name || 'PDF preview';
+    } else {
+      node.src = file.url;
+      node.alt = file.name || 'Finished visual';
+      node.loading = 'lazy';
+    }
+    cell.appendChild(node);
+    grid.appendChild(cell);
+  }
+  grid.classList.toggle('single', items.length === 1);
+  grid.classList.remove('hidden');
+  if (phProof) phProof.classList.add('hidden');
+}
+
+function renderCapturedMedia(media) {
+  const frame = document.getElementById('va-captured-frame');
+  const phCap = document.getElementById('va-captured-ph');
+  if (!frame) return;
+  frame.innerHTML = '';
+  const hasUrl = !!media?.url;
+  if (!hasUrl) {
+    frame.classList.add('hidden');
+    frame.dataset.type = '';
+    if (phCap) phCap.classList.remove('hidden');
+    return;
+  }
+  const pdf = isPdfFile(media.name, media.mime);
+  const node = pdf ? document.createElement('object') : document.createElement('img');
+  if (pdf) {
+    node.type = 'application/pdf';
+    node.data = media.url;
+    node.title = media.name || 'PDF preview';
+  } else {
+    node.src = media.url;
+    node.alt = media.name || 'Captured image';
+    node.loading = 'lazy';
+  }
+  frame.appendChild(node);
+  frame.dataset.type = pdf ? 'pdf' : 'image';
+  frame.classList.remove('hidden');
+  if (phCap) phCap.classList.add('hidden');
+}
+
 async function loadVisualAssets(runAnalysis = false) {
   const itemSel = document.getElementById('va-item');
   const sideSel = document.getElementById('va-side');
@@ -1148,39 +1216,15 @@ async function loadVisualAssets(runAnalysis = false) {
       if (runAnalysis) hideVAOverlay();
       return;
     }
-    const proofImg = document.getElementById('va-proof');
-    const capImg = document.getElementById('va-captured');
     const proofName = document.getElementById('va-proof-name');
     const capName = document.getElementById('va-captured-name');
 
-    const phProof = document.getElementById('va-proof-ph');
-    const phCap = document.getElementById('va-captured-ph');
+    const proofs = Array.isArray(json.proofs) ? json.proofs : (json.proof ? [json.proof] : []);
 
-    if (proofImg) {
-      if (json.proof?.url) {
-        proofImg.src = json.proof.url;
-        proofImg.classList.remove('hidden');
-        proofImg.classList.remove('va-img-dim');
-        if (phProof) phProof.classList.add('hidden');
-      } else {
-        proofImg.classList.add('hidden');
-        proofImg.classList.remove('va-img-dim');
-        if (phProof) phProof.classList.remove('hidden');
-      }
-    }
-    if (capImg) {
-      if (json.captured?.url) {
-        capImg.src = json.captured.url;
-        capImg.classList.remove('hidden');
-        capImg.classList.remove('va-img-dim');
-        if (phCap) phCap.classList.add('hidden');
-      } else {
-        capImg.classList.add('hidden');
-        capImg.classList.remove('va-img-dim');
-        if (phCap) phCap.classList.remove('hidden');
-      }
-    }
-    if (proofName) proofName.textContent = json.proof?.name || '';
+    renderProofGrid(proofs);
+    renderCapturedMedia(json.captured);
+
+    if (proofName) proofName.textContent = proofs[0]?.name || json.proof?.name || '';
     if (capName) capName.textContent = json.captured?.name || '';
 
     renderVAResult(json.analysis);
@@ -1192,14 +1236,14 @@ async function loadVisualAssets(runAnalysis = false) {
 }
 
 function clearVisualPreview() {
-  const proofImg = document.getElementById('va-proof');
-  const capImg = document.getElementById('va-captured');
+  const proofGrid = document.getElementById('va-proof-grid');
+  const capFrame = document.getElementById('va-captured-frame');
   const proofName = document.getElementById('va-proof-name');
   const capName = document.getElementById('va-captured-name');
   const phProof = document.getElementById('va-proof-ph');
   const phCap = document.getElementById('va-captured-ph');
-  if (proofImg) { proofImg.removeAttribute('src'); proofImg.classList.add('hidden'); }
-  if (capImg) { capImg.removeAttribute('src'); capImg.classList.add('hidden'); }
+  if (proofGrid) { proofGrid.innerHTML = ''; proofGrid.classList.add('hidden'); }
+  if (capFrame) { capFrame.innerHTML = ''; capFrame.classList.add('hidden'); capFrame.dataset.type = ''; }
   if (phProof) phProof.classList.remove('hidden');
   if (phCap) phCap.classList.remove('hidden');
   if (proofName) proofName.textContent = '';
@@ -1212,8 +1256,8 @@ function renderVAResult(analysis) {
   if (!wrap) return;
   const conf = wrap.querySelector('.va-confidence');
   const findings = wrap.querySelector('.va-findings');
-  const proofImg = document.getElementById('va-proof');
-  const capImg = document.getElementById('va-captured');
+  const proofGrid = document.getElementById('va-proof-grid');
+  const capFrame = document.getElementById('va-captured-frame');
   const previewCard = document.getElementById('va-preview-card');
   if (conf) {
     if (!analysis) {
@@ -1234,13 +1278,13 @@ function renderVAResult(analysis) {
     }
   }
   wrap.classList.toggle('hidden', !analysis);
-  if (analysis && proofImg && capImg) {
-    proofImg.classList.add('va-img-dim');
-    capImg.classList.add('va-img-dim');
+  if (analysis && proofGrid && capFrame) {
+    proofGrid.classList.add('va-img-dim');
+    capFrame.classList.add('va-img-dim');
     if (previewCard) previewCard.classList.add('dim');
   } else {
-    if (proofImg) proofImg.classList.remove('va-img-dim');
-    if (capImg) capImg.classList.remove('va-img-dim');
+    if (proofGrid) proofGrid.classList.remove('va-img-dim');
+    if (capFrame) capFrame.classList.remove('va-img-dim');
     if (previewCard) previewCard.classList.remove('dim');
   }
 }
