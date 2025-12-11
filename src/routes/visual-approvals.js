@@ -40,10 +40,7 @@ router.get('/api/visual-approvals/:itemId', async (req, res) => {
       analyze
     });
 
-    const proofTargetsRaw = []
-      .concat(Array.isArray(finishedFiles) ? finishedFiles : [])
-      .concat(Array.isArray(jobFiles) ? jobFiles : [])
-      .filter(Boolean);
+    const proofTargetsRaw = (Array.isArray(finishedFiles) && finishedFiles.length ? finishedFiles : [proofFile]).filter(Boolean);
     const seen = new Set();
     const proofTargets = [];
     for (const f of proofTargetsRaw) {
@@ -53,7 +50,6 @@ router.get('/api/visual-approvals/:itemId', async (req, res) => {
       proofTargets.push(f);
       if (proofTargets.length >= 4) break;
     }
-    if (!proofTargets.length && proofFile) proofTargets.push(proofFile);
 
     const proofs = await Promise.all(proofTargets.map(async (file) => {
       const meta = await getAssetPublicUrl(file.assetId);
@@ -87,6 +83,7 @@ router.get('/api/visual-approvals/:itemId', async (req, res) => {
       proof: proofMeta || { name: proofFile.name, url: proofMeta?.url || null, mime: inferMimeType(proofFile.name), assetId: proofFile.assetId },
       proofs: proofs.filter(Boolean),
       captured: { name: capturedFile.name, url: capturedUrl, mime: capturedMime, assetId: capturedFile.assetId },
+      capturedFiles: Array.isArray(jobFiles) ? jobFiles.map(f => ({ name: f.name, assetId: f.assetId, url: null, mime: inferMimeType(f.name) })) : [],
       analysis
     });
   } catch (err) {

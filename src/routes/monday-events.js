@@ -12,7 +12,7 @@ const {
   CUSTOMER_IS_ITEM_NAME,
   STATUS_COLUMN_ID_VISUAL,
 } = require('../config/mondayFields');
-const { FINISHED_VISUAL_COLUMN_ID } = require('../config/env');
+const { FINISHED_VISUAL_COLUMN_ID, JOB_FILES_COLUMN_ID, BOARD_ID } = require('../config/env');
 const lineItemImporter = require('../services/dropboxLineItemImporter');
 const { processJobNumber } = lineItemImporter;
 const LINEITEM_BOARD_ID = lineItemImporter.BOARD_ID;
@@ -71,11 +71,19 @@ router.post('/events', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'Missing boardId or itemId' });
     }
 
-    // Track finished visual uploads -> notification badge
-    const finishedId = FINISHED_VISUAL_COLUMN_ID || COLS.FINISHED_VISUAL;
-    if (finishedId && columnId === finishedId) {
+    // Track job files uploads on the main board only -> notification badge
+    if (
+      JOB_FILES_COLUMN_ID &&
+      String(columnId) === String(JOB_FILES_COLUMN_ID) &&
+      String(boardId) === String(BOARD_ID)
+    ) {
       visualNotifications.add(itemId);
-      return res.status(200).json({ ok: true, action: 'visual_ready', itemId: String(itemId) });
+      return res.status(200).json({
+        ok: true,
+        action: 'visual_ready',
+        itemId: String(itemId),
+        columnId,
+      });
     }
 
     if (CREATE_ITEM_EVENTS.has(eventType)) {

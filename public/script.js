@@ -1343,10 +1343,10 @@ async function loadVisualAssets(runAnalysis = false) {
     const proofs = Array.isArray(json.proofs) ? json.proofs : (json.proof ? [json.proof] : []);
 
     renderProofGrid(proofs);
-    renderCapturedMedia(json.captured);
+    renderCapturedMedia(json.capturedFiles && json.capturedFiles.length ? json.capturedFiles : json.captured);
 
     if (proofName) proofName.textContent = proofs[0]?.name || json.proof?.name || '';
-    if (capName) capName.textContent = json.captured?.name || '';
+    if (capName) capName.textContent = (json.capturedFiles && json.capturedFiles[0]?.name) || json.captured?.name || '';
 
     renderVAResult(json.analysis);
     if (runAnalysis) showVAOverlay('Analysis complete.', 100, true);
