@@ -1259,57 +1259,62 @@ function renderProofGrid(proofs) {
 }
 
 function renderCapturedMedia(media) {
-  const frame = document.getElementById('va-captured-frame');
+  const grid = document.getElementById('va-captured-grid');
   const phCap = document.getElementById('va-captured-ph');
-  if (!frame) return;
-  frame.innerHTML = '';
-  const pdf = isPdfFile(media?.name, media?.mime);
-  const src = buildAssetSrc(media, { stripPdfUi: pdf });
-  const hasUrl = !!src;
-  if (!hasUrl) {
-    frame.classList.add('hidden');
-    frame.dataset.type = '';
+  if (!grid) return;
+  grid.innerHTML = '';
+  const items = Array.isArray(media) ? media : (media ? [media] : []);
+  if (!items.length) {
+    grid.classList.add('hidden');
     if (phCap) phCap.classList.remove('hidden');
     return;
   }
-  if (pdf) {
-    const loader = document.createElement('div');
-    loader.className = 'va-pdf-loading';
-    loader.textContent = 'Rendering PDF…';
-    frame.appendChild(loader);
-    renderPdfImage(src, media?.name || 'PDF')
-      .then(img => {
-        if (!frame.isConnected) return;
-        img.dataset.fullSrc = img.src;
-        img.dataset.caption = media?.name || '';
-        frame.innerHTML = '';
-        frame.appendChild(img);
-      })
-      .catch((err) => {
-        console.error('PDF render failed (captured)', err);
-        if (!frame.isConnected) return;
-        const obj = document.createElement('object');
-        obj.type = 'application/pdf';
-        obj.data = src;
-        obj.title = media?.name || 'PDF preview';
-        obj.style.width = '100%';
-        obj.style.height = '100%';
-        obj.dataset.fullSrc = src;
-        obj.dataset.caption = media?.name || '';
-        frame.innerHTML = '';
-        frame.appendChild(obj);
-      });
-  } else {
-    const node = document.createElement('img');
-    node.src = src;
-    node.alt = media.name || 'Captured image';
-    node.loading = 'lazy';
-    node.dataset.fullSrc = src;
-    node.dataset.caption = media.name || '';
-    frame.appendChild(node);
+  for (const file of items.slice(0, 4)) {
+    const pdf = isPdfFile(file?.name, file?.mime);
+    const src = buildAssetSrc(file, { stripPdfUi: pdf });
+    if (!src) continue;
+    const cell = document.createElement('div');
+    cell.className = 'va-proof-cell';
+    if (pdf) {
+      const loader = document.createElement('div');
+      loader.className = 'va-pdf-loading';
+      loader.textContent = 'Rendering PDF…';
+      cell.appendChild(loader);
+      renderPdfImage(src, file?.name || 'PDF')
+        .then(img => {
+          if (!cell.isConnected) return;
+          img.dataset.fullSrc = img.src;
+          img.dataset.caption = file?.name || '';
+          cell.innerHTML = '';
+          cell.appendChild(img);
+        })
+        .catch((err) => {
+          console.error('PDF render failed (captured)', err);
+          if (!cell.isConnected) return;
+          const obj = document.createElement('object');
+          obj.type = 'application/pdf';
+          obj.data = src;
+          obj.title = file?.name || 'PDF preview';
+          obj.style.width = '100%';
+          obj.style.height = '100%';
+          obj.dataset.fullSrc = src;
+          obj.dataset.caption = file?.name || '';
+          cell.innerHTML = '';
+          cell.appendChild(obj);
+        });
+    } else {
+      const node = document.createElement('img');
+      node.src = src;
+      node.alt = file?.name || 'Captured image';
+      node.loading = 'lazy';
+      node.dataset.fullSrc = src;
+      node.dataset.caption = file?.name || '';
+      cell.appendChild(node);
+    }
+    grid.appendChild(cell);
   }
-  frame.dataset.type = pdf ? 'pdf' : 'image';
-  frame.classList.remove('hidden');
+  grid.classList.toggle('single', items.length === 1);
+  grid.classList.remove('hidden');
   if (phCap) phCap.classList.add('hidden');
 }
 
@@ -1354,13 +1359,13 @@ async function loadVisualAssets(runAnalysis = false) {
 
 function clearVisualPreview() {
   const proofGrid = document.getElementById('va-proof-grid');
-  const capFrame = document.getElementById('va-captured-frame');
+  const capGrid = document.getElementById('va-captured-grid');
   const proofName = document.getElementById('va-proof-name');
   const capName = document.getElementById('va-captured-name');
   const phProof = document.getElementById('va-proof-ph');
   const phCap = document.getElementById('va-captured-ph');
   if (proofGrid) { proofGrid.innerHTML = ''; proofGrid.classList.add('hidden'); }
-  if (capFrame) { capFrame.innerHTML = ''; capFrame.classList.add('hidden'); capFrame.dataset.type = ''; }
+  if (capGrid) { capGrid.innerHTML = ''; capGrid.classList.add('hidden'); capGrid.dataset.type = ''; }
   if (phProof) phProof.classList.remove('hidden');
   if (phCap) phCap.classList.remove('hidden');
   if (proofName) proofName.textContent = '';
@@ -1374,7 +1379,7 @@ function renderVAResult(analysis) {
   const conf = wrap.querySelector('.va-confidence');
   const findings = wrap.querySelector('.va-findings');
   const proofGrid = document.getElementById('va-proof-grid');
-  const capFrame = document.getElementById('va-captured-frame');
+  const capFrame = document.getElementById('va-captured-grid');
   const previewCard = document.getElementById('va-preview-card');
   if (conf) {
     if (!analysis) {
