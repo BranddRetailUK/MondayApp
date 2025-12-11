@@ -1089,6 +1089,8 @@ function initVisualTab() {
     loadVisualAssets(false);
   });
   if (itemSel) itemSel.addEventListener('change', () => loadVisualAssets(false));
+
+  bindLightboxClicks();
 }
 
 function refreshVisualItemSelect(payload) {
@@ -1223,6 +1225,8 @@ function renderProofGrid(proofs) {
       renderPdfImage(src, file.name || 'PDF')
         .then(img => {
           if (!cell.isConnected) return;
+          img.dataset.fullSrc = img.src;
+          img.dataset.caption = file.name || '';
           cell.innerHTML = '';
           cell.appendChild(img);
         })
@@ -1236,6 +1240,8 @@ function renderProofGrid(proofs) {
           obj.title = file.name || 'PDF preview';
           obj.style.width = '100%';
           obj.style.height = '100%';
+          obj.dataset.fullSrc = src;
+          obj.dataset.caption = file.name || '';
           cell.innerHTML = '';
           cell.appendChild(obj);
         });
@@ -1244,6 +1250,8 @@ function renderProofGrid(proofs) {
       node.src = src;
       node.alt = file.name || 'Finished visual';
       node.loading = 'lazy';
+      node.dataset.fullSrc = src;
+      node.dataset.caption = file.name || '';
       cell.appendChild(node);
     }
     grid.appendChild(cell);
@@ -1275,6 +1283,8 @@ function renderCapturedMedia(media) {
     renderPdfImage(src, media?.name || 'PDF')
       .then(img => {
         if (!frame.isConnected) return;
+        img.dataset.fullSrc = img.src;
+        img.dataset.caption = media?.name || '';
         frame.innerHTML = '';
         frame.appendChild(img);
       })
@@ -1287,6 +1297,8 @@ function renderCapturedMedia(media) {
         obj.title = media?.name || 'PDF preview';
         obj.style.width = '100%';
         obj.style.height = '100%';
+        obj.dataset.fullSrc = src;
+        obj.dataset.caption = media?.name || '';
         frame.innerHTML = '';
         frame.appendChild(obj);
       });
@@ -1295,6 +1307,8 @@ function renderCapturedMedia(media) {
     node.src = src;
     node.alt = media.name || 'Captured image';
     node.loading = 'lazy';
+    node.dataset.fullSrc = src;
+    node.dataset.caption = media.name || '';
     frame.appendChild(node);
   }
   frame.dataset.type = pdf ? 'pdf' : 'image';
@@ -1393,6 +1407,53 @@ function renderVAResult(analysis) {
     if (capFrame) capFrame.classList.remove('va-img-dim');
     if (previewCard) previewCard.classList.remove('dim');
   }
+}
+
+// Lightbox
+function bindLightboxClicks() {
+  const proofGrid = document.getElementById('va-proof-grid');
+  const capFrame = document.getElementById('va-captured-frame');
+  const lightbox = document.getElementById('va-lightbox');
+  const lbImg = document.getElementById('va-lightbox-img');
+  const lbCap = document.getElementById('va-lightbox-caption');
+  const lbClose = document.getElementById('va-lightbox-close');
+  if (!lightbox || !lbImg || !lbClose) return;
+
+  const open = (src, caption = '') => {
+    if (!src) return;
+    lbImg.src = src;
+    lbCap.textContent = caption || '';
+    lightbox.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+  };
+  const close = () => {
+    lightbox.classList.add('hidden');
+    lbImg.src = '';
+    lbCap.textContent = '';
+    document.body.classList.remove('modal-open');
+  };
+
+  lightbox.addEventListener('click', (e) => {
+    if (e.target === lightbox || e.target.classList.contains('va-lightbox-backdrop') || e.target === lbClose) {
+      close();
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') close();
+  });
+
+  const clickHandler = (e) => {
+    const target = e.target;
+    if (!target) return;
+    const full = target.dataset?.fullSrc;
+    if (full) {
+      e.stopPropagation();
+      open(full, target.dataset?.caption || '');
+    }
+  };
+
+  if (proofGrid) proofGrid.addEventListener('click', clickHandler);
+  if (capFrame) capFrame.addEventListener('click', clickHandler);
 }
 
 function showVAOverlay(label, pct, autoHide = false, animate = false) {

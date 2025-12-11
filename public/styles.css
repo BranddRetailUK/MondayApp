@@ -355,12 +355,12 @@ body.modal-open{overflow:hidden}
 .va-proof-grid.single { display: flex; align-items: stretch; }
 .va-proof-grid.single .va-proof-cell { flex: 1; }
 .va-proof-cell { background: #0b1017; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
-.va-proof-cell img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.va-proof-cell img { width: 100%; height: 100%; object-fit: contain; display: block; cursor: zoom-in; }
 .va-proof-cell object { width: 100%; height: 100%; border: none; background: #0b1017; }
 .va-pdf-loading { color: #9db0cc; font-weight: 700; font-size: 13px; text-align: center; padding: 12px; }
-.va-pdf-img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.va-pdf-img { width: 100%; height: 100%; object-fit: contain; display: block; cursor: zoom-in; }
 .va-media-frame { width: 100%; height: 100%; display: flex; align-items: stretch; justify-content: center; }
-.va-media-frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.va-media-frame img { width: 100%; height: 100%; object-fit: contain; display: block; cursor: zoom-in; }
 .va-media-frame object { width: 100%; height: 100%; border: none; background: #0b1017; }
 .va-media-frame.hidden, .va-proof-grid.hidden { display:none; }
 .va-img-dim { filter: blur(2px) brightness(0.4); }
@@ -452,6 +452,15 @@ body.modal-open{overflow:hidden}
 .va-preview-card.dim .va-proof-grid,
 .va-preview-card.dim .va-media-frame,
 .va-preview-card.dim .va-img-wrap object { filter: blur(1px) brightness(0.4); }
+
+.va-lightbox { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 3000; }
+.va-lightbox.hidden { display: none; }
+.va-lightbox-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.72); backdrop-filter: blur(8px); }
+.va-lightbox-content { position: relative; max-width: 94vw; max-height: 92vh; display: flex; flex-direction: column; gap: 10px; align-items: center; justify-content: center; z-index: 1; }
+.va-lightbox-content img { max-width: 100%; max-height: 86vh; border-radius: 12px; box-shadow: 0 24px 60px rgba(0,0,0,0.45); background: #0b1017; object-fit: contain; }
+.va-lightbox-caption { color: #e5edff; font-weight: 700; text-align: center; }
+.va-lightbox-close { position: absolute; top: -12px; right: -12px; width: 32px; height: 32px; border-radius: 50%; border: none; background: rgba(0,0,0,0.8); color: #fff; font-size: 20px; cursor: pointer; box-shadow: 0 8px 18px rgba(0,0,0,0.35); }
+.va-lightbox-close:hover { background: rgba(0,0,0,0.9); }
 @media (max-width: 900px){
   .va-result-float{ position:static; transform:none; margin:12px 0 0 0; }
 }
