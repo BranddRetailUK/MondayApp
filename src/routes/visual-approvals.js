@@ -63,9 +63,9 @@ router.get('/api/visual-approvals/:itemId', async (req, res) => {
     return res.json({
       ok: true,
       side,
-      proof: proofMeta || { name: proofFile.name, url: proofMeta?.url || null, mime: inferMimeType(proofFile.name) },
+      proof: proofMeta || { name: proofFile.name, url: proofMeta?.url || null, mime: inferMimeType(proofFile.name), assetId: proofFile.assetId },
       proofs: proofs.filter(Boolean),
-      captured: { name: capturedFile.name, url: capturedUrl, mime: capturedMime },
+      captured: { name: capturedFile.name, url: capturedUrl, mime: capturedMime, assetId: capturedFile.assetId },
       analysis
     });
   } catch (err) {

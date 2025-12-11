@@ -8,6 +8,8 @@ const upload = multer({ limits: { fileSize: 25 * 1024 * 1024 } }); // 25MB cap f
 const { JOB_FILES_COLUMN_ID } = require('../config/env');
 const { getAccessToken, addFileToColumn } = require('../services/monday');
 const { enqueue } = require('../services/imageAnalysisQueue');
+const { downloadAsset } = require('../services/mondayAssets');
+const { inferMimeType } = require('../services/visualAnalysis');
 
 router.post('/api/items/:itemId/file', upload.single('file'), async (req, res) => {
   try {
@@ -38,6 +40,27 @@ router.post('/api/items/:itemId/file', upload.single('file'), async (req, res) =
   } catch (err) {
     console.error('[files] upload error:', err?.message || err);
     res.status(500).json({ error: 'Failed to upload image' });
+  }
+});
+
+// Inline asset proxy to bypass Monday's frame restrictions (e.g., PDFs)
+router.get('/api/assets/:assetId/inline', async (req, res) => {
+  try {
+    const { assetId } = req.params;
+    if (!assetId) return res.status(400).json({ error: 'Missing assetId' });
+
+    const name = String(req.query.name || 'file');
+    const buffer = await downloadAsset(assetId);
+    const mime = inferMimeType(name);
+    const safeName = name.replace(/["\r\n]/g, '');
+
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+    res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
+    return res.send(buffer);
+  } catch (err) {
+    console.error('[files] inline asset error:', err?.message || err);
+    return res.status(500).json({ error: 'Failed to load asset' });
   }
 });
 

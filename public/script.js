@@ -1134,28 +1134,39 @@ function isPdfFile(name, mime) {
   return /\.pdf(\?|$)/i.test(name || '');
 }
 
+function buildAssetSrc(file) {
+  if (!file) return '';
+  if (file.assetId) {
+    const name = encodeURIComponent(file.name || 'file');
+    return `/api/assets/${encodeURIComponent(file.assetId)}/inline?name=${name}`;
+  }
+  return file.url || '';
+}
+
 function renderProofGrid(proofs) {
   const grid = document.getElementById('va-proof-grid');
   const phProof = document.getElementById('va-proof-ph');
   if (!grid) return;
   grid.innerHTML = '';
-  const items = (Array.isArray(proofs) ? proofs : []).filter(f => f && f.url);
+  const items = (Array.isArray(proofs) ? proofs : []).filter(f => f && (f.url || f.assetId));
   if (!items.length) {
     grid.classList.add('hidden');
     if (phProof) phProof.classList.remove('hidden');
     return;
   }
   for (const file of items.slice(0, 4)) {
+    const src = buildAssetSrc(file);
+    if (!src) continue;
     const cell = document.createElement('div');
     cell.className = 'va-proof-cell';
     const pdf = isPdfFile(file.name, file.mime);
     const node = pdf ? document.createElement('object') : document.createElement('img');
     if (pdf) {
       node.type = 'application/pdf';
-      node.data = file.url;
+      node.data = src;
       node.title = file.name || 'PDF preview';
     } else {
-      node.src = file.url;
+      node.src = src;
       node.alt = file.name || 'Finished visual';
       node.loading = 'lazy';
     }
@@ -1172,7 +1183,8 @@ function renderCapturedMedia(media) {
   const phCap = document.getElementById('va-captured-ph');
   if (!frame) return;
   frame.innerHTML = '';
-  const hasUrl = !!media?.url;
+  const src = buildAssetSrc(media);
+  const hasUrl = !!src;
   if (!hasUrl) {
     frame.classList.add('hidden');
     frame.dataset.type = '';
@@ -1183,10 +1195,10 @@ function renderCapturedMedia(media) {
   const node = pdf ? document.createElement('object') : document.createElement('img');
   if (pdf) {
     node.type = 'application/pdf';
-    node.data = media.url;
+    node.data = src;
     node.title = media.name || 'PDF preview';
   } else {
-    node.src = media.url;
+    node.src = src;
     node.alt = media.name || 'Captured image';
     node.loading = 'lazy';
   }
