@@ -1152,13 +1152,12 @@ async function ensurePdfJs() {
   if (__pdfJsPromise) return __pdfJsPromise;
   __pdfJsPromise = new Promise((resolve, reject) => {
     const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.js';
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
     script.async = true;
     script.onload = () => {
       if (window.pdfjsLib) {
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js';
-        // Force inline rendering to avoid worker fetch issues
-        window.pdfjsLib.disableWorker = true;
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        window.pdfjsLib.disableWorker = false;
         resolve(window.pdfjsLib);
       } else {
         reject(new Error('pdfjsLib not available after load'));
@@ -1179,9 +1178,9 @@ async function renderPdfImage(src, altText = 'PDF') {
 
   const loadingTask = pdfjs.getDocument({
     data: buffer,
-    useWorkerFetch: false,
+    useWorkerFetch: true,
     isEvalSupported: true,
-    disableAutoFetch: true,
+    disableAutoFetch: false,
   });
 
   const pdf = await loadingTask.promise;
@@ -1230,7 +1229,15 @@ function renderProofGrid(proofs) {
         .catch((err) => {
           console.error('PDF render failed (proof)', err);
           if (!cell.isConnected) return;
-          loader.textContent = 'PDF failed to render';
+          // Fallback to native viewer if render fails
+          const obj = document.createElement('object');
+          obj.type = 'application/pdf';
+          obj.data = src;
+          obj.title = file.name || 'PDF preview';
+          obj.style.width = '100%';
+          obj.style.height = '100%';
+          cell.innerHTML = '';
+          cell.appendChild(obj);
         });
     } else {
       const node = document.createElement('img');
@@ -1274,7 +1281,14 @@ function renderCapturedMedia(media) {
       .catch((err) => {
         console.error('PDF render failed (captured)', err);
         if (!frame.isConnected) return;
-        loader.textContent = 'PDF failed to render';
+        const obj = document.createElement('object');
+        obj.type = 'application/pdf';
+        obj.data = src;
+        obj.title = media?.name || 'PDF preview';
+        obj.style.width = '100%';
+        obj.style.height = '100%';
+        frame.innerHTML = '';
+        frame.appendChild(obj);
       });
   } else {
     const node = document.createElement('img');
