@@ -890,6 +890,308 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 
+// ================== MERCH TRAFFIC TAB ==================
+
+const MERCH_PROOF_PLACEHOLDER = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><defs><linearGradient id="g" x1="0%" x2="100%" y1="0%" y2="100%"><stop stop-color="%233e8dfd" offset="0%"/><stop stop-color="%234fd1c5" offset="100%"/></linearGradient></defs><rect width="100%" height="100%" fill="url(%23g)"/><text x="50%" y="50%" fill="%23e5ecff" font-family="Arial" font-size="26" font-weight="700" text-anchor="middle" dominant-baseline="middle">First off approved</text></svg>';
+
+const MERCH_TRAFFIC_DATA = [
+  {
+    key: 'pre-production',
+    stage: 'PRE_PRODUCTION',
+    summary: 'Artwork sign-off & blanks booked',
+    jobs: [
+      {
+        title: 'Welcome Pack Hoodies',
+        ref: 'MT-1042',
+        client: 'Apex Learning',
+        qty: 120,
+        window: 'Proof eta: today 4pm',
+        subitems: [
+          { label: 'Hoodie · Black (S-XL)', qty: '80' },
+          { label: 'Tote · Natural (One Size)', qty: '40' }
+        ],
+        note: 'Mockup shared — waiting on colour sign-off.'
+      },
+      {
+        title: 'Pop-Up Crew Tees',
+        ref: 'MT-1045',
+        client: 'Northwind Stores',
+        qty: 96,
+        window: 'First-off booked: tomorrow AM',
+        subitems: [
+          { label: 'Teal Tee (XS-L)', qty: '60' },
+          { label: 'Charcoal Tee (XL-XXL)', qty: '36' }
+        ],
+        note: 'Blanks inbound; lining up print screens.'
+      }
+    ]
+  },
+  {
+    key: 'in-progress',
+    stage: 'IN PROGRESS',
+    summary: 'Production underway',
+    jobs: [
+      {
+        title: 'Campus Ambassador Kits',
+        ref: 'MT-1048',
+        client: 'Contoso University',
+        qty: 150,
+        window: 'Press check at 2pm',
+        subitems: [
+          { label: 'Navy Hoodie (S-XL)', qty: '90' },
+          { label: 'Bucket Hat (One Size)', qty: '60' }
+        ],
+        note: 'Sample stitched — need approval photo after first 10.'
+      },
+      {
+        title: 'Retail Staff Polos',
+        ref: 'MT-1050',
+        client: 'Lumen Retail',
+        qty: 72,
+        window: 'Ship window: Friday',
+        subitems: [
+          { label: 'Black Polo (S-L)', qty: '48' },
+          { label: 'Black Polo (XL-XXL)', qty: '24' }
+        ],
+        note: 'First-off ready to upload once collars cool.'
+      }
+    ]
+  },
+  {
+    key: 'completed',
+    stage: 'COMPLETED',
+    summary: 'Signed off and ready to ship',
+    jobs: [
+      {
+        title: 'VIP Event Jackets',
+        ref: 'MT-1031',
+        client: 'Fabrikam Events',
+        qty: 48,
+        window: 'Courier pick-up: 4pm',
+        subitems: [
+          { label: 'Storm Grey Jacket (XS-L)', qty: '32' },
+          { label: 'Storm Grey Jacket (XL-XXL)', qty: '16' }
+        ],
+        note: 'QC complete; packed on pallet A3.',
+        proof: {
+          name: 'first-off-approved.png',
+          status: 'Approved',
+          note: 'Approved by client this morning.',
+          preview: MERCH_PROOF_PLACEHOLDER
+        }
+      },
+      {
+        title: 'Influencer Tote Bundles',
+        ref: 'MT-1026',
+        client: 'Tailwind Studio',
+        qty: 200,
+        window: 'Waiting for courier booking',
+        subitems: [
+          { label: 'Premium Tote (One Size)', qty: '200' }
+        ],
+        note: 'Ready to go — waiting on delivery slot.'
+      }
+    ]
+  }
+];
+
+document.addEventListener('DOMContentLoaded', initMerchTraffic);
+
+function initMerchTraffic() {
+  const refreshBtn = document.getElementById('merch-refresh');
+  if (refreshBtn) refreshBtn.addEventListener('click', renderMerchTraffic);
+  renderMerchTraffic();
+}
+
+function renderMerchTraffic() {
+  const root = document.getElementById('merch-traffic-board');
+  if (!root) return;
+  root.innerHTML = '';
+
+  MERCH_TRAFFIC_DATA.forEach(group => {
+    root.appendChild(buildMerchGroup(group));
+  });
+}
+
+function buildMerchGroup(group) {
+  const wrap = document.createElement('section');
+  wrap.className = 'group';
+  if (group.key) wrap.dataset.groupKey = group.key;
+
+  const titleBtn = document.createElement('button');
+  titleBtn.className = 'group-title';
+  titleBtn.type = 'button';
+  titleBtn.innerHTML = `
+    <span class="chev" aria-hidden="true"></span>
+    <div class="group-meta">
+      <span class="group-name">${escapeHtml(group.stage || group.title || 'Untitled')}</span>
+      <span class="group-count">${(group.jobs || []).length} job${(group.jobs || []).length === 1 ? '' : 's'}</span>
+    </div>
+    ${group.summary ? `<span class="merch-tag">${escapeHtml(group.summary)}</span>` : ''}
+  `;
+  titleBtn.setAttribute('aria-expanded', 'true');
+  titleBtn.addEventListener('click', () => {
+    const collapsed = wrap.classList.toggle('collapsed');
+    titleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+  });
+  wrap.appendChild(titleBtn);
+
+  const content = document.createElement('div');
+  content.className = 'group-content';
+
+  const grid = document.createElement('div');
+  grid.className = 'board-grid merch-grid';
+
+  const headRow = document.createElement('div');
+  headRow.className = 'grid-row grid-head';
+  headRow.innerHTML = `
+    <div class="grid-cell head job-head">Job</div>
+    <div class="grid-cell head qty-head">Qty</div>
+    <div class="grid-cell head subs-head">Sub items</div>
+    <div class="grid-cell head proof-head">First off upload</div>
+  `;
+  grid.appendChild(headRow);
+
+  (group.jobs || []).forEach((job, idx) => {
+    grid.appendChild(buildMerchRow(job, `${group.key || 'stage'}-${idx}`));
+  });
+
+  content.appendChild(grid);
+  wrap.appendChild(content);
+  return wrap;
+}
+
+function buildMerchRow(job, uid) {
+  const row = document.createElement('div');
+  row.className = 'grid-row merch-row';
+
+  const jobCell = document.createElement('div');
+  jobCell.className = 'grid-cell job-cell merch-job';
+  const metaLine = [job.client, job.ref].filter(Boolean).join(' · ');
+  jobCell.innerHTML = `
+    <div class="title-wrap merch-title">
+      <span class="job-title">${escapeHtml(job.title || 'Untitled job')}</span>
+    </div>
+    ${metaLine ? `<div class="muted small">${escapeHtml(metaLine)}</div>` : ''}
+    ${job.note ? `<div class="muted small">${escapeHtml(job.note)}</div>` : ''}
+  `;
+  row.appendChild(jobCell);
+
+  const qtyCell = document.createElement('div');
+  qtyCell.className = 'grid-cell merch-qty';
+  qtyCell.innerHTML = `
+    <div class="qty-pill">${job.qty != null ? escapeHtml(job.qty) : '—'}</div>
+    ${job.window ? `<div class="muted small">${escapeHtml(job.window)}</div>` : ''}
+  `;
+  row.appendChild(qtyCell);
+
+  const subCell = document.createElement('div');
+  subCell.className = 'grid-cell merch-sub';
+  const chips = document.createElement('div');
+  chips.className = 'subitem-chips';
+  if (job.subitems && job.subitems.length) {
+    job.subitems.forEach(sub => {
+      const chip = document.createElement('span');
+      chip.className = 'subitem-chip';
+      const qtyText = sub.qty ? ` · ${sub.qty}` : '';
+      chip.textContent = `${sub.label || 'Line'}${qtyText}`;
+      chips.appendChild(chip);
+    });
+  } else {
+    const placeholder = document.createElement('div');
+    placeholder.className = 'muted small';
+    placeholder.textContent = 'No sub items added yet.';
+    chips.appendChild(placeholder);
+  }
+  subCell.appendChild(chips);
+  row.appendChild(subCell);
+
+  const uploadCell = document.createElement('div');
+  uploadCell.className = 'grid-cell merch-upload';
+  uploadCell.appendChild(buildUploadBox(uid, job));
+  row.appendChild(uploadCell);
+
+  return row;
+}
+
+function buildUploadBox(uid, job) {
+  const wrap = document.createElement('div');
+  wrap.className = 'upload-box';
+
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.id = `merch-upload-${uid}`;
+  input.addEventListener('change', () => handleMerchUpload(input, wrap));
+  wrap.appendChild(input);
+
+  const label = document.createElement('label');
+  label.className = 'upload-label';
+  label.htmlFor = input.id;
+  label.innerHTML = `
+    <div class="upload-icon">⬆</div>
+    <div class="upload-text">${job.proof ? 'Replace upload' : 'Upload first off'}</div>
+    <div class="upload-note muted small">${job.proof?.note || 'Add a quick phone snap for client approval.'}</div>
+  `;
+  wrap.appendChild(label);
+
+  const preview = document.createElement('div');
+  preview.className = 'upload-preview';
+  const img = document.createElement('img');
+  img.alt = 'First off preview';
+  if (job.proof?.preview) {
+    img.src = job.proof.preview;
+  } else {
+    preview.classList.add('hidden');
+  }
+  preview.appendChild(img);
+  wrap.appendChild(preview);
+
+  const meta = document.createElement('div');
+  meta.className = 'upload-meta';
+  const badge = document.createElement('span');
+  badge.className = 'upload-badge';
+  badge.textContent = job.proof?.status || 'Awaiting upload';
+  const status = document.createElement('div');
+  status.className = 'muted small upload-status';
+  status.textContent = job.proof?.name || 'No first off uploaded yet.';
+  meta.appendChild(badge);
+  meta.appendChild(status);
+  wrap.appendChild(meta);
+
+  return wrap;
+}
+
+function handleMerchUpload(input, wrap) {
+  const file = input.files && input.files[0];
+  const note = wrap.querySelector('.upload-note');
+  const text = wrap.querySelector('.upload-text');
+  const badge = wrap.querySelector('.upload-badge');
+  const status = wrap.querySelector('.upload-status');
+  const preview = wrap.querySelector('.upload-preview');
+  const img = preview?.querySelector('img');
+
+  if (!file) return;
+  if (!file.type || !file.type.startsWith('image/')) {
+    if (note) note.textContent = 'Please choose an image file.';
+    input.value = '';
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    if (img) {
+      img.src = reader.result;
+      preview.classList.remove('hidden');
+    }
+    if (text) text.textContent = 'Replace upload';
+    if (badge) badge.textContent = 'Pending approval';
+    if (status) status.textContent = file.name;
+    if (note) note.textContent = 'Stored locally for now — ready to share with the client.';
+  };
+  reader.readAsDataURL(file);
+}
+
 // ================== HOME DASH LOGIC ==================
 document.addEventListener('DOMContentLoaded', initHomeDash);
 

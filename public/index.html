@@ -23,6 +23,7 @@
         <div class="nav-heading">Home</div>
         <ul class="nav-tabs">
           <li data-tab="dashboard" class="active">Dashboard</li>
+          <li data-tab="merch">MERCH TRAFFIC</li>
           <li data-tab="orders">Orders</li>
           <li data-tab="customers">Customers</li>
           <li data-tab="stock">Stock</li>
@@ -79,6 +80,35 @@
             </div>
           </div>
           <div id="board"></div>
+        </section>
+      </section>
+
+      <!-- MERCH TRAFFIC -->
+      <section id="tab-merch" class="tab-content">
+        <header class="page-header">
+          <div class="header-left">
+            <p class="eyebrow">Client View</p>
+            <h1>Merch Traffic</h1>
+            <p class="muted">Preview for a prospective customer to monitor their jobs by stage.</p>
+          </div>
+          <div class="header-actions">
+            <button id="merch-refresh" class="btn outline">Refresh view</button>
+          </div>
+        </header>
+
+        <section class="board-shell card merch-shell">
+          <div class="board-shell-head">
+            <div class="board-status merch-status">
+              <div class="status-legend">
+                <span><span class="dot dot-purple"></span> Pre-production</span>
+                <span><span class="dot dot-gold"></span> In progress</span>
+                <span><span class="dot dot-green"></span> Completed</span>
+              </div>
+              <div class="muted small">Live-style board with demo data and first-off uploads.</div>
+            </div>
+            <div class="pill pill-muted">Client-ready</div>
+          </div>
+          <div id="merch-traffic-board"></div>
         </section>
       </section>
 

@@ -177,6 +177,7 @@ body{
 .status-legend{display:flex;gap:14px;align-items:center;flex-wrap:wrap;color:var(--muted);font-size:12px}
 #labels-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-left:auto}
 .board-shell #board{padding:0 14px 16px;}
+#merch-traffic-board{padding:0 14px 16px;}
 
 /* Groups */
 .group{
@@ -213,6 +214,7 @@ body{
 .group[data-group-key*="print"]{--group-accent:#f3d14b}
 .group[data-group-key*="embroidery"]{--group-accent:#f18b2e}
 .group[data-group-key*="pre-production"]{--group-accent:#2ec983}
+.group[data-group-key*="in-progress"]{--group-accent:#f5d16b}
 .group[data-group-key*="to-sample"]{--group-accent:#47c47c}
 .group[data-group-key*="completed"]{--group-accent:#35d07f}
 
@@ -273,6 +275,37 @@ body{
 .sub-title .muted{font-weight:500}
 .sub-arrow{opacity:.7;margin-right:2px;color:var(--muted)}
 
+/* Merch Traffic */
+.merch-shell .board-shell-head{align-items:flex-start}
+.merch-status{flex-direction:column;align-items:flex-start;gap:6px}
+.merch-grid .grid-row{grid-template-columns: 1.5fr 0.6fr 1.5fr 1.2fr;align-items:flex-start}
+.merch-grid .grid-cell{height:100%}
+.merch-row .grid-cell{background:rgba(255,255,255,.02);}
+.merch-tag{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:6px 10px;border-radius:8px;
+  background:#132033;border:1px solid var(--border);color:#dce3f5;font-size:12px;font-weight:700;
+}
+.merch-job .muted{margin-top:4px}
+.qty-pill{
+  display:inline-block;padding:8px 10px;border-radius:10px;
+  background:#0f1622;border:1px solid var(--border);font-weight:800;min-width:52px;text-align:center;
+}
+.subitem-chips{display:flex;flex-wrap:wrap;gap:8px}
+.subitem-chip{background:#111828;border:1px solid var(--border);border-radius:999px;padding:6px 10px;font-weight:700;color:#dce3f5}
+.upload-box{border:1px dashed var(--border);border-radius:12px;padding:10px 12px;background:#0b1017;display:flex;flex-direction:column;gap:8px;}
+.upload-box input[type="file"]{display:none}
+.upload-label{display:flex;flex-direction:column;gap:6px;color:#dce3f5;cursor:pointer}
+.upload-icon{
+  width:32px;height:32px;border-radius:10px;background:var(--panel-2);
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;
+  border:1px solid var(--border);box-shadow:0 6px 16px rgba(0,0,0,0.3);
+}
+.upload-preview{border-radius:10px;overflow:hidden;border:1px solid var(--border);background:#0f1622;}
+.upload-preview img{width:100%;height:140px;object-fit:cover;display:block;}
+.upload-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.upload-badge{background:#162033;color:var(--accent);border:1px solid var(--border);border-radius:10px;padding:4px 10px;font-weight:800;font-size:12px;}
+
 /* Status dots */
 .status-dots{display:flex;gap:8px;align-items:center;justify-content:flex-start}
 .dot{display:inline-block;width:12px;height:12px;border-radius:50%;background:#1f2633;box-shadow:0 0 0 1px rgba(255,255,255,.06) inset}
@@ -303,6 +336,9 @@ body.modal-open{overflow:hidden}
   .board-shell-head{align-items:flex-start}
   .title-cell{flex-wrap:wrap}
   .job-title{white-space:normal}
+  .merch-grid .grid-row{grid-template-columns: 1fr;}
+  .merch-grid .grid-head{display:none;}
+  .merch-row .grid-cell{border-top:1px solid var(--border);}
 }
 @media (max-width: 720px){
   .app-container{flex-direction:column}
