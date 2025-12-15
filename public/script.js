@@ -905,7 +905,6 @@ const MERCH_TRAFFIC_DATA = [
         ref: 'MT-1042',
         client: 'Apex Learning',
         qty: 120,
-        window: 'Proof eta: today 4pm',
         subitems: [
           { label: 'Hoodie · Black (S-XL)', qty: '80' },
           { label: 'Tote · Natural (One Size)', qty: '40' }
@@ -917,7 +916,6 @@ const MERCH_TRAFFIC_DATA = [
         ref: 'MT-1045',
         client: 'Northwind Stores',
         qty: 96,
-        window: 'First-off booked: tomorrow AM',
         subitems: [
           { label: 'Teal Tee (XS-L)', qty: '60' },
           { label: 'Charcoal Tee (XL-XXL)', qty: '36' }
@@ -936,7 +934,7 @@ const MERCH_TRAFFIC_DATA = [
         ref: 'MT-1048',
         client: 'Contoso University',
         qty: 150,
-        window: 'Press check at 2pm',
+        eta: 'ETA today 5:00pm',
         subitems: [
           { label: 'Navy Hoodie (S-XL)', qty: '90' },
           { label: 'Bucket Hat (One Size)', qty: '60' }
@@ -948,7 +946,7 @@ const MERCH_TRAFFIC_DATA = [
         ref: 'MT-1050',
         client: 'Lumen Retail',
         qty: 72,
-        window: 'Ship window: Friday',
+        eta: 'ETA tomorrow 2:30pm',
         subitems: [
           { label: 'Black Polo (S-L)', qty: '48' },
           { label: 'Black Polo (XL-XXL)', qty: '24' }
@@ -1068,11 +1066,14 @@ function buildMerchRow(job, uid) {
   const jobCell = document.createElement('div');
   jobCell.className = 'grid-cell job-cell merch-job';
   const metaLine = [job.client, job.ref].filter(Boolean).join(' · ');
+  const metaBlocks = [];
+  if (metaLine) metaBlocks.push(`<span class="muted small">${escapeHtml(metaLine)}</span>`);
+  if (job.eta) metaBlocks.push(`<span class="eta-pill">ETA ${escapeHtml(job.eta)}</span>`);
   jobCell.innerHTML = `
     <div class="title-wrap merch-title">
       <span class="job-title">${escapeHtml(job.title || 'Untitled job')}</span>
     </div>
-    ${metaLine ? `<div class="muted small">${escapeHtml(metaLine)}</div>` : ''}
+    ${metaBlocks.length ? `<div class="merch-job-meta">${metaBlocks.join('')}</div>` : ''}
     ${job.note ? `<div class="muted small">${escapeHtml(job.note)}</div>` : ''}
   `;
   row.appendChild(jobCell);
@@ -1081,7 +1082,6 @@ function buildMerchRow(job, uid) {
   qtyCell.className = 'grid-cell merch-qty';
   qtyCell.innerHTML = `
     <div class="qty-pill">${job.qty != null ? escapeHtml(job.qty) : '—'}</div>
-    ${job.window ? `<div class="muted small">${escapeHtml(job.window)}</div>` : ''}
   `;
   row.appendChild(qtyCell);
 

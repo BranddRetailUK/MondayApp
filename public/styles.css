@@ -239,7 +239,7 @@ body{
 .job-cell{display:flex;align-items:center;gap:10px;min-width:0;}
 .title-cell{width:100%;}
 .title-wrap{display:flex;align-items:center;gap:10px;min-width:0;width:100%}
-.job-title{font-weight:800;font-size:17px;color:#f1f5ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+.job-title{font-weight:800;font-size:17px;color:#f1f5ff;white-space:normal;overflow:visible;text-overflow:clip;flex:1;min-width:0}
 .sync-cell{display:flex;justify-content:flex-end;}
 
 .status-cell{width:100%;text-align:right}
@@ -280,13 +280,17 @@ body{
 .merch-status{flex-direction:column;align-items:flex-start;gap:6px}
 .merch-grid .grid-row{grid-template-columns: 1.5fr 0.6fr 1.5fr 1.2fr;align-items:flex-start}
 .merch-grid .grid-cell{height:100%}
-.merch-row .grid-cell{background:rgba(255,255,255,.02);}
+.merch-grid .grid-row:not(.grid-head){border-top:1px solid var(--border);}
+.merch-row .grid-cell{background:rgba(255,255,255,.02);padding:14px 14px;}
+.merch-row:first-of-type .grid-cell{border-top:none;}
 .merch-tag{
   display:inline-flex;align-items:center;gap:6px;
   padding:6px 10px;border-radius:8px;
   background:#132033;border:1px solid var(--border);color:#dce3f5;font-size:12px;font-weight:700;
 }
 .merch-job .muted{margin-top:4px}
+.merch-job-meta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:4px;}
+.eta-pill{background:#132033;border:1px solid var(--border);border-radius:999px;padding:4px 10px;font-weight:800;font-size:12px;color:#dce3f5;}
 .qty-pill{
   display:inline-block;padding:8px 10px;border-radius:10px;
   background:#0f1622;border:1px solid var(--border);font-weight:800;min-width:52px;text-align:center;
