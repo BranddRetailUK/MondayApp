@@ -291,6 +291,9 @@ body{
 .merch-job .muted{margin-top:4px}
 .merch-job-meta{display:flex;gap:8px;align-items:flex-start;flex-direction:column;margin-top:4px;}
 .eta-pill{background:#132033;border:1px solid var(--border);border-radius:999px;padding:4px 10px;font-weight:800;font-size:12px;color:#dce3f5;}
+.eta-hot{background:#2c1a1a;border-color:#ff6b6b;color:#ffd7d7;}
+.eta-warm{background:#2b2314;border-color:#f5d16b;color:#ffe7b3;}
+.eta-cool{background:#14252a;border-color:#4fd1c5;color:#c4f5ee;}
 .qty-pill{
   display:inline-block;padding:8px 10px;border-radius:10px;
   background:#0f1622;border:1px solid var(--border);font-weight:800;min-width:52px;text-align:center;

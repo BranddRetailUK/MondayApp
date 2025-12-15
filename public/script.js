@@ -1077,30 +1077,11 @@ function buildMerchRow(job, uid) {
 
   if (job.eta) {
     const etaPill = document.createElement('span');
-    etaPill.className = 'eta-pill';
+    etaPill.className = `eta-pill ${etaToneClass(job.eta)}`;
     etaPill.textContent = job.eta;
     titleWrap.appendChild(etaPill);
   }
   jobCell.appendChild(titleWrap);
-
-  const metaLine = [job.client, job.ref].filter(Boolean).join(' · ');
-  if (metaLine || job.note) {
-    const meta = document.createElement('div');
-    meta.className = 'merch-job-meta';
-    if (metaLine) {
-      const span = document.createElement('span');
-      span.className = 'muted small';
-      span.textContent = metaLine;
-      meta.appendChild(span);
-    }
-    if (job.note) {
-      const note = document.createElement('div');
-      note.className = 'muted small';
-      note.textContent = job.note;
-      meta.appendChild(note);
-    }
-    jobCell.appendChild(meta);
-  }
 
   if (job.subitems && job.subitems.length) {
     const subToggle = document.createElement('button');
@@ -1166,6 +1147,13 @@ function buildMerchSubRows(job, uid) {
 function toggleMerchSub(uid, open) {
   const rows = document.querySelectorAll(`.merch-subwrap[data-parent="${CSS.escape(uid)}"]`);
   rows.forEach(r => r.classList.toggle('hidden', !open));
+}
+
+function etaToneClass(text) {
+  const t = String(text || '').toLowerCase();
+  if (/today|now|soon|1h|2h|hour/.test(t)) return 'eta-hot';
+  if (/tomorrow|next day|am|pm/.test(t)) return 'eta-warm';
+  return 'eta-cool';
 }
 
 function buildUploadBox(uid, job) {
