@@ -1070,31 +1070,51 @@ function buildMerchRow(job, uid) {
   const titleWrap = document.createElement('div');
   titleWrap.className = 'title-wrap merch-title';
 
-  const toggle = document.createElement('button');
-  toggle.className = 'row-toggle';
-  toggle.type = 'button';
-  toggle.setAttribute('aria-expanded', 'false');
-  toggle.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const isOpen = toggle.classList.toggle('open');
-    toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-    toggleMerchSub(uid, isOpen);
-  });
-  titleWrap.appendChild(toggle);
-
   const titleSpan = document.createElement('span');
   titleSpan.className = 'job-title';
   titleSpan.textContent = job.title || 'Untitled job';
   titleWrap.appendChild(titleSpan);
 
-  jobCell.appendChild(titleWrap);
-  titleWrap.addEventListener('click', () => toggle.click());
-
   if (job.eta) {
-    const eta = document.createElement('div');
-    eta.className = 'merch-job-meta';
-    eta.innerHTML = `<span class="eta-pill">${escapeHtml(job.eta)}</span>`;
-    jobCell.appendChild(eta);
+    const etaPill = document.createElement('span');
+    etaPill.className = 'eta-pill';
+    etaPill.textContent = job.eta;
+    titleWrap.appendChild(etaPill);
+  }
+  jobCell.appendChild(titleWrap);
+
+  const metaLine = [job.client, job.ref].filter(Boolean).join(' · ');
+  if (metaLine || job.note) {
+    const meta = document.createElement('div');
+    meta.className = 'merch-job-meta';
+    if (metaLine) {
+      const span = document.createElement('span');
+      span.className = 'muted small';
+      span.textContent = metaLine;
+      meta.appendChild(span);
+    }
+    if (job.note) {
+      const note = document.createElement('div');
+      note.className = 'muted small';
+      note.textContent = job.note;
+      meta.appendChild(note);
+    }
+    jobCell.appendChild(meta);
+  }
+
+  if (job.subitems && job.subitems.length) {
+    const subToggle = document.createElement('button');
+    subToggle.type = 'button';
+    subToggle.className = 'sub-toggle';
+    subToggle.innerHTML = `<span class="chev-sm" aria-hidden="true"></span> Sub items`;
+    subToggle.setAttribute('aria-expanded', 'false');
+    subToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = subToggle.classList.toggle('open');
+      subToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      toggleMerchSub(uid, isOpen);
+    });
+    jobCell.appendChild(subToggle);
   }
   row.appendChild(jobCell);
 
@@ -1104,27 +1124,6 @@ function buildMerchRow(job, uid) {
     <div class="qty-pill">${job.qty != null ? escapeHtml(job.qty) : '—'}</div>
   `;
   row.appendChild(qtyCell);
-
-  const subCell = document.createElement('div');
-  subCell.className = 'grid-cell merch-sub';
-  const chips = document.createElement('div');
-  chips.className = 'subitem-chips';
-  if (job.subitems && job.subitems.length) {
-    job.subitems.forEach(sub => {
-      const chip = document.createElement('span');
-      chip.className = 'subitem-chip';
-      const qtyText = sub.qty ? ` · ${sub.qty}` : '';
-      chip.textContent = `${sub.label || 'Line'}${qtyText}`;
-      chips.appendChild(chip);
-    });
-  } else {
-    const placeholder = document.createElement('div');
-    placeholder.className = 'muted small';
-    placeholder.textContent = 'No sub items added yet.';
-    chips.appendChild(placeholder);
-  }
-  subCell.appendChild(chips);
-  row.appendChild(subCell);
 
   const uploadCell = document.createElement('div');
   uploadCell.className = 'grid-cell merch-upload';
