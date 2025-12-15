@@ -278,7 +278,7 @@ body{
 /* Merch Traffic */
 .merch-shell .board-shell-head{align-items:flex-start}
 .merch-status{flex-direction:column;align-items:flex-start;gap:6px}
-.merch-grid .grid-row{grid-template-columns: 1.5fr 0.6fr 1.5fr 1.2fr;align-items:flex-start}
+.merch-grid .grid-row{grid-template-columns: 1.6fr 0.5fr 1.1fr;align-items:flex-start}
 .merch-grid .grid-cell{height:100%}
 .merch-grid .grid-row:not(.grid-head){border-top:1px solid var(--border);}
 .merch-row .grid-cell{background:rgba(255,255,255,.02);padding:14px 14px;}
@@ -309,6 +309,12 @@ body{
 .upload-preview img{width:100%;height:140px;object-fit:cover;display:block;}
 .upload-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .upload-badge{background:#162033;color:var(--accent);border:1px solid var(--border);border-radius:10px;padding:4px 10px;font-weight:800;font-size:12px;}
+.merch-subwrap{grid-column:1 / -1;border-top:1px solid var(--border);background:#0d131e;padding:10px 14px 12px;border-radius:0 0 10px 10px;}
+.merch-subgrid{display:grid;grid-template-columns:1.2fr 1fr 1fr 0.4fr;gap:8px 10px;align-items:center;}
+.merch-subhead{color:#9db0cc;font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:0.4px;padding-bottom:4px;border-bottom:1px solid var(--border);}
+.merch-subrow{color:#dce3f5;font-weight:700;padding-top:6px;}
+.merch-subwrap.hidden{display:none;}
+.align-right{text-align:right;}
 
 /* Status dots */
 .status-dots{display:flex;gap:8px;align-items:center;justify-content:flex-start}
@@ -343,6 +349,8 @@ body.modal-open{overflow:hidden}
   .merch-grid .grid-row{grid-template-columns: 1fr;}
   .merch-grid .grid-head{display:none;}
   .merch-row .grid-cell{border-top:1px solid var(--border);}
+  .merch-subgrid{grid-template-columns:1fr 1fr;}
+  .merch-subgrid .align-right{text-align:left;}
 }
 @media (max-width: 720px){
   .app-container{flex-direction:column}

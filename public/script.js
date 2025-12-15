@@ -906,8 +906,8 @@ const MERCH_TRAFFIC_DATA = [
         client: 'Apex Learning',
         qty: 120,
         subitems: [
-          { label: 'Hoodie · Black (S-XL)', qty: '80' },
-          { label: 'Tote · Natural (One Size)', qty: '40' }
+          { name: 'Hoodie', colour: 'Black', size: 'S-XL', qty: 80 },
+          { name: 'Tote', colour: 'Natural', size: 'One Size', qty: 40 }
         ],
         note: 'Mockup shared — waiting on colour sign-off.'
       },
@@ -917,8 +917,8 @@ const MERCH_TRAFFIC_DATA = [
         client: 'Northwind Stores',
         qty: 96,
         subitems: [
-          { label: 'Teal Tee (XS-L)', qty: '60' },
-          { label: 'Charcoal Tee (XL-XXL)', qty: '36' }
+          { name: 'Teal Tee', colour: 'Teal', size: 'XS-L', qty: 60 },
+          { name: 'Charcoal Tee', colour: 'Charcoal', size: 'XL-XXL', qty: 36 }
         ],
         note: 'Blanks inbound; lining up print screens.'
       }
@@ -936,8 +936,8 @@ const MERCH_TRAFFIC_DATA = [
         qty: 150,
         eta: 'ETA today 5:00pm',
         subitems: [
-          { label: 'Navy Hoodie (S-XL)', qty: '90' },
-          { label: 'Bucket Hat (One Size)', qty: '60' }
+          { name: 'Navy Hoodie', colour: 'Navy', size: 'S-XL', qty: 90 },
+          { name: 'Bucket Hat', colour: 'Black', size: 'One Size', qty: 60 }
         ],
         note: 'Sample stitched — need approval photo after first 10.'
       },
@@ -948,8 +948,8 @@ const MERCH_TRAFFIC_DATA = [
         qty: 72,
         eta: 'ETA tomorrow 2:30pm',
         subitems: [
-          { label: 'Black Polo (S-L)', qty: '48' },
-          { label: 'Black Polo (XL-XXL)', qty: '24' }
+          { name: 'Black Polo', colour: 'Black', size: 'S-L', qty: 48 },
+          { name: 'Black Polo', colour: 'Black', size: 'XL-XXL', qty: 24 }
         ],
         note: 'First-off ready to upload once collars cool.'
       }
@@ -967,8 +967,8 @@ const MERCH_TRAFFIC_DATA = [
         qty: 48,
         window: 'Courier pick-up: 4pm',
         subitems: [
-          { label: 'Storm Grey Jacket (XS-L)', qty: '32' },
-          { label: 'Storm Grey Jacket (XL-XXL)', qty: '16' }
+          { name: 'Storm Grey Jacket', colour: 'Storm Grey', size: 'XS-L', qty: 32 },
+          { name: 'Storm Grey Jacket', colour: 'Storm Grey', size: 'XL-XXL', qty: 16 }
         ],
         note: 'QC complete; packed on pallet A3.',
         proof: {
@@ -985,7 +985,7 @@ const MERCH_TRAFFIC_DATA = [
         qty: 200,
         window: 'Waiting for courier booking',
         subitems: [
-          { label: 'Premium Tote (One Size)', qty: '200' }
+          { name: 'Premium Tote', colour: 'Natural', size: 'One Size', qty: 200 }
         ],
         note: 'Ready to go — waiting on delivery slot.'
       }
@@ -1045,13 +1045,14 @@ function buildMerchGroup(group) {
   headRow.innerHTML = `
     <div class="grid-cell head job-head">Job</div>
     <div class="grid-cell head qty-head">Qty</div>
-    <div class="grid-cell head subs-head">Sub items</div>
     <div class="grid-cell head proof-head">First off upload</div>
   `;
   grid.appendChild(headRow);
 
   (group.jobs || []).forEach((job, idx) => {
-    grid.appendChild(buildMerchRow(job, `${group.key || 'stage'}-${idx}`));
+    const uid = `${group.key || 'stage'}-${idx}`;
+    grid.appendChild(buildMerchRow(job, uid));
+    grid.appendChild(buildMerchSubRows(job, uid));
   });
 
   content.appendChild(grid);
@@ -1062,20 +1063,39 @@ function buildMerchGroup(group) {
 function buildMerchRow(job, uid) {
   const row = document.createElement('div');
   row.className = 'grid-row merch-row';
+  row.dataset.uid = uid;
 
   const jobCell = document.createElement('div');
   jobCell.className = 'grid-cell job-cell merch-job';
-  const metaLine = [job.client, job.ref].filter(Boolean).join(' · ');
-  const metaBlocks = [];
-  if (metaLine) metaBlocks.push(`<span class="muted small">${escapeHtml(metaLine)}</span>`);
-  if (job.eta) metaBlocks.push(`<span class="eta-pill">ETA ${escapeHtml(job.eta)}</span>`);
-  jobCell.innerHTML = `
-    <div class="title-wrap merch-title">
-      <span class="job-title">${escapeHtml(job.title || 'Untitled job')}</span>
-    </div>
-    ${metaBlocks.length ? `<div class="merch-job-meta">${metaBlocks.join('')}</div>` : ''}
-    ${job.note ? `<div class="muted small">${escapeHtml(job.note)}</div>` : ''}
-  `;
+  const titleWrap = document.createElement('div');
+  titleWrap.className = 'title-wrap merch-title';
+
+  const toggle = document.createElement('button');
+  toggle.className = 'row-toggle';
+  toggle.type = 'button';
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = toggle.classList.toggle('open');
+    toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    toggleMerchSub(uid, isOpen);
+  });
+  titleWrap.appendChild(toggle);
+
+  const titleSpan = document.createElement('span');
+  titleSpan.className = 'job-title';
+  titleSpan.textContent = job.title || 'Untitled job';
+  titleWrap.appendChild(titleSpan);
+
+  jobCell.appendChild(titleWrap);
+  titleWrap.addEventListener('click', () => toggle.click());
+
+  if (job.eta) {
+    const eta = document.createElement('div');
+    eta.className = 'merch-job-meta';
+    eta.innerHTML = `<span class="eta-pill">${escapeHtml(job.eta)}</span>`;
+    jobCell.appendChild(eta);
+  }
   row.appendChild(jobCell);
 
   const qtyCell = document.createElement('div');
@@ -1112,6 +1132,41 @@ function buildMerchRow(job, uid) {
   row.appendChild(uploadCell);
 
   return row;
+}
+
+function buildMerchSubRows(job, uid) {
+  const wrap = document.createElement('div');
+  wrap.className = 'merch-subwrap hidden';
+  wrap.dataset.parent = uid;
+
+  const head = document.createElement('div');
+  head.className = 'merch-subgrid merch-subhead';
+  head.innerHTML = `
+    <div>Sub item</div>
+    <div>Colour</div>
+    <div>Size</div>
+    <div class="align-right">Qty</div>
+  `;
+  wrap.appendChild(head);
+
+  (job.subitems || []).forEach(sub => {
+    const row = document.createElement('div');
+    row.className = 'merch-subgrid merch-subrow';
+    row.innerHTML = `
+      <div>${escapeHtml(sub.name || sub.label || 'Line')}</div>
+      <div>${escapeHtml(sub.colour || sub.color || '—')}</div>
+      <div>${escapeHtml(sub.size || '—')}</div>
+      <div class="align-right">${escapeHtml(sub.qty != null ? sub.qty : '—')}</div>
+    `;
+    wrap.appendChild(row);
+  });
+
+  return wrap;
+}
+
+function toggleMerchSub(uid, open) {
+  const rows = document.querySelectorAll(`.merch-subwrap[data-parent="${CSS.escape(uid)}"]`);
+  rows.forEach(r => r.classList.toggle('hidden', !open));
 }
 
 function buildUploadBox(uid, job) {
