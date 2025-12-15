@@ -278,7 +278,7 @@ body{
 /* Merch Traffic */
 .merch-shell .board-shell-head{align-items:flex-start}
 .merch-status{flex-direction:column;align-items:flex-start;gap:6px}
-.merch-grid .grid-row{grid-template-columns: 1.4fr 0.35fr 1.25fr;align-items:flex-start}
+.merch-grid .grid-row{grid-template-columns: 1.3fr 0.5fr 0.35fr 1.15fr;align-items:flex-start}
 .merch-grid .grid-cell{height:100%}
 .merch-grid .grid-row:not(.grid-head){border-top:1px solid var(--border);}
 .merch-row .grid-cell{background:rgba(255,255,255,.02);padding:14px 14px;}
@@ -290,17 +290,26 @@ body{
 }
 .merch-job .muted{margin-top:4px}
 .merch-job-meta{display:flex;gap:8px;align-items:flex-start;flex-direction:column;margin-top:4px;}
-.eta-pill{background:#132033;border:1px solid var(--border);border-radius:999px;padding:4px 10px;font-weight:800;font-size:12px;color:#dce3f5;}
-.eta-hot{background:#2c1a1a;border-color:#ff6b6b;color:#ffd7d7;}
-.eta-warm{background:#2b2314;border-color:#f5d16b;color:#ffe7b3;}
-.eta-cool{background:#14252a;border-color:#4fd1c5;color:#c4f5ee;}
+.eta-pill{background:#132033;border:1px solid var(--border);border-radius:999px;padding:6px 10px;font-weight:800;font-size:12px;color:#dce3f5;display:inline-flex;align-items:center;gap:6px;}
+.eta-pill::before{content:"";width:8px;height:8px;border-radius:50%;background:#4fd1c5;box-shadow:0 0 0 1px rgba(255,255,255,0.08) inset;}
+.eta-good{background:#0f2c1f;border-color:#22c55e;color:#c0f2d8;}
+.eta-good::before{background:#22c55e;}
+.eta-warn{background:#2b2314;border-color:#f5d16b;color:#ffe7b3;}
+.eta-warn::before{background:#f5d16b;}
+.eta-far{background:#2f1a1a;border-color:#ff6b6b;color:#ffd4d4;}
+.eta-far::before{background:#ff6b6b;}
 .qty-pill{
   display:inline-block;padding:8px 10px;border-radius:10px;
   background:#0f1622;border:1px solid var(--border);font-weight:800;min-width:52px;text-align:center;
 }
+.merch-eta{text-align:center;}
+.eta-head{text-align:center;}
 .subitem-chips{display:flex;flex-wrap:wrap;gap:8px}
 .subitem-chip{background:#111828;border:1px solid var(--border);border-radius:999px;padding:6px 10px;font-weight:700;color:#dce3f5}
 .upload-box{border:1px dashed var(--border);border-radius:12px;padding:10px 12px;background:#0b1017;display:flex;flex-direction:column;gap:8px;}
+.upload-box.compact{padding:8px 10px;gap:6px;}
+.upload-box.compact .upload-note{display:none;}
+.upload-box.compact .upload-meta{margin-top:2px;}
 .upload-box input[type="file"]{display:none}
 .upload-label{display:flex;flex-direction:column;gap:6px;color:#dce3f5;cursor:pointer}
 .upload-icon{
@@ -308,10 +317,11 @@ body{
   display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;
   border:1px solid var(--border);box-shadow:0 6px 16px rgba(0,0,0,0.3);
 }
-.upload-preview{border-radius:10px;overflow:hidden;border:1px solid var(--border);background:#0f1622;}
-.upload-preview img{width:100%;height:140px;object-fit:cover;display:block;}
+.upload-preview-block{border-radius:10px;overflow:hidden;border:1px solid var(--border);background:#0f1622;}
+.upload-preview-block img{width:100%;height:160px;object-fit:cover;display:block;}
 .upload-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .upload-badge{background:#162033;color:var(--accent);border:1px solid var(--border);border-radius:10px;padding:4px 10px;font-weight:800;font-size:12px;}
+.upload-preview-toggle{align-self:flex-start;margin-top:4px;}
 .merch-subwrap{grid-column:1 / -1;border-top:1px solid var(--border);background:#0d131e;padding:10px 14px 12px;border-radius:0 0 10px 10px;}
 .merch-subgrid{display:grid;grid-template-columns:1.2fr 1fr 1fr 0.4fr;gap:8px 10px;align-items:center;}
 .merch-subhead{color:#9db0cc;font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:0.4px;padding-bottom:4px;border-bottom:1px solid var(--border);}

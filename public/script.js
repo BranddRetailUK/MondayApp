@@ -893,6 +893,7 @@ document.addEventListener("DOMContentLoaded", () => {
 // ================== MERCH TRAFFIC TAB ==================
 
 const MERCH_PROOF_PLACEHOLDER = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><defs><linearGradient id="g" x1="0%" x2="100%" y1="0%" y2="100%"><stop stop-color="%233e8dfd" offset="0%"/><stop stop-color="%234fd1c5" offset="100%"/></linearGradient></defs><rect width="100%" height="100%" fill="url(%23g)"/><text x="50%" y="50%" fill="%23e5ecff" font-family="Arial" font-size="26" font-weight="700" text-anchor="middle" dominant-baseline="middle">First off approved</text></svg>';
+const MERCH_UPLOAD_PLACEHOLDER = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><defs><linearGradient id="g" x1="0%" x2="100%" y1="0%" y2="100%"><stop stop-color="%2322c55e" offset="0%"/><stop stop-color="%2326a269" offset="100%"/></linearGradient></defs><rect width="100%" height="100%" fill="url(%23g)"/><text x="50%" y="50%" fill="%23e5ecff" font-family="Arial" font-size="26" font-weight="700" text-anchor="middle" dominant-baseline="middle">Preview upload</text></svg>';
 
 const MERCH_TRAFFIC_DATA = [
   {
@@ -1044,6 +1045,7 @@ function buildMerchGroup(group) {
   headRow.className = 'grid-row grid-head';
   headRow.innerHTML = `
     <div class="grid-cell head job-head">Job</div>
+    <div class="grid-cell head eta-head">ETA</div>
     <div class="grid-cell head qty-head">Qty</div>
     <div class="grid-cell head proof-head">First off upload</div>
   `;
@@ -1075,12 +1077,6 @@ function buildMerchRow(job, uid) {
   titleSpan.textContent = job.title || 'Untitled job';
   titleWrap.appendChild(titleSpan);
 
-  if (job.eta) {
-    const etaPill = document.createElement('span');
-    etaPill.className = `eta-pill ${etaToneClass(job.eta)}`;
-    etaPill.textContent = job.eta;
-    titleWrap.appendChild(etaPill);
-  }
   jobCell.appendChild(titleWrap);
 
   if (job.subitems && job.subitems.length) {
@@ -1098,6 +1094,11 @@ function buildMerchRow(job, uid) {
     jobCell.appendChild(subToggle);
   }
   row.appendChild(jobCell);
+
+  const etaCell = document.createElement('div');
+  etaCell.className = 'grid-cell merch-eta';
+  etaCell.innerHTML = job.eta ? `<span class="eta-pill ${etaToneClass(job.eta)}">${escapeHtml(job.eta)}</span>` : '<span class="muted small">—</span>';
+  row.appendChild(etaCell);
 
   const qtyCell = document.createElement('div');
   qtyCell.className = 'grid-cell merch-qty';
@@ -1151,14 +1152,16 @@ function toggleMerchSub(uid, open) {
 
 function etaToneClass(text) {
   const t = String(text || '').toLowerCase();
-  if (/today|now|soon|1h|2h|hour/.test(t)) return 'eta-hot';
-  if (/tomorrow|next day|am|pm/.test(t)) return 'eta-warm';
-  return 'eta-cool';
+  if (/today|now|soon|1h|2h|hour/.test(t)) return 'eta-good';
+  if (/tomorrow|next day|am|pm|afternoon|morning/.test(t)) return 'eta-warn';
+  return 'eta-far';
 }
 
 function buildUploadBox(uid, job) {
   const wrap = document.createElement('div');
   wrap.className = 'upload-box';
+  const hasPreview = Boolean(job.proof?.preview);
+  if (!hasPreview) wrap.classList.add('compact');
 
   const input = document.createElement('input');
   input.type = 'file';
@@ -1177,18 +1180,6 @@ function buildUploadBox(uid, job) {
   `;
   wrap.appendChild(label);
 
-  const preview = document.createElement('div');
-  preview.className = 'upload-preview';
-  const img = document.createElement('img');
-  img.alt = 'First off preview';
-  if (job.proof?.preview) {
-    img.src = job.proof.preview;
-  } else {
-    preview.classList.add('hidden');
-  }
-  preview.appendChild(img);
-  wrap.appendChild(preview);
-
   const meta = document.createElement('div');
   meta.className = 'upload-meta';
   const badge = document.createElement('span');
@@ -1201,6 +1192,26 @@ function buildUploadBox(uid, job) {
   meta.appendChild(status);
   wrap.appendChild(meta);
 
+  const previewBlock = document.createElement('div');
+  previewBlock.className = 'upload-preview-block hidden';
+  const img = document.createElement('img');
+  img.alt = 'First off preview';
+  img.src = job.proof?.preview || MERCH_UPLOAD_PLACEHOLDER;
+  previewBlock.appendChild(img);
+  wrap.appendChild(previewBlock);
+
+  if (hasPreview) {
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'btn outline small upload-preview-toggle';
+    toggle.textContent = 'View upload';
+    toggle.addEventListener('click', () => {
+      const isHidden = previewBlock.classList.toggle('hidden');
+      toggle.textContent = isHidden ? 'View upload' : 'Hide upload';
+    });
+    wrap.insertBefore(toggle, previewBlock);
+  }
+
   return wrap;
 }
 
@@ -1210,7 +1221,7 @@ function handleMerchUpload(input, wrap) {
   const text = wrap.querySelector('.upload-text');
   const badge = wrap.querySelector('.upload-badge');
   const status = wrap.querySelector('.upload-status');
-  const preview = wrap.querySelector('.upload-preview');
+  const preview = wrap.querySelector('.upload-preview-block');
   const img = preview?.querySelector('img');
 
   if (!file) return;
@@ -1226,6 +1237,7 @@ function handleMerchUpload(input, wrap) {
       img.src = reader.result;
       preview.classList.remove('hidden');
     }
+    wrap.classList.remove('compact');
     if (text) text.textContent = 'Replace upload';
     if (badge) badge.textContent = 'Pending approval';
     if (status) status.textContent = file.name;
