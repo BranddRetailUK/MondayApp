@@ -304,6 +304,9 @@ body{
 }
 .merch-eta{text-align:center;}
 .eta-head{text-align:center;}
+.row-highlight .grid-cell{background:rgba(34,197,94,0.07);border-color:rgba(34,197,94,0.25);}
+.row-highlight .job-title{color:#c7f7dc;}
+.row-highlight .upload-box{border-color:rgba(34,197,94,0.3);}
 .subitem-chips{display:flex;flex-wrap:wrap;gap:8px}
 .subitem-chip{background:#111828;border:1px solid var(--border);border-radius:999px;padding:6px 10px;font-weight:700;color:#dce3f5}
 .upload-box{border:1px dashed var(--border);border-radius:12px;padding:10px 12px;background:#0b1017;display:flex;flex-direction:column;gap:8px;}
@@ -321,6 +324,8 @@ body{
 .upload-preview-block img{width:100%;height:160px;object-fit:cover;display:block;}
 .upload-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .upload-badge{background:#162033;color:var(--accent);border:1px solid var(--border);border-radius:10px;padding:4px 10px;font-weight:800;font-size:12px;}
+.upload-badge.upload-pending{background:#2b2314;border-color:#f5d16b;color:#ffe7b3;}
+.upload-badge.upload-approved{background:#0f2c1f;border-color:#22c55e;color:#c0f2d8;}
 .upload-preview-toggle{align-self:flex-start;margin-top:4px;}
 .merch-subwrap{grid-column:1 / -1;border-top:1px solid var(--border);background:#0d131e;padding:10px 14px 12px;border-radius:0 0 10px 10px;}
 .merch-subgrid{display:grid;grid-template-columns:1.2fr 1fr 1fr 0.4fr;gap:8px 10px;align-items:center;}

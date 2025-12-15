@@ -910,7 +910,14 @@ const MERCH_TRAFFIC_DATA = [
           { name: 'Hoodie', colour: 'Black', size: 'S-XL', qty: 80 },
           { name: 'Tote', colour: 'Natural', size: 'One Size', qty: 40 }
         ],
-        note: 'Mockup shared — waiting on colour sign-off.'
+        note: 'Mockup shared — waiting on colour sign-off.',
+        proof: {
+          name: 'first-off-pending.jpg',
+          status: 'Pending approval',
+          statusTone: 'pending',
+          note: 'Client review required.',
+          preview: MERCH_UPLOAD_PLACEHOLDER
+        }
       },
       {
         title: 'Pop-Up Crew Tees',
@@ -921,7 +928,14 @@ const MERCH_TRAFFIC_DATA = [
           { name: 'Teal Tee', colour: 'Teal', size: 'XS-L', qty: 60 },
           { name: 'Charcoal Tee', colour: 'Charcoal', size: 'XL-XXL', qty: 36 }
         ],
-        note: 'Blanks inbound; lining up print screens.'
+        note: 'Blanks inbound; lining up print screens.',
+        proof: {
+          name: 'first-off-pending.jpg',
+          status: 'Pending approval',
+          statusTone: 'pending',
+          note: 'Awaiting sample upload.',
+          preview: MERCH_UPLOAD_PLACEHOLDER
+        }
       }
     ]
   },
@@ -940,7 +954,14 @@ const MERCH_TRAFFIC_DATA = [
           { name: 'Navy Hoodie', colour: 'Navy', size: 'S-XL', qty: 90 },
           { name: 'Bucket Hat', colour: 'Black', size: 'One Size', qty: 60 }
         ],
-        note: 'Sample stitched — need approval photo after first 10.'
+        note: 'Sample stitched — need approval photo after first 10.',
+        proof: {
+          name: 'first-off-approved.png',
+          status: 'Approved',
+          statusTone: 'approved',
+          note: 'Approved by client today.',
+          preview: MERCH_UPLOAD_PLACEHOLDER
+        }
       },
       {
         title: 'Retail Staff Polos',
@@ -952,7 +973,14 @@ const MERCH_TRAFFIC_DATA = [
           { name: 'Black Polo', colour: 'Black', size: 'S-L', qty: 48 },
           { name: 'Black Polo', colour: 'Black', size: 'XL-XXL', qty: 24 }
         ],
-        note: 'First-off ready to upload once collars cool.'
+        note: 'First-off ready to upload once collars cool.',
+        proof: {
+          name: 'first-off-approved.png',
+          status: 'Approved',
+          statusTone: 'approved',
+          note: 'QA signed off.',
+          preview: MERCH_UPLOAD_PLACEHOLDER
+        }
       }
     ]
   },
@@ -975,9 +1003,11 @@ const MERCH_TRAFFIC_DATA = [
         proof: {
           name: 'first-off-approved.png',
           status: 'Approved',
+          statusTone: 'approved',
           note: 'Approved by client this morning.',
           preview: MERCH_PROOF_PLACEHOLDER
-        }
+        },
+        highlight: true
       },
       {
         title: 'Influencer Tote Bundles',
@@ -988,7 +1018,14 @@ const MERCH_TRAFFIC_DATA = [
         subitems: [
           { name: 'Premium Tote', colour: 'Natural', size: 'One Size', qty: 200 }
         ],
-        note: 'Ready to go — waiting on delivery slot.'
+        note: 'Ready to go — waiting on delivery slot.',
+        proof: {
+          name: 'first-off-approved.png',
+          status: 'Approved',
+          statusTone: 'approved',
+          note: 'Approved and ready.',
+          preview: MERCH_UPLOAD_PLACEHOLDER
+        }
       }
     ]
   }
@@ -1066,6 +1103,7 @@ function buildMerchRow(job, uid) {
   const row = document.createElement('div');
   row.className = 'grid-row merch-row';
   row.dataset.uid = uid;
+  if (job.highlight) row.classList.add('row-highlight');
 
   const jobCell = document.createElement('div');
   jobCell.className = 'grid-cell job-cell merch-job';
@@ -1184,6 +1222,7 @@ function buildUploadBox(uid, job) {
   meta.className = 'upload-meta';
   const badge = document.createElement('span');
   badge.className = 'upload-badge';
+  if (job.proof?.statusTone) badge.classList.add(`upload-${job.proof.statusTone}`);
   badge.textContent = job.proof?.status || 'Awaiting upload';
   const status = document.createElement('div');
   status.className = 'muted small upload-status';
