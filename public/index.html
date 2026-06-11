@@ -419,36 +419,6 @@
 
       <!-- DATABASE -->
       <section id="tab-database" class="tab-content">
-        <header class="page-header">
-          <div class="header-left">
-            <p class="eyebrow">Access Snapshot</p>
-            <h1>DATABASE</h1>
-            <p class="muted">2025 and 2026 jobs imported from the MDB.</p>
-          </div>
-          <div class="header-actions">
-            <button id="db-refresh" class="btn outline">Refresh</button>
-          </div>
-        </header>
-
-        <div id="db-summary" class="db-summary-grid">
-          <div class="db-metric">
-            <span class="db-metric-label">Jobs</span>
-            <strong id="db-summary-jobs">0</strong>
-          </div>
-          <div class="db-metric">
-            <span class="db-metric-label">Line items</span>
-            <strong id="db-summary-lines">0</strong>
-          </div>
-          <div class="db-metric">
-            <span class="db-metric-label">Positions</span>
-            <strong id="db-summary-positions">0</strong>
-          </div>
-          <div class="db-metric">
-            <span class="db-metric-label">Last import</span>
-            <strong id="db-summary-import">-</strong>
-          </div>
-        </div>
-
         <section class="card db-filter-card">
           <div class="card-head">
             <h2>Search</h2>
@@ -502,15 +472,16 @@
           </div>
         </section>
 
-        <div class="db-layout">
+        <div class="db-layout db-list-layout">
           <section class="card db-results-card">
             <div class="card-head">
               <h2>Jobs</h2>
-              <div class="card-actions">
+              <div class="card-actions db-pagination-bar">
                 <span id="db-results-count" class="pill pill-muted">0 results</span>
-                <button id="db-prev" class="btn outline small">Previous</button>
+                <button id="db-prev" class="btn outline small" aria-label="Previous page">‹</button>
+                <div id="db-pages" class="db-pages"></div>
+                <button id="db-next" class="btn outline small" aria-label="Next page">›</button>
                 <span id="db-page" class="small muted">0-0</span>
-                <button id="db-next" class="btn outline small">Next</button>
               </div>
             </div>
             <div class="card-body db-table-wrap">
@@ -520,7 +491,7 @@
                     <th class="w-90">Job</th>
                     <th>Customer</th>
                     <th>Title</th>
-                    <th class="w-120">Type</th>
+                    <th class="w-140">Type</th>
                     <th class="w-120">Date</th>
                     <th class="w-90">Qty</th>
                     <th class="w-90">Lines</th>
@@ -529,54 +500,6 @@
                 </thead>
                 <tbody></tbody>
               </table>
-            </div>
-          </section>
-
-          <section id="db-detail-card" class="card db-detail-card">
-            <div class="card-head">
-              <div>
-                <h2 id="db-detail-title">Select a job</h2>
-                <div id="db-detail-subtitle" class="small muted">Line items and job information will appear here.</div>
-              </div>
-            </div>
-            <div class="card-body">
-              <div id="db-detail-empty" class="db-empty muted">No job selected.</div>
-              <div id="db-detail-content" class="hidden">
-                <div id="db-detail-facts" class="db-facts"></div>
-                <div id="db-detail-comments" class="db-comments hidden"></div>
-
-                <h3 class="subhead mt">Line Items</h3>
-                <div class="db-table-wrap">
-                  <table id="db-lines-table" class="data-table db-lines-table">
-                    <thead>
-                      <tr>
-                        <th>Description</th>
-                        <th class="w-120">Code</th>
-                        <th>Style</th>
-                        <th class="w-120">Colour</th>
-                        <th class="w-90">Size</th>
-                        <th class="w-80">Qty</th>
-                        <th class="w-120">Supplier</th>
-                      </tr>
-                    </thead>
-                    <tbody></tbody>
-                  </table>
-                </div>
-
-                <h3 class="subhead mt">Positions</h3>
-                <div class="db-table-wrap">
-                  <table id="db-positions-table" class="data-table">
-                    <thead>
-                      <tr>
-                        <th class="w-160">Position</th>
-                        <th>Colours</th>
-                        <th class="w-160">Design</th>
-                      </tr>
-                    </thead>
-                    <tbody></tbody>
-                  </table>
-                </div>
-              </div>
             </div>
           </section>
         </div>

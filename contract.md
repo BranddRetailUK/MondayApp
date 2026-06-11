@@ -246,9 +246,11 @@ The dashboard has a `DATABASE` tab backed by a 2025/2026 MDB import.
 
 Frontend files:
 
-- `public/index.html`: sidebar tab and DATABASE markup.
-- `public/database.js`: search, filter, pagination, summary cards, job detail rendering.
-- `public/styles.css`: DATABASE layout, table, metric, selected-row, and detail styles.
+- `public/index.html`: sidebar tab and DATABASE list markup.
+- `public/database.js`: search, filter, compact 100-job list, and numbered pagination.
+- `public/database-job.html`: separate full-width job info page.
+- `public/database-job.js`: job facts, contact fields, line items, and positions rendering.
+- `public/styles.css`: DATABASE list, pagination, job info, and full-width table styles.
 
 Backend files:
 
@@ -259,8 +261,8 @@ Backend files:
 Endpoints:
 
 - `GET /api/database/summary`: returns counts for jobs, line items, positions, import status, counts by year, and counts by type.
-- `GET /api/database/jobs?q=&customer=&type=&year=&status=&limit=&offset=`: returns paginated jobs. Search covers job number, customer, job title, client order number, line description, style code, style name, colour, and size.
-- `GET /api/database/jobs/:id`: returns one job plus line items and position rows. `:id` may be source order id or job number.
+- `GET /api/database/jobs?q=&customer=&type=&year=&status=&limit=&offset=`: returns paginated jobs. Default and UI page size is 100 jobs. Search covers job number, customer, job title, contact name/email, client order number, line description, style code, style name, colour, and size.
+- `GET /api/database/jobs/:id`: returns one job plus contact fields, line items, and position rows. `:id` may be source order id or job number.
 
 Import rules:
 
@@ -276,9 +278,16 @@ Import rules:
 railway run --service DB node scripts/import-database-mdb.js PS_XP_tab.mdb
 ```
 
+UI rules:
+
+- The DATABASE tab is list-only.
+- Clicking a job navigates to `/database-job.html?id=<source_order_id>`.
+- The job info page owns the contact fields, line items table, positions table, comments, and job facts.
+- Line item table headers must remain horizontal/readable; do not reintroduce narrow side-panel line item tables.
+
 Core source mappings:
 
-- Jobs: `tblOrder` joined to `tblCustomer` and `tblOrderType`.
+- Jobs: `tblOrder` joined to `tblCustomer`, `tblContact`, and `tblOrderType`.
 - Line items: `tblOrderItem` joined to `tblProduct`, `tblStyle`, `tblStyleColour`, `tblColour`, `tblStyleSize`, `tblSize`, `tblProductType`, and `tblSupplier`.
 - Positions: `tblOrderPosition`.
 

@@ -44,7 +44,7 @@ router.get('/api/database/summary', async (_req, res) => {
 });
 
 router.get('/api/database/jobs', async (req, res) => {
-  const limit = clampInt(req.query.limit, 50, 1, 100);
+  const limit = clampInt(req.query.limit, 100, 1, 100);
   const offset = clampInt(req.query.offset, 0, 0, 100000);
   const { whereSql, params } = buildJobFilters(req.query);
 
@@ -80,6 +80,7 @@ router.get('/api/database/jobs', async (req, res) => {
               j.order_type_abbr,
               j.customer_name,
               j.customer_code,
+              j.contact_name,
               j.job_title,
               j.client_order_no,
               j.order_date,
@@ -171,6 +172,8 @@ function buildJobFilters(query) {
     where.push(`(
       j.customer_name ILIKE ${ref}
       OR j.job_title ILIKE ${ref}
+      OR j.contact_name ILIKE ${ref}
+      OR j.contact_email ILIKE ${ref}
       OR j.client_order_no ILIKE ${ref}
       OR CAST(j.order_no AS TEXT) ILIKE ${ref}
       OR EXISTS (

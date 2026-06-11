@@ -12,6 +12,10 @@ async function ensureDatabaseTables(db) {
       customer_name TEXT,
       customer_code TEXT,
       contact_id INTEGER,
+      contact_name TEXT,
+      contact_phone TEXT,
+      contact_mobile TEXT,
+      contact_email TEXT,
       job_title TEXT,
       client_order_no TEXT,
       order_date TIMESTAMP,
@@ -41,6 +45,11 @@ async function ensureDatabaseTables(db) {
       imported_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
   `);
+
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS contact_name TEXT;');
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS contact_phone TEXT;');
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS contact_mobile TEXT;');
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS contact_email TEXT;');
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS database_job_line_items (

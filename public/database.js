@@ -2,8 +2,7 @@
   const state = {
     loaded: false,
     loading: false,
-    selectedId: null,
-    limit: 50,
+    limit: 100,
     offset: 0,
     total: 0,
   };
@@ -16,32 +15,20 @@
   function initDatabaseTab() {
     els = {
       tab: document.querySelector('.nav-tabs li[data-tab="database"]'),
-      refresh: document.getElementById('db-refresh'),
       searchBtn: document.getElementById('db-search-btn'),
       clearBtn: document.getElementById('db-clear-btn'),
       prevBtn: document.getElementById('db-prev'),
       nextBtn: document.getElementById('db-next'),
+      pages: document.getElementById('db-pages'),
       search: document.getElementById('db-search'),
       customer: document.getElementById('db-customer'),
       type: document.getElementById('db-type'),
       year: document.getElementById('db-year'),
       statusFilter: document.getElementById('db-status-filter'),
       status: document.getElementById('db-status'),
-      summaryJobs: document.getElementById('db-summary-jobs'),
-      summaryLines: document.getElementById('db-summary-lines'),
-      summaryPositions: document.getElementById('db-summary-positions'),
-      summaryImport: document.getElementById('db-summary-import'),
       resultsCount: document.getElementById('db-results-count'),
       page: document.getElementById('db-page'),
       jobsBody: document.querySelector('#db-jobs-table tbody'),
-      detailTitle: document.getElementById('db-detail-title'),
-      detailSubtitle: document.getElementById('db-detail-subtitle'),
-      detailEmpty: document.getElementById('db-detail-empty'),
-      detailContent: document.getElementById('db-detail-content'),
-      detailFacts: document.getElementById('db-detail-facts'),
-      detailComments: document.getElementById('db-detail-comments'),
-      linesBody: document.querySelector('#db-lines-table tbody'),
-      positionsBody: document.querySelector('#db-positions-table tbody'),
     };
 
     if (!els.tab) return;
@@ -49,11 +36,15 @@
     els.tab.addEventListener('click', () => {
       if (!state.loaded) loadDatabase();
     });
-    els.refresh.addEventListener('click', () => loadDatabase({ reset: true }));
-    els.searchBtn.addEventListener('click', () => loadJobs({ reset: true }));
+    if (els.searchBtn) els.searchBtn.addEventListener('click', () => loadJobs({ reset: true }));
     els.clearBtn.addEventListener('click', clearFilters);
     els.prevBtn.addEventListener('click', () => movePage(-1));
     els.nextBtn.addEventListener('click', () => movePage(1));
+    els.pages.addEventListener('click', (event) => {
+      const btn = event.target.closest('button[data-page]');
+      if (!btn) return;
+      goToPage(Number(btn.dataset.page));
+    });
 
     [els.search, els.customer].forEach((input) => {
       input.addEventListener('input', () => {
@@ -68,28 +59,18 @@
     [els.type, els.year, els.statusFilter].forEach((input) => {
       input.addEventListener('change', () => loadJobs({ reset: true }));
     });
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('tab') === 'database' || window.location.hash === '#database') {
+      els.tab.click();
+    } else if (document.getElementById('tab-database')?.classList.contains('active')) {
+      loadDatabase();
+    }
   }
 
   async function loadDatabase(options = {}) {
-    await Promise.all([
-      loadSummary(),
-      loadJobs(options),
-    ]);
+    await loadJobs(options);
     state.loaded = true;
-  }
-
-  async function loadSummary() {
-    try {
-      const summary = await fetchJson('/api/database/summary');
-      els.summaryJobs.textContent = formatNumber(summary.jobs);
-      els.summaryLines.textContent = formatNumber(summary.lineItems);
-      els.summaryPositions.textContent = formatNumber(summary.positions);
-      els.summaryImport.textContent = summary.latestRun
-        ? formatDate(summary.latestRun.finished_at || summary.latestRun.started_at)
-        : '-';
-    } catch (err) {
-      setStatus(err.message, 'error');
-    }
   }
 
   async function loadJobs(options = {}) {
@@ -133,14 +114,10 @@
     }
 
     els.jobsBody.innerHTML = jobs.map((job) => `
-      <tr class="db-job-row ${state.selectedId === job.source_order_id ? 'selected' : ''}"
-          data-id="${job.source_order_id}" tabindex="0">
+      <tr class="db-job-row" data-id="${job.source_order_id}" tabindex="0">
         <td><strong>${escapeHtml(job.order_no)}</strong></td>
         <td>${escapeHtml(job.customer_name || '-')}</td>
-        <td>
-          <div class="db-job-title">${escapeHtml(job.job_title || '-')}</div>
-          <div class="small muted">${escapeHtml(job.client_order_no || '')}</div>
-        </td>
+        <td><div class="db-job-title">${escapeHtml(job.job_title || '-')}</div></td>
         <td>${escapeHtml(job.order_type || '-')}</td>
         <td>${escapeHtml(formatDate(job.order_date))}</td>
         <td>${escapeHtml(formatNumber(job.total_quantity || 0))}</td>
@@ -150,112 +127,17 @@
     `).join('');
 
     els.jobsBody.querySelectorAll('.db-job-row').forEach((row) => {
-      row.addEventListener('click', () => loadJobDetail(row.dataset.id));
+      row.addEventListener('click', () => openJob(row.dataset.id));
       row.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') loadJobDetail(row.dataset.id);
+        if (event.key === 'Enter') openJob(row.dataset.id);
       });
     });
   }
 
-  async function loadJobDetail(id) {
+  function openJob(id) {
     const sourceOrderId = Number.parseInt(id, 10);
     if (!Number.isFinite(sourceOrderId)) return;
-
-    state.selectedId = sourceOrderId;
-    markSelectedRow();
-    els.detailTitle.textContent = 'Loading...';
-    els.detailSubtitle.textContent = '';
-    els.detailEmpty.classList.add('hidden');
-    els.detailContent.classList.add('hidden');
-
-    try {
-      const data = await fetchJson(`/api/database/jobs/${sourceOrderId}`);
-      renderJobDetail(data);
-    } catch (err) {
-      els.detailTitle.textContent = 'Job unavailable';
-      els.detailSubtitle.textContent = err.message;
-      els.detailEmpty.classList.remove('hidden');
-      els.detailContent.classList.add('hidden');
-    }
-  }
-
-  function renderJobDetail(data) {
-    const job = data.job || {};
-    const lineItems = data.lineItems || [];
-    const positions = data.positions || [];
-
-    els.detailTitle.textContent = `${job.order_no || '-'} - ${job.customer_name || 'Unknown customer'}`;
-    els.detailSubtitle.textContent = job.job_title || job.order_type || '';
-    els.detailEmpty.classList.add('hidden');
-    els.detailContent.classList.remove('hidden');
-
-    const facts = [
-      ['Customer', job.customer_name],
-      ['Customer code', job.customer_code],
-      ['Job type', job.order_type],
-      ['Order date', formatDate(job.order_date)],
-      ['Delivery date', formatDate(job.delivery_date)],
-      ['Status', job.is_complete ? 'Complete' : 'Open'],
-      ['Client order', job.client_order_no],
-      ['Invoice', job.invoice_no],
-      ['Line items', lineItems.length],
-      ['Positions', positions.length],
-    ];
-
-    els.detailFacts.innerHTML = facts.map(([label, value]) => `
-      <div class="db-fact">
-        <span>${escapeHtml(label)}</span>
-        <strong>${escapeHtml(value || '-')}</strong>
-      </div>
-    `).join('');
-
-    if (job.comments) {
-      els.detailComments.textContent = job.comments;
-      els.detailComments.classList.remove('hidden');
-    } else {
-      els.detailComments.textContent = '';
-      els.detailComments.classList.add('hidden');
-    }
-
-    renderLineItems(lineItems);
-    renderPositions(positions);
-  }
-
-  function renderLineItems(lineItems) {
-    if (!lineItems.length) {
-      els.linesBody.innerHTML = renderEmptyRow('No line items', 7);
-      return;
-    }
-
-    els.linesBody.innerHTML = lineItems.map((item) => `
-      <tr>
-        <td>${escapeHtml(item.line_description || item.style_name || '-')}</td>
-        <td>${escapeHtml(item.style_code || item.alt_style_code || '-')}</td>
-        <td>
-          <div>${escapeHtml(item.style_name || '-')}</div>
-          <div class="small muted">${escapeHtml(item.product_type || '')}</div>
-        </td>
-        <td>${escapeHtml(item.colour || '-')}</td>
-        <td>${escapeHtml(item.size || '-')}</td>
-        <td><strong>${escapeHtml(formatNumber(item.quantity || 0))}</strong></td>
-        <td>${escapeHtml(item.supplier_name || '-')}</td>
-      </tr>
-    `).join('');
-  }
-
-  function renderPositions(positions) {
-    if (!positions.length) {
-      els.positionsBody.innerHTML = renderEmptyRow('No positions', 3);
-      return;
-    }
-
-    els.positionsBody.innerHTML = positions.map((position) => `
-      <tr>
-        <td>${escapeHtml(position.position_name || '-')}</td>
-        <td>${escapeHtml(position.colour_notes || '-')}</td>
-        <td>${escapeHtml(position.design_ref || '-')}</td>
-      </tr>
-    `).join('');
+    window.location.href = `/database-job.html?id=${sourceOrderId}`;
   }
 
   function movePage(direction) {
@@ -274,17 +156,14 @@
     loadJobs({ reset: true });
   }
 
-  function markSelectedRow() {
-    els.jobsBody.querySelectorAll('.db-job-row').forEach((row) => {
-      row.classList.toggle('selected', Number(row.dataset.id) === state.selectedId);
-    });
-  }
-
   function renderPaging() {
     const start = state.total ? state.offset + 1 : 0;
     const end = Math.min(state.offset + state.limit, state.total);
+    const pageCount = Math.max(1, Math.ceil(state.total / state.limit));
+    const currentPage = Math.floor(state.offset / state.limit) + 1;
     els.page.textContent = `${formatNumber(start)}-${formatNumber(end)}`;
     els.resultsCount.textContent = `${formatNumber(state.total)} results`;
+    els.pages.innerHTML = renderPageButtons(currentPage, pageCount);
     els.prevBtn.disabled = state.offset <= 0;
     els.nextBtn.disabled = state.offset + state.limit >= state.total;
   }
@@ -292,6 +171,44 @@
   function setPagingDisabled(disabled) {
     els.prevBtn.disabled = disabled || state.offset <= 0;
     els.nextBtn.disabled = disabled || state.offset + state.limit >= state.total;
+  }
+
+  function goToPage(page) {
+    const pageCount = Math.max(1, Math.ceil(state.total / state.limit));
+    if (!Number.isFinite(page) || page < 1 || page > pageCount) return;
+    state.offset = (page - 1) * state.limit;
+    loadJobs();
+  }
+
+  function renderPageButtons(currentPage, pageCount) {
+    const pages = visiblePages(currentPage, pageCount);
+    return pages.map((page) => {
+      if (page === 'gap') return '<span class="db-page-gap">...</span>';
+      return `
+        <button class="btn outline small db-page-btn ${page === currentPage ? 'active' : ''}"
+                data-page="${page}"
+                ${page === currentPage ? 'aria-current="page"' : ''}>
+          ${page}
+        </button>
+      `;
+    }).join('');
+  }
+
+  function visiblePages(currentPage, pageCount) {
+    if (pageCount <= 7) {
+      return Array.from({ length: pageCount }, (_, index) => index + 1);
+    }
+
+    const pages = [1];
+    const start = Math.max(2, currentPage - 1);
+    const end = Math.min(pageCount - 1, currentPage + 1);
+
+    if (start > 2) pages.push('gap');
+    for (let page = start; page <= end; page += 1) pages.push(page);
+    if (end < pageCount - 1) pages.push('gap');
+    pages.push(pageCount);
+
+    return pages;
   }
 
   function setStatus(message, tone = 'info') {

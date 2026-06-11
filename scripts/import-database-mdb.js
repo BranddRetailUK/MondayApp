@@ -37,6 +37,11 @@ const TABLE_COLUMNS = {
     'sectortypeid', 'accountmanagerstaffid', 'scustomer', 'scustomercode',
     'tracestaffid', 'dtcreate', 'dtedit',
   ],
+  tblContact: [
+    'contactid', 'customerid', 'addressid', 'ynmailout', 'slastname',
+    'sfirstname', 'stitle', 'stel', 'sfax', 'smobile', 'semail',
+    'tracestaffid', 'dtcreate', 'dtedit',
+  ],
   tblOrderType: [
     'ordertypeid', 'sordertype', 'sordertypeabbr', 'ynprinting',
     'ynembroidery', 'ynbusinessgift', 'sprocess', 'tracestaffid',
@@ -83,6 +88,7 @@ const JOB_COLUMNS = [
   'source_order_id', 'order_no', 'source_year', 'order_type_id',
   'order_type', 'order_type_abbr', 'customer_id', 'customer_name',
   'customer_code', 'contact_id', 'job_title', 'client_order_no',
+  'contact_name', 'contact_phone', 'contact_mobile', 'contact_email',
   'order_date', 'customer_date_required', 'complete_date', 'is_complete',
   'delivery_date', 'is_reorder', 'is_bagged', 'is_automatic',
   'screen_numbers', 'comments', 'has_artwork', 'has_screens', 'has_shirts',
@@ -233,6 +239,7 @@ function decodeField(value) {
 
 function buildSnapshot(data) {
   const customers = mapByInt(data.tblCustomer, 'customerid');
+  const contacts = mapByInt(data.tblContact, 'contactid');
   const orderTypes = mapByInt(data.tblOrderType, 'ordertypeid');
   const products = mapByInt(data.tblProduct, 'productid');
   const styles = mapByInt(data.tblStyle, 'styleid');
@@ -254,6 +261,7 @@ function buildSnapshot(data) {
     if (!sourceOrderId) continue;
 
     const customer = customers.get(toInt(order.customerid)) || {};
+    const contact = contacts.get(toInt(order.contactid)) || {};
     const orderType = orderTypes.get(toInt(order.ordertypeid)) || {};
 
     selectedOrderIds.add(sourceOrderId);
@@ -268,6 +276,10 @@ function buildSnapshot(data) {
       customer_name: cleanText(customer.scustomer),
       customer_code: cleanText(customer.scustomercode),
       contact_id: toInt(order.contactid),
+      contact_name: contactName(contact),
+      contact_phone: cleanText(contact.stel),
+      contact_mobile: cleanText(contact.smobile),
+      contact_email: cleanText(contact.semail),
       job_title: cleanText(order.sjobtitle),
       client_order_no: cleanText(order.sclientorderno),
       order_date: toTimestamp(order.dtorder),
@@ -379,6 +391,14 @@ function cleanText(value) {
   if (value === null || value === undefined) return null;
   const text = String(value).trim();
   return text ? text : null;
+}
+
+function contactName(contact) {
+  const parts = [
+    cleanText(contact.sfirstname),
+    cleanText(contact.slastname),
+  ].filter(Boolean);
+  return parts.length ? parts.join(' ') : null;
 }
 
 function toInt(value) {
