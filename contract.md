@@ -121,6 +121,7 @@ Implemented in `createJobOnMonday(job)`.
   - customer
   - job title
 - Creates one Monday subitem per parsed line item.
+- Creates a final managed subitem named `TOTAL`; its quantity column is the sum of parsed line-item quantities.
 - Sets job type status when `JOB_TYPE_STATUS_COLUMN_ID` is configured.
 - Print status candidates: `PRINT`.
 - Embroidery status candidates: `EMB`, `EMBROIDERY`, `EMBRODIERY`.
@@ -139,9 +140,11 @@ Implemented in `updateJobOnMonday(job, existingItem)`.
 - Fetches current item and subitems from Monday.
 - Tries to update parent job number/customer/title columns if they exist.
 - Job-type status update is non-fatal.
-- Syncs subitems by index.
+- Syncs parsed line-item subitems by index, ignoring the managed `TOTAL` row while matching CSV rows.
 - Missing subitems are created.
 - Subitems with changed names are replaced by creating the replacement before deleting the old subitem.
+- Ensures exactly one managed `TOTAL` subitem is last, with blank code/size/colour columns and the summed quantity.
+- Duplicate or misplaced `TOTAL` subitems are treated as managed rows and removed independently of extra-subitem preservation.
 - Extra subitems are preserved by default.
 - Set `OPEN_ORDERS_DELETE_EXTRA_SUBITEMS=true` to allow deletion of extra subitems.
 
@@ -162,7 +165,7 @@ Implemented in `computeJobSignature()` and `openOrdersState.js`.
   - `pending`
   - `created`
   - `updated`
-- Unchanged signatures are skipped unless Monday subitem count does not match expected count.
+- Unchanged signatures are skipped unless Monday subitems do not match the parsed line-item count plus `TOTAL`, or the managed `TOTAL` row is missing, duplicated, not last, or has the wrong quantity.
 
 ### Assessment Of Deletion Loop
 
@@ -463,5 +466,5 @@ The visual queue routes require `visual_jobs`, but the current migration file do
 - Board pagination limits can affect item matching if the board grows beyond configured limits.
 - `monday.js` and `mondayClient.js` are separate Monday clients with different auth/token handling.
 - Visual notifications are in-memory and reset on process restart.
-- Open-orders subitem sync is index-based; reordering source lines can cause replacement behavior.
+- Open-orders line-item subitem sync is index-based; reordering source lines can cause replacement behavior. The managed `TOTAL` subitem is synced separately and should remain last.
 - DATABASE imports use an MDB snapshot. Run a fresh import whenever the source MDB copy changes.

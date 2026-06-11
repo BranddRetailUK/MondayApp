@@ -62,6 +62,8 @@ const OPEN_ORDERS_LOCAL_PATH =
   process.env.OPEN_ORDERS_LOCAL_PATH ||
   path.join(__dirname, '..', '..', 'tmp', 'open_orders.csv');
 
+const TOTAL_SUBITEM_NAME = 'TOTAL';
+
 let syncLock = null;
 
 async function runExclusiveSync(fn) {
@@ -86,14 +88,46 @@ function buildItemName(job) {
   return nameParts.filter(Boolean).join(' - ') || `Job ${job.jobNumber}`;
 }
 
+function normalizeSubitemName(name) {
+  return String(name || '').replace(/\s+/g, ' ').replace(/,+\s*$/, '').trim();
+}
+
+function isTotalSubitem(subitem) {
+  return normalizeSubitemName(subitem?.name).toUpperCase() === TOTAL_SUBITEM_NAME;
+}
+
+function calculateJobTotalQty(job) {
+  return (job.lineItems || []).reduce((total, line) => total + (Number(line?.qty) || 0), 0);
+}
+
+function buildTotalSubitemLine(job) {
+  return {
+    isTotal: true,
+    qty: calculateJobTotalQty(job),
+    size: '',
+    colour: '',
+    code: '',
+    description: TOTAL_SUBITEM_NAME,
+  };
+}
+
+function buildDesiredSubitemLines(job) {
+  return [...(job.lineItems || []), buildTotalSubitemLine(job)];
+}
+
+function getExpectedSubitemCount(job) {
+  return buildDesiredSubitemLines(job).length;
+}
+
 function buildSubitemName(line, index) {
+  if (line?.isTotal) return TOTAL_SUBITEM_NAME;
   const base = (() => {
     if (line.description) return line.description;
     if (line.code && line.size) return `${line.code} ${line.size}`;
     if (line.code) return line.code;
     return `Line ${index + 1}`;
   })();
-  return String(base).replace(/\s+/g, ' ').replace(/,+\s*$/, '').trim();
+  return normalizeSubitemName(base);
 }
 
 function buildSubitemColumnValues(line) {
@@ -165,6 +199,24 @@ function getColumnText(columns = [], columnId) {
   return match?.text ? String(match.text).trim() : '';
 }
 
+function getTotalSubitemSyncReason(item, job) {
+  const subitems = Array.isArray(item.subitems) ? item.subitems : [];
+  const totalSubitems = subitems.filter(isTotalSubitem);
+  const lastSubitem = subitems[subitems.length - 1] || null;
+
+  if (!totalSubitems.length) return 'missing_total_subitem';
+  if (!lastSubitem || !isTotalSubitem(lastSubitem)) return 'total_subitem_not_last';
+  if (totalSubitems.length > 1) return 'duplicate_total_subitems';
+
+  if (SUBITEM_COLS.QTY) {
+    const currentQty = getColumnText(lastSubitem.column_values || [], SUBITEM_COLS.QTY);
+    const desiredQty = String(calculateJobTotalQty(job));
+    if (currentQty !== desiredQty) return 'total_qty_mismatch';
+  }
+
+  return null;
+}
+
 async function ensureItemColumnValue(item, columnId, desired, { dryRun = false } = {}) {
   if (!columnId) return;
   const hasColumn = (item.column_values || []).some(col => col.id === columnId);
@@ -192,8 +244,8 @@ async function ensureSubitemMatchesLine(subitem, line, index, jobNumber, parentI
   }
 
   const desiredName = buildSubitemName(line, index);
-  const currentNameNormalized = String(subitem.name || '').replace(/\s+/g, ' ').replace(/,+\s*$/, '').trim();
-  const desiredNameNormalized = String(desiredName || '').replace(/\s+/g, ' ').replace(/,+\s*$/, '').trim();
+  const currentNameNormalized = normalizeSubitemName(subitem.name);
+  const desiredNameNormalized = normalizeSubitemName(desiredName);
   if (currentNameNormalized !== desiredNameNormalized) {
     if (dryRun) {
       console.log(`[dry-run] would delete/replace subitem ${subitem.id} name "${subitem.name}" -> "${desiredName}"`);
@@ -238,11 +290,12 @@ async function ensureSubitemMatchesLine(subitem, line, index, jobNumber, parentI
   }
 }
 
-async function syncSubitemsForItem(item, job, { dryRun = false } = {}) {
+async function syncLineItemSubitemsForItem(item, job, { dryRun = false } = {}) {
   const existingSubitems = item.subitems || [];
+  const existingLineSubitems = existingSubitems.filter(subitem => !isTotalSubitem(subitem));
   for (let i = 0; i < job.lineItems.length; i++) {
     const line = job.lineItems[i];
-    const existing = existingSubitems[i];
+    const existing = existingLineSubitems[i];
     if (existing) {
       await ensureSubitemMatchesLine(existing, line, i, job.jobNumber, item.id, { dryRun });
     } else {
@@ -256,8 +309,8 @@ async function syncSubitemsForItem(item, job, { dryRun = false } = {}) {
       }
     }
   }
-  if (existingSubitems.length > job.lineItems.length) {
-    const toRemove = existingSubitems.slice(job.lineItems.length);
+  if (existingLineSubitems.length > job.lineItems.length) {
+    const toRemove = existingLineSubitems.slice(job.lineItems.length);
     if (!DELETE_EXTRA_SUBITEMS) {
       console.warn(
         `[sync] Job ${job.jobNumber} has ${toRemove.length} extra subitem(s); preserving them. Set OPEN_ORDERS_DELETE_EXTRA_SUBITEMS=true to remove extras.`
@@ -277,6 +330,56 @@ async function syncSubitemsForItem(item, job, { dryRun = false } = {}) {
       }
     }
   }
+}
+
+async function deleteManagedTotalSubitems(subitems, jobNumber, { dryRun = false } = {}) {
+  for (const sub of subitems) {
+    if (dryRun) {
+      console.log(`[dry-run] would delete duplicate/misplaced TOTAL subitem ${sub.id} on job ${jobNumber}`);
+      continue;
+    }
+    try {
+      await mondayClient.deleteItem(sub.id);
+      console.log(`[sync] Deleted duplicate/misplaced TOTAL subitem ${sub.id} on job ${jobNumber}`);
+    } catch (err) {
+      console.warn(`[sync] Failed to delete TOTAL subitem ${sub.id}: ${err.message}`);
+    }
+  }
+}
+
+async function ensureTotalSubitemForItem(item, job, { dryRun = false } = {}) {
+  const latestItem = dryRun ? item : await mondayClient.getItemWithColumns(item.id);
+  const subitems = latestItem.subitems || [];
+  const totalSubitems = subitems.filter(isTotalSubitem);
+  const lastSubitem = subitems[subitems.length - 1] || null;
+  const totalLine = buildTotalSubitemLine(job);
+  const totalIndex = (job.lineItems || []).length;
+
+  if (lastSubitem && isTotalSubitem(lastSubitem)) {
+    await ensureSubitemMatchesLine(lastSubitem, totalLine, totalIndex, job.jobNumber, item.id, { dryRun });
+    await deleteManagedTotalSubitems(
+      totalSubitems.filter(subitem => subitem.id !== lastSubitem.id),
+      job.jobNumber,
+      { dryRun }
+    );
+    return;
+  }
+
+  const name = buildSubitemName(totalLine, totalIndex);
+  const columns = buildSubitemColumnValues(totalLine);
+  if (dryRun) {
+    console.log(`[dry-run] would create final TOTAL subitem under ${item.id}: ${columns[SUBITEM_COLS.QTY] ?? ''}`);
+  } else {
+    await mondayClient.createSubitem(item.id, name, columns);
+    console.log(`[sync] Job ${job.jobNumber} created final TOTAL subitem on item ${item.id}`);
+  }
+
+  await deleteManagedTotalSubitems(totalSubitems, job.jobNumber, { dryRun });
+}
+
+async function syncSubitemsForItem(item, job, { dryRun = false } = {}) {
+  await syncLineItemSubitemsForItem(item, job, { dryRun });
+  await ensureTotalSubitemForItem(item, job, { dryRun });
 }
 
 async function updateJobOnMonday(job, existingItem, { dryRun = false } = {}) {
@@ -311,17 +414,18 @@ async function createJobOnMonday(job, { dryRun = false } = {}) {
   if (JOB_TITLE_COLUMN_ID) columnValues[JOB_TITLE_COLUMN_ID] = job.jobTitle || '';
 
   const itemName = buildItemName(job);
+  const desiredSubitems = buildDesiredSubitemLines(job);
 
   if (dryRun) {
-    console.log(`[dry-run] would create item "${itemName}" with ${job.lineItems.length} subitems`);
+    console.log(`[dry-run] would create item "${itemName}" with ${desiredSubitems.length} subitems`);
     return null;
   }
 
   let itemId = null;
   try {
     itemId = await mondayClient.createItem(BOARD_ID, GROUP_ID, itemName, columnValues);
-    for (let i = 0; i < job.lineItems.length; i++) {
-      const line = job.lineItems[i];
+    for (let i = 0; i < desiredSubitems.length; i++) {
+      const line = desiredSubitems[i];
       const name = buildSubitemName(line, i);
       const columns = buildSubitemColumnValues(line);
       await mondayClient.createSubitem(itemId, name, columns);
@@ -436,7 +540,7 @@ async function syncOpenOrdersFileUnlocked(filePath, { dryRun = false } = {}) {
   const updateMap = new Map();
   updates.forEach(entry => updateMap.set(entry.jobNumber, entry));
 
-  // Force update if subitem count on Monday does not match CSV, even when signature is unchanged.
+  // Force update if Monday subitems do not match the CSV rows plus the managed TOTAL row.
   const unchanged = entries.filter(entry => {
     if (!existing.has(entry.jobNumber)) return false;
     const prevSignature = state.jobs?.[entry.jobNumber]?.signature || null;
@@ -452,10 +556,16 @@ async function syncOpenOrdersFileUnlocked(filePath, { dryRun = false } = {}) {
     try {
       const item = await mondayClient.getItemWithColumns(itemId);
       const subCount = Array.isArray(item.subitems) ? item.subitems.length : 0;
-      const expected = entry.job.lineItems.length;
+      const expected = getExpectedSubitemCount(entry.job);
       if (subCount !== expected) {
         updateMap.set(jobNumber, { ...entry, reason: 'subitem_count_mismatch', itemId });
         console.log(`[sync] Forcing update of job ${jobNumber}: subitem count ${subCount} != expected ${expected}`);
+        continue;
+      }
+      const totalReason = getTotalSubitemSyncReason(item, entry.job);
+      if (totalReason) {
+        updateMap.set(jobNumber, { ...entry, reason: totalReason, itemId });
+        console.log(`[sync] Forcing update of job ${jobNumber}: ${totalReason}`);
       }
     } catch (err) {
       console.warn(`[sync] Skipping forced check for job ${jobNumber}: ${err.message}`);
