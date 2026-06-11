@@ -48,6 +48,11 @@ const JOB_TYPE_LABEL_MAP = {
   EMBROIDERY: 'EMBROIDERY',
 };
 
+const DELETE_EXTRA_SUBITEMS =
+  ['1', 'true', 'yes'].includes(
+    String(process.env.OPEN_ORDERS_DELETE_EXTRA_SUBITEMS || '').trim().toLowerCase()
+  );
+
 const OPEN_ORDERS_DROPBOX_PATH =
   process.env.OPEN_ORDERS_DROPBOX_PATH || '/MONDAY/open_orders.csv';
 
@@ -186,9 +191,15 @@ async function ensureSubitemMatchesLine(subitem, line, index, jobNumber, parentI
       console.log(`[dry-run] would delete/replace subitem ${subitem.id} name "${subitem.name}" -> "${desiredName}"`);
     } else {
       try {
+        const replacementId = await mondayClient.createSubitem(
+          parentItemId,
+          desiredName,
+          buildSubitemColumnValues(line)
+        );
         await mondayClient.deleteItem(subitem.id);
-        await mondayClient.createSubitem(parentItemId, desiredName, buildSubitemColumnValues(line));
-        console.log(`[sync] Job ${jobNumber} replaced subitem ${subitem.id} with "${desiredName}"`);
+        console.log(
+          `[sync] Job ${jobNumber} replaced subitem ${subitem.id} with "${desiredName}" (${replacementId})`
+        );
       } catch (err) {
         console.warn(`[sync] Failed to replace subitem ${subitem.id} on job ${jobNumber}: ${err.message}`);
       }
@@ -239,6 +250,12 @@ async function syncSubitemsForItem(item, job, { dryRun = false } = {}) {
   }
   if (existingSubitems.length > job.lineItems.length) {
     const toRemove = existingSubitems.slice(job.lineItems.length);
+    if (!DELETE_EXTRA_SUBITEMS) {
+      console.warn(
+        `[sync] Job ${job.jobNumber} has ${toRemove.length} extra subitem(s); preserving them. Set OPEN_ORDERS_DELETE_EXTRA_SUBITEMS=true to remove extras.`
+      );
+      return;
+    }
     for (const sub of toRemove) {
       if (dryRun) {
         console.log(`[dry-run] would delete extra subitem ${sub.id} on job ${job.jobNumber}`);
@@ -274,7 +291,7 @@ async function updateJobOnMonday(job, existingItem, { dryRun = false } = {}) {
   await ensureItemColumnValue(item, CUSTOMER_COLUMN_ID, job.customer, { dryRun });
   await ensureItemColumnValue(item, JOB_TITLE_COLUMN_ID, job.jobTitle, { dryRun });
 
-  await applyJobTypeStatus(item.id, job.jobType, { dryRun });
+  await applyJobTypeStatusSafe(item.id, job.jobType, { dryRun, jobNumber: job.jobNumber });
   await syncSubitemsForItem(item, job, { dryRun });
   return item.id;
 }
@@ -302,22 +319,26 @@ async function createJobOnMonday(job, { dryRun = false } = {}) {
       await mondayClient.createSubitem(itemId, name, columns);
     }
 
-    await applyJobTypeStatus(itemId, job.jobType, { dryRun });
+    await applyJobTypeStatusSafe(itemId, job.jobType, { dryRun, jobNumber: job.jobNumber });
     return itemId;
   } catch (err) {
     if (itemId) {
-      try {
-        await mondayClient.deleteItem(itemId);
-        console.warn(
-          `[sync] Rolled back item ${itemId} for job ${job.jobNumber} after failure: ${err.message}`
-        );
-      } catch (cleanupErr) {
-        console.warn(
-          `[sync] Failed to clean up item ${itemId} for job ${job.jobNumber}: ${cleanupErr.message}`
-        );
-      }
+      err.itemId = itemId;
+      console.warn(
+        `[sync] Preserving item ${itemId} for job ${job.jobNumber} after partial create failure: ${err.message}`
+      );
     }
     throw err;
+  }
+}
+
+async function applyJobTypeStatusSafe(itemId, jobType, { dryRun, jobNumber }) {
+  try {
+    await applyJobTypeStatus(itemId, jobType, { dryRun });
+  } catch (err) {
+    console.warn(
+      `[sync] Failed to set job type status for job ${jobNumber || itemId} on item ${itemId}: ${err.message}`
+    );
   }
 }
 
@@ -358,6 +379,7 @@ async function syncOpenOrdersFileUnlocked(filePath, { dryRun = false } = {}) {
   const newJobs = entries.filter(entry => {
     if (existing.has(entry.jobNumber)) return false;
     const stateEntry = state.jobs?.[entry.jobNumber];
+    if (stateEntry?.itemId) return false;
     if (stateEntry && stateEntry.status === 'pending' && !stateEntry.itemId) {
       console.log(`[sync] Job ${entry.jobNumber} marked pending previously; retrying creation`);
       return true;
@@ -367,9 +389,16 @@ async function syncOpenOrdersFileUnlocked(filePath, { dryRun = false } = {}) {
   });
 
   const updates = entries.filter(entry => {
-    if (!existing.has(entry.jobNumber)) return false;
+    const stateEntry = state.jobs?.[entry.jobNumber] || null;
+    const knownItem = existing.get(entry.jobNumber) || (stateEntry?.itemId ? { id: stateEntry.itemId } : null);
+    if (!knownItem) return false;
     const prevSignature = state.jobs?.[entry.jobNumber]?.signature || null;
     entry.prevSignature = prevSignature;
+    entry.itemId = knownItem.id;
+    if (stateEntry?.status === 'pending') {
+      console.log(`[sync] Job ${entry.jobNumber} has pending state; retrying update against item ${knownItem.id}`);
+      return true;
+    }
     if (prevSignature === entry.signature) {
       console.log(`[sync] Job ${entry.jobNumber} signature unchanged; skipping`);
     } else {
@@ -435,7 +464,11 @@ async function syncOpenOrdersFileUnlocked(filePath, { dryRun = false } = {}) {
     } catch (err) {
       console.error(`[sync] Failed to create job ${job.jobNumber}:`, err.message);
       if (!dryRun) {
-        clearJob(state, jobNumber);
+        if (err.itemId) {
+          markJobPending(state, jobNumber, entry.signature, err.itemId);
+        } else {
+          clearJob(state, jobNumber);
+        }
         saveState(state);
       }
       results.push({ job: job.jobNumber, success: false, error: err.message });
@@ -444,7 +477,7 @@ async function syncOpenOrdersFileUnlocked(filePath, { dryRun = false } = {}) {
 
   for (const entry of updatesFinal) {
     const job = entry.job;
-    const existingItem = existing.get(entry.jobNumber);
+    const existingItem = existing.get(entry.jobNumber) || (entry.itemId ? { id: entry.itemId } : null);
     try {
       console.log(
         `[sync] Updating job ${entry.jobNumber} item ${existingItem.id} (sig ${entry.prevSignature || 'none'} -> ${entry.signature})`

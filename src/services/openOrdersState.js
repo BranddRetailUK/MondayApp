@@ -38,7 +38,7 @@ function setJobState(state, jobNumber, { itemId = null, signature = null, status
   const now = new Date().toISOString();
   const existing = state.jobs[jobNumber] || {};
   state.jobs[jobNumber] = {
-    itemId: itemId || existing.itemId || null,
+    itemId: itemId != null ? itemId : existing.itemId || null,
     signature: signature || existing.signature || null,
     status: status || existing.status || null,
     createdAt: existing.createdAt || now,
@@ -53,8 +53,8 @@ function clearJob(state, jobNumber) {
   }
 }
 
-function markJobPending(state, jobNumber, signature = null) {
-  setJobState(state, jobNumber, { itemId: null, signature, status: 'pending' });
+function markJobPending(state, jobNumber, signature = null, itemId = null) {
+  setJobState(state, jobNumber, { itemId, signature, status: 'pending' });
 }
 
 function markJobCreated(state, jobNumber, itemId, signature = null) {
