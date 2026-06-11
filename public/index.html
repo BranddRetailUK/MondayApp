@@ -8,6 +8,7 @@
   <script src="customers.js" defer></script>
   <script src="orders.js" defer></script>
   <script src="shipping.js" defer></script>
+  <script src="database.js" defer></script>
 </head>
 <body class="dashboard-only">
   <div class="app-container">
@@ -26,6 +27,7 @@
           <li data-tab="merch">MERCH TRAFFIC</li>
           <li data-tab="orders">Orders</li>
           <li data-tab="customers">Customers</li>
+          <li data-tab="database">DATABASE</li>
           <li data-tab="stock">Stock</li>
           <li data-tab="shipping">Shipping</li>
           <li data-tab="pencarrie">PenCarrie</li>
@@ -410,6 +412,171 @@
                 </thead>
                 <tbody></tbody>
               </table>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- DATABASE -->
+      <section id="tab-database" class="tab-content">
+        <header class="page-header">
+          <div class="header-left">
+            <p class="eyebrow">Access Snapshot</p>
+            <h1>DATABASE</h1>
+            <p class="muted">2025 and 2026 jobs imported from the MDB.</p>
+          </div>
+          <div class="header-actions">
+            <button id="db-refresh" class="btn outline">Refresh</button>
+          </div>
+        </header>
+
+        <div id="db-summary" class="db-summary-grid">
+          <div class="db-metric">
+            <span class="db-metric-label">Jobs</span>
+            <strong id="db-summary-jobs">0</strong>
+          </div>
+          <div class="db-metric">
+            <span class="db-metric-label">Line items</span>
+            <strong id="db-summary-lines">0</strong>
+          </div>
+          <div class="db-metric">
+            <span class="db-metric-label">Positions</span>
+            <strong id="db-summary-positions">0</strong>
+          </div>
+          <div class="db-metric">
+            <span class="db-metric-label">Last import</span>
+            <strong id="db-summary-import">-</strong>
+          </div>
+        </div>
+
+        <section class="card db-filter-card">
+          <div class="card-head">
+            <h2>Search</h2>
+            <div class="card-actions">
+              <button id="db-search-btn" class="btn primary">Search</button>
+              <button id="db-clear-btn" class="btn outline">Clear</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="form-grid db-filters">
+              <div class="form-row">
+                <label>Search
+                  <input id="db-search" placeholder="Job, customer, product, colour" />
+                </label>
+              </div>
+              <div class="form-row">
+                <label>Customer
+                  <input id="db-customer" placeholder="Customer name" />
+                </label>
+              </div>
+              <div class="form-row">
+                <label>Type
+                  <select id="db-type">
+                    <option value="">All types</option>
+                    <option value="Printing">Printing</option>
+                    <option value="Embroidery">Embroidery</option>
+                    <option value="Business gifts">Business gifts</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-row">
+                <label>Year
+                  <select id="db-year">
+                    <option value="">2025/2026</option>
+                    <option value="2026">2026</option>
+                    <option value="2025">2025</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-row">
+                <label>Status
+                  <select id="db-status-filter">
+                    <option value="">All</option>
+                    <option value="open">Open</option>
+                    <option value="complete">Complete</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div id="db-status" class="small muted mt-8"></div>
+          </div>
+        </section>
+
+        <div class="db-layout">
+          <section class="card db-results-card">
+            <div class="card-head">
+              <h2>Jobs</h2>
+              <div class="card-actions">
+                <span id="db-results-count" class="pill pill-muted">0 results</span>
+                <button id="db-prev" class="btn outline small">Previous</button>
+                <span id="db-page" class="small muted">0-0</span>
+                <button id="db-next" class="btn outline small">Next</button>
+              </div>
+            </div>
+            <div class="card-body db-table-wrap">
+              <table id="db-jobs-table" class="data-table db-jobs-table">
+                <thead>
+                  <tr>
+                    <th class="w-90">Job</th>
+                    <th>Customer</th>
+                    <th>Title</th>
+                    <th class="w-120">Type</th>
+                    <th class="w-120">Date</th>
+                    <th class="w-90">Qty</th>
+                    <th class="w-90">Lines</th>
+                    <th class="w-100">Status</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="db-detail-card" class="card db-detail-card">
+            <div class="card-head">
+              <div>
+                <h2 id="db-detail-title">Select a job</h2>
+                <div id="db-detail-subtitle" class="small muted">Line items and job information will appear here.</div>
+              </div>
+            </div>
+            <div class="card-body">
+              <div id="db-detail-empty" class="db-empty muted">No job selected.</div>
+              <div id="db-detail-content" class="hidden">
+                <div id="db-detail-facts" class="db-facts"></div>
+                <div id="db-detail-comments" class="db-comments hidden"></div>
+
+                <h3 class="subhead mt">Line Items</h3>
+                <div class="db-table-wrap">
+                  <table id="db-lines-table" class="data-table db-lines-table">
+                    <thead>
+                      <tr>
+                        <th>Description</th>
+                        <th class="w-120">Code</th>
+                        <th>Style</th>
+                        <th class="w-120">Colour</th>
+                        <th class="w-90">Size</th>
+                        <th class="w-80">Qty</th>
+                        <th class="w-120">Supplier</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+
+                <h3 class="subhead mt">Positions</h3>
+                <div class="db-table-wrap">
+                  <table id="db-positions-table" class="data-table">
+                    <thead>
+                      <tr>
+                        <th class="w-160">Position</th>
+                        <th>Colours</th>
+                        <th class="w-160">Design</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </section>
         </div>

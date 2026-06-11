@@ -1,6 +1,7 @@
 // Idempotent DB bootstrap (mirrors your current schema)
 const pool = require('./pool');
 const { VERBOSE_SQL } = require('../config/env');
+const { ensureDatabaseTables } = require('./databaseSchema');
 
 async function initDb() {
   const run = async (sql) => {
@@ -129,6 +130,9 @@ async function initDb() {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
   `);
+
+  // Denormalized Access/MDB import tables for the dashboard DATABASE tab.
+  await ensureDatabaseTables(pool);
 }
 
 module.exports = { initDb };

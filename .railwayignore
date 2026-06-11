@@ -1,6 +1,5 @@
-.env
+*.mdb
+*.ldb
 node_modules
 uploads
 tmp
-*.mdb
-*.ldb

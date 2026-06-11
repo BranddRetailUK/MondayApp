@@ -31,6 +31,7 @@ app.use(require('./routes/board'));
 app.use(require('./routes/scanner'));
 app.use(require('./routes/customers'));
 app.use(require('./routes/orders'));
+app.use(require('./routes/database'));
 app.use('/api/visual-jobs', visualJobs);
 app.use(visualApprovals);
 app.use(filesRoute);

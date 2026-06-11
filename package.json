@@ -7,7 +7,8 @@
     "smoke:lineitems": "node scripts/lineitem-smoke.js",
     "import:dropbox": "node scripts/dropbox-lineitem-importer.js",
     "smoke:open-orders": "node scripts/open-orders-smoke.js",
-    "sync:open-orders": "node scripts/open-orders-sync.js"
+    "sync:open-orders": "node scripts/open-orders-sync.js",
+    "import:database-mdb": "node scripts/import-database-mdb.js"
   },
   "dependencies": {
     "axios": "^1.13.2",

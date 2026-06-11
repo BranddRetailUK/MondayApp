@@ -240,6 +240,55 @@ Scanner progression:
 
 Order uploads use `multer` and write file metadata to `order_files`.
 
+### DATABASE
+
+The dashboard has a `DATABASE` tab backed by a 2025/2026 MDB import.
+
+Frontend files:
+
+- `public/index.html`: sidebar tab and DATABASE markup.
+- `public/database.js`: search, filter, pagination, summary cards, job detail rendering.
+- `public/styles.css`: DATABASE layout, table, metric, selected-row, and detail styles.
+
+Backend files:
+
+- `src/routes/database.js`: `/api/database` JSON endpoints.
+- `src/db/databaseSchema.js`: idempotent table creation.
+- `scripts/import-database-mdb.js`: imports `PS_XP_tab.mdb` into Railway/Postgres.
+
+Endpoints:
+
+- `GET /api/database/summary`: returns counts for jobs, line items, positions, import status, counts by year, and counts by type.
+- `GET /api/database/jobs?q=&customer=&type=&year=&status=&limit=&offset=`: returns paginated jobs. Search covers job number, customer, job title, client order number, line description, style code, style name, colour, and size.
+- `GET /api/database/jobs/:id`: returns one job plus line items and position rows. `:id` may be source order id or job number.
+
+Import rules:
+
+- Source file: `PS_XP_tab.mdb`.
+- Included years: 2025 and 2026 only.
+- Date basis: `tblOrder.dtOrder`, falling back to `tblOrder.dtCreate`.
+- Default import mode replaces the current DATABASE snapshot inside one transaction.
+- `--append` skips deletes and upserts into existing rows.
+- The importer prefers `DATABASE_PUBLIC_URL` when running locally against Railway DB service variables.
+- Run against Railway DB service variables:
+
+```bash
+railway run --service DB node scripts/import-database-mdb.js PS_XP_tab.mdb
+```
+
+Core source mappings:
+
+- Jobs: `tblOrder` joined to `tblCustomer` and `tblOrderType`.
+- Line items: `tblOrderItem` joined to `tblProduct`, `tblStyle`, `tblStyleColour`, `tblColour`, `tblStyleSize`, `tblSize`, `tblProductType`, and `tblSupplier`.
+- Positions: `tblOrderPosition`.
+
+Current imported production snapshot, verified on 2026-06-11:
+
+- `database_jobs`: 1,162 rows.
+- `database_job_line_items`: 5,870 rows.
+- `database_job_positions`: 1,664 rows.
+- Latest `database_import_runs.status`: `complete`.
+
 ### Files And Visual QA
 
 - `POST /api/items/:itemId/file`: uploads an image to Monday `JOB_FILES_COLUMN_ID` and queues visual analysis.
@@ -308,6 +357,10 @@ Created by `src/db/migrate.js`:
 - `orders`
 - `order_items`
 - `order_files`
+- `database_jobs`
+- `database_job_line_items`
+- `database_job_positions`
+- `database_import_runs`
 
 The visual queue routes require `visual_jobs`, but the current migration file does not create it. Treat that as a known schema gap unless a deployment migration exists outside this repo.
 
@@ -389,6 +442,7 @@ The visual queue routes require `visual_jobs`, but the current migration file do
 - `npm run import:dropbox`: import all pending per-job Dropbox line-item files.
 - `npm run smoke:open-orders -- <file>`: parse an open-orders CSV file.
 - `npm run sync:open-orders -- [file] [--dry-run]`: sync open-orders CSV from file or Dropbox.
+- `npm run import:database-mdb -- [PS_XP_tab.mdb] [--dry-run] [--append]`: import 2025/2026 MDB jobs into DATABASE tables.
 
 ## Known Risks And Maintenance Notes
 
@@ -401,3 +455,4 @@ The visual queue routes require `visual_jobs`, but the current migration file do
 - `monday.js` and `mondayClient.js` are separate Monday clients with different auth/token handling.
 - Visual notifications are in-memory and reset on process restart.
 - Open-orders subitem sync is index-based; reordering source lines can cause replacement behavior.
+- DATABASE imports use an MDB snapshot. Run a fresh import whenever the source MDB copy changes.
