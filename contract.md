@@ -121,7 +121,9 @@ Implemented in `createJobOnMonday(job)`.
   - customer
   - job title
 - Creates one Monday subitem per parsed line item.
-- Sets job type status from `PRINT` or `EMBROIDERY` when `JOB_TYPE_STATUS_COLUMN_ID` is configured.
+- Sets job type status when `JOB_TYPE_STATUS_COLUMN_ID` is configured.
+- Print status candidates: `PRINT`.
+- Embroidery status candidates: `EMB`, `EMBROIDERY`, `EMBRODIERY`.
 
 Important hardening:
 

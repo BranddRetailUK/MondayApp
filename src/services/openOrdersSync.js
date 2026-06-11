@@ -43,9 +43,11 @@ const JOB_TITLE_COLUMN_ID = mondayFields.COLS.JOB_TITLE || null;
 
 const SUBITEM_COLS = mondayFields.SUBITEM_COLS || {};
 
-const JOB_TYPE_LABEL_MAP = {
-  PRINT: 'PRINT',
-  EMBROIDERY: 'EMBROIDERY',
+const JOB_TYPE_LABEL_ALIASES = {
+  PRINT: ['PRINT'],
+  EMB: ['EMB', 'EMBROIDERY', 'EMBRODIERY'],
+  EMBROIDERY: ['EMB', 'EMBROIDERY', 'EMBRODIERY'],
+  EMBRODIERY: ['EMB', 'EMBROIDERY', 'EMBRODIERY'],
 };
 
 const DELETE_EXTRA_SUBITEMS =
@@ -127,6 +129,12 @@ function normalizeLineItem(line = {}) {
     code: String(line.code || '').trim(),
     description: String(line.description || '').trim(),
   };
+}
+
+function getJobTypeStatusLabels(jobType) {
+  const normalized = String(jobType || '').trim().toUpperCase();
+  if (!normalized) return [];
+  return JOB_TYPE_LABEL_ALIASES[normalized] || [normalized];
 }
 
 function computeJobSignature(job) {
@@ -344,17 +352,33 @@ async function applyJobTypeStatusSafe(itemId, jobType, { dryRun, jobNumber }) {
 
 async function applyJobTypeStatus(itemId, jobType, { dryRun }) {
   if (!JOB_TYPE_STATUS_COLUMN_ID || !jobType) return;
-  const label = JOB_TYPE_LABEL_MAP[String(jobType).trim().toUpperCase()];
-  if (!label) return;
+  const labels = getJobTypeStatusLabels(jobType);
+  if (!labels.length) return;
   if (dryRun) {
-    console.log(`[dry-run] would set ${JOB_TYPE_STATUS_COLUMN_ID} to ${label} on item ${itemId || '(new item)'}`);
+    console.log(
+      `[dry-run] would set ${JOB_TYPE_STATUS_COLUMN_ID} to one of [${labels.join(', ')}] on item ${itemId || '(new item)'}`
+    );
     return;
   }
-  await mondayClient.setStatusByLabel(
-    BOARD_ID,
-    itemId,
-    JOB_TYPE_STATUS_COLUMN_ID,
-    label
+  let lastErr = null;
+  for (const label of labels) {
+    try {
+      await mondayClient.setStatusByLabel(
+        BOARD_ID,
+        itemId,
+        JOB_TYPE_STATUS_COLUMN_ID,
+        label
+      );
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (!/Status label ".+" not found/i.test(err.message || '')) {
+        throw err;
+      }
+    }
+  }
+  throw new Error(
+    `None of status labels [${labels.join(', ')}] found on column ${JOB_TYPE_STATUS_COLUMN_ID}: ${lastErr?.message || 'unknown error'}`
   );
 }
 
