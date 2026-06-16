@@ -20,6 +20,7 @@ const NULL_TOKEN = '__NULL__';
 const IMPORT_YEARS = new Set([2025, 2026]);
 const INSERT_BATCH_SIZE = 250;
 const MDB_EXPORT_BIN = resolveMdbExportBin();
+const ADDRESS_SOURCE_TABLES = ['tblOrder', 'tblCustomer', 'tblAddress', 'tblContact'];
 
 const TABLE_COLUMNS = {
   tblOrder: [
@@ -142,6 +143,7 @@ async function main() {
 
   const dryRun = args.includes('--dry-run');
   const append = args.includes('--append');
+  const addressesOnly = args.includes('--addresses-only');
   const fileArg = args.find((arg) => !arg.startsWith('--')) || 'PS_XP_tab.mdb';
   const mdbPath = path.resolve(process.cwd(), fileArg);
 
@@ -150,14 +152,17 @@ async function main() {
   }
 
   console.log(`[database-import] Reading ${mdbPath}`);
-  const data = readSourceData(mdbPath);
-  const snapshot = buildSnapshot(data);
+  const data = readSourceData(mdbPath, addressesOnly ? ADDRESS_SOURCE_TABLES : Object.keys(TABLE_COLUMNS));
+  const snapshot = addressesOnly ? buildAddressSnapshot(data) : buildSnapshot(data);
 
   console.log(
     `[database-import] Snapshot: ${snapshot.jobs.length} jobs, ` +
     `${snapshot.lineItems.length} line items, ${snapshot.positions.length} positions, ` +
     `${snapshot.addresses.length} customer addresses`
   );
+  if (addressesOnly) {
+    console.log(`[database-import] Address-only mode: ${snapshot.jobAddressUpdates.length} existing job address rows prepared`);
+  }
   console.log(`[database-import] Years: ${[...IMPORT_YEARS].join(', ')}`);
 
   if (dryRun) {
@@ -168,6 +173,7 @@ async function main() {
   await importSnapshot(snapshot, {
     sourceFile: mdbPath,
     replaceExisting: !append,
+    addressesOnly,
   });
 }
 
@@ -179,6 +185,9 @@ Imports Access jobs dated 2025 or 2026 into Railway/Postgres tables:
   database_job_line_items
   database_job_positions
   database_customer_addresses
+
+Options:
+  --addresses-only  Import only customer addresses and job address fields.
 
 Run against Railway with:
   railway run --service DB node scripts/import-database-mdb.js PS_XP_tab.mdb
@@ -200,8 +209,7 @@ function resolveMdbExportBin() {
   return 'mdb-export';
 }
 
-function readSourceData(mdbPath) {
-  const tables = Object.keys(TABLE_COLUMNS);
+function readSourceData(mdbPath, tables = Object.keys(TABLE_COLUMNS)) {
   return tables.reduce((acc, table) => {
     console.log(`[database-import] Exporting ${table}`);
     acc[table] = exportTable(mdbPath, table);
@@ -412,31 +420,12 @@ function buildSnapshot(data) {
     }));
 
   const addressRoles = buildAddressRoleMap(data, selectedOrderIds, selectedCustomerIds);
-  const customerAddresses = data.tblAddress
-    .filter((address) => {
-      const customerId = toInt(address.customerid);
-      const addressId = toInt(address.addressid);
-      return (customerId && selectedCustomerIds.has(customerId))
-        || (addressId && selectedAddressIds.has(addressId));
-    })
-    .map((address) => ({
-      source_address_id: toInt(address.addressid),
-      customer_id: toInt(address.customerid),
-      address_type: addressTypeForAddress(address, addressRoles),
-      address_line1: cleanText(address.saddress1),
-      address_line2: cleanText(address.saddress2),
-      address_line3: cleanText(address.saddress3),
-      address_line4: cleanText(address.saddress4),
-      address_line5: cleanText(address.saddress5),
-      postcode: cleanText(address.spostcode),
-      phone: cleanText(address.stel),
-      fax: cleanText(address.sfax),
-      mobile: cleanText(address.smobile),
-      trace_staff_id: toInt(address.tracestaffid),
-      created_at_source: toTimestamp(address.dtcreate),
-      updated_at_source: toTimestamp(address.dtedit),
-    }))
-    .filter((address) => address.source_address_id);
+  const customerAddresses = buildCustomerAddressRows(
+    data.tblAddress,
+    selectedCustomerIds,
+    selectedAddressIds,
+    addressRoles
+  );
 
   jobs.sort((a, b) => {
     const dateA = a.order_date || a.created_at_source || '';
@@ -445,6 +434,63 @@ function buildSnapshot(data) {
   });
 
   return { jobs, lineItems, positions, addresses: customerAddresses };
+}
+
+function buildAddressSnapshot(data) {
+  const customers = mapByInt(data.tblCustomer, 'customerid');
+  const addresses = mapByInt(data.tblAddress, 'addressid');
+  const contacts = mapByInt(data.tblContact, 'contactid');
+  const selectedOrderIds = new Set();
+  const selectedCustomerIds = new Set();
+  const selectedAddressIds = new Set();
+  const jobAddressUpdates = [];
+
+  for (const order of data.tblOrder) {
+    const sourceYear = sourceYearForOrder(order);
+    if (!sourceYear) continue;
+
+    const sourceOrderId = toInt(order.orderid);
+    if (!sourceOrderId) continue;
+
+    const customer = customers.get(toInt(order.customerid)) || {};
+    const contact = contacts.get(toInt(order.contactid)) || {};
+    const invoiceAddressId = toInt(order.invaddressid) || toInt(customer.invaddressid);
+    const deliveryAddressId = toInt(order.deladdressid) || toInt(customer.deladdressid);
+    const invoiceAddress = addresses.get(invoiceAddressId) || {};
+    const deliveryAddress = addresses.get(deliveryAddressId) || {};
+    const customerId = toInt(order.customerid);
+
+    selectedOrderIds.add(sourceOrderId);
+    if (customerId) selectedCustomerIds.add(customerId);
+    if (invoiceAddressId) selectedAddressIds.add(invoiceAddressId);
+    if (deliveryAddressId) selectedAddressIds.add(deliveryAddressId);
+    const contactAddressId = toInt(contact.addressid);
+    if (contactAddressId) selectedAddressIds.add(contactAddressId);
+
+    jobAddressUpdates.push({
+      source_order_id: sourceOrderId,
+      invoice_address_id: invoiceAddressId,
+      delivery_address_id: deliveryAddressId,
+      invoice_address: formatAddress(invoiceAddress),
+      delivery_address: formatAddress(deliveryAddress),
+    });
+  }
+
+  const addressRoles = buildAddressRoleMap(data, selectedOrderIds, selectedCustomerIds);
+  const customerAddresses = buildCustomerAddressRows(
+    data.tblAddress,
+    selectedCustomerIds,
+    selectedAddressIds,
+    addressRoles
+  );
+
+  return {
+    jobs: [],
+    lineItems: [],
+    positions: [],
+    addresses: customerAddresses,
+    jobAddressUpdates,
+  };
 }
 
 function sourceYearForOrder(order) {
@@ -498,6 +544,34 @@ function buildAddressRoleMap(data, selectedOrderIds, selectedCustomerIds) {
   }
 
   return roles;
+}
+
+function buildCustomerAddressRows(addressRows, selectedCustomerIds, selectedAddressIds, addressRoles) {
+  return (addressRows || [])
+    .filter((address) => {
+      const customerId = toInt(address.customerid);
+      const addressId = toInt(address.addressid);
+      return (customerId && selectedCustomerIds.has(customerId))
+        || (addressId && selectedAddressIds.has(addressId));
+    })
+    .map((address) => ({
+      source_address_id: toInt(address.addressid),
+      customer_id: toInt(address.customerid),
+      address_type: addressTypeForAddress(address, addressRoles),
+      address_line1: cleanText(address.saddress1),
+      address_line2: cleanText(address.saddress2),
+      address_line3: cleanText(address.saddress3),
+      address_line4: cleanText(address.saddress4),
+      address_line5: cleanText(address.saddress5),
+      postcode: cleanText(address.spostcode),
+      phone: cleanText(address.stel),
+      fax: cleanText(address.sfax),
+      mobile: cleanText(address.smobile),
+      trace_staff_id: toInt(address.tracestaffid),
+      created_at_source: toTimestamp(address.dtcreate),
+      updated_at_source: toTimestamp(address.dtedit),
+    }))
+    .filter((address) => address.source_address_id);
 }
 
 function addAddressRole(roles, addressId, role) {
@@ -592,6 +666,46 @@ async function importSnapshot(snapshot, options) {
     runId = run.rows[0].id;
 
     await client.query('BEGIN');
+
+    if (options.addressesOnly) {
+      console.log('[database-import] Address-only import: replacing customer address rows');
+      await client.query('DELETE FROM database_customer_addresses');
+
+      console.log(`[database-import] Writing ${snapshot.addresses.length} customer addresses`);
+      await upsertRows(
+        client,
+        'database_customer_addresses',
+        ADDRESS_COLUMNS,
+        'source_address_id',
+        snapshot.addresses
+      );
+
+      console.log(`[database-import] Updating ${snapshot.jobAddressUpdates.length} job address fields`);
+      await updateJobAddressRows(client, snapshot.jobAddressUpdates);
+
+      await client.query('COMMIT');
+
+      await client.query(
+        `UPDATE database_import_runs
+         SET job_count = $1,
+             line_item_count = 0,
+             position_count = 0,
+             address_count = $2,
+             finished_at = NOW(),
+             status = 'complete',
+             message = $3
+         WHERE id = $4`,
+        [
+          snapshot.jobAddressUpdates.length,
+          snapshot.addresses.length,
+          'Address data imported only',
+          runId,
+        ]
+      );
+
+      console.log('[database-import] Address-only import complete');
+      return;
+    }
 
     if (options.replaceExisting) {
       console.log('[database-import] Replacing existing database snapshot');
@@ -707,5 +821,52 @@ async function upsertRows(client, table, columns, conflictColumn, rows) {
 
     const count = Math.min(start + batch.length, rows.length);
     console.log(`[database-import] ${table}: ${count}/${rows.length}`);
+  }
+}
+
+async function updateJobAddressRows(client, rows) {
+  if (!rows.length) return;
+
+  const columns = [
+    'source_order_id',
+    'invoice_address_id',
+    'delivery_address_id',
+    'invoice_address',
+    'delivery_address',
+  ];
+  const casts = {
+    source_order_id: '::int',
+    invoice_address_id: '::int',
+    delivery_address_id: '::int',
+    invoice_address: '::text',
+    delivery_address: '::text',
+  };
+
+  for (let start = 0; start < rows.length; start += INSERT_BATCH_SIZE) {
+    const batch = rows.slice(start, start + INSERT_BATCH_SIZE);
+    const values = [];
+    const rowPlaceholders = batch.map((row, rowIndex) => {
+      const fields = columns.map((column, columnIndex) => {
+        values.push(row[column]);
+        return `$${(rowIndex * columns.length) + columnIndex + 1}${casts[column]}`;
+      });
+      return `(${fields.join(', ')})`;
+    });
+
+    const sql = `
+      UPDATE database_jobs AS jobs
+      SET invoice_address_id = updates.invoice_address_id,
+          delivery_address_id = updates.delivery_address_id,
+          invoice_address = updates.invoice_address,
+          delivery_address = updates.delivery_address
+      FROM (VALUES ${rowPlaceholders.join(', ')})
+        AS updates(source_order_id, invoice_address_id, delivery_address_id, invoice_address, delivery_address)
+      WHERE jobs.source_order_id = updates.source_order_id
+    `;
+
+    await client.query(sql, values);
+
+    const count = Math.min(start + batch.length, rows.length);
+    console.log(`[database-import] database_jobs address fields: ${count}/${rows.length}`);
   }
 }

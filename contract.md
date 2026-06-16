@@ -4,7 +4,7 @@ Last reviewed: 2026-06-16
 
 ## Purpose
 
-MondayApp is a legacy Node/Express service that connects Monday.com, Dropbox CSV/XLSX files, a local dashboard, scanner/QR flows, PenCarrie stock/order APIs, and visual proof workflows.
+MondayApp is a legacy Node/Express service that connects Monday.com, Dropbox CSV/XLSX files, a local dashboard, scanner/QR flows, and visual proof workflows.
 
 The most important production path is the Dropbox/Open Orders import:
 
@@ -19,6 +19,7 @@ The most important production path is the Dropbox/Open Orders import:
 - Runtime entry: `server.js`, which loads `server.modular.js`.
 - App composition: `src/app.js`.
 - Static frontend: `public/`.
+- Ultimate Hub dashboard tabs: Dashboard, DATABASE, and Visual Approvals. The old standalone `MERCH TRAFFIC`, Orders, Customers, Stock, Shipping, and PenCarrie tabs have been removed. DATABASE order/customer/stock workflows remain part of the DATABASE tab.
 - DB bootstrap: `src/db/migrate.js`.
 - Config: `src/config/env.js` and `src/config/mondayFields.js`.
 
@@ -227,22 +228,6 @@ Scanner progression:
 - scan 2: local status `STEP2_STATUS_LABEL`, set `STATUS_COLUMN_ID`
 - scan 3: local status `STEP3_STATUS_LABEL`, set `STATUS_COLUMN_ID`
 
-### Customers
-
-- `GET /api/customers/search?q=...`
-- `GET /api/customers`
-- `POST /api/customers`
-- `GET /api/customers/:id`
-- `GET /api/customers/:id/orders`
-
-### Orders
-
-- `GET /api/orders?limit=...`
-- `POST /api/orders`
-- `GET /api/orders/:id`
-
-Order uploads use `multer` and write file metadata to `order_files`.
-
 ### DATABASE
 
 The dashboard has a `DATABASE` tab backed by a 2025/2026 MDB import.
@@ -280,11 +265,18 @@ Import rules:
 - Date basis: `tblOrder.dtOrder`, falling back to `tblOrder.dtCreate`.
 - Default import mode replaces the current DATABASE snapshot inside one transaction.
 - `--append` skips deletes and upserts into existing rows.
+- `--addresses-only` imports only address data: it replaces `database_customer_addresses` with addresses for customers present in the 2025/2026 order snapshot and updates existing `database_jobs.invoice_address_id`, `database_jobs.delivery_address_id`, `database_jobs.invoice_address`, and `database_jobs.delivery_address`. It does not reimport jobs, line items, or positions.
 - The importer prefers `DATABASE_PUBLIC_URL` when running locally against Railway DB service variables.
 - Run against Railway DB service variables:
 
 ```bash
 railway run --service DB node scripts/import-database-mdb.js PS_XP_tab.mdb
+```
+
+Run only the 2025/2026 customer-address backfill:
+
+```bash
+railway run --service DB node scripts/import-database-mdb.js PS_XP_tab.mdb --addresses-only
 ```
 
 UI rules:
@@ -363,29 +355,12 @@ The route expects a `visual_jobs` table with at least:
 - `created_at`
 - `updated_at`
 
-### PenCarrie
-
-Mounted at `/api/pencarrie`.
-
-- `GET /api/pencarrie/debug/whoami`
-- `GET /api/pencarrie/debug/ping`
-- `GET /api/pencarrie/orders`
-- `GET /api/pencarrie/orders/:ordcode`
-- `GET /api/pencarrie/whoami`
-- `GET /api/pencarrie/smoke`
-
-`pencarrie.js` uses `src/integrations/pencarrie.js`; `pencarrie-smoke.js` is a direct gateway smoke/debug path.
-
 ## Database Tables
 
 Created by `src/db/migrate.js`:
 
 - `job_scans`
 - `job_scan_events`
-- `customers`
-- `orders`
-- `order_items`
-- `order_files`
 - `database_jobs`
 - `database_job_line_items`
 - `database_job_positions`
@@ -458,12 +433,6 @@ The visual queue routes require `visual_jobs`, but the current migration file do
 - `VISUAL_WORKER_KEY`
 - `VISUAL_CLAIM_SECS`
 - `INTERNAL_ENQUEUE_URL`
-
-### PenCarrie
-
-- `PENCARRIE_GATEWAY_URL`
-- `PENCARRIE_CUSTOMER_CODE`
-- `PENCARRIE_ENV`
 
 ## Scripts
 
