@@ -418,90 +418,164 @@
       </section>
 
       <!-- DATABASE -->
-      <section id="tab-database" class="tab-content">
-        <section class="card db-filter-card">
-          <div class="card-head">
-            <h2>Search</h2>
-            <div class="card-actions">
-              <button id="db-search-btn" class="btn primary">Search</button>
-              <button id="db-clear-btn" class="btn outline">Clear</button>
-            </div>
-          </div>
-          <div class="card-body">
-            <div class="form-grid db-filters">
-              <div class="form-row">
-                <label>Search
-                  <input id="db-search" placeholder="Job, customer, product, colour" />
-                </label>
-              </div>
-              <div class="form-row">
-                <label>Customer
-                  <input id="db-customer" placeholder="Customer name" />
-                </label>
-              </div>
-              <div class="form-row">
-                <label>Type
-                  <select id="db-type">
-                    <option value="">All types</option>
-                    <option value="Printing">Printing</option>
-                    <option value="Embroidery">Embroidery</option>
-                    <option value="Business gifts">Business gifts</option>
-                  </select>
-                </label>
-              </div>
-              <div class="form-row">
-                <label>Year
-                  <select id="db-year">
-                    <option value="">2025/2026</option>
-                    <option value="2026">2026</option>
-                    <option value="2025">2025</option>
-                  </select>
-                </label>
-              </div>
-              <div class="form-row">
-                <label>Status
-                  <select id="db-status-filter">
-                    <option value="">All</option>
-                    <option value="open">Open</option>
-                    <option value="complete">Complete</option>
-                  </select>
-                </label>
-              </div>
-            </div>
-            <div id="db-status" class="small muted mt-8"></div>
-          </div>
-        </section>
+      <section id="tab-database" class="tab-content db-legacy-tab">
+        <div id="db-legacy-app" class="db-legacy-app">
+          <div class="db-legacy-stage">
+            <button id="db-home-button" class="db-home-button" type="button">Home</button>
 
-        <div class="db-layout db-list-layout">
-          <section class="card db-results-card">
-            <div class="card-head">
-              <h2>Jobs</h2>
-              <div class="card-actions db-pagination-bar">
-                <span id="db-results-count" class="pill pill-muted">0 results</span>
-                <button id="db-prev" class="btn outline small" aria-label="Previous page">‹</button>
-                <div id="db-pages" class="db-pages"></div>
-                <button id="db-next" class="btn outline small" aria-label="Next page">›</button>
-                <span id="db-page" class="small muted">0-0</span>
+            <div class="db-main-tabs" role="tablist" aria-label="Database sections">
+              <button class="db-main-tab active" type="button" data-db-go="home">Main Menu Options</button>
+              <button class="db-main-tab" type="button" data-db-go="outstanding">Outstanding Orders</button>
+            </div>
+
+            <section id="db-home-view" class="db-view db-home-view active" aria-label="Database home">
+              <div class="db-menu-column db-menu-left">
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="open-orders">Open Orders</button>
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="all-orders">All Orders</button>
+                <button class="db-raised-button" type="button" data-db-action="placeholder">Customers</button>
+                <button class="db-raised-button" type="button" data-db-action="placeholder">Styles</button>
+                <button class="db-raised-button" type="button" data-db-action="placeholder">Suppliers</button>
+                <button class="db-raised-button" type="button" data-db-action="placeholder">Reports</button>
+                <button class="db-raised-button" type="button" data-db-action="placeholder">Marketing</button>
               </div>
+
+              <div class="db-outstanding-actions">
+                <div class="db-panel-title">Outstanding actions</div>
+                <div class="db-action-count" id="db-outstanding-count">0</div>
+                <button class="db-small-button" type="button" data-db-action="open-orders">&gt;&gt;</button>
+              </div>
+
+              <div class="db-menu-column db-menu-right">
+                <button class="db-raised-button" type="button" data-db-action="placeholder">Users</button>
+                <button class="db-raised-button" type="button" data-db-action="placeholder">Passwords</button>
+                <button class="db-raised-button" type="button" data-db-action="placeholder">Configuration</button>
+                <button class="db-raised-button" type="button" data-db-action="placeholder">Error log</button>
+              </div>
+
+              <div class="db-backup-panel">
+                <div class="db-panel-title db-backup-title">Backup status</div>
+                <label class="db-checkbox-row"><input type="checkbox" checked disabled> Run backup</label>
+                <div class="db-backup-hot">Halted</div>
+                <div class="db-backup-copy">Data last backed up:</div>
+                <div class="db-backup-date">21-Nov-03 23:32</div>
+              </div>
+            </section>
+
+            <section id="db-outstanding-view" class="db-view db-outstanding-view" aria-label="Outstanding orders">
+              <div class="db-table-frame db-outstanding-table-frame">
+                <table id="db-outstanding-table" class="db-legacy-table">
+                  <thead>
+                    <tr>
+                      <th class="db-row-selector"></th>
+                      <th>Order no:</th>
+                      <th>Customer:</th>
+                      <th>Type</th>
+                      <th>Job title:</th>
+                      <th>Taken by:</th>
+                      <th>Order date:</th>
+                      <th>Delivery:</th>
+                      <th>Art</th>
+                      <th>S/J</th>
+                      <th>Sht.</th>
+                      <th>P/o</th>
+                      <th>CS.</th>
+                    </tr>
+                  </thead>
+                  <tbody id="db-outstanding-body">
+                    <tr><td colspan="13" class="db-empty-cell">Loading outstanding orders</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="db-outstanding-controls">
+                <div class="db-filter-buttons" role="group" aria-label="Outstanding order filters">
+                  <button class="db-toolbar-button" type="button" data-db-group="not-ready">Not ready</button>
+                  <button class="db-toolbar-button" type="button" data-db-group="ready">Ready</button>
+                  <button class="db-toolbar-button" type="button" data-db-group="print">Print ready</button>
+                  <button class="db-toolbar-button" type="button" data-db-group="embroidery">Embroidery ready</button>
+                  <button class="db-toolbar-button" type="button" data-db-group="gifts">Gifts</button>
+                  <button class="db-toolbar-button active" type="button" data-db-group="all">All outstanding</button>
+                </div>
+                <button id="db-refresh-orders" class="db-toolbar-button" type="button">Refresh</button>
+                <button class="db-icon-button" type="button" aria-label="Print">▦</button>
+                <fieldset class="db-sort-panel">
+                  <legend>Sort by:</legend>
+                  <label><input type="radio" name="db-sort" value="order" checked> Order no</label>
+                  <label><input type="radio" name="db-sort" value="delivery"> Delivery date</label>
+                </fieldset>
+                <label class="db-select-order-label">Select Order:
+                  <select id="db-select-order"></select>
+                </label>
+              </div>
+            </section>
+
+            <section id="db-order-view" class="db-view db-order-view" aria-label="Order">
+              <div class="db-order-header">
+                <div class="db-order-title-area">
+                  <div class="db-order-line">
+                    <span class="db-order-label-large">Job:</span>
+                    <input id="db-order-job-title" class="db-title-input" readonly>
+                    <button class="db-toolbar-button db-edit-button" type="button">Edit</button>
+                  </div>
+                  <div class="db-order-line db-order-number-line">
+                    <span class="db-order-label-large">Order No:</span>
+                    <input id="db-order-number" class="db-order-number-input" readonly>
+                    <div class="db-document-buttons">
+                      <button class="db-doc-button" type="button">Order<br>Ack.</button>
+                      <button class="db-doc-button" type="button">Delivery<br>Note</button>
+                      <button class="db-doc-button" type="button">Invoice</button>
+                      <button class="db-doc-button" type="button">Pro-<br>Forma</button>
+                      <button class="db-doc-button" type="button" data-db-order-tab="items">Stock</button>
+                      <button class="db-doc-button" type="button" data-db-order-tab="items">Non<br>Stock</button>
+                      <button class="db-doc-button" type="button" data-db-order-tab="items">Non<br>Del</button>
+                      <button class="db-doc-button" type="button" data-db-order-tab="items">Inter<br>nal</button>
+                      <button class="db-doc-button" type="button" data-db-order-tab="design">Des<br>ign</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="db-order-meta-panel">
+                  <div class="db-meta-grid">
+                    <span>Created:</span>
+                    <span>Last edited:</span>
+                    <span>By:</span>
+                    <a id="db-created-at" href="#">-</a>
+                    <a id="db-updated-at" href="#">-</a>
+                    <a id="db-updated-by" href="#">-</a>
+                  </div>
+                  <label>Job:
+                    <select id="db-header-job-select"></select>
+                  </label>
+                  <label>Order:
+                    <select id="db-header-order-select"></select>
+                  </label>
+                </div>
+              </div>
+
+              <div class="db-order-tabs" role="tablist" aria-label="Order tabs">
+                <button class="db-order-tab active" type="button" data-db-order-tab="details">Order details</button>
+                <button class="db-order-tab" type="button" data-db-order-tab="items">Order Items</button>
+                <button class="db-order-tab" type="button" data-db-order-tab="design">Design</button>
+              </div>
+
+              <div id="db-order-details-panel" class="db-order-panel active"></div>
+              <div id="db-order-items-panel" class="db-order-panel"></div>
+              <div id="db-order-design-panel" class="db-order-panel"></div>
+            </section>
+          </div>
+
+          <footer class="db-footer-bar">
+            <div class="db-footer-left">
+              <div><span>User:</span> <strong>Melvyn Harris</strong></div>
+              <div><span>Connection:</span> <strong>Live data</strong></div>
             </div>
-            <div class="card-body db-table-wrap">
-              <table id="db-jobs-table" class="data-table db-jobs-table">
-                <thead>
-                  <tr>
-                    <th class="w-90">Job</th>
-                    <th>Customer</th>
-                    <th>Title</th>
-                    <th class="w-140">Type</th>
-                    <th class="w-120">Date</th>
-                    <th class="w-90">Qty</th>
-                    <th class="w-90">Lines</th>
-                    <th class="w-100">Status</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
+            <div id="db-footer-title" class="db-footer-title">Main Menu</div>
+            <div class="db-footer-right">
+              <div><span>Version:</span> <strong>2.01</strong></div>
+              <div><span>Date:</span> <strong>19th November 2010</strong></div>
             </div>
-          </section>
+            <button class="db-exit-button" type="button" data-db-go="home" aria-label="Home">▸</button>
+          </footer>
         </div>
       </section>
 

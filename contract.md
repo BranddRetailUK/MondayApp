@@ -249,11 +249,11 @@ The dashboard has a `DATABASE` tab backed by a 2025/2026 MDB import.
 
 Frontend files:
 
-- `public/index.html`: sidebar tab and DATABASE list markup.
-- `public/database.js`: search, filter, compact 100-job list, and numbered pagination.
-- `public/database-job.html`: separate full-width job info page.
-- `public/database-job.js`: job facts, contact fields, line items, and positions rendering.
-- `public/styles.css`: DATABASE list, pagination, job info, and full-width table styles.
+- `public/index.html`: sidebar tab and legacy-style DATABASE hub markup.
+- `public/database.js`: DATABASE home screen, outstanding order grouping, order navigation, order detail tabs, line-item rendering, and design-position rendering.
+- `public/database-job.html`: older direct full-width job info page retained as a fallback.
+- `public/database-job.js`: older job facts, contact fields, line items, and positions rendering for the fallback page.
+- `public/styles.css`: scoped legacy DATABASE hub styles plus older fallback page table styles.
 
 Backend files:
 
@@ -264,7 +264,7 @@ Backend files:
 Endpoints:
 
 - `GET /api/database/summary`: returns counts for jobs, line items, positions, import status, counts by year, and counts by type.
-- `GET /api/database/jobs?q=&customer=&type=&year=&status=&limit=&offset=`: returns paginated jobs. Default and UI page size is 100 jobs. Search covers job number, customer, job title, contact name/email, client order number, line description, style code, style name, colour, and size.
+- `GET /api/database/jobs?q=&customer=&type=&year=&status=&limit=&offset=`: returns paginated jobs. Default and UI page size is 100 jobs. Search covers job number, customer, job title, contact name/email, client order number, line description, style code, style name, colour, and size. The list response also includes imported order flags and timestamps used by the legacy outstanding-orders grid.
 - `GET /api/database/jobs/:id`: returns one job plus contact fields, line items, and position rows. `:id` may be source order id or job number.
 
 Import rules:
@@ -283,10 +283,15 @@ railway run --service DB node scripts/import-database-mdb.js PS_XP_tab.mdb
 
 UI rules:
 
-- The DATABASE tab is list-only.
-- Clicking a job navigates to `/database-job.html?id=<source_order_id>`.
-- The job info page owns the contact fields, line items table, positions table, comments, and job facts.
-- Line item table headers must remain horizontal/readable; do not reintroduce narrow side-panel line item tables.
+- The DATABASE tab is a legacy-style hub matching the Access-era reference UI colors and layout.
+- The DATABASE home screen is the default tab screen and includes the main menu buttons, outstanding-actions count, admin buttons, backup-status panel, and footer.
+- The Outstanding Orders tab loads open jobs through `/api/database/jobs?status=open`, follows pagination until all open jobs are loaded, and groups rows into Print, Embroidery, Gifts, and Other using `order_type`/`order_type_abbr`.
+- Clicking an outstanding order opens the in-tab order view. Users can return to the DATABASE home screen with the top-left Home button.
+- The order view has three top tabs: Order details, Order Items, and Design. These tabs switch in place without navigating away from the dashboard.
+- Order details surfaces every imported job field that maps to the reference screen, including customer/contact, type, dates, client reference, comments, invoice fields, and boolean flags.
+- Order Items splits imported line items into stock, non-stock, non-deliverable, and internal sections using existing line-item flags and product/style data.
+- Design renders imported `database_job_positions` rows and the job `screen_numbers` field.
+- `/database-job.html?id=<source_order_id>` remains a direct fallback page, but the dashboard DATABASE tab is now the primary workflow.
 
 Core source mappings:
 

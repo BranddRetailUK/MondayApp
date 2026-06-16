@@ -1,243 +1,749 @@
 (function () {
+  const PAGE_LIMIT = 100;
+  const MAX_JOBS = 2500;
+
   const state = {
-    loaded: false,
-    loading: false,
-    limit: 100,
-    offset: 0,
-    total: 0,
+    loadedHome: false,
+    loadingOrders: false,
+    orderMode: 'open',
+    loadedOrderMode: '',
+    outstandingJobs: [],
+    outstandingTotal: 0,
+    activeGroup: 'all',
+    activeSort: 'order',
+    activeOrderTab: 'details',
+    selectedJob: null,
+    selectedLineItems: [],
+    selectedPositions: [],
   };
 
   let els = {};
-  let debounceTimer = null;
 
-  document.addEventListener('DOMContentLoaded', initDatabaseTab);
+  document.addEventListener('DOMContentLoaded', initDatabaseHub);
 
-  function initDatabaseTab() {
+  function initDatabaseHub() {
     els = {
-      tab: document.querySelector('.nav-tabs li[data-tab="database"]'),
-      searchBtn: document.getElementById('db-search-btn'),
-      clearBtn: document.getElementById('db-clear-btn'),
-      prevBtn: document.getElementById('db-prev'),
-      nextBtn: document.getElementById('db-next'),
-      pages: document.getElementById('db-pages'),
-      search: document.getElementById('db-search'),
-      customer: document.getElementById('db-customer'),
-      type: document.getElementById('db-type'),
-      year: document.getElementById('db-year'),
-      statusFilter: document.getElementById('db-status-filter'),
-      status: document.getElementById('db-status'),
-      resultsCount: document.getElementById('db-results-count'),
-      page: document.getElementById('db-page'),
-      jobsBody: document.querySelector('#db-jobs-table tbody'),
+      root: document.getElementById('db-legacy-app'),
+      sideTab: document.querySelector('.nav-tabs li[data-tab="database"]'),
+      homeButton: document.getElementById('db-home-button'),
+      mainTabs: Array.from(document.querySelectorAll('.db-main-tab')),
+      views: Array.from(document.querySelectorAll('#db-legacy-app .db-view')),
+      homeCount: document.getElementById('db-outstanding-count'),
+      outstandingBody: document.getElementById('db-outstanding-body'),
+      refreshOrders: document.getElementById('db-refresh-orders'),
+      selectOrder: document.getElementById('db-select-order'),
+      footerTitle: document.getElementById('db-footer-title'),
+      orderTitle: document.getElementById('db-order-job-title'),
+      orderNumber: document.getElementById('db-order-number'),
+      createdAt: document.getElementById('db-created-at'),
+      updatedAt: document.getElementById('db-updated-at'),
+      updatedBy: document.getElementById('db-updated-by'),
+      headerJobSelect: document.getElementById('db-header-job-select'),
+      headerOrderSelect: document.getElementById('db-header-order-select'),
+      orderTabs: Array.from(document.querySelectorAll('.db-order-tab')),
+      detailsPanel: document.getElementById('db-order-details-panel'),
+      itemsPanel: document.getElementById('db-order-items-panel'),
+      designPanel: document.getElementById('db-order-design-panel'),
     };
 
-    if (!els.tab) return;
+    if (!els.root) return;
 
-    els.tab.addEventListener('click', () => {
-      if (!state.loaded) loadDatabase();
-    });
-    if (els.searchBtn) els.searchBtn.addEventListener('click', () => loadJobs({ reset: true }));
-    els.clearBtn.addEventListener('click', clearFilters);
-    els.prevBtn.addEventListener('click', () => movePage(-1));
-    els.nextBtn.addEventListener('click', () => movePage(1));
-    els.pages.addEventListener('click', (event) => {
-      const btn = event.target.closest('button[data-page]');
-      if (!btn) return;
-      goToPage(Number(btn.dataset.page));
-    });
+    els.root.addEventListener('click', handleRootClick);
+    els.outstandingBody.addEventListener('click', handleOutstandingRowClick);
+    els.outstandingBody.addEventListener('keydown', handleOutstandingRowKeydown);
+    els.refreshOrders.addEventListener('click', () => loadOutstandingOrders({ force: true }));
+    els.selectOrder.addEventListener('change', () => openSelectedOrder(els.selectOrder.value));
+    els.headerJobSelect.addEventListener('change', () => openSelectedOrder(els.headerJobSelect.value));
+    els.headerOrderSelect.addEventListener('change', () => openSelectedOrder(els.headerOrderSelect.value));
 
-    [els.search, els.customer].forEach((input) => {
-      input.addEventListener('input', () => {
-        window.clearTimeout(debounceTimer);
-        debounceTimer = window.setTimeout(() => loadJobs({ reset: true }), 350);
-      });
-      input.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') loadJobs({ reset: true });
+    document.querySelectorAll('input[name="db-sort"]').forEach((input) => {
+      input.addEventListener('change', () => {
+        state.activeSort = input.value;
+        renderOutstandingOrders();
       });
     });
 
-    [els.type, els.year, els.statusFilter].forEach((input) => {
-      input.addEventListener('change', () => loadJobs({ reset: true }));
-    });
+    if (els.sideTab) {
+      els.sideTab.addEventListener('click', () => {
+        if (!state.loadedHome) loadHomeMetrics();
+      });
+    }
 
     const params = new URLSearchParams(window.location.search);
     if (params.get('tab') === 'database' || window.location.hash === '#database') {
-      els.tab.click();
+      els.sideTab?.click();
     } else if (document.getElementById('tab-database')?.classList.contains('active')) {
-      loadDatabase();
+      loadHomeMetrics();
     }
   }
 
-  async function loadDatabase(options = {}) {
-    await loadJobs(options);
-    state.loaded = true;
-  }
+  function handleRootClick(event) {
+    const button = event.target.closest('button');
+    if (!button || !els.root.contains(button) || button.disabled) return;
 
-  async function loadJobs(options = {}) {
-    if (state.loading) return;
-    if (options.reset) state.offset = 0;
-
-    state.loading = true;
-    setStatus('Loading jobs...');
-    setPagingDisabled(true);
-
-    try {
-      const params = new URLSearchParams({
-        limit: String(state.limit),
-        offset: String(state.offset),
-      });
-
-      addParam(params, 'q', els.search.value);
-      addParam(params, 'customer', els.customer.value);
-      addParam(params, 'type', els.type.value);
-      addParam(params, 'year', els.year.value);
-      addParam(params, 'status', els.statusFilter.value);
-
-      const data = await fetchJson(`/api/database/jobs?${params.toString()}`);
-      state.total = data.total || 0;
-      renderJobs(data.jobs || []);
-      renderPaging();
-      setStatus(`${formatNumber(state.total)} matching jobs`);
-    } catch (err) {
-      els.jobsBody.innerHTML = renderEmptyRow('Failed to load jobs', 8);
-      setStatus(err.message, 'error');
-    } finally {
-      state.loading = false;
-      setPagingDisabled(false);
-    }
-  }
-
-  function renderJobs(jobs) {
-    if (!jobs.length) {
-      els.jobsBody.innerHTML = renderEmptyRow('No jobs found', 8);
+    if (button.id === 'db-home-button') {
+      showHome();
       return;
     }
 
-    els.jobsBody.innerHTML = jobs.map((job) => `
-      <tr class="db-job-row" data-id="${job.source_order_id}" tabindex="0">
-        <td><strong>${escapeHtml(job.order_no)}</strong></td>
-        <td>${escapeHtml(job.customer_name || '-')}</td>
-        <td><div class="db-job-title">${escapeHtml(job.job_title || '-')}</div></td>
-        <td>${escapeHtml(job.order_type || '-')}</td>
-        <td>${escapeHtml(formatDate(job.order_date))}</td>
-        <td>${escapeHtml(formatNumber(job.total_quantity || 0))}</td>
-        <td>${escapeHtml(formatNumber(job.line_item_count || 0))}</td>
-        <td>${renderStatus(job.is_complete)}</td>
-      </tr>
-    `).join('');
+    const go = button.dataset.dbGo;
+    if (go === 'home') {
+      showHome();
+      return;
+    }
+    if (go === 'outstanding') {
+      openOutstandingOrders('open');
+      return;
+    }
 
-    els.jobsBody.querySelectorAll('.db-job-row').forEach((row) => {
-      row.addEventListener('click', () => openJob(row.dataset.id));
-      row.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') openJob(row.dataset.id);
+    const action = button.dataset.dbAction;
+    if (action === 'open-orders') {
+      openOutstandingOrders('open');
+      return;
+    }
+    if (action === 'all-orders') {
+      openOutstandingOrders('all');
+      return;
+    }
+
+    const group = button.dataset.dbGroup;
+    if (group) {
+      state.activeGroup = group;
+      document.querySelectorAll('[data-db-group]').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.dbGroup === group);
       });
+      renderOutstandingOrders();
+      return;
+    }
+
+    const orderTab = button.dataset.dbOrderTab;
+    if (orderTab) {
+      showOrderTab(orderTab);
+    }
+  }
+
+  function handleOutstandingRowClick(event) {
+    const row = event.target.closest('tr[data-job-id]');
+    if (!row) return;
+    openOrder(row.dataset.jobId, 'details');
+  }
+
+  function handleOutstandingRowKeydown(event) {
+    if (event.key !== 'Enter') return;
+    const row = event.target.closest('tr[data-job-id]');
+    if (!row) return;
+    openOrder(row.dataset.jobId, 'details');
+  }
+
+  async function loadHomeMetrics() {
+    state.loadedHome = true;
+    try {
+      const data = await fetchJson('/api/database/jobs?status=open&limit=1&offset=0');
+      els.homeCount.textContent = formatNumber(data.total || 0);
+    } catch {
+      els.homeCount.textContent = '!';
+    }
+  }
+
+  function showHome() {
+    showView('home');
+    state.activeOrderTab = 'details';
+    setFooterTitle('Main Menu');
+  }
+
+  function openOutstandingOrders(mode) {
+    state.orderMode = mode === 'all' ? 'all' : 'open';
+    showView('outstanding');
+    setFooterTitle(state.orderMode === 'all' ? 'All Orders' : 'Open Orders');
+    loadOutstandingOrders({ force: false });
+  }
+
+  async function loadOutstandingOrders(options = {}) {
+    if (state.loadingOrders) return;
+    if (state.outstandingJobs.length && state.loadedOrderMode === state.orderMode && !options.force) {
+      renderOutstandingOrders();
+      return;
+    }
+
+    state.loadingOrders = true;
+    els.outstandingBody.innerHTML = renderStatusRow('Loading outstanding orders');
+
+    try {
+      const result = await fetchJobs(state.orderMode);
+      state.outstandingJobs = result.jobs;
+      state.outstandingTotal = result.total;
+      state.loadedOrderMode = state.orderMode;
+      renderOutstandingOrders();
+      hydrateOrderSelectors();
+    } catch (err) {
+      els.outstandingBody.innerHTML = renderStatusRow(err.message);
+    } finally {
+      state.loadingOrders = false;
+    }
+  }
+
+  async function fetchJobs(mode) {
+    const jobs = [];
+    let offset = 0;
+    let total = 0;
+
+    while (jobs.length < MAX_JOBS) {
+      const params = new URLSearchParams({
+        limit: String(PAGE_LIMIT),
+        offset: String(offset),
+      });
+      if (mode !== 'all') params.set('status', 'open');
+
+      const data = await fetchJson(`/api/database/jobs?${params.toString()}`);
+      const batch = data.jobs || [];
+      total = data.total || batch.length;
+      jobs.push(...batch);
+
+      offset += data.limit || PAGE_LIMIT;
+      if (!batch.length || offset >= total) break;
+    }
+
+    return { jobs, total };
+  }
+
+  function renderOutstandingOrders() {
+    const rows = groupedOutstandingRows();
+    if (!rows.length) {
+      els.outstandingBody.innerHTML = renderStatusRow('No matching orders');
+      hydrateOrderSelectors();
+      return;
+    }
+
+    let html = '';
+    for (const group of rows) {
+      html += `<tr class="db-group-heading"><td colspan="13">${escapeHtml(group.label)}</td></tr>`;
+      html += group.jobs.map(renderOutstandingRow).join('');
+    }
+
+    els.outstandingBody.innerHTML = html;
+    hydrateOrderSelectors();
+  }
+
+  function groupedOutstandingRows() {
+    const groups = [
+      { key: 'print', label: 'Print', jobs: [] },
+      { key: 'embroidery', label: 'Embroidery', jobs: [] },
+      { key: 'gifts', label: 'Gifts', jobs: [] },
+      { key: 'other', label: 'Other', jobs: [] },
+    ];
+    const groupMap = new Map(groups.map((group) => [group.key, group]));
+
+    for (const job of filteredOutstandingJobs()) {
+      const category = categoryForJob(job);
+      (groupMap.get(category) || groupMap.get('other')).jobs.push(job);
+    }
+
+    groups.forEach((group) => group.jobs.sort(compareJobs));
+    return groups.filter((group) => group.jobs.length);
+  }
+
+  function filteredOutstandingJobs() {
+    const active = state.activeGroup;
+    return state.outstandingJobs.filter((job) => {
+      const category = categoryForJob(job);
+      if (active === 'all') return true;
+      if (active === 'ready') return isReady(job);
+      if (active === 'not-ready') return !isReady(job);
+      return category === active;
     });
   }
 
-  function openJob(id) {
-    const sourceOrderId = Number.parseInt(id, 10);
-    if (!Number.isFinite(sourceOrderId)) return;
-    window.location.href = `/database-job.html?id=${sourceOrderId}`;
+  function compareJobs(a, b) {
+    if (state.activeSort === 'delivery') {
+      const aTime = dateTime(a.delivery_date);
+      const bTime = dateTime(b.delivery_date);
+      if (aTime !== bTime) return aTime - bTime;
+    }
+    return Number(b.order_no || 0) - Number(a.order_no || 0);
   }
 
-  function movePage(direction) {
-    const nextOffset = state.offset + (direction * state.limit);
-    if (nextOffset < 0 || nextOffset >= state.total) return;
-    state.offset = nextOffset;
-    loadJobs();
+  function renderOutstandingRow(job) {
+    const selected = state.selectedJob && Number(state.selectedJob.source_order_id) === Number(job.source_order_id);
+    const delivery = `${formatDate(job.delivery_date, 'long')}${truthy(job.customer_date_required) ? ' *' : ''}`;
+    return `
+      <tr class="db-outstanding-row ${selected ? 'selected' : ''}" data-job-id="${escapeAttr(job.source_order_id)}" tabindex="0">
+        <td class="db-row-selector">${selected ? '&#9654;' : ''}</td>
+        <td class="db-order-link">${escapeHtml(job.order_no || '')}</td>
+        <td class="db-customer-link">${escapeHtml(job.customer_name || '')}</td>
+        <td class="db-type-cell db-type-${categoryForJob(job)}">${escapeHtml(typeAbbr(job))}</td>
+        <td>${escapeHtml(job.job_title || '')}</td>
+        <td>${escapeHtml(staffShort(job.trace_staff_id))}</td>
+        <td>${escapeHtml(formatDate(job.order_date, 'long'))}</td>
+        <td>${escapeHtml(delivery)}</td>
+        <td>${renderCheck(job.has_artwork)}</td>
+        <td>${renderCheck(truthy(job.has_screens) || Boolean(job.screen_numbers))}</td>
+        <td>${renderCheck(job.has_shirts)}</td>
+        <td>${renderCheck(job.is_printed)}</td>
+        <td>${renderCheck(job.customer_supplied)}</td>
+      </tr>
+    `;
   }
 
-  function clearFilters() {
-    els.search.value = '';
-    els.customer.value = '';
-    els.type.value = '';
-    els.year.value = '';
-    els.statusFilter.value = '';
-    loadJobs({ reset: true });
+  async function openSelectedOrder(value) {
+    const id = Number.parseInt(value, 10);
+    if (!Number.isFinite(id)) return;
+    await openOrder(id, state.activeOrderTab || 'details');
   }
 
-  function renderPaging() {
-    const start = state.total ? state.offset + 1 : 0;
-    const end = Math.min(state.offset + state.limit, state.total);
-    const pageCount = Math.max(1, Math.ceil(state.total / state.limit));
-    const currentPage = Math.floor(state.offset / state.limit) + 1;
-    els.page.textContent = `${formatNumber(start)}-${formatNumber(end)}`;
-    els.resultsCount.textContent = `${formatNumber(state.total)} results`;
-    els.pages.innerHTML = renderPageButtons(currentPage, pageCount);
-    els.prevBtn.disabled = state.offset <= 0;
-    els.nextBtn.disabled = state.offset + state.limit >= state.total;
+  async function openOrder(id, tab) {
+    state.activeOrderTab = tab || 'details';
+    showView('order');
+    setFooterTitle('Open Orders');
+    setOrderLoading();
+
+    try {
+      const data = await fetchJson(`/api/database/jobs/${encodeURIComponent(id)}`);
+      state.selectedJob = data.job || {};
+      state.selectedLineItems = data.lineItems || [];
+      state.selectedPositions = data.positions || [];
+      renderOrder();
+      renderOutstandingOrders();
+      showOrderTab(state.activeOrderTab);
+    } catch (err) {
+      renderOrderError(err.message);
+    }
   }
 
-  function setPagingDisabled(disabled) {
-    els.prevBtn.disabled = disabled || state.offset <= 0;
-    els.nextBtn.disabled = disabled || state.offset + state.limit >= state.total;
+  function setOrderLoading() {
+    els.orderTitle.value = 'Loading...';
+    els.orderNumber.value = '';
+    els.createdAt.textContent = '-';
+    els.updatedAt.textContent = '-';
+    els.updatedBy.textContent = '-';
+    els.detailsPanel.innerHTML = '<div class="db-panel-message">Loading order details</div>';
+    els.itemsPanel.innerHTML = '';
+    els.designPanel.innerHTML = '';
   }
 
-  function goToPage(page) {
-    const pageCount = Math.max(1, Math.ceil(state.total / state.limit));
-    if (!Number.isFinite(page) || page < 1 || page > pageCount) return;
-    state.offset = (page - 1) * state.limit;
-    loadJobs();
+  function renderOrderError(message) {
+    els.orderTitle.value = 'Order unavailable';
+    els.orderNumber.value = '';
+    els.detailsPanel.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
+    els.itemsPanel.innerHTML = '';
+    els.designPanel.innerHTML = '';
   }
 
-  function renderPageButtons(currentPage, pageCount) {
-    const pages = visiblePages(currentPage, pageCount);
-    return pages.map((page) => {
-      if (page === 'gap') return '<span class="db-page-gap">...</span>';
-      return `
-        <button class="btn outline small db-page-btn ${page === currentPage ? 'active' : ''}"
-                data-page="${page}"
-                ${page === currentPage ? 'aria-current="page"' : ''}>
-          ${page}
-        </button>
-      `;
+  function renderOrder() {
+    const job = state.selectedJob || {};
+    els.orderTitle.value = job.job_title || '';
+    els.orderNumber.value = job.order_no || '';
+    els.createdAt.textContent = formatDateTime(job.created_at_source);
+    els.updatedAt.textContent = formatDateTime(job.updated_at_source);
+    els.updatedBy.textContent = staffLabel(job.trace_staff_id);
+
+    hydrateOrderSelectors();
+    renderDetailsPanel();
+    renderItemsPanel();
+    renderDesignPanel();
+  }
+
+  function hydrateOrderSelectors() {
+    const selectedId = state.selectedJob?.source_order_id ? String(state.selectedJob.source_order_id) : '';
+    const jobs = selectorJobs();
+    const placeholder = '<option value="">Select order</option>';
+    const options = jobs.map((job) => {
+      const id = String(job.source_order_id);
+      const label = `${job.order_no || ''} - ${job.job_title || job.customer_name || ''}`.trim();
+      return `<option value="${escapeAttr(id)}" ${id === selectedId ? 'selected' : ''}>${escapeHtml(label)}</option>`;
     }).join('');
+
+    [els.selectOrder, els.headerJobSelect, els.headerOrderSelect].forEach((select) => {
+      select.innerHTML = placeholder + options;
+      if (selectedId) select.value = selectedId;
+    });
   }
 
-  function visiblePages(currentPage, pageCount) {
-    if (pageCount <= 7) {
-      return Array.from({ length: pageCount }, (_, index) => index + 1);
+  function selectorJobs() {
+    const jobs = [...state.outstandingJobs];
+    if (state.selectedJob?.source_order_id && !jobs.some((job) => Number(job.source_order_id) === Number(state.selectedJob.source_order_id))) {
+      jobs.unshift(state.selectedJob);
     }
-
-    const pages = [1];
-    const start = Math.max(2, currentPage - 1);
-    const end = Math.min(pageCount - 1, currentPage + 1);
-
-    if (start > 2) pages.push('gap');
-    for (let page = start; page <= end; page += 1) pages.push(page);
-    if (end < pageCount - 1) pages.push('gap');
-    pages.push(pageCount);
-
-    return pages;
+    return jobs.sort((a, b) => Number(b.order_no || 0) - Number(a.order_no || 0));
   }
 
-  function setStatus(message, tone = 'info') {
-    els.status.textContent = message || '';
-    els.status.dataset.tone = tone;
+  function showOrderTab(tab) {
+    state.activeOrderTab = tab;
+    els.orderTabs.forEach((button) => {
+      button.classList.toggle('active', button.dataset.dbOrderTab === tab);
+    });
+    [
+      ['details', els.detailsPanel],
+      ['items', els.itemsPanel],
+      ['design', els.designPanel],
+    ].forEach(([key, panel]) => {
+      panel.classList.toggle('active', key === tab);
+    });
   }
 
-  function addParam(params, key, value) {
-    const clean = String(value || '').trim();
-    if (clean) params.set(key, clean);
+  function renderDetailsPanel() {
+    const job = state.selectedJob || {};
+    els.detailsPanel.innerHTML = `
+      <div class="db-details-layout">
+        <div class="db-detail-box db-customer-box">
+          ${detailRow('Customer:', `${selectBox(job.customer_name, 'db-control-link')}<input class="db-legacy-input db-code-input" readonly value="${escapeAttr(job.customer_code || '')}">`)}
+          ${detailRow('Contact:', selectBox(job.contact_name))}
+          ${detailRow('Order type:', selectBox(job.order_type || typeLabel(job)))}
+          ${detailRow('Taken by:', selectBox(staffLabel(job.trace_staff_id)))}
+          ${detailRow('Delivery:', selectBox(''))}
+          ${detailRow('Order date:', inputBox(formatDate(job.order_date, 'short')))}
+          ${detailRow('Delivery:', `${inputBox(formatDate(job.delivery_date, 'short'))}<label class="db-inline-check">${renderCheck(job.customer_date_required)} Customer date</label>`)}
+          ${detailRow('Completion', `${inputBox(formatDate(job.complete_date, 'short'))}${renderCheck(job.is_complete)}`)}
+        </div>
+
+        <div class="db-detail-box db-address-box">
+          ${detailRow('Invoice to:', selectBox(job.customer_name))}
+          ${detailRow('Deliver to:', selectBox(job.customer_name))}
+        </div>
+
+        <div class="db-detail-box db-payment-box">
+          ${detailRow('Payment:', selectBox(''))}
+          ${detailRow('Client ref:', inputBox(job.client_order_no || job.contact_name || ''))}
+          <div class="db-form-row db-comments-row">
+            <label>Comments:</label>
+            <textarea readonly>${escapeHtml(job.comments || '')}</textarea>
+          </div>
+        </div>
+
+        <div class="db-detail-box db-print-box">
+          ${detailRow('Delivery note:', inputBox(formatDate(job.delivery_note_date, 'short'), 'db-green-input'))}
+          ${detailRow('Invoice no:', inputBox(job.invoice_no || '', 'db-green-input'))}
+          ${detailRow('Pro-forma:', inputBox(formatDate(job.pf_invoice_date, 'short'), 'db-green-input'))}
+        </div>
+
+        <div class="db-detail-box db-invoice-checks">
+          <label>${renderCheck(job.invoice_required)} Invoice required</label>
+          <label>${renderCheck(job.invoice_printed)} Invoice printed</label>
+          <label>${renderCheck(job.pf_invoice_printed)} Pro-forma printed</label>
+        </div>
+
+        <div class="db-detail-box db-flags-box">
+          <div>
+            <label>${renderCheck(job.has_artwork)} Artwork</label>
+            <label>${renderCheck(false)} Jacquard</label>
+            <label>${renderCheck(job.has_shirts)} Shirts</label>
+            <label>${renderCheck(job.is_reorder)} Re-order</label>
+            <label>${renderCheck(job.customer_supplied)} Customer supplied</label>
+          </div>
+          <div>
+            <label>${renderCheck(job.is_printed)} Printed</label>
+            <label>${renderCheck(job.is_bagged)} Bagged</label>
+            <label>${renderCheck(job.is_automatic)} Automatic</label>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
-  async function fetchJson(url) {
-    const response = await fetch(url);
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(payload.error || `Request failed: ${response.status}`);
-    }
-    return payload;
+  function renderItemsPanel() {
+    const items = state.selectedLineItems || [];
+    const stockItems = items.filter(isStockItem);
+    const nonStockItems = items.filter(isNonStockItem);
+    const nonDeliverableItems = items.filter((item) => truthy(item.is_non_deliverable));
+    const internalItems = items.filter((item) => truthy(item.is_internal));
+    const suppliers = unique(items.map((item) => item.supplier_name).filter(Boolean)).join(', ');
+
+    els.itemsPanel.innerHTML = `
+      <div class="db-items-layout">
+        <div class="db-items-stock-frame">
+          <table class="db-legacy-table db-items-table">
+            <thead>
+              <tr>
+                <th class="db-row-selector"></th>
+                <th>Stock code:</th>
+                <th>Code:</th>
+                <th>Alt code:</th>
+                <th>Style:</th>
+                <th>Colour:</th>
+                <th>Size:</th>
+                <th>Cost:</th>
+                <th>Price:</th>
+                <th>Qty:</th>
+                <th>VAT:</th>
+              </tr>
+            </thead>
+            <tbody>${stockItems.length ? stockItems.map(renderStockRow).join('') : renderItemEmptyRow(11)}</tbody>
+          </table>
+        </div>
+
+        <div class="db-items-lower-grid">
+          <div class="db-items-left-stack">
+            ${renderSmallItemBox('Non-deliverable item:', nonDeliverableItems)}
+            ${renderSmallItemBox('Internal item:', internalItems)}
+          </div>
+          <div class="db-edit-spine">E<br>D<br>I<br>T</div>
+          <div class="db-nonstock-box">
+            <table class="db-legacy-table db-nonstock-table">
+              <thead>
+                <tr>
+                  <th class="db-row-selector"></th>
+                  <th>Non-stock item:</th>
+                  <th>Cost:</th>
+                  <th>Price:</th>
+                  <th>Qty:</th>
+                  <th>VAT:</th>
+                </tr>
+              </thead>
+              <tbody>${nonStockItems.length ? nonStockItems.map(renderNonStockRow).join('') : renderItemEmptyRow(6)}</tbody>
+            </table>
+            <div class="db-supplier-row"><span>Supplier:</span><input readonly value="${escapeAttr(suppliers)}"></div>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
-  function renderStatus(isComplete) {
-    const label = isComplete ? 'Complete' : 'Open';
-    const cls = isComplete ? 'db-status-complete' : 'db-status-open';
-    return `<span class="badge ${cls}">${label}</span>`;
+  function renderDesignPanel() {
+    const positions = state.selectedPositions || [];
+    const job = state.selectedJob || {};
+
+    els.designPanel.innerHTML = `
+      <div class="db-design-layout">
+        <div class="db-design-table-frame">
+          <table class="db-legacy-table db-design-table">
+            <thead>
+              <tr>
+                <th class="db-row-selector"></th>
+                <th>Position:</th>
+                <th>Colour:</th>
+                <th>Design:</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${positions.length ? positions.map(renderPositionRow).join('') : '<tr><td class="db-row-selector"></td><td></td><td></td><td></td></tr>'}
+            </tbody>
+          </table>
+          <div class="db-design-filler"></div>
+        </div>
+        <div class="db-screens-row">
+          <span>Screens:</span>
+          <input readonly value="${escapeAttr(job.screen_numbers || '')}">
+        </div>
+      </div>
+    `;
   }
 
-  function renderEmptyRow(message, colspan) {
-    return `<tr><td colspan="${colspan}" class="db-empty-cell">${escapeHtml(message)}</td></tr>`;
+  function renderStockRow(item, index) {
+    return `
+      <tr>
+        <td class="db-row-selector">${index === 0 ? '&#9654;' : ''}</td>
+        <td class="db-order-link">${escapeHtml(stockCode(item))}</td>
+        <td>${escapeHtml(item.style_code || '')}</td>
+        <td>${escapeHtml(item.alt_style_code || '')}</td>
+        <td>${escapeHtml(item.style_name || item.line_description || '')}</td>
+        <td>${escapeHtml(item.colour || '')}</td>
+        <td>${escapeHtml(item.size || '')}</td>
+        <td>${escapeHtml(formatCurrency(item.unit_cost))}</td>
+        <td>${escapeHtml(formatCurrency(item.unit_price))}</td>
+        <td>${escapeHtml(formatNumber(item.quantity || 0))}</td>
+        <td>${escapeHtml(formatVat(item.vat_rate))}</td>
+      </tr>
+    `;
+  }
+
+  function renderNonStockRow(item, index) {
+    return `
+      <tr>
+        <td class="db-row-selector">${index === 0 ? '&#9654;' : ''}</td>
+        <td>${escapeHtml(item.line_description || item.style_name || '')}</td>
+        <td>${escapeHtml(formatCurrency(item.unit_cost))}</td>
+        <td>${escapeHtml(formatCurrency(item.unit_price))}</td>
+        <td>${escapeHtml(formatNumber(item.quantity || 0))}</td>
+        <td>${escapeHtml(formatVat(item.vat_rate))}</td>
+      </tr>
+    `;
+  }
+
+  function renderPositionRow(position, index) {
+    return `
+      <tr>
+        <td class="db-row-selector">${index === 0 ? '&#9654;' : ''}</td>
+        <td>${escapeHtml(position.position_name || '')}</td>
+        <td>${escapeHtml(position.colour_notes || '')}</td>
+        <td>${escapeHtml(position.design_ref || '')}</td>
+      </tr>
+    `;
+  }
+
+  function renderSmallItemBox(title, items) {
+    return `
+      <div class="db-small-item-box">
+        <table class="db-legacy-table">
+          <thead>
+            <tr>
+              <th>${escapeHtml(title)}</th>
+              <th>Cost:</th>
+              <th>Price:</th>
+              <th>Qty:</th>
+              <th>VAT:</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.length ? items.map((item) => `
+              <tr>
+                <td>${escapeHtml(item.line_description || item.style_name || '')}</td>
+                <td>${escapeHtml(formatCurrency(item.unit_cost))}</td>
+                <td>${escapeHtml(formatCurrency(item.unit_price))}</td>
+                <td>${escapeHtml(formatNumber(item.quantity || 0))}</td>
+                <td>${escapeHtml(formatVat(item.vat_rate))}</td>
+              </tr>
+            `).join('') : '<tr class="db-gray-fill"><td colspan="5"></td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function showView(name) {
+    els.views.forEach((view) => {
+      view.classList.toggle('active', view.id === `db-${name}-view`);
+    });
+
+    els.mainTabs.forEach((tab) => {
+      const active = name === 'home' ? tab.dataset.dbGo === 'home' : tab.dataset.dbGo === 'outstanding';
+      tab.classList.toggle('active', active);
+    });
+  }
+
+  function setFooterTitle(title) {
+    els.footerTitle.textContent = title;
+  }
+
+  function detailRow(label, controlHtml) {
+    return `
+      <div class="db-form-row">
+        <label>${escapeHtml(label)}</label>
+        <div class="db-form-control">${controlHtml}</div>
+      </div>
+    `;
+  }
+
+  function inputBox(value, className = '') {
+    return `<input class="db-legacy-input ${className}" readonly value="${escapeAttr(value || '')}">`;
+  }
+
+  function selectBox(value, className = '') {
+    return `<select class="${className}" disabled><option>${escapeHtml(value || '')}</option></select>`;
+  }
+
+  function renderStatusRow(message) {
+    return `<tr><td colspan="13" class="db-empty-cell">${escapeHtml(message)}</td></tr>`;
+  }
+
+  function renderItemEmptyRow(colspan) {
+    return `<tr class="db-gray-fill"><td colspan="${colspan}"></td></tr>`;
+  }
+
+  function renderCheck(value) {
+    return `<input class="db-tiny-check" type="checkbox" disabled ${truthy(value) ? 'checked' : ''}>`;
+  }
+
+  function categoryForJob(job) {
+    const type = `${job.order_type || ''} ${job.order_type_abbr || ''}`.toLowerCase();
+    const abbr = String(job.order_type_abbr || '').trim().toLowerCase();
+    if (type.includes('gift') || abbr === 'g') return 'gifts';
+    if (type.includes('embro') || abbr === 'e') return 'embroidery';
+    if (type.includes('print') || abbr === 'p') return 'print';
+    return 'other';
+  }
+
+  function typeAbbr(job) {
+    if (job.order_type_abbr) return job.order_type_abbr;
+    const category = categoryForJob(job);
+    if (category === 'gifts') return 'G';
+    if (category === 'embroidery') return 'E';
+    if (category === 'print') return 'P';
+    return '';
+  }
+
+  function typeLabel(job) {
+    const category = categoryForJob(job);
+    if (category === 'gifts') return 'Business gifts';
+    if (category === 'embroidery') return 'Embroidery';
+    if (category === 'print') return 'Printing';
+    return '';
+  }
+
+  function isReady(job) {
+    return truthy(job.has_artwork)
+      || truthy(job.has_screens)
+      || Boolean(job.screen_numbers)
+      || truthy(job.has_shirts)
+      || truthy(job.is_printed);
+  }
+
+  function isStockItem(item) {
+    return !truthy(item.is_non_deliverable)
+      && !truthy(item.is_internal)
+      && Boolean(item.source_product_id || item.style_code || item.style_name);
+  }
+
+  function isNonStockItem(item) {
+    return !truthy(item.is_non_deliverable) && !truthy(item.is_internal) && !isStockItem(item);
+  }
+
+  function stockCode(item) {
+    if (!item.source_product_id) return '';
+    const raw = String(item.source_product_id);
+    return /^\d+$/.test(raw) ? raw.padStart(8, '0') : raw;
+  }
+
+  function staffShort(value) {
+    if (!value) return '';
+    return String(value).slice(0, 2);
+  }
+
+  function staffLabel(value) {
+    if (!value) return '';
+    return `Staff ${value}`;
+  }
+
+  function formatDate(value, style) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = style === 'short'
+      ? String(date.getFullYear()).slice(-2)
+      : String(date.getFullYear());
+    return `${day}/${month}/${year}`;
+  }
+
+  function formatDateTime(value) {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    const datePart = formatDate(value, 'short');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${datePart} ${hours}:${minutes}`;
+  }
+
+  function dateTime(value) {
+    if (!value) return Number.MAX_SAFE_INTEGER;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? Number.MAX_SAFE_INTEGER : date.getTime();
+  }
+
+  function formatCurrency(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return '';
+    return new Intl.NumberFormat('en-GB', {
+      style: 'currency',
+      currency: 'GBP',
+    }).format(number);
+  }
+
+  function formatVat(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return '';
+    const percent = number > 0 && number <= 1 ? number * 100 : number;
+    return `${percent.toFixed(2)}%`;
   }
 
   function formatNumber(value) {
@@ -246,15 +752,25 @@
     return new Intl.NumberFormat('en-GB').format(number);
   }
 
-  function formatDate(value) {
-    if (!value) return '';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
-    return date.toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    });
+  function truthy(value) {
+    return value === true || value === 1 || value === '1' || String(value).toLowerCase() === 'true';
+  }
+
+  function unique(values) {
+    return Array.from(new Set(values));
+  }
+
+  async function fetchJson(url) {
+    const response = await fetch(url, { cache: 'no-store' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || `Request failed: ${response.status}`);
+    }
+    return payload;
+  }
+
+  function escapeAttr(value) {
+    return escapeHtml(value).replace(/`/g, '&#096;');
   }
 
   function escapeHtml(value) {
