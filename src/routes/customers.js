@@ -9,21 +9,12 @@ router.get('/api/customers/search', async (req, res) => {
   if (!q) return res.json([]);
   try {
     const r = await pool.query(
-      `SELECT id, business_name, contact_name, email,
-              inv_line1, inv_line2, inv_city, inv_region, inv_postcode, inv_country,
-              ship_line1, ship_line2, ship_city, ship_region, ship_postcode, ship_country
+      `SELECT id, business_name, contact_name, email
        FROM customers
        WHERE business_name ILIKE $1 OR contact_name ILIKE $1 OR email ILIKE $1
-       ORDER BY
-         CASE
-           WHEN LOWER(business_name) = LOWER($2) THEN 0
-           WHEN business_name ILIKE $3 THEN 1
-           WHEN contact_name ILIKE $3 THEN 2
-           ELSE 3
-         END,
-         business_name ASC
+       ORDER BY business_name ASC
        LIMIT 20`,
-      [`%${q}%`, q, `${q}%`]
+      [`%${q}%`]
     );
     res.json(r.rows);
   } catch (e) {

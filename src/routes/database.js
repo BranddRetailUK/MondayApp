@@ -139,10 +139,91 @@ router.get('/api/database/jobs', async (req, res) => {
   }
 });
 
+router.get('/api/database/customers/search', async (req, res) => {
+  const search = cleanQuery(req.query.q);
+  if (!search) return res.json([]);
+
+  try {
+    const result = await pool.query(
+      `WITH candidates AS (
+         SELECT
+           COALESCE(customer_id::text, LOWER(customer_name)) AS customer_key,
+           customer_id,
+           customer_name AS business_name,
+           customer_code,
+           contact_id,
+           contact_name,
+           contact_phone,
+           contact_mobile,
+           contact_email,
+           contact_email AS email,
+           delivery_address,
+           invoice_address,
+           source_order_id,
+           order_no,
+           COALESCE(order_date, updated_at_source, created_at_source) AS last_seen_at,
+           CASE
+             WHEN LOWER(customer_name) = LOWER($2) THEN 0
+             WHEN customer_name ILIKE $3 THEN 1
+             WHEN customer_code ILIKE $3 THEN 2
+             WHEN contact_name ILIKE $3 THEN 3
+             WHEN contact_email ILIKE $3 THEN 4
+             ELSE 5
+           END AS match_rank
+         FROM database_jobs
+         WHERE customer_name IS NOT NULL
+           AND customer_name <> ''
+           AND (
+             customer_name ILIKE $1
+             OR customer_code ILIKE $1
+             OR contact_name ILIKE $1
+             OR contact_email ILIKE $1
+           )
+       ),
+       ranked AS (
+         SELECT *,
+                ROW_NUMBER() OVER (
+                  PARTITION BY customer_key
+                  ORDER BY match_rank ASC,
+                           last_seen_at DESC NULLS LAST,
+                           order_no DESC NULLS LAST
+                ) AS customer_rank
+         FROM candidates
+       )
+       SELECT customer_id,
+              business_name,
+              customer_code,
+              contact_id,
+              contact_name,
+              contact_phone,
+              contact_mobile,
+              contact_email,
+              email,
+              delivery_address,
+              invoice_address,
+              source_order_id AS latest_source_order_id,
+              order_no AS latest_order_no
+       FROM ranked
+       WHERE customer_rank = 1
+       ORDER BY match_rank ASC,
+                LOWER(business_name) ASC,
+                latest_order_no DESC NULLS LAST
+       LIMIT 20`,
+      [`%${search}%`, search, `${search}%`]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('GET /api/database/customers/search', err);
+    res.status(500).json({ error: 'Failed to search database customers' });
+  }
+});
+
 router.post('/api/database/jobs', async (req, res) => {
   const payload = req.body || {};
   const customerName = cleanNullable(payload.customer_name);
   const contactName = cleanNullable(payload.contact_name);
+  const customerId = nullableInt(payload.customer_id);
+  const contactId = nullableInt(payload.contact_id);
   const orderType = cleanNullable(payload.order_type);
   const jobTitle = cleanNullable(payload.job_title);
   const orderDate = parseDatabaseDate(payload.order_date, 'Order date');
@@ -185,8 +266,14 @@ router.post('/api/database/jobs', async (req, res) => {
          source_year,
          order_type,
          order_type_abbr,
+         customer_id,
          customer_name,
+         customer_code,
+         contact_id,
          contact_name,
+         contact_phone,
+         contact_mobile,
+         contact_email,
          job_title,
          client_order_no,
          delivery_method,
@@ -204,7 +291,8 @@ router.post('/api/database/jobs', async (req, res) => {
          updated_at_source
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-         $13, $14, $15, $16, $17, $18, FALSE, TRUE, NOW(), NOW()
+         $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
+         FALSE, TRUE, NOW(), NOW()
        )
        RETURNING *`,
       [
@@ -213,8 +301,14 @@ router.post('/api/database/jobs', async (req, res) => {
         orderDate.year,
         orderType,
         orderTypeAbbr,
+        customerId,
         customerName,
+        cleanNullable(payload.customer_code),
+        contactId,
         contactName,
+        cleanNullable(payload.contact_phone),
+        cleanNullable(payload.contact_mobile),
+        cleanNullable(payload.contact_email),
         jobTitle,
         cleanNullable(payload.client_order_no),
         cleanNullable(payload.delivery_method),
@@ -362,6 +456,11 @@ function clampInt(value, fallback, min, max) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(Math.max(parsed, min), max);
+}
+
+function nullableInt(value) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function parseDatabaseDate(value, label) {

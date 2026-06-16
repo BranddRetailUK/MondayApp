@@ -1128,15 +1128,15 @@ body.modal-open{overflow:hidden}
   width:140px;
 }
 .db-order-view{
-  padding:0 12px 0;
+  padding:0;
 }
 .db-order-header{
   position:relative;
   height:96px;
 }
 .db-order-title-area{
-  padding-top:16px;
-  padding-right:310px;
+  width:678px;
+  padding:16px 0 0 2px;
 }
 .db-order-line{
   display:flex;
@@ -1148,12 +1148,15 @@ body.modal-open{overflow:hidden}
   align-items:flex-start;
 }
 .db-order-label-large{
+  flex:0 0 98px;
   width:98px;
   color:#120080;
   font-size:22px;
   line-height:30px;
+  white-space:nowrap;
 }
 .db-title-input{
+  flex:0 0 482px;
   width:482px;
   height:29px;
   border:2px inset #fff;
@@ -1163,10 +1166,12 @@ body.modal-open{overflow:hidden}
   padding:1px 4px;
 }
 .db-edit-button{
+  flex:0 0 60px;
   width:60px;
   height:31px;
 }
 .db-order-number-input{
+  flex:0 0 90px;
   width:90px;
   height:31px;
   border:1px solid #fff;
@@ -1180,10 +1185,15 @@ body.modal-open{overflow:hidden}
   gap:1px;
 }
 .db-doc-button{
-  width:57px;
+  flex:0 0 55px;
+  width:55px;
   height:43px;
   padding:0 2px;
   line-height:15px;
+}
+.db-doc-button:nth-child(n+5){
+  flex-basis:45px;
+  width:45px;
 }
 .db-order-meta-panel{
   position:absolute;

@@ -239,7 +239,7 @@
     const requestId = ++customerSearchRequest;
 
     try {
-      const results = await fetchJson(`/api/customers/search?q=${encodeURIComponent(query)}`);
+      const results = await fetchJson(`/api/database/customers/search?q=${encodeURIComponent(query)}`);
       if (requestId !== customerSearchRequest || els.newCustomerInput.value.trim() !== query) return;
       state.customerResults = rankCustomers(Array.isArray(results) ? results : [], query);
       renderCustomerResults(state.customerResults, query);
@@ -338,7 +338,7 @@
     els.newCustomerInput.value = customer.business_name || '';
     els.newContactInput.value = customer.contact_name || '';
 
-    const invoiceAddress = formatCustomerAddress(customer, 'inv');
+    const invoiceAddress = formatCustomerAddress(customer, 'inv') || customer.business_name || '';
     const deliveryAddress = formatCustomerAddress(customer, 'ship') || invoiceAddress;
     els.newDeliveryAddress.value = deliveryAddress || '';
     els.newInvoiceAddress.value = invoiceAddress || deliveryAddress || '';
@@ -355,6 +355,8 @@
   }
 
   function formatCustomerAddress(customer, prefix) {
+    if (prefix === 'inv' && customer.invoice_address) return String(customer.invoice_address).trim();
+    if (prefix === 'ship' && customer.delivery_address) return String(customer.delivery_address).trim();
     return [
       customer[`${prefix}_line1`],
       customer[`${prefix}_line2`],
@@ -417,9 +419,16 @@
 
   function collectNewOrderPayload() {
     const fields = els.newOrderForm.elements;
+    const selectedCustomer = selectedDatabaseCustomer(fields.customer_name.value);
     return {
+      customer_id: selectedCustomer?.customer_id,
       customer_name: fields.customer_name.value,
+      customer_code: selectedCustomer?.customer_code,
+      contact_id: selectedCustomer?.contact_id,
       contact_name: fields.contact_name.value,
+      contact_phone: selectedCustomer?.contact_phone,
+      contact_mobile: selectedCustomer?.contact_mobile,
+      contact_email: selectedCustomer?.contact_email || selectedCustomer?.email,
       order_type: fields.order_type.value,
       job_title: fields.job_title.value,
       order_date: legacyInputDateToIso(fields.order_date.value),
@@ -433,6 +442,13 @@
       invoice_required: fields.invoice_required.value,
       client_order_no: fields.client_order_no.value,
     };
+  }
+
+  function selectedDatabaseCustomer(customerName) {
+    if (!state.selectedCustomer) return null;
+    const selectedName = String(state.selectedCustomer.business_name || '').trim().toLowerCase();
+    const currentName = String(customerName || '').trim().toLowerCase();
+    return selectedName && selectedName === currentName ? state.selectedCustomer : null;
   }
 
   function openOutstandingOrders(mode) {
