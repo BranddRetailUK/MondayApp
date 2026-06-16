@@ -433,7 +433,7 @@
       job_title: fields.job_title.value,
       order_date: legacyInputDateToIso(fields.order_date.value),
       delivery_date: legacyInputDateToIso(fields.delivery_date.value),
-      customer_date_required: fields.customer_date_required.checked,
+      customer_date_required: false,
       delivery_method: fields.delivery_method.value,
       payment_terms: fields.payment_terms.value,
       order_taken_by: fields.order_taken_by.value,

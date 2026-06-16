@@ -802,26 +802,12 @@ body.modal-open{overflow:hidden}
   width:100%;
   min-width:0;
 }
-.db-new-order-customer-row > .db-lookup-button,
-.db-new-order-contact-row > .db-lookup-button{
-  grid-column:2;
-}
 .db-new-order-customer-row > input,
 .db-new-order-contact-row > input{
   grid-column:3 / 6;
 }
-.db-new-order-customer-row > .db-combo-button,
-.db-new-order-contact-row > .db-combo-button{
-  grid-column:5;
-  justify-self:end;
-}
 .db-new-order-contact-row > input{
-  grid-column:3;
-  width:164px;
-}
-.db-new-order-contact-row > .db-combo-button{
-  grid-column:4;
-  justify-self:start;
+  width:100%;
 }
 .db-new-short-row > select{
   grid-column:3;
@@ -832,16 +818,8 @@ body.modal-open{overflow:hidden}
   grid-column:3;
   width:164px;
 }
-.db-new-combo-row > .db-new-row-combo{
-  grid-column:4;
-}
 .db-new-wide-combo-row > input{
   grid-column:3 / 6;
-  padding-right:22px;
-}
-.db-new-wide-combo-row > .db-new-row-combo{
-  grid-column:5;
-  justify-self:end;
 }
 .db-new-order-date-row > input{
   grid-column:3;
@@ -850,14 +828,6 @@ body.modal-open{overflow:hidden}
 .db-new-order-delivery-date-row > input{
   grid-column:3;
   width:95px;
-}
-.db-new-inline-check{
-  grid-column:4 / 6;
-  display:flex;
-  align-items:center;
-  gap:4px;
-  color:#000!important;
-  white-space:nowrap;
 }
 .db-new-order-invoice-row > select{
   grid-column:3;
@@ -880,8 +850,6 @@ body.modal-open{overflow:hidden}
   font:12px Arial, Helvetica, sans-serif;
   padding:1px 3px;
 }
-.db-lookup-button,
-.db-combo-button,
 .db-new-action-button{
   border:2px outset #fff;
   border-radius:0;
@@ -889,16 +857,6 @@ body.modal-open{overflow:hidden}
   color:#000;
   font:12px Arial, Helvetica, sans-serif;
   cursor:pointer;
-}
-.db-lookup-button,
-.db-combo-button{
-  width:25px;
-  height:23px;
-  padding:0;
-  line-height:18px;
-}
-.db-combo-button{
-  width:19px;
 }
 .db-new-order-status{
   position:absolute;
