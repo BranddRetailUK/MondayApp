@@ -430,6 +430,7 @@
 
             <section id="db-home-view" class="db-view db-home-view active" aria-label="Database home">
               <div class="db-menu-column db-menu-left">
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="new-order">New Order</button>
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="open-orders">Open Orders</button>
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="all-orders">All Orders</button>
                 <button class="db-raised-button" type="button" data-db-action="placeholder">Customers</button>
@@ -459,6 +460,113 @@
                 <div class="db-backup-copy">Data last backed up:</div>
                 <div class="db-backup-date">21-Nov-03 23:32</div>
               </div>
+            </section>
+
+            <section id="db-new-order-view" class="db-view db-new-order-view" aria-label="New order">
+              <form id="db-new-order-form" class="db-new-order-box">
+                <div class="db-new-order-title">New Order</div>
+
+                <div class="db-new-order-row db-new-order-customer-row">
+                  <label>Customer:</label>
+                  <button class="db-lookup-button" type="button">&gt;*</button>
+                  <input id="db-new-customer" name="customer_name" autocomplete="off">
+                  <button class="db-combo-button" type="button">⌄</button>
+                </div>
+
+                <div class="db-new-order-row db-new-order-contact-row">
+                  <label>Contact:</label>
+                  <button class="db-lookup-button" type="button">*</button>
+                  <input id="db-new-contact" name="contact_name" autocomplete="off">
+                  <button class="db-combo-button" type="button">⌄</button>
+                </div>
+
+                <div class="db-new-order-row db-new-short-row">
+                  <label>Order type:</label>
+                  <select id="db-new-order-type" name="order_type">
+                    <option value=""></option>
+                    <option value="Printing">Printing</option>
+                    <option value="Embroidery">Embroidery</option>
+                    <option value="Business gifts">Business gifts</option>
+                  </select>
+                </div>
+
+                <div class="db-new-order-row">
+                  <label>Job title:</label>
+                  <input id="db-new-job-title" name="job_title" autocomplete="off">
+                </div>
+
+                <div class="db-new-order-row db-new-order-date-row">
+                  <label>Order date:</label>
+                  <input id="db-new-order-date" name="order_date" autocomplete="off">
+                </div>
+
+                <div class="db-new-order-row db-new-order-delivery-date-row">
+                  <label>Delivery date:</label>
+                  <input id="db-new-delivery-date" name="delivery_date" autocomplete="off">
+                  <label class="db-new-inline-check"><input id="db-new-customer-date" name="customer_date_required" type="checkbox"> Customer date</label>
+                </div>
+
+                <div class="db-new-order-row db-new-short-row">
+                  <label>Delivery method:</label>
+                  <select id="db-new-delivery-method" name="delivery_method">
+                    <option value=""></option>
+                    <option value="Collecting">Collecting</option>
+                    <option value="Courier">Courier</option>
+                    <option value="Delivery">Delivery</option>
+                  </select>
+                </div>
+
+                <div class="db-new-order-row db-new-short-row">
+                  <label>Payment terms:</label>
+                  <select id="db-new-payment-terms" name="payment_terms">
+                    <option value=""></option>
+                    <option value="ACCOUNT">ACCOUNT</option>
+                    <option value="CARD">CARD</option>
+                    <option value="PRO-FORMA">PRO-FORMA</option>
+                  </select>
+                </div>
+
+                <div class="db-new-order-row db-new-combo-row">
+                  <label>Order taken by:</label>
+                  <select id="db-new-order-taken-by" name="order_taken_by">
+                    <option value="Melvyn Harris">Melvyn Harris</option>
+                  </select>
+                  <button class="db-combo-button db-new-row-combo" type="button">⌄</button>
+                </div>
+
+                <div class="db-new-order-row db-new-wide-combo-row">
+                  <label>Delivery adds:</label>
+                  <input id="db-new-delivery-address" name="delivery_address" autocomplete="off">
+                  <button class="db-combo-button db-new-row-combo" type="button">⌄</button>
+                </div>
+
+                <div class="db-new-order-row db-new-wide-combo-row">
+                  <label>Invoice adds:</label>
+                  <input id="db-new-invoice-address" name="invoice_address" autocomplete="off">
+                  <button class="db-combo-button db-new-row-combo" type="button">⌄</button>
+                </div>
+
+                <div class="db-new-order-row db-new-order-invoice-row">
+                  <label>Invoice required:</label>
+                  <select id="db-new-invoice-required" name="invoice_required">
+                    <option value=""></option>
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
+                  </select>
+                </div>
+
+                <div class="db-new-order-row db-new-order-customer-ref-row">
+                  <label>Customer ref:</label>
+                  <input id="db-new-customer-ref" name="client_order_no" autocomplete="off">
+                </div>
+
+                <div id="db-new-order-status" class="db-new-order-status"></div>
+
+                <div class="db-new-order-actions">
+                  <button id="db-new-order-cancel" class="db-new-action-button" type="button">Cancel</button>
+                  <button id="db-new-order-accept" class="db-new-action-button" type="submit" disabled>Accept</button>
+                </div>
+              </form>
             </section>
 
             <section id="db-outstanding-view" class="db-view db-outstanding-view" aria-label="Outstanding orders">

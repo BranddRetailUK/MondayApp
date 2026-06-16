@@ -12,6 +12,7 @@
     activeGroup: 'all',
     activeSort: 'order',
     activeOrderTab: 'details',
+    newOrderSubmitting: false,
     selectedJob: null,
     selectedLineItems: [],
     selectedPositions: [],
@@ -44,6 +45,10 @@
       detailsPanel: document.getElementById('db-order-details-panel'),
       itemsPanel: document.getElementById('db-order-items-panel'),
       designPanel: document.getElementById('db-order-design-panel'),
+      newOrderForm: document.getElementById('db-new-order-form'),
+      newOrderAccept: document.getElementById('db-new-order-accept'),
+      newOrderCancel: document.getElementById('db-new-order-cancel'),
+      newOrderStatus: document.getElementById('db-new-order-status'),
     };
 
     if (!els.root) return;
@@ -55,6 +60,10 @@
     els.selectOrder.addEventListener('change', () => openSelectedOrder(els.selectOrder.value));
     els.headerJobSelect.addEventListener('change', () => openSelectedOrder(els.headerJobSelect.value));
     els.headerOrderSelect.addEventListener('change', () => openSelectedOrder(els.headerOrderSelect.value));
+    els.newOrderForm.addEventListener('submit', submitNewOrder);
+    els.newOrderForm.addEventListener('input', validateNewOrderForm);
+    els.newOrderForm.addEventListener('change', validateNewOrderForm);
+    els.newOrderCancel.addEventListener('click', showHome);
 
     document.querySelectorAll('input[name="db-sort"]').forEach((input) => {
       input.addEventListener('change', () => {
@@ -97,6 +106,10 @@
     }
 
     const action = button.dataset.dbAction;
+    if (action === 'new-order') {
+      showNewOrder();
+      return;
+    }
     if (action === 'open-orders') {
       openOutstandingOrders('open');
       return;
@@ -149,6 +162,95 @@
     showView('home');
     state.activeOrderTab = 'details';
     setFooterTitle('Main Menu');
+  }
+
+  function showNewOrder() {
+    showView('new-order');
+    setFooterTitle('New Order');
+    resetNewOrderForm();
+  }
+
+  function resetNewOrderForm() {
+    els.newOrderForm.reset();
+    const today = new Date();
+    const delivery = addDays(today, 14);
+    document.getElementById('db-new-order-date').value = formatLegacyInputDate(today);
+    document.getElementById('db-new-delivery-date').value = formatLegacyInputDate(delivery);
+    document.getElementById('db-new-order-taken-by').value = 'Melvyn Harris';
+    els.newOrderStatus.textContent = '';
+    els.newOrderStatus.dataset.tone = '';
+    validateNewOrderForm();
+  }
+
+  function validateNewOrderForm() {
+    const form = els.newOrderForm;
+    const fields = form.elements;
+    const valid = Boolean(
+      fields.customer_name.value.trim()
+      && fields.order_type.value.trim()
+      && fields.job_title.value.trim()
+      && fields.order_date.value.trim()
+      && fields.delivery_date.value.trim()
+    );
+    els.newOrderAccept.disabled = !valid || state.newOrderSubmitting;
+  }
+
+  async function submitNewOrder(event) {
+    event.preventDefault();
+    if (state.newOrderSubmitting) return;
+    validateNewOrderForm();
+    if (els.newOrderAccept.disabled) return;
+
+    state.newOrderSubmitting = true;
+    validateNewOrderForm();
+    els.newOrderStatus.textContent = 'Creating order...';
+    els.newOrderStatus.dataset.tone = 'info';
+
+    try {
+      const payload = collectNewOrderPayload();
+      const response = await fetch('/api/database/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || `Request failed: ${response.status}`);
+      }
+
+      state.loadedHome = false;
+      state.loadedOrderMode = '';
+      els.newOrderStatus.textContent = `Created order ${data.job?.order_no || ''}`;
+      els.newOrderStatus.dataset.tone = 'success';
+      await openOrder(data.job.source_order_id, 'details');
+      loadHomeMetrics();
+    } catch (err) {
+      els.newOrderStatus.textContent = err.message;
+      els.newOrderStatus.dataset.tone = 'error';
+    } finally {
+      state.newOrderSubmitting = false;
+      validateNewOrderForm();
+    }
+  }
+
+  function collectNewOrderPayload() {
+    const fields = els.newOrderForm.elements;
+    return {
+      customer_name: fields.customer_name.value,
+      contact_name: fields.contact_name.value,
+      order_type: fields.order_type.value,
+      job_title: fields.job_title.value,
+      order_date: legacyInputDateToIso(fields.order_date.value),
+      delivery_date: legacyInputDateToIso(fields.delivery_date.value),
+      customer_date_required: fields.customer_date_required.checked,
+      delivery_method: fields.delivery_method.value,
+      payment_terms: fields.payment_terms.value,
+      order_taken_by: fields.order_taken_by.value,
+      delivery_address: fields.delivery_address.value,
+      invoice_address: fields.invoice_address.value,
+      invoice_required: fields.invoice_required.value,
+      client_order_no: fields.client_order_no.value,
+    };
   }
 
   function openOutstandingOrders(mode) {
@@ -208,19 +310,14 @@
 
   function renderOutstandingOrders() {
     const rows = groupedOutstandingRows();
-    if (!rows.length) {
+    const jobs = rows.flatMap((group) => group.jobs);
+    if (!jobs.length) {
       els.outstandingBody.innerHTML = renderStatusRow('No matching orders');
       hydrateOrderSelectors();
       return;
     }
 
-    let html = '';
-    for (const group of rows) {
-      html += `<tr class="db-group-heading"><td colspan="13">${escapeHtml(group.label)}</td></tr>`;
-      html += group.jobs.map(renderOutstandingRow).join('');
-    }
-
-    els.outstandingBody.innerHTML = html;
+    els.outstandingBody.innerHTML = jobs.map(renderOutstandingRow).join('');
     hydrateOrderSelectors();
   }
 
@@ -272,7 +369,7 @@
         <td class="db-customer-link">${escapeHtml(job.customer_name || '')}</td>
         <td class="db-type-cell db-type-${categoryForJob(job)}">${escapeHtml(typeAbbr(job))}</td>
         <td>${escapeHtml(job.job_title || '')}</td>
-        <td>${escapeHtml(staffShort(job.trace_staff_id))}</td>
+        <td>${escapeHtml(staffShort(job.order_taken_by || job.trace_staff_id))}</td>
         <td>${escapeHtml(formatDate(job.order_date, 'long'))}</td>
         <td>${escapeHtml(delivery)}</td>
         <td>${renderCheck(job.has_artwork)}</td>
@@ -334,7 +431,7 @@
     els.orderNumber.value = job.order_no || '';
     els.createdAt.textContent = formatDateTime(job.created_at_source);
     els.updatedAt.textContent = formatDateTime(job.updated_at_source);
-    els.updatedBy.textContent = staffLabel(job.trace_staff_id);
+    els.updatedBy.textContent = staffLabel(job.order_taken_by || job.trace_staff_id);
 
     hydrateOrderSelectors();
     renderDetailsPanel();
@@ -388,20 +485,20 @@
           ${detailRow('Customer:', `${selectBox(job.customer_name, 'db-control-link')}<input class="db-legacy-input db-code-input" readonly value="${escapeAttr(job.customer_code || '')}">`)}
           ${detailRow('Contact:', selectBox(job.contact_name))}
           ${detailRow('Order type:', selectBox(job.order_type || typeLabel(job)))}
-          ${detailRow('Taken by:', selectBox(staffLabel(job.trace_staff_id)))}
-          ${detailRow('Delivery:', selectBox(''))}
+          ${detailRow('Taken by:', selectBox(staffLabel(job.order_taken_by || job.trace_staff_id)))}
+          ${detailRow('Delivery:', selectBox(job.delivery_method))}
           ${detailRow('Order date:', inputBox(formatDate(job.order_date, 'short')))}
           ${detailRow('Delivery:', `${inputBox(formatDate(job.delivery_date, 'short'))}<label class="db-inline-check">${renderCheck(job.customer_date_required)} Customer date</label>`)}
           ${detailRow('Completion', `${inputBox(formatDate(job.complete_date, 'short'))}${renderCheck(job.is_complete)}`)}
         </div>
 
         <div class="db-detail-box db-address-box">
-          ${detailRow('Invoice to:', selectBox(job.customer_name))}
-          ${detailRow('Deliver to:', selectBox(job.customer_name))}
+          ${detailRow('Invoice to:', selectBox(job.invoice_address || job.customer_name))}
+          ${detailRow('Deliver to:', selectBox(job.delivery_address || job.customer_name))}
         </div>
 
         <div class="db-detail-box db-payment-box">
-          ${detailRow('Payment:', selectBox(''))}
+          ${detailRow('Payment:', selectBox(job.payment_terms))}
           ${detailRow('Client ref:', inputBox(job.client_order_no || job.contact_name || ''))}
           <div class="db-form-row db-comments-row">
             <label>Comments:</label>
@@ -604,7 +701,9 @@
     });
 
     els.mainTabs.forEach((tab) => {
-      const active = name === 'home' ? tab.dataset.dbGo === 'home' : tab.dataset.dbGo === 'outstanding';
+      const active = (name === 'home' || name === 'new-order')
+        ? tab.dataset.dbGo === 'home'
+        : tab.dataset.dbGo === 'outstanding';
       tab.classList.toggle('active', active);
     });
   }
@@ -694,12 +793,16 @@
 
   function staffShort(value) {
     if (!value) return '';
-    return String(value).slice(0, 2);
+    const clean = String(value).trim();
+    if (/^\d+$/.test(clean)) return clean.slice(0, 2);
+    const initials = clean.split(/\s+/).map((part) => part[0]).join('');
+    return initials.slice(0, 2).toUpperCase();
   }
 
   function staffLabel(value) {
     if (!value) return '';
-    return `Staff ${value}`;
+    const clean = String(value).trim();
+    return /^\d+$/.test(clean) ? `Staff ${clean}` : clean;
   }
 
   function formatDate(value, style) {
@@ -722,6 +825,30 @@
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
     return `${datePart} ${hours}:${minutes}`;
+  }
+
+  function formatLegacyInputDate(date) {
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = String(date.getFullYear()).slice(-2);
+    return `${day}/${month}/${year}`;
+  }
+
+  function legacyInputDateToIso(value) {
+    const clean = String(value || '').trim();
+    const legacy = clean.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+    if (!legacy) return clean;
+    const day = legacy[1].padStart(2, '0');
+    const month = legacy[2].padStart(2, '0');
+    let year = Number.parseInt(legacy[3], 10);
+    if (year < 100) year += 2000;
+    return `${String(year).padStart(4, '0')}-${month}-${day}`;
+  }
+
+  function addDays(date, days) {
+    const copy = new Date(date.getTime());
+    copy.setDate(copy.getDate() + days);
+    return copy;
   }
 
   function dateTime(value) {

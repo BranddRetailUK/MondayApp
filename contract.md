@@ -250,7 +250,7 @@ The dashboard has a `DATABASE` tab backed by a 2025/2026 MDB import.
 Frontend files:
 
 - `public/index.html`: sidebar tab and legacy-style DATABASE hub markup.
-- `public/database.js`: DATABASE home screen, outstanding order grouping, order navigation, order detail tabs, line-item rendering, and design-position rendering.
+- `public/database.js`: DATABASE home screen, manual new-order form, outstanding order grouping, order navigation, order detail tabs, line-item rendering, and design-position rendering.
 - `public/database-job.html`: older direct full-width job info page retained as a fallback.
 - `public/database-job.js`: older job facts, contact fields, line items, and positions rendering for the fallback page.
 - `public/styles.css`: scoped legacy DATABASE hub styles plus older fallback page table styles.
@@ -265,6 +265,7 @@ Endpoints:
 
 - `GET /api/database/summary`: returns counts for jobs, line items, positions, import status, counts by year, and counts by type.
 - `GET /api/database/jobs?q=&customer=&type=&year=&status=&limit=&offset=`: returns paginated jobs. Default and UI page size is 100 jobs. Search covers job number, customer, job title, contact name/email, client order number, line description, style code, style name, colour, and size. The list response also includes imported order flags and timestamps used by the legacy outstanding-orders grid.
+- `POST /api/database/jobs`: creates a real manual `database_jobs` row from the legacy New Order form. Required fields are customer, order type, job title, order date, and delivery date. The route allocates the next source order id/order number in a transaction and marks the row `is_manual_entry = true`.
 - `GET /api/database/jobs/:id`: returns one job plus contact fields, line items, and position rows. `:id` may be source order id or job number.
 
 Import rules:
@@ -283,8 +284,9 @@ railway run --service DB node scripts/import-database-mdb.js PS_XP_tab.mdb
 
 UI rules:
 
-- The DATABASE tab is a legacy-style hub matching the Access-era reference UI colors and layout.
-- The DATABASE home screen is the default tab screen and includes the main menu buttons, outstanding-actions count, admin buttons, backup-status panel, and footer.
+- The DATABASE tab is a fixed-size, centered legacy-style hub matching the Access-era reference UI colors, scale, spacing, and layout, with empty blue background around the reference canvas on wider dashboard screens.
+- The DATABASE home screen is the default tab screen and includes the New Order button, main menu buttons, outstanding-actions count, admin buttons, backup-status panel, and footer.
+- The New Order button opens a centered legacy form. Accept creates a manual job row in `database_jobs`, then opens that created order in the order-details view.
 - The Outstanding Orders tab loads open jobs through `/api/database/jobs?status=open`, follows pagination until all open jobs are loaded, and groups rows into Print, Embroidery, Gifts, and Other using `order_type`/`order_type_abbr`.
 - Clicking an outstanding order opens the in-tab order view. Users can return to the DATABASE home screen with the top-left Home button.
 - The order view has three top tabs: Order details, Order Items, and Design. These tabs switch in place without navigating away from the dashboard.
@@ -296,6 +298,7 @@ UI rules:
 Core source mappings:
 
 - Jobs: `tblOrder` joined to `tblCustomer`, `tblContact`, and `tblOrderType`.
+- Manual New Order rows store non-MDB form fields directly on `database_jobs`: `delivery_method`, `payment_terms`, `order_taken_by`, `delivery_address`, `invoice_address`, and `is_manual_entry`.
 - Line items: `tblOrderItem` joined to `tblProduct`, `tblStyle`, `tblStyleColour`, `tblColour`, `tblStyleSize`, `tblSize`, `tblProductType`, and `tblSupplier`.
 - Positions: `tblOrderPosition`.
 

@@ -18,6 +18,12 @@ async function ensureDatabaseTables(db) {
       contact_email TEXT,
       job_title TEXT,
       client_order_no TEXT,
+      delivery_method TEXT,
+      payment_terms TEXT,
+      order_taken_by TEXT,
+      delivery_address TEXT,
+      invoice_address TEXT,
+      is_manual_entry BOOLEAN NOT NULL DEFAULT FALSE,
       order_date TIMESTAMP,
       customer_date_required BOOLEAN,
       complete_date TIMESTAMP,
@@ -50,6 +56,12 @@ async function ensureDatabaseTables(db) {
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS contact_phone TEXT;');
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS contact_mobile TEXT;');
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS contact_email TEXT;');
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS delivery_method TEXT;');
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS payment_terms TEXT;');
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS order_taken_by TEXT;');
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS delivery_address TEXT;');
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS invoice_address TEXT;');
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS is_manual_entry BOOLEAN NOT NULL DEFAULT FALSE;');
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS database_job_line_items (

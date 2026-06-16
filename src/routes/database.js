@@ -83,6 +83,12 @@ router.get('/api/database/jobs', async (req, res) => {
               j.contact_name,
               j.job_title,
               j.client_order_no,
+              j.delivery_method,
+              j.payment_terms,
+              j.order_taken_by,
+              j.delivery_address,
+              j.invoice_address,
+              j.is_manual_entry,
               j.order_date,
               j.delivery_date,
               j.complete_date,
@@ -130,6 +136,107 @@ router.get('/api/database/jobs', async (req, res) => {
   } catch (err) {
     console.error('GET /api/database/jobs', err);
     res.status(500).json({ error: 'Failed to fetch database jobs' });
+  }
+});
+
+router.post('/api/database/jobs', async (req, res) => {
+  const payload = req.body || {};
+  const customerName = cleanNullable(payload.customer_name);
+  const contactName = cleanNullable(payload.contact_name);
+  const orderType = cleanNullable(payload.order_type);
+  const jobTitle = cleanNullable(payload.job_title);
+  const orderDate = parseDatabaseDate(payload.order_date, 'Order date');
+  const deliveryDate = parseDatabaseDate(payload.delivery_date, 'Delivery date');
+
+  if (!customerName || !orderType || !jobTitle || !orderDate || !deliveryDate) {
+    return res.status(400).json({
+      error: 'Customer, order type, job title, order date, and delivery date are required',
+    });
+  }
+
+  if (!orderDate.valid || !deliveryDate.valid) {
+    return res.status(400).json({ error: orderDate.error || deliveryDate.error });
+  }
+
+  if (orderDate.year !== 2025 && orderDate.year !== 2026) {
+    return res.status(400).json({ error: 'Order date must be in 2025 or 2026 for the DATABASE snapshot' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(71060216)');
+
+    const next = await client.query(`
+      SELECT
+        (COALESCE(MAX(source_order_id), 0) + 1)::int AS source_order_id,
+        (GREATEST(COALESCE(MAX(order_no), 50000), 50000) + 1)::int AS order_no
+      FROM database_jobs
+    `);
+
+    const sourceOrderId = next.rows[0].source_order_id;
+    const orderNo = next.rows[0].order_no;
+    const orderTypeAbbr = orderTypeAbbreviation(orderType);
+
+    const inserted = await client.query(
+      `INSERT INTO database_jobs (
+         source_order_id,
+         order_no,
+         source_year,
+         order_type,
+         order_type_abbr,
+         customer_name,
+         contact_name,
+         job_title,
+         client_order_no,
+         delivery_method,
+         payment_terms,
+         order_taken_by,
+         delivery_address,
+         invoice_address,
+         order_date,
+         delivery_date,
+         customer_date_required,
+         invoice_required,
+         is_complete,
+         is_manual_entry,
+         created_at_source,
+         updated_at_source
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+         $13, $14, $15, $16, $17, $18, FALSE, TRUE, NOW(), NOW()
+       )
+       RETURNING *`,
+      [
+        sourceOrderId,
+        orderNo,
+        orderDate.year,
+        orderType,
+        orderTypeAbbr,
+        customerName,
+        contactName,
+        jobTitle,
+        cleanNullable(payload.client_order_no),
+        cleanNullable(payload.delivery_method),
+        cleanNullable(payload.payment_terms),
+        cleanNullable(payload.order_taken_by),
+        cleanNullable(payload.delivery_address),
+        cleanNullable(payload.invoice_address),
+        orderDate.iso,
+        deliveryDate.iso,
+        toBoolean(payload.customer_date_required),
+        invoiceRequiredValue(payload.invoice_required),
+      ]
+    );
+
+    await client.query('COMMIT');
+    res.status(201).json({ job: inserted.rows[0] });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('POST /api/database/jobs', err);
+    res.status(500).json({ error: 'Failed to create database job' });
+  } finally {
+    client.release();
   }
 });
 
@@ -246,10 +353,75 @@ function cleanQuery(value) {
   return String(value || '').trim();
 }
 
+function cleanNullable(value) {
+  const clean = cleanQuery(value);
+  return clean || null;
+}
+
 function clampInt(value, fallback, min, max) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(Math.max(parsed, min), max);
+}
+
+function parseDatabaseDate(value, label) {
+  const clean = cleanQuery(value);
+  if (!clean) return null;
+
+  let year;
+  let month;
+  let day;
+
+  const iso = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) {
+    year = Number.parseInt(iso[1], 10);
+    month = Number.parseInt(iso[2], 10);
+    day = Number.parseInt(iso[3], 10);
+  } else {
+    const legacy = clean.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+    if (!legacy) {
+      return { valid: false, error: `${label} must be DD/MM/YY or YYYY-MM-DD` };
+    }
+    day = Number.parseInt(legacy[1], 10);
+    month = Number.parseInt(legacy[2], 10);
+    year = Number.parseInt(legacy[3], 10);
+    if (year < 100) year += 2000;
+  }
+
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return { valid: false, error: `${label} is not a valid date` };
+  }
+
+  return {
+    valid: true,
+    year,
+    iso: `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+  };
+}
+
+function orderTypeAbbreviation(orderType) {
+  const normalized = cleanQuery(orderType).toLowerCase();
+  if (normalized.includes('embro')) return 'E';
+  if (normalized.includes('gift')) return 'G';
+  if (normalized.includes('print')) return 'P';
+  return normalized.slice(0, 1).toUpperCase() || null;
+}
+
+function invoiceRequiredValue(value) {
+  const clean = cleanQuery(value).toLowerCase();
+  if (!clean) return null;
+  if (clean === 'yes' || clean === 'true' || clean === '1') return true;
+  if (clean === 'no' || clean === 'false' || clean === '0') return false;
+  return null;
+}
+
+function toBoolean(value) {
+  return value === true || value === 1 || value === '1' || cleanQuery(value).toLowerCase() === 'true';
 }
 
 module.exports = router;
