@@ -109,6 +109,16 @@ async function ensureDatabaseTables(db) {
     );
   `);
 
+  await db.query('ALTER TABLE database_job_positions ADD COLUMN IF NOT EXISTS source_order_position_id INTEGER;');
+  await db.query('ALTER TABLE database_job_positions ADD COLUMN IF NOT EXISTS source_order_id INTEGER;');
+  await db.query('ALTER TABLE database_job_positions ADD COLUMN IF NOT EXISTS position_name TEXT;');
+  await db.query('ALTER TABLE database_job_positions ADD COLUMN IF NOT EXISTS colour_notes TEXT;');
+  await db.query('ALTER TABLE database_job_positions ADD COLUMN IF NOT EXISTS design_ref TEXT;');
+  await db.query('ALTER TABLE database_job_positions ADD COLUMN IF NOT EXISTS trace_staff_id INTEGER;');
+  await db.query('ALTER TABLE database_job_positions ADD COLUMN IF NOT EXISTS created_at_source TIMESTAMP;');
+  await db.query('ALTER TABLE database_job_positions ADD COLUMN IF NOT EXISTS updated_at_source TIMESTAMP;');
+  await db.query('ALTER TABLE database_job_positions ADD COLUMN IF NOT EXISTS imported_at TIMESTAMP NOT NULL DEFAULT NOW();');
+
   await db.query(`
     CREATE TABLE IF NOT EXISTS database_import_runs (
       id SERIAL PRIMARY KEY,
@@ -130,6 +140,7 @@ async function ensureDatabaseTables(db) {
   await db.query('CREATE INDEX IF NOT EXISTS database_jobs_order_date_idx ON database_jobs(order_date);');
   await db.query('CREATE INDEX IF NOT EXISTS database_jobs_complete_idx ON database_jobs(is_complete);');
   await db.query('CREATE INDEX IF NOT EXISTS database_job_line_items_order_idx ON database_job_line_items(source_order_id);');
+  await db.query('CREATE UNIQUE INDEX IF NOT EXISTS database_job_positions_source_position_idx ON database_job_positions(source_order_position_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_job_positions_order_idx ON database_job_positions(source_order_id);');
 }
 

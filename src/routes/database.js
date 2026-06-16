@@ -334,6 +334,119 @@ router.post('/api/database/jobs', async (req, res) => {
   }
 });
 
+router.put('/api/database/jobs/:id/positions', async (req, res) => {
+  const id = Number.parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: 'Invalid job id' });
+  }
+
+  const positions = normalizePositionPayload(req.body?.positions);
+  if (positions.length > 50) {
+    return res.status(400).json({ error: 'Too many design position rows' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(71060217)');
+
+    const job = await client.query(
+      `SELECT source_order_id
+       FROM database_jobs
+       WHERE source_order_id = $1 OR order_no = $1
+       ORDER BY CASE WHEN source_order_id = $1 THEN 0 ELSE 1 END
+       LIMIT 1
+       FOR UPDATE`,
+      [id]
+    );
+
+    if (!job.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Database job not found' });
+    }
+
+    const sourceOrderId = job.rows[0].source_order_id;
+    const existingIds = positions
+      .map((position) => position.source_order_position_id)
+      .filter((positionId) => Number.isFinite(positionId));
+
+    await client.query(
+      `DELETE FROM database_job_positions
+       WHERE source_order_id = $1
+         AND NOT (source_order_position_id = ANY($2::int[]))`,
+      [sourceOrderId, existingIds]
+    );
+
+    let nextSourcePositionId = null;
+    if (positions.some((position) => !Number.isFinite(position.source_order_position_id))) {
+      const next = await client.query(`
+        SELECT (COALESCE(MAX(source_order_position_id), 0) + 1)::int AS next_id
+        FROM database_job_positions
+      `);
+      nextSourcePositionId = next.rows[0].next_id;
+    }
+
+    for (const position of positions) {
+      if (Number.isFinite(position.source_order_position_id)) {
+        await client.query(
+          `UPDATE database_job_positions
+           SET position_name = $3,
+               colour_notes = $4,
+               design_ref = $5,
+               updated_at_source = NOW(),
+               imported_at = NOW()
+           WHERE source_order_id = $1
+             AND source_order_position_id = $2`,
+          [
+            sourceOrderId,
+            position.source_order_position_id,
+            position.position_name,
+            position.colour_notes,
+            position.design_ref,
+          ]
+        );
+      } else {
+        await client.query(
+          `INSERT INTO database_job_positions (
+             source_order_position_id,
+             source_order_id,
+             position_name,
+             colour_notes,
+             design_ref,
+             created_at_source,
+             updated_at_source
+           ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
+          [
+            nextSourcePositionId,
+            sourceOrderId,
+            position.position_name,
+            position.colour_notes,
+            position.design_ref,
+          ]
+        );
+        nextSourcePositionId += 1;
+      }
+    }
+
+    const saved = await client.query(
+      `SELECT *
+       FROM database_job_positions
+       WHERE source_order_id = $1
+       ORDER BY source_order_position_id`,
+      [sourceOrderId]
+    );
+
+    await client.query('COMMIT');
+    res.json({ positions: saved.rows });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('PUT /api/database/jobs/:id/positions', err);
+    res.status(500).json({ error: 'Failed to save design positions' });
+  } finally {
+    client.release();
+  }
+});
+
 router.get('/api/database/jobs/:id', async (req, res) => {
   const id = Number.parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) {
@@ -450,6 +563,18 @@ function cleanQuery(value) {
 function cleanNullable(value) {
   const clean = cleanQuery(value);
   return clean || null;
+}
+
+function normalizePositionPayload(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((position) => ({
+      source_order_position_id: nullableInt(position?.source_order_position_id),
+      position_name: cleanNullable(position?.position_name),
+      colour_notes: cleanNullable(position?.colour_notes),
+      design_ref: cleanNullable(position?.design_ref),
+    }))
+    .filter((position) => position.position_name || position.colour_notes || position.design_ref);
 }
 
 function clampInt(value, fallback, min, max) {

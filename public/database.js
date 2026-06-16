@@ -2,6 +2,7 @@
   const PAGE_LIMIT = 100;
   const MAX_JOBS = 2500;
   const CUSTOMER_SEARCH_DELAY = 180;
+  const DESIGN_AUTOSAVE_MS = 5000;
 
   const state = {
     loadedHome: false,
@@ -19,11 +20,16 @@
     selectedJob: null,
     selectedLineItems: [],
     selectedPositions: [],
+    designDirty: false,
+    designSaving: false,
+    designSaveQueued: false,
+    designLastSavedSignature: '[]',
   };
 
   let els = {};
   let customerSearchTimer = 0;
   let customerSearchRequest = 0;
+  let designAutosaveTimer = 0;
 
   document.addEventListener('DOMContentLoaded', initDatabaseHub);
 
@@ -79,6 +85,14 @@
     els.newCustomerInput.addEventListener('keydown', handleCustomerSearchKeydown);
     els.newCustomerResults.addEventListener('mousedown', (event) => event.preventDefault());
     els.newCustomerResults.addEventListener('click', handleCustomerResultClick);
+    els.designPanel.addEventListener('input', handleDesignInput);
+    window.addEventListener('pagehide', () => flushDesignAutosave({ keepalive: true }));
+    window.addEventListener('beforeunload', () => flushDesignAutosave({ keepalive: true }));
+    document.querySelectorAll('.nav-tabs li').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        if (tab.dataset.tab !== 'database') flushDesignAutosave();
+      }, { capture: true });
+    });
     document.addEventListener('click', handleDocumentClick);
 
     document.querySelectorAll('input[name="db-sort"]').forEach((input) => {
@@ -102,35 +116,41 @@
     }
   }
 
-  function handleRootClick(event) {
+  async function handleRootClick(event) {
     const button = event.target.closest('button');
     if (!button || !els.root.contains(button) || button.disabled) return;
 
     if (button.id === 'db-home-button') {
+      await flushDesignAutosave();
       showHome();
       return;
     }
 
     const go = button.dataset.dbGo;
     if (go === 'home') {
+      await flushDesignAutosave();
       showHome();
       return;
     }
     if (go === 'outstanding') {
+      await flushDesignAutosave();
       openOutstandingOrders('open');
       return;
     }
 
     const action = button.dataset.dbAction;
     if (action === 'new-order') {
+      await flushDesignAutosave();
       showNewOrder();
       return;
     }
     if (action === 'open-orders') {
+      await flushDesignAutosave();
       openOutstandingOrders('open');
       return;
     }
     if (action === 'all-orders') {
+      await flushDesignAutosave();
       openOutstandingOrders('all');
       return;
     }
@@ -147,20 +167,25 @@
 
     const orderTab = button.dataset.dbOrderTab;
     if (orderTab) {
+      if (state.activeOrderTab === 'design' && orderTab !== 'design') {
+        await flushDesignAutosave();
+      }
       showOrderTab(orderTab);
     }
   }
 
-  function handleOutstandingRowClick(event) {
+  async function handleOutstandingRowClick(event) {
     const row = event.target.closest('tr[data-job-id]');
     if (!row) return;
+    await flushDesignAutosave();
     openOrder(row.dataset.jobId, 'details');
   }
 
-  function handleOutstandingRowKeydown(event) {
+  async function handleOutstandingRowKeydown(event) {
     if (event.key !== 'Enter') return;
     const row = event.target.closest('tr[data-job-id]');
     if (!row) return;
+    await flushDesignAutosave();
     openOrder(row.dataset.jobId, 'details');
   }
 
@@ -582,6 +607,7 @@
   async function openSelectedOrder(value) {
     const id = Number.parseInt(value, 10);
     if (!Number.isFinite(id)) return;
+    await flushDesignAutosave();
     await openOrder(id, state.activeOrderTab || 'details');
   }
 
@@ -605,6 +631,7 @@
   }
 
   function setOrderLoading() {
+    resetDesignAutosaveState();
     els.orderTitle.value = 'Loading...';
     els.orderNumber.value = '';
     els.createdAt.textContent = '-';
@@ -616,6 +643,7 @@
   }
 
   function renderOrderError(message) {
+    resetDesignAutosaveState();
     els.orderTitle.value = 'Order unavailable';
     els.orderNumber.value = '';
     els.detailsPanel.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
@@ -795,6 +823,8 @@
   function renderDesignPanel() {
     const positions = state.selectedPositions || [];
     const job = state.selectedJob || {};
+    const rows = positions.length ? positions : [{}];
+    if (positions.length) rows.push({});
 
     els.designPanel.innerHTML = `
       <div class="db-design-layout">
@@ -809,7 +839,7 @@
               </tr>
             </thead>
             <tbody>
-              ${positions.length ? positions.map(renderPositionRow).join('') : '<tr><td class="db-row-selector"></td><td></td><td></td><td></td></tr>'}
+              ${rows.map(renderPositionRow).join('')}
             </tbody>
           </table>
           <div class="db-design-filler"></div>
@@ -820,6 +850,8 @@
         </div>
       </div>
     `;
+    state.designDirty = false;
+    state.designLastSavedSignature = designSignature(collectDesignPositions());
   }
 
   function renderStockRow(item, index) {
@@ -854,14 +886,131 @@
   }
 
   function renderPositionRow(position, index) {
+    const sourceId = position.source_order_position_id || '';
     return `
-      <tr>
+      <tr class="db-design-row" data-position-id="${escapeAttr(sourceId)}">
         <td class="db-row-selector">${index === 0 ? '&#9654;' : ''}</td>
-        <td>${escapeHtml(position.position_name || '')}</td>
-        <td>${escapeHtml(position.colour_notes || '')}</td>
-        <td>${escapeHtml(position.design_ref || '')}</td>
+        <td><textarea class="db-design-edit" data-design-field="position_name">${escapeHtml(position.position_name || '')}</textarea></td>
+        <td><textarea class="db-design-edit" data-design-field="colour_notes">${escapeHtml(position.colour_notes || '')}</textarea></td>
+        <td><textarea class="db-design-edit" data-design-field="design_ref">${escapeHtml(position.design_ref || '')}</textarea></td>
       </tr>
     `;
+  }
+
+  function handleDesignInput(event) {
+    if (!event.target.closest('.db-design-edit')) return;
+    ensureTrailingBlankDesignRow();
+    state.designDirty = true;
+    scheduleDesignAutosave();
+  }
+
+  function ensureTrailingBlankDesignRow() {
+    const rows = Array.from(els.designPanel.querySelectorAll('.db-design-row'));
+    const last = rows[rows.length - 1];
+    if (!last || !designRowHasValue(last)) return;
+    const tbody = last.parentElement;
+    tbody.insertAdjacentHTML('beforeend', renderPositionRow({}, rows.length));
+  }
+
+  function designRowHasValue(row) {
+    return ['position_name', 'colour_notes', 'design_ref'].some((field) => {
+      const input = row.querySelector(`[data-design-field="${field}"]`);
+      return input && input.value.trim();
+    });
+  }
+
+  function collectDesignPositions() {
+    return Array.from(els.designPanel.querySelectorAll('.db-design-row'))
+      .map((row) => {
+        const sourceId = Number.parseInt(row.dataset.positionId, 10);
+        return {
+          source_order_position_id: Number.isFinite(sourceId) ? sourceId : null,
+          position_name: designFieldValue(row, 'position_name'),
+          colour_notes: designFieldValue(row, 'colour_notes'),
+          design_ref: designFieldValue(row, 'design_ref'),
+        };
+      })
+      .filter((position) => position.position_name || position.colour_notes || position.design_ref);
+  }
+
+  function designFieldValue(row, field) {
+    return row.querySelector(`[data-design-field="${field}"]`)?.value.trim() || '';
+  }
+
+  function designSignature(positions) {
+    return JSON.stringify(positions.map((position) => ({
+      source_order_position_id: position.source_order_position_id || null,
+      position_name: position.position_name || '',
+      colour_notes: position.colour_notes || '',
+      design_ref: position.design_ref || '',
+    })));
+  }
+
+  function scheduleDesignAutosave() {
+    clearTimeout(designAutosaveTimer);
+    designAutosaveTimer = window.setTimeout(() => {
+      flushDesignAutosave();
+    }, DESIGN_AUTOSAVE_MS);
+  }
+
+  async function flushDesignAutosave(options = {}) {
+    clearTimeout(designAutosaveTimer);
+    if (!state.designDirty || !state.selectedJob?.source_order_id) return;
+    await saveDesignPositions(options);
+  }
+
+  async function saveDesignPositions(options = {}) {
+    const positions = collectDesignPositions();
+    const signature = designSignature(positions);
+    if (signature === state.designLastSavedSignature) {
+      state.designDirty = false;
+      return;
+    }
+
+    if (state.designSaving) {
+      state.designSaveQueued = true;
+      return;
+    }
+
+    state.designSaving = true;
+    const endpoint = `/api/database/jobs/${encodeURIComponent(state.selectedJob.source_order_id)}/positions`;
+    const body = JSON.stringify({ positions });
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        keepalive: Boolean(options.keepalive),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || `Request failed: ${response.status}`);
+      }
+
+      const hadNewRows = positions.some((position) => !position.source_order_position_id);
+      state.selectedPositions = data.positions || positions;
+      state.designDirty = false;
+      state.designLastSavedSignature = designSignature(state.selectedPositions);
+      if (hadNewRows) renderDesignPanel();
+    } catch (err) {
+      state.designDirty = true;
+      console.error('Design autosave failed', err);
+    } finally {
+      state.designSaving = false;
+      if (state.designSaveQueued) {
+        state.designSaveQueued = false;
+        scheduleDesignAutosave();
+      }
+    }
+  }
+
+  function resetDesignAutosaveState() {
+    clearTimeout(designAutosaveTimer);
+    state.designDirty = false;
+    state.designSaving = false;
+    state.designSaveQueued = false;
+    state.designLastSavedSignature = '[]';
   }
 
   function renderSmallItemBox(title, items) {

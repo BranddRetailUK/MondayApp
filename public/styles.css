@@ -1458,6 +1458,26 @@ body.modal-open{overflow:hidden}
 .db-design-table td{
   height:50px;
   vertical-align:top;
+  padding:0;
+}
+.db-design-edit{
+  width:100%;
+  height:50px;
+  display:block;
+  border:0;
+  border-radius:0;
+  background:#ffffef;
+  color:#000;
+  font:12px Arial, Helvetica, sans-serif;
+  line-height:15px;
+  padding:3px 4px;
+  resize:none;
+  outline:none;
+}
+.db-design-edit:focus{
+  background:#fff;
+  outline:1px solid #1b62d1;
+  outline-offset:-1px;
 }
 .db-design-filler{
   height:220px;

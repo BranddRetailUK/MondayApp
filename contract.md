@@ -268,6 +268,7 @@ Endpoints:
 - `GET /api/database/customers/search?q=`: searches distinct customer/contact values from `database_jobs`, using the same imported customer data that populates outstanding orders and order details.
 - `POST /api/database/jobs`: creates a real manual `database_jobs` row from the legacy New Order form. Required fields are customer, order type, job title, order date, and delivery date. The route allocates the next source order id/order number in a transaction and marks the row `is_manual_entry = true`.
 - `GET /api/database/jobs/:id`: returns one job plus contact fields, line items, and position rows. `:id` may be source order id or job number.
+- `PUT /api/database/jobs/:id/positions`: replaces editable design-position rows for one job. It updates existing `database_job_positions`, inserts new rows with allocated legacy-compatible `source_order_position_id` values, and removes cleared rows.
 
 Import rules:
 
@@ -293,7 +294,7 @@ UI rules:
 - The order view has three top tabs: Order details, Order Items, and Design. These tabs switch in place without navigating away from the dashboard. The order header reserves spacing above the tabs so document buttons and the metadata panel do not touch or overlap the tab strip.
 - Order details surfaces every imported job field that maps to the reference screen, including customer/contact, type, dates, client reference, comments, invoice fields, and boolean flags.
 - Order Items splits imported line items into stock, non-stock, non-deliverable, and internal sections using existing line-item flags and product/style data.
-- Design renders imported `database_job_positions` rows and the job `screen_numbers` field.
+- Design renders imported `database_job_positions` rows and the job `screen_numbers` field. Position, Colour, and Design cells are editable; changes autosave every 5 seconds and flush immediately before switching order tabs, opening another order, leaving DATABASE, or leaving the browser page.
 - `/database-job.html?id=<source_order_id>` remains a direct fallback page, but the dashboard DATABASE tab is now the primary workflow.
 
 Core source mappings:
@@ -301,7 +302,7 @@ Core source mappings:
 - Jobs: `tblOrder` joined to `tblCustomer`, `tblContact`, and `tblOrderType`.
 - Manual New Order rows store non-MDB form fields directly on `database_jobs`: `delivery_method`, `payment_terms`, `order_taken_by`, `delivery_address`, `invoice_address`, and `is_manual_entry`.
 - Line items: `tblOrderItem` joined to `tblProduct`, `tblStyle`, `tblStyleColour`, `tblColour`, `tblStyleSize`, `tblSize`, `tblProductType`, and `tblSupplier`.
-- Positions: `tblOrderPosition`.
+- Positions: `tblOrderPosition`: `orderpositionid` maps to `source_order_position_id`, `orderid` to `source_order_id`, `sposition` to `position_name`, `memcolour` to `colour_notes`, and `sdesign` to `design_ref`.
 
 Current imported production snapshot, verified on 2026-06-11:
 
