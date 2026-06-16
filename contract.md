@@ -285,12 +285,12 @@ railway run --service DB node scripts/import-database-mdb.js PS_XP_tab.mdb
 
 UI rules:
 
-- The DATABASE tab is a fixed-size, centered legacy-style hub matching the Access-era reference UI colors, scale, spacing, and layout, with empty blue background around the reference canvas on wider dashboard screens.
+- The DATABASE tab is a fixed-size, centered legacy-style hub matching the Access-era reference UI colors, scale, spacing, and layout, with every DATABASE view rendered at 120% legacy scale and empty blue background around the reference canvas on wider dashboard screens.
 - The DATABASE home screen is the default tab screen and includes the New Order button, main menu buttons, outstanding-actions count, admin buttons, and backup-status panel. The legacy blue footer bar is intentionally omitted in the dashboard hub.
 - The New Order button opens a centered legacy form. The customer field live-searches `/api/database/customers/search` as the user types; selecting a customer fills contact, delivery address, and invoice address fields from stored DATABASE customer/order data when available. Accept creates a manual job row in `database_jobs`, carrying through selected customer/contact ids and codes when present, then opens that created order in the order-details view.
 - The Outstanding Orders tab loads open jobs through `/api/database/jobs?status=open`, follows pagination until all open jobs are loaded, and groups rows into Print, Embroidery, Gifts, and Other using `order_type`/`order_type_abbr`.
 - Clicking an outstanding order opens the in-tab order view. Users can return to the DATABASE home screen with the top-left Home button.
-- The order view has three top tabs: Order details, Order Items, and Design. These tabs switch in place without navigating away from the dashboard. The order view uses a larger 120% legacy scale inside the dashboard so header buttons, metadata panel, and form sections match the Access reference spacing.
+- The order view has three top tabs: Order details, Order Items, and Design. These tabs switch in place without navigating away from the dashboard. The order header reserves spacing above the tabs so document buttons and the metadata panel do not touch or overlap the tab strip.
 - Order details surfaces every imported job field that maps to the reference screen, including customer/contact, type, dates, client reference, comments, invoice fields, and boolean flags.
 - Order Items splits imported line items into stock, non-stock, non-deliverable, and internal sections using existing line-item flags and product/style data.
 - Design renders imported `database_job_positions` rows and the job `screen_numbers` field.

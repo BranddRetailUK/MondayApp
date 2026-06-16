@@ -568,10 +568,10 @@ body.modal-open{overflow:hidden}
 }
 .db-legacy-app{
   position:relative;
-  width:982px;
-  min-width:982px;
-  height:572px;
-  min-height:572px;
+  width:1203px;
+  min-width:1203px;
+  height:687px;
+  min-height:687px;
   flex:0 0 auto;
   display:block;
   background:#92cdea;
@@ -581,23 +581,13 @@ body.modal-open{overflow:hidden}
 .db-legacy-stage{
   position:absolute;
   left:0;
-  top:30px;
-  width:982px;
+  top:36px;
+  width:1002px;
   height:542px;
   min-height:0;
   margin:0;
   border:1px solid #6f6f6f;
   background:#92cdea;
-}
-.db-legacy-app[data-db-view="order"]{
-  width:1203px;
-  min-width:1203px;
-  height:687px;
-  min-height:687px;
-}
-.db-legacy-app[data-db-view="order"] .db-legacy-stage{
-  top:36px;
-  width:1002px;
   transform:scale(1.2);
   transform-origin:top left;
 }
@@ -1144,11 +1134,11 @@ body.modal-open{overflow:hidden}
 }
 .db-order-header{
   position:relative;
-  height:96px;
+  height:105px;
 }
 .db-order-title-area{
   width:678px;
-  padding:16px 0 0 20px;
+  padding:10px 0 0 20px;
 }
 .db-order-line{
   display:flex;
@@ -1260,7 +1250,7 @@ body.modal-open{overflow:hidden}
   display:grid;
   grid-template-columns:1fr 1fr 1fr;
   height:28px;
-  margin-top:0;
+  margin-top:8px;
 }
 .db-order-tab{
   border:1px solid #f7f7f7;
