@@ -21,6 +21,8 @@ async function ensureDatabaseTables(db) {
       delivery_method TEXT,
       payment_terms TEXT,
       order_taken_by TEXT,
+      invoice_address_id INTEGER,
+      delivery_address_id INTEGER,
       delivery_address TEXT,
       invoice_address TEXT,
       is_manual_entry BOOLEAN NOT NULL DEFAULT FALSE,
@@ -59,9 +61,50 @@ async function ensureDatabaseTables(db) {
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS delivery_method TEXT;');
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS payment_terms TEXT;');
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS order_taken_by TEXT;');
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS invoice_address_id INTEGER;');
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS delivery_address_id INTEGER;');
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS delivery_address TEXT;');
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS invoice_address TEXT;');
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS is_manual_entry BOOLEAN NOT NULL DEFAULT FALSE;');
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS database_customer_addresses (
+      id SERIAL PRIMARY KEY,
+      source_address_id INTEGER NOT NULL UNIQUE,
+      customer_id INTEGER,
+      address_type TEXT,
+      address_line1 TEXT,
+      address_line2 TEXT,
+      address_line3 TEXT,
+      address_line4 TEXT,
+      address_line5 TEXT,
+      postcode TEXT,
+      phone TEXT,
+      fax TEXT,
+      mobile TEXT,
+      trace_staff_id INTEGER,
+      created_at_source TIMESTAMP,
+      updated_at_source TIMESTAMP,
+      imported_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await db.query('ALTER TABLE database_customer_addresses ADD COLUMN IF NOT EXISTS source_address_id INTEGER;');
+  await db.query('ALTER TABLE database_customer_addresses ADD COLUMN IF NOT EXISTS customer_id INTEGER;');
+  await db.query('ALTER TABLE database_customer_addresses ADD COLUMN IF NOT EXISTS address_type TEXT;');
+  await db.query('ALTER TABLE database_customer_addresses ADD COLUMN IF NOT EXISTS address_line1 TEXT;');
+  await db.query('ALTER TABLE database_customer_addresses ADD COLUMN IF NOT EXISTS address_line2 TEXT;');
+  await db.query('ALTER TABLE database_customer_addresses ADD COLUMN IF NOT EXISTS address_line3 TEXT;');
+  await db.query('ALTER TABLE database_customer_addresses ADD COLUMN IF NOT EXISTS address_line4 TEXT;');
+  await db.query('ALTER TABLE database_customer_addresses ADD COLUMN IF NOT EXISTS address_line5 TEXT;');
+  await db.query('ALTER TABLE database_customer_addresses ADD COLUMN IF NOT EXISTS postcode TEXT;');
+  await db.query('ALTER TABLE database_customer_addresses ADD COLUMN IF NOT EXISTS phone TEXT;');
+  await db.query('ALTER TABLE database_customer_addresses ADD COLUMN IF NOT EXISTS fax TEXT;');
+  await db.query('ALTER TABLE database_customer_addresses ADD COLUMN IF NOT EXISTS mobile TEXT;');
+  await db.query('ALTER TABLE database_customer_addresses ADD COLUMN IF NOT EXISTS trace_staff_id INTEGER;');
+  await db.query('ALTER TABLE database_customer_addresses ADD COLUMN IF NOT EXISTS created_at_source TIMESTAMP;');
+  await db.query('ALTER TABLE database_customer_addresses ADD COLUMN IF NOT EXISTS updated_at_source TIMESTAMP;');
+  await db.query('ALTER TABLE database_customer_addresses ADD COLUMN IF NOT EXISTS imported_at TIMESTAMP NOT NULL DEFAULT NOW();');
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS database_job_line_items (
@@ -127,6 +170,7 @@ async function ensureDatabaseTables(db) {
       job_count INTEGER NOT NULL DEFAULT 0,
       line_item_count INTEGER NOT NULL DEFAULT 0,
       position_count INTEGER NOT NULL DEFAULT 0,
+      address_count INTEGER NOT NULL DEFAULT 0,
       started_at TIMESTAMP NOT NULL DEFAULT NOW(),
       finished_at TIMESTAMP,
       status TEXT NOT NULL DEFAULT 'running',
@@ -137,11 +181,16 @@ async function ensureDatabaseTables(db) {
   await db.query('CREATE INDEX IF NOT EXISTS database_jobs_order_no_idx ON database_jobs(order_no);');
   await db.query('CREATE INDEX IF NOT EXISTS database_jobs_source_year_idx ON database_jobs(source_year);');
   await db.query('CREATE INDEX IF NOT EXISTS database_jobs_customer_name_idx ON database_jobs(customer_name);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_jobs_invoice_address_idx ON database_jobs(invoice_address_id);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_jobs_delivery_address_idx ON database_jobs(delivery_address_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_jobs_order_date_idx ON database_jobs(order_date);');
   await db.query('CREATE INDEX IF NOT EXISTS database_jobs_complete_idx ON database_jobs(is_complete);');
+  await db.query('CREATE UNIQUE INDEX IF NOT EXISTS database_customer_addresses_source_address_idx ON database_customer_addresses(source_address_id);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_customer_addresses_customer_idx ON database_customer_addresses(customer_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_job_line_items_order_idx ON database_job_line_items(source_order_id);');
   await db.query('CREATE UNIQUE INDEX IF NOT EXISTS database_job_positions_source_position_idx ON database_job_positions(source_order_position_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_job_positions_order_idx ON database_job_positions(source_order_id);');
+  await db.query('ALTER TABLE database_import_runs ADD COLUMN IF NOT EXISTS address_count INTEGER NOT NULL DEFAULT 0;');
 }
 
 module.exports = { ensureDatabaseTables };

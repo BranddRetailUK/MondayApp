@@ -19,6 +19,7 @@ const RECORD_DELIMITER = '\x1e';
 const NULL_TOKEN = '__NULL__';
 const IMPORT_YEARS = new Set([2025, 2026]);
 const INSERT_BATCH_SIZE = 250;
+const MDB_EXPORT_BIN = resolveMdbExportBin();
 
 const TABLE_COLUMNS = {
   tblOrder: [
@@ -35,6 +36,11 @@ const TABLE_COLUMNS = {
   tblCustomer: [
     'customerid', 'invaddressid', 'deladdressid', 'sectorid',
     'sectortypeid', 'accountmanagerstaffid', 'scustomer', 'scustomercode',
+    'tracestaffid', 'dtcreate', 'dtedit',
+  ],
+  tblAddress: [
+    'addressid', 'customerid', 'saddress1', 'saddress2', 'saddress3',
+    'saddress4', 'saddress5', 'spostcode', 'stel', 'sfax', 'smobile',
     'tracestaffid', 'dtcreate', 'dtedit',
   ],
   tblContact: [
@@ -89,8 +95,9 @@ const JOB_COLUMNS = [
   'order_type', 'order_type_abbr', 'customer_id', 'customer_name',
   'customer_code', 'contact_id', 'job_title', 'client_order_no',
   'contact_name', 'contact_phone', 'contact_mobile', 'contact_email',
-  'order_date', 'customer_date_required', 'complete_date', 'is_complete',
-  'delivery_date', 'is_reorder', 'is_bagged', 'is_automatic',
+  'invoice_address_id', 'delivery_address_id', 'invoice_address',
+  'delivery_address', 'order_date', 'customer_date_required',
+  'complete_date', 'is_complete', 'delivery_date', 'is_reorder', 'is_bagged', 'is_automatic',
   'screen_numbers', 'comments', 'has_artwork', 'has_screens', 'has_shirts',
   'is_printed', 'customer_supplied', 'delivery_note_date', 'invoice_no',
   'trace_staff_id', 'created_at_source', 'updated_at_source',
@@ -112,6 +119,13 @@ const POSITION_COLUMNS = [
   'source_order_position_id', 'source_order_id', 'position_name',
   'colour_notes', 'design_ref', 'trace_staff_id', 'created_at_source',
   'updated_at_source',
+];
+
+const ADDRESS_COLUMNS = [
+  'source_address_id', 'customer_id', 'address_type', 'address_line1',
+  'address_line2', 'address_line3', 'address_line4', 'address_line5',
+  'postcode', 'phone', 'fax', 'mobile', 'trace_staff_id',
+  'created_at_source', 'updated_at_source',
 ];
 
 main().catch((err) => {
@@ -141,7 +155,8 @@ async function main() {
 
   console.log(
     `[database-import] Snapshot: ${snapshot.jobs.length} jobs, ` +
-    `${snapshot.lineItems.length} line items, ${snapshot.positions.length} positions`
+    `${snapshot.lineItems.length} line items, ${snapshot.positions.length} positions, ` +
+    `${snapshot.addresses.length} customer addresses`
   );
   console.log(`[database-import] Years: ${[...IMPORT_YEARS].join(', ')}`);
 
@@ -163,10 +178,26 @@ Imports Access jobs dated 2025 or 2026 into Railway/Postgres tables:
   database_jobs
   database_job_line_items
   database_job_positions
+  database_customer_addresses
 
 Run against Railway with:
   railway run --service DB node scripts/import-database-mdb.js PS_XP_tab.mdb
 `);
+}
+
+function resolveMdbExportBin() {
+  if (process.env.MDB_EXPORT_BIN) return process.env.MDB_EXPORT_BIN;
+
+  const candidates = [
+    '/opt/homebrew/bin/mdb-export',
+    '/usr/local/bin/mdb-export',
+    '/usr/bin/mdb-export',
+  ];
+
+  const installedPath = candidates.find((candidate) => fs.existsSync(candidate));
+  if (installedPath) return installedPath;
+
+  return 'mdb-export';
 }
 
 function readSourceData(mdbPath) {
@@ -179,7 +210,7 @@ function readSourceData(mdbPath) {
 }
 
 function exportTable(mdbPath, table) {
-  const result = spawnSync('mdb-export', [
+  const result = spawnSync(MDB_EXPORT_BIN, [
     '-H',
     '-D', '%Y-%m-%d',
     '-T', '%Y-%m-%d %H:%M:%S',
@@ -239,6 +270,7 @@ function decodeField(value) {
 
 function buildSnapshot(data) {
   const customers = mapByInt(data.tblCustomer, 'customerid');
+  const addresses = mapByInt(data.tblAddress, 'addressid');
   const contacts = mapByInt(data.tblContact, 'contactid');
   const orderTypes = mapByInt(data.tblOrderType, 'ordertypeid');
   const products = mapByInt(data.tblProduct, 'productid');
@@ -251,6 +283,8 @@ function buildSnapshot(data) {
   const suppliers = mapByInt(data.tblSupplier, 'supplierid');
 
   const selectedOrderIds = new Set();
+  const selectedCustomerIds = new Set();
+  const selectedAddressIds = new Set();
   const jobs = [];
 
   for (const order of data.tblOrder) {
@@ -263,8 +297,19 @@ function buildSnapshot(data) {
     const customer = customers.get(toInt(order.customerid)) || {};
     const contact = contacts.get(toInt(order.contactid)) || {};
     const orderType = orderTypes.get(toInt(order.ordertypeid)) || {};
+    const invoiceAddressId = toInt(order.invaddressid) || toInt(customer.invaddressid);
+    const deliveryAddressId = toInt(order.deladdressid) || toInt(customer.deladdressid);
+    const invoiceAddress = addresses.get(invoiceAddressId) || {};
+    const deliveryAddress = addresses.get(deliveryAddressId) || {};
+    const customerId = toInt(order.customerid);
 
     selectedOrderIds.add(sourceOrderId);
+    if (customerId) selectedCustomerIds.add(customerId);
+    if (invoiceAddressId) selectedAddressIds.add(invoiceAddressId);
+    if (deliveryAddressId) selectedAddressIds.add(deliveryAddressId);
+    const contactAddressId = toInt(contact.addressid);
+    if (contactAddressId) selectedAddressIds.add(contactAddressId);
+
     jobs.push({
       source_order_id: sourceOrderId,
       order_no: toInt(order.lngorderno),
@@ -272,7 +317,7 @@ function buildSnapshot(data) {
       order_type_id: toInt(order.ordertypeid),
       order_type: cleanText(orderType.sordertype),
       order_type_abbr: cleanText(orderType.sordertypeabbr),
-      customer_id: toInt(order.customerid),
+      customer_id: customerId,
       customer_name: cleanText(customer.scustomer),
       customer_code: cleanText(customer.scustomercode),
       contact_id: toInt(order.contactid),
@@ -280,6 +325,10 @@ function buildSnapshot(data) {
       contact_phone: cleanText(contact.stel),
       contact_mobile: cleanText(contact.smobile),
       contact_email: cleanText(contact.semail),
+      invoice_address_id: invoiceAddressId,
+      delivery_address_id: deliveryAddressId,
+      invoice_address: formatAddress(invoiceAddress),
+      delivery_address: formatAddress(deliveryAddress),
       job_title: cleanText(order.sjobtitle),
       client_order_no: cleanText(order.sclientorderno),
       order_date: toTimestamp(order.dtorder),
@@ -362,13 +411,40 @@ function buildSnapshot(data) {
       updated_at_source: toTimestamp(position.dtedit),
     }));
 
+  const addressRoles = buildAddressRoleMap(data, selectedOrderIds, selectedCustomerIds);
+  const customerAddresses = data.tblAddress
+    .filter((address) => {
+      const customerId = toInt(address.customerid);
+      const addressId = toInt(address.addressid);
+      return (customerId && selectedCustomerIds.has(customerId))
+        || (addressId && selectedAddressIds.has(addressId));
+    })
+    .map((address) => ({
+      source_address_id: toInt(address.addressid),
+      customer_id: toInt(address.customerid),
+      address_type: addressTypeForAddress(address, addressRoles),
+      address_line1: cleanText(address.saddress1),
+      address_line2: cleanText(address.saddress2),
+      address_line3: cleanText(address.saddress3),
+      address_line4: cleanText(address.saddress4),
+      address_line5: cleanText(address.saddress5),
+      postcode: cleanText(address.spostcode),
+      phone: cleanText(address.stel),
+      fax: cleanText(address.sfax),
+      mobile: cleanText(address.smobile),
+      trace_staff_id: toInt(address.tracestaffid),
+      created_at_source: toTimestamp(address.dtcreate),
+      updated_at_source: toTimestamp(address.dtedit),
+    }))
+    .filter((address) => address.source_address_id);
+
   jobs.sort((a, b) => {
     const dateA = a.order_date || a.created_at_source || '';
     const dateB = b.order_date || b.created_at_source || '';
     return dateA < dateB ? 1 : dateA > dateB ? -1 : b.order_no - a.order_no;
   });
 
-  return { jobs, lineItems, positions };
+  return { jobs, lineItems, positions, addresses: customerAddresses };
 }
 
 function sourceYearForOrder(order) {
@@ -399,6 +475,54 @@ function contactName(contact) {
     cleanText(contact.slastname),
   ].filter(Boolean);
   return parts.length ? parts.join(' ') : null;
+}
+
+function buildAddressRoleMap(data, selectedOrderIds, selectedCustomerIds) {
+  const roles = new Map();
+
+  for (const customer of data.tblCustomer || []) {
+    if (!selectedCustomerIds.has(toInt(customer.customerid))) continue;
+    addAddressRole(roles, customer.invaddressid, 'Invoice');
+    addAddressRole(roles, customer.deladdressid, 'Delivery');
+  }
+
+  for (const order of data.tblOrder || []) {
+    if (!selectedOrderIds.has(toInt(order.orderid))) continue;
+    addAddressRole(roles, order.invaddressid, 'Invoice');
+    addAddressRole(roles, order.deladdressid, 'Delivery');
+  }
+
+  for (const contact of data.tblContact || []) {
+    if (!selectedCustomerIds.has(toInt(contact.customerid))) continue;
+    addAddressRole(roles, contact.addressid, 'Contact');
+  }
+
+  return roles;
+}
+
+function addAddressRole(roles, addressId, role) {
+  const id = toInt(addressId);
+  if (!id) return;
+  if (!roles.has(id)) roles.set(id, new Set());
+  roles.get(id).add(role);
+}
+
+function addressTypeForAddress(address, addressRoles) {
+  const roles = addressRoles.get(toInt(address.addressid));
+  if (!roles || !roles.size) return 'Address';
+  return Array.from(roles).join(' / ');
+}
+
+function formatAddress(address) {
+  const parts = [
+    cleanText(address.saddress1),
+    cleanText(address.saddress2),
+    cleanText(address.saddress3),
+    cleanText(address.saddress4),
+    cleanText(address.saddress5),
+    cleanText(address.spostcode),
+  ].filter(Boolean);
+  return parts.length ? parts.join(', ') : null;
 }
 
 function toInt(value) {
@@ -441,6 +565,7 @@ function printDryRun(snapshot) {
   console.log('[database-import] Dry run only. No database writes performed.');
   console.log(`[database-import] Jobs by year: ${JSON.stringify(byYear)}`);
   console.log(`[database-import] Jobs by type: ${JSON.stringify(byType)}`);
+  console.log(`[database-import] Customer addresses: ${snapshot.addresses.length}`);
   console.log('[database-import] Latest jobs:');
   snapshot.jobs.slice(0, 10).forEach((job) => {
     console.log(
@@ -473,7 +598,17 @@ async function importSnapshot(snapshot, options) {
       await client.query('DELETE FROM database_job_positions');
       await client.query('DELETE FROM database_job_line_items');
       await client.query('DELETE FROM database_jobs');
+      await client.query('DELETE FROM database_customer_addresses');
     }
+
+    console.log(`[database-import] Writing ${snapshot.addresses.length} customer addresses`);
+    await upsertRows(
+      client,
+      'database_customer_addresses',
+      ADDRESS_COLUMNS,
+      'source_address_id',
+      snapshot.addresses
+    );
 
     console.log(`[database-import] Writing ${snapshot.jobs.length} jobs`);
     await upsertRows(client, 'database_jobs', JOB_COLUMNS, 'source_order_id', snapshot.jobs);
@@ -503,14 +638,16 @@ async function importSnapshot(snapshot, options) {
        SET job_count = $1,
            line_item_count = $2,
            position_count = $3,
+           address_count = $4,
            finished_at = NOW(),
            status = 'complete',
-           message = $4
-       WHERE id = $5`,
+           message = $5
+       WHERE id = $6`,
       [
         snapshot.jobs.length,
         snapshot.lineItems.length,
         snapshot.positions.length,
+        snapshot.addresses.length,
         options.replaceExisting ? 'Snapshot replaced' : 'Snapshot appended/upserted',
         runId,
       ]

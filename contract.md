@@ -267,7 +267,7 @@ Endpoints:
 - `GET /api/database/jobs?q=&customer=&type=&year=&status=&limit=&offset=`: returns paginated jobs. Default and UI page size is 100 jobs. Search covers job number, customer, job title, contact name/email, client order number, line description, style code, style name, colour, and size. The list response also includes imported order flags and timestamps used by the legacy outstanding-orders grid.
 - `GET /api/database/outstanding-counts`: returns open order counts grouped as Printing, Embroidery, and Business Gifts using the same `order_type`/`order_type_abbr` category rules as the legacy UI.
 - `GET /api/database/customers?q=`: returns distinct customers from `database_jobs` in alphabetical order, with each customer's latest order number, latest job title, latest order date, contact, customer code, and order count.
-- `GET /api/database/customers/:key`: returns one DATABASE customer aggregate. `:key` is either a numeric imported `customer_id` or `name:<customer name>` for rows without a source customer id. The response includes all jobs for the customer, unique recorded contact rows grouped from job contact fields, and unique recorded invoice/delivery addresses grouped from job address fields.
+- `GET /api/database/customers/:key`: returns one DATABASE customer aggregate. `:key` is either a numeric imported `customer_id` or `name:<customer name>` for rows without a source customer id. The response includes all 2025/2026 jobs for the customer, unique recorded contact rows grouped from job contact fields, and imported customer addresses from `database_customer_addresses` with manual job invoice/delivery address text as a fallback.
 - `GET /api/database/customers/search?q=`: searches distinct customer/contact values from `database_jobs`, using the same imported customer data that populates outstanding orders and order details.
 - `POST /api/database/jobs`: creates a real manual `database_jobs` row from the legacy New Order form. Required fields are customer, order type, job title, order date, and delivery date. The route allocates the next source order id/order number in a transaction and marks the row `is_manual_entry = true`.
 - `GET /api/database/jobs/:id`: returns one job plus contact fields, line items, and position rows. `:id` may be source order id or job number.
@@ -293,7 +293,7 @@ UI rules:
 - The DATABASE home screen is the default tab screen and includes the New Order button, main menu buttons, outstanding-actions panel, admin buttons, and backup-status panel. The outstanding-actions panel shows three open-order counts for Printing, Embroidery, and Business Gifts, sourced from `/api/database/outstanding-counts`. The legacy blue footer bar is intentionally omitted in the dashboard hub.
 - The New Order button opens a centered legacy form without placeholder lookup buttons, fake combo-arrow buttons, or a customer-date checkbox. The customer field live-searches `/api/database/customers/search` as the user types; selecting a customer fills contact, delivery address, and invoice address fields from stored DATABASE customer/order data when available. Accept creates a manual job row in `database_jobs`, carrying through selected customer/contact ids and codes when present, then opens that created order in the order-details view.
 - The Customers main-menu button opens a legacy-styled list page backed only by `database_jobs`, not the separate dashboard customer tables. Customers are sorted alphabetically, searchable at the top of the page, and each row shows the latest order next to the customer record. Clicking a customer row opens a legacy-style customer page in the DATABASE tab.
-- The customer page mirrors the legacy Access-era customer layout with Customer, Code, Account manager, created/edited metadata, a gray lookup panel, and tabs for Orders, Contacts, Addresses, Quotations, Communications, and Actions. The Orders tab lists all orders for that customer and opens the existing order view when an order is clicked. The Contacts tab lists every unique recorded contact from the customer's jobs. The Addresses tab lists every unique recorded invoice/delivery address from the customer's jobs. Quotations, Communications, and Actions are present as empty legacy tabs because those records are not imported into the current snapshot.
+- The customer page mirrors the legacy Access-era customer layout with Customer, Code, Account manager, created/edited metadata, a gray lookup panel, and tabs for Orders, Contacts, Addresses, Quotations, Communications, and Actions. The Orders tab lists all 2025/2026 orders for that customer and opens the existing order view when an order is clicked. The Contacts tab lists every unique recorded contact from the customer's jobs. The Addresses tab lists imported MDB addresses for customers present in the 2025/2026 snapshot, plus manual job invoice/delivery address text as a fallback. Quotations, Communications, and Actions are present as empty legacy tabs because those records are not imported into the current snapshot.
 - The Outstanding Orders tab loads open jobs through `/api/database/jobs?status=open`, follows pagination until all open jobs are loaded, and groups rows into Print, Embroidery, Gifts, and Other using `order_type`/`order_type_abbr`.
 - Clicking an outstanding order opens the in-tab order view. Users can return to the DATABASE home screen with the top-left Home button.
 - The order view has three top tabs: Order details, Order Items, and Design. These tabs switch in place without navigating away from the dashboard. The order header reserves spacing above the tabs so document buttons and the metadata panel do not touch or overlap the tab strip. Clicking the customer control in Order details opens the customer page for that order's customer.
@@ -306,6 +306,7 @@ Core source mappings:
 
 - Jobs: `tblOrder` joined to `tblCustomer`, `tblContact`, and `tblOrderType`.
 - Manual New Order rows store non-MDB form fields directly on `database_jobs`: `delivery_method`, `payment_terms`, `order_taken_by`, `delivery_address`, `invoice_address`, and `is_manual_entry`.
+- Customer addresses: `tblAddress`, joined through `tblCustomer.invaddressid` / `tblCustomer.deladdressid`, selected 2025/2026 `tblOrder.invaddressid` / `tblOrder.deladdressid`, and selected-customer `tblContact.addressid`. The importer only writes address rows for customers that appear in the 2025/2026 order snapshot, so historic-only customers and addresses are excluded. Imported jobs also store `invoice_address_id`, `delivery_address_id`, and formatted invoice/delivery address text from `tblAddress`.
 - Line items: `tblOrderItem` joined to `tblProduct`, `tblStyle`, `tblStyleColour`, `tblColour`, `tblStyleSize`, `tblSize`, `tblProductType`, and `tblSupplier`.
 - Positions: `tblOrderPosition`: `orderpositionid` maps to `source_order_position_id`, `orderid` to `source_order_id`, `sposition` to `position_name`, `memcolour` to `colour_notes`, and `sdesign` to `design_ref`.
 
@@ -314,6 +315,7 @@ Current imported production snapshot, verified on 2026-06-11:
 - `database_jobs`: 1,162 rows.
 - `database_job_line_items`: 5,870 rows.
 - `database_job_positions`: 1,664 rows.
+- `database_customer_addresses`: importer dry run against root `PS_XP_tab.mdb` on 2026-06-16 returns 583 rows scoped to customers in the 2025/2026 order snapshot.
 - Latest `database_import_runs.status`: `complete`.
 
 ### Files And Visual QA
@@ -387,6 +389,7 @@ Created by `src/db/migrate.js`:
 - `database_jobs`
 - `database_job_line_items`
 - `database_job_positions`
+- `database_customer_addresses`
 - `database_import_runs`
 
 The visual queue routes require `visual_jobs`, but the current migration file does not create it. Treat that as a known schema gap unless a deployment migration exists outside this repo.

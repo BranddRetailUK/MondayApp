@@ -4,10 +4,11 @@ const pool = require('../db/pool');
 
 router.get('/api/database/summary', async (_req, res) => {
   try {
-    const [jobs, lineItems, positions, byYear, byType, latestRun] = await Promise.all([
+    const [jobs, lineItems, positions, addresses, byYear, byType, latestRun] = await Promise.all([
       pool.query('SELECT COUNT(*)::int AS count FROM database_jobs'),
       pool.query('SELECT COUNT(*)::int AS count FROM database_job_line_items'),
       pool.query('SELECT COUNT(*)::int AS count FROM database_job_positions'),
+      pool.query('SELECT COUNT(*)::int AS count FROM database_customer_addresses'),
       pool.query(`
         SELECT source_year, COUNT(*)::int AS count
         FROM database_jobs
@@ -22,7 +23,7 @@ router.get('/api/database/summary', async (_req, res) => {
       `),
       pool.query(`
         SELECT id, source_file, source_years, job_count, line_item_count,
-               position_count, started_at, finished_at, status, message
+               position_count, address_count, started_at, finished_at, status, message
         FROM database_import_runs
         ORDER BY started_at DESC
         LIMIT 1
@@ -33,6 +34,7 @@ router.get('/api/database/summary', async (_req, res) => {
       jobs: jobs.rows[0].count,
       lineItems: lineItems.rows[0].count,
       positions: positions.rows[0].count,
+      customerAddresses: addresses.rows[0].count,
       byYear: byYear.rows,
       byType: byType.rows,
       latestRun: latestRun.rows[0] || null,
@@ -371,7 +373,24 @@ router.get('/api/database/customers/:key', async (req, res) => {
       return res.status(404).json({ error: 'Database customer not found' });
     }
 
-    res.json(buildCustomerDetail(customerKey, orders));
+    const customerId = customerKey.type === 'id'
+      ? customerKey.value
+      : firstFinite(orders, 'customer_id');
+    let addressRows = [];
+
+    if (isFiniteDatabaseValue(customerId)) {
+      const addresses = await pool.query(
+        `SELECT *
+         FROM database_customer_addresses
+         WHERE customer_id = $1
+         ORDER BY COALESCE(updated_at_source, created_at_source) DESC NULLS LAST,
+                  source_address_id DESC`,
+        [customerId]
+      );
+      addressRows = addresses.rows;
+    }
+
+    res.json(buildCustomerDetail(customerKey, orders, addressRows));
   } catch (err) {
     console.error('GET /api/database/customers/:key', err);
     res.status(500).json({ error: 'Failed to fetch database customer detail' });
@@ -820,7 +839,7 @@ function parseCustomerKey(value) {
   return { type: 'name', value: clean };
 }
 
-function buildCustomerDetail(customerKey, orders) {
+function buildCustomerDetail(customerKey, orders, addressRows = []) {
   const latest = orders[0] || {};
   const businessName = firstNonEmpty(orders, 'customer_name');
   const customerId = firstFinite(orders, 'customer_id');
@@ -841,7 +860,7 @@ function buildCustomerDetail(customerKey, orders) {
     },
     orders,
     contacts: groupedContacts(orders),
-    addresses: groupedAddresses(orders),
+    addresses: groupedAddresses(orders, addressRows),
   };
 }
 
@@ -899,26 +918,84 @@ function groupedContacts(orders) {
   });
 }
 
-function groupedAddresses(orders) {
+function groupedAddresses(orders, addressRows = []) {
   const addresses = new Map();
 
+  for (const address of addressRows) {
+    addImportedAddress(addresses, address, orders);
+  }
+
   for (const order of orders) {
-    addAddress(addresses, order, 'Invoice', order.invoice_address);
-    addAddress(addresses, order, 'Delivery', order.delivery_address);
+    if (!order.invoice_address_id) {
+      addAddress(addresses, order, 'Invoice', order.invoice_address);
+    }
+    if (!order.delivery_address_id) {
+      addAddress(addresses, order, 'Delivery', order.delivery_address);
+    }
   }
 
   return Array.from(addresses.values()).sort((a, b) => {
-    const byAddress = a.address.localeCompare(b.address, 'en', { sensitivity: 'base' });
-    if (byAddress) return byAddress;
-    return a.address_type.localeCompare(b.address_type, 'en', { sensitivity: 'base' });
+    const byDate = dateTime(b.last_seen_at) - dateTime(a.last_seen_at);
+    if (byDate) return byDate;
+    return a.address.localeCompare(b.address, 'en', { sensitivity: 'base' });
   });
+}
+
+function addImportedAddress(addresses, addressRow, orders) {
+  const address = formatImportedAddress(addressRow);
+  if (!address) return;
+
+  const sourceAddressId = Number(addressRow.source_address_id);
+  const matchingOrders = orders.filter((order) => (
+    Number(order.invoice_address_id) === sourceAddressId ||
+    Number(order.delivery_address_id) === sourceAddressId
+  ));
+  const latestOrder = matchingOrders[0] || null;
+  const roles = new Set(splitAddressRoles(addressRow.address_type));
+
+  for (const order of matchingOrders) {
+    if (Number(order.invoice_address_id) === sourceAddressId) roles.add('Invoice');
+    if (Number(order.delivery_address_id) === sourceAddressId) roles.add('Delivery');
+  }
+
+  const key = normalizedAddressKey(address);
+  const existing = addresses.get(key) || {
+    source_address_id: addressRow.source_address_id || null,
+    address_type: roles.size ? Array.from(roles).join(' / ') : 'Address',
+    address,
+    phone: addressRow.phone || null,
+    fax: addressRow.fax || null,
+    mobile: addressRow.mobile || null,
+    latest_order_no: latestOrder?.order_no || null,
+    latest_source_order_id: latestOrder?.source_order_id || null,
+    order_count: matchingOrders.length,
+    first_seen_at: addressRow.created_at_source || latestOrder?.order_date || null,
+    last_seen_at: addressRow.updated_at_source || addressRow.created_at_source || latestOrder?.order_date || null,
+  };
+
+  if (existing !== addresses.get(key)) {
+    addresses.set(key, existing);
+    return;
+  }
+
+  existing.address_type = mergedAddressType(existing.address_type, roles);
+  existing.phone = existing.phone || addressRow.phone || null;
+  existing.fax = existing.fax || addressRow.fax || null;
+  existing.mobile = existing.mobile || addressRow.mobile || null;
+  existing.order_count = Math.max(existing.order_count || 0, matchingOrders.length);
+
+  if (latestOrder && isLater(seenDate(latestOrder), existing.last_seen_at)) {
+    existing.latest_order_no = latestOrder.order_no || null;
+    existing.latest_source_order_id = latestOrder.source_order_id || null;
+    existing.last_seen_at = seenDate(latestOrder);
+  }
 }
 
 function addAddress(addresses, order, addressType, address) {
   const cleanAddress = cleanQuery(address);
   if (!cleanAddress) return;
 
-  const key = `${addressType.toLowerCase()}:${cleanAddress.replace(/\s+/g, ' ').toLowerCase()}`;
+  const key = normalizedAddressKey(cleanAddress);
   const existing = addresses.get(key) || {
     address_type: addressType,
     address: cleanAddress,
@@ -929,6 +1006,7 @@ function addAddress(addresses, order, addressType, address) {
     last_seen_at: seenDate(order),
   };
 
+  existing.address_type = mergedAddressType(existing.address_type, [addressType]);
   existing.order_count += 1;
 
   if (isLater(seenDate(order), existing.last_seen_at)) {
@@ -942,6 +1020,37 @@ function addAddress(addresses, order, addressType, address) {
   }
 
   addresses.set(key, existing);
+}
+
+function formatImportedAddress(address) {
+  return [
+    address.address_line1,
+    address.address_line2,
+    address.address_line3,
+    address.address_line4,
+    address.address_line5,
+    address.postcode,
+  ].map(cleanQuery).filter(Boolean).join(', ');
+}
+
+function normalizedAddressKey(address) {
+  return cleanQuery(address).replace(/\s+/g, ' ').toLowerCase();
+}
+
+function splitAddressRoles(value) {
+  return cleanQuery(value)
+    .split('/')
+    .map((role) => cleanQuery(role))
+    .filter(Boolean);
+}
+
+function mergedAddressType(current, roles) {
+  const merged = new Set(splitAddressRoles(current));
+  for (const role of roles) {
+    const cleanRole = cleanQuery(role);
+    if (cleanRole) merged.add(cleanRole);
+  }
+  return merged.size ? Array.from(merged).join(' / ') : 'Address';
 }
 
 function firstNonEmpty(rows, field) {
@@ -974,6 +1083,12 @@ function latestDate(rows, field) {
 
 function seenDate(order) {
   return order.order_date || order.updated_at_source || order.created_at_source || null;
+}
+
+function dateTime(value) {
+  if (!value) return 0;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : 0;
 }
 
 function isLater(candidate, current) {
