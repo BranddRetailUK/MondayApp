@@ -18,9 +18,14 @@
     activeGroup: 'all',
     activeSort: 'order',
     activeOrderTab: 'details',
+    activeCustomerTab: 'orders',
     newOrderSubmitting: false,
     selectedCustomer: null,
     customerResults: [],
+    selectedCustomerDetail: null,
+    selectedCustomerOrders: [],
+    selectedCustomerContacts: [],
+    selectedCustomerAddresses: [],
     selectedJob: null,
     selectedLineItems: [],
     selectedPositions: [],
@@ -51,6 +56,19 @@
       homeCountGifts: document.getElementById('db-count-gifts'),
       customersSearch: document.getElementById('db-customers-search'),
       customersBody: document.getElementById('db-customers-body'),
+      customerName: document.getElementById('db-customer-name'),
+      customerCode: document.getElementById('db-customer-code'),
+      customerAccountManager: document.getElementById('db-customer-account-manager'),
+      customerCreatedAt: document.getElementById('db-customer-created-at'),
+      customerUpdatedAt: document.getElementById('db-customer-updated-at'),
+      customerUpdatedBy: document.getElementById('db-customer-updated-by'),
+      customerMetaName: document.getElementById('db-customer-meta-name'),
+      customerMetaCode: document.getElementById('db-customer-meta-code'),
+      customerTabs: Array.from(document.querySelectorAll('.db-customer-tab')),
+      customerPanels: Array.from(document.querySelectorAll('.db-customer-panel')),
+      customerOrdersBody: document.getElementById('db-customer-orders-body'),
+      customerContactsBody: document.getElementById('db-customer-contacts-body'),
+      customerAddressesBody: document.getElementById('db-customer-addresses-body'),
       outstandingBody: document.getElementById('db-outstanding-body'),
       refreshOrders: document.getElementById('db-refresh-orders'),
       selectOrder: document.getElementById('db-select-order'),
@@ -84,6 +102,8 @@
     els.outstandingBody.addEventListener('keydown', handleOutstandingRowKeydown);
     els.customersBody.addEventListener('click', handleDatabaseCustomerRowClick);
     els.customersBody.addEventListener('keydown', handleDatabaseCustomerRowKeydown);
+    els.customerOrdersBody.addEventListener('click', handleCustomerOrderRowClick);
+    els.customerOrdersBody.addEventListener('keydown', handleCustomerOrderRowKeydown);
     els.customersSearch.addEventListener('input', handleDatabaseCustomerSearchInput);
     els.refreshOrders.addEventListener('click', () => loadOutstandingOrders({ force: true }));
     els.selectOrder.addEventListener('change', () => openSelectedOrder(els.selectOrder.value));
@@ -136,6 +156,19 @@
     if (button.id === 'db-home-button') {
       await flushDesignAutosave();
       showHome();
+      return;
+    }
+
+    const customerKey = button.dataset.dbCustomerOpen;
+    if (customerKey) {
+      await flushDesignAutosave();
+      openCustomer(customerKey, 'orders');
+      return;
+    }
+
+    const customerTab = button.dataset.dbCustomerTab;
+    if (customerTab) {
+      showCustomerTab(customerTab);
       return;
     }
 
@@ -515,13 +548,28 @@
   }
 
   async function handleDatabaseCustomerRowClick(event) {
+    const row = event.target.closest('tr[data-customer-key]');
+    if (!row) return;
+    await flushDesignAutosave();
+    openCustomer(row.dataset.customerKey, 'orders');
+  }
+
+  async function handleDatabaseCustomerRowKeydown(event) {
+    if (event.key !== 'Enter') return;
+    const row = event.target.closest('tr[data-customer-key]');
+    if (!row) return;
+    await flushDesignAutosave();
+    openCustomer(row.dataset.customerKey, 'orders');
+  }
+
+  async function handleCustomerOrderRowClick(event) {
     const row = event.target.closest('tr[data-job-id]');
     if (!row) return;
     await flushDesignAutosave();
     openOrder(row.dataset.jobId, 'details');
   }
 
-  async function handleDatabaseCustomerRowKeydown(event) {
+  async function handleCustomerOrderRowKeydown(event) {
     if (event.key !== 'Enter') return;
     const row = event.target.closest('tr[data-job-id]');
     if (!row) return;
@@ -570,9 +618,9 @@
   }
 
   function renderDatabaseCustomerRow(customer, index) {
-    const jobId = customer.latest_source_order_id || '';
+    const customerKey = customerKeyForRecord(customer);
     return `
-      <tr class="db-customer-row" data-job-id="${escapeAttr(jobId)}" tabindex="0">
+      <tr class="db-customer-row" data-customer-key="${escapeAttr(customerKey)}" tabindex="0">
         <td class="db-row-selector">${index === 0 ? '&#9654;' : ''}</td>
         <td class="db-customer-link">${escapeHtml(customer.business_name || '')}</td>
         <td class="db-order-link">${escapeHtml(customer.latest_order_no || '')}</td>
@@ -583,6 +631,155 @@
         <td>${escapeHtml(formatNumber(customer.order_count || 0))}</td>
       </tr>
     `;
+  }
+
+  async function openCustomer(customerKey, tab) {
+    if (!customerKey) return;
+    state.activeCustomerTab = tab || 'orders';
+    showView('customer');
+    setFooterTitle('Customer');
+    setCustomerLoading();
+    showCustomerTab(state.activeCustomerTab);
+
+    try {
+      const data = await fetchJson(`/api/database/customers/${encodeURIComponent(customerKey)}`);
+      state.selectedCustomerDetail = data.customer || {};
+      state.selectedCustomerOrders = data.orders || [];
+      state.selectedCustomerContacts = data.contacts || [];
+      state.selectedCustomerAddresses = data.addresses || [];
+      renderCustomerPage();
+      showCustomerTab(state.activeCustomerTab);
+    } catch (err) {
+      renderCustomerError(err.message);
+    }
+  }
+
+  function setCustomerLoading() {
+    state.selectedCustomerDetail = null;
+    state.selectedCustomerOrders = [];
+    state.selectedCustomerContacts = [];
+    state.selectedCustomerAddresses = [];
+    els.customerName.value = 'Loading...';
+    els.customerCode.value = '';
+    setSelectValue(els.customerAccountManager, '');
+    els.customerCreatedAt.textContent = '-';
+    els.customerUpdatedAt.textContent = '-';
+    els.customerUpdatedBy.textContent = '-';
+    setSelectValue(els.customerMetaName, '');
+    setSelectValue(els.customerMetaCode, '');
+    els.customerOrdersBody.innerHTML = renderStatusRow('Loading customer orders', 14);
+    els.customerContactsBody.innerHTML = renderStatusRow('Loading contacts', 7);
+    els.customerAddressesBody.innerHTML = renderStatusRow('Loading addresses', 6);
+  }
+
+  function renderCustomerError(message) {
+    els.customerName.value = 'Customer unavailable';
+    els.customerCode.value = '';
+    setSelectValue(els.customerAccountManager, '');
+    els.customerCreatedAt.textContent = '-';
+    els.customerUpdatedAt.textContent = '-';
+    els.customerUpdatedBy.textContent = '-';
+    setSelectValue(els.customerMetaName, '');
+    setSelectValue(els.customerMetaCode, '');
+    els.customerOrdersBody.innerHTML = renderStatusRow(message, 14);
+    els.customerContactsBody.innerHTML = renderStatusRow(message, 7);
+    els.customerAddressesBody.innerHTML = renderStatusRow(message, 6);
+  }
+
+  function renderCustomerPage() {
+    const customer = state.selectedCustomerDetail || {};
+    els.customerName.value = customer.business_name || '';
+    els.customerCode.value = customer.customer_code || '';
+    setSelectValue(els.customerAccountManager, staffLabel(customer.account_manager));
+    els.customerCreatedAt.textContent = formatDateTime(customer.created_at_source);
+    els.customerUpdatedAt.textContent = formatDateTime(customer.updated_at_source);
+    els.customerUpdatedBy.textContent = staffLabel(customer.updated_by) || '-';
+    setSelectValue(els.customerMetaName, customer.business_name || '');
+    setSelectValue(els.customerMetaCode, customer.customer_code || '');
+
+    renderCustomerOrders();
+    renderCustomerContacts();
+    renderCustomerAddresses();
+  }
+
+  function renderCustomerOrders() {
+    const orders = state.selectedCustomerOrders || [];
+    if (!orders.length) {
+      els.customerOrdersBody.innerHTML = renderStatusRow('No orders recorded for this customer', 14);
+      return;
+    }
+
+    els.customerOrdersBody.innerHTML = orders.map(renderCustomerOrderRow).join('');
+  }
+
+  function renderCustomerOrderRow(order, index) {
+    return `
+      <tr class="db-customer-order-row" data-job-id="${escapeAttr(order.source_order_id || '')}" tabindex="0">
+        <td class="db-row-selector">${index === 0 ? '&#9654;' : ''}</td>
+        <td class="db-order-link">${escapeHtml(order.order_no || '')}</td>
+        <td>${escapeHtml(order.client_order_no || '')}</td>
+        <td class="db-type-cell db-type-${categoryForJob(order)}">${escapeHtml(typeAbbr(order))}</td>
+        <td>${escapeHtml(order.contact_name || '')}</td>
+        <td>${escapeHtml(order.job_title || '')}</td>
+        <td>${escapeHtml(staffShort(order.order_taken_by || order.trace_staff_id))}</td>
+        <td>${escapeHtml(formatDate(order.order_date, 'long'))}</td>
+        <td>${escapeHtml(formatDate(order.complete_date, 'long'))}</td>
+        <td>${renderCheck(order.has_artwork)}</td>
+        <td>${renderCheck(truthy(order.has_screens) || Boolean(order.screen_numbers))}</td>
+        <td>${renderCheck(order.has_shirts)}</td>
+        <td>${renderCheck(order.is_reorder)}</td>
+        <td>${renderCheck(order.customer_supplied)}</td>
+      </tr>
+    `;
+  }
+
+  function renderCustomerContacts() {
+    const contacts = state.selectedCustomerContacts || [];
+    if (!contacts.length) {
+      els.customerContactsBody.innerHTML = renderStatusRow('No contact information recorded for this customer', 7);
+      return;
+    }
+
+    els.customerContactsBody.innerHTML = contacts.map((contact, index) => `
+      <tr>
+        <td class="db-row-selector">${index === 0 ? '&#9654;' : ''}</td>
+        <td>${escapeHtml(contact.contact_name || '')}</td>
+        <td>${escapeHtml(contact.contact_phone || '')}</td>
+        <td>${escapeHtml(contact.contact_mobile || '')}</td>
+        <td class="db-customer-email-cell">${escapeHtml(contact.contact_email || '')}</td>
+        <td>${escapeHtml(formatNumber(contact.order_count || 0))}</td>
+        <td class="db-order-link">${escapeHtml(contact.latest_order_no || '')}</td>
+      </tr>
+    `).join('');
+  }
+
+  function renderCustomerAddresses() {
+    const addresses = state.selectedCustomerAddresses || [];
+    if (!addresses.length) {
+      els.customerAddressesBody.innerHTML = renderStatusRow('No addresses recorded for this customer', 6);
+      return;
+    }
+
+    els.customerAddressesBody.innerHTML = addresses.map((address, index) => `
+      <tr>
+        <td class="db-row-selector">${index === 0 ? '&#9654;' : ''}</td>
+        <td>${escapeHtml(address.address_type || '')}</td>
+        <td>${escapeHtml(address.address || '')}</td>
+        <td>${escapeHtml(formatNumber(address.order_count || 0))}</td>
+        <td class="db-order-link">${escapeHtml(address.latest_order_no || '')}</td>
+        <td>${escapeHtml(formatDate(address.last_seen_at, 'long'))}</td>
+      </tr>
+    `).join('');
+  }
+
+  function showCustomerTab(tab) {
+    state.activeCustomerTab = tab || 'orders';
+    els.customerTabs.forEach((button) => {
+      button.classList.toggle('active', button.dataset.dbCustomerTab === state.activeCustomerTab);
+    });
+    els.customerPanels.forEach((panel) => {
+      panel.classList.toggle('active', panel.id === `db-customer-${state.activeCustomerTab}-panel`);
+    });
   }
 
   function openOutstandingOrders(mode) {
@@ -817,7 +1014,7 @@
     els.detailsPanel.innerHTML = `
       <div class="db-details-layout">
         <div class="db-detail-box db-customer-box">
-          ${detailRow('Customer:', `${selectBox(job.customer_name, 'db-control-link')}<input class="db-legacy-input db-code-input" readonly value="${escapeAttr(job.customer_code || '')}">`)}
+          ${detailRow('Customer:', `${customerOpenButton(job)}<input class="db-legacy-input db-code-input" readonly value="${escapeAttr(job.customer_code || '')}">`)}
           ${detailRow('Contact:', selectBox(job.contact_name))}
           ${detailRow('Order type:', selectBox(job.order_type || typeLabel(job)))}
           ${detailRow('Taken by:', selectBox(staffLabel(job.order_taken_by || job.trace_staff_id)))}
@@ -1157,7 +1354,7 @@
     });
 
     els.mainTabs.forEach((tab) => {
-      const active = (name === 'home' || name === 'new-order' || name === 'customers')
+      const active = (name === 'home' || name === 'new-order' || name === 'customers' || name === 'customer')
         ? tab.dataset.dbGo === 'home'
         : tab.dataset.dbGo === 'outstanding';
       tab.classList.toggle('active', active);
@@ -1183,6 +1380,27 @@
 
   function selectBox(value, className = '') {
     return `<select class="${className}" disabled><option>${escapeHtml(value || '')}</option></select>`;
+  }
+
+  function customerOpenButton(job) {
+    const key = customerKeyForRecord({
+      customer_id: job.customer_id,
+      business_name: job.customer_name,
+    });
+    const disabled = key ? '' : ' disabled';
+    return `<button class="db-customer-open-button db-control-link" type="button" data-db-customer-open="${escapeAttr(key)}"${disabled}>${escapeHtml(job.customer_name || '')}</button>`;
+  }
+
+  function customerKeyForRecord(customer) {
+    const id = Number.parseInt(customer?.customer_id, 10);
+    if (Number.isFinite(id)) return String(id);
+    const name = String(customer?.business_name || '').trim();
+    return name ? `name:${name}` : '';
+  }
+
+  function setSelectValue(select, value) {
+    if (!select) return;
+    select.innerHTML = `<option>${escapeHtml(value || '')}</option>`;
   }
 
   function renderStatusRow(message, colspan = 13) {

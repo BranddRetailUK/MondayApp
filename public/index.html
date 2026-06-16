@@ -601,6 +601,137 @@
               </div>
             </section>
 
+            <section id="db-customer-view" class="db-view db-customer-view" aria-label="Database customer">
+              <div class="db-customer-header">
+                <div class="db-customer-title-area">
+                  <div class="db-customer-line">
+                    <span class="db-order-label-large">Customer:</span>
+                    <input id="db-customer-name" class="db-title-input" readonly>
+                    <button class="db-toolbar-button db-edit-button" type="button">Edit</button>
+                  </div>
+                  <div class="db-customer-line db-customer-code-line">
+                    <span class="db-order-label-large">Code:</span>
+                    <input id="db-customer-code" class="db-order-number-input" readonly>
+                    <span class="db-customer-manager-label">Account manager:</span>
+                    <select id="db-customer-account-manager" class="db-customer-manager-select" disabled></select>
+                  </div>
+                </div>
+
+                <div class="db-customer-meta-links">
+                  <div class="db-meta-grid">
+                    <span>Created:</span>
+                    <span>Last edited:</span>
+                    <span>By:</span>
+                    <a id="db-customer-created-at" href="#">-</a>
+                    <a id="db-customer-updated-at" href="#">-</a>
+                    <a id="db-customer-updated-by" href="#">-</a>
+                  </div>
+                </div>
+
+                <div class="db-customer-meta-panel">
+                  <label>Customer:
+                    <select id="db-customer-meta-name" disabled></select>
+                  </label>
+                  <label>Code:
+                    <select id="db-customer-meta-code" disabled></select>
+                  </label>
+                </div>
+              </div>
+
+              <div class="db-customer-tabs" role="tablist" aria-label="Customer tabs">
+                <button class="db-customer-tab active" type="button" data-db-customer-tab="orders">Orders</button>
+                <button class="db-customer-tab" type="button" data-db-customer-tab="contacts">Contacts</button>
+                <button class="db-customer-tab" type="button" data-db-customer-tab="addresses">Addresses</button>
+                <button class="db-customer-tab" type="button" data-db-customer-tab="quotations">Quotations</button>
+                <button class="db-customer-tab" type="button" data-db-customer-tab="communications">Communications</button>
+                <button class="db-customer-tab" type="button" data-db-customer-tab="actions">Actions</button>
+                <button class="db-customer-tab-arrow" type="button" aria-label="Previous tab">&lt;</button>
+                <button class="db-customer-tab-arrow" type="button" aria-label="Next tab">&gt;</button>
+              </div>
+
+              <div class="db-customer-panel active" id="db-customer-orders-panel">
+                <div class="db-customer-table-frame">
+                  <table id="db-customer-orders-table" class="db-legacy-table">
+                    <thead>
+                      <tr>
+                        <th class="db-row-selector"></th>
+                        <th>Order no:</th>
+                        <th>Customer ref:</th>
+                        <th>P/E:</th>
+                        <th>Contact:</th>
+                        <th>Job title:</th>
+                        <th>Taken by:</th>
+                        <th>Order date:</th>
+                        <th>Completed:</th>
+                        <th>Art</th>
+                        <th>Scr.</th>
+                        <th>Sht.</th>
+                        <th>R/o</th>
+                        <th>CS.</th>
+                      </tr>
+                    </thead>
+                    <tbody id="db-customer-orders-body">
+                      <tr><td colspan="14" class="db-empty-cell">Loading customer orders</td></tr>
+                    </tbody>
+                  </table>
+                  <div class="db-customer-gray-fill"></div>
+                </div>
+              </div>
+
+              <div class="db-customer-panel" id="db-customer-contacts-panel">
+                <div class="db-customer-table-frame">
+                  <table id="db-customer-contacts-table" class="db-legacy-table">
+                    <thead>
+                      <tr>
+                        <th class="db-row-selector"></th>
+                        <th>Contact:</th>
+                        <th>Tel:</th>
+                        <th>Mobile:</th>
+                        <th>Email:</th>
+                        <th>Orders:</th>
+                        <th>Latest order:</th>
+                      </tr>
+                    </thead>
+                    <tbody id="db-customer-contacts-body">
+                      <tr><td colspan="7" class="db-empty-cell">Loading contacts</td></tr>
+                    </tbody>
+                  </table>
+                  <div class="db-customer-gray-fill"></div>
+                </div>
+              </div>
+
+              <div class="db-customer-panel" id="db-customer-addresses-panel">
+                <div class="db-customer-table-frame">
+                  <table id="db-customer-addresses-table" class="db-legacy-table">
+                    <thead>
+                      <tr>
+                        <th class="db-row-selector"></th>
+                        <th>Type:</th>
+                        <th>Address:</th>
+                        <th>Orders:</th>
+                        <th>Latest order:</th>
+                        <th>Last used:</th>
+                      </tr>
+                    </thead>
+                    <tbody id="db-customer-addresses-body">
+                      <tr><td colspan="6" class="db-empty-cell">Loading addresses</td></tr>
+                    </tbody>
+                  </table>
+                  <div class="db-customer-gray-fill"></div>
+                </div>
+              </div>
+
+              <div class="db-customer-panel" id="db-customer-quotations-panel">
+                <div class="db-customer-table-frame"><div class="db-panel-message">No quotations recorded</div><div class="db-customer-gray-fill"></div></div>
+              </div>
+              <div class="db-customer-panel" id="db-customer-communications-panel">
+                <div class="db-customer-table-frame"><div class="db-panel-message">No communications recorded</div><div class="db-customer-gray-fill"></div></div>
+              </div>
+              <div class="db-customer-panel" id="db-customer-actions-panel">
+                <div class="db-customer-table-frame"><div class="db-panel-message">No actions recorded</div><div class="db-customer-gray-fill"></div></div>
+              </div>
+            </section>
+
             <section id="db-outstanding-view" class="db-view db-outstanding-view" aria-label="Outstanding orders">
               <div class="db-table-frame db-outstanding-table-frame">
                 <table id="db-outstanding-table" class="db-legacy-table">

@@ -329,6 +329,55 @@ router.get('/api/database/customers/search', async (req, res) => {
   }
 });
 
+router.get('/api/database/customers/:key', async (req, res) => {
+  const customerKey = parseCustomerKey(req.params.key);
+  if (!customerKey) {
+    return res.status(400).json({ error: 'Invalid customer key' });
+  }
+
+  const where = customerKey.type === 'id'
+    ? 'j.customer_id = $1'
+    : 'LOWER(j.customer_name) = LOWER($1)';
+
+  try {
+    const result = await pool.query(
+      `WITH line_summary AS (
+         SELECT source_order_id,
+                COUNT(*)::int AS line_item_count,
+                COALESCE(SUM(quantity), 0)::int AS total_quantity
+         FROM database_job_line_items
+         GROUP BY source_order_id
+       ),
+       position_summary AS (
+         SELECT source_order_id, COUNT(*)::int AS position_count
+         FROM database_job_positions
+         GROUP BY source_order_id
+       )
+       SELECT j.*,
+              COALESCE(ls.line_item_count, 0)::int AS line_item_count,
+              COALESCE(ls.total_quantity, 0)::int AS total_quantity,
+              COALESCE(ps.position_count, 0)::int AS position_count
+       FROM database_jobs j
+       LEFT JOIN line_summary ls ON ls.source_order_id = j.source_order_id
+       LEFT JOIN position_summary ps ON ps.source_order_id = j.source_order_id
+       WHERE ${where}
+       ORDER BY COALESCE(j.order_date, j.updated_at_source, j.created_at_source) DESC NULLS LAST,
+                j.order_no DESC NULLS LAST`,
+      [customerKey.value]
+    );
+
+    const orders = result.rows;
+    if (!orders.length) {
+      return res.status(404).json({ error: 'Database customer not found' });
+    }
+
+    res.json(buildCustomerDetail(customerKey, orders));
+  } catch (err) {
+    console.error('GET /api/database/customers/:key', err);
+    res.status(500).json({ error: 'Failed to fetch database customer detail' });
+  }
+});
+
 router.post('/api/database/jobs', async (req, res) => {
   const payload = req.body || {};
   const customerName = cleanNullable(payload.customer_name);
@@ -753,6 +802,190 @@ function invoiceRequiredValue(value) {
   if (clean === 'yes' || clean === 'true' || clean === '1') return true;
   if (clean === 'no' || clean === 'false' || clean === '0') return false;
   return null;
+}
+
+function parseCustomerKey(value) {
+  const clean = cleanQuery(value);
+  if (!clean) return null;
+
+  if (clean.toLowerCase().startsWith('name:')) {
+    const name = clean.slice(5).trim();
+    return name ? { type: 'name', value: name } : null;
+  }
+
+  if (/^\d+$/.test(clean)) {
+    return { type: 'id', value: Number.parseInt(clean, 10) };
+  }
+
+  return { type: 'name', value: clean };
+}
+
+function buildCustomerDetail(customerKey, orders) {
+  const latest = orders[0] || {};
+  const businessName = firstNonEmpty(orders, 'customer_name');
+  const customerId = firstFinite(orders, 'customer_id');
+
+  return {
+    customer: {
+      customer_key: customerKey.type === 'id' ? String(customerKey.value) : `name:${businessName || customerKey.value}`,
+      customer_id: customerId,
+      business_name: businessName,
+      customer_code: firstNonEmpty(orders, 'customer_code'),
+      account_manager: firstNonEmpty(orders, 'order_taken_by') || firstNonEmpty(orders, 'trace_staff_id'),
+      created_at_source: earliestDate(orders, 'created_at_source'),
+      updated_at_source: latestDate(orders, 'updated_at_source'),
+      updated_by: latest.order_taken_by || latest.trace_staff_id || null,
+      latest_source_order_id: latest.source_order_id || null,
+      latest_order_no: latest.order_no || null,
+      order_count: orders.length,
+    },
+    orders,
+    contacts: groupedContacts(orders),
+    addresses: groupedAddresses(orders),
+  };
+}
+
+function groupedContacts(orders) {
+  const contacts = new Map();
+
+  for (const order of orders) {
+    if (!order.contact_name && !order.contact_phone && !order.contact_mobile && !order.contact_email) continue;
+
+    const key = isFiniteDatabaseValue(order.contact_id)
+      ? `id:${order.contact_id}`
+      : [
+          order.contact_name,
+          order.contact_phone,
+          order.contact_mobile,
+          order.contact_email,
+        ].map((value) => cleanQuery(value).toLowerCase()).join('|');
+
+    const existing = contacts.get(key) || {
+      contact_id: order.contact_id || null,
+      contact_name: order.contact_name || null,
+      contact_phone: order.contact_phone || null,
+      contact_mobile: order.contact_mobile || null,
+      contact_email: order.contact_email || null,
+      latest_order_no: order.order_no || null,
+      latest_source_order_id: order.source_order_id || null,
+      order_count: 0,
+      first_seen_at: seenDate(order),
+      last_seen_at: seenDate(order),
+    };
+
+    existing.contact_name = existing.contact_name || order.contact_name || null;
+    existing.contact_phone = existing.contact_phone || order.contact_phone || null;
+    existing.contact_mobile = existing.contact_mobile || order.contact_mobile || null;
+    existing.contact_email = existing.contact_email || order.contact_email || null;
+    existing.order_count += 1;
+
+    if (isLater(seenDate(order), existing.last_seen_at)) {
+      existing.latest_order_no = order.order_no || null;
+      existing.latest_source_order_id = order.source_order_id || null;
+      existing.last_seen_at = seenDate(order);
+    }
+
+    if (isEarlier(seenDate(order), existing.first_seen_at)) {
+      existing.first_seen_at = seenDate(order);
+    }
+
+    contacts.set(key, existing);
+  }
+
+  return Array.from(contacts.values()).sort((a, b) => {
+    const byName = cleanQuery(a.contact_name).localeCompare(cleanQuery(b.contact_name), 'en', { sensitivity: 'base' });
+    if (byName) return byName;
+    return Number(b.latest_order_no || 0) - Number(a.latest_order_no || 0);
+  });
+}
+
+function groupedAddresses(orders) {
+  const addresses = new Map();
+
+  for (const order of orders) {
+    addAddress(addresses, order, 'Invoice', order.invoice_address);
+    addAddress(addresses, order, 'Delivery', order.delivery_address);
+  }
+
+  return Array.from(addresses.values()).sort((a, b) => {
+    const byAddress = a.address.localeCompare(b.address, 'en', { sensitivity: 'base' });
+    if (byAddress) return byAddress;
+    return a.address_type.localeCompare(b.address_type, 'en', { sensitivity: 'base' });
+  });
+}
+
+function addAddress(addresses, order, addressType, address) {
+  const cleanAddress = cleanQuery(address);
+  if (!cleanAddress) return;
+
+  const key = `${addressType.toLowerCase()}:${cleanAddress.replace(/\s+/g, ' ').toLowerCase()}`;
+  const existing = addresses.get(key) || {
+    address_type: addressType,
+    address: cleanAddress,
+    latest_order_no: order.order_no || null,
+    latest_source_order_id: order.source_order_id || null,
+    order_count: 0,
+    first_seen_at: seenDate(order),
+    last_seen_at: seenDate(order),
+  };
+
+  existing.order_count += 1;
+
+  if (isLater(seenDate(order), existing.last_seen_at)) {
+    existing.latest_order_no = order.order_no || null;
+    existing.latest_source_order_id = order.source_order_id || null;
+    existing.last_seen_at = seenDate(order);
+  }
+
+  if (isEarlier(seenDate(order), existing.first_seen_at)) {
+    existing.first_seen_at = seenDate(order);
+  }
+
+  addresses.set(key, existing);
+}
+
+function firstNonEmpty(rows, field) {
+  const row = rows.find((item) => cleanQuery(item[field]));
+  return row ? row[field] : null;
+}
+
+function firstFinite(rows, field) {
+  const row = rows.find((item) => isFiniteDatabaseValue(item[field]));
+  return row ? Number(row[field]) : null;
+}
+
+function isFiniteDatabaseValue(value) {
+  return value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
+}
+
+function earliestDate(rows, field) {
+  return rows
+    .map((row) => row[field])
+    .filter(Boolean)
+    .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0] || null;
+}
+
+function latestDate(rows, field) {
+  return rows
+    .map((row) => row[field])
+    .filter(Boolean)
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] || null;
+}
+
+function seenDate(order) {
+  return order.order_date || order.updated_at_source || order.created_at_source || null;
+}
+
+function isLater(candidate, current) {
+  if (!candidate) return false;
+  if (!current) return true;
+  return new Date(candidate).getTime() > new Date(current).getTime();
+}
+
+function isEarlier(candidate, current) {
+  if (!candidate) return false;
+  if (!current) return true;
+  return new Date(candidate).getTime() < new Date(current).getTime();
 }
 
 function toBoolean(value) {

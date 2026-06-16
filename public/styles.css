@@ -1051,6 +1051,29 @@ body.modal-open{overflow:hidden}
 #db-customers-table th:nth-child(7){width:68px}
 #db-customers-table th:nth-child(8){width:58px;text-align:center}
 #db-customers-table td:nth-child(8){text-align:center}
+#db-customer-orders-table th:nth-child(2){width:58px}
+#db-customer-orders-table th:nth-child(3){width:118px}
+#db-customer-orders-table th:nth-child(4){width:32px;text-align:center}
+#db-customer-orders-table th:nth-child(5){width:122px}
+#db-customer-orders-table th:nth-child(6){width:auto}
+#db-customer-orders-table th:nth-child(7){width:58px}
+#db-customer-orders-table th:nth-child(8){width:82px}
+#db-customer-orders-table th:nth-child(9){width:82px}
+#db-customer-orders-table th:nth-child(n+10){width:27px;text-align:center}
+#db-customer-orders-table td:nth-child(n+10){text-align:center}
+#db-customer-contacts-table th:nth-child(2){width:190px}
+#db-customer-contacts-table th:nth-child(3){width:130px}
+#db-customer-contacts-table th:nth-child(4){width:130px}
+#db-customer-contacts-table th:nth-child(5){width:auto}
+#db-customer-contacts-table th:nth-child(6){width:58px;text-align:center}
+#db-customer-contacts-table th:nth-child(7){width:86px}
+#db-customer-contacts-table td:nth-child(6){text-align:center}
+#db-customer-addresses-table th:nth-child(2){width:88px}
+#db-customer-addresses-table th:nth-child(3){width:auto}
+#db-customer-addresses-table th:nth-child(4){width:58px;text-align:center}
+#db-customer-addresses-table th:nth-child(5){width:86px}
+#db-customer-addresses-table th:nth-child(6){width:88px}
+#db-customer-addresses-table td:nth-child(4){text-align:center}
 .db-outstanding-row{
   cursor:pointer;
 }
@@ -1062,6 +1085,12 @@ body.modal-open{overflow:hidden}
   cursor:pointer;
 }
 .db-customer-row:hover td{
+  background:#e6f1ff;
+}
+.db-customer-order-row{
+  cursor:pointer;
+}
+.db-customer-order-row:hover td{
   background:#e6f1ff;
 }
 .db-empty-cell{
@@ -1143,13 +1172,24 @@ body.modal-open{overflow:hidden}
 .db-order-view{
   padding:0;
 }
+.db-customer-view{
+  padding:0 19px;
+}
 .db-order-header{
   position:relative;
   height:105px;
 }
+.db-customer-header{
+  position:relative;
+  height:118px;
+}
 .db-order-title-area{
   width:678px;
   padding:10px 0 0 20px;
+}
+.db-customer-title-area{
+  width:678px;
+  padding:18px 0 0 1px;
 }
 .db-order-line{
   display:flex;
@@ -1157,8 +1197,17 @@ body.modal-open{overflow:hidden}
   gap:8px;
   margin-bottom:8px;
 }
+.db-customer-line{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-bottom:14px;
+}
 .db-order-number-line{
   align-items:flex-start;
+}
+.db-customer-code-line{
+  align-items:center;
 }
 .db-order-label-large{
   flex:0 0 98px;
@@ -1193,6 +1242,21 @@ body.modal-open{overflow:hidden}
   font:22px Arial, Helvetica, sans-serif;
   padding:1px 4px;
 }
+.db-customer-manager-label{
+  margin-left:84px;
+  color:#120080;
+  font-size:18px;
+  font-weight:700;
+  white-space:nowrap;
+}
+.db-customer-manager-select{
+  width:134px;
+  height:25px;
+  border:2px inset #fff;
+  background:#fff;
+  color:red;
+  font:18px Arial, Helvetica, sans-serif;
+}
 .db-document-buttons{
   display:flex;
   gap:2px;
@@ -1219,6 +1283,25 @@ body.modal-open{overflow:hidden}
   border:2px inset #666;
   color:#fff;
 }
+.db-customer-meta-links{
+  position:absolute;
+  right:0;
+  top:0;
+  width:306px;
+  height:38px;
+  color:#000;
+}
+.db-customer-meta-panel{
+  position:absolute;
+  right:0;
+  top:40px;
+  width:306px;
+  height:68px;
+  padding:10px 12px 8px;
+  background:#7f7f7f;
+  border:2px inset #666;
+  color:#fff;
+}
 .db-meta-grid{
   display:grid;
   grid-template-columns:1fr 1fr 1fr;
@@ -1240,7 +1323,14 @@ body.modal-open{overflow:hidden}
   align-items:center;
   margin-bottom:5px;
 }
+.db-customer-meta-panel label{
+  display:grid;
+  grid-template-columns:66px 1fr;
+  align-items:center;
+  margin-bottom:5px;
+}
 .db-order-meta-panel select,
+.db-customer-meta-panel select,
 .db-select-order-label select,
 .db-legacy-app select,
 .db-legacy-input,
@@ -1256,6 +1346,16 @@ body.modal-open{overflow:hidden}
 .db-order-meta-panel select{
   width:100%;
   min-width:0;
+}
+.db-customer-meta-panel select{
+  width:100%;
+  min-width:0;
+}
+.db-legacy-app .db-customer-manager-select{
+  width:134px;
+  height:25px;
+  color:red;
+  font:18px Arial, Helvetica, sans-serif;
 }
 .db-order-tabs{
   display:grid;
@@ -1274,6 +1374,26 @@ body.modal-open{overflow:hidden}
   background:#fff;
   border-bottom-color:#fff;
 }
+.db-customer-tabs{
+  display:grid;
+  grid-template-columns:repeat(6, 1fr) 20px 20px;
+  height:28px;
+}
+.db-customer-tab,
+.db-customer-tab-arrow{
+  border:1px solid #f7f7f7;
+  background:#f4f4f4;
+  color:#000;
+  font:12px Arial, Helvetica, sans-serif;
+  cursor:pointer;
+}
+.db-customer-tab.active{
+  background:#fff;
+  border-bottom-color:#fff;
+}
+.db-customer-tab-arrow{
+  padding:0;
+}
 .db-order-panel{
   display:none;
   min-height:447px;
@@ -1283,6 +1403,34 @@ body.modal-open{overflow:hidden}
 }
 .db-order-panel.active{
   display:block;
+}
+.db-customer-panel{
+  display:none;
+  height:448px;
+  border:1px solid #fff;
+  border-top:none;
+  background:#92cdea;
+  padding:13px 14px;
+}
+.db-customer-panel.active{
+  display:block;
+}
+.db-customer-table-frame{
+  height:418px;
+  border:1px solid #000;
+  background:#858585;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+.db-customer-table-frame .db-legacy-table{
+  flex:0 0 auto;
+}
+.db-customer-gray-fill{
+  flex:1 1 auto;
+  min-height:220px;
+  background:#858585;
+  border-top:1px solid #000;
 }
 .db-panel-message{
   padding:24px;
@@ -1373,6 +1521,26 @@ body.modal-open{overflow:hidden}
 .db-control-link{
   color:#00e!important;
   text-decoration:underline;
+}
+.db-customer-open-button{
+  width:100%;
+  min-width:0;
+  height:21px;
+  padding:1px 2px;
+  border:2px inset #fff;
+  border-radius:0;
+  background:#fff;
+  color:#00e;
+  font:12px Arial, Helvetica, sans-serif;
+  text-align:left;
+  cursor:pointer;
+  overflow:hidden;
+  white-space:nowrap;
+  text-overflow:clip;
+}
+.db-customer-open-button:disabled{
+  color:#000;
+  cursor:default;
 }
 .db-code-input{
   width:67px!important;
