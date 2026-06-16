@@ -1,6 +1,6 @@
 # MondayApp Service Contract
 
-Last reviewed: 2026-06-11
+Last reviewed: 2026-06-16
 
 ## Purpose
 
@@ -265,6 +265,8 @@ Endpoints:
 
 - `GET /api/database/summary`: returns counts for jobs, line items, positions, import status, counts by year, and counts by type.
 - `GET /api/database/jobs?q=&customer=&type=&year=&status=&limit=&offset=`: returns paginated jobs. Default and UI page size is 100 jobs. Search covers job number, customer, job title, contact name/email, client order number, line description, style code, style name, colour, and size. The list response also includes imported order flags and timestamps used by the legacy outstanding-orders grid.
+- `GET /api/database/outstanding-counts`: returns open order counts grouped as Printing, Embroidery, and Business Gifts using the same `order_type`/`order_type_abbr` category rules as the legacy UI.
+- `GET /api/database/customers?q=`: returns distinct customers from `database_jobs` in alphabetical order, with each customer's latest order number, latest job title, latest order date, contact, customer code, and order count.
 - `GET /api/database/customers/search?q=`: searches distinct customer/contact values from `database_jobs`, using the same imported customer data that populates outstanding orders and order details.
 - `POST /api/database/jobs`: creates a real manual `database_jobs` row from the legacy New Order form. Required fields are customer, order type, job title, order date, and delivery date. The route allocates the next source order id/order number in a transaction and marks the row `is_manual_entry = true`.
 - `GET /api/database/jobs/:id`: returns one job plus contact fields, line items, and position rows. `:id` may be source order id or job number.
@@ -287,8 +289,9 @@ railway run --service DB node scripts/import-database-mdb.js PS_XP_tab.mdb
 UI rules:
 
 - The DATABASE tab is a fixed-size, centered legacy-style hub matching the Access-era reference UI colors, scale, spacing, and layout, with every DATABASE view rendered at 120% legacy scale and empty blue background around the reference canvas on wider dashboard screens.
-- The DATABASE home screen is the default tab screen and includes the New Order button, main menu buttons, outstanding-actions count, admin buttons, and backup-status panel. The legacy blue footer bar is intentionally omitted in the dashboard hub.
+- The DATABASE home screen is the default tab screen and includes the New Order button, main menu buttons, outstanding-actions panel, admin buttons, and backup-status panel. The outstanding-actions panel shows three open-order counts for Printing, Embroidery, and Business Gifts, sourced from `/api/database/outstanding-counts`. The legacy blue footer bar is intentionally omitted in the dashboard hub.
 - The New Order button opens a centered legacy form without placeholder lookup buttons, fake combo-arrow buttons, or a customer-date checkbox. The customer field live-searches `/api/database/customers/search` as the user types; selecting a customer fills contact, delivery address, and invoice address fields from stored DATABASE customer/order data when available. Accept creates a manual job row in `database_jobs`, carrying through selected customer/contact ids and codes when present, then opens that created order in the order-details view.
+- The Customers main-menu button opens a legacy-styled list page backed only by `database_jobs`, not the separate dashboard customer tables. Customers are sorted alphabetically, searchable at the top of the page, and each row shows the latest order next to the customer record.
 - The Outstanding Orders tab loads open jobs through `/api/database/jobs?status=open`, follows pagination until all open jobs are loaded, and groups rows into Print, Embroidery, Gifts, and Other using `order_type`/`order_type_abbr`.
 - Clicking an outstanding order opens the in-tab order view. Users can return to the DATABASE home screen with the top-left Home button.
 - The order view has three top tabs: Order details, Order Items, and Design. These tabs switch in place without navigating away from the dashboard. The order header reserves spacing above the tabs so document buttons and the metadata panel do not touch or overlap the tab strip.

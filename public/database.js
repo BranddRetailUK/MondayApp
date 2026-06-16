@@ -11,6 +11,10 @@
     loadedOrderMode: '',
     outstandingJobs: [],
     outstandingTotal: 0,
+    loadingCustomers: false,
+    loadedCustomers: false,
+    databaseCustomers: [],
+    databaseCustomerQuery: '',
     activeGroup: 'all',
     activeSort: 'order',
     activeOrderTab: 'details',
@@ -28,7 +32,9 @@
 
   let els = {};
   let customerSearchTimer = 0;
+  let databaseCustomerSearchTimer = 0;
   let customerSearchRequest = 0;
+  let databaseCustomerRequest = 0;
   let designAutosaveTimer = 0;
 
   document.addEventListener('DOMContentLoaded', initDatabaseHub);
@@ -40,7 +46,11 @@
       homeButton: document.getElementById('db-home-button'),
       mainTabs: Array.from(document.querySelectorAll('.db-main-tab')),
       views: Array.from(document.querySelectorAll('#db-legacy-app .db-view')),
-      homeCount: document.getElementById('db-outstanding-count'),
+      homeCountPrinting: document.getElementById('db-count-printing'),
+      homeCountEmbroidery: document.getElementById('db-count-embroidery'),
+      homeCountGifts: document.getElementById('db-count-gifts'),
+      customersSearch: document.getElementById('db-customers-search'),
+      customersBody: document.getElementById('db-customers-body'),
       outstandingBody: document.getElementById('db-outstanding-body'),
       refreshOrders: document.getElementById('db-refresh-orders'),
       selectOrder: document.getElementById('db-select-order'),
@@ -72,6 +82,9 @@
     els.root.addEventListener('click', handleRootClick);
     els.outstandingBody.addEventListener('click', handleOutstandingRowClick);
     els.outstandingBody.addEventListener('keydown', handleOutstandingRowKeydown);
+    els.customersBody.addEventListener('click', handleDatabaseCustomerRowClick);
+    els.customersBody.addEventListener('keydown', handleDatabaseCustomerRowKeydown);
+    els.customersSearch.addEventListener('input', handleDatabaseCustomerSearchInput);
     els.refreshOrders.addEventListener('click', () => loadOutstandingOrders({ force: true }));
     els.selectOrder.addEventListener('change', () => openSelectedOrder(els.selectOrder.value));
     els.headerJobSelect.addEventListener('change', () => openSelectedOrder(els.headerJobSelect.value));
@@ -154,6 +167,11 @@
       openOutstandingOrders('all');
       return;
     }
+    if (action === 'customers') {
+      await flushDesignAutosave();
+      showCustomers();
+      return;
+    }
 
     const group = button.dataset.dbGroup;
     if (group) {
@@ -192,11 +210,17 @@
   async function loadHomeMetrics() {
     state.loadedHome = true;
     try {
-      const data = await fetchJson('/api/database/jobs?status=open&limit=1&offset=0');
-      els.homeCount.textContent = formatNumber(data.total || 0);
+      const data = await fetchJson('/api/database/outstanding-counts');
+      setHomeCounts(data);
     } catch {
-      els.homeCount.textContent = '!';
+      setHomeCounts({ printing: '!', embroidery: '!', business_gifts: '!' });
     }
+  }
+
+  function setHomeCounts(counts) {
+    els.homeCountPrinting.textContent = formatNumber(counts.printing ?? 0);
+    els.homeCountEmbroidery.textContent = formatNumber(counts.embroidery ?? 0);
+    els.homeCountGifts.textContent = formatNumber(counts.business_gifts ?? counts.gifts ?? 0);
   }
 
   function showHome() {
@@ -209,6 +233,12 @@
     showView('new-order');
     setFooterTitle('New Order');
     resetNewOrderForm();
+  }
+
+  function showCustomers() {
+    showView('customers');
+    setFooterTitle('Customers');
+    loadDatabaseCustomers({ force: false });
   }
 
   function resetNewOrderForm() {
@@ -474,6 +504,85 @@
     const selectedName = String(state.selectedCustomer.business_name || '').trim().toLowerCase();
     const currentName = String(customerName || '').trim().toLowerCase();
     return selectedName && selectedName === currentName ? state.selectedCustomer : null;
+  }
+
+  function handleDatabaseCustomerSearchInput() {
+    state.databaseCustomerQuery = els.customersSearch.value.trim();
+    clearTimeout(databaseCustomerSearchTimer);
+    databaseCustomerSearchTimer = window.setTimeout(() => {
+      loadDatabaseCustomers({ force: true });
+    }, CUSTOMER_SEARCH_DELAY);
+  }
+
+  async function handleDatabaseCustomerRowClick(event) {
+    const row = event.target.closest('tr[data-job-id]');
+    if (!row) return;
+    await flushDesignAutosave();
+    openOrder(row.dataset.jobId, 'details');
+  }
+
+  async function handleDatabaseCustomerRowKeydown(event) {
+    if (event.key !== 'Enter') return;
+    const row = event.target.closest('tr[data-job-id]');
+    if (!row) return;
+    await flushDesignAutosave();
+    openOrder(row.dataset.jobId, 'details');
+  }
+
+  async function loadDatabaseCustomers(options = {}) {
+    const query = els.customersSearch.value.trim();
+    state.databaseCustomerQuery = query;
+
+    if (state.loadedCustomers && !options.force && state.databaseCustomers.length) {
+      renderDatabaseCustomers();
+      return;
+    }
+
+    const requestId = ++databaseCustomerRequest;
+    state.loadingCustomers = true;
+    els.customersBody.innerHTML = renderStatusRow('Loading customers', 8);
+
+    try {
+      const params = new URLSearchParams();
+      if (query) params.set('q', query);
+      const suffix = params.toString() ? `?${params.toString()}` : '';
+      const data = await fetchJson(`/api/database/customers${suffix}`);
+      if (requestId !== databaseCustomerRequest) return;
+      state.databaseCustomers = data.customers || [];
+      state.loadedCustomers = true;
+      renderDatabaseCustomers();
+    } catch (err) {
+      if (requestId !== databaseCustomerRequest) return;
+      els.customersBody.innerHTML = renderStatusRow(err.message, 8);
+    } finally {
+      if (requestId === databaseCustomerRequest) state.loadingCustomers = false;
+    }
+  }
+
+  function renderDatabaseCustomers() {
+    const customers = state.databaseCustomers || [];
+    if (!customers.length) {
+      els.customersBody.innerHTML = renderStatusRow('No matching customers', 8);
+      return;
+    }
+
+    els.customersBody.innerHTML = customers.map(renderDatabaseCustomerRow).join('');
+  }
+
+  function renderDatabaseCustomerRow(customer, index) {
+    const jobId = customer.latest_source_order_id || '';
+    return `
+      <tr class="db-customer-row" data-job-id="${escapeAttr(jobId)}" tabindex="0">
+        <td class="db-row-selector">${index === 0 ? '&#9654;' : ''}</td>
+        <td class="db-customer-link">${escapeHtml(customer.business_name || '')}</td>
+        <td class="db-order-link">${escapeHtml(customer.latest_order_no || '')}</td>
+        <td>${escapeHtml(customer.latest_job_title || '')}</td>
+        <td>${escapeHtml(formatDate(customer.latest_order_date, 'long'))}</td>
+        <td>${escapeHtml(customer.contact_name || '')}</td>
+        <td>${escapeHtml(customer.customer_code || '')}</td>
+        <td>${escapeHtml(formatNumber(customer.order_count || 0))}</td>
+      </tr>
+    `;
   }
 
   function openOutstandingOrders(mode) {
@@ -1048,7 +1157,7 @@
     });
 
     els.mainTabs.forEach((tab) => {
-      const active = (name === 'home' || name === 'new-order')
+      const active = (name === 'home' || name === 'new-order' || name === 'customers')
         ? tab.dataset.dbGo === 'home'
         : tab.dataset.dbGo === 'outstanding';
       tab.classList.toggle('active', active);
@@ -1076,8 +1185,8 @@
     return `<select class="${className}" disabled><option>${escapeHtml(value || '')}</option></select>`;
   }
 
-  function renderStatusRow(message) {
-    return `<tr><td colspan="13" class="db-empty-cell">${escapeHtml(message)}</td></tr>`;
+  function renderStatusRow(message, colspan = 13) {
+    return `<tr><td colspan="${colspan}" class="db-empty-cell">${escapeHtml(message)}</td></tr>`;
   }
 
   function renderItemEmptyRow(colspan) {

@@ -139,6 +139,117 @@ router.get('/api/database/jobs', async (req, res) => {
   }
 });
 
+router.get('/api/database/outstanding-counts', async (_req, res) => {
+  try {
+    const result = await pool.query(`
+      WITH categorized AS (
+        SELECT CASE
+          WHEN LOWER(COALESCE(order_type, '') || ' ' || COALESCE(order_type_abbr, '')) LIKE '%gift%'
+            OR LOWER(COALESCE(order_type_abbr, '')) = 'g'
+            THEN 'gifts'
+          WHEN LOWER(COALESCE(order_type, '') || ' ' || COALESCE(order_type_abbr, '')) LIKE '%embro%'
+            OR LOWER(COALESCE(order_type_abbr, '')) = 'e'
+            THEN 'embroidery'
+          WHEN LOWER(COALESCE(order_type, '') || ' ' || COALESCE(order_type_abbr, '')) LIKE '%print%'
+            OR LOWER(COALESCE(order_type_abbr, '')) = 'p'
+            THEN 'print'
+          ELSE 'other'
+        END AS category
+        FROM database_jobs
+        WHERE is_complete IS NOT TRUE
+      )
+      SELECT
+        (COUNT(*) FILTER (WHERE category = 'print'))::int AS printing,
+        (COUNT(*) FILTER (WHERE category = 'embroidery'))::int AS embroidery,
+        (COUNT(*) FILTER (WHERE category = 'gifts'))::int AS business_gifts,
+        (COUNT(*))::int AS total
+      FROM categorized
+    `);
+
+    res.json(result.rows[0] || {
+      printing: 0,
+      embroidery: 0,
+      business_gifts: 0,
+      total: 0,
+    });
+  } catch (err) {
+    console.error('GET /api/database/outstanding-counts', err);
+    res.status(500).json({ error: 'Failed to fetch outstanding action counts' });
+  }
+});
+
+router.get('/api/database/customers', async (req, res) => {
+  const search = cleanQuery(req.query.q);
+  const params = [];
+  let searchSql = '';
+
+  if (search) {
+    params.push(`%${search}%`);
+    const ref = `$${params.length}`;
+    searchSql = `AND (
+      customer_name ILIKE ${ref}
+      OR customer_code ILIKE ${ref}
+      OR contact_name ILIKE ${ref}
+      OR contact_email ILIKE ${ref}
+      OR CAST(order_no AS TEXT) ILIKE ${ref}
+      OR job_title ILIKE ${ref}
+    )`;
+  }
+
+  try {
+    const result = await pool.query(
+      `WITH customer_jobs AS (
+         SELECT
+           COALESCE(customer_id::text, LOWER(customer_name)) AS customer_key,
+           customer_id,
+           customer_name AS business_name,
+           customer_code,
+           contact_name,
+           contact_email,
+           source_order_id,
+           order_no,
+           job_title,
+           order_date,
+           delivery_date,
+           COALESCE(order_date, updated_at_source, created_at_source) AS last_seen_at,
+           (COUNT(*) OVER (PARTITION BY COALESCE(customer_id::text, LOWER(customer_name))))::int AS order_count,
+           ROW_NUMBER() OVER (
+             PARTITION BY COALESCE(customer_id::text, LOWER(customer_name))
+             ORDER BY COALESCE(order_date, updated_at_source, created_at_source) DESC NULLS LAST,
+                      order_no DESC NULLS LAST
+           ) AS customer_rank
+         FROM database_jobs
+         WHERE customer_name IS NOT NULL
+           AND customer_name <> ''
+           ${searchSql}
+       )
+       SELECT
+         customer_id,
+         business_name,
+         customer_code,
+         contact_name,
+         contact_email,
+         source_order_id AS latest_source_order_id,
+         order_no AS latest_order_no,
+         job_title AS latest_job_title,
+         order_date AS latest_order_date,
+         delivery_date AS latest_delivery_date,
+         last_seen_at,
+         order_count
+       FROM customer_jobs
+       WHERE customer_rank = 1
+       ORDER BY LOWER(business_name) ASC, business_name ASC
+       LIMIT 5000`,
+      params
+    );
+
+    res.json({ customers: result.rows });
+  } catch (err) {
+    console.error('GET /api/database/customers', err);
+    res.status(500).json({ error: 'Failed to fetch database customers' });
+  }
+});
+
 router.get('/api/database/customers/search', async (req, res) => {
   const search = cleanQuery(req.query.q);
   if (!search) return res.json([]);
