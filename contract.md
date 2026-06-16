@@ -290,7 +290,7 @@ UI rules:
 - The New Order button opens a centered legacy form. The customer field live-searches `/api/database/customers/search` as the user types; selecting a customer fills contact, delivery address, and invoice address fields from stored DATABASE customer/order data when available. Accept creates a manual job row in `database_jobs`, carrying through selected customer/contact ids and codes when present, then opens that created order in the order-details view.
 - The Outstanding Orders tab loads open jobs through `/api/database/jobs?status=open`, follows pagination until all open jobs are loaded, and groups rows into Print, Embroidery, Gifts, and Other using `order_type`/`order_type_abbr`.
 - Clicking an outstanding order opens the in-tab order view. Users can return to the DATABASE home screen with the top-left Home button.
-- The order view has three top tabs: Order details, Order Items, and Design. These tabs switch in place without navigating away from the dashboard.
+- The order view has three top tabs: Order details, Order Items, and Design. These tabs switch in place without navigating away from the dashboard. The order view uses a larger 120% legacy scale inside the dashboard so header buttons, metadata panel, and form sections match the Access reference spacing.
 - Order details surfaces every imported job field that maps to the reference screen, including customer/contact, type, dates, client reference, comments, invoice fields, and boolean flags.
 - Order Items splits imported line items into stock, non-stock, non-deliverable, and internal sections using existing line-item flags and product/style data.
 - Design renders imported `database_job_positions` rows and the job `screen_numbers` field.

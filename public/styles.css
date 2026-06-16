@@ -589,6 +589,18 @@ body.modal-open{overflow:hidden}
   border:1px solid #6f6f6f;
   background:#92cdea;
 }
+.db-legacy-app[data-db-view="order"]{
+  width:1203px;
+  min-width:1203px;
+  height:687px;
+  min-height:687px;
+}
+.db-legacy-app[data-db-view="order"] .db-legacy-stage{
+  top:36px;
+  width:1002px;
+  transform:scale(1.2);
+  transform-origin:top left;
+}
 .db-home-button{
   position:absolute;
   left:0;
@@ -1136,7 +1148,7 @@ body.modal-open{overflow:hidden}
 }
 .db-order-title-area{
   width:678px;
-  padding:16px 0 0 2px;
+  padding:16px 0 0 20px;
 }
 .db-order-line{
   display:flex;
@@ -1182,7 +1194,7 @@ body.modal-open{overflow:hidden}
 }
 .db-document-buttons{
   display:flex;
-  gap:1px;
+  gap:2px;
 }
 .db-doc-button{
   flex:0 0 55px;
@@ -1201,7 +1213,7 @@ body.modal-open{overflow:hidden}
   top:0;
   width:306px;
   height:105px;
-  padding:2px 10px 8px;
+  padding:4px 10px 8px;
   background:#7f7f7f;
   border:2px inset #666;
   color:#fff;

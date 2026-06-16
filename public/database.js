@@ -894,6 +894,7 @@
   }
 
   function showView(name) {
+    els.root.dataset.dbView = name;
     els.views.forEach((view) => {
       view.classList.toggle('active', view.id === `db-${name}-view`);
     });
