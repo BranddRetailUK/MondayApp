@@ -1,6 +1,7 @@
 (function () {
   const PAGE_LIMIT = 100;
   const MAX_JOBS = 2500;
+  const CUSTOMER_SEARCH_DELAY = 180;
 
   const state = {
     loadedHome: false,
@@ -13,12 +14,16 @@
     activeSort: 'order',
     activeOrderTab: 'details',
     newOrderSubmitting: false,
+    selectedCustomer: null,
+    customerResults: [],
     selectedJob: null,
     selectedLineItems: [],
     selectedPositions: [],
   };
 
   let els = {};
+  let customerSearchTimer = 0;
+  let customerSearchRequest = 0;
 
   document.addEventListener('DOMContentLoaded', initDatabaseHub);
 
@@ -49,6 +54,11 @@
       newOrderAccept: document.getElementById('db-new-order-accept'),
       newOrderCancel: document.getElementById('db-new-order-cancel'),
       newOrderStatus: document.getElementById('db-new-order-status'),
+      newCustomerInput: document.getElementById('db-new-customer'),
+      newContactInput: document.getElementById('db-new-contact'),
+      newCustomerResults: document.getElementById('db-new-customer-results'),
+      newDeliveryAddress: document.getElementById('db-new-delivery-address'),
+      newInvoiceAddress: document.getElementById('db-new-invoice-address'),
     };
 
     if (!els.root) return;
@@ -64,6 +74,12 @@
     els.newOrderForm.addEventListener('input', validateNewOrderForm);
     els.newOrderForm.addEventListener('change', validateNewOrderForm);
     els.newOrderCancel.addEventListener('click', showHome);
+    els.newCustomerInput.addEventListener('input', handleNewCustomerInput);
+    els.newCustomerInput.addEventListener('focus', showExistingCustomerResults);
+    els.newCustomerInput.addEventListener('keydown', handleCustomerSearchKeydown);
+    els.newCustomerResults.addEventListener('mousedown', (event) => event.preventDefault());
+    els.newCustomerResults.addEventListener('click', handleCustomerResultClick);
+    document.addEventListener('click', handleDocumentClick);
 
     document.querySelectorAll('input[name="db-sort"]').forEach((input) => {
       input.addEventListener('change', () => {
@@ -172,6 +188,11 @@
 
   function resetNewOrderForm() {
     els.newOrderForm.reset();
+    clearTimeout(customerSearchTimer);
+    customerSearchRequest += 1;
+    state.selectedCustomer = null;
+    state.customerResults = [];
+    closeCustomerResults();
     const today = new Date();
     const delivery = addDays(today, 14);
     document.getElementById('db-new-order-date').value = formatLegacyInputDate(today);
@@ -193,6 +214,167 @@
       && fields.delivery_date.value.trim()
     );
     els.newOrderAccept.disabled = !valid || state.newOrderSubmitting;
+  }
+
+  function handleNewCustomerInput() {
+    state.selectedCustomer = null;
+    const query = els.newCustomerInput.value.trim();
+    clearTimeout(customerSearchTimer);
+
+    if (!query) {
+      customerSearchRequest += 1;
+      state.customerResults = [];
+      closeCustomerResults();
+      validateNewOrderForm();
+      return;
+    }
+
+    customerSearchTimer = window.setTimeout(() => {
+      searchCustomers(query);
+    }, CUSTOMER_SEARCH_DELAY);
+    validateNewOrderForm();
+  }
+
+  async function searchCustomers(query) {
+    const requestId = ++customerSearchRequest;
+
+    try {
+      const results = await fetchJson(`/api/customers/search?q=${encodeURIComponent(query)}`);
+      if (requestId !== customerSearchRequest || els.newCustomerInput.value.trim() !== query) return;
+      state.customerResults = rankCustomers(Array.isArray(results) ? results : [], query);
+      renderCustomerResults(state.customerResults, query);
+    } catch {
+      if (requestId !== customerSearchRequest || els.newCustomerInput.value.trim() !== query) return;
+      state.customerResults = [];
+      renderCustomerResults([], query);
+    }
+  }
+
+  function rankCustomers(customers, query) {
+    const normalized = query.trim().toLowerCase();
+    return customers.slice().sort((a, b) => {
+      const aName = String(a.business_name || '').trim().toLowerCase();
+      const bName = String(b.business_name || '').trim().toLowerCase();
+      const aContact = String(a.contact_name || '').trim().toLowerCase();
+      const bContact = String(b.contact_name || '').trim().toLowerCase();
+      const aScore = customerMatchScore(aName, aContact, normalized);
+      const bScore = customerMatchScore(bName, bContact, normalized);
+      if (aScore !== bScore) return aScore - bScore;
+      return aName.localeCompare(bName);
+    });
+  }
+
+  function customerMatchScore(name, contact, query) {
+    if (name === query) return 0;
+    if (name.startsWith(query)) return 1;
+    if (contact === query) return 2;
+    if (contact.startsWith(query)) return 3;
+    if (name.includes(query)) return 4;
+    if (contact.includes(query)) return 5;
+    return 6;
+  }
+
+  function showExistingCustomerResults() {
+    const query = els.newCustomerInput.value.trim();
+    if (!query) return;
+    if (state.customerResults.length) {
+      renderCustomerResults(state.customerResults, query);
+      return;
+    }
+    searchCustomers(query);
+  }
+
+  function renderCustomerResults(results, query) {
+    if (!els.newCustomerResults) return;
+    if (!query.trim()) {
+      closeCustomerResults();
+      return;
+    }
+
+    if (!results.length) {
+      els.newCustomerResults.innerHTML = '<div class="db-customer-result-empty">No matching customers</div>';
+      els.newCustomerResults.classList.add('open');
+      return;
+    }
+
+    els.newCustomerResults.innerHTML = results.map((customer, index) => {
+      const name = customer.business_name || '';
+      const contact = customer.contact_name || customer.email || '';
+      const exact = name.trim().toLowerCase() === query.trim().toLowerCase();
+      return `
+        <button class="db-customer-result ${exact ? 'active' : ''}" type="button" role="option" data-customer-index="${index}">
+          <span class="db-customer-result-name">${highlightMatch(name, query)}</span>
+          ${contact ? `<span class="db-customer-result-contact">${highlightMatch(contact, query)}</span>` : ''}
+        </button>
+      `;
+    }).join('');
+    els.newCustomerResults.classList.add('open');
+  }
+
+  function handleCustomerResultClick(event) {
+    const result = event.target.closest('[data-customer-index]');
+    if (!result) return;
+    const index = Number.parseInt(result.dataset.customerIndex, 10);
+    const customer = state.customerResults[index];
+    if (customer) selectCustomer(customer);
+  }
+
+  function handleCustomerSearchKeydown(event) {
+    if (event.key !== 'Enter' || !els.newCustomerResults.classList.contains('open')) return;
+    const first = state.customerResults[0];
+    if (!first) return;
+    event.preventDefault();
+    selectCustomer(first);
+  }
+
+  function handleDocumentClick(event) {
+    if (!els.newCustomerResults || !els.newCustomerInput) return;
+    if (event.target === els.newCustomerInput || els.newCustomerResults.contains(event.target)) return;
+    closeCustomerResults();
+  }
+
+  function selectCustomer(customer) {
+    state.selectedCustomer = customer;
+    els.newCustomerInput.value = customer.business_name || '';
+    els.newContactInput.value = customer.contact_name || '';
+
+    const invoiceAddress = formatCustomerAddress(customer, 'inv');
+    const deliveryAddress = formatCustomerAddress(customer, 'ship') || invoiceAddress;
+    els.newDeliveryAddress.value = deliveryAddress || '';
+    els.newInvoiceAddress.value = invoiceAddress || deliveryAddress || '';
+
+    state.customerResults = [];
+    closeCustomerResults();
+    validateNewOrderForm();
+  }
+
+  function closeCustomerResults() {
+    if (!els.newCustomerResults) return;
+    els.newCustomerResults.classList.remove('open');
+    els.newCustomerResults.innerHTML = '';
+  }
+
+  function formatCustomerAddress(customer, prefix) {
+    return [
+      customer[`${prefix}_line1`],
+      customer[`${prefix}_line2`],
+      customer[`${prefix}_city`],
+      customer[`${prefix}_region`],
+      customer[`${prefix}_postcode`],
+      customer[`${prefix}_country`],
+    ].map((part) => String(part || '').trim()).filter(Boolean).join(', ');
+  }
+
+  function highlightMatch(value, query) {
+    const text = String(value || '');
+    const clean = query.trim();
+    if (!clean) return escapeHtml(text);
+    const index = text.toLowerCase().indexOf(clean.toLowerCase());
+    if (index === -1) return escapeHtml(text);
+    const before = text.slice(0, index);
+    const match = text.slice(index, index + clean.length);
+    const after = text.slice(index + clean.length);
+    return `${escapeHtml(before)}<span class="match">${escapeHtml(match)}</span>${escapeHtml(after)}`;
   }
 
   async function submitNewOrder(event) {
@@ -709,7 +891,7 @@
   }
 
   function setFooterTitle(title) {
-    els.footerTitle.textContent = title;
+    if (els.footerTitle) els.footerTitle.textContent = title;
   }
 
   function detailRow(label, controlHtml) {

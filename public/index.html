@@ -471,6 +471,7 @@
                   <button class="db-lookup-button" type="button">&gt;*</button>
                   <input id="db-new-customer" name="customer_name" autocomplete="off">
                   <button class="db-combo-button" type="button">⌄</button>
+                  <div id="db-new-customer-results" class="db-customer-results" role="listbox"></div>
                 </div>
 
                 <div class="db-new-order-row db-new-order-contact-row">
@@ -484,9 +485,9 @@
                   <label>Order type:</label>
                   <select id="db-new-order-type" name="order_type">
                     <option value=""></option>
+                    <option value="Business Gifts">Business Gifts</option>
                     <option value="Printing">Printing</option>
                     <option value="Embroidery">Embroidery</option>
-                    <option value="Business gifts">Business gifts</option>
                   </select>
                 </div>
 
@@ -510,8 +511,7 @@
                   <label>Delivery method:</label>
                   <select id="db-new-delivery-method" name="delivery_method">
                     <option value=""></option>
-                    <option value="Collecting">Collecting</option>
-                    <option value="Courier">Courier</option>
+                    <option value="Collection">Collection</option>
                     <option value="Delivery">Delivery</option>
                   </select>
                 </div>
@@ -520,9 +520,9 @@
                   <label>Payment terms:</label>
                   <select id="db-new-payment-terms" name="payment_terms">
                     <option value=""></option>
-                    <option value="ACCOUNT">ACCOUNT</option>
-                    <option value="CARD">CARD</option>
-                    <option value="PRO-FORMA">PRO-FORMA</option>
+                    <option value="Account">Account</option>
+                    <option value="COD">COD</option>
+                    <option value="Pro Forma">Pro Forma</option>
                   </select>
                 </div>
 
@@ -550,8 +550,8 @@
                   <label>Invoice required:</label>
                   <select id="db-new-invoice-required" name="invoice_required">
                     <option value=""></option>
-                    <option value="yes">Yes</option>
-                    <option value="no">No</option>
+                    <option value="Yes">Yes</option>
+                    <option value="No">No</option>
                   </select>
                 </div>
 
@@ -672,18 +672,6 @@
             </section>
           </div>
 
-          <footer class="db-footer-bar">
-            <div class="db-footer-left">
-              <div><span>User:</span> <strong>Melvyn Harris</strong></div>
-              <div><span>Connection:</span> <strong>Live data</strong></div>
-            </div>
-            <div id="db-footer-title" class="db-footer-title">Main Menu</div>
-            <div class="db-footer-right">
-              <div><span>Version:</span> <strong>2.01</strong></div>
-              <div><span>Date:</span> <strong>19th November 2010</strong></div>
-            </div>
-            <button class="db-exit-button" type="button" data-db-go="home" aria-label="Home">▸</button>
-          </footer>
         </div>
       </section>
 
