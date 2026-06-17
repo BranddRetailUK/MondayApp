@@ -5,6 +5,7 @@
   const PRODUCT_SEARCH_DELAY = 180;
   const DESIGN_AUTOSAVE_MS = 5000;
   const LINE_ORDER_AUTOSAVE_MS = 3500;
+  const ORDER_ACK_LOGO_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781699668/ultimate_logo_imyxvr.png';
 
   const state = {
     loadedHome: false,
@@ -147,6 +148,7 @@
     document.addEventListener('pointermove', handleLineDragPointerMove);
     document.addEventListener('pointerup', handleLineDragPointerUp);
     document.addEventListener('pointercancel', handleLineDragPointerUp);
+    document.addEventListener('keydown', handleOrderAckKeydown);
     window.addEventListener('pagehide', () => flushOrderAutosaves({ keepalive: true }));
     window.addEventListener('beforeunload', () => flushOrderAutosaves({ keepalive: true }));
     document.querySelectorAll('.nav-tabs li').forEach((tab) => {
@@ -252,6 +254,12 @@
     if (action === 'customers') {
       await flushOrderAutosaves();
       showCustomers();
+      return;
+    }
+
+    if (button.dataset.dbOrderAck) {
+      await flushOrderAutosaves();
+      openOrderAcknowledgement();
       return;
     }
 
@@ -1222,6 +1230,350 @@
     `;
     state.designDirty = false;
     state.designLastSavedSignature = designSignature(collectDesignPositions());
+  }
+
+  function openOrderAcknowledgement() {
+    if (!state.selectedJob?.source_order_id && !state.selectedJob?.order_no) return;
+
+    const modal = ensureOrderAckModal();
+    const page = modal.querySelector('.db-order-ack-page');
+    page.innerHTML = renderOrderAcknowledgementPage();
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open', 'db-order-ack-open');
+
+    window.requestAnimationFrame(() => {
+      const printButton = modal.querySelector('[data-db-ack-print]');
+      if (printButton) printButton.focus();
+    });
+  }
+
+  function ensureOrderAckModal() {
+    let modal = document.getElementById('db-order-ack-modal');
+    if (modal) return modal;
+
+    modal = document.createElement('div');
+    modal.id = 'db-order-ack-modal';
+    modal.className = 'db-order-ack-modal';
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    modal.innerHTML = `
+      <div class="db-order-ack-shell" role="dialog" aria-modal="true" aria-label="Order acknowledgement PDF preview">
+        <div class="db-order-ack-toolbar">
+          <div class="db-order-ack-toolbar-title">Order acknowledgement</div>
+          <div class="db-order-ack-toolbar-actions">
+            <button class="db-order-ack-action" type="button" data-db-ack-print="true">Print</button>
+            <button class="db-order-ack-action" type="button" data-db-ack-download="true">Download PDF</button>
+            <button class="db-order-ack-close" type="button" data-db-ack-close="true" aria-label="Close">Close</button>
+          </div>
+        </div>
+        <div class="db-order-ack-scroll">
+          <article class="db-order-ack-page" role="document"></article>
+        </div>
+      </div>
+    `;
+    modal.addEventListener('click', handleOrderAckModalClick);
+    document.body.appendChild(modal);
+    return modal;
+  }
+
+  function handleOrderAckModalClick(event) {
+    const modal = document.getElementById('db-order-ack-modal');
+    if (!modal || modal.hidden) return;
+
+    if (event.target === modal) {
+      closeOrderAcknowledgement();
+      return;
+    }
+
+    const button = event.target.closest('button');
+    if (!button || !modal.contains(button)) return;
+
+    if (button.dataset.dbAckClose) {
+      closeOrderAcknowledgement();
+      return;
+    }
+
+    if (button.dataset.dbAckPrint || button.dataset.dbAckDownload) {
+      printOrderAcknowledgement();
+    }
+  }
+
+  function handleOrderAckKeydown(event) {
+    if (event.key !== 'Escape') return;
+    const modal = document.getElementById('db-order-ack-modal');
+    if (modal && !modal.hidden) closeOrderAcknowledgement();
+  }
+
+  function closeOrderAcknowledgement() {
+    const modal = document.getElementById('db-order-ack-modal');
+    if (!modal) return;
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('modal-open', 'db-order-ack-open', 'db-order-ack-printing');
+  }
+
+  function printOrderAcknowledgement() {
+    const modal = document.getElementById('db-order-ack-modal');
+    if (!modal || modal.hidden) return;
+
+    document.body.classList.add('db-order-ack-printing');
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      document.body.classList.remove('db-order-ack-printing');
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+    window.setTimeout(() => {
+      window.print();
+      window.setTimeout(cleanup, 1500);
+    }, 50);
+  }
+
+  function renderOrderAcknowledgementPage() {
+    const job = state.selectedJob || {};
+    const items = orderAckLineItems();
+    const positions = state.selectedPositions || [];
+    const totals = orderAckTotals(items);
+    const invoiceLines = orderAckAddressLines(job.invoice_address, job.customer_name);
+    const deliveryLines = String(job.delivery_address || '').trim()
+      ? orderAckAddressLines(job.delivery_address, job.customer_name)
+      : [];
+    const deliverySameAsInvoice = !deliveryLines.length || sameOrderAckAddress(invoiceLines, deliveryLines);
+    const deliveryDisplay = deliverySameAsInvoice ? ['(as above)'] : deliveryLines;
+    const yourRef = job.client_order_no || contactFirstName(job.contact_name) || job.contact_name || '';
+    const salutation = contactFirstName(job.contact_name)
+      || (/^[a-z]+$/i.test(String(yourRef).trim()) ? titleCaseName(yourRef) : '')
+      || 'Customer';
+
+    return `
+      <header class="db-order-ack-header">
+        <h1>ORDER<br>ACKNOWLEDGEMENT</h1>
+        <img class="db-order-ack-logo" src="${escapeAttr(ORDER_ACK_LOGO_URL)}" alt="Ultimate logo" crossorigin="anonymous">
+      </header>
+
+      <section class="db-order-ack-address">
+        ${invoiceLines.map((line) => `<div>${escapeHtml(line)}</div>`).join('')}
+      </section>
+
+      <section class="db-order-ack-meta" aria-label="Order acknowledgement details">
+        ${orderAckMetaRow('ULT ref:', job.order_no)}
+        ${orderAckMetaRow('Your ref:', yourRef)}
+        ${orderAckMetaRow('Order date:', formatDate(job.order_date, 'full'))}
+        ${orderAckMetaRow('Order taken by:', staffLabel(job.order_taken_by || job.trace_staff_id))}
+        ${orderAckMetaRow('Order value:', formatCurrency(totals.gross))}
+        ${orderAckMetaRow('Delivery address:', deliveryDisplay.map((line) => escapeHtml(line)).join('<br>'), { html: true })}
+      </section>
+
+      <section class="db-order-ack-letter">
+        <p>Dear ${escapeHtml(salutation)}</p>
+        <p>Thank you for your order. To ensure we have understood your requirements fully, could you please check the details below and inform us immediately of any discrepancies.</p>
+      </section>
+
+      <section class="db-order-ack-job">
+        <span>Job title:</span>
+        <strong>${escapeHtml(job.job_title || '')}</strong>
+      </section>
+
+      ${renderOrderAckItemsTable(items, totals)}
+      ${renderOrderAckPositionsTable(positions)}
+      ${job.comments ? renderOrderAckComments(job.comments) : ''}
+    `;
+  }
+
+  function orderAckMetaRow(label, value, options = {}) {
+    const content = options.html ? (value || '') : escapeHtml(value || value === 0 ? value : '');
+    return `
+      <div class="db-order-ack-meta-row">
+        <span>${escapeHtml(label)}</span>
+        <strong>${content}</strong>
+      </div>
+    `;
+  }
+
+  function renderOrderAckItemsTable(items, totals) {
+    const rows = items.length ? items.map(renderOrderAckItemRow).join('') : `
+      <tr>
+        <td colspan="6" class="db-order-ack-empty">No order line items</td>
+      </tr>
+    `;
+
+    return `
+      <table class="db-order-ack-items">
+        <thead>
+          <tr>
+            <th>${escapeHtml(orderAckItemsLabel(items))}</th>
+            <th>Qty</th>
+            <th>Price</th>
+            <th>Total</th>
+            <th>VAT</th>
+            <th>Rate</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr>
+            <td colspan="3"></td>
+            <td>${escapeHtml(formatCurrency(totals.net))}</td>
+            <td>${escapeHtml(formatCurrency(totals.vat))}</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    `;
+  }
+
+  function renderOrderAckItemRow(item) {
+    const quantity = orderAckQuantity(item);
+    const price = orderAckNumber(item.unit_price);
+    const net = orderAckLineNet(item);
+    const vat = orderAckLineVat(item);
+    return `
+      <tr>
+        <td>${escapeHtml(orderAckItemDescription(item))}</td>
+        <td>${escapeHtml(formatNumber(quantity))}</td>
+        <td>${Number.isFinite(price) ? escapeHtml(formatCurrency(price)) : ''}</td>
+        <td>${escapeHtml(formatCurrency(net))}</td>
+        <td>${escapeHtml(formatCurrency(vat))}</td>
+        <td>${escapeHtml(formatVat(item.vat_rate))}</td>
+      </tr>
+    `;
+  }
+
+  function renderOrderAckPositionsTable(positions) {
+    const visiblePositions = (positions || []).filter((position) => (
+      position.position_name || position.colour_notes || position.design_ref
+    ));
+    if (!visiblePositions.length) return '';
+
+    const hasDesign = visiblePositions.some((position) => position.design_ref);
+    return `
+      <table class="db-order-ack-positions ${hasDesign ? 'has-design' : ''}">
+        <thead>
+          <tr>
+            <th>Positions</th>
+            <th>Colours</th>
+            ${hasDesign ? '<th>Design</th>' : ''}
+          </tr>
+        </thead>
+        <tbody>
+          ${visiblePositions.map((position) => `
+            <tr>
+              <td>${escapeHtml(position.position_name || '')}</td>
+              <td>${escapeHtml(position.colour_notes || '')}</td>
+              ${hasDesign ? `<td>${escapeHtml(position.design_ref || '')}</td>` : ''}
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function renderOrderAckComments(comments) {
+    return `
+      <section class="db-order-ack-comments">
+        <strong>Comments</strong>
+        <p>${escapeHtml(comments)}</p>
+      </section>
+    `;
+  }
+
+  function orderAckLineItems() {
+    const items = state.selectedLineItems || [];
+    const customerFacing = items.filter((item) => !truthy(item.is_internal));
+    return customerFacing.length ? customerFacing : items;
+  }
+
+  function orderAckItemsLabel(items) {
+    if (!items.length) return 'Items';
+    if (items.every(isStockItem)) return 'Stock items';
+    if (items.every(isNonStockItem)) return 'Non-stock items';
+    if (items.every((item) => truthy(item.is_non_deliverable))) return 'Non-deliverable items';
+    return 'Items';
+  }
+
+  function orderAckItemDescription(item) {
+    const description = item.line_description || item.style_name || '';
+    const code = item.style_code || item.alt_style_code || '';
+    const variant = [item.colour, item.size].filter(Boolean).join(' ');
+    return [code, description, variant].filter(Boolean).join(' - ');
+  }
+
+  function orderAckTotals(items) {
+    return (items || []).reduce((totals, item) => {
+      const net = orderAckLineNet(item);
+      const vat = orderAckLineVat(item);
+      totals.net += net;
+      totals.vat += vat;
+      totals.gross += net + vat;
+      return totals;
+    }, { net: 0, vat: 0, gross: 0 });
+  }
+
+  function orderAckLineNet(item) {
+    const price = orderAckNumber(item.unit_price);
+    if (!Number.isFinite(price)) return 0;
+    return price * orderAckQuantity(item);
+  }
+
+  function orderAckLineVat(item) {
+    const rate = orderAckVatPercent(item.vat_rate);
+    return orderAckLineNet(item) * (rate / 100);
+  }
+
+  function orderAckQuantity(item) {
+    const quantity = orderAckNumber(item.quantity);
+    return Number.isFinite(quantity) ? quantity : 0;
+  }
+
+  function orderAckVatPercent(value) {
+    const number = orderAckNumber(value);
+    if (!Number.isFinite(number)) return 0;
+    return number > 0 && number <= 1 ? number * 100 : number;
+  }
+
+  function orderAckNumber(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : NaN;
+  }
+
+  function orderAckAddressLines(address, customerName) {
+    const customer = String(customerName || '').trim();
+    const lines = splitOrderAckAddress(address);
+    if (customer && !lines.length) return [customer];
+    if (customer && normalizeOrderAckText(lines[0]) !== normalizeOrderAckText(customer)) {
+      return [customer, ...lines];
+    }
+    return lines;
+  }
+
+  function splitOrderAckAddress(value) {
+    return String(value || '')
+      .replace(/\r/g, '\n')
+      .split(/\n|,/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+
+  function sameOrderAckAddress(left, right) {
+    return normalizeOrderAckText((left || []).join(' ')) === normalizeOrderAckText((right || []).join(' '));
+  }
+
+  function normalizeOrderAckText(value) {
+    return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  }
+
+  function contactFirstName(value) {
+    const clean = String(value || '').trim();
+    if (!clean) return '';
+    return titleCaseName(clean.split(/\s+/)[0]);
+  }
+
+  function titleCaseName(value) {
+    const clean = String(value || '').trim().toLowerCase();
+    return clean ? clean.charAt(0).toUpperCase() + clean.slice(1) : '';
   }
 
   function renderStockRow(item, index) {
