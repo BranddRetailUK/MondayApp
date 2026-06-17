@@ -2,6 +2,8 @@
 
 const PROD_ORIGIN = window.location.origin;
 const ENDPOINTS = { data: '/api/board', auth: '/auth', scans: '/api/scan-states' };
+const DASHBOARD_TAB_STORAGE_KEY = 'ultimateHub.activeDashboardTab';
+const DASHBOARD_TAB_NAMES = ['dashboard', 'database', 'visuals'];
 const SUBITEM_COLUMNS = {
   code: 'text_mkvdj3cd',
   size: 'text_mkxewsew',
@@ -875,20 +877,60 @@ window.addEventListener('beforeunload', async () => {
 
 document.addEventListener("DOMContentLoaded", () => {
   const tabs = document.querySelectorAll(".nav-tabs li");
-  const contents = document.querySelectorAll(".tab-content");
+  const initialTab = getExplicitDashboardTab() || getStoredDashboardTab() || 'dashboard';
+
+  activateDashboardTab(initialTab);
 
   tabs.forEach(tab => {
     tab.addEventListener("click", () => {
-      const target = tab.getAttribute("data-tab");
-      tabs.forEach(t => t.classList.remove("active"));
-      tab.classList.add("active");
-      contents.forEach(c => {
-        c.classList.remove("active");
-        if (c.id === `tab-${target}`) c.classList.add("active");
-      });
+      activateDashboardTab(tab.getAttribute("data-tab"));
     });
   });
 });
+
+function activateDashboardTab(target) {
+  const requestedTab = isValidDashboardTab(target) ? target : 'dashboard';
+  const activeTab = document.getElementById(`tab-${requestedTab}`) ? requestedTab : 'dashboard';
+  const tabs = document.querySelectorAll(".nav-tabs li");
+  const contents = document.querySelectorAll(".tab-content");
+
+  tabs.forEach(tab => {
+    tab.classList.toggle("active", tab.getAttribute("data-tab") === activeTab);
+  });
+  contents.forEach(content => {
+    content.classList.toggle("active", content.id === `tab-${activeTab}`);
+  });
+  setStoredDashboardTab(activeTab);
+}
+
+function getExplicitDashboardTab() {
+  const params = new URLSearchParams(window.location.search);
+  const queryTab = params.get('tab');
+  if (isValidDashboardTab(queryTab)) return queryTab;
+
+  const hashTab = window.location.hash.replace(/^#/, '');
+  return isValidDashboardTab(hashTab) ? hashTab : '';
+}
+
+function getStoredDashboardTab() {
+  try {
+    const storedTab = window.localStorage.getItem(DASHBOARD_TAB_STORAGE_KEY);
+    return isValidDashboardTab(storedTab) ? storedTab : '';
+  } catch {
+    return '';
+  }
+}
+
+function setStoredDashboardTab(tabName) {
+  if (!isValidDashboardTab(tabName)) return;
+  try {
+    window.localStorage.setItem(DASHBOARD_TAB_STORAGE_KEY, tabName);
+  } catch {}
+}
+
+function isValidDashboardTab(tabName) {
+  return DASHBOARD_TAB_NAMES.includes(tabName);
+}
 
 // ================== VISUAL APPROVALS TAB ==================
 const __vaState = { items: [], loaded: false, overlayTimer: null, overlayPct: 0 };

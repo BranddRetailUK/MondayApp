@@ -19,7 +19,7 @@ The most important production path is the Dropbox/Open Orders import:
 - Runtime entry: `server.js`, which loads `server.modular.js`.
 - App composition: `src/app.js`.
 - Static frontend: `public/`.
-- Ultimate Hub dashboard tabs: Dashboard, DATABASE, and Visual Approvals. The old standalone `MERCH TRAFFIC`, Orders, Customers, Stock, Shipping, and PenCarrie tabs have been removed. DATABASE order/customer/stock workflows remain part of the DATABASE tab.
+- Ultimate Hub dashboard tabs: Dashboard, DATABASE, and Visual Approvals. The active top-level dashboard tab is stored in browser localStorage so a page refresh returns the user to the last selected tab, unless an explicit `?tab=` query or matching hash such as `#database` selects a valid tab. The old standalone `MERCH TRAFFIC`, Orders, Customers, Stock, Shipping, and PenCarrie tabs have been removed. DATABASE order/customer/stock workflows remain part of the DATABASE tab.
 - DB bootstrap: `src/db/migrate.js`.
 - Config: `src/config/env.js` and `src/config/mondayFields.js`.
 
@@ -301,7 +301,7 @@ UI rules:
 - The Outstanding Orders tab loads open jobs through `/api/database/jobs?status=open`, follows pagination until all open jobs are loaded, and groups rows into Print, Embroidery, Gifts, and Other using `order_type`/`order_type_abbr`.
 - Clicking an outstanding order opens the in-tab order view. Users can return to the DATABASE home screen with the top-left Home button.
 - The order view has three top tabs: Order details, Order Items, and Design. These tabs switch in place without navigating away from the dashboard. The order header reserves spacing above the tabs so document buttons and the metadata panel do not touch or overlap the tab strip. Clicking the customer control in Order details opens the customer page for that order's customer.
-- Order Details, Order Items, and Design tab content use white backgrounds for panels, tables, cells, inputs, selects, and textareas; legacy grey/off-white fills are intentionally removed from these order info tabs.
+- Order Details, Order Items, and Design tab content uses the legacy blue/grey/off-white fills for panels, table headers, and empty space. White backgrounds are limited to field-like areas such as customer/order inputs, selects, textareas, line-item entry fields, line item value cells, design edit boxes, supplier/screen fields, and comments fields.
 - Order details surfaces every imported job field that maps to the reference screen, including customer/contact, type, dates, client reference, comments, invoice fields, and boolean flags.
 - Order Items splits imported line items into stock, non-stock, non-deliverable, and internal sections using existing line-item flags and product/style data. The stock table displays Code, Alt code, Style, Colour, Size, Cost, Price, Qty, and VAT; it does not show a separate Stock code/source product id column. Line item ordering uses `database_job_line_items.line_sort_order`, falling back to `source_order_item_id`.
 - The Order Items stock table has an Add line button centered below the current stock rows. Clicking it inserts one editable stock row. The Style and Code inputs use product autocomplete backed by `database_products`; pressing Enter selects the first result when the result list is open. Once a style/code result is selected, Colour and Size become dropdowns for that style's available product variants, Cost follows the selected variant, and pressing Enter or the row `+` button creates the line item.
