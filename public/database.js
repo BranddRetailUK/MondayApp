@@ -4,6 +4,7 @@
   const CUSTOMER_SEARCH_DELAY = 180;
   const PRODUCT_SEARCH_DELAY = 180;
   const DESIGN_AUTOSAVE_MS = 5000;
+  const LINE_ORDER_AUTOSAVE_MS = 3500;
 
   const state = {
     loadedHome: false,
@@ -35,6 +36,10 @@
     productSearchOpen: false,
     productSearchField: 'style',
     productSearchQuery: '',
+    lineOrderDirty: false,
+    lineOrderSaving: false,
+    lineOrderSaveQueued: false,
+    lineOrderLastSavedSignature: '[]',
     designDirty: false,
     designSaving: false,
     designSaveQueued: false,
@@ -49,6 +54,8 @@
   let databaseCustomerRequest = 0;
   let productSearchRequest = 0;
   let designAutosaveTimer = 0;
+  let lineOrderAutosaveTimer = 0;
+  let lineDrag = null;
 
   document.addEventListener('DOMContentLoaded', initDatabaseHub);
 
@@ -131,12 +138,16 @@
     els.itemsPanel.addEventListener('keydown', handleLineDraftKeydown);
     els.itemsPanel.addEventListener('change', handleLineDraftChange);
     els.itemsPanel.addEventListener('mousedown', handleLineDraftMouseDown);
+    els.itemsPanel.addEventListener('pointerdown', handleLineDragPointerDown);
     els.designPanel.addEventListener('input', handleDesignInput);
-    window.addEventListener('pagehide', () => flushDesignAutosave({ keepalive: true }));
-    window.addEventListener('beforeunload', () => flushDesignAutosave({ keepalive: true }));
+    document.addEventListener('pointermove', handleLineDragPointerMove);
+    document.addEventListener('pointerup', handleLineDragPointerUp);
+    document.addEventListener('pointercancel', handleLineDragPointerUp);
+    window.addEventListener('pagehide', () => flushOrderAutosaves({ keepalive: true }));
+    window.addEventListener('beforeunload', () => flushOrderAutosaves({ keepalive: true }));
     document.querySelectorAll('.nav-tabs li').forEach((tab) => {
       tab.addEventListener('click', () => {
-        if (tab.dataset.tab !== 'database') flushDesignAutosave();
+        if (tab.dataset.tab !== 'database') flushOrderAutosaves();
       }, { capture: true });
     });
     document.addEventListener('click', handleDocumentClick);
@@ -188,14 +199,14 @@
     }
 
     if (button.id === 'db-home-button') {
-      await flushDesignAutosave();
+      await flushOrderAutosaves();
       showHome();
       return;
     }
 
     const customerKey = button.dataset.dbCustomerOpen;
     if (customerKey) {
-      await flushDesignAutosave();
+      await flushOrderAutosaves();
       openCustomer(customerKey, 'orders');
       return;
     }
@@ -208,34 +219,34 @@
 
     const go = button.dataset.dbGo;
     if (go === 'home') {
-      await flushDesignAutosave();
+      await flushOrderAutosaves();
       showHome();
       return;
     }
     if (go === 'outstanding') {
-      await flushDesignAutosave();
+      await flushOrderAutosaves();
       openOutstandingOrders('open');
       return;
     }
 
     const action = button.dataset.dbAction;
     if (action === 'new-order') {
-      await flushDesignAutosave();
+      await flushOrderAutosaves();
       showNewOrder();
       return;
     }
     if (action === 'open-orders') {
-      await flushDesignAutosave();
+      await flushOrderAutosaves();
       openOutstandingOrders('open');
       return;
     }
     if (action === 'all-orders') {
-      await flushDesignAutosave();
+      await flushOrderAutosaves();
       openOutstandingOrders('all');
       return;
     }
     if (action === 'customers') {
-      await flushDesignAutosave();
+      await flushOrderAutosaves();
       showCustomers();
       return;
     }
@@ -253,7 +264,7 @@
     const orderTab = button.dataset.dbOrderTab;
     if (orderTab) {
       if (state.activeOrderTab === 'design' && orderTab !== 'design') {
-        await flushDesignAutosave();
+        await flushOrderAutosaves();
       }
       showOrderTab(orderTab);
     }
@@ -262,7 +273,7 @@
   async function handleOutstandingRowClick(event) {
     const row = event.target.closest('tr[data-job-id]');
     if (!row) return;
-    await flushDesignAutosave();
+    await flushOrderAutosaves();
     openOrder(row.dataset.jobId, 'details');
   }
 
@@ -270,7 +281,7 @@
     if (event.key !== 'Enter') return;
     const row = event.target.closest('tr[data-job-id]');
     if (!row) return;
-    await flushDesignAutosave();
+    await flushOrderAutosaves();
     openOrder(row.dataset.jobId, 'details');
   }
 
@@ -590,7 +601,7 @@
   async function handleDatabaseCustomerRowClick(event) {
     const row = event.target.closest('tr[data-customer-key]');
     if (!row) return;
-    await flushDesignAutosave();
+    await flushOrderAutosaves();
     openCustomer(row.dataset.customerKey, 'orders');
   }
 
@@ -598,14 +609,14 @@
     if (event.key !== 'Enter') return;
     const row = event.target.closest('tr[data-customer-key]');
     if (!row) return;
-    await flushDesignAutosave();
+    await flushOrderAutosaves();
     openCustomer(row.dataset.customerKey, 'orders');
   }
 
   async function handleCustomerOrderRowClick(event) {
     const row = event.target.closest('tr[data-job-id]');
     if (!row) return;
-    await flushDesignAutosave();
+    await flushOrderAutosaves();
     openOrder(row.dataset.jobId, 'details');
   }
 
@@ -613,7 +624,7 @@
     if (event.key !== 'Enter') return;
     const row = event.target.closest('tr[data-job-id]');
     if (!row) return;
-    await flushDesignAutosave();
+    await flushOrderAutosaves();
     openOrder(row.dataset.jobId, 'details');
   }
 
@@ -953,7 +964,7 @@
   async function openSelectedOrder(value) {
     const id = Number.parseInt(value, 10);
     if (!Number.isFinite(id)) return;
-    await flushDesignAutosave();
+    await flushOrderAutosaves();
     await openOrder(id, state.activeOrderTab || 'details');
   }
 
@@ -969,6 +980,8 @@
       state.selectedLineItems = data.lineItems || [];
       state.selectedPositions = data.positions || [];
       resetLineDraftState();
+      resetLineOrderAutosaveState();
+      state.lineOrderLastSavedSignature = lineOrderSignature(stockLineItems());
       renderOrder();
       renderOutstandingOrders();
       showOrderTab(state.activeOrderTab);
@@ -1209,9 +1222,12 @@
   }
 
   function renderStockRow(item, index) {
+    const lineId = item.source_order_item_id || '';
     return `
-      <tr>
-        <td class="db-row-selector">${index === 0 ? '&#9654;' : ''}</td>
+      <tr class="db-stock-line-row" data-line-id="${escapeAttr(lineId)}" data-stock-index="${escapeAttr(index)}">
+        <td class="db-row-selector">
+          <button class="db-line-drag-handle" type="button" data-db-line-drag="true" aria-label="Reorder line item">&#9654;</button>
+        </td>
         <td class="db-order-link">${escapeHtml(stockCode(item))}</td>
         <td>${escapeHtml(item.style_code || '')}</td>
         <td>${escapeHtml(item.alt_style_code || '')}</td>
@@ -1474,9 +1490,16 @@
     }
 
     const rect = input.getBoundingClientRect();
-    box.style.left = `${Math.round(rect.left)}px`;
-    box.style.top = `${Math.round(rect.bottom + 2)}px`;
-    box.style.width = `${Math.max(340, Math.round(rect.width))}px`;
+    const layout = box.closest('.db-items-layout');
+    const layoutRect = layout.getBoundingClientRect();
+    const desiredWidth = Math.max(340, Math.round(rect.width));
+    const maxWidth = Math.max(220, layout.clientWidth - 2);
+    const width = Math.min(desiredWidth, maxWidth);
+    const left = Math.max(0, Math.min(Math.round(rect.left - layoutRect.left), layout.clientWidth - width));
+    const top = Math.max(0, Math.round(rect.bottom - layoutRect.top + 2));
+    box.style.left = `${left}px`;
+    box.style.top = `${top}px`;
+    box.style.width = `${width}px`;
     box.innerHTML = renderProductResults(errorMessage);
     box.classList.add('open');
   }
@@ -1658,6 +1681,8 @@
         state.selectedJob.line_item_count = state.selectedLineItems.length;
         state.selectedJob.total_quantity = state.selectedLineItems.reduce((total, item) => total + Number(item.quantity || 0), 0);
       }
+      resetLineOrderAutosaveState();
+      state.lineOrderLastSavedSignature = lineOrderSignature(stockLineItems());
       resetLineDraftState();
       renderItemsPanel();
       renderOutstandingOrders();
@@ -1684,6 +1709,231 @@
     const parsed = lineNumber(value);
     if (parsed === null) return null;
     return parsed > 1 ? parsed / 100 : parsed;
+  }
+
+  function handleLineDragPointerDown(event) {
+    const handle = event.target.closest('[data-db-line-drag]');
+    if (!handle || event.button !== 0 || state.lineDraft) return;
+
+    const row = handle.closest('.db-stock-line-row');
+    const tbody = row?.parentElement;
+    if (!row || !tbody || !row.dataset.lineId) return;
+
+    event.preventDefault();
+    closeProductResults();
+
+    const rect = row.getBoundingClientRect();
+    lineDrag = {
+      pointerId: event.pointerId,
+      row,
+      tbody,
+      offsetY: event.clientY - rect.top,
+      startOrder: currentDomStockLineIds(),
+      ghost: createLineDragGhost(row, rect),
+    };
+
+    row.classList.add('db-line-row-dragging');
+    document.body.classList.add('db-line-drag-active');
+    handle.setPointerCapture?.(event.pointerId);
+    updateLineDragGhost(event.clientY);
+  }
+
+  function handleLineDragPointerMove(event) {
+    if (!lineDrag || event.pointerId !== lineDrag.pointerId) return;
+    event.preventDefault();
+    updateLineDragGhost(event.clientY);
+    moveDraggedLineRow(event.clientY);
+  }
+
+  function handleLineDragPointerUp(event) {
+    if (!lineDrag || event.pointerId !== lineDrag.pointerId) return;
+    event.preventDefault();
+
+    const drag = lineDrag;
+    const before = drag.startOrder.join('|');
+    cleanupLineDrag();
+
+    const afterIds = currentDomStockLineIds();
+    const after = afterIds.join('|');
+    if (after && after !== before) {
+      applyStockLineOrder(afterIds);
+      markLineOrderDirty();
+    }
+  }
+
+  function createLineDragGhost(row, rect) {
+    const ghost = document.createElement('div');
+    ghost.className = 'db-line-drag-ghost';
+    ghost.style.left = `${Math.round(rect.left)}px`;
+    ghost.style.width = `${Math.round(rect.width)}px`;
+
+    const table = document.createElement('table');
+    table.className = 'db-legacy-table db-items-table';
+    const tbody = document.createElement('tbody');
+    const clone = row.cloneNode(true);
+    clone.classList.remove('db-line-row-dragging');
+    clone.classList.add('db-line-drag-ghost-row');
+    tbody.appendChild(clone);
+    table.appendChild(tbody);
+    ghost.appendChild(table);
+    document.body.appendChild(ghost);
+    return ghost;
+  }
+
+  function updateLineDragGhost(clientY) {
+    if (!lineDrag?.ghost) return;
+    lineDrag.ghost.style.top = `${Math.round(clientY - lineDrag.offsetY)}px`;
+  }
+
+  function moveDraggedLineRow(clientY) {
+    if (!lineDrag) return;
+
+    const rows = Array.from(lineDrag.tbody.querySelectorAll('.db-stock-line-row'))
+      .filter((row) => row !== lineDrag.row);
+    let beforeRow = null;
+
+    for (const row of rows) {
+      const rect = row.getBoundingClientRect();
+      if (clientY < rect.top + rect.height / 2) {
+        beforeRow = row;
+        break;
+      }
+    }
+
+    if (beforeRow) {
+      lineDrag.tbody.insertBefore(lineDrag.row, beforeRow);
+      return;
+    }
+
+    const firstNonStockRow = Array.from(lineDrag.tbody.children)
+      .find((row) => !row.classList.contains('db-stock-line-row'));
+    lineDrag.tbody.insertBefore(lineDrag.row, firstNonStockRow || null);
+  }
+
+  function cleanupLineDrag() {
+    if (!lineDrag) return;
+    lineDrag.row.classList.remove('db-line-row-dragging');
+    lineDrag.ghost?.remove();
+    document.body.classList.remove('db-line-drag-active');
+    lineDrag = null;
+  }
+
+  function currentDomStockLineIds() {
+    const rows = Array.from(els.itemsPanel.querySelectorAll('.db-stock-line-row'));
+    return rows
+      .map((row) => Number.parseInt(row.dataset.lineId, 10))
+      .filter((id) => Number.isFinite(id));
+  }
+
+  function applyStockLineOrder(lineIds) {
+    const stockById = new Map(stockLineItems().map((item) => [Number(item.source_order_item_id), item]));
+    const orderedStock = lineIds
+      .map((lineId) => stockById.get(Number(lineId)))
+      .filter(Boolean);
+
+    if (orderedStock.length !== stockById.size) return;
+
+    let stockIndex = 0;
+    state.selectedLineItems = state.selectedLineItems.map((item) => {
+      if (!isStockItem(item)) return item;
+      const orderedItem = orderedStock[stockIndex] || item;
+      stockIndex += 1;
+      return {
+        ...orderedItem,
+        line_sort_order: stockIndex,
+      };
+    });
+  }
+
+  function markLineOrderDirty() {
+    state.lineOrderDirty = true;
+    scheduleLineOrderAutosave();
+  }
+
+  function scheduleLineOrderAutosave() {
+    clearTimeout(lineOrderAutosaveTimer);
+    lineOrderAutosaveTimer = window.setTimeout(() => {
+      flushLineOrderAutosave();
+    }, LINE_ORDER_AUTOSAVE_MS);
+  }
+
+  async function flushOrderAutosaves(options = {}) {
+    await Promise.all([
+      flushDesignAutosave(options),
+      flushLineOrderAutosave(options),
+    ]);
+  }
+
+  async function flushLineOrderAutosave(options = {}) {
+    clearTimeout(lineOrderAutosaveTimer);
+    if (!state.lineOrderDirty || !state.selectedJob?.source_order_id) return;
+    await saveLineOrder(options);
+  }
+
+  async function saveLineOrder(options = {}) {
+    const lineItemIds = stockLineItems()
+      .map((item) => Number.parseInt(item.source_order_item_id, 10))
+      .filter((id) => Number.isFinite(id));
+    const signature = lineOrderSignature(lineItemIds);
+
+    if (signature === state.lineOrderLastSavedSignature) {
+      state.lineOrderDirty = false;
+      return;
+    }
+
+    if (state.lineOrderSaving) {
+      state.lineOrderSaveQueued = true;
+      return;
+    }
+
+    state.lineOrderSaving = true;
+
+    try {
+      const response = await fetch(`/api/database/jobs/${encodeURIComponent(state.selectedJob.source_order_id)}/line-items/order`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ line_item_ids: lineItemIds }),
+        keepalive: Boolean(options.keepalive),
+        cache: 'no-store',
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || `Request failed: ${response.status}`);
+      }
+
+      state.selectedLineItems = data.lineItems || state.selectedLineItems;
+      state.lineOrderDirty = false;
+      state.lineOrderLastSavedSignature = lineOrderSignature(stockLineItems());
+      if (!options.keepalive && state.activeOrderTab === 'items') renderItemsPanel();
+    } catch (err) {
+      state.lineOrderDirty = true;
+      console.error('Line item order autosave failed', err);
+    } finally {
+      state.lineOrderSaving = false;
+      if (state.lineOrderSaveQueued) {
+        state.lineOrderSaveQueued = false;
+        scheduleLineOrderAutosave();
+      }
+    }
+  }
+
+  function resetLineOrderAutosaveState() {
+    clearTimeout(lineOrderAutosaveTimer);
+    state.lineOrderDirty = false;
+    state.lineOrderSaving = false;
+    state.lineOrderSaveQueued = false;
+    state.lineOrderLastSavedSignature = '[]';
+  }
+
+  function stockLineItems() {
+    return (state.selectedLineItems || []).filter(isStockItem);
+  }
+
+  function lineOrderSignature(value) {
+    const ids = Array.isArray(value) ? value : [];
+    return JSON.stringify(ids.map((item) => (
+      typeof item === 'object' ? Number(item.source_order_item_id) : Number(item)
+    )));
   }
 
   function renderNonStockRow(item, index) {
@@ -1763,7 +2013,7 @@
   function scheduleDesignAutosave() {
     clearTimeout(designAutosaveTimer);
     designAutosaveTimer = window.setTimeout(() => {
-      flushDesignAutosave();
+      flushOrderAutosaves();
     }, DESIGN_AUTOSAVE_MS);
   }
 

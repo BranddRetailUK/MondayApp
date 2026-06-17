@@ -1558,7 +1558,7 @@ body.modal-open{overflow:hidden}
   text-align:center;
 }
 .db-product-results{
-  position:fixed;
+  position:absolute;
   z-index:40;
   display:none;
   max-height:150px;
@@ -1618,6 +1618,38 @@ body.modal-open{overflow:hidden}
   padding:5px 6px;
   color:#555;
   font:12px Arial, Helvetica, sans-serif;
+}
+.db-line-drag-handle{
+  width:17px;
+  height:16px;
+  padding:0;
+  border:0;
+  background:transparent;
+  color:#000;
+  font:12px Arial, Helvetica, sans-serif;
+  line-height:14px;
+  cursor:grab;
+}
+.db-line-drag-active,
+.db-line-drag-active *{
+  cursor:grabbing!important;
+  user-select:none;
+}
+.db-line-row-dragging{
+  opacity:.32;
+}
+.db-line-drag-ghost{
+  position:fixed;
+  z-index:1000;
+  pointer-events:none;
+  opacity:.78;
+  box-shadow:2px 3px 0 rgba(0,0,0,.28);
+}
+.db-line-drag-ghost .db-legacy-table{
+  table-layout:fixed;
+}
+.db-line-drag-ghost-row td{
+  background:#ffffef!important;
 }
 .db-items-lower-grid{
   display:grid;

@@ -792,11 +792,18 @@ router.post('/api/database/jobs/:id/line-items', async (req, res) => {
     const productRow = product.rows[0];
     const sourceOrderId = job.rows[0].source_order_id;
     const sourceOrderItemId = next.rows[0].next_id;
+    const nextSort = await client.query(
+      `SELECT (COALESCE(MAX(line_sort_order), COUNT(*)) + 1)::int AS next_sort_order
+       FROM database_job_line_items
+       WHERE source_order_id = $1`,
+      [sourceOrderId]
+    );
 
     await client.query(
       `INSERT INTO database_job_line_items (
          source_order_item_id,
          source_order_id,
+         line_sort_order,
          source_product_id,
          line_description,
          quantity,
@@ -818,13 +825,14 @@ router.post('/api/database/jobs/:id/line-items', async (req, res) => {
          created_at_source,
          updated_at_source
        ) VALUES (
-         $1, $2, $3, $4, $5, $6, $7, $8,
-         FALSE, FALSE, $9, $10, $11, $12, $13, $14, $15, $16,
-         $17, $18, NOW(), NOW()
+         $1, $2, $3, $4, $5, $6, $7, $8, $9,
+         FALSE, FALSE, $10, $11, $12, $13, $14, $15, $16, $17,
+         $18, $19, NOW(), NOW()
        )`,
       [
         sourceOrderItemId,
         sourceOrderId,
+        nextSort.rows[0].next_sort_order,
         productRow.source_product_id,
         productRow.style_name,
         quantity,
@@ -852,6 +860,85 @@ router.post('/api/database/jobs/:id/line-items', async (req, res) => {
     await client.query('ROLLBACK').catch(() => {});
     console.error('POST /api/database/jobs/:id/line-items', err);
     res.status(500).json({ error: 'Failed to add database line item' });
+  } finally {
+    client.release();
+  }
+});
+
+router.put('/api/database/jobs/:id/line-items/order', async (req, res) => {
+  const id = Number.parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: 'Invalid job id' });
+  }
+
+  const orderedLineIds = normalizeLineOrderPayload(req.body?.line_item_ids);
+  if (!orderedLineIds.length) {
+    return res.status(400).json({ error: 'Line item order is required' });
+  }
+
+  if (orderedLineIds.length > 500) {
+    return res.status(400).json({ error: 'Too many line items to reorder' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(71060219)');
+
+    const job = await client.query(
+      `SELECT source_order_id
+       FROM database_jobs
+       WHERE source_order_id = $1 OR order_no = $1
+       ORDER BY CASE WHEN source_order_id = $1 THEN 0 ELSE 1 END
+       LIMIT 1
+       FOR UPDATE`,
+      [id]
+    );
+
+    if (!job.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Database job not found' });
+    }
+
+    const sourceOrderId = job.rows[0].source_order_id;
+    const existing = await client.query(
+      `SELECT source_order_item_id
+       FROM database_job_line_items
+       WHERE source_order_id = $1
+         AND source_order_item_id = ANY($2::int[])`,
+      [sourceOrderId, orderedLineIds]
+    );
+
+    if (existing.rowCount !== orderedLineIds.length) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Line item order contains rows outside this order' });
+    }
+
+    const values = [];
+    const rowPlaceholders = orderedLineIds.map((lineId, index) => {
+      values.push(lineId, index + 1);
+      return `($${index * 2 + 1}::int, $${index * 2 + 2}::int)`;
+    });
+
+    await client.query(
+      `UPDATE database_job_line_items AS line_items
+       SET line_sort_order = updates.line_sort_order,
+           updated_at_source = NOW(),
+           imported_at = NOW()
+       FROM (VALUES ${rowPlaceholders.join(', ')}) AS updates(source_order_item_id, line_sort_order)
+       WHERE line_items.source_order_id = $${values.length + 1}
+         AND line_items.source_order_item_id = updates.source_order_item_id`,
+      [...values, sourceOrderId]
+    );
+
+    const lineItems = await fetchLineItems(client, sourceOrderId);
+
+    await client.query('COMMIT');
+    res.json({ lineItems });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('PUT /api/database/jobs/:id/line-items/order', err);
+    res.status(500).json({ error: 'Failed to save line item order' });
   } finally {
     client.release();
   }
@@ -992,6 +1079,21 @@ function nullableInt(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function normalizeLineOrderPayload(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const ids = [];
+
+  for (const item of value) {
+    const id = nullableInt(item);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+
+  return ids;
+}
+
 function nullableNumber(value) {
   if (value === null || value === undefined || value === '') return null;
   const parsed = Number.parseFloat(String(value));
@@ -1003,7 +1105,7 @@ async function fetchLineItems(db, sourceOrderId) {
     `SELECT *
      FROM database_job_line_items
      WHERE source_order_id = $1
-     ORDER BY source_order_item_id`,
+     ORDER BY COALESCE(line_sort_order, source_order_item_id), source_order_item_id`,
     [sourceOrderId]
   );
   return result.rows;

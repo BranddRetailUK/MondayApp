@@ -117,10 +117,11 @@ const JOB_COLUMNS = [
 ];
 
 const LINE_COLUMNS = [
-  'source_order_item_id', 'source_order_id', 'source_product_id',
-  'supplier_order_id', 'line_description', 'quantity', 'unit_price',
-  'unit_cost', 'vat_rate', 'is_non_deliverable', 'is_internal',
-  'supplier_name', 'style_id', 'style_code', 'alt_style_code',
+  'source_order_item_id', 'source_order_id', 'line_sort_order',
+  'source_product_id', 'supplier_order_id', 'line_description',
+  'quantity', 'unit_price', 'unit_cost', 'vat_rate',
+  'is_non_deliverable', 'is_internal', 'supplier_name',
+  'style_id', 'style_code', 'alt_style_code',
   'style_name', 'colour', 'size', 'product_type', 'stock',
   'is_product_active', 'trace_staff_id', 'created_at_source',
   'updated_at_source',
@@ -407,9 +408,13 @@ function buildSnapshot(data) {
     });
   }
 
+  const lineSortByOrder = new Map();
   const lineItems = data.tblOrderItem
     .filter((item) => selectedOrderIds.has(toInt(item.orderid)))
     .map((item) => {
+      const sourceOrderId = toInt(item.orderid);
+      const lineSortOrder = (lineSortByOrder.get(sourceOrderId) || 0) + 1;
+      lineSortByOrder.set(sourceOrderId, lineSortOrder);
       const product = products.get(toInt(item.productid)) || {};
       const style = styles.get(toInt(product.styleid)) || {};
       const styleColour = styleColours.get(toInt(product.stylecolourid)) || {};
@@ -421,7 +426,8 @@ function buildSnapshot(data) {
 
       return {
         source_order_item_id: toInt(item.orderitemid),
-        source_order_id: toInt(item.orderid),
+        source_order_id: sourceOrderId,
+        line_sort_order: lineSortOrder,
         source_product_id: toInt(item.productid),
         supplier_order_id: toInt(item.supplierorderid),
         line_description: cleanText(item.sdescription),
