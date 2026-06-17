@@ -19,6 +19,8 @@
     databaseCustomerQuery: '',
     activeGroup: 'all',
     activeSort: 'order',
+    activeView: 'home',
+    viewHistory: [],
     activeOrderTab: 'details',
     activeCustomerTab: 'orders',
     newOrderSubmitting: false,
@@ -62,6 +64,7 @@
   function initDatabaseHub() {
     els = {
       root: document.getElementById('db-legacy-app'),
+      stage: document.querySelector('#db-legacy-app .db-legacy-stage'),
       sideTab: document.querySelector('.nav-tabs li[data-tab="database"]'),
       homeButton: document.getElementById('db-home-button'),
       mainTabs: Array.from(document.querySelectorAll('.db-main-tab')),
@@ -111,6 +114,7 @@
     };
 
     if (!els.root) return;
+    els.stage?.classList.add('db-view-home');
 
     els.root.addEventListener('click', handleRootClick);
     els.outstandingBody.addEventListener('click', handleOutstandingRowClick);
@@ -200,7 +204,7 @@
 
     if (button.id === 'db-home-button') {
       await flushOrderAutosaves();
-      showHome();
+      goBackDatabaseView();
       return;
     }
 
@@ -301,8 +305,8 @@
     els.homeCountGifts.textContent = formatNumber(counts.business_gifts ?? counts.gifts ?? 0);
   }
 
-  function showHome() {
-    showView('home');
+  function showHome(options = {}) {
+    showView('home', options);
     state.activeOrderTab = 'details';
     setFooterTitle('Main Menu');
   }
@@ -1131,7 +1135,7 @@
     const suppliers = unique(items.map((item) => item.supplier_name).filter(Boolean)).join(', ');
 
     const stockRows = [
-      stockItems.length ? stockItems.map(renderStockRow).join('') : (state.lineDraft ? '' : renderItemEmptyRow(11)),
+      stockItems.length ? stockItems.map(renderStockRow).join('') : (state.lineDraft ? '' : renderItemEmptyRow(10)),
       state.lineDraft ? renderLineDraftRow() : renderAddLineButtonRow(),
     ].join('');
 
@@ -1142,7 +1146,6 @@
             <thead>
               <tr>
                 <th class="db-row-selector"></th>
-                <th>Stock code:</th>
                 <th>Code:</th>
                 <th>Alt code:</th>
                 <th>Style:</th>
@@ -1228,7 +1231,6 @@
         <td class="db-row-selector">
           <button class="db-line-drag-handle" type="button" data-db-line-drag="true" aria-label="Reorder line item">&#9654;</button>
         </td>
-        <td class="db-order-link">${escapeHtml(stockCode(item))}</td>
         <td>${escapeHtml(item.style_code || '')}</td>
         <td>${escapeHtml(item.alt_style_code || '')}</td>
         <td>${escapeHtml(item.style_name || item.line_description || '')}</td>
@@ -1245,7 +1247,7 @@
   function renderAddLineButtonRow() {
     return `
       <tr class="db-add-line-button-row">
-        <td colspan="11">
+        <td colspan="10">
           <button class="db-add-line-button" type="button" data-db-line-action="add">Add line</button>
         </td>
       </tr>
@@ -1263,7 +1265,6 @@
         <td class="db-row-selector">
           <button class="db-line-save-button" type="button" data-db-line-action="save"${saveDisabled}>+</button>
         </td>
-        <td><input class="db-line-input db-line-stock-code" readonly value="${escapeAttr(product ? stockCode({ source_product_id: product.source_product_id }) : '')}"></td>
         <td>${renderLineSearchInput('code', draft.codeQuery)}</td>
         <td><input class="db-line-input" readonly value="${escapeAttr(draft.altCode || product?.alt_style_code || '')}"></td>
         <td>${renderLineSearchInput('style', draft.styleQuery)}</td>
@@ -1274,7 +1275,7 @@
         <td><input class="db-line-input db-line-qty" data-line-input="quantity" inputmode="numeric" value="${escapeAttr(draft.quantity)}"></td>
         <td><input class="db-line-input db-line-vat" data-line-input="vatPercent" inputmode="decimal" value="${escapeAttr(draft.vatPercent)}"></td>
       </tr>
-      ${status ? `<tr class="db-add-line-status-row"><td colspan="11">${escapeHtml(status)}</td></tr>` : ''}
+      ${status ? `<tr class="db-add-line-status-row"><td colspan="10">${escapeHtml(status)}</td></tr>` : ''}
     `;
   }
 
@@ -1405,10 +1406,8 @@
   }
 
   function clearDraftProductCells() {
-    const stock = els.itemsPanel.querySelector('.db-line-stock-code');
-    const alt = els.itemsPanel.querySelector('.db-add-line-edit-row td:nth-child(4) input');
-    const cost = els.itemsPanel.querySelector('.db-add-line-edit-row td:nth-child(8) input');
-    if (stock) stock.value = '';
+    const alt = els.itemsPanel.querySelector('.db-add-line-edit-row td:nth-child(3) input');
+    const cost = els.itemsPanel.querySelector('.db-add-line-edit-row td:nth-child(7) input');
     if (alt) alt.value = '';
     if (cost) cost.value = '';
   }
@@ -2106,10 +2105,17 @@
     `;
   }
 
-  function showView(name) {
+  function showView(name, options = {}) {
+    if (!options.skipHistory && state.activeView && state.activeView !== name) {
+      state.viewHistory.push(state.activeView);
+      if (state.viewHistory.length > 20) state.viewHistory.shift();
+    }
+    state.activeView = name;
+
     els.views.forEach((view) => {
       view.classList.toggle('active', view.id === `db-${name}-view`);
     });
+    els.stage?.classList.toggle('db-view-home', name === 'home');
 
     els.mainTabs.forEach((tab) => {
       const active = (name === 'home' || name === 'new-order' || name === 'customers' || name === 'customer')
@@ -2117,6 +2123,31 @@
         : tab.dataset.dbGo === 'outstanding';
       tab.classList.toggle('active', active);
     });
+  }
+
+  function goBackDatabaseView() {
+    const previous = state.viewHistory.pop();
+    if (!previous || previous === state.activeView) {
+      showHome({ skipHistory: true });
+      return;
+    }
+
+    if (previous === 'home') {
+      showHome({ skipHistory: true });
+      return;
+    }
+
+    showView(previous, { skipHistory: true });
+    setFooterTitle(titleForView(previous));
+  }
+
+  function titleForView(name) {
+    if (name === 'new-order') return 'New Order';
+    if (name === 'customers') return 'Customers';
+    if (name === 'customer') return 'Customer';
+    if (name === 'outstanding') return state.orderMode === 'all' ? 'All Orders' : 'Open Orders';
+    if (name === 'order') return 'Open Orders';
+    return 'Main Menu';
   }
 
   function setFooterTitle(title) {
@@ -2215,12 +2246,6 @@
 
   function isNonStockItem(item) {
     return !truthy(item.is_non_deliverable) && !truthy(item.is_internal) && !isStockItem(item);
-  }
-
-  function stockCode(item) {
-    if (!item.source_product_id) return '';
-    const raw = String(item.source_product_id);
-    return /^\d+$/.test(raw) ? raw.padStart(8, '0') : raw;
   }
 
   function staffShort(value) {
