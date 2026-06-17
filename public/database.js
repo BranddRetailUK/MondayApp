@@ -2,6 +2,7 @@
   const PAGE_LIMIT = 100;
   const MAX_JOBS = 2500;
   const CUSTOMER_SEARCH_DELAY = 180;
+  const PRODUCT_SEARCH_DELAY = 180;
   const DESIGN_AUTOSAVE_MS = 5000;
 
   const state = {
@@ -29,6 +30,11 @@
     selectedJob: null,
     selectedLineItems: [],
     selectedPositions: [],
+    lineDraft: null,
+    productResults: [],
+    productSearchOpen: false,
+    productSearchField: 'style',
+    productSearchQuery: '',
     designDirty: false,
     designSaving: false,
     designSaveQueued: false,
@@ -38,8 +44,10 @@
   let els = {};
   let customerSearchTimer = 0;
   let databaseCustomerSearchTimer = 0;
+  let productSearchTimer = 0;
   let customerSearchRequest = 0;
   let databaseCustomerRequest = 0;
+  let productSearchRequest = 0;
   let designAutosaveTimer = 0;
 
   document.addEventListener('DOMContentLoaded', initDatabaseHub);
@@ -118,6 +126,11 @@
     els.newCustomerInput.addEventListener('keydown', handleCustomerSearchKeydown);
     els.newCustomerResults.addEventListener('mousedown', (event) => event.preventDefault());
     els.newCustomerResults.addEventListener('click', handleCustomerResultClick);
+    els.itemsPanel.addEventListener('input', handleLineDraftInput);
+    els.itemsPanel.addEventListener('focusin', handleLineDraftFocus);
+    els.itemsPanel.addEventListener('keydown', handleLineDraftKeydown);
+    els.itemsPanel.addEventListener('change', handleLineDraftChange);
+    els.itemsPanel.addEventListener('mousedown', handleLineDraftMouseDown);
     els.designPanel.addEventListener('input', handleDesignInput);
     window.addEventListener('pagehide', () => flushDesignAutosave({ keepalive: true }));
     window.addEventListener('beforeunload', () => flushDesignAutosave({ keepalive: true }));
@@ -152,6 +165,27 @@
   async function handleRootClick(event) {
     const button = event.target.closest('button');
     if (!button || !els.root.contains(button) || button.disabled) return;
+
+    const productIndex = button.dataset.dbProductIndex;
+    if (productIndex !== undefined) {
+      const product = state.productResults[Number.parseInt(productIndex, 10)];
+      if (product) await selectProductResult(product);
+      return;
+    }
+
+    const lineAction = button.dataset.dbLineAction;
+    if (lineAction === 'add') {
+      startLineDraft();
+      return;
+    }
+    if (lineAction === 'save') {
+      await saveLineDraft();
+      return;
+    }
+    if (lineAction === 'cancel') {
+      cancelLineDraft();
+      return;
+    }
 
     if (button.id === 'db-home-button') {
       await flushDesignAutosave();
@@ -416,9 +450,15 @@
   }
 
   function handleDocumentClick(event) {
-    if (!els.newCustomerResults || !els.newCustomerInput) return;
-    if (event.target === els.newCustomerInput || els.newCustomerResults.contains(event.target)) return;
-    closeCustomerResults();
+    if (els.newCustomerResults && els.newCustomerInput) {
+      const insideCustomerSearch = event.target === els.newCustomerInput || els.newCustomerResults.contains(event.target);
+      if (!insideCustomerSearch) closeCustomerResults();
+    }
+
+    const productResults = els.itemsPanel?.querySelector('.db-product-results');
+    const insideProductSearch = event.target.closest('[data-line-search]')
+      || (productResults && productResults.contains(event.target));
+    if (!insideProductSearch) closeProductResults();
   }
 
   function selectCustomer(customer) {
@@ -928,6 +968,7 @@
       state.selectedJob = data.job || {};
       state.selectedLineItems = data.lineItems || [];
       state.selectedPositions = data.positions || [];
+      resetLineDraftState();
       renderOrder();
       renderOutstandingOrders();
       showOrderTab(state.activeOrderTab);
@@ -1076,6 +1117,11 @@
     const internalItems = items.filter((item) => truthy(item.is_internal));
     const suppliers = unique(items.map((item) => item.supplier_name).filter(Boolean)).join(', ');
 
+    const stockRows = [
+      stockItems.length ? stockItems.map(renderStockRow).join('') : (state.lineDraft ? '' : renderItemEmptyRow(11)),
+      state.lineDraft ? renderLineDraftRow() : renderAddLineButtonRow(),
+    ].join('');
+
     els.itemsPanel.innerHTML = `
       <div class="db-items-layout">
         <div class="db-items-stock-frame">
@@ -1095,7 +1141,7 @@
                 <th>VAT:</th>
               </tr>
             </thead>
-            <tbody>${stockItems.length ? stockItems.map(renderStockRow).join('') : renderItemEmptyRow(11)}</tbody>
+            <tbody>${stockRows}</tbody>
           </table>
         </div>
 
@@ -1122,8 +1168,10 @@
             <div class="db-supplier-row"><span>Supplier:</span><input readonly value="${escapeAttr(suppliers)}"></div>
           </div>
         </div>
+        <div class="db-product-results" role="listbox"></div>
       </div>
     `;
+    window.requestAnimationFrame(() => paintProductResults());
   }
 
   function renderDesignPanel() {
@@ -1176,6 +1224,466 @@
         <td>${escapeHtml(formatVat(item.vat_rate))}</td>
       </tr>
     `;
+  }
+
+  function renderAddLineButtonRow() {
+    return `
+      <tr class="db-add-line-button-row">
+        <td colspan="11">
+          <button class="db-add-line-button" type="button" data-db-line-action="add">Add line</button>
+        </td>
+      </tr>
+    `;
+  }
+
+  function renderLineDraftRow() {
+    const draft = state.lineDraft || createLineDraft();
+    const product = selectedDraftProduct(draft);
+    const saveDisabled = product && !draft.saving ? '' : ' disabled';
+    const status = draft.error || (draft.loadingVariants ? 'Loading variants' : '');
+
+    return `
+      <tr class="db-add-line-edit-row">
+        <td class="db-row-selector">
+          <button class="db-line-save-button" type="button" data-db-line-action="save"${saveDisabled}>+</button>
+        </td>
+        <td><input class="db-line-input db-line-stock-code" readonly value="${escapeAttr(product ? stockCode({ source_product_id: product.source_product_id }) : '')}"></td>
+        <td>${renderLineSearchInput('code', draft.codeQuery)}</td>
+        <td><input class="db-line-input" readonly value="${escapeAttr(draft.altCode || product?.alt_style_code || '')}"></td>
+        <td>${renderLineSearchInput('style', draft.styleQuery)}</td>
+        <td>${renderVariantSelect('colour', draft)}</td>
+        <td>${renderVariantSelect('size', draft)}</td>
+        <td><input class="db-line-input db-line-money" readonly value="${escapeAttr(product ? formatCurrency(product.unit_cost) : '')}"></td>
+        <td><input class="db-line-input db-line-money" data-line-input="unitPrice" value="${escapeAttr(draft.unitPrice)}"></td>
+        <td><input class="db-line-input db-line-qty" data-line-input="quantity" inputmode="numeric" value="${escapeAttr(draft.quantity)}"></td>
+        <td><input class="db-line-input db-line-vat" data-line-input="vatPercent" inputmode="decimal" value="${escapeAttr(draft.vatPercent)}"></td>
+      </tr>
+      ${status ? `<tr class="db-add-line-status-row"><td colspan="11">${escapeHtml(status)}</td></tr>` : ''}
+    `;
+  }
+
+  function renderLineSearchInput(field, value) {
+    return `
+      <input
+        class="db-line-input db-line-search-input"
+        data-line-search="${escapeAttr(field)}"
+        autocomplete="off"
+        value="${escapeAttr(value || '')}"
+      >
+    `;
+  }
+
+  function renderVariantSelect(field, draft) {
+    const options = field === 'colour' ? draftColourOptions(draft) : draftSizeOptions(draft);
+    const selected = field === 'colour' ? draft.colourValue : draft.sizeValue;
+    const disabled = options.length ? '' : ' disabled';
+    return `
+      <select class="db-line-select" data-line-select="${escapeAttr(field)}"${disabled}>
+        ${options.length ? options.map((option) => (
+          `<option value="${escapeAttr(option.value)}" ${option.value === selected ? 'selected' : ''}>${escapeHtml(option.label)}</option>`
+        )).join('') : '<option></option>'}
+      </select>
+    `;
+  }
+
+  function startLineDraft() {
+    state.lineDraft = createLineDraft();
+    state.productResults = [];
+    state.productSearchOpen = false;
+    renderItemsPanel();
+    window.requestAnimationFrame(() => {
+      const input = els.itemsPanel.querySelector('[data-line-search="style"]');
+      if (input) input.focus();
+    });
+  }
+
+  function cancelLineDraft() {
+    resetLineDraftState();
+    renderItemsPanel();
+  }
+
+  function resetLineDraftState() {
+    clearTimeout(productSearchTimer);
+    productSearchRequest += 1;
+    state.lineDraft = null;
+    state.productResults = [];
+    state.productSearchOpen = false;
+    state.productSearchQuery = '';
+    state.productSearchField = 'style';
+  }
+
+  function createLineDraft() {
+    return {
+      codeQuery: '',
+      styleQuery: '',
+      altCode: '',
+      selectedStyleId: null,
+      variants: [],
+      productId: null,
+      colourValue: '',
+      sizeValue: '',
+      unitPrice: '',
+      quantity: '1',
+      vatPercent: '20.00',
+      loadingVariants: false,
+      saving: false,
+      error: '',
+    };
+  }
+
+  function handleLineDraftMouseDown(event) {
+    if (event.target.closest('.db-product-results')) event.preventDefault();
+  }
+
+  function handleLineDraftFocus(event) {
+    const field = event.target.dataset.lineSearch;
+    if (!field || !state.lineDraft) return;
+    state.productSearchField = field;
+    state.productSearchQuery = event.target.value.trim();
+    state.productSearchOpen = true;
+    searchProducts(field, state.productSearchQuery);
+  }
+
+  function handleLineDraftInput(event) {
+    if (!state.lineDraft) return;
+
+    const searchField = event.target.dataset.lineSearch;
+    if (searchField) {
+      updateDraftSearchValue(searchField, event.target.value);
+      state.productSearchField = searchField;
+      state.productSearchQuery = event.target.value.trim();
+      state.productSearchOpen = true;
+      clearTimeout(productSearchTimer);
+      productSearchTimer = window.setTimeout(() => {
+        searchProducts(searchField, state.productSearchQuery);
+      }, PRODUCT_SEARCH_DELAY);
+      return;
+    }
+
+    const inputField = event.target.dataset.lineInput;
+    if (inputField) {
+      state.lineDraft[inputField] = event.target.value;
+      state.lineDraft.error = '';
+    }
+  }
+
+  function updateDraftSearchValue(field, value) {
+    const draft = state.lineDraft;
+    if (!draft) return;
+    if (field === 'code') {
+      draft.codeQuery = value;
+      draft.styleQuery = '';
+    }
+    if (field === 'style') {
+      draft.styleQuery = value;
+      draft.codeQuery = '';
+    }
+    draft.selectedStyleId = null;
+    draft.variants = [];
+    draft.productId = null;
+    draft.colourValue = '';
+    draft.sizeValue = '';
+    draft.altCode = '';
+    draft.error = '';
+    clearDraftProductCells();
+  }
+
+  function clearDraftProductCells() {
+    const stock = els.itemsPanel.querySelector('.db-line-stock-code');
+    const alt = els.itemsPanel.querySelector('.db-add-line-edit-row td:nth-child(4) input');
+    const cost = els.itemsPanel.querySelector('.db-add-line-edit-row td:nth-child(8) input');
+    if (stock) stock.value = '';
+    if (alt) alt.value = '';
+    if (cost) cost.value = '';
+  }
+
+  function handleLineDraftKeydown(event) {
+    if (!state.lineDraft) return;
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      if (state.productSearchOpen) {
+        closeProductResults();
+      } else {
+        cancelLineDraft();
+      }
+      return;
+    }
+
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+
+    if (event.target.dataset.lineSearch && state.productSearchOpen && state.productResults.length) {
+      selectProductResult(state.productResults[0]);
+      return;
+    }
+
+    saveLineDraft();
+  }
+
+  function handleLineDraftChange(event) {
+    if (!state.lineDraft) return;
+    const field = event.target.dataset.lineSelect;
+    if (!field) return;
+
+    if (field === 'colour') {
+      state.lineDraft.colourValue = event.target.value;
+      syncDraftVariantSelection({ preserveSize: true });
+    } else if (field === 'size') {
+      state.lineDraft.sizeValue = event.target.value;
+      syncDraftVariantSelection();
+    }
+
+    state.lineDraft.error = '';
+    renderItemsPanel();
+  }
+
+  async function searchProducts(field, query) {
+    const requestId = ++productSearchRequest;
+    const params = new URLSearchParams({ field, q: query || '' });
+
+    try {
+      const data = await fetchJson(`/api/database/products/search?${params.toString()}`);
+      if (requestId !== productSearchRequest || !state.lineDraft) return;
+      state.productResults = Array.isArray(data.products) ? data.products : [];
+      state.productSearchOpen = true;
+      paintProductResults();
+    } catch {
+      if (requestId !== productSearchRequest || !state.lineDraft) return;
+      state.productResults = [];
+      state.productSearchOpen = true;
+      paintProductResults('Product search failed');
+    }
+  }
+
+  function paintProductResults(errorMessage = '') {
+    const box = els.itemsPanel?.querySelector('.db-product-results');
+    if (!box) return;
+
+    if (!state.lineDraft || !state.productSearchOpen) {
+      box.classList.remove('open');
+      box.innerHTML = '';
+      return;
+    }
+
+    const input = els.itemsPanel.querySelector(`[data-line-search="${state.productSearchField}"]`);
+    if (!input) {
+      box.classList.remove('open');
+      box.innerHTML = '';
+      return;
+    }
+
+    const rect = input.getBoundingClientRect();
+    box.style.left = `${Math.round(rect.left)}px`;
+    box.style.top = `${Math.round(rect.bottom + 2)}px`;
+    box.style.width = `${Math.max(340, Math.round(rect.width))}px`;
+    box.innerHTML = renderProductResults(errorMessage);
+    box.classList.add('open');
+  }
+
+  function renderProductResults(errorMessage) {
+    const query = state.productSearchQuery || '';
+    if (errorMessage) return `<div class="db-product-result-empty">${escapeHtml(errorMessage)}</div>`;
+    if (!state.productResults.length) return '<div class="db-product-result-empty">No matching products</div>';
+
+    return state.productResults.map((product, index) => {
+      const code = product.style_code || product.alt_style_code || '';
+      const name = product.style_name || '';
+      const meta = [
+        product.colour_count ? `${product.colour_count} colours` : '',
+        product.size_count ? `${product.size_count} sizes` : '',
+      ].filter(Boolean).join(' | ');
+
+      return `
+        <button class="db-product-result ${index === 0 ? 'active' : ''}" type="button" role="option" data-db-product-index="${index}">
+          <span class="db-product-result-code">${highlightMatch(code, query)}</span>
+          <span class="db-product-result-name">${highlightMatch(name, query)}</span>
+          ${meta ? `<span class="db-product-result-meta">${escapeHtml(meta)}</span>` : ''}
+        </button>
+      `;
+    }).join('');
+  }
+
+  function closeProductResults() {
+    productSearchRequest += 1;
+    state.productSearchOpen = false;
+    const box = els.itemsPanel?.querySelector('.db-product-results');
+    if (!box) return;
+    box.classList.remove('open');
+    box.innerHTML = '';
+  }
+
+  async function selectProductResult(product) {
+    if (!state.lineDraft) return;
+
+    const draft = state.lineDraft;
+    draft.selectedStyleId = Number.parseInt(product.style_id, 10);
+    draft.codeQuery = product.style_code || '';
+    draft.styleQuery = product.style_name || '';
+    draft.altCode = product.alt_style_code || '';
+    draft.variants = [];
+    draft.productId = null;
+    draft.colourValue = '';
+    draft.sizeValue = '';
+    draft.loadingVariants = true;
+    draft.error = '';
+    closeProductResults();
+    renderItemsPanel();
+
+    try {
+      const data = await fetchJson(`/api/database/products/styles/${encodeURIComponent(draft.selectedStyleId)}/variants`);
+      if (!state.lineDraft || state.lineDraft.selectedStyleId !== draft.selectedStyleId) return;
+      draft.variants = Array.isArray(data.products) ? data.products : [];
+      draft.loadingVariants = false;
+      syncDraftVariantSelection();
+      renderItemsPanel();
+      window.requestAnimationFrame(() => {
+        els.itemsPanel.querySelector('[data-line-select="colour"]')?.focus();
+      });
+    } catch (err) {
+      if (!state.lineDraft) return;
+      draft.loadingVariants = false;
+      draft.error = err.message || 'Failed to load product variants';
+      renderItemsPanel();
+    }
+  }
+
+  function syncDraftVariantSelection(options = {}) {
+    const draft = state.lineDraft;
+    if (!draft || !draft.variants.length) return;
+
+    if (!draft.colourValue) draft.colourValue = variantColourValue(draft.variants[0]);
+
+    const availableSizes = draftSizeOptions(draft);
+    if (!draft.sizeValue || !availableSizes.some((option) => option.value === draft.sizeValue)) {
+      draft.sizeValue = availableSizes[0]?.value || '';
+    }
+
+    let product = selectedDraftProduct(draft);
+    if (!product && options.preserveSize) {
+      draft.sizeValue = '';
+      const sizes = draftSizeOptions(draft);
+      draft.sizeValue = sizes[0]?.value || '';
+      product = selectedDraftProduct(draft);
+    }
+
+    draft.productId = product?.source_product_id || null;
+    if (product) {
+      draft.colourValue = variantColourValue(product);
+      draft.sizeValue = variantSizeValue(product);
+    }
+  }
+
+  function selectedDraftProduct(draft) {
+    if (!draft?.variants?.length) return null;
+    const byColourAndSize = draft.variants.find((product) => (
+      variantColourValue(product) === draft.colourValue
+      && variantSizeValue(product) === draft.sizeValue
+    ));
+    if (byColourAndSize) return byColourAndSize;
+
+    const byId = draft.variants.find((product) => String(product.source_product_id) === String(draft.productId));
+    if (byId) return byId;
+
+    return draft.variants.find((product) => variantColourValue(product) === draft.colourValue)
+      || draft.variants[0]
+      || null;
+  }
+
+  function draftColourOptions(draft) {
+    return uniqueVariantOptions(draft?.variants || [], variantColourValue, 'colour');
+  }
+
+  function draftSizeOptions(draft) {
+    const products = (draft?.variants || []).filter((product) => (
+      !draft.colourValue || variantColourValue(product) === draft.colourValue
+    ));
+    return uniqueVariantOptions(products.length ? products : (draft?.variants || []), variantSizeValue, 'size');
+  }
+
+  function uniqueVariantOptions(products, valueFn, labelKey) {
+    const seen = new Set();
+    const options = [];
+    for (const product of products) {
+      const value = valueFn(product);
+      if (!value || seen.has(value)) continue;
+      seen.add(value);
+      options.push({ value, label: product[labelKey] || '' });
+    }
+    return options;
+  }
+
+  function variantColourValue(product) {
+    if (!product) return '';
+    if (product.colour_id !== null && product.colour_id !== undefined) return `id:${product.colour_id}`;
+    return product.colour ? `name:${product.colour}` : '';
+  }
+
+  function variantSizeValue(product) {
+    if (!product) return '';
+    if (product.size_id !== null && product.size_id !== undefined) return `id:${product.size_id}`;
+    return product.size ? `name:${product.size}` : '';
+  }
+
+  async function saveLineDraft() {
+    const draft = state.lineDraft;
+    if (!draft || draft.saving) return;
+    syncDraftVariantSelection();
+    const product = selectedDraftProduct(draft);
+
+    if (!product) {
+      draft.error = 'Select a product, colour, and size before adding the line';
+      renderItemsPanel();
+      return;
+    }
+
+    draft.saving = true;
+    draft.error = '';
+    renderItemsPanel();
+
+    try {
+      const data = await fetchJson(`/api/database/jobs/${encodeURIComponent(state.selectedJob.source_order_id)}/line-items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source_product_id: product.source_product_id,
+          quantity: lineInteger(draft.quantity, 1),
+          unit_price: lineNumber(draft.unitPrice),
+          vat_rate: lineVatRate(draft.vatPercent),
+        }),
+      });
+
+      state.selectedLineItems = data.lineItems || state.selectedLineItems;
+      if (state.selectedJob) {
+        state.selectedJob.line_item_count = state.selectedLineItems.length;
+        state.selectedJob.total_quantity = state.selectedLineItems.reduce((total, item) => total + Number(item.quantity || 0), 0);
+      }
+      resetLineDraftState();
+      renderItemsPanel();
+      renderOutstandingOrders();
+    } catch (err) {
+      if (!state.lineDraft) return;
+      state.lineDraft.saving = false;
+      state.lineDraft.error = err.message || 'Failed to add line item';
+      renderItemsPanel();
+    }
+  }
+
+  function lineInteger(value, fallback) {
+    const parsed = Number.parseInt(String(value || '').replace(/[^\d-]/g, ''), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  }
+
+  function lineNumber(value) {
+    if (value === null || value === undefined || String(value).trim() === '') return null;
+    const parsed = Number.parseFloat(String(value).replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function lineVatRate(value) {
+    const parsed = lineNumber(value);
+    if (parsed === null) return null;
+    return parsed > 1 ? parsed / 100 : parsed;
   }
 
   function renderNonStockRow(item, index) {
@@ -1561,8 +2069,8 @@
     return Array.from(new Set(values));
   }
 
-  async function fetchJson(url) {
-    const response = await fetch(url, { cache: 'no-store' });
+  async function fetchJson(url, options = {}) {
+    const response = await fetch(url, { cache: 'no-store', ...options });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(payload.error || `Request failed: ${response.status}`);

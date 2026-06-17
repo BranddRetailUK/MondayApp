@@ -1,6 +1,6 @@
 # MondayApp Service Contract
 
-Last reviewed: 2026-06-16
+Last reviewed: 2026-06-17
 
 ## Purpose
 
@@ -244,7 +244,7 @@ Backend files:
 
 - `src/routes/database.js`: `/api/database` JSON endpoints.
 - `src/db/databaseSchema.js`: idempotent table creation.
-- `scripts/import-database-mdb.js`: imports `PS_XP_tab.mdb` into Railway/Postgres.
+- `scripts/import-database-mdb.js`: imports `PS_XP_tab.mdb` into Railway/Postgres, including a products-only mode for products referenced by existing imported order line items.
 
 Endpoints:
 
@@ -256,6 +256,9 @@ Endpoints:
 - `GET /api/database/customers/search?q=`: searches distinct customer/contact values from `database_jobs`, using the same imported customer data that populates outstanding orders and order details.
 - `POST /api/database/jobs`: creates a real manual `database_jobs` row from the legacy New Order form. Required fields are customer, order type, job title, order date, and delivery date. The route allocates the next source order id/order number in a transaction and marks the row `is_manual_entry = true`.
 - `GET /api/database/jobs/:id`: returns one job plus contact fields, line items, and position rows. `:id` may be source order id or job number.
+- `GET /api/database/products/search?field=style|code&q=`: searches scoped `database_products` rows grouped by `style_id`. Style searches match style names first, with style/alt code fallback. Code searches match style and alternate style codes.
+- `GET /api/database/products/styles/:styleId/variants`: returns all scoped product variants for one style, ordered for colour/size dropdowns.
+- `POST /api/database/jobs/:id/line-items`: creates a real stock line item for one job from a selected `database_products.source_product_id`. The route allocates the next `source_order_item_id`, copies product style/colour/size/cost fields into `database_job_line_items`, and returns the refreshed line items.
 - `PUT /api/database/jobs/:id/positions`: replaces editable design-position rows for one job. It updates existing `database_job_positions`, inserts new rows with allocated legacy-compatible `source_order_position_id` values, and removes cleared rows.
 
 Import rules:
@@ -266,6 +269,7 @@ Import rules:
 - Default import mode replaces the current DATABASE snapshot inside one transaction.
 - `--append` skips deletes and upserts into existing rows.
 - `--addresses-only` imports only address data: it replaces `database_customer_addresses` with addresses for customers present in the 2025/2026 order snapshot and updates existing `database_jobs.invoice_address_id`, `database_jobs.delivery_address_id`, `database_jobs.invoice_address`, and `database_jobs.delivery_address`. It does not reimport jobs, line items, or positions.
+- `--products-only` imports only product rows whose `tblProduct.ProductID` appears in current `database_job_line_items.source_product_id`. It creates/updates `database_products` and replaces that scoped product snapshot by default. It does not import the full Access product catalogue.
 - The importer prefers `DATABASE_PUBLIC_URL` when running locally against Railway DB service variables.
 - Run against Railway DB service variables:
 
@@ -277,6 +281,12 @@ Run only the 2025/2026 customer-address backfill:
 
 ```bash
 railway run --service DB node scripts/import-database-mdb.js PS_XP_tab.mdb --addresses-only
+```
+
+Run only the products used by the current imported order lines:
+
+```bash
+railway run --service DB node scripts/import-database-mdb.js PS_XP_tab.mdb --products-only
 ```
 
 UI rules:
@@ -291,6 +301,7 @@ UI rules:
 - The order view has three top tabs: Order details, Order Items, and Design. These tabs switch in place without navigating away from the dashboard. The order header reserves spacing above the tabs so document buttons and the metadata panel do not touch or overlap the tab strip. Clicking the customer control in Order details opens the customer page for that order's customer.
 - Order details surfaces every imported job field that maps to the reference screen, including customer/contact, type, dates, client reference, comments, invoice fields, and boolean flags.
 - Order Items splits imported line items into stock, non-stock, non-deliverable, and internal sections using existing line-item flags and product/style data.
+- The Order Items stock table has an Add line button centered below the current stock rows. Clicking it inserts one editable stock row. The Style and Code inputs use product autocomplete backed by `database_products`; pressing Enter selects the first result when the result list is open. Once a style/code result is selected, Colour and Size become dropdowns for that style's available product variants, Cost follows the selected variant, and pressing Enter or the row `+` button creates the line item.
 - Design renders imported `database_job_positions` rows and the job `screen_numbers` field. Position, Colour, and Design cells are editable; changes autosave every 5 seconds and flush immediately before switching order tabs, opening another order, leaving DATABASE, or leaving the browser page.
 - `/database-job.html?id=<source_order_id>` remains a direct fallback page, but the dashboard DATABASE tab is now the primary workflow.
 
@@ -300,14 +311,16 @@ Core source mappings:
 - Manual New Order rows store non-MDB form fields directly on `database_jobs`: `delivery_method`, `payment_terms`, `order_taken_by`, `delivery_address`, `invoice_address`, and `is_manual_entry`.
 - Customer addresses: `tblAddress`, joined through `tblCustomer.invaddressid` / `tblCustomer.deladdressid`, selected 2025/2026 `tblOrder.invaddressid` / `tblOrder.deladdressid`, and selected-customer `tblContact.addressid`. The importer only writes address rows for customers that appear in the 2025/2026 order snapshot, so historic-only customers and addresses are excluded. Imported jobs also store `invoice_address_id`, `delivery_address_id`, and formatted invoice/delivery address text from `tblAddress`.
 - Line items: `tblOrderItem` joined to `tblProduct`, `tblStyle`, `tblStyleColour`, `tblColour`, `tblStyleSize`, `tblSize`, `tblProductType`, and `tblSupplier`.
+- Products: `database_products` is keyed by `tblProduct.productid` and is populated only from products referenced by existing `database_job_line_items.source_product_id`. Product rows join `tblProduct` to `tblStyle`, `tblStyleColour`, `tblColour`, `tblStyleSize`, `tblSize`, `tblProductType`, and `tblSupplier`, preserving style code, alternate style code, style name, colour, size, supplier, product type, unit cost, stock, and active flag.
 - Positions: `tblOrderPosition`: `orderpositionid` maps to `source_order_position_id`, `orderid` to `source_order_id`, `sposition` to `position_name`, `memcolour` to `colour_notes`, and `sdesign` to `design_ref`.
 
-Current imported production snapshot, verified on 2026-06-11:
+Current imported production snapshot:
 
 - `database_jobs`: 1,162 rows.
 - `database_job_line_items`: 5,870 rows.
 - `database_job_positions`: 1,664 rows.
 - `database_customer_addresses`: importer dry run against root `PS_XP_tab.mdb` on 2026-06-16 returns 583 rows scoped to customers in the 2025/2026 order snapshot.
+- `database_products`: 1,953 rows after products-only import on 2026-06-17, exactly matching distinct products referenced by current `database_job_line_items`; `stock` is present but all imported rows currently have stock `0`.
 - Latest `database_import_runs.status`: `complete`.
 
 ### Files And Visual QA
@@ -363,6 +376,7 @@ Created by `src/db/migrate.js`:
 - `job_scan_events`
 - `database_jobs`
 - `database_job_line_items`
+- `database_products`
 - `database_job_positions`
 - `database_customer_addresses`
 - `database_import_runs`
@@ -441,7 +455,7 @@ The visual queue routes require `visual_jobs`, but the current migration file do
 - `npm run import:dropbox`: import all pending per-job Dropbox line-item files.
 - `npm run smoke:open-orders -- <file>`: parse an open-orders CSV file.
 - `npm run sync:open-orders -- [file] [--dry-run]`: sync open-orders CSV from file or Dropbox.
-- `npm run import:database-mdb -- [PS_XP_tab.mdb] [--dry-run] [--append]`: import 2025/2026 MDB jobs into DATABASE tables.
+- `npm run import:database-mdb -- [PS_XP_tab.mdb] [--dry-run] [--append]`: import 2025/2026 MDB jobs into DATABASE tables. Add `--products-only` to import only product rows referenced by existing imported order lines.
 
 ## Known Risks And Maintenance Notes
 
@@ -455,3 +469,4 @@ The visual queue routes require `visual_jobs`, but the current migration file do
 - Visual notifications are in-memory and reset on process restart.
 - Open-orders line-item subitem sync is index-based; reordering source lines can cause replacement behavior. The managed `TOTAL` subitem is synced separately and should remain last.
 - DATABASE imports use an MDB snapshot. Run a fresh import whenever the source MDB copy changes.
+- `database_products` is a scoped product snapshot, not the full MDB product catalogue. Re-run `--products-only` after importing or replacing DATABASE line items.

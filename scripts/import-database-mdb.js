@@ -21,6 +21,16 @@ const IMPORT_YEARS = new Set([2025, 2026]);
 const INSERT_BATCH_SIZE = 250;
 const MDB_EXPORT_BIN = resolveMdbExportBin();
 const ADDRESS_SOURCE_TABLES = ['tblOrder', 'tblCustomer', 'tblAddress', 'tblContact'];
+const PRODUCT_SOURCE_TABLES = [
+  'tblProduct',
+  'tblStyle',
+  'tblStyleColour',
+  'tblColour',
+  'tblStyleSize',
+  'tblSize',
+  'tblProductType',
+  'tblSupplier',
+];
 
 const TABLE_COLUMNS = {
   tblOrder: [
@@ -116,6 +126,15 @@ const LINE_COLUMNS = [
   'updated_at_source',
 ];
 
+const PRODUCT_COLUMNS = [
+  'source_product_id', 'style_id', 'style_colour_id', 'style_size_id',
+  'supplier_id', 'supplier_name', 'supplier_code', 'product_type_id',
+  'product_type', 'style_code', 'alt_style_code', 'style_name',
+  'colour_id', 'colour', 'size_id', 'size', 'unit_cost', 'stock',
+  'is_product_active', 'trace_staff_id', 'created_at_source',
+  'updated_at_source',
+];
+
 const POSITION_COLUMNS = [
   'source_order_position_id', 'source_order_id', 'position_name',
   'colour_notes', 'design_ref', 'trace_staff_id', 'created_at_source',
@@ -144,15 +163,35 @@ async function main() {
   const dryRun = args.includes('--dry-run');
   const append = args.includes('--append');
   const addressesOnly = args.includes('--addresses-only');
+  const productsOnly = args.includes('--products-only') || args.includes('--products-from-existing-orders');
   const fileArg = args.find((arg) => !arg.startsWith('--')) || 'PS_XP_tab.mdb';
   const mdbPath = path.resolve(process.cwd(), fileArg);
+
+  if (addressesOnly && productsOnly) {
+    throw new Error('--addresses-only and --products-only cannot be used together');
+  }
 
   if (!fs.existsSync(mdbPath)) {
     throw new Error(`MDB file not found: ${mdbPath}`);
   }
 
   console.log(`[database-import] Reading ${mdbPath}`);
-  const data = readSourceData(mdbPath, addressesOnly ? ADDRESS_SOURCE_TABLES : Object.keys(TABLE_COLUMNS));
+  const sourceTables = addressesOnly
+    ? ADDRESS_SOURCE_TABLES
+    : productsOnly
+      ? PRODUCT_SOURCE_TABLES
+      : Object.keys(TABLE_COLUMNS);
+  const data = readSourceData(mdbPath, sourceTables);
+
+  if (productsOnly) {
+    await importProductsFromExistingOrders(data, {
+      sourceFile: mdbPath,
+      dryRun,
+      replaceExisting: !append,
+    });
+    return;
+  }
+
   const snapshot = addressesOnly ? buildAddressSnapshot(data) : buildSnapshot(data);
 
   console.log(
@@ -185,9 +224,11 @@ Imports Access jobs dated 2025 or 2026 into Railway/Postgres tables:
   database_job_line_items
   database_job_positions
   database_customer_addresses
+  database_products
 
 Options:
   --addresses-only  Import only customer addresses and job address fields.
+  --products-only   Import only product rows referenced by existing database_job_line_items.
 
 Run against Railway with:
   railway run --service DB node scripts/import-database-mdb.js PS_XP_tab.mdb
@@ -434,6 +475,55 @@ function buildSnapshot(data) {
   });
 
   return { jobs, lineItems, positions, addresses: customerAddresses };
+}
+
+function buildProductRows(data, selectedProductIds) {
+  const styles = mapByInt(data.tblStyle, 'styleid');
+  const styleColours = mapByInt(data.tblStyleColour, 'stylecolourid');
+  const colours = mapByInt(data.tblColour, 'colourid');
+  const styleSizes = mapByInt(data.tblStyleSize, 'stylesizeid');
+  const sizes = mapByInt(data.tblSize, 'sizeid');
+  const productTypes = mapByInt(data.tblProductType, 'producttypeid');
+  const suppliers = mapByInt(data.tblSupplier, 'supplierid');
+
+  return (data.tblProduct || [])
+    .filter((product) => selectedProductIds.has(toInt(product.productid)))
+    .map((product) => {
+      const style = styles.get(toInt(product.styleid)) || {};
+      const styleColour = styleColours.get(toInt(product.stylecolourid)) || {};
+      const colour = colours.get(toInt(styleColour.colourid)) || {};
+      const styleSize = styleSizes.get(toInt(product.stylesizeid)) || {};
+      const size = sizes.get(toInt(styleSize.sizeid)) || {};
+      const productType = productTypes.get(toInt(style.producttypeid)) || {};
+      const supplier = suppliers.get(toInt(style.supplierid)) || {};
+
+      return {
+        source_product_id: toInt(product.productid),
+        style_id: toInt(product.styleid),
+        style_colour_id: toInt(product.stylecolourid),
+        style_size_id: toInt(product.stylesizeid),
+        supplier_id: toInt(style.supplierid),
+        supplier_name: cleanText(supplier.ssupplier),
+        supplier_code: cleanText(supplier.ssuppliercode),
+        product_type_id: toInt(style.producttypeid),
+        product_type: cleanText(productType.sproducttype),
+        style_code: cleanText(style.sstylecode),
+        alt_style_code: cleanText(style.saltstylecode),
+        style_name: cleanText(style.sstyle),
+        colour_id: toInt(styleColour.colourid),
+        colour: cleanText(colour.scolour),
+        size_id: toInt(styleSize.sizeid),
+        size: cleanText(size.ssize),
+        unit_cost: toNumber(product.curcost),
+        stock: toInt(product.lngstock),
+        is_product_active: toBool(product.ynactive),
+        trace_staff_id: toInt(product.tracestaffid),
+        created_at_source: toTimestamp(product.dtcreate),
+        updated_at_source: toTimestamp(product.dtedit),
+      };
+    })
+    .filter((product) => product.source_product_id)
+    .sort((a, b) => a.source_product_id - b.source_product_id);
 }
 
 function buildAddressSnapshot(data) {
@@ -789,6 +879,117 @@ async function importSnapshot(snapshot, options) {
     client.release();
     await pool.end();
   }
+}
+
+async function importProductsFromExistingOrders(data, options) {
+  const pool = require('../src/db/pool');
+  const client = await pool.connect();
+  let runId = null;
+
+  try {
+    await ensureDatabaseTables(client);
+
+    const selectedProductIds = await fetchExistingOrderProductIds(client);
+    const selectedProductIdSet = new Set(selectedProductIds);
+    const productRows = buildProductRows(data, selectedProductIdSet);
+    const missingCount = selectedProductIds.length - productRows.length;
+
+    console.log(`[database-import] Existing order product ids: ${selectedProductIds.length}`);
+    console.log(
+      `[database-import] Product rows prepared: ${productRows.length}` +
+      (missingCount ? ` (${missingCount} product ids were not found in the MDB)` : '')
+    );
+
+    if (options.dryRun) {
+      console.log('[database-import] Dry run only. No database writes performed.');
+      console.log('[database-import] Sample products:');
+      productRows.slice(0, 10).forEach((product) => {
+        console.log(
+          `  - ${product.source_product_id} | ${product.style_code || 'No code'} | ` +
+          `${product.style_name || 'No style'} | ${product.colour || 'No colour'} | ` +
+          `${product.size || 'No size'} | stock ${product.stock ?? 'n/a'}`
+        );
+      });
+      return;
+    }
+
+    const run = await client.query(
+      `INSERT INTO database_import_runs (source_file, source_years, status, message)
+       VALUES ($1, $2, 'running', $3)
+       RETURNING id`,
+      [options.sourceFile, [...IMPORT_YEARS].join(','), 'Referenced product import started']
+    );
+    runId = run.rows[0].id;
+
+    await client.query('BEGIN');
+
+    if (options.replaceExisting) {
+      console.log('[database-import] Replacing existing referenced product rows');
+      await client.query('DELETE FROM database_products');
+    }
+
+    console.log(`[database-import] Writing ${productRows.length} products`);
+    await upsertRows(
+      client,
+      'database_products',
+      PRODUCT_COLUMNS,
+      'source_product_id',
+      productRows
+    );
+
+    await client.query('COMMIT');
+
+    await client.query(
+      `UPDATE database_import_runs
+       SET product_count = $1,
+           finished_at = NOW(),
+           status = 'complete',
+           message = $2
+       WHERE id = $3`,
+      [
+        productRows.length,
+        options.replaceExisting
+          ? 'Referenced product rows replaced'
+          : 'Referenced product rows appended/upserted',
+        runId,
+      ]
+    );
+
+    console.log('[database-import] Product import complete');
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      // Ignore rollback errors after a pre-transaction failure.
+    }
+
+    if (runId) {
+      await client.query(
+        `UPDATE database_import_runs
+         SET finished_at = NOW(), status = 'failed', message = $1
+         WHERE id = $2`,
+        [err.message, runId]
+      );
+    }
+
+    throw err;
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+async function fetchExistingOrderProductIds(client) {
+  const result = await client.query(`
+    SELECT DISTINCT source_product_id
+    FROM database_job_line_items
+    WHERE source_product_id IS NOT NULL
+    ORDER BY source_product_id
+  `);
+
+  return result.rows
+    .map((row) => toInt(row.source_product_id))
+    .filter((productId) => productId !== null);
 }
 
 async function upsertRows(client, table, columns, conflictColumn, rows) {

@@ -626,6 +626,237 @@ router.put('/api/database/jobs/:id/positions', async (req, res) => {
   }
 });
 
+router.get('/api/database/products/search', async (req, res) => {
+  const search = cleanQuery(req.query.q);
+  const field = cleanQuery(req.query.field).toLowerCase() === 'code' ? 'code' : 'style';
+  const params = [];
+  let whereSql = 'WHERE style_id IS NOT NULL';
+  let rankSql = '2';
+
+  if (search) {
+    params.push(`%${search}%`, search, `${search}%`);
+    if (field === 'code') {
+      whereSql += `
+        AND (
+          style_code ILIKE $1
+          OR alt_style_code ILIKE $1
+        )`;
+      rankSql = `
+        CASE
+          WHEN LOWER(COALESCE(style_code, '')) = LOWER($2) THEN 0
+          WHEN LOWER(COALESCE(alt_style_code, '')) = LOWER($2) THEN 0
+          WHEN style_code ILIKE $3 THEN 1
+          WHEN alt_style_code ILIKE $3 THEN 1
+          ELSE 2
+        END`;
+    } else {
+      whereSql += `
+        AND (
+          style_name ILIKE $1
+          OR style_code ILIKE $1
+          OR alt_style_code ILIKE $1
+        )`;
+      rankSql = `
+        CASE
+          WHEN LOWER(COALESCE(style_name, '')) = LOWER($2) THEN 0
+          WHEN style_name ILIKE $3 THEN 1
+          WHEN style_code ILIKE $3 THEN 2
+          WHEN alt_style_code ILIKE $3 THEN 3
+          ELSE 4
+        END`;
+    }
+  }
+
+  try {
+    const result = await pool.query(
+      `WITH candidates AS (
+         SELECT *,
+                ${rankSql} AS match_rank
+         FROM database_products
+         ${whereSql}
+       )
+       SELECT style_id,
+              MIN(source_product_id)::int AS sample_product_id,
+              MIN(style_code) AS style_code,
+              MIN(alt_style_code) AS alt_style_code,
+              MIN(style_name) AS style_name,
+              MIN(product_type) AS product_type,
+              MIN(supplier_name) AS supplier_name,
+              COUNT(*)::int AS variant_count,
+              COUNT(DISTINCT colour)::int AS colour_count,
+              COUNT(DISTINCT size)::int AS size_count,
+              MIN(match_rank)::int AS match_rank
+       FROM candidates
+       GROUP BY style_id
+       ORDER BY MIN(match_rank) ASC,
+                LOWER(MIN(style_name)) ASC NULLS LAST,
+                LOWER(MIN(style_code)) ASC NULLS LAST
+       LIMIT 20`,
+      params
+    );
+
+    res.json({ products: result.rows });
+  } catch (err) {
+    console.error('GET /api/database/products/search', err);
+    res.status(500).json({ error: 'Failed to search database products' });
+  }
+});
+
+router.get('/api/database/products/styles/:styleId/variants', async (req, res) => {
+  const styleId = Number.parseInt(req.params.styleId, 10);
+  if (!Number.isFinite(styleId)) {
+    return res.status(400).json({ error: 'Invalid style id' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT *
+       FROM database_products
+       WHERE style_id = $1
+       ORDER BY LOWER(COALESCE(colour, '')) ASC,
+                colour_id ASC NULLS LAST,
+                size_id ASC NULLS LAST,
+                LOWER(COALESCE(size, '')) ASC,
+                source_product_id ASC`,
+      [styleId]
+    );
+
+    if (!result.rowCount) {
+      return res.status(404).json({ error: 'Product style not found' });
+    }
+
+    res.json({ products: result.rows });
+  } catch (err) {
+    console.error('GET /api/database/products/styles/:styleId/variants', err);
+    res.status(500).json({ error: 'Failed to fetch product variants' });
+  }
+});
+
+router.post('/api/database/jobs/:id/line-items', async (req, res) => {
+  const id = Number.parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: 'Invalid job id' });
+  }
+
+  const productId = nullableInt(req.body?.source_product_id);
+  if (!productId) {
+    return res.status(400).json({ error: 'Product is required' });
+  }
+
+  const quantity = nullableInt(req.body?.quantity) || 1;
+  if (quantity < 1 || quantity > 100000) {
+    return res.status(400).json({ error: 'Quantity must be between 1 and 100000' });
+  }
+
+  const unitPrice = nullableNumber(req.body?.unit_price);
+  const vatRate = nullableNumber(req.body?.vat_rate);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(71060218)');
+
+    const job = await client.query(
+      `SELECT source_order_id
+       FROM database_jobs
+       WHERE source_order_id = $1 OR order_no = $1
+       ORDER BY CASE WHEN source_order_id = $1 THEN 0 ELSE 1 END
+       LIMIT 1
+       FOR UPDATE`,
+      [id]
+    );
+
+    if (!job.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Database job not found' });
+    }
+
+    const product = await client.query(
+      `SELECT *
+       FROM database_products
+       WHERE source_product_id = $1
+       LIMIT 1`,
+      [productId]
+    );
+
+    if (!product.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Product not found in referenced product table' });
+    }
+
+    const next = await client.query(`
+      SELECT (COALESCE(MAX(source_order_item_id), 0) + 1)::int AS next_id
+      FROM database_job_line_items
+    `);
+
+    const productRow = product.rows[0];
+    const sourceOrderId = job.rows[0].source_order_id;
+    const sourceOrderItemId = next.rows[0].next_id;
+
+    await client.query(
+      `INSERT INTO database_job_line_items (
+         source_order_item_id,
+         source_order_id,
+         source_product_id,
+         line_description,
+         quantity,
+         unit_price,
+         unit_cost,
+         vat_rate,
+         is_non_deliverable,
+         is_internal,
+         supplier_name,
+         style_id,
+         style_code,
+         alt_style_code,
+         style_name,
+         colour,
+         size,
+         product_type,
+         stock,
+         is_product_active,
+         created_at_source,
+         updated_at_source
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8,
+         FALSE, FALSE, $9, $10, $11, $12, $13, $14, $15, $16,
+         $17, $18, NOW(), NOW()
+       )`,
+      [
+        sourceOrderItemId,
+        sourceOrderId,
+        productRow.source_product_id,
+        productRow.style_name,
+        quantity,
+        unitPrice,
+        productRow.unit_cost,
+        vatRate,
+        productRow.supplier_name,
+        productRow.style_id,
+        productRow.style_code,
+        productRow.alt_style_code,
+        productRow.style_name,
+        productRow.colour,
+        productRow.size,
+        productRow.product_type,
+        productRow.stock,
+        productRow.is_product_active,
+      ]
+    );
+
+    const lineItems = await fetchLineItems(client, sourceOrderId);
+
+    await client.query('COMMIT');
+    res.status(201).json({ lineItems });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('POST /api/database/jobs/:id/line-items', err);
+    res.status(500).json({ error: 'Failed to add database line item' });
+  } finally {
+    client.release();
+  }
+});
+
 router.get('/api/database/jobs/:id', async (req, res) => {
   const id = Number.parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) {
@@ -646,13 +877,7 @@ router.get('/api/database/jobs/:id', async (req, res) => {
 
     const sourceOrderId = job.rows[0].source_order_id;
     const [lineItems, positions] = await Promise.all([
-      pool.query(
-        `SELECT *
-         FROM database_job_line_items
-         WHERE source_order_id = $1
-         ORDER BY source_order_item_id`,
-        [sourceOrderId]
-      ),
+      fetchLineItems(pool, sourceOrderId),
       pool.query(
         `SELECT *
          FROM database_job_positions
@@ -664,7 +889,7 @@ router.get('/api/database/jobs/:id', async (req, res) => {
 
     res.json({
       job: job.rows[0],
-      lineItems: lineItems.rows,
+      lineItems,
       positions: positions.rows,
     });
   } catch (err) {
@@ -765,6 +990,23 @@ function clampInt(value, fallback, min, max) {
 function nullableInt(value) {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function nullableNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number.parseFloat(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+async function fetchLineItems(db, sourceOrderId) {
+  const result = await db.query(
+    `SELECT *
+     FROM database_job_line_items
+     WHERE source_order_id = $1
+     ORDER BY source_order_item_id`,
+    [sourceOrderId]
+  );
+  return result.rows;
 }
 
 function parseDatabaseDate(value, label) {

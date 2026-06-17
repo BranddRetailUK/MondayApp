@@ -138,6 +138,59 @@ async function ensureDatabaseTables(db) {
   `);
 
   await db.query(`
+    CREATE TABLE IF NOT EXISTS database_products (
+      id SERIAL PRIMARY KEY,
+      source_product_id INTEGER NOT NULL UNIQUE,
+      style_id INTEGER,
+      style_colour_id INTEGER,
+      style_size_id INTEGER,
+      supplier_id INTEGER,
+      supplier_name TEXT,
+      supplier_code TEXT,
+      product_type_id INTEGER,
+      product_type TEXT,
+      style_code TEXT,
+      alt_style_code TEXT,
+      style_name TEXT,
+      colour_id INTEGER,
+      colour TEXT,
+      size_id INTEGER,
+      size TEXT,
+      unit_cost NUMERIC(15, 2),
+      stock INTEGER,
+      is_product_active BOOLEAN,
+      trace_staff_id INTEGER,
+      created_at_source TIMESTAMP,
+      updated_at_source TIMESTAMP,
+      imported_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS source_product_id INTEGER;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS style_id INTEGER;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS style_colour_id INTEGER;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS style_size_id INTEGER;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS supplier_id INTEGER;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS supplier_name TEXT;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS supplier_code TEXT;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS product_type_id INTEGER;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS product_type TEXT;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS style_code TEXT;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS alt_style_code TEXT;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS style_name TEXT;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS colour_id INTEGER;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS colour TEXT;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS size_id INTEGER;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS size TEXT;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS unit_cost NUMERIC(15, 2);');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS stock INTEGER;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS is_product_active BOOLEAN;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS trace_staff_id INTEGER;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS created_at_source TIMESTAMP;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS updated_at_source TIMESTAMP;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS imported_at TIMESTAMP NOT NULL DEFAULT NOW();');
+
+  await db.query(`
     CREATE TABLE IF NOT EXISTS database_job_positions (
       id SERIAL PRIMARY KEY,
       source_order_position_id INTEGER NOT NULL UNIQUE,
@@ -171,6 +224,7 @@ async function ensureDatabaseTables(db) {
       line_item_count INTEGER NOT NULL DEFAULT 0,
       position_count INTEGER NOT NULL DEFAULT 0,
       address_count INTEGER NOT NULL DEFAULT 0,
+      product_count INTEGER NOT NULL DEFAULT 0,
       started_at TIMESTAMP NOT NULL DEFAULT NOW(),
       finished_at TIMESTAMP,
       status TEXT NOT NULL DEFAULT 'running',
@@ -188,9 +242,15 @@ async function ensureDatabaseTables(db) {
   await db.query('CREATE UNIQUE INDEX IF NOT EXISTS database_customer_addresses_source_address_idx ON database_customer_addresses(source_address_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_customer_addresses_customer_idx ON database_customer_addresses(customer_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_job_line_items_order_idx ON database_job_line_items(source_order_id);');
+  await db.query('CREATE UNIQUE INDEX IF NOT EXISTS database_products_source_product_idx ON database_products(source_product_id);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_products_style_code_idx ON database_products(style_code);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_products_colour_idx ON database_products(colour);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_products_size_idx ON database_products(size);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_products_active_idx ON database_products(is_product_active);');
   await db.query('CREATE UNIQUE INDEX IF NOT EXISTS database_job_positions_source_position_idx ON database_job_positions(source_order_position_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_job_positions_order_idx ON database_job_positions(source_order_id);');
   await db.query('ALTER TABLE database_import_runs ADD COLUMN IF NOT EXISTS address_count INTEGER NOT NULL DEFAULT 0;');
+  await db.query('ALTER TABLE database_import_runs ADD COLUMN IF NOT EXISTS product_count INTEGER NOT NULL DEFAULT 0;');
 }
 
 module.exports = { ensureDatabaseTables };
