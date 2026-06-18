@@ -1169,6 +1169,60 @@ router.put('/api/database/jobs/:id/line-items/:lineItemId', async (req, res) => 
   }
 });
 
+router.delete('/api/database/jobs/:id/line-items/:lineItemId', async (req, res) => {
+  const id = Number.parseInt(req.params.id, 10);
+  const lineItemId = Number.parseInt(req.params.lineItemId, 10);
+  if (!Number.isFinite(id) || !Number.isFinite(lineItemId)) {
+    return res.status(400).json({ error: 'Invalid job or line item id' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(71060222)');
+
+    const job = await client.query(
+      `SELECT source_order_id
+       FROM database_jobs
+       WHERE source_order_id = $1 OR order_no = $1
+       ORDER BY CASE WHEN source_order_id = $1 THEN 0 ELSE 1 END
+       LIMIT 1
+       FOR UPDATE`,
+      [id]
+    );
+
+    if (!job.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Database job not found' });
+    }
+
+    const sourceOrderId = job.rows[0].source_order_id;
+    const deleted = await client.query(
+      `DELETE FROM database_job_line_items
+       WHERE source_order_id = $1
+         AND source_order_item_id = $2
+       RETURNING source_order_item_id`,
+      [sourceOrderId, lineItemId]
+    );
+
+    if (!deleted.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Line item not found for this order' });
+    }
+
+    const lineItems = await fetchLineItems(client, sourceOrderId);
+
+    await client.query('COMMIT');
+    res.json({ lineItems });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('DELETE /api/database/jobs/:id/line-items/:lineItemId', err);
+    res.status(500).json({ error: 'Failed to delete database line item' });
+  } finally {
+    client.release();
+  }
+});
+
 router.get('/api/database/jobs/:id', async (req, res) => {
   const id = Number.parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) {

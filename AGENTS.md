@@ -4,3 +4,5 @@ At the start of every chat in this repository, read `contract.md` one time first
 only re-read the contract file if further context is required later in the chat
 
 Treat `contract.md` as the source of truth for service features, webhooks, endpoints, sync logic, and known risks. If code behavior changes, update `contract.md` in the same change.
+
+Runtime note for Codex shells: this Mac has Homebrew Node installed at `/opt/homebrew/bin/node` and npm at `/opt/homebrew/bin/npm`. If a fresh chat/session reports `node` or `npm` missing from `PATH`, do not search the filesystem; run Node/npm checks with `/opt/homebrew/bin` prepended, for example `PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH" npm run smoke:open-orders`.

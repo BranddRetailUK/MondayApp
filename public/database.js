@@ -54,6 +54,8 @@
     jobSaveQueued: false,
     jobLastSavedSignature: '{}',
     customLineDraft: null,
+    lineDeleteTarget: null,
+    lineDeleteSaving: false,
     currentUser: null,
   };
 
@@ -221,6 +223,12 @@
     }
     if (lineAction === 'cancel') {
       cancelLineDraft();
+      return;
+    }
+
+    const deleteLineId = button.dataset.dbLineDelete;
+    if (deleteLineId) {
+      openLineDeleteConfirmation(deleteLineId);
       return;
     }
 
@@ -1220,8 +1228,8 @@
             <thead>
               <tr>
                 <th class="db-row-selector"></th>
+                <th class="db-row-selector"></th>
                 <th>Code:</th>
-                <th>Alt code:</th>
                 <th>Style:</th>
                 <th>Colour:</th>
                 <th>Size:</th>
@@ -1246,6 +1254,7 @@
               <thead>
                 <tr>
                   <th class="db-row-selector"></th>
+                  <th class="db-row-selector"></th>
                   <th>Non-stock item:</th>
                   <th>Cost:</th>
                   <th>Price:</th>
@@ -1254,7 +1263,7 @@
                 </tr>
               </thead>
               <tbody>
-                ${renderCustomSectionRows(nonStockItems, 'nonstock', 6, renderNonStockRow)}
+                ${renderCustomSectionRows(nonStockItems, 'nonstock', 7, renderNonStockRow)}
               </tbody>
             </table>
             <div class="db-supplier-row"><span>Supplier:</span><input readonly value="${escapeAttr(suppliers)}"></div>
@@ -1369,6 +1378,11 @@
 
   function handleOrderAckKeydown(event) {
     if (event.key !== 'Escape') return;
+    const deleteModal = document.getElementById('db-line-delete-modal');
+    if (deleteModal && !deleteModal.hidden) {
+      closeLineDeleteConfirmation();
+      return;
+    }
     const modal = document.getElementById('db-order-ack-modal');
     if (modal && !modal.hidden) closeOrderAcknowledgement();
   }
@@ -1379,6 +1393,139 @@
     modal.hidden = true;
     modal.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('modal-open', 'db-order-ack-open', 'db-order-ack-printing');
+  }
+
+  function openLineDeleteConfirmation(lineItemId) {
+    const id = Number.parseInt(lineItemId, 10);
+    if (!Number.isFinite(id) || !state.selectedJob?.source_order_id) return;
+
+    const item = state.selectedLineItems.find((line) => Number(line.source_order_item_id) === id);
+    state.lineDeleteTarget = { lineItemId: id, label: lineDeleteLabel(item) };
+    state.lineDeleteSaving = false;
+
+    const modal = ensureLineDeleteModal();
+    const message = modal.querySelector('.db-line-delete-message');
+    const error = modal.querySelector('.db-line-delete-error');
+    if (message) {
+      message.textContent = state.lineDeleteTarget.label
+        ? `Delete ${state.lineDeleteTarget.label}?`
+        : 'Delete this line item?';
+    }
+    if (error) error.textContent = '';
+    setLineDeleteModalSaving(false);
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open', 'db-line-delete-open');
+
+    window.requestAnimationFrame(() => {
+      modal.querySelector('[data-db-line-delete-cancel]')?.focus();
+    });
+  }
+
+  function ensureLineDeleteModal() {
+    let modal = document.getElementById('db-line-delete-modal');
+    if (modal) return modal;
+
+    modal = document.createElement('div');
+    modal.id = 'db-line-delete-modal';
+    modal.className = 'db-line-delete-modal';
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    modal.innerHTML = `
+      <div class="db-line-delete-shell" role="dialog" aria-modal="true" aria-labelledby="db-line-delete-title">
+        <div class="db-line-delete-title" id="db-line-delete-title">Are you sure?</div>
+        <div class="db-line-delete-message">Delete this line item?</div>
+        <div class="db-line-delete-error" aria-live="polite"></div>
+        <div class="db-line-delete-actions">
+          <button class="db-line-delete-confirm" type="button" data-db-line-delete-confirm="true">Confirm</button>
+          <button class="db-line-delete-cancel" type="button" data-db-line-delete-cancel="true">No</button>
+        </div>
+      </div>
+    `;
+    modal.addEventListener('click', handleLineDeleteModalClick);
+    document.body.appendChild(modal);
+    return modal;
+  }
+
+  function handleLineDeleteModalClick(event) {
+    const modal = document.getElementById('db-line-delete-modal');
+    if (!modal || modal.hidden) return;
+
+    if (event.target === modal) {
+      closeLineDeleteConfirmation();
+      return;
+    }
+
+    const button = event.target.closest('button');
+    if (!button || !modal.contains(button)) return;
+
+    if (button.dataset.dbLineDeleteCancel) {
+      closeLineDeleteConfirmation();
+      return;
+    }
+
+    if (button.dataset.dbLineDeleteConfirm) {
+      confirmDeleteLineItem();
+    }
+  }
+
+  function closeLineDeleteConfirmation() {
+    if (state.lineDeleteSaving) return;
+    const modal = document.getElementById('db-line-delete-modal');
+    if (!modal) return;
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('modal-open', 'db-line-delete-open');
+    state.lineDeleteTarget = null;
+  }
+
+  async function confirmDeleteLineItem() {
+    const target = state.lineDeleteTarget;
+    if (!target || state.lineDeleteSaving || !state.selectedJob?.source_order_id) return;
+
+    state.lineDeleteSaving = true;
+    setLineDeleteModalSaving(true);
+
+    try {
+      await flushLineOrderAutosave();
+      const data = await fetchJson(
+        `/api/database/jobs/${encodeURIComponent(state.selectedJob.source_order_id)}/line-items/${encodeURIComponent(target.lineItemId)}`,
+        { method: 'DELETE' }
+      );
+      state.selectedLineItems = data.lineItems || state.selectedLineItems.filter((line) => (
+        Number(line.source_order_item_id) !== Number(target.lineItemId)
+      ));
+      syncSelectedJobLineSummary();
+      resetLineOrderAutosaveState();
+      state.lineDeleteSaving = false;
+      closeLineDeleteConfirmation();
+      renderItemsPanel();
+      renderOutstandingOrders();
+    } catch (err) {
+      state.lineDeleteSaving = false;
+      setLineDeleteModalSaving(false, err.message || 'Failed to delete line item');
+      console.error('Line item delete failed', err);
+    }
+  }
+
+  function setLineDeleteModalSaving(saving, errorMessage = '') {
+    const modal = document.getElementById('db-line-delete-modal');
+    if (!modal) return;
+    const confirm = modal.querySelector('[data-db-line-delete-confirm]');
+    const cancel = modal.querySelector('[data-db-line-delete-cancel]');
+    const error = modal.querySelector('.db-line-delete-error');
+    if (confirm) {
+      confirm.disabled = saving;
+      confirm.textContent = saving ? 'Deleting...' : 'Confirm';
+    }
+    if (cancel) cancel.disabled = saving;
+    if (error) error.textContent = errorMessage;
+  }
+
+  function lineDeleteLabel(item) {
+    if (!item) return '';
+    const description = item.line_description || item.style_name || item.style_code || '';
+    return String(description || '').trim();
   }
 
   function printOrderAcknowledgement() {
@@ -1648,11 +1795,11 @@
     const lineId = item.source_order_item_id || '';
     return `
       <tr class="db-line-row db-stock-line-row" data-line-id="${escapeAttr(lineId)}" data-stock-index="${escapeAttr(index)}">
+        ${renderLineDeleteCell(lineId)}
         <td class="db-row-selector">
           <button class="db-line-drag-handle" type="button" data-db-line-drag="true" aria-label="Reorder line item">&#9654;</button>
         </td>
         <td>${renderLineItemInput(item, 'style_code')}</td>
-        <td>${renderLineItemInput(item, 'alt_style_code')}</td>
         <td>${renderLineItemInput(item, 'style_name')}</td>
         <td>${renderLineItemInput(item, 'colour')}</td>
         <td>${renderLineItemInput(item, 'size')}</td>
@@ -1661,6 +1808,14 @@
         <td>${renderLineItemInput(item, 'quantity', 'db-line-qty')}</td>
         <td>${renderLineItemInput(item, 'vatPercent', 'db-line-vat')}</td>
       </tr>
+    `;
+  }
+
+  function renderLineDeleteCell(lineId) {
+    return `
+      <td class="db-row-selector db-line-delete-cell">
+        <button class="db-line-delete-button" type="button" data-db-line-delete="${escapeAttr(lineId)}" aria-label="Delete line item" title="Delete line item">X</button>
+      </td>
     `;
   }
 
@@ -1702,9 +1857,9 @@
 
     return `
       <tr class="db-add-line-edit-row">
+        <td class="db-row-selector db-line-delete-cell"></td>
         <td class="db-row-selector"></td>
         <td>${renderLineSearchInput('code', draft.codeQuery)}</td>
-        <td><input class="db-line-input" readonly value="${escapeAttr(draft.altCode || product?.alt_style_code || '')}"></td>
         <td>${renderLineSearchInput('style', draft.styleQuery)}</td>
         <td>${renderVariantSelect('colour', draft)}</td>
         <td>${renderVariantSelect('size', draft)}</td>
@@ -1772,7 +1927,6 @@
     return {
       codeQuery: '',
       styleQuery: '',
-      altCode: '',
       selectedStyleId: null,
       variants: [],
       productId: null,
@@ -1839,15 +1993,12 @@
     draft.productId = null;
     draft.colourValue = '';
     draft.sizeValue = '';
-    draft.altCode = '';
     draft.error = '';
     clearDraftProductCells();
   }
 
   function clearDraftProductCells() {
-    const alt = els.itemsPanel.querySelector('.db-add-line-edit-row td:nth-child(3) input');
     const cost = els.itemsPanel.querySelector('.db-add-line-edit-row td:nth-child(7) input');
-    if (alt) alt.value = '';
     if (cost) cost.value = '';
   }
 
@@ -1885,8 +2036,29 @@
     window.setTimeout(() => {
       if (!state.lineDraft || els.itemsPanel.querySelector('.db-add-line-edit-row:focus-within')) return;
       syncDraftVariantSelection();
+      if (isBlankLineDraft(state.lineDraft)) {
+        cancelLineDraft();
+        return;
+      }
       if (selectedDraftProduct(state.lineDraft)) saveLineDraft();
     }, 0);
+  }
+
+  function isBlankLineDraft(draft) {
+    if (!draft) return true;
+    return !String(draft.codeQuery || '').trim()
+      && !String(draft.styleQuery || '').trim()
+      && !draft.selectedStyleId
+      && !draft.productId
+      && !draft.variants?.length
+      && !String(draft.unitPrice || '').trim()
+      && isDefaultDraftValue(draft.quantity, '1')
+      && isDefaultDraftValue(draft.vatPercent, '20.00');
+  }
+
+  function isDefaultDraftValue(value, defaultValue) {
+    const clean = String(value ?? '').trim();
+    return clean === '' || clean === defaultValue;
   }
 
   function handleLineDraftChange(event) {
@@ -1995,7 +2167,6 @@
     draft.selectedStyleId = Number.parseInt(product.style_id, 10);
     draft.codeQuery = product.style_code || '';
     draft.styleQuery = product.style_name || '';
-    draft.altCode = product.alt_style_code || '';
     draft.variants = [];
     draft.productId = null;
     draft.colourValue = '';
@@ -2576,6 +2747,7 @@
     const lineId = item.source_order_item_id || '';
     return `
       <tr class="db-line-row db-custom-line-row" data-line-id="${escapeAttr(lineId)}">
+        ${renderLineDeleteCell(lineId)}
         <td class="db-row-selector">
           <button class="db-line-drag-handle" type="button" data-db-line-drag="true" aria-label="Reorder line item">&#9654;</button>
         </td>
@@ -2623,6 +2795,7 @@
 
     return `
       <tr class="db-custom-line-edit-row" data-custom-line-type="${escapeAttr(type)}">
+        <td class="db-row-selector db-line-delete-cell"></td>
         <td class="db-row-selector"></td>
         <td><textarea class="db-custom-line-input" data-custom-line-field="line_description">${escapeHtml(draft.line_description)}</textarea></td>
         <td><input class="db-custom-line-input db-line-money" data-custom-line-field="unit_cost" value="${escapeAttr(draft.unit_cost)}"></td>
@@ -2699,8 +2872,21 @@
 
     window.setTimeout(() => {
       if (!state.customLineDraft || els.itemsPanel.querySelector('[data-custom-line-type]:focus-within')) return;
-      if (state.customLineDraft.line_description.trim()) saveCustomLineDraft();
+      if (isBlankCustomLineDraft(state.customLineDraft)) {
+        cancelCustomLineDraft();
+        return;
+      }
+      saveCustomLineDraft();
     }, 0);
+  }
+
+  function isBlankCustomLineDraft(draft) {
+    if (!draft) return true;
+    return !String(draft.line_description || '').trim()
+      && !String(draft.unit_cost || '').trim()
+      && !String(draft.unit_price || '').trim()
+      && isDefaultDraftValue(draft.quantity, '1')
+      && isDefaultDraftValue(draft.vatPercent, '20.00');
   }
 
   async function saveCustomLineDraft() {
@@ -2887,6 +3073,7 @@
           <thead>
             <tr>
               <th class="db-row-selector"></th>
+              <th class="db-row-selector"></th>
               <th>${escapeHtml(title)}</th>
               <th>Cost:</th>
               <th>Price:</th>
@@ -2895,8 +3082,9 @@
             </tr>
           </thead>
           <tbody>
-            ${renderCustomSectionRows(items, lineType, 6, (item) => `
+            ${renderCustomSectionRows(items, lineType, 7, (item) => `
               <tr class="db-line-row db-custom-line-row" data-line-id="${escapeAttr(item.source_order_item_id || '')}">
+                ${renderLineDeleteCell(item.source_order_item_id || '')}
                 <td class="db-row-selector">
                   <button class="db-line-drag-handle" type="button" data-db-line-drag="true" aria-label="Reorder line item">&#9654;</button>
                 </td>
