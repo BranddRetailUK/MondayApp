@@ -576,6 +576,10 @@ body.modal-open{overflow:hidden}
   height:840px;
   min-height:840px;
 }
+.db-legacy-app.db-new-customer-expanded{
+  height:820px;
+  min-height:820px;
+}
 .db-legacy-stage{
   position:absolute;
   left:0;
@@ -592,6 +596,9 @@ body.modal-open{overflow:hidden}
 }
 .db-legacy-stage.db-order-items-active{
   height:660px;
+}
+.db-legacy-stage.db-new-customer-active{
+  height:640px;
 }
 .db-home-button{
   position:absolute;
@@ -748,6 +755,9 @@ body.modal-open{overflow:hidden}
 .db-new-order-view{
   position:relative;
   height:540px;
+}
+.db-new-customer-view{
+  height:640px;
 }
 .db-new-order-box{
   position:absolute;

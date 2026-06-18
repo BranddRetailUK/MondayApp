@@ -3723,6 +3723,8 @@
     });
     els.stage?.classList.toggle('db-view-home', name === 'home');
     els.stage?.classList.toggle('db-view-order', name === 'order');
+    els.stage?.classList.toggle('db-new-customer-active', name === 'new-customer');
+    els.root?.classList.toggle('db-new-customer-expanded', name === 'new-customer');
     if (name !== 'order') {
       els.stage?.classList.remove('db-order-items-active');
       els.root?.classList.remove('db-order-items-expanded');
