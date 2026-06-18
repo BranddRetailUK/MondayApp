@@ -609,13 +609,15 @@ router.put('/api/database/jobs/:id/positions', async (req, res) => {
       nextSourcePositionId = next.rows[0].next_id;
     }
 
-    for (const position of positions) {
+    for (const [index, position] of positions.entries()) {
+      const positionSortOrder = index + 1;
       if (Number.isFinite(position.source_order_position_id)) {
         await client.query(
           `UPDATE database_job_positions
-           SET position_name = $3,
-               colour_notes = $4,
-               design_ref = $5,
+           SET position_sort_order = $3,
+               position_name = $4,
+               colour_notes = $5,
+               design_ref = $6,
                updated_at_source = NOW(),
                imported_at = NOW()
            WHERE source_order_id = $1
@@ -623,6 +625,7 @@ router.put('/api/database/jobs/:id/positions', async (req, res) => {
           [
             sourceOrderId,
             position.source_order_position_id,
+            positionSortOrder,
             position.position_name,
             position.colour_notes,
             position.design_ref,
@@ -633,15 +636,17 @@ router.put('/api/database/jobs/:id/positions', async (req, res) => {
           `INSERT INTO database_job_positions (
              source_order_position_id,
              source_order_id,
+             position_sort_order,
              position_name,
              colour_notes,
              design_ref,
              created_at_source,
              updated_at_source
-           ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
+           ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
           [
             nextSourcePositionId,
             sourceOrderId,
+            positionSortOrder,
             position.position_name,
             position.colour_notes,
             position.design_ref,
@@ -655,7 +660,7 @@ router.put('/api/database/jobs/:id/positions', async (req, res) => {
       `SELECT *
        FROM database_job_positions
        WHERE source_order_id = $1
-       ORDER BY source_order_position_id`,
+       ORDER BY COALESCE(position_sort_order, source_order_position_id), source_order_position_id`,
       [sourceOrderId]
     );
 
@@ -1248,7 +1253,7 @@ router.get('/api/database/jobs/:id', async (req, res) => {
         `SELECT *
          FROM database_job_positions
          WHERE source_order_id = $1
-         ORDER BY source_order_position_id`,
+         ORDER BY COALESCE(position_sort_order, source_order_position_id), source_order_position_id`,
         [sourceOrderId]
       ),
     ]);

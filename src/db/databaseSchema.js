@@ -202,6 +202,7 @@ async function ensureDatabaseTables(db) {
       id SERIAL PRIMARY KEY,
       source_order_position_id INTEGER NOT NULL UNIQUE,
       source_order_id INTEGER NOT NULL REFERENCES database_jobs(source_order_id) ON DELETE CASCADE,
+      position_sort_order INTEGER,
       position_name TEXT,
       colour_notes TEXT,
       design_ref TEXT,
@@ -214,6 +215,7 @@ async function ensureDatabaseTables(db) {
 
   await db.query('ALTER TABLE database_job_positions ADD COLUMN IF NOT EXISTS source_order_position_id INTEGER;');
   await db.query('ALTER TABLE database_job_positions ADD COLUMN IF NOT EXISTS source_order_id INTEGER;');
+  await db.query('ALTER TABLE database_job_positions ADD COLUMN IF NOT EXISTS position_sort_order INTEGER;');
   await db.query('ALTER TABLE database_job_positions ADD COLUMN IF NOT EXISTS position_name TEXT;');
   await db.query('ALTER TABLE database_job_positions ADD COLUMN IF NOT EXISTS colour_notes TEXT;');
   await db.query('ALTER TABLE database_job_positions ADD COLUMN IF NOT EXISTS design_ref TEXT;');
@@ -257,6 +259,7 @@ async function ensureDatabaseTables(db) {
   await db.query('CREATE INDEX IF NOT EXISTS database_products_active_idx ON database_products(is_product_active);');
   await db.query('CREATE UNIQUE INDEX IF NOT EXISTS database_job_positions_source_position_idx ON database_job_positions(source_order_position_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_job_positions_order_idx ON database_job_positions(source_order_id);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_job_positions_sort_idx ON database_job_positions(source_order_id, position_sort_order);');
   await db.query('ALTER TABLE database_import_runs ADD COLUMN IF NOT EXISTS address_count INTEGER NOT NULL DEFAULT 0;');
   await db.query('ALTER TABLE database_import_runs ADD COLUMN IF NOT EXISTS product_count INTEGER NOT NULL DEFAULT 0;');
 }

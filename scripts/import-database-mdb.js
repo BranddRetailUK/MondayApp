@@ -137,9 +137,9 @@ const PRODUCT_COLUMNS = [
 ];
 
 const POSITION_COLUMNS = [
-  'source_order_position_id', 'source_order_id', 'position_name',
-  'colour_notes', 'design_ref', 'trace_staff_id', 'created_at_source',
-  'updated_at_source',
+  'source_order_position_id', 'source_order_id', 'position_sort_order',
+  'position_name', 'colour_notes', 'design_ref', 'trace_staff_id',
+  'created_at_source', 'updated_at_source',
 ];
 
 const ADDRESS_COLUMNS = [
@@ -453,18 +453,25 @@ function buildSnapshot(data) {
       };
     });
 
+  const positionSortByOrder = new Map();
   const positions = data.tblOrderPosition
     .filter((position) => selectedOrderIds.has(toInt(position.orderid)))
-    .map((position) => ({
-      source_order_position_id: toInt(position.orderpositionid),
-      source_order_id: toInt(position.orderid),
-      position_name: cleanText(position.sposition),
-      colour_notes: cleanText(position.memcolour),
-      design_ref: cleanText(position.sdesign),
-      trace_staff_id: toInt(position.tracestaffid),
-      created_at_source: toTimestamp(position.dtcreate),
-      updated_at_source: toTimestamp(position.dtedit),
-    }));
+    .map((position) => {
+      const sourceOrderId = toInt(position.orderid);
+      const positionSortOrder = (positionSortByOrder.get(sourceOrderId) || 0) + 1;
+      positionSortByOrder.set(sourceOrderId, positionSortOrder);
+      return {
+        source_order_position_id: toInt(position.orderpositionid),
+        source_order_id: sourceOrderId,
+        position_sort_order: positionSortOrder,
+        position_name: cleanText(position.sposition),
+        colour_notes: cleanText(position.memcolour),
+        design_ref: cleanText(position.sdesign),
+        trace_staff_id: toInt(position.tracestaffid),
+        created_at_source: toTimestamp(position.dtcreate),
+        updated_at_source: toTimestamp(position.dtedit),
+      };
+    });
 
   const addressRoles = buildAddressRoleMap(data, selectedOrderIds, selectedCustomerIds);
   const customerAddresses = buildCustomerAddressRows(

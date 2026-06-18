@@ -56,6 +56,8 @@
     customLineDraft: null,
     lineDeleteTarget: null,
     lineDeleteSaving: false,
+    designDeleteTarget: null,
+    designDeleteSaving: false,
     currentUser: null,
   };
 
@@ -162,6 +164,8 @@
     els.itemsPanel.addEventListener('mousedown', handleLineDraftMouseDown);
     els.itemsPanel.addEventListener('pointerdown', handleLineDragPointerDown);
     els.designPanel.addEventListener('input', handleDesignInput);
+    els.designPanel.addEventListener('focusout', handleDesignFocusOut);
+    els.designPanel.addEventListener('pointerdown', handleLineDragPointerDown);
     document.addEventListener('pointermove', handleLineDragPointerMove);
     document.addEventListener('pointerup', handleLineDragPointerUp);
     document.addEventListener('pointercancel', handleLineDragPointerUp);
@@ -229,6 +233,12 @@
     const deleteLineId = button.dataset.dbLineDelete;
     if (deleteLineId) {
       openLineDeleteConfirmation(deleteLineId);
+      return;
+    }
+
+    const deleteDesignKey = button.dataset.dbDesignDelete;
+    if (deleteDesignKey) {
+      openDesignDeleteConfirmation(deleteDesignKey);
       return;
     }
 
@@ -1223,7 +1233,7 @@
 
     els.itemsPanel.innerHTML = `
       <div class="db-items-layout">
-        <div class="db-items-stock-frame">
+        <div class="db-items-stock-frame" data-db-item-scroll>
           <table class="db-legacy-table db-items-table">
             <thead>
               <tr>
@@ -1250,29 +1260,44 @@
           </div>
           <div class="db-edit-spine">E<br>D<br>I<br>T</div>
           <div class="db-nonstock-box">
-            <table class="db-legacy-table db-nonstock-table">
-              <thead>
-                <tr>
-                  <th class="db-row-selector"></th>
-                  <th class="db-row-selector"></th>
-                  <th>Non-stock item:</th>
-                  <th>Cost:</th>
-                  <th>Price:</th>
-                  <th>Qty:</th>
-                  <th>VAT:</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${renderCustomSectionRows(nonStockItems, 'nonstock', 7, renderNonStockRow)}
-              </tbody>
-            </table>
+            <div class="db-custom-table-scroll" data-db-item-scroll>
+              <table class="db-legacy-table db-nonstock-table">
+                <thead>
+                  <tr>
+                    <th class="db-row-selector"></th>
+                    <th class="db-row-selector"></th>
+                    <th>Non-stock item:</th>
+                    <th>Cost:</th>
+                    <th>Price:</th>
+                    <th>Qty:</th>
+                    <th>VAT:</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${renderCustomSectionRows(nonStockItems, 'nonstock', 7, renderNonStockRow)}
+                </tbody>
+              </table>
+            </div>
             <div class="db-supplier-row"><span>Supplier:</span><input readonly value="${escapeAttr(suppliers)}"></div>
           </div>
         </div>
         <div class="db-product-results" role="listbox"></div>
       </div>
     `;
-    window.requestAnimationFrame(() => paintProductResults());
+    window.requestAnimationFrame(() => {
+      scrollItemSectionsToAddLine();
+      paintProductResults();
+    });
+  }
+
+  function scrollItemSectionsToAddLine() {
+    if (state.activeOrderTab !== 'items') return;
+
+    els.itemsPanel.querySelectorAll('[data-db-item-scroll]').forEach((section) => {
+      const target = section.querySelector('.db-add-line-button-row, .db-add-line-edit-row, .db-custom-line-edit-row');
+      if (!target) return;
+      section.scrollTop = section.scrollHeight;
+    });
   }
 
   function renderDesignPanel() {
@@ -1287,6 +1312,7 @@
           <table class="db-legacy-table db-design-table">
             <thead>
               <tr>
+                <th class="db-row-selector"></th>
                 <th class="db-row-selector"></th>
                 <th>Position:</th>
                 <th>Colour:</th>
@@ -1401,7 +1427,9 @@
 
     const item = state.selectedLineItems.find((line) => Number(line.source_order_item_id) === id);
     state.lineDeleteTarget = { lineItemId: id, label: lineDeleteLabel(item) };
+    state.designDeleteTarget = null;
     state.lineDeleteSaving = false;
+    state.designDeleteSaving = false;
 
     const modal = ensureLineDeleteModal();
     const message = modal.querySelector('.db-line-delete-message');
@@ -1465,18 +1493,23 @@
     }
 
     if (button.dataset.dbLineDeleteConfirm) {
-      confirmDeleteLineItem();
+      if (state.designDeleteTarget) {
+        confirmDeleteDesignPosition();
+      } else {
+        confirmDeleteLineItem();
+      }
     }
   }
 
   function closeLineDeleteConfirmation() {
-    if (state.lineDeleteSaving) return;
+    if (state.lineDeleteSaving || state.designDeleteSaving) return;
     const modal = document.getElementById('db-line-delete-modal');
     if (!modal) return;
     modal.hidden = true;
     modal.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('modal-open', 'db-line-delete-open');
     state.lineDeleteTarget = null;
+    state.designDeleteTarget = null;
   }
 
   async function confirmDeleteLineItem() {
@@ -1526,6 +1559,89 @@
     if (!item) return '';
     const description = item.line_description || item.style_name || item.style_code || '';
     return String(description || '').trim();
+  }
+
+  function openDesignDeleteConfirmation(designKey) {
+    const row = findDesignRowByKey(designKey);
+    if (!row || !state.selectedJob?.source_order_id) return;
+
+    state.designDeleteTarget = { designKey, label: designDeleteLabel(row) };
+    state.lineDeleteTarget = null;
+    state.designDeleteSaving = false;
+    state.lineDeleteSaving = false;
+
+    const modal = ensureLineDeleteModal();
+    const message = modal.querySelector('.db-line-delete-message');
+    const error = modal.querySelector('.db-line-delete-error');
+    if (message) {
+      message.textContent = state.designDeleteTarget.label
+        ? `Delete ${state.designDeleteTarget.label}?`
+        : 'Delete this design row?';
+    }
+    if (error) error.textContent = '';
+    setLineDeleteModalSaving(false);
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open', 'db-line-delete-open');
+
+    window.requestAnimationFrame(() => {
+      modal.querySelector('[data-db-line-delete-cancel]')?.focus();
+    });
+  }
+
+  async function confirmDeleteDesignPosition() {
+    const target = state.designDeleteTarget;
+    if (!target || state.designDeleteSaving || !state.selectedJob?.source_order_id) return;
+
+    const row = findDesignRowByKey(target.designKey);
+    if (!row) {
+      closeLineDeleteConfirmation();
+      return;
+    }
+
+    state.designDeleteSaving = true;
+    setLineDeleteModalSaving(true);
+
+    const tbody = row.parentElement;
+    const nextSibling = row.nextSibling;
+    row.remove();
+    ensureDesignTableHasEntryRow();
+    state.designDirty = true;
+
+    const saved = await saveDesignPositions();
+    state.designDeleteSaving = false;
+
+    if (saved) {
+      closeLineDeleteConfirmation();
+      renderDesignPanel();
+      return;
+    }
+
+    if (tbody) {
+      Array.from(tbody.querySelectorAll('.db-design-row')).forEach((candidate) => {
+        const sourceId = Number.parseInt(candidate.dataset.positionId, 10);
+        if (!Number.isFinite(sourceId) && !designRowHasValue(candidate)) candidate.remove();
+      });
+      if (nextSibling && nextSibling.parentNode === tbody) {
+        tbody.insertBefore(row, nextSibling);
+      } else {
+        tbody.appendChild(row);
+      }
+      state.designDirty = designSignature(collectDesignPositions()) !== state.designLastSavedSignature;
+    }
+    setLineDeleteModalSaving(false, 'Failed to delete design row');
+  }
+
+  function findDesignRowByKey(designKey) {
+    return Array.from(els.designPanel?.querySelectorAll('.db-design-row') || [])
+      .find((row) => row.dataset.designKey === String(designKey));
+  }
+
+  function designDeleteLabel(row) {
+    const label = designFieldValue(row, 'position_name')
+      || designFieldValue(row, 'colour_notes')
+      || designFieldValue(row, 'design_ref');
+    return String(label || '').trim();
   }
 
   function printOrderAcknowledgement() {
@@ -1609,11 +1725,7 @@
   }
 
   function renderOrderAckItemsTable(items, totals) {
-    const rows = items.length ? items.map(renderOrderAckItemRow).join('') : `
-      <tr>
-        <td colspan="6" class="db-order-ack-empty">No order line items</td>
-      </tr>
-    `;
+    const rows = renderOrderAckItemRows(items);
 
     return `
       <table class="db-order-ack-items">
@@ -1638,6 +1750,31 @@
         </tfoot>
       </table>
     `;
+  }
+
+  function renderOrderAckItemRows(items) {
+    if (!items.length) {
+      return `
+        <tr>
+          <td colspan="6" class="db-order-ack-empty">No order line items</td>
+        </tr>
+      `;
+    }
+
+    const groups = groupedOrderAckLineItems(items);
+    const rows = [];
+    let hasPreviousRows = false;
+
+    for (const group of groups) {
+      if (!group.items.length) continue;
+      if (group.type === 'nondelivery' && hasPreviousRows) {
+        rows.push('<tr class="db-order-ack-item-gap"><td colspan="6"></td></tr>');
+      }
+      rows.push(...group.items.map(renderOrderAckItemRow));
+      hasPreviousRows = true;
+    }
+
+    return rows.join('');
   }
 
   function renderOrderAckItemRow(item) {
@@ -1697,8 +1834,35 @@
 
   function orderAckLineItems() {
     const items = state.selectedLineItems || [];
-    const customerFacing = items.filter((item) => !truthy(item.is_internal));
-    return customerFacing.length ? customerFacing : items;
+    return groupedOrderAckLineItems(items).flatMap((group) => group.items);
+  }
+
+  function groupedOrderAckLineItems(items) {
+    const groups = {
+      stock: [],
+      nonstock: [],
+      nondelivery: [],
+      internal: [],
+    };
+
+    for (const item of items || []) {
+      if (truthy(item.is_internal)) {
+        groups.internal.push(item);
+      } else if (truthy(item.is_non_deliverable)) {
+        groups.nondelivery.push(item);
+      } else if (isStockItem(item)) {
+        groups.stock.push(item);
+      } else {
+        groups.nonstock.push(item);
+      }
+    }
+
+    return [
+      { type: 'stock', items: groups.stock },
+      { type: 'nonstock', items: groups.nonstock },
+      { type: 'nondelivery', items: groups.nondelivery },
+      { type: 'internal', items: groups.internal },
+    ];
   }
 
   function orderAckItemsLabel(items) {
@@ -2406,6 +2570,12 @@
   }
 
   function handleLineDragPointerDown(event) {
+    const designHandle = event.target.closest('[data-db-design-drag]');
+    if (designHandle) {
+      startDesignDrag(event, designHandle);
+      return;
+    }
+
     const handle = event.target.closest('[data-db-line-drag]');
     if (!handle || event.button !== 0 || state.lineDraft || state.customLineDraft) return;
 
@@ -2421,8 +2591,37 @@
       pointerId: event.pointerId,
       row,
       tbody,
+      mode: 'line',
+      rowSelector: '.db-line-row',
       offsetY: event.clientY - rect.top,
       startOrder: currentDomLineIds(tbody),
+      ghost: createLineDragGhost(row, rect),
+    };
+
+    row.classList.add('db-line-row-dragging');
+    document.body.classList.add('db-line-drag-active');
+    handle.setPointerCapture?.(event.pointerId);
+    updateLineDragGhost(event.clientY);
+  }
+
+  function startDesignDrag(event, handle) {
+    if (event.button !== 0) return;
+
+    const row = handle.closest('.db-design-row');
+    const tbody = row?.parentElement;
+    if (!row || !tbody || !designRowHasValue(row)) return;
+
+    event.preventDefault();
+
+    const rect = row.getBoundingClientRect();
+    lineDrag = {
+      pointerId: event.pointerId,
+      row,
+      tbody,
+      mode: 'design',
+      rowSelector: '.db-design-row',
+      offsetY: event.clientY - rect.top,
+      startOrder: currentDomDesignKeys(tbody),
       ghost: createLineDragGhost(row, rect),
     };
 
@@ -2446,6 +2645,13 @@
     const drag = lineDrag;
     const before = drag.startOrder.join('|');
     cleanupLineDrag();
+
+    if (drag.mode === 'design') {
+      const afterKeys = currentDomDesignKeys(drag.tbody);
+      const after = afterKeys.join('|');
+      if (after && after !== before) markDesignOrderDirty();
+      return;
+    }
 
     const afterIds = currentDomLineIds(drag.tbody);
     const after = afterIds.join('|');
@@ -2482,8 +2688,9 @@
   function moveDraggedLineRow(clientY) {
     if (!lineDrag) return;
 
+    const rowSelector = lineDrag.rowSelector || '.db-line-row';
     const rows = Array.from(lineDrag.tbody.children)
-      .filter((row) => row.classList.contains('db-line-row'))
+      .filter((row) => row.matches(rowSelector))
       .filter((row) => row !== lineDrag.row);
     let beforeRow = null;
 
@@ -2501,7 +2708,7 @@
     }
 
     const firstNonLineRow = Array.from(lineDrag.tbody.children)
-      .find((row) => !row.classList.contains('db-line-row'));
+      .find((row) => !row.matches(rowSelector));
     lineDrag.tbody.insertBefore(lineDrag.row, firstNonLineRow || null);
   }
 
@@ -2519,6 +2726,15 @@
     return rows
       .map((row) => Number.parseInt(row.dataset.lineId, 10))
       .filter((id) => Number.isFinite(id));
+  }
+
+  function currentDomDesignKeys(tbody) {
+    const rows = Array.from(tbody?.children || [])
+      .filter((row) => row.classList.contains('db-design-row'))
+      .filter((row) => designRowHasValue(row));
+    return rows
+      .map((row) => row.dataset.designKey || '')
+      .filter(Boolean);
   }
 
   function applyLineOrder(lineIds) {
@@ -2560,6 +2776,8 @@
   function handleJobTitleInput() {
     if (!state.selectedJob?.source_order_id) return;
     state.selectedJob.job_title = els.orderTitle.value;
+    updateOutstandingJob(state.selectedJob);
+    renderOutstandingOrders();
     state.jobDirty = true;
     scheduleJobAutosave();
   }
@@ -2620,6 +2838,7 @@
       els.updatedBy.textContent = orderByLabel(state.selectedJob);
       updateOutstandingJob(state.selectedJob);
       renderOutstandingOrders();
+      hydrateOrderSelectors();
     } catch (err) {
       state.jobDirty = true;
       console.error('Job title autosave failed', err);
@@ -2777,9 +2996,8 @@
 
     if (isEditing) {
       return [
-        renderCustomLineDraftRow(lineType, colspan),
         itemRows,
-        renderItemEmptyRow(colspan),
+        renderCustomLineDraftRow(lineType, colspan),
       ].join('');
     }
 
@@ -2935,9 +3153,12 @@
 
   function renderPositionRow(position, index) {
     const sourceId = position.source_order_position_id || '';
+    const designKey = sourceId ? `id:${sourceId}` : `new:${index}`;
+    const hasValue = designPositionHasValue(position);
     return `
-      <tr class="db-design-row" data-position-id="${escapeAttr(sourceId)}">
-        <td class="db-row-selector">${index === 0 ? '&#9654;' : ''}</td>
+      <tr class="db-design-row" data-position-id="${escapeAttr(sourceId)}" data-design-key="${escapeAttr(designKey)}">
+        <td class="db-row-selector db-design-delete-cell">${hasValue ? renderDesignDeleteButton(designKey) : ''}</td>
+        <td class="db-row-selector db-design-drag-cell">${hasValue ? renderDesignDragButton() : ''}</td>
         <td><textarea class="db-design-edit" data-design-field="position_name">${escapeHtml(position.position_name || '')}</textarea></td>
         <td><textarea class="db-design-edit" data-design-field="colour_notes">${escapeHtml(position.colour_notes || '')}</textarea></td>
         <td><textarea class="db-design-edit" data-design-field="design_ref">${escapeHtml(position.design_ref || '')}</textarea></td>
@@ -2945,11 +3166,41 @@
     `;
   }
 
+  function renderDesignDeleteButton(designKey) {
+    return `<button class="db-line-delete-button" type="button" data-db-design-delete="${escapeAttr(designKey)}" aria-label="Delete design row" title="Delete design row">X</button>`;
+  }
+
+  function renderDesignDragButton() {
+    return '<button class="db-line-drag-handle" type="button" data-db-design-drag="true" aria-label="Reorder design row">&#9654;</button>';
+  }
+
+  function designPositionHasValue(position) {
+    return Boolean(
+      String(position?.position_name || '').trim()
+      || String(position?.colour_notes || '').trim()
+      || String(position?.design_ref || '').trim()
+    );
+  }
+
   function handleDesignInput(event) {
-    if (!event.target.closest('.db-design-edit')) return;
+    const row = event.target.closest('.db-design-row');
+    if (!row || !event.target.closest('.db-design-edit')) return;
+    syncDesignRowControls(row);
     ensureTrailingBlankDesignRow();
     state.designDirty = true;
     scheduleDesignAutosave();
+  }
+
+  function handleDesignFocusOut(event) {
+    const row = event.target.closest('.db-design-row');
+    if (!row || !event.target.closest('.db-design-edit')) return;
+    const nextTarget = event.relatedTarget;
+    if (nextTarget && row.contains(nextTarget)) return;
+
+    window.setTimeout(() => {
+      if (!row.isConnected || row.matches(':focus-within')) return;
+      removeBlankUnsavedDesignRow(row);
+    }, 0);
   }
 
   function ensureTrailingBlankDesignRow() {
@@ -2960,6 +3211,14 @@
     tbody.insertAdjacentHTML('beforeend', renderPositionRow({}, rows.length));
   }
 
+  function ensureDesignTableHasEntryRow() {
+    const tbody = els.designPanel.querySelector('.db-design-table tbody');
+    if (!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('.db-design-row'));
+    if (rows.length) return;
+    tbody.insertAdjacentHTML('beforeend', renderPositionRow({}, 0));
+  }
+
   function designRowHasValue(row) {
     return ['position_name', 'colour_notes', 'design_ref'].some((field) => {
       const input = row.querySelector(`[data-design-field="${field}"]`);
@@ -2967,12 +3226,31 @@
     });
   }
 
+  function syncDesignRowControls(row) {
+    const hasValue = designRowHasValue(row);
+    const deleteCell = row.querySelector('.db-design-delete-cell');
+    const dragCell = row.querySelector('.db-design-drag-cell');
+    if (deleteCell) deleteCell.innerHTML = hasValue ? renderDesignDeleteButton(row.dataset.designKey || '') : '';
+    if (dragCell) dragCell.innerHTML = hasValue ? renderDesignDragButton() : '';
+  }
+
+  function removeBlankUnsavedDesignRow(row) {
+    const sourceId = Number.parseInt(row.dataset.positionId, 10);
+    if (Number.isFinite(sourceId) || designRowHasValue(row)) return;
+
+    const tbody = row.parentElement;
+    const rows = Array.from(tbody?.querySelectorAll('.db-design-row') || []);
+    if (rows.length <= 1) return;
+    row.remove();
+  }
+
   function collectDesignPositions() {
     return Array.from(els.designPanel.querySelectorAll('.db-design-row'))
-      .map((row) => {
+      .map((row, index) => {
         const sourceId = Number.parseInt(row.dataset.positionId, 10);
         return {
           source_order_position_id: Number.isFinite(sourceId) ? sourceId : null,
+          position_sort_order: index + 1,
           position_name: designFieldValue(row, 'position_name'),
           colour_notes: designFieldValue(row, 'colour_notes'),
           design_ref: designFieldValue(row, 'design_ref'),
@@ -2988,10 +3266,16 @@
   function designSignature(positions) {
     return JSON.stringify(positions.map((position) => ({
       source_order_position_id: position.source_order_position_id || null,
+      position_sort_order: position.position_sort_order || null,
       position_name: position.position_name || '',
       colour_notes: position.colour_notes || '',
       design_ref: position.design_ref || '',
     })));
+  }
+
+  function markDesignOrderDirty() {
+    state.designDirty = true;
+    scheduleDesignAutosave();
   }
 
   function scheduleDesignAutosave() {
@@ -3012,12 +3296,12 @@
     const signature = designSignature(positions);
     if (signature === state.designLastSavedSignature) {
       state.designDirty = false;
-      return;
+      return true;
     }
 
     if (state.designSaving) {
       state.designSaveQueued = true;
-      return;
+      return false;
     }
 
     state.designSaving = true;
@@ -3045,9 +3329,11 @@
       state.designDirty = false;
       state.designLastSavedSignature = designSignature(state.selectedPositions);
       if (hadNewRows) renderDesignPanel();
+      return true;
     } catch (err) {
       state.designDirty = true;
       console.error('Design autosave failed', err);
+      return false;
     } finally {
       state.designSaving = false;
       if (state.designSaveQueued) {
@@ -3069,34 +3355,36 @@
     const lineType = normalizeCustomLineType(type);
     return `
       <div class="db-small-item-box">
-        <table class="db-legacy-table">
-          <thead>
-            <tr>
-              <th class="db-row-selector"></th>
-              <th class="db-row-selector"></th>
-              <th>${escapeHtml(title)}</th>
-              <th>Cost:</th>
-              <th>Price:</th>
-              <th>Qty:</th>
-              <th>VAT:</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${renderCustomSectionRows(items, lineType, 7, (item) => `
-              <tr class="db-line-row db-custom-line-row" data-line-id="${escapeAttr(item.source_order_item_id || '')}">
-                ${renderLineDeleteCell(item.source_order_item_id || '')}
-                <td class="db-row-selector">
-                  <button class="db-line-drag-handle" type="button" data-db-line-drag="true" aria-label="Reorder line item">&#9654;</button>
-                </td>
-                <td>${renderLineItemInput(item, 'line_description')}</td>
-                <td>${renderLineItemInput(item, 'unit_cost', 'db-line-money')}</td>
-                <td>${renderLineItemInput(item, 'unit_price', 'db-line-money')}</td>
-                <td>${renderLineItemInput(item, 'quantity', 'db-line-qty')}</td>
-                <td>${renderLineItemInput(item, 'vatPercent', 'db-line-vat')}</td>
+        <div class="db-custom-table-scroll" data-db-item-scroll>
+          <table class="db-legacy-table">
+            <thead>
+              <tr>
+                <th class="db-row-selector"></th>
+                <th class="db-row-selector"></th>
+                <th>${escapeHtml(title)}</th>
+                <th>Cost:</th>
+                <th>Price:</th>
+                <th>Qty:</th>
+                <th>VAT:</th>
               </tr>
-            `)}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              ${renderCustomSectionRows(items, lineType, 7, (item) => `
+                <tr class="db-line-row db-custom-line-row" data-line-id="${escapeAttr(item.source_order_item_id || '')}">
+                  ${renderLineDeleteCell(item.source_order_item_id || '')}
+                  <td class="db-row-selector">
+                    <button class="db-line-drag-handle" type="button" data-db-line-drag="true" aria-label="Reorder line item">&#9654;</button>
+                  </td>
+                  <td>${renderLineItemInput(item, 'line_description')}</td>
+                  <td>${renderLineItemInput(item, 'unit_cost', 'db-line-money')}</td>
+                  <td>${renderLineItemInput(item, 'unit_price', 'db-line-money')}</td>
+                  <td>${renderLineItemInput(item, 'quantity', 'db-line-qty')}</td>
+                  <td>${renderLineItemInput(item, 'vatPercent', 'db-line-vat')}</td>
+                </tr>
+              `)}
+            </tbody>
+          </table>
+        </div>
       </div>
     `;
   }

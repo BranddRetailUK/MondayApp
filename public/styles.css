@@ -1428,6 +1428,12 @@ body.modal-open{overflow:hidden}
   border-left:0;
   border-bottom:0;
 }
+.db-order-ack-item-gap td{
+  height:3mm;
+  padding:0;
+  border:0;
+  background:#fff;
+}
 .db-order-ack-empty{
   height:12mm;
   color:#555;
@@ -1783,12 +1789,13 @@ body.modal-open{overflow:hidden}
 }
 .db-items-stock-frame{
   height:202px;
-  overflow:auto;
+  overflow-y:auto;
+  overflow-x:hidden;
   border:1px solid #000;
   background:#858585;
 }
 .db-items-table th:nth-child(3){width:67px}
-.db-items-table th:nth-child(4){width:447px}
+.db-items-table th:nth-child(4){width:421px}
 .db-items-table th:nth-child(5){width:108px}
 .db-items-table th:nth-child(6){width:80px}
 .db-items-table th:nth-child(7),
@@ -1807,16 +1814,15 @@ body.modal-open{overflow:hidden}
   background:#fff;
 }
 .db-add-line-button-row td{
+  position:sticky;
+  bottom:0;
+  z-index:5;
   height:23px;
   padding:2px 0!important;
   text-align:center;
   vertical-align:middle;
   background:#858585!important;
   border-color:#858585!important;
-}
-.db-small-item-box .db-add-line-button-row,
-.db-nonstock-box .db-add-line-button-row{
-  height:100%;
 }
 .db-small-item-box .db-add-line-button,
 .db-nonstock-box .db-add-line-button{
@@ -1835,10 +1841,16 @@ body.modal-open{overflow:hidden}
   cursor:pointer;
 }
 .db-add-line-edit-row td{
+  position:sticky;
+  bottom:0;
+  z-index:5;
   overflow:visible;
   background:#ffffef;
 }
 .db-custom-line-edit-row td{
+  position:sticky;
+  bottom:0;
+  z-index:5;
   overflow:visible;
   background:#ffffef;
   padding:0;
@@ -2107,10 +2119,19 @@ input.db-custom-line-input{
 .db-small-item-box{
   border:1px solid #000;
   background:#858585;
+  display:flex;
+  flex-direction:column;
   overflow:hidden;
 }
-.db-small-item-box .db-legacy-table{
-  height:100%;
+.db-custom-table-scroll{
+  flex:1 1 auto;
+  min-height:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  background:#858585;
+}
+.db-custom-table-scroll .db-legacy-table{
+  min-height:100%;
 }
 .db-small-item-box th:nth-child(1),
 .db-small-item-box th:nth-child(2){width:19px}
@@ -2131,10 +2152,10 @@ input.db-custom-line-input{
   background:#858585;
   display:flex;
   flex-direction:column;
+  overflow:hidden;
 }
-.db-nonstock-box .db-legacy-table{
+.db-nonstock-box .db-custom-table-scroll{
   flex:1 1 auto;
-  height:100%;
 }
 .db-nonstock-table th:nth-child(1),
 .db-nonstock-table th:nth-child(2){width:19px}
@@ -2177,14 +2198,17 @@ input.db-custom-line-input{
   background:#858585;
   overflow:hidden;
 }
-.db-design-table th:nth-child(2){width:160px}
-.db-design-table th:nth-child(3){width:auto}
-.db-design-table th:nth-child(4){width:150px}
+.db-design-table th:nth-child(3){width:160px}
+.db-design-table th:nth-child(4){width:auto}
+.db-design-table th:nth-child(5){width:150px}
 .db-design-table td{
   height:50px;
   vertical-align:top;
   padding:0;
   background:#fff!important;
+}
+.db-design-table .db-row-selector{
+  vertical-align:middle;
 }
 .db-design-edit{
   width:100%;
