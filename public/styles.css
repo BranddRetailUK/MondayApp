@@ -1463,18 +1463,29 @@ body.modal-open{overflow:hidden}
   display:flex;
   justify-content:center;
 }
+.db-order-ack-pages{
+  flex:0 0 auto;
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
 .db-order-ack-page{
   position:relative;
   width:210mm;
-  min-height:297mm;
+  height:297mm;
   flex:0 0 auto;
   box-sizing:border-box;
-  padding:12mm 24mm 52mm 21mm;
+  padding:12mm 24mm 35mm 21mm;
+  overflow:hidden;
   background:#fff;
   color:#000;
   box-shadow:0 12px 36px rgba(0,0,0,0.45);
   font:12px Arial, Helvetica, sans-serif;
   line-height:1.18;
+}
+.db-order-ack-page-content{
+  height:101mm;
+  overflow:hidden;
 }
 .db-order-ack-header{
   min-height:42mm;
@@ -1668,12 +1679,12 @@ body.modal-open{overflow:hidden}
 }
 .db-order-ack-footer{
   position:absolute;
-  left:0;
-  right:0;
+  left:50%;
   bottom:0;
-  width:210mm;
-  max-width:100%;
+  width:146mm;
+  max-width:none;
   height:auto;
+  transform:translateX(-50%);
   display:block;
   pointer-events:none;
 }
@@ -2706,10 +2717,10 @@ input.db-custom-line-input{
 
 @page{
   size:A4;
-  margin:10mm 0 40mm;
+  margin:0;
 }
 @page :first{
-  margin:0 0 40mm;
+  margin:0;
 }
 @media print{
   body.db-order-ack-printing{
@@ -2745,21 +2756,23 @@ input.db-custom-line-input{
     padding:0;
     background:#fff;
   }
+  body.db-order-ack-printing .db-order-ack-pages{
+    display:block;
+    gap:0;
+  }
   body.db-order-ack-printing .db-order-ack-page{
     width:210mm;
-    min-height:auto;
+    height:297mm;
     margin:0;
-    padding:12mm 24mm 0 21mm;
+    padding:12mm 24mm 35mm 21mm;
+    overflow:hidden;
     box-shadow:none;
+    break-after:page;
+    page-break-after:always;
   }
-  body.db-order-ack-printing .db-order-ack-footer{
-    position:fixed;
-    left:0;
-    right:0;
-    bottom:0;
-    width:210mm;
-    max-width:none;
-    z-index:10;
+  body.db-order-ack-printing .db-order-ack-page:last-child{
+    break-after:auto;
+    page-break-after:auto;
   }
   body.db-order-ack-printing .db-order-ack-items,
   body.db-order-ack-printing .db-order-ack-positions{

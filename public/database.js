@@ -9,6 +9,22 @@
   const LINE_ORDER_AUTOSAVE_MS = 3500;
   const ORDER_ACK_LOGO_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781699668/ultimate_logo_imyxvr.png';
   const ORDER_ACK_FOOTER_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781779546/LETTERHEAD_INFO_pxmlak.png';
+  const ORDER_ACK_PAGE_CONTENT_MAX_MM = 101;
+  const ORDER_ACK_TABLE_TOP_MM = 6;
+  const ORDER_ACK_TABLE_HEADER_MM = 5.5;
+  const ORDER_ACK_EMPTY_ROW_MM = 12;
+  const ORDER_ACK_GAP_ROW_MM = 3;
+  const ORDER_ACK_ITEM_ROW_BASE_MM = 6.8;
+  const ORDER_ACK_ITEM_ROW_EXTRA_LINE_MM = 3.4;
+  const ORDER_ACK_ITEM_CHARS_PER_LINE = 48;
+  const ORDER_ACK_SUMMARY_MM = 22;
+  const ORDER_ACK_POSITIONS_TOP_MM = 6;
+  const ORDER_ACK_POSITIONS_HEADER_MM = 7;
+  const ORDER_ACK_POSITION_ROW_MM = 7;
+  const ORDER_ACK_COMMENTS_TOP_MM = 6;
+  const ORDER_ACK_COMMENTS_BASE_MM = 11;
+  const ORDER_ACK_COMMENTS_LINE_MM = 4.2;
+  const ORDER_ACK_COMMENTS_CHARS_PER_LINE = 95;
 
   const state = {
     loadedHome: false,
@@ -2043,8 +2059,8 @@
     if (!state.selectedJob?.source_order_id && !state.selectedJob?.order_no) return;
 
     const modal = ensureOrderAckModal();
-    const page = modal.querySelector('.db-order-ack-page');
-    page.innerHTML = renderOrderAcknowledgementPage();
+    const pages = modal.querySelector('.db-order-ack-pages');
+    pages.innerHTML = renderOrderAcknowledgementPage();
     modal.hidden = false;
     modal.setAttribute('aria-hidden', 'false');
     document.body.classList.add('modal-open', 'db-order-ack-open');
@@ -2075,7 +2091,7 @@
           </div>
         </div>
         <div class="db-order-ack-scroll">
-          <article class="db-order-ack-page" role="document"></article>
+          <article class="db-order-ack-pages" role="document"></article>
         </div>
       </div>
     `;
@@ -2464,17 +2480,42 @@
     const salutation = contactFirstName(job.contact_name)
       || (/^[a-z]+$/i.test(String(yourRef).trim()) ? titleCaseName(yourRef) : '')
       || 'Customer';
+    const context = {
+      job,
+      items,
+      totals,
+      invoiceLines,
+      deliveryDisplay,
+      yourRef,
+      salutation,
+    };
+    const pages = buildOrderAckPages({ items, totals, positions, comments: job.comments });
 
+    return pages.map((pageContent, index) => renderOrderAckPage(context, pageContent, index)).join('');
+  }
+
+  function renderOrderAckPage(context, pageContent, pageIndex) {
+    return `
+      <section class="db-order-ack-page" aria-label="Order acknowledgement page ${pageIndex + 1}">
+        ${renderOrderAckPageHeader(context)}
+        <section class="db-order-ack-page-content">
+          ${renderOrderAckPageContent(pageContent, context)}
+        </section>
+        <img class="db-order-ack-footer" src="${escapeAttr(ORDER_ACK_FOOTER_URL)}" alt="Ultimate letterhead footer" crossorigin="anonymous">
+      </section>
+    `;
+  }
+
+  function renderOrderAckPageHeader(context) {
+    const { job, totals, invoiceLines, deliveryDisplay, yourRef, salutation } = context;
     return `
       <header class="db-order-ack-header">
         <h1>ORDER<br>ACKNOWLEDGEMENT</h1>
         <img class="db-order-ack-logo" src="${escapeAttr(ORDER_ACK_LOGO_URL)}" alt="Ultimate logo" crossorigin="anonymous">
       </header>
-
       <section class="db-order-ack-address">
         ${invoiceLines.map((line) => `<div>${escapeHtml(line)}</div>`).join('')}
       </section>
-
       <section class="db-order-ack-meta" aria-label="Order acknowledgement details">
         ${orderAckMetaRow('ULT ref:', job.order_no)}
         ${orderAckMetaRow('Your ref:', yourRef)}
@@ -2493,11 +2534,17 @@
         <span>Job title:</span>
         <strong>${escapeHtml(job.job_title || '')}</strong>
       </section>
+    `;
+  }
 
-      ${renderOrderAckItemsTable(items, totals)}
-      ${renderOrderAckPositionsTable(positions)}
-      ${job.comments ? renderOrderAckComments(job.comments) : ''}
-      <img class="db-order-ack-footer" src="${escapeAttr(ORDER_ACK_FOOTER_URL)}" alt="Ultimate letterhead footer" crossorigin="anonymous">
+  function renderOrderAckPageContent(pageContent, context) {
+    return `
+      ${pageContent.itemEntries.length || pageContent.showEmptyItems
+        ? renderOrderAckItemsTable(pageContent.itemEntries, context.items, { empty: pageContent.showEmptyItems })
+        : ''}
+      ${pageContent.showSummary ? renderOrderAckSummaryRows(context.totals) : ''}
+      ${pageContent.positions.length ? renderOrderAckPositionsTable(pageContent.positions, pageContent.hasDesign) : ''}
+      ${pageContent.comments ? renderOrderAckComments(pageContent.comments) : ''}
     `;
   }
 
@@ -2511,14 +2558,12 @@
     `;
   }
 
-  function renderOrderAckItemsTable(items, totals) {
-    const itemBodies = renderOrderAckItemBodies(items);
-
+  function renderOrderAckItemsTable(entries, allItems, options = {}) {
     return `
       <table class="db-order-ack-items">
         <thead>
           <tr>
-            <th>${escapeHtml(orderAckItemsLabel(items))}</th>
+            <th>${escapeHtml(orderAckItemsLabel(allItems))}</th>
             <th>Qty</th>
             <th>Price</th>
             <th>Total</th>
@@ -2526,43 +2571,134 @@
             <th>Rate</th>
           </tr>
         </thead>
-        ${itemBodies}
+        <tbody class="db-order-ack-item-group">
+          ${options.empty ? '<tr><td colspan="6" class="db-order-ack-empty">No order line items</td></tr>' : ''}
+          ${entries.map(renderOrderAckItemEntry).join('')}
+        </tbody>
       </table>
-      ${renderOrderAckSummaryRows(totals)}
     `;
   }
 
-  function renderOrderAckItemBodies(items) {
-    if (!items.length) {
-      return `
-        <tbody class="db-order-ack-item-group">
-          <tr>
-            <td colspan="6" class="db-order-ack-empty">No order line items</td>
-          </tr>
-        </tbody>
-      `;
+  function renderOrderAckItemEntry(entry) {
+    if (entry.type === 'gap') return '<tr class="db-order-ack-item-gap"><td colspan="6"></td></tr>';
+    return renderOrderAckItemRow(entry.item);
+  }
+
+  function buildOrderAckPages({ items, totals, positions, comments }) {
+    const visiblePositions = (positions || []).filter((position) => (
+      position.position_name || position.colour_notes || position.design_ref
+    ));
+    const hasDesign = visiblePositions.some((position) => position.design_ref);
+    const pages = [];
+    let page = emptyOrderAckPageContent();
+    let usedMm = 0;
+
+    const pushPage = () => {
+      pages.push(page);
+      page = emptyOrderAckPageContent();
+      usedMm = 0;
+    };
+    const ensureSpace = (heightMm) => {
+      if (usedMm > 0 && usedMm + heightMm > ORDER_ACK_PAGE_CONTENT_MAX_MM) pushPage();
+    };
+
+    const itemEntries = orderAckItemEntries(items);
+    if (!itemEntries.length) {
+      const emptyTableHeight = ORDER_ACK_TABLE_TOP_MM + ORDER_ACK_TABLE_HEADER_MM + ORDER_ACK_EMPTY_ROW_MM;
+      ensureSpace(emptyTableHeight);
+      page.showEmptyItems = true;
+      usedMm += emptyTableHeight;
+    } else {
+      for (const entry of itemEntries) {
+        if (entry.type === 'gap' && !page.itemEntries.length) continue;
+        let tableOverhead = page.itemEntries.length ? 0 : ORDER_ACK_TABLE_TOP_MM + ORDER_ACK_TABLE_HEADER_MM;
+        ensureSpace(tableOverhead + entry.heightMm);
+        if (entry.type === 'gap' && !page.itemEntries.length) continue;
+        tableOverhead = page.itemEntries.length ? 0 : ORDER_ACK_TABLE_TOP_MM + ORDER_ACK_TABLE_HEADER_MM;
+        page.itemEntries.push(entry);
+        usedMm += (page.itemEntries.length === 1 ? tableOverhead : 0) + entry.heightMm;
+      }
     }
 
-    const groups = groupedOrderAckLineItems(items);
-    const bodies = [];
+    ensureSpace(ORDER_ACK_SUMMARY_MM);
+    page.showSummary = true;
+    usedMm += ORDER_ACK_SUMMARY_MM;
+
+    for (const position of visiblePositions) {
+      let tableOverhead = page.positions.length ? 0 : ORDER_ACK_POSITIONS_TOP_MM + ORDER_ACK_POSITIONS_HEADER_MM;
+      ensureSpace(tableOverhead + ORDER_ACK_POSITION_ROW_MM);
+      tableOverhead = page.positions.length ? 0 : ORDER_ACK_POSITIONS_TOP_MM + ORDER_ACK_POSITIONS_HEADER_MM;
+      page.positions.push(position);
+      page.hasDesign = hasDesign;
+      usedMm += (page.positions.length === 1 ? tableOverhead : 0) + ORDER_ACK_POSITION_ROW_MM;
+    }
+
+    if (comments) {
+      const commentsHeight = orderAckCommentsHeight(comments);
+      ensureSpace(commentsHeight);
+      page.comments = comments;
+      usedMm += commentsHeight;
+    }
+
+    if (pageHasOrderAckContent(page) || !pages.length) pushPage();
+    return pages;
+  }
+
+  function emptyOrderAckPageContent() {
+    return {
+      itemEntries: [],
+      showEmptyItems: false,
+      showSummary: false,
+      positions: [],
+      hasDesign: false,
+      comments: '',
+    };
+  }
+
+  function pageHasOrderAckContent(page) {
+    return Boolean(
+      page.itemEntries.length
+      || page.showEmptyItems
+      || page.showSummary
+      || page.positions.length
+      || page.comments
+    );
+  }
+
+  function orderAckItemEntries(items) {
+    const entries = [];
     let hasPreviousRows = false;
 
-    for (const group of groups) {
+    for (const group of groupedOrderAckLineItems(items)) {
       if (!group.items.length) continue;
-      const rows = [];
       if (group.type === 'nondelivery' && hasPreviousRows) {
-        rows.push('<tr class="db-order-ack-item-gap"><td colspan="6"></td></tr>');
+        entries.push({ type: 'gap', heightMm: ORDER_ACK_GAP_ROW_MM });
       }
-      rows.push(...group.items.map(renderOrderAckItemRow));
-      bodies.push(`
-        <tbody class="db-order-ack-item-group db-order-ack-item-group-${escapeAttr(group.type)}">
-          ${rows.join('')}
-        </tbody>
-      `);
+      for (const item of group.items) {
+        entries.push({
+          type: 'item',
+          item,
+          heightMm: orderAckItemRowHeight(item),
+        });
+      }
       hasPreviousRows = true;
     }
 
-    return bodies.join('');
+    return entries;
+  }
+
+  function orderAckItemRowHeight(item) {
+    const description = orderAckItemDescription(item);
+    const lineCount = Math.max(1, Math.ceil(description.length / ORDER_ACK_ITEM_CHARS_PER_LINE));
+    return ORDER_ACK_ITEM_ROW_BASE_MM + ((lineCount - 1) * ORDER_ACK_ITEM_ROW_EXTRA_LINE_MM);
+  }
+
+  function orderAckCommentsHeight(comments) {
+    const text = String(comments || '');
+    const explicitLines = text.split(/\r?\n/).reduce((count, line) => (
+      count + Math.max(1, Math.ceil(line.length / ORDER_ACK_COMMENTS_CHARS_PER_LINE))
+    ), 0);
+    return ORDER_ACK_COMMENTS_TOP_MM + ORDER_ACK_COMMENTS_BASE_MM + (explicitLines * ORDER_ACK_COMMENTS_LINE_MM);
   }
 
   function renderOrderAckItemRow(item) {
@@ -2601,13 +2737,13 @@
     `;
   }
 
-  function renderOrderAckPositionsTable(positions) {
+  function renderOrderAckPositionsTable(positions, forceHasDesign = false) {
     const visiblePositions = (positions || []).filter((position) => (
       position.position_name || position.colour_notes || position.design_ref
     ));
     if (!visiblePositions.length) return '';
 
-    const hasDesign = visiblePositions.some((position) => position.design_ref);
+    const hasDesign = forceHasDesign || visiblePositions.some((position) => position.design_ref);
     return `
       <table class="db-order-ack-positions ${hasDesign ? 'has-design' : ''}">
         <thead>
