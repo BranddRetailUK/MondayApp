@@ -681,8 +681,8 @@ function normalizeColumns(columns) {
 
 function buildDashboardGridSpec(mondayColumns, { subitem = false, widthOverrides = new Map(), nameWidth = null } = {}) {
   const columns = [
-    { kind: 'print', title: subitem ? '' : 'Print', width: 82 },
-    { kind: 'name', title: subitem ? 'Subitem' : 'Job', width: nameWidth || (subitem ? 520 : 560) },
+    { kind: 'print', title: subitem ? '' : 'LABEL', width: 82 },
+    { kind: 'name', title: subitem ? 'Subitem' : 'JOB', width: nameWidth || (subitem ? 520 : 560) },
     ...mondayColumns.map(column => ({
       kind: 'column',
       title: column.title,
@@ -847,11 +847,18 @@ function buildJobNameColumnWidth(groups) {
     for (const item of items) {
       const text = normalizeCellText(item?.name || '');
       if (!text) continue;
-      max = Math.max(max, measureBoardTextWidth(text));
+      const subitems = Array.isArray(item?.subitems) ? item.subitems : [];
+      const subitemBadgeWidth = subitems.length > 0 ? measureSubitemCountBadgeWidth(subitems.length) : 0;
+      max = Math.max(max, measureBoardTextWidth(text) + subitemBadgeWidth);
     }
   }
   if (!max) return 560;
-  return Math.max(560, Math.ceil(max + 112));
+  return Math.max(560, Math.ceil(max + 122));
+}
+
+function measureSubitemCountBadgeWidth(count) {
+  const textWidth = measureBoardTextWidth(String(count), "11px Manrope, 'Segoe UI', system-ui, sans-serif");
+  return Math.max(18, Math.ceil(textWidth + 10)) + 9;
 }
 
 function getMaxColumnTextWidth(groups, columnId) {
@@ -869,12 +876,12 @@ function getMaxColumnTextWidth(groups, columnId) {
 }
 
 let __boardTextMeasureCanvas = null;
-function measureBoardTextWidth(text) {
+function measureBoardTextWidth(text, font = "14px Manrope, 'Segoe UI', system-ui, sans-serif") {
   try {
     if (!__boardTextMeasureCanvas) __boardTextMeasureCanvas = document.createElement('canvas');
     const ctx = __boardTextMeasureCanvas.getContext('2d');
     if (ctx) {
-      ctx.font = "14px Manrope, 'Segoe UI', system-ui, sans-serif";
+      ctx.font = font;
       return ctx.measureText(String(text || '')).width;
     }
   } catch {}
