@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ultimate Hub · Login</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="auth-page.js" defer></script>
+</head>
+<body class="auth-page">
+  <main class="auth-shell">
+    <section class="auth-panel" aria-labelledby="auth-title">
+      <div class="auth-brand">
+        <div class="logo-mark">UH</div>
+        <div>
+          <h1 id="auth-title">Ultimate Hub</h1>
+          <p>Ultimate Promotions</p>
+        </div>
+      </div>
+
+      <div class="auth-tabs" role="tablist" aria-label="Authentication">
+        <button id="auth-login-tab" class="auth-tab active" type="button" data-auth-mode="login">Login</button>
+        <button id="auth-signup-tab" class="auth-tab" type="button" data-auth-mode="signup">Sign up</button>
+      </div>
+
+      <form id="auth-login-form" class="auth-form active" data-auth-form="login">
+        <label>Email
+          <input name="email" type="email" autocomplete="email" required>
+        </label>
+        <label>Password
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button class="btn primary auth-submit" type="submit">Login</button>
+      </form>
+
+      <form id="auth-signup-form" class="auth-form" data-auth-form="signup">
+        <div class="auth-name-grid">
+          <label>First name
+            <input name="first_name" autocomplete="given-name" required>
+          </label>
+          <label>Last name
+            <input name="last_name" autocomplete="family-name" required>
+          </label>
+        </div>
+        <label>Email
+          <input name="email" type="email" autocomplete="email" required>
+        </label>
+        <label>Password
+          <input name="password" type="password" autocomplete="new-password" minlength="10" required>
+        </label>
+        <label>Confirm password
+          <input name="confirm_password" type="password" autocomplete="new-password" minlength="10" required>
+        </label>
+        <button class="btn primary auth-submit" type="submit">Create account</button>
+      </form>
+
+      <div id="auth-status" class="auth-status" role="status" aria-live="polite"></div>
+    </section>
+  </main>
+</body>
+</html>

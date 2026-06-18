@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db/pool');
+const { fullName } = require('../services/hubAuth');
 
 router.get('/api/database/summary', async (_req, res) => {
   try {
@@ -88,6 +89,8 @@ router.get('/api/database/jobs', async (req, res) => {
               j.delivery_method,
               j.payment_terms,
               j.order_taken_by,
+              j.order_owner_user_id,
+              j.order_owner_name,
               j.delivery_address,
               j.invoice_address,
               j.is_manual_entry,
@@ -407,6 +410,8 @@ router.post('/api/database/jobs', async (req, res) => {
   const jobTitle = cleanNullable(payload.job_title);
   const orderDate = parseDatabaseDate(payload.order_date, 'Order date');
   const deliveryDate = parseDatabaseDate(payload.delivery_date, 'Delivery date');
+  const orderOwnerName = req.hubUser ? fullName(req.hubUser) : cleanNullable(payload.order_taken_by);
+  const orderTakenBy = orderOwnerName || cleanNullable(payload.order_taken_by);
 
   if (!customerName || !orderType || !jobTitle || !orderDate || !deliveryDate) {
     return res.status(400).json({
@@ -458,6 +463,8 @@ router.post('/api/database/jobs', async (req, res) => {
          delivery_method,
          payment_terms,
          order_taken_by,
+         order_owner_user_id,
+         order_owner_name,
          delivery_address,
          invoice_address,
          order_date,
@@ -471,6 +478,7 @@ router.post('/api/database/jobs', async (req, res) => {
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
          $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
+         $25, $26,
          FALSE, TRUE, NOW(), NOW()
        )
        RETURNING *`,
@@ -492,7 +500,9 @@ router.post('/api/database/jobs', async (req, res) => {
         cleanNullable(payload.client_order_no),
         cleanNullable(payload.delivery_method),
         cleanNullable(payload.payment_terms),
-        cleanNullable(payload.order_taken_by),
+        orderTakenBy,
+        req.hubUser?.id || null,
+        orderOwnerName,
         cleanNullable(payload.delivery_address),
         cleanNullable(payload.invoice_address),
         orderDate.iso,
@@ -510,6 +520,40 @@ router.post('/api/database/jobs', async (req, res) => {
     res.status(500).json({ error: 'Failed to create database job' });
   } finally {
     client.release();
+  }
+});
+
+router.put('/api/database/jobs/:id', async (req, res) => {
+  const id = Number.parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: 'Invalid job id' });
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(req.body || {}, 'job_title')) {
+    return res.status(400).json({ error: 'No supported job fields supplied' });
+  }
+
+  const jobTitle = cleanNullable(req.body.job_title);
+
+  try {
+    const result = await pool.query(
+      `UPDATE database_jobs
+       SET job_title = $2,
+           updated_at_source = NOW(),
+           imported_at = NOW()
+       WHERE source_order_id = $1 OR order_no = $1
+       RETURNING *`,
+      [id, jobTitle]
+    );
+
+    if (!result.rowCount) {
+      return res.status(404).json({ error: 'Database job not found' });
+    }
+
+    res.json({ job: result.rows[0] });
+  } catch (err) {
+    console.error('PUT /api/database/jobs/:id', err);
+    res.status(500).json({ error: 'Failed to save database job' });
   }
 });
 
@@ -865,6 +909,112 @@ router.post('/api/database/jobs/:id/line-items', async (req, res) => {
   }
 });
 
+router.post('/api/database/jobs/:id/line-items/custom', async (req, res) => {
+  const id = Number.parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: 'Invalid job id' });
+  }
+
+  const lineType = normalizeCustomLineType(req.body?.line_type);
+  if (!lineType) {
+    return res.status(400).json({ error: 'Line type must be nonstock, nondelivery, or internal' });
+  }
+
+  const description = cleanNullable(req.body?.line_description);
+  if (!description) {
+    return res.status(400).json({ error: 'Line description is required' });
+  }
+
+  const quantity = nullableInt(req.body?.quantity) || 1;
+  if (quantity < 1 || quantity > 100000) {
+    return res.status(400).json({ error: 'Quantity must be between 1 and 100000' });
+  }
+
+  const flags = customLineFlags(lineType);
+  const unitCost = nullableNumber(req.body?.unit_cost);
+  const unitPrice = nullableNumber(req.body?.unit_price);
+  const vatRate = normalizeVatRate(req.body?.vat_rate);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(71060220)');
+
+    const job = await client.query(
+      `SELECT source_order_id
+       FROM database_jobs
+       WHERE source_order_id = $1 OR order_no = $1
+       ORDER BY CASE WHEN source_order_id = $1 THEN 0 ELSE 1 END
+       LIMIT 1
+       FOR UPDATE`,
+      [id]
+    );
+
+    if (!job.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Database job not found' });
+    }
+
+    const next = await client.query(`
+      SELECT (COALESCE(MAX(source_order_item_id), 0) + 1)::int AS next_id
+      FROM database_job_line_items
+    `);
+
+    const sourceOrderId = job.rows[0].source_order_id;
+    const sourceOrderItemId = next.rows[0].next_id;
+    const nextSort = await client.query(
+      `SELECT (COALESCE(MAX(line_sort_order), COUNT(*)) + 1)::int AS next_sort_order
+       FROM database_job_line_items
+       WHERE source_order_id = $1`,
+      [sourceOrderId]
+    );
+
+    await client.query(
+      `INSERT INTO database_job_line_items (
+         source_order_item_id,
+         source_order_id,
+         line_sort_order,
+         line_description,
+         quantity,
+         unit_price,
+         unit_cost,
+         vat_rate,
+         is_non_deliverable,
+         is_internal,
+         supplier_name,
+         created_at_source,
+         updated_at_source
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW()
+       )`,
+      [
+        sourceOrderItemId,
+        sourceOrderId,
+        nextSort.rows[0].next_sort_order,
+        description,
+        quantity,
+        unitPrice,
+        unitCost,
+        vatRate,
+        flags.isNonDeliverable,
+        flags.isInternal,
+        cleanNullable(req.body?.supplier_name),
+      ]
+    );
+
+    const lineItems = await fetchLineItems(client, sourceOrderId);
+
+    await client.query('COMMIT');
+    res.status(201).json({ lineItems });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('POST /api/database/jobs/:id/line-items/custom', err);
+    res.status(500).json({ error: 'Failed to add custom database line item' });
+  } finally {
+    client.release();
+  }
+});
+
 router.put('/api/database/jobs/:id/line-items/order', async (req, res) => {
   const id = Number.parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) {
@@ -1098,6 +1248,27 @@ function nullableNumber(value) {
   if (value === null || value === undefined || value === '') return null;
   const parsed = Number.parseFloat(String(value));
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeVatRate(value) {
+  const parsed = nullableNumber(value);
+  if (parsed === null) return null;
+  return parsed > 1 ? parsed / 100 : parsed;
+}
+
+function normalizeCustomLineType(value) {
+  const clean = cleanQuery(value).toLowerCase();
+  if (clean === 'nonstock' || clean === 'non-stock') return 'nonstock';
+  if (clean === 'nondelivery' || clean === 'non-delivery' || clean === 'non-deliverable') return 'nondelivery';
+  if (clean === 'internal') return 'internal';
+  return '';
+}
+
+function customLineFlags(lineType) {
+  return {
+    isNonDeliverable: lineType === 'nondelivery',
+    isInternal: lineType === 'internal',
+  };
 }
 
 async function fetchLineItems(db, sourceOrderId) {

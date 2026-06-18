@@ -2,9 +2,11 @@
 const path = require('path');
 const express = require('express');
 const app = express();
+const publicDir = path.join(__dirname, '..', 'public');
 
 const { PORT } = require('./config/env');
 const { getAccessToken } = require('./services/monday');
+const { attachHubUser, requireHubApiAuth, requireHubPageAuth } = require('./middleware/hubAuth');
 const visualJobs = require('./routes/visual-jobs');
 const visualApprovals = require('./routes/visual-approvals');
 const filesRoute = require('./routes/files');
@@ -12,24 +14,38 @@ const filesRoute = require('./routes/files');
 
 // ---- parse JSON BEFORE routes
 app.use(express.json());
+app.use(attachHubUser);
+
+app.use(require('./routes/hub-auth'));
+app.use(require('./routes/auth'));
+
+app.get(['/', '/index.html'], requireHubPageAuth, (_req, res) => {
+  res.sendFile(path.join(publicDir, 'index.html'));
+});
+app.get(['/database-job.html', '/launch.html'], requireHubPageAuth, (req, res) => {
+  res.sendFile(path.join(publicDir, path.basename(req.path)));
+});
 
 // Static
-app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use(express.static(publicDir, { index: false }));
 
 // Health/status
 app.get('/api/status', (_req, res) => {
-  res.json({ ok: true, mondayAuthenticated: Boolean(getAccessToken()) });
+  res.json({
+    ok: true,
+    mondayAuthenticated: Boolean(getAccessToken()),
+    hubAuthenticated: Boolean(_req.hubUser),
+  });
 });
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 // Routers
-app.use(require('./routes/auth'));
-app.use(require('./routes/board'));
+app.use(requireHubApiAuth, require('./routes/board'));
 app.use(require('./routes/scanner'));
-app.use(require('./routes/database'));
+app.use(requireHubApiAuth, require('./routes/database'));
 app.use('/api/visual-jobs', visualJobs);
-app.use(visualApprovals);
-app.use(filesRoute);
+app.use(requireHubApiAuth, visualApprovals);
+app.use(requireHubApiAuth, filesRoute);
 
 // Monday webhook routes
 app.use('/api/monday', require('./routes/monday-events'));

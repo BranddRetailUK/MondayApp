@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>Ultimate Hub · Dashboard</title>
   <link rel="stylesheet" href="styles.css">
+  <script src="auth-session.js" defer></script>
   <script src="script.js" defer></script>
   <script src="database.js" defer></script>
 </head>
@@ -14,7 +15,7 @@
         <div class="logo-mark">UH</div>
         <div class="logo-text">
           <div class="sidebar-logo">Ultimate Hub</div>
-          <div class="sidebar-sub">Production</div>
+          <div class="sidebar-sub">User</div>
         </div>
       </div>
       <div class="nav-group">
@@ -176,7 +177,7 @@
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="new-order">New Order</button>
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="open-orders">Open Orders</button>
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="all-orders">All Orders</button>
-                <button class="db-raised-button" type="button" data-db-action="customers">Customers</button>
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="customers">Customers</button>
                 <button class="db-raised-button" type="button" data-db-action="placeholder">Styles</button>
                 <button class="db-raised-button" type="button" data-db-action="placeholder">Suppliers</button>
               </div>
@@ -271,7 +272,7 @@
                 <div class="db-new-order-row db-new-combo-row">
                   <label>Order taken by:</label>
                   <select id="db-new-order-taken-by" name="order_taken_by">
-                    <option value="Melvyn Harris">Melvyn Harris</option>
+                    <option value=""></option>
                   </select>
                 </div>
 
@@ -495,23 +496,13 @@
 
               <div class="db-outstanding-controls">
                 <div class="db-filter-buttons" role="group" aria-label="Outstanding order filters">
-                  <button class="db-toolbar-button" type="button" data-db-group="not-ready">Not ready</button>
-                  <button class="db-toolbar-button" type="button" data-db-group="ready">Ready</button>
-                  <button class="db-toolbar-button" type="button" data-db-group="print">Print ready</button>
-                  <button class="db-toolbar-button" type="button" data-db-group="embroidery">Embroidery ready</button>
+                  <button class="db-toolbar-button" type="button" data-db-group="not-ready">Not Approved</button>
+                  <button class="db-toolbar-button" type="button" data-db-group="ready">Approved</button>
+                  <button class="db-toolbar-button" type="button" data-db-group="print">Print</button>
+                  <button class="db-toolbar-button" type="button" data-db-group="embroidery">Embroidery</button>
                   <button class="db-toolbar-button" type="button" data-db-group="gifts">Gifts</button>
                   <button class="db-toolbar-button active" type="button" data-db-group="all">All outstanding</button>
                 </div>
-                <button id="db-refresh-orders" class="db-toolbar-button" type="button">Refresh</button>
-                <button class="db-icon-button" type="button" aria-label="Print">▦</button>
-                <fieldset class="db-sort-panel">
-                  <legend>Sort by:</legend>
-                  <label><input type="radio" name="db-sort" value="order" checked> Order no</label>
-                  <label><input type="radio" name="db-sort" value="delivery"> Delivery date</label>
-                </fieldset>
-                <label class="db-select-order-label">Select Order:
-                  <select id="db-select-order"></select>
-                </label>
               </div>
             </section>
 
@@ -520,8 +511,7 @@
                 <div class="db-order-title-area">
                   <div class="db-order-line">
                     <span class="db-order-label-large">Job:</span>
-                    <input id="db-order-job-title" class="db-title-input" readonly>
-                    <button class="db-toolbar-button db-edit-button" type="button">Edit</button>
+                    <input id="db-order-job-title" class="db-title-input" autocomplete="off">
                   </div>
                   <div class="db-order-line db-order-number-line">
                     <span class="db-order-label-large">Order No:</span>
@@ -549,12 +539,6 @@
                     <a id="db-updated-at" href="#">-</a>
                     <a id="db-updated-by" href="#">-</a>
                   </div>
-                  <label>Job:
-                    <select id="db-header-job-select"></select>
-                  </label>
-                  <label>Order:
-                    <select id="db-header-order-select"></select>
-                  </label>
                 </div>
               </div>
 

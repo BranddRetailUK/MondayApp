@@ -21,6 +21,8 @@ async function ensureDatabaseTables(db) {
       delivery_method TEXT,
       payment_terms TEXT,
       order_taken_by TEXT,
+      order_owner_user_id INTEGER,
+      order_owner_name TEXT,
       invoice_address_id INTEGER,
       delivery_address_id INTEGER,
       delivery_address TEXT,
@@ -61,6 +63,8 @@ async function ensureDatabaseTables(db) {
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS delivery_method TEXT;');
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS payment_terms TEXT;');
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS order_taken_by TEXT;');
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS order_owner_user_id INTEGER;');
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS order_owner_name TEXT;');
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS invoice_address_id INTEGER;');
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS delivery_address_id INTEGER;');
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS delivery_address TEXT;');

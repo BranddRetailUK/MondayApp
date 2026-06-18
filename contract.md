@@ -1,6 +1,6 @@
 # MondayApp Service Contract
 
-Last reviewed: 2026-06-17
+Last reviewed: 2026-06-18
 
 ## Purpose
 
@@ -19,6 +19,7 @@ The most important production path is the Dropbox/Open Orders import:
 - Runtime entry: `server.js`, which loads `server.modular.js`.
 - App composition: `src/app.js`.
 - Static frontend: `public/`.
+- Hub auth: `/login` and `/signup` serve the app login/signup page. The dashboard entry points `/`, `/index.html`, `/database-job.html`, and `/launch.html` require a Hub session. Static assets remain public, but browser app APIs for the board, DATABASE, visual approvals, and file upload/proxy routes require a Hub session.
 - Ultimate Hub dashboard tabs: Dashboard, DATABASE, and Visual Approvals. The active top-level dashboard tab is stored in browser localStorage so a page refresh returns the user to the last selected tab, unless an explicit `?tab=` query or matching hash such as `#database` selects a valid tab. The old standalone `MERCH TRAFFIC`, Orders, Customers, Stock, Shipping, and PenCarrie tabs have been removed. DATABASE order/customer/stock workflows remain part of the DATABASE tab.
 - DB bootstrap: `src/db/migrate.js`.
 - Config: `src/config/env.js` and `src/config/mondayFields.js`.
@@ -34,6 +35,9 @@ The most important production path is the Dropbox/Open Orders import:
 - `src/routes/monday-events.js`: Monday webhook handler for visual status changes, file notifications, and create-item line-item imports.
 - `src/services/dropboxLineItemImporter.js`: imports per-job XLSX/CSV line-item files from Dropbox into an existing Monday item.
 - `src/routes/visual-jobs.js`: worker queue API for local visual generation.
+- `src/routes/hub-auth.js`: Ultimate Hub signup/login/session endpoints.
+- `src/services/hubAuth.js`: scrypt password hashing, session-cookie creation, and current-user lookup.
+- `src/middleware/hubAuth.js`: attaches `req.hubUser` and protects page/API routes.
 - `visual-runner.js` and `visual generator/`: local visual generation runner/assets.
 
 ## Webhooks
@@ -203,10 +207,26 @@ Triggered by:
 
 ## API Endpoints
 
+### Ultimate Hub Auth
+
+- `GET /login`: serves the Hub login/signup page in login mode.
+- `GET /signup`: serves the same page in signup mode.
+- `GET /api/auth/me`: returns `{ user }` for the current Hub session, or `null`.
+- `POST /api/auth/signup`: creates a `hub_users` row and starts a session. Requires `email`, `first_name`, `last_name`, and `password`. Signup email addresses must be exactly on `@ultimatepromotions.co.uk`.
+- `POST /api/auth/login`: verifies email/password and starts a session.
+- `POST /api/auth/logout`: deletes the current session and clears the cookie.
+
+Security rules:
+
+- Passwords are stored only as Node `crypto.scrypt` hashes with per-user random salts.
+- Session cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` in production/HTTPS.
+- Database session rows store only a SHA-256 hash of the random browser session token.
+- Monday OAuth remains on `/auth` and `/callback`; do not reuse those paths for Hub login.
+
 ### Health And Status
 
 - `GET /health`: returns `{ ok: true }`.
-- `GET /api/status`: returns `{ ok: true, mondayAuthenticated: boolean }`.
+- `GET /api/status`: returns `{ ok: true, mondayAuthenticated: boolean, hubAuthenticated: boolean }`.
 
 ### Monday Auth And Board
 
@@ -259,7 +279,9 @@ Endpoints:
 - `GET /api/database/products/search?field=style|code&q=`: searches scoped `database_products` rows grouped by `style_id`. Style searches match style names first, with style/alt code fallback. Code searches match style and alternate style codes.
 - `GET /api/database/products/styles/:styleId/variants`: returns all scoped product variants for one style, ordered for colour/size dropdowns.
 - `POST /api/database/jobs/:id/line-items`: creates a real stock line item for one job from a selected `database_products.source_product_id`. The route allocates the next `source_order_item_id`, copies product style/colour/size/cost fields into `database_job_line_items`, and returns the refreshed line items.
+- `POST /api/database/jobs/:id/line-items/custom`: creates a non-stock, non-deliverable, or internal line item without product lookup. Accepted `line_type` values are `nonstock`, `nondelivery`, and `internal`; each stores free-text description, cost, price, quantity, and VAT fields in `database_job_line_items`.
 - `PUT /api/database/jobs/:id/line-items/order`: persists the current stock line-item order from an ordered list of `source_order_item_id` values. The route validates all submitted lines belong to the target job, writes `database_job_line_items.line_sort_order`, and returns refreshed line items.
+- `PUT /api/database/jobs/:id`: updates editable job-level fields. Currently used for default-editable order title autosave by writing `database_jobs.job_title` and `updated_at_source`.
 - `PUT /api/database/jobs/:id/positions`: replaces editable design-position rows for one job. It updates existing `database_job_positions`, inserts new rows with allocated legacy-compatible `source_order_position_id` values, and removes cleared rows.
 
 Import rules:
@@ -296,16 +318,19 @@ UI rules:
 - The DATABASE home screen is the default tab screen and includes the New Order button, main menu buttons, Open Orders count panel, and admin buttons. Reports and Marketing live at the bottom of the right-side admin button column below Error log; the old backup-status panel is removed. The Open Orders count panel title is centered, slightly larger, and bold, and the panel shows three open-order counts for Printing, Embroidery, and Business Gifts, sourced from `/api/database/outstanding-counts`. The legacy blue footer bar is intentionally omitted in the dashboard hub.
 - The top DATABASE navigation has two main tabs, `Home` and `Outstanding Orders`. The small top-left button is `Back`, returns to the previous in-DATABASE view, and is hidden on the Home view; while hidden, the two main tabs span the full top tab row.
 - The New Order button opens a centered legacy form without placeholder lookup buttons, fake combo-arrow buttons, or a customer-date checkbox. The customer field live-searches `/api/database/customers/search` as the user types; selecting a customer fills contact, delivery address, and invoice address fields from stored DATABASE customer/order data when available. Accept creates a manual job row in `database_jobs`, carrying through selected customer/contact ids and codes when present, then opens that created order in the order-details view.
+- New manual orders set `database_jobs.order_taken_by`, `order_owner_user_id`, and `order_owner_name` from the logged-in Hub user server-side. The sidebar subtitle under `Ultimate Hub` shows the logged-in user's first name.
 - The Customers main-menu button opens a legacy-styled list page backed only by `database_jobs`, not the separate dashboard customer tables. Customers are sorted alphabetically, searchable at the top of the page, and each row shows the latest order next to the customer record. Clicking a customer row opens a legacy-style customer page in the DATABASE tab.
 - The customer page mirrors the legacy Access-era customer layout with Customer, Code, Account manager, created/edited metadata, a gray lookup panel, and tabs for Orders, Contacts, Addresses, Quotations, Communications, and Actions. The Orders tab lists all 2025/2026 orders for that customer and opens the existing order view when an order is clicked. The Contacts tab lists every unique recorded contact from the customer's jobs. The Addresses tab lists imported MDB addresses for customers present in the 2025/2026 snapshot, plus manual job invoice/delivery address text as a fallback. Quotations, Communications, and Actions are present as empty legacy tabs because those records are not imported into the current snapshot.
 - The Outstanding Orders tab loads open jobs through `/api/database/jobs?status=open`, follows pagination until all open jobs are loaded, and groups rows into Print, Embroidery, Gifts, and Other using `order_type`/`order_type_abbr`.
 - Clicking an outstanding order opens the in-tab order view. Users can return to the DATABASE home screen with the top-left Home button.
 - The order view has three top tabs: Order details, Order Items, and Design. These tabs switch in place without navigating away from the dashboard. The order header reserves spacing above the tabs so document buttons and the metadata panel do not touch or overlap the tab strip. Clicking the customer control in Order details opens the customer page for that order's customer.
 - In the order view, the `Order Ack.` document button opens an A4 order acknowledgement preview in a modal. The acknowledgement is rendered from the loaded DATABASE job, customer/address fields, line items, VAT/cost totals, and design positions; it includes the Ultimate logo at 50mm wide in the top-right of the page. The modal closes on outside-backdrop click or Escape and provides print/save-as-PDF controls through the browser print dialog.
+- The order title is editable by default in the header and autosaves through `PUT /api/database/jobs/:id` using the same debounced/flush-before-navigation pattern as other DATABASE autosaves. The old Edit button next to the title is removed. The top-right metadata box no longer contains the Job/Order dropdowns; `By:` prefers `order_owner_name` and falls back to `order_taken_by`/legacy staff id.
 - Order Details, Order Items, and Design tab content uses the legacy blue/grey/off-white fills for panels, table headers, and empty space. White backgrounds are limited to field-like areas such as customer/order inputs, selects, textareas, line-item entry fields, line item value cells, design edit boxes, supplier/screen fields, and comments fields.
 - Order details surfaces every imported job field that maps to the reference screen, including customer/contact, type, dates, client reference, comments, invoice fields, and boolean flags.
 - Order Items splits imported line items into stock, non-stock, non-deliverable, and internal sections using existing line-item flags and product/style data. The stock table displays Code, Alt code, Style, Colour, Size, Cost, Price, Qty, and VAT; it does not show a separate Stock code/source product id column. Line item ordering uses `database_job_line_items.line_sort_order`, falling back to `source_order_item_id`.
 - The Order Items stock table has an Add line button centered below the current stock rows. Clicking it inserts one editable stock row. The Style and Code inputs use product autocomplete backed by `database_products`; pressing Enter selects the first result when the result list is open. Once a style/code result is selected, Colour and Size become dropdowns for that style's available product variants, Cost follows the selected variant, and pressing Enter or the row `+` button creates the line item.
+- Non-stock, non-deliverable, and internal item sections also have Add line buttons. These create text-entry rows only and deliberately do not use product search.
 - Every stock line item row has a black arrow drag handle. Click-hold and drag moves the row with a ghost copy following the pointer; dropping the row updates the visible order and autosaves it after about 3.5 seconds. Pending line-order changes also flush before opening another order, leaving DATABASE, or leaving the browser page.
 - Design renders imported `database_job_positions` rows and the job `screen_numbers` field. Position, Colour, and Design cells are editable; changes autosave every 5 seconds and flush immediately before switching order tabs, opening another order, leaving DATABASE, or leaving the browser page.
 - `/database-job.html?id=<source_order_id>` remains a direct fallback page, but the dashboard DATABASE tab is now the primary workflow.
@@ -313,7 +338,7 @@ UI rules:
 Core source mappings:
 
 - Jobs: `tblOrder` joined to `tblCustomer`, `tblContact`, and `tblOrderType`.
-- Manual New Order rows store non-MDB form fields directly on `database_jobs`: `delivery_method`, `payment_terms`, `order_taken_by`, `delivery_address`, `invoice_address`, and `is_manual_entry`.
+- Manual New Order rows store non-MDB form fields directly on `database_jobs`: `delivery_method`, `payment_terms`, `order_taken_by`, `order_owner_user_id`, `order_owner_name`, `delivery_address`, `invoice_address`, and `is_manual_entry`.
 - Customer addresses: `tblAddress`, joined through `tblCustomer.invaddressid` / `tblCustomer.deladdressid`, selected 2025/2026 `tblOrder.invaddressid` / `tblOrder.deladdressid`, and selected-customer `tblContact.addressid`. The importer only writes address rows for customers that appear in the 2025/2026 order snapshot, so historic-only customers and addresses are excluded. Imported jobs also store `invoice_address_id`, `delivery_address_id`, and formatted invoice/delivery address text from `tblAddress`.
 - Line items: `tblOrderItem` joined to `tblProduct`, `tblStyle`, `tblStyleColour`, `tblColour`, `tblStyleSize`, `tblSize`, `tblProductType`, and `tblSupplier`. `line_sort_order` is assigned during import from the legacy item order and can be updated manually from the Order Items drag handle.
 - Products: `database_products` is keyed by `tblProduct.productid` and is populated only from products referenced by existing `database_job_line_items.source_product_id`. Product rows join `tblProduct` to `tblStyle`, `tblStyleColour`, `tblColour`, `tblStyleSize`, `tblSize`, `tblProductType`, and `tblSupplier`, preserving style code, alternate style code, style name, colour, size, supplier, product type, unit cost, stock, and active flag.
@@ -379,6 +404,8 @@ Created by `src/db/migrate.js`:
 
 - `job_scans`
 - `job_scan_events`
+- `hub_users`
+- `hub_sessions`
 - `database_jobs`
 - `database_job_line_items`
 - `database_products`

@@ -4,6 +4,7 @@
   const CUSTOMER_SEARCH_DELAY = 180;
   const PRODUCT_SEARCH_DELAY = 180;
   const DESIGN_AUTOSAVE_MS = 5000;
+  const JOB_AUTOSAVE_MS = DESIGN_AUTOSAVE_MS;
   const LINE_ORDER_AUTOSAVE_MS = 3500;
   const ORDER_ACK_LOGO_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781699668/ultimate_logo_imyxvr.png';
 
@@ -47,6 +48,12 @@
     designSaving: false,
     designSaveQueued: false,
     designLastSavedSignature: '[]',
+    jobDirty: false,
+    jobSaving: false,
+    jobSaveQueued: false,
+    jobLastSavedSignature: '{}',
+    customLineDraft: null,
+    currentUser: null,
   };
 
   let els = {};
@@ -57,6 +64,7 @@
   let databaseCustomerRequest = 0;
   let productSearchRequest = 0;
   let designAutosaveTimer = 0;
+  let jobAutosaveTimer = 0;
   let lineOrderAutosaveTimer = 0;
   let lineDrag = null;
 
@@ -89,7 +97,6 @@
       customerContactsBody: document.getElementById('db-customer-contacts-body'),
       customerAddressesBody: document.getElementById('db-customer-addresses-body'),
       outstandingBody: document.getElementById('db-outstanding-body'),
-      refreshOrders: document.getElementById('db-refresh-orders'),
       selectOrder: document.getElementById('db-select-order'),
       footerTitle: document.getElementById('db-footer-title'),
       orderTitle: document.getElementById('db-order-job-title'),
@@ -125,10 +132,11 @@
     els.customerOrdersBody.addEventListener('click', handleCustomerOrderRowClick);
     els.customerOrdersBody.addEventListener('keydown', handleCustomerOrderRowKeydown);
     els.customersSearch.addEventListener('input', handleDatabaseCustomerSearchInput);
-    els.refreshOrders.addEventListener('click', () => loadOutstandingOrders({ force: true }));
-    els.selectOrder.addEventListener('change', () => openSelectedOrder(els.selectOrder.value));
-    els.headerJobSelect.addEventListener('change', () => openSelectedOrder(els.headerJobSelect.value));
-    els.headerOrderSelect.addEventListener('change', () => openSelectedOrder(els.headerOrderSelect.value));
+    els.selectOrder?.addEventListener('change', () => openSelectedOrder(els.selectOrder.value));
+    els.headerJobSelect?.addEventListener('change', () => openSelectedOrder(els.headerJobSelect.value));
+    els.headerOrderSelect?.addEventListener('change', () => openSelectedOrder(els.headerOrderSelect.value));
+    els.orderTitle.addEventListener('input', handleJobTitleInput);
+    els.orderTitle.addEventListener('blur', () => flushJobAutosave());
     els.newOrderForm.addEventListener('submit', submitNewOrder);
     els.newOrderForm.addEventListener('input', validateNewOrderForm);
     els.newOrderForm.addEventListener('change', validateNewOrderForm);
@@ -139,8 +147,10 @@
     els.newCustomerResults.addEventListener('mousedown', (event) => event.preventDefault());
     els.newCustomerResults.addEventListener('click', handleCustomerResultClick);
     els.itemsPanel.addEventListener('input', handleLineDraftInput);
+    els.itemsPanel.addEventListener('input', handleCustomLineDraftInput);
     els.itemsPanel.addEventListener('focusin', handleLineDraftFocus);
     els.itemsPanel.addEventListener('keydown', handleLineDraftKeydown);
+    els.itemsPanel.addEventListener('keydown', handleCustomLineDraftKeydown);
     els.itemsPanel.addEventListener('change', handleLineDraftChange);
     els.itemsPanel.addEventListener('mousedown', handleLineDraftMouseDown);
     els.itemsPanel.addEventListener('pointerdown', handleLineDragPointerDown);
@@ -170,6 +180,11 @@
         if (!state.loadedHome) loadHomeMetrics();
       });
     }
+    document.addEventListener('ultimatehub:user', (event) => setCurrentUser(event.detail));
+    if (window.ultimateHubUser) setCurrentUser(window.ultimateHubUser);
+    window.ultimateHubUserPromise?.then((user) => {
+      if (user) setCurrentUser(user);
+    });
 
     const params = new URLSearchParams(window.location.search);
     if (params.get('tab') === 'database' || window.location.hash === '#database') {
@@ -202,6 +217,23 @@
     if (lineAction === 'cancel') {
       cancelLineDraft();
       return;
+    }
+
+    const customLineAction = button.dataset.dbCustomLineAction;
+    if (customLineAction) {
+      const lineType = button.dataset.dbLineType;
+      if (customLineAction === 'add') {
+        startCustomLineDraft(lineType);
+        return;
+      }
+      if (customLineAction === 'save') {
+        await saveCustomLineDraft();
+        return;
+      }
+      if (customLineAction === 'cancel') {
+        cancelCustomLineDraft();
+        return;
+      }
     }
 
     if (button.id === 'db-home-button') {
@@ -331,6 +363,25 @@
     loadDatabaseCustomers({ force: false });
   }
 
+  function setCurrentUser(user) {
+    state.currentUser = user || null;
+    updateNewOrderTakenBy();
+  }
+
+  function currentUserFullName() {
+    const user = state.currentUser || window.ultimateHubUser || null;
+    return user?.full_name || [user?.first_name, user?.last_name].filter(Boolean).join(' ');
+  }
+
+  function updateNewOrderTakenBy() {
+    const select = document.getElementById('db-new-order-taken-by');
+    if (!select) return;
+    const name = currentUserFullName();
+    if (!name) return;
+    select.innerHTML = `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`;
+    select.value = name;
+  }
+
   function resetNewOrderForm() {
     els.newOrderForm.reset();
     clearTimeout(customerSearchTimer);
@@ -342,7 +393,7 @@
     const delivery = addDays(today, 14);
     document.getElementById('db-new-order-date').value = formatLegacyInputDate(today);
     document.getElementById('db-new-delivery-date').value = formatLegacyInputDate(delivery);
-    document.getElementById('db-new-order-taken-by').value = 'Melvyn Harris';
+    updateNewOrderTakenBy();
     els.newOrderStatus.textContent = '';
     els.newOrderStatus.dataset.tone = '';
     validateNewOrderForm();
@@ -547,9 +598,14 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        credentials: 'include',
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (response.status === 401) {
+          window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search + window.location.hash)}`);
+          return;
+        }
         throw new Error(data.error || `Request failed: ${response.status}`);
       }
 
@@ -992,8 +1048,11 @@
       state.selectedLineItems = data.lineItems || [];
       state.selectedPositions = data.positions || [];
       resetLineDraftState();
+      resetCustomLineDraftState();
       resetLineOrderAutosaveState();
+      resetJobAutosaveState();
       state.lineOrderLastSavedSignature = lineOrderSignature(stockLineItems());
+      state.jobLastSavedSignature = jobSignature(state.selectedJob);
       renderOrder();
       renderOutstandingOrders();
       showOrderTab(state.activeOrderTab);
@@ -1004,6 +1063,7 @@
 
   function setOrderLoading() {
     resetDesignAutosaveState();
+    resetJobAutosaveState();
     els.orderTitle.value = 'Loading...';
     els.orderNumber.value = '';
     els.createdAt.textContent = '-';
@@ -1016,6 +1076,7 @@
 
   function renderOrderError(message) {
     resetDesignAutosaveState();
+    resetJobAutosaveState();
     els.orderTitle.value = 'Order unavailable';
     els.orderNumber.value = '';
     els.detailsPanel.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
@@ -1029,7 +1090,7 @@
     els.orderNumber.value = job.order_no || '';
     els.createdAt.textContent = formatDateTime(job.created_at_source);
     els.updatedAt.textContent = formatDateTime(job.updated_at_source);
-    els.updatedBy.textContent = staffLabel(job.order_taken_by || job.trace_staff_id);
+    els.updatedBy.textContent = orderByLabel(job);
 
     hydrateOrderSelectors();
     renderDetailsPanel();
@@ -1047,7 +1108,7 @@
       return `<option value="${escapeAttr(id)}" ${id === selectedId ? 'selected' : ''}>${escapeHtml(label)}</option>`;
     }).join('');
 
-    [els.selectOrder, els.headerJobSelect, els.headerOrderSelect].forEach((select) => {
+    [els.selectOrder, els.headerJobSelect, els.headerOrderSelect].filter(Boolean).forEach((select) => {
       select.innerHTML = placeholder + options;
       if (selectedId) select.value = selectedId;
     });
@@ -1083,7 +1144,7 @@
           ${detailRow('Customer:', `${customerOpenButton(job)}<input class="db-legacy-input db-code-input" readonly value="${escapeAttr(job.customer_code || '')}">`)}
           ${detailRow('Contact:', selectBox(job.contact_name))}
           ${detailRow('Order type:', selectBox(job.order_type || typeLabel(job)))}
-          ${detailRow('Taken by:', selectBox(staffLabel(job.order_taken_by || job.trace_staff_id)))}
+          ${detailRow('Taken by:', selectBox(takenByLabel(job)))}
           ${detailRow('Delivery:', selectBox(job.delivery_method))}
           ${detailRow('Order date:', inputBox(formatDate(job.order_date, 'short')))}
           ${detailRow('Delivery:', `${inputBox(formatDate(job.delivery_date, 'short'))}<label class="db-inline-check">${renderCheck(job.customer_date_required)} Customer date</label>`)}
@@ -1171,8 +1232,8 @@
 
         <div class="db-items-lower-grid">
           <div class="db-items-left-stack">
-            ${renderSmallItemBox('Non-deliverable item:', nonDeliverableItems)}
-            ${renderSmallItemBox('Internal item:', internalItems)}
+            ${renderSmallItemBox('Non-deliverable item:', nonDeliverableItems, 'nondelivery')}
+            ${renderSmallItemBox('Internal item:', internalItems, 'internal')}
           </div>
           <div class="db-edit-spine">E<br>D<br>I<br>T</div>
           <div class="db-nonstock-box">
@@ -1187,7 +1248,10 @@
                   <th>VAT:</th>
                 </tr>
               </thead>
-              <tbody>${nonStockItems.length ? nonStockItems.map(renderNonStockRow).join('') : renderItemEmptyRow(6)}</tbody>
+              <tbody>
+                ${nonStockItems.length ? nonStockItems.map(renderNonStockRow).join('') : renderItemEmptyRow(6)}
+                ${state.customLineDraft?.type === 'nonstock' ? renderCustomLineDraftRow('nonstock', 6) : renderCustomAddLineButtonRow('nonstock', 6)}
+              </tbody>
             </table>
             <div class="db-supplier-row"><span>Supplier:</span><input readonly value="${escapeAttr(suppliers)}"></div>
           </div>
@@ -1362,7 +1426,7 @@
         ${orderAckMetaRow('ULT ref:', job.order_no)}
         ${orderAckMetaRow('Your ref:', yourRef)}
         ${orderAckMetaRow('Order date:', formatDate(job.order_date, 'full'))}
-        ${orderAckMetaRow('Order taken by:', staffLabel(job.order_taken_by || job.trace_staff_id))}
+        ${orderAckMetaRow('Order taken by:', takenByLabel(job))}
         ${orderAckMetaRow('Order value:', formatCurrency(totals.gross))}
         ${orderAckMetaRow('Delivery address:', deliveryDisplay.map((line) => escapeHtml(line)).join('<br>'), { html: true })}
       </section>
@@ -1656,6 +1720,7 @@
   }
 
   function startLineDraft() {
+    resetCustomLineDraftState();
     state.lineDraft = createLineDraft();
     state.productResults = [];
     state.productSearchOpen = false;
@@ -2201,6 +2266,104 @@
     scheduleLineOrderAutosave();
   }
 
+  function handleJobTitleInput() {
+    if (!state.selectedJob?.source_order_id) return;
+    state.selectedJob.job_title = els.orderTitle.value;
+    state.jobDirty = true;
+    scheduleJobAutosave();
+  }
+
+  function scheduleJobAutosave() {
+    clearTimeout(jobAutosaveTimer);
+    jobAutosaveTimer = window.setTimeout(() => {
+      flushJobAutosave();
+    }, JOB_AUTOSAVE_MS);
+  }
+
+  async function flushJobAutosave(options = {}) {
+    clearTimeout(jobAutosaveTimer);
+    if (!state.jobDirty || !state.selectedJob?.source_order_id) return;
+    await saveJobFields(options);
+  }
+
+  async function saveJobFields(options = {}) {
+    const payload = {
+      job_title: els.orderTitle.value.trim(),
+    };
+    const signature = jobSignature(payload);
+
+    if (signature === state.jobLastSavedSignature) {
+      state.jobDirty = false;
+      return;
+    }
+
+    if (state.jobSaving) {
+      state.jobSaveQueued = true;
+      return;
+    }
+
+    state.jobSaving = true;
+
+    try {
+      const response = await fetch(`/api/database/jobs/${encodeURIComponent(state.selectedJob.source_order_id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        keepalive: Boolean(options.keepalive),
+        cache: 'no-store',
+        credentials: 'include',
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 401) {
+          window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search + window.location.hash)}`);
+          return;
+        }
+        throw new Error(data.error || `Request failed: ${response.status}`);
+      }
+
+      state.selectedJob = { ...state.selectedJob, ...data.job };
+      state.jobDirty = false;
+      state.jobLastSavedSignature = jobSignature(state.selectedJob);
+      els.updatedAt.textContent = formatDateTime(state.selectedJob.updated_at_source);
+      els.updatedBy.textContent = orderByLabel(state.selectedJob);
+      updateOutstandingJob(state.selectedJob);
+      renderOutstandingOrders();
+    } catch (err) {
+      state.jobDirty = true;
+      console.error('Job title autosave failed', err);
+    } finally {
+      state.jobSaving = false;
+      if (state.jobSaveQueued) {
+        state.jobSaveQueued = false;
+        scheduleJobAutosave();
+      }
+    }
+  }
+
+  function resetJobAutosaveState() {
+    clearTimeout(jobAutosaveTimer);
+    state.jobDirty = false;
+    state.jobSaving = false;
+    state.jobSaveQueued = false;
+    state.jobLastSavedSignature = '{}';
+  }
+
+  function jobSignature(job) {
+    return JSON.stringify({
+      job_title: job?.job_title || '',
+    });
+  }
+
+  function updateOutstandingJob(job) {
+    if (!job?.source_order_id) return;
+    state.outstandingJobs = state.outstandingJobs.map((item) => (
+      Number(item.source_order_id) === Number(job.source_order_id)
+        ? { ...item, ...job }
+        : item
+    ));
+  }
+
   function scheduleLineOrderAutosave() {
     clearTimeout(lineOrderAutosaveTimer);
     lineOrderAutosaveTimer = window.setTimeout(() => {
@@ -2210,6 +2373,7 @@
 
   async function flushOrderAutosaves(options = {}) {
     await Promise.all([
+      flushJobAutosave(options),
       flushDesignAutosave(options),
       flushLineOrderAutosave(options),
     ]);
@@ -2249,6 +2413,10 @@
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (response.status === 401) {
+          window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search + window.location.hash)}`);
+          return;
+        }
         throw new Error(data.error || `Request failed: ${response.status}`);
       }
 
@@ -2298,6 +2466,131 @@
         <td>${escapeHtml(formatVat(item.vat_rate))}</td>
       </tr>
     `;
+  }
+
+  function renderCustomAddLineButtonRow(type, colspan) {
+    return `
+      <tr class="db-add-line-button-row">
+        <td colspan="${colspan}">
+          <button class="db-add-line-button" type="button" data-db-custom-line-action="add" data-db-line-type="${escapeAttr(type)}">Add line</button>
+        </td>
+      </tr>
+    `;
+  }
+
+  function renderCustomLineDraftRow(type, colspan) {
+    const draft = state.customLineDraft || createCustomLineDraft(type);
+    const saveDisabled = draft.line_description.trim() && !draft.saving ? '' : ' disabled';
+    const status = draft.error || '';
+
+    return `
+      <tr class="db-custom-line-edit-row" data-custom-line-type="${escapeAttr(type)}">
+        <td class="db-row-selector">
+          <button class="db-line-save-button" type="button" data-db-custom-line-action="save" data-db-line-type="${escapeAttr(type)}"${saveDisabled}>+</button>
+        </td>
+        <td><textarea class="db-custom-line-input" data-custom-line-field="line_description">${escapeHtml(draft.line_description)}</textarea></td>
+        <td><input class="db-custom-line-input db-line-money" data-custom-line-field="unit_cost" value="${escapeAttr(draft.unit_cost)}"></td>
+        <td><input class="db-custom-line-input db-line-money" data-custom-line-field="unit_price" value="${escapeAttr(draft.unit_price)}"></td>
+        <td><input class="db-custom-line-input db-line-qty" data-custom-line-field="quantity" inputmode="numeric" value="${escapeAttr(draft.quantity)}"></td>
+        <td><input class="db-custom-line-input db-line-vat" data-custom-line-field="vatPercent" inputmode="decimal" value="${escapeAttr(draft.vatPercent)}"></td>
+      </tr>
+      ${status ? `<tr class="db-add-line-status-row"><td colspan="${colspan}">${escapeHtml(status)}</td></tr>` : ''}
+    `;
+  }
+
+  function startCustomLineDraft(type) {
+    const lineType = normalizeCustomLineType(type);
+    if (!lineType) return;
+    resetLineDraftState();
+    state.customLineDraft = createCustomLineDraft(lineType);
+    renderItemsPanel();
+    window.requestAnimationFrame(() => {
+      const input = els.itemsPanel.querySelector(`[data-custom-line-type="${lineType}"] [data-custom-line-field="line_description"]`);
+      input?.focus();
+    });
+  }
+
+  function cancelCustomLineDraft() {
+    resetCustomLineDraftState();
+    renderItemsPanel();
+  }
+
+  function resetCustomLineDraftState() {
+    state.customLineDraft = null;
+  }
+
+  function createCustomLineDraft(type) {
+    return {
+      type: normalizeCustomLineType(type) || 'nonstock',
+      line_description: '',
+      unit_cost: '',
+      unit_price: '',
+      quantity: '1',
+      vatPercent: '20.00',
+      saving: false,
+      error: '',
+    };
+  }
+
+  function handleCustomLineDraftInput(event) {
+    const field = event.target.dataset.customLineField;
+    if (!field || !state.customLineDraft) return;
+    const row = event.target.closest('[data-custom-line-type]');
+    if (!row || row.dataset.customLineType !== state.customLineDraft.type) return;
+    state.customLineDraft[field] = event.target.value;
+    state.customLineDraft.error = '';
+  }
+
+  function handleCustomLineDraftKeydown(event) {
+    if (!state.customLineDraft || !event.target.dataset.customLineField) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      cancelCustomLineDraft();
+    }
+  }
+
+  async function saveCustomLineDraft() {
+    const draft = state.customLineDraft;
+    if (!draft || draft.saving) return;
+
+    if (!draft.line_description.trim()) {
+      draft.error = 'Line description is required';
+      renderItemsPanel();
+      return;
+    }
+
+    draft.saving = true;
+    draft.error = '';
+    renderItemsPanel();
+
+    try {
+      const data = await fetchJson(`/api/database/jobs/${encodeURIComponent(state.selectedJob.source_order_id)}/line-items/custom`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          line_type: draft.type,
+          line_description: draft.line_description,
+          unit_cost: lineNumber(draft.unit_cost),
+          unit_price: lineNumber(draft.unit_price),
+          quantity: lineInteger(draft.quantity, 1),
+          vat_rate: lineVatRate(draft.vatPercent),
+        }),
+      });
+
+      state.selectedLineItems = data.lineItems || state.selectedLineItems;
+      if (state.selectedJob) {
+        state.selectedJob.line_item_count = state.selectedLineItems.length;
+        state.selectedJob.total_quantity = state.selectedLineItems.reduce((total, item) => total + Number(item.quantity || 0), 0);
+      }
+      resetCustomLineDraftState();
+      renderItemsPanel();
+      renderOutstandingOrders();
+    } catch (err) {
+      if (!state.customLineDraft) return;
+      state.customLineDraft.saving = false;
+      state.customLineDraft.error = err.message || 'Failed to add line item';
+      renderItemsPanel();
+    }
   }
 
   function renderPositionRow(position, index) {
@@ -2400,6 +2693,10 @@
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (response.status === 401) {
+          window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search + window.location.hash)}`);
+          return;
+        }
         throw new Error(data.error || `Request failed: ${response.status}`);
       }
 
@@ -2428,12 +2725,14 @@
     state.designLastSavedSignature = '[]';
   }
 
-  function renderSmallItemBox(title, items) {
+  function renderSmallItemBox(title, items, type) {
+    const lineType = normalizeCustomLineType(type);
     return `
       <div class="db-small-item-box">
         <table class="db-legacy-table">
           <thead>
             <tr>
+              <th class="db-row-selector"></th>
               <th>${escapeHtml(title)}</th>
               <th>Cost:</th>
               <th>Price:</th>
@@ -2444,13 +2743,15 @@
           <tbody>
             ${items.length ? items.map((item) => `
               <tr>
+                <td class="db-row-selector"></td>
                 <td>${escapeHtml(item.line_description || item.style_name || '')}</td>
                 <td>${escapeHtml(formatCurrency(item.unit_cost))}</td>
                 <td>${escapeHtml(formatCurrency(item.unit_price))}</td>
                 <td>${escapeHtml(formatNumber(item.quantity || 0))}</td>
                 <td>${escapeHtml(formatVat(item.vat_rate))}</td>
               </tr>
-            `).join('') : '<tr class="db-gray-fill"><td colspan="5"></td></tr>'}
+            `).join('') : '<tr class="db-gray-fill"><td colspan="6"></td></tr>'}
+            ${state.customLineDraft?.type === lineType ? renderCustomLineDraftRow(lineType, 6) : renderCustomAddLineButtonRow(lineType, 6)}
           </tbody>
         </table>
       </div>
@@ -2600,6 +2901,14 @@
     return !truthy(item.is_non_deliverable) && !truthy(item.is_internal) && !isStockItem(item);
   }
 
+  function normalizeCustomLineType(value) {
+    const clean = String(value || '').trim().toLowerCase();
+    if (clean === 'nonstock' || clean === 'non-stock') return 'nonstock';
+    if (clean === 'nondelivery' || clean === 'non-delivery' || clean === 'non-deliverable') return 'nondelivery';
+    if (clean === 'internal') return 'internal';
+    return '';
+  }
+
   function staffShort(value) {
     if (!value) return '';
     const clean = String(value).trim();
@@ -2612,6 +2921,17 @@
     if (!value) return '';
     const clean = String(value).trim();
     return /^\d+$/.test(clean) ? `Staff ${clean}` : clean;
+  }
+
+  function takenByLabel(job) {
+    return staffLabel(job?.order_taken_by || job?.order_owner_name || job?.trace_staff_id);
+  }
+
+  function orderByLabel(job) {
+    const owner = staffLabel(job?.order_owner_name);
+    const takenBy = takenByLabel(job);
+    if (owner && takenBy && owner !== takenBy) return `${owner} / ${takenBy}`;
+    return owner || takenBy;
   }
 
   function formatDate(value, style) {
@@ -2697,9 +3017,12 @@
   }
 
   async function fetchJson(url, options = {}) {
-    const response = await fetch(url, { cache: 'no-store', ...options });
+    const response = await fetch(url, { cache: 'no-store', credentials: 'include', ...options });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
+      if (response.status === 401) {
+        window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search + window.location.hash)}`);
+      }
       throw new Error(payload.error || `Request failed: ${response.status}`);
     }
     return payload;
