@@ -408,7 +408,8 @@ function renderBoard(payload) {
   const boardColumns = getRenderableBoardColumns(board.columns || []);
   const subitemColumns = getRenderableSubitemColumns(board.subitemColumns || []);
   const boardColumnWidths = buildBoardColumnWidthOverrides(boardColumns, board.groups || []);
-  const gridSpec = buildDashboardGridSpec(boardColumns, { subitem: false, widthOverrides: boardColumnWidths });
+  const jobNameWidth = buildJobNameColumnWidth(board.groups || []);
+  const gridSpec = buildDashboardGridSpec(boardColumns, { subitem: false, widthOverrides: boardColumnWidths, nameWidth: jobNameWidth });
   const subitemGridSpec = buildDashboardGridSpec(subitemColumns, { subitem: true });
   const activeSortColumn = getActiveSortColumn(boardColumns);
 
@@ -537,7 +538,10 @@ function collectBoardUiState(boardDiv) {
 
 function isDefaultCollapsedGroup(groupName) {
   const normalized = String(groupName || '').trim().toUpperCase();
-  return normalized === 'HOLD' || normalized === 'COMPLETED';
+  return normalized === 'HOLD' ||
+    normalized === 'COMPLETED' ||
+    normalized === 'TO SAMPLE' ||
+    normalized === 'OFFICE';
 }
 
 function toggleSubRows(parentId, open) {
@@ -675,10 +679,10 @@ function normalizeColumns(columns) {
     .filter(column => column.id);
 }
 
-function buildDashboardGridSpec(mondayColumns, { subitem = false, widthOverrides = new Map() } = {}) {
+function buildDashboardGridSpec(mondayColumns, { subitem = false, widthOverrides = new Map(), nameWidth = null } = {}) {
   const columns = [
     { kind: 'print', title: subitem ? '' : 'Print', width: 82 },
-    { kind: 'name', title: subitem ? 'Subitem' : 'Job', width: subitem ? 520 : 560 },
+    { kind: 'name', title: subitem ? 'Subitem' : 'Job', width: nameWidth || (subitem ? 520 : 560) },
     ...mondayColumns.map(column => ({
       kind: 'column',
       title: column.title,
@@ -821,13 +825,33 @@ function buildBoardColumnWidthOverrides(columns, groups) {
   const overrides = new Map();
   for (const column of columns) {
     const title = String(column.title || '').trim().toUpperCase();
-    if (title !== 'NOTES') continue;
+    if (!isDynamicBoardTextWidthColumn(title)) continue;
     const maxTextWidth = getMaxColumnTextWidth(groups, column.id);
     if (maxTextWidth > 0) {
       overrides.set(column.id, Math.max(getColumnWidth(column), Math.ceil(maxTextWidth + 34)));
     }
   }
   return overrides;
+}
+
+function isDynamicBoardTextWidthColumn(title) {
+  const normalized = String(title || '').trim().toUpperCase().replace(/\s+/g, ' ');
+  const compact = normalized.replace(/[^A-Z0-9]/g, '');
+  return normalized === 'NOTES' || compact === 'DESPSG' || compact === 'DESNOPSG';
+}
+
+function buildJobNameColumnWidth(groups) {
+  let max = 0;
+  for (const group of (Array.isArray(groups) ? groups : [])) {
+    const items = (group.items_page && group.items_page.items) || [];
+    for (const item of items) {
+      const text = normalizeCellText(item?.name || '');
+      if (!text) continue;
+      max = Math.max(max, measureBoardTextWidth(text));
+    }
+  }
+  if (!max) return 560;
+  return Math.max(560, Math.ceil(max + 112));
 }
 
 function getMaxColumnTextWidth(groups, columnId) {
