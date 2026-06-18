@@ -741,13 +741,14 @@ router.post('/api/database/customers/:key/contacts', async (req, res) => {
   }
 
   const payload = req.body || {};
+  const sourceContactId = nullableInt(payload.source_contact_id);
   const contactTitle = cleanNullable(payload.contact_title);
   const contactFirstName = cleanNullable(payload.contact_first_name);
   const contactLastName = cleanNullable(payload.contact_last_name);
   const contactName = contactNameFromParts(contactTitle, contactFirstName, contactLastName);
 
-  if (!contactFirstName) {
-    return res.status(400).json({ error: 'Firstname is required' });
+  if (!contactHasAnyValue(payload)) {
+    return res.status(400).json({ error: 'Contact details are required' });
   }
 
   try {
@@ -759,6 +760,7 @@ router.post('/api/database/customers/:key/contacts', async (req, res) => {
     const actorName = req.hubUser ? fullName(req.hubUser) : null;
     const result = await pool.query(
       `INSERT INTO database_customer_contacts (
+         source_contact_id,
          customer_id,
          profile_id,
          customer_name,
@@ -781,10 +783,28 @@ router.post('/api/database/customers/:key/contacts', async (req, res) => {
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8,
          $9, $10, $11, $12, $13, $14, $15,
-         $16, NOW(), NOW(), NOW()
+         $16, $17, NOW(), NOW(), NOW()
        )
+       ON CONFLICT (source_contact_id) DO UPDATE
+       SET customer_id = EXCLUDED.customer_id,
+           profile_id = EXCLUDED.profile_id,
+           customer_name = EXCLUDED.customer_name,
+           contact_title = EXCLUDED.contact_title,
+           contact_first_name = EXCLUDED.contact_first_name,
+           contact_last_name = EXCLUDED.contact_last_name,
+           contact_name = EXCLUDED.contact_name,
+           contact_phone = EXCLUDED.contact_phone,
+           contact_fax = EXCLUDED.contact_fax,
+           contact_mobile = EXCLUDED.contact_mobile,
+           contact_email = EXCLUDED.contact_email,
+           contact_address = EXCLUDED.contact_address,
+           updated_by_user_id = EXCLUDED.updated_by_user_id,
+           updated_by_name = EXCLUDED.updated_by_name,
+           updated_at_source = NOW(),
+           imported_at = NOW()
        RETURNING *`,
       [
+        sourceContactId,
         context.customer_id,
         context.profile_id,
         context.customer_name,
@@ -808,6 +828,116 @@ router.post('/api/database/customers/:key/contacts', async (req, res) => {
   } catch (err) {
     console.error('POST /api/database/customers/:key/contacts', err);
     res.status(500).json({ error: 'Failed to create database customer contact' });
+  }
+});
+
+router.put('/api/database/customers/:key/contacts/:contactId', async (req, res) => {
+  const customerKey = parseCustomerKey(req.params.key);
+  const contactRowId = nullableInt(req.params.contactId);
+  if (!customerKey || !contactRowId) {
+    return res.status(400).json({ error: 'Invalid contact key' });
+  }
+
+  const payload = req.body || {};
+  if (!contactHasAnyValue(payload)) {
+    return res.status(400).json({ error: 'Contact details are required' });
+  }
+
+  try {
+    const context = await resolveCustomerContactContext(customerKey);
+    if (!context) {
+      return res.status(404).json({ error: 'Database customer not found' });
+    }
+
+    const scope = contactScopeClause(context, 13);
+    if (!scope.clause) {
+      return res.status(404).json({ error: 'Database customer contact not found' });
+    }
+
+    const contactTitle = cleanNullable(payload.contact_title);
+    const contactFirstName = cleanNullable(payload.contact_first_name);
+    const contactLastName = cleanNullable(payload.contact_last_name);
+    const actorName = req.hubUser ? fullName(req.hubUser) : null;
+    const result = await pool.query(
+      `UPDATE database_customer_contacts
+       SET contact_title = $2,
+           contact_first_name = $3,
+           contact_last_name = $4,
+           contact_name = $5,
+           contact_phone = $6,
+           contact_fax = $7,
+           contact_mobile = $8,
+           contact_email = $9,
+           contact_address = $10,
+           updated_by_user_id = $11,
+           updated_by_name = $12,
+           updated_at_source = NOW(),
+           imported_at = NOW()
+       WHERE id = $1
+         AND (${scope.clause})
+       RETURNING *`,
+      [
+        contactRowId,
+        contactTitle,
+        contactFirstName,
+        contactLastName,
+        contactNameFromParts(contactTitle, contactFirstName, contactLastName),
+        cleanNullable(payload.contact_phone),
+        cleanNullable(payload.contact_fax),
+        cleanNullable(payload.contact_mobile),
+        cleanNullable(payload.contact_email),
+        cleanNullable(payload.contact_address),
+        req.hubUser?.id || null,
+        actorName,
+        ...scope.params,
+      ]
+    );
+
+    if (!result.rowCount) {
+      return res.status(404).json({ error: 'Database customer contact not found' });
+    }
+
+    res.json({ contact: manualContactToContact(result.rows[0]) });
+  } catch (err) {
+    console.error('PUT /api/database/customers/:key/contacts/:contactId', err);
+    res.status(500).json({ error: 'Failed to update database customer contact' });
+  }
+});
+
+router.delete('/api/database/customers/:key/contacts/:contactId', async (req, res) => {
+  const customerKey = parseCustomerKey(req.params.key);
+  const contactRowId = nullableInt(req.params.contactId);
+  if (!customerKey || !contactRowId) {
+    return res.status(400).json({ error: 'Invalid contact key' });
+  }
+
+  try {
+    const context = await resolveCustomerContactContext(customerKey);
+    if (!context) {
+      return res.status(404).json({ error: 'Database customer not found' });
+    }
+
+    const scope = contactScopeClause(context, 2);
+    if (!scope.clause) {
+      return res.status(404).json({ error: 'Database customer contact not found' });
+    }
+
+    const result = await pool.query(
+      `DELETE FROM database_customer_contacts
+       WHERE id = $1
+         AND (${scope.clause})
+       RETURNING id`,
+      [contactRowId, ...scope.params]
+    );
+
+    if (!result.rowCount) {
+      return res.status(404).json({ error: 'Database customer contact not found' });
+    }
+
+    res.json({ ok: true, contact_id: contactRowId });
+  } catch (err) {
+    console.error('DELETE /api/database/customers/:key/contacts/:contactId', err);
+    res.status(500).json({ error: 'Failed to delete database customer contact' });
   }
 });
 
@@ -2094,9 +2224,36 @@ async function resolveCustomerContactContext(customerKey) {
   };
 }
 
+function contactScopeClause(context, startIndex) {
+  const clauses = [];
+  const params = [];
+
+  if (isFiniteDatabaseValue(context?.profile_id)) {
+    params.push(Number(context.profile_id));
+    clauses.push(`profile_id = $${startIndex + params.length - 1}`);
+  }
+
+  if (isFiniteDatabaseValue(context?.customer_id)) {
+    params.push(Number(context.customer_id));
+    clauses.push(`customer_id = $${startIndex + params.length - 1}`);
+  }
+
+  const customerName = cleanNullable(context?.customer_name);
+  if (customerName) {
+    params.push(customerName);
+    clauses.push(`LOWER(customer_name) = LOWER($${startIndex + params.length - 1})`);
+  }
+
+  return {
+    clause: clauses.join(' OR '),
+    params,
+  };
+}
+
 function manualContactToContact(contact) {
   return {
     contact_id: contact.source_contact_id || null,
+    contact_row_id: contact.id || null,
     manual_contact_id: contact.id || null,
     contact_title: contact.contact_title || null,
     contact_first_name: contact.contact_first_name || null,
@@ -2117,6 +2274,19 @@ function manualContactToContact(contact) {
     first_seen_at: contact.created_at_source || null,
     last_seen_at: contact.updated_at_source || contact.created_at_source || null,
   };
+}
+
+function contactHasAnyValue(payload) {
+  return [
+    payload?.contact_title,
+    payload?.contact_first_name,
+    payload?.contact_last_name,
+    payload?.contact_phone,
+    payload?.contact_fax,
+    payload?.contact_mobile,
+    payload?.contact_email,
+    payload?.contact_address,
+  ].some((value) => cleanQuery(value));
 }
 
 function groupedContacts(orders, profile = null, manualContactRows = []) {
@@ -2143,6 +2313,7 @@ function groupedContacts(orders, profile = null, manualContactRows = []) {
 
     contacts.set(key, {
       contact_id: null,
+      contact_row_id: null,
       manual_contact_id: null,
       contact_title: null,
       contact_first_name: null,
@@ -2175,6 +2346,7 @@ function groupedContacts(orders, profile = null, manualContactRows = []) {
 
     const existing = contacts.get(key) || {
       contact_id: order.contact_id || null,
+      contact_row_id: null,
       manual_contact_id: null,
       contact_title: null,
       contact_first_name: null,

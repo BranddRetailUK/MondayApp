@@ -5,8 +5,10 @@
   const PRODUCT_SEARCH_DELAY = 180;
   const DESIGN_AUTOSAVE_MS = 5000;
   const JOB_AUTOSAVE_MS = DESIGN_AUTOSAVE_MS;
+  const CONTACT_AUTOSAVE_MS = DESIGN_AUTOSAVE_MS;
   const LINE_ORDER_AUTOSAVE_MS = 3500;
   const ORDER_ACK_LOGO_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781699668/ultimate_logo_imyxvr.png';
+  const ORDER_ACK_FOOTER_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781779546/LETTERHEAD_INFO_pxmlak.png';
 
   const state = {
     loadedHome: false,
@@ -58,6 +60,12 @@
     jobSaving: false,
     jobSaveQueued: false,
     jobLastSavedSignature: '{}',
+    contactDirtyKeys: new Set(),
+    contactSavingKeys: new Set(),
+    contactSaveQueuedKeys: new Set(),
+    contactLastSavedSignatures: {},
+    contactDeleteTarget: null,
+    contactDeleteSaving: false,
     customLineDraft: null,
     lineDeleteTarget: null,
     lineDeleteSaving: false,
@@ -75,6 +83,7 @@
   let productSearchRequest = 0;
   let designAutosaveTimer = 0;
   let jobAutosaveTimer = 0;
+  let contactAutosaveTimer = 0;
   let lineOrderAutosaveTimer = 0;
   let lineDrag = null;
 
@@ -149,6 +158,8 @@
     els.customersBody.addEventListener('keydown', handleDatabaseCustomerRowKeydown);
     els.customerOrdersBody.addEventListener('click', handleCustomerOrderRowClick);
     els.customerOrdersBody.addEventListener('keydown', handleCustomerOrderRowKeydown);
+    els.customerContactsBody.addEventListener('input', handleCustomerContactInput);
+    els.customerContactsBody.addEventListener('focusout', handleCustomerContactFocusOut);
     els.customersSearch.addEventListener('input', handleDatabaseCustomerSearchInput);
     els.customerAccountManager?.addEventListener('change', handleCustomerAccountManagerChange);
     els.selectOrder?.addEventListener('change', () => openSelectedOrder(els.selectOrder.value));
@@ -264,6 +275,12 @@
       return;
     }
 
+    const deleteContactKey = button.dataset.dbContactDelete;
+    if (deleteContactKey) {
+      openContactDeleteConfirmation(deleteContactKey);
+      return;
+    }
+
     const customLineAction = button.dataset.dbCustomLineAction;
     if (customLineAction) {
       const lineType = button.dataset.dbLineType;
@@ -296,6 +313,7 @@
 
     const customerTab = button.dataset.dbCustomerTab;
     if (customerTab) {
+      await flushOrderAutosaves();
       showCustomerTab(customerTab);
       return;
     }
@@ -1024,6 +1042,7 @@
   }
 
   function setCustomerLoading() {
+    resetContactAutosaveState();
     state.selectedCustomerDetail = null;
     state.selectedCustomerOrders = [];
     state.selectedCustomerContacts = [];
@@ -1040,6 +1059,7 @@
   }
 
   function renderCustomerError(message) {
+    resetContactAutosaveState();
     els.customerName.value = 'Customer unavailable';
     els.customerCode.value = '';
     setCustomerAccountManagerOptions(null, true);
@@ -1203,33 +1223,37 @@
         <button class="db-toolbar-button db-contact-add-button" type="button" data-db-action="add-contact">Add Contact</button>
       </div>
     `;
+    hydrateContactAutosaveSignatures();
   }
 
-  function renderCustomerContactCard(contact) {
+  function renderCustomerContactCard(contact, index) {
     const parts = contactNameParts(contact);
+    const contactKey = contactCardKey(contact, index);
+    const rowId = contact.contact_row_id || contact.manual_contact_id || '';
     return `
-      <article class="db-contact-card">
+      <article class="db-contact-card" data-contact-key="${escapeAttr(contactKey)}" data-contact-row-id="${escapeAttr(rowId)}" data-source-contact-id="${escapeAttr(contact.contact_id || '')}">
+        <button class="db-contact-delete-button" type="button" data-db-contact-delete="${escapeAttr(contactKey)}" aria-label="Delete contact" title="Delete contact">X</button>
         <div class="db-contact-card-row db-contact-name-row">
           <label>Contact:</label>
-          <input class="db-contact-title-field" readonly value="${escapeAttr(parts.title)}">
-          <input readonly value="${escapeAttr(parts.firstName)}">
-          <input readonly value="${escapeAttr(parts.lastName)}">
+          <input class="db-contact-title-field" data-contact-field="contact_title" value="${escapeAttr(parts.title)}">
+          <input data-contact-field="contact_first_name" value="${escapeAttr(parts.firstName)}">
+          <input data-contact-field="contact_last_name" value="${escapeAttr(parts.lastName)}">
         </div>
         <div class="db-contact-card-row db-contact-two-column-row">
           <label>Tel:</label>
-          <input readonly value="${escapeAttr(contact.contact_phone || '')}">
+          <input data-contact-field="contact_phone" value="${escapeAttr(contact.contact_phone || '')}">
           <label>Email:</label>
-          <input readonly value="${escapeAttr(contact.contact_email || '')}">
+          <input data-contact-field="contact_email" value="${escapeAttr(contact.contact_email || '')}">
         </div>
         <div class="db-contact-card-row db-contact-two-column-row">
           <label>Fax:</label>
-          <input readonly value="${escapeAttr(contact.contact_fax || '')}">
+          <input data-contact-field="contact_fax" value="${escapeAttr(contact.contact_fax || '')}">
           <label>Mobile:</label>
-          <input readonly value="${escapeAttr(contact.contact_mobile || '')}">
+          <input data-contact-field="contact_mobile" value="${escapeAttr(contact.contact_mobile || '')}">
         </div>
         <div class="db-contact-card-row db-contact-address-row">
           <label>Address:</label>
-          <input readonly value="${escapeAttr(contact.contact_address || '')}">
+          <input data-contact-field="contact_address" value="${escapeAttr(contact.contact_address || '')}">
         </div>
       </article>
     `;
@@ -1249,6 +1273,252 @@
       firstName: parts.slice(0, -1).join(' '),
       lastName: parts[parts.length - 1],
     };
+  }
+
+  function contactCardKey(contact, index = 0) {
+    const rowId = contact?.contact_row_id || contact?.manual_contact_id;
+    if (rowId) return `row:${rowId}`;
+    if (contact?.contact_id) return `source:${contact.contact_id}`;
+    return `fallback:${index}`;
+  }
+
+  function hydrateContactAutosaveSignatures() {
+    clearTimeout(contactAutosaveTimer);
+    state.contactDirtyKeys = new Set();
+    state.contactSavingKeys = new Set();
+    state.contactSaveQueuedKeys = new Set();
+    state.contactLastSavedSignatures = {};
+    (state.selectedCustomerContacts || []).forEach((contact, index) => {
+      state.contactLastSavedSignatures[contactCardKey(contact, index)] = contactSignature(contactPayloadFromContact(contact));
+    });
+  }
+
+  function resetContactAutosaveState() {
+    clearTimeout(contactAutosaveTimer);
+    state.contactDirtyKeys = new Set();
+    state.contactSavingKeys = new Set();
+    state.contactSaveQueuedKeys = new Set();
+    state.contactLastSavedSignatures = {};
+    state.contactDeleteTarget = null;
+    state.contactDeleteSaving = false;
+  }
+
+  function handleCustomerContactInput(event) {
+    const input = event.target.closest('[data-contact-field]');
+    if (!input) return;
+    const card = input.closest('.db-contact-card');
+    if (!card) return;
+
+    syncContactStateFromCard(card);
+    markContactDirty(card.dataset.contactKey);
+    card.classList.add('db-contact-card-dirty');
+    card.classList.remove('db-contact-card-error');
+  }
+
+  function handleCustomerContactFocusOut(event) {
+    const input = event.target.closest('[data-contact-field]');
+    if (!input) return;
+    const card = input.closest('.db-contact-card');
+    if (!card) return;
+
+    const nextTarget = event.relatedTarget;
+    if (nextTarget && card.contains(nextTarget)) return;
+
+    window.setTimeout(() => {
+      if (!card.isConnected || card.matches(':focus-within')) return;
+      flushContactAutosaveForKey(card.dataset.contactKey);
+    }, 0);
+  }
+
+  function syncContactStateFromCard(card) {
+    const key = card?.dataset.contactKey;
+    if (!key) return;
+    const contact = findContactByKey(key);
+    if (!contact) return;
+    const payload = collectContactPayloadFromCard(card);
+    Object.assign(contact, payload, {
+      contact_name: contactNameFromPayload(payload),
+    });
+  }
+
+  function markContactDirty(contactKey) {
+    if (!contactKey) return;
+    state.contactDirtyKeys.add(contactKey);
+    scheduleContactAutosave();
+  }
+
+  function scheduleContactAutosave() {
+    clearTimeout(contactAutosaveTimer);
+    contactAutosaveTimer = window.setTimeout(() => {
+      flushContactAutosaves();
+    }, CONTACT_AUTOSAVE_MS);
+  }
+
+  async function flushContactAutosaves(options = {}) {
+    clearTimeout(contactAutosaveTimer);
+    const keys = Array.from(state.contactDirtyKeys || []);
+    for (const key of keys) {
+      await flushContactAutosaveForKey(key, options);
+    }
+  }
+
+  async function flushContactAutosaveForKey(contactKey, options = {}) {
+    if (!contactKey || !state.contactDirtyKeys.has(contactKey)) return true;
+    const card = findContactCardByKey(contactKey);
+    if (!card) return true;
+
+    syncContactStateFromCard(card);
+    const payload = collectContactPayloadFromCard(card);
+    const signature = contactSignature(payload);
+    if (signature === state.contactLastSavedSignatures[contactKey]) {
+      state.contactDirtyKeys.delete(contactKey);
+      card.classList.remove('db-contact-card-dirty');
+      card.classList.remove('db-contact-card-error');
+      return true;
+    }
+
+    if (state.contactSavingKeys.has(contactKey)) {
+      state.contactSaveQueuedKeys.add(contactKey);
+      return false;
+    }
+
+    const customerKey = state.selectedCustomerDetail?.customer_key;
+    if (!customerKey || !contactHasAnyValue(payload)) return false;
+
+    state.contactSavingKeys.add(contactKey);
+    card.classList.add('db-contact-card-saving');
+
+    try {
+      const rowId = card.dataset.contactRowId;
+      const sourceContactId = card.dataset.sourceContactId;
+      const endpoint = rowId
+        ? `/api/database/customers/${encodeURIComponent(customerKey)}/contacts/${encodeURIComponent(rowId)}`
+        : `/api/database/customers/${encodeURIComponent(customerKey)}/contacts`;
+      const method = rowId ? 'PUT' : 'POST';
+      const body = JSON.stringify({
+        ...payload,
+        source_contact_id: sourceContactId || null,
+      });
+      const data = await fetchJson(endpoint, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        keepalive: Boolean(options.keepalive),
+      });
+      const savedContact = data.contact || {};
+      replaceSelectedContact(contactKey, savedContact);
+      state.contactDirtyKeys.delete(contactKey);
+      delete state.contactLastSavedSignatures[contactKey];
+      const newKey = contactCardKey(savedContact, selectedContactIndex(savedContact));
+      state.contactLastSavedSignatures[newKey] = contactSignature(contactPayloadFromContact(savedContact));
+
+      if (!rowId || newKey !== contactKey) {
+        renderCustomerContacts();
+      } else {
+        card.classList.remove('db-contact-card-dirty');
+        card.classList.remove('db-contact-card-error');
+        card.dataset.contactRowId = savedContact.contact_row_id || savedContact.manual_contact_id || rowId;
+      }
+      return true;
+    } catch (err) {
+      state.contactDirtyKeys.add(contactKey);
+      card.classList.add('db-contact-card-error');
+      console.error('Contact autosave failed', err);
+      return false;
+    } finally {
+      state.contactSavingKeys.delete(contactKey);
+      card.classList.remove('db-contact-card-saving');
+      if (state.contactSaveQueuedKeys.has(contactKey)) {
+        state.contactSaveQueuedKeys.delete(contactKey);
+        scheduleContactAutosave();
+      }
+    }
+  }
+
+  function collectContactPayloadFromCard(card) {
+    return {
+      contact_title: contactFieldValue(card, 'contact_title'),
+      contact_first_name: contactFieldValue(card, 'contact_first_name'),
+      contact_last_name: contactFieldValue(card, 'contact_last_name'),
+      contact_phone: contactFieldValue(card, 'contact_phone'),
+      contact_fax: contactFieldValue(card, 'contact_fax'),
+      contact_mobile: contactFieldValue(card, 'contact_mobile'),
+      contact_email: contactFieldValue(card, 'contact_email'),
+      contact_address: contactFieldValue(card, 'contact_address'),
+    };
+  }
+
+  function contactPayloadFromContact(contact) {
+    const parts = contactNameParts(contact);
+    return {
+      contact_title: contact.contact_title || parts.title || '',
+      contact_first_name: contact.contact_first_name || parts.firstName || '',
+      contact_last_name: contact.contact_last_name || parts.lastName || '',
+      contact_phone: contact.contact_phone || '',
+      contact_fax: contact.contact_fax || '',
+      contact_mobile: contact.contact_mobile || '',
+      contact_email: contact.contact_email || '',
+      contact_address: contact.contact_address || '',
+    };
+  }
+
+  function contactFieldValue(card, field) {
+    return card.querySelector(`[data-contact-field="${field}"]`)?.value.trim() || '';
+  }
+
+  function contactSignature(payload) {
+    return JSON.stringify({
+      contact_title: payload?.contact_title || '',
+      contact_first_name: payload?.contact_first_name || '',
+      contact_last_name: payload?.contact_last_name || '',
+      contact_phone: payload?.contact_phone || '',
+      contact_fax: payload?.contact_fax || '',
+      contact_mobile: payload?.contact_mobile || '',
+      contact_email: payload?.contact_email || '',
+      contact_address: payload?.contact_address || '',
+    });
+  }
+
+  function contactNameFromPayload(payload) {
+    return [payload?.contact_first_name, payload?.contact_last_name]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+      .join(' ') || null;
+  }
+
+  function contactHasAnyValue(payload) {
+    return Object.values(payload || {}).some((value) => String(value || '').trim());
+  }
+
+  function findContactCardByKey(contactKey) {
+    return Array.from(els.customerContactsBody.querySelectorAll('.db-contact-card'))
+      .find((card) => card.dataset.contactKey === String(contactKey));
+  }
+
+  function findContactByKey(contactKey) {
+    return (state.selectedCustomerContacts || []).find((contact, index) => (
+      contactCardKey(contact, index) === String(contactKey)
+    ));
+  }
+
+  function selectedContactIndex(targetContact) {
+    return (state.selectedCustomerContacts || []).findIndex((contact) => (
+      (targetContact.contact_row_id || targetContact.manual_contact_id)
+        ? Number(contact.contact_row_id || contact.manual_contact_id) === Number(targetContact.contact_row_id || targetContact.manual_contact_id)
+        : contact === targetContact
+    ));
+  }
+
+  function replaceSelectedContact(contactKey, savedContact) {
+    const contacts = state.selectedCustomerContacts || [];
+    const index = contacts.findIndex((contact, contactIndex) => contactCardKey(contact, contactIndex) === contactKey);
+    if (index === -1) {
+      state.selectedCustomerContacts = [...contacts, savedContact];
+      return;
+    }
+    state.selectedCustomerContacts = contacts.map((contact, contactIndex) => (
+      contactIndex === index ? { ...contact, ...savedContact } : contact
+    ));
   }
 
   function renderCustomerAddresses() {
@@ -1862,8 +2132,10 @@
     const item = state.selectedLineItems.find((line) => Number(line.source_order_item_id) === id);
     state.lineDeleteTarget = { lineItemId: id, label: lineDeleteLabel(item) };
     state.designDeleteTarget = null;
+    state.contactDeleteTarget = null;
     state.lineDeleteSaving = false;
     state.designDeleteSaving = false;
+    state.contactDeleteSaving = false;
 
     const modal = ensureLineDeleteModal();
     const message = modal.querySelector('.db-line-delete-message');
@@ -1927,7 +2199,9 @@
     }
 
     if (button.dataset.dbLineDeleteConfirm) {
-      if (state.designDeleteTarget) {
+      if (state.contactDeleteTarget) {
+        confirmDeleteContact();
+      } else if (state.designDeleteTarget) {
         confirmDeleteDesignPosition();
       } else {
         confirmDeleteLineItem();
@@ -1936,7 +2210,7 @@
   }
 
   function closeLineDeleteConfirmation() {
-    if (state.lineDeleteSaving || state.designDeleteSaving) return;
+    if (state.lineDeleteSaving || state.designDeleteSaving || state.contactDeleteSaving) return;
     const modal = document.getElementById('db-line-delete-modal');
     if (!modal) return;
     modal.hidden = true;
@@ -1944,6 +2218,7 @@
     document.body.classList.remove('modal-open', 'db-line-delete-open');
     state.lineDeleteTarget = null;
     state.designDeleteTarget = null;
+    state.contactDeleteTarget = null;
   }
 
   async function confirmDeleteLineItem() {
@@ -2001,8 +2276,10 @@
 
     state.designDeleteTarget = { designKey, label: designDeleteLabel(row) };
     state.lineDeleteTarget = null;
+    state.contactDeleteTarget = null;
     state.designDeleteSaving = false;
     state.lineDeleteSaving = false;
+    state.contactDeleteSaving = false;
 
     const modal = ensureLineDeleteModal();
     const message = modal.querySelector('.db-line-delete-message');
@@ -2078,6 +2355,81 @@
     return String(label || '').trim();
   }
 
+  function openContactDeleteConfirmation(contactKey) {
+    const contact = findContactByKey(contactKey);
+    if (!contact) return;
+
+    const rowId = contact.contact_row_id || contact.manual_contact_id;
+    state.contactDeleteTarget = {
+      contactKey,
+      rowId,
+      label: contactDeleteLabel(contact),
+    };
+    state.lineDeleteTarget = null;
+    state.designDeleteTarget = null;
+    state.contactDeleteSaving = false;
+    state.lineDeleteSaving = false;
+    state.designDeleteSaving = false;
+
+    const modal = ensureLineDeleteModal();
+    const message = modal.querySelector('.db-line-delete-message');
+    const error = modal.querySelector('.db-line-delete-error');
+    if (message) {
+      message.textContent = state.contactDeleteTarget.label
+        ? `Delete ${state.contactDeleteTarget.label}?`
+        : 'Delete this contact?';
+    }
+    setLineDeleteModalSaving(false);
+    if (error) error.textContent = rowId ? '' : 'This contact has not been stored yet.';
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open', 'db-line-delete-open');
+
+    window.requestAnimationFrame(() => {
+      modal.querySelector('[data-db-line-delete-cancel]')?.focus();
+    });
+  }
+
+  async function confirmDeleteContact() {
+    const target = state.contactDeleteTarget;
+    const customerKey = state.selectedCustomerDetail?.customer_key;
+    if (!target || state.contactDeleteSaving || !customerKey) return;
+
+    if (!target.rowId) {
+      setLineDeleteModalSaving(false, 'This contact cannot be deleted until it has been saved.');
+      return;
+    }
+
+    state.contactDeleteSaving = true;
+    setLineDeleteModalSaving(true);
+
+    try {
+      await fetchJson(`/api/database/customers/${encodeURIComponent(customerKey)}/contacts/${encodeURIComponent(target.rowId)}`, {
+        method: 'DELETE',
+      });
+      state.selectedCustomerContacts = (state.selectedCustomerContacts || []).filter((contact, index) => (
+        contactCardKey(contact, index) !== target.contactKey
+      ));
+      state.contactDirtyKeys.delete(target.contactKey);
+      delete state.contactLastSavedSignatures[target.contactKey];
+      state.contactDeleteSaving = false;
+      closeLineDeleteConfirmation();
+      renderCustomerContacts();
+    } catch (err) {
+      state.contactDeleteSaving = false;
+      setLineDeleteModalSaving(false, err.message || 'Failed to delete contact');
+      console.error('Contact delete failed', err);
+    }
+  }
+
+  function contactDeleteLabel(contact) {
+    const parts = contactNameParts(contact);
+    return [parts.firstName, parts.lastName].filter(Boolean).join(' ')
+      || contact.contact_email
+      || contact.contact_phone
+      || 'this contact';
+  }
+
   function printOrderAcknowledgement() {
     const modal = document.getElementById('db-order-ack-modal');
     if (!modal || modal.hidden) return;
@@ -2145,6 +2497,7 @@
       ${renderOrderAckItemsTable(items, totals)}
       ${renderOrderAckPositionsTable(positions)}
       ${job.comments ? renderOrderAckComments(job.comments) : ''}
+      <img class="db-order-ack-footer" src="${escapeAttr(ORDER_ACK_FOOTER_URL)}" alt="Ultimate letterhead footer" crossorigin="anonymous">
     `;
   }
 
@@ -3340,6 +3693,7 @@
       flushJobAutosave(options),
       flushDesignAutosave(options),
       flushLineOrderAutosave(options),
+      flushContactAutosaves(options),
     ]);
   }
 

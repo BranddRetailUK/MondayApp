@@ -1464,11 +1464,12 @@ body.modal-open{overflow:hidden}
   justify-content:center;
 }
 .db-order-ack-page{
+  position:relative;
   width:210mm;
   min-height:297mm;
   flex:0 0 auto;
   box-sizing:border-box;
-  padding:12mm 24mm 18mm 21mm;
+  padding:12mm 24mm 52mm 21mm;
   background:#fff;
   color:#000;
   box-shadow:0 12px 36px rgba(0,0,0,0.45);
@@ -1665,6 +1666,17 @@ body.modal-open{overflow:hidden}
   margin:2mm 0 0;
   white-space:pre-wrap;
 }
+.db-order-ack-footer{
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:0;
+  width:210mm;
+  max-width:100%;
+  height:auto;
+  display:block;
+  pointer-events:none;
+}
 .db-order-meta-panel{
   position:absolute;
   right:0;
@@ -1823,21 +1835,46 @@ body.modal-open{overflow:hidden}
 .db-contact-cards-scroll{
   height:100%;
   min-height:0;
+  padding:10px;
   overflow-y:auto;
   overflow-x:hidden;
   border:1px solid #000;
   background:#c6def5;
 }
 .db-contact-card{
+  position:relative;
   min-height:96px;
-  padding:7px 10px;
-  border-bottom:1px solid #000;
+  margin-bottom:10px;
+  padding:7px 28px 7px 10px;
+  border:1px solid #000;
   background:#c6def5;
   color:#000;
   font:12px Arial, Helvetica, sans-serif;
 }
 .db-contact-card:last-child{
-  border-bottom:0;
+  margin-bottom:0;
+}
+.db-contact-delete-button{
+  position:absolute;
+  top:4px;
+  right:4px;
+  width:18px;
+  height:18px;
+  padding:0;
+  border:1px solid #900;
+  border-radius:0;
+  background:#d00000;
+  color:#fff;
+  font:700 11px Arial, Helvetica, sans-serif;
+  line-height:14px;
+  cursor:pointer;
+}
+.db-contact-card-saving input{
+  background:#f6f6f6;
+}
+.db-contact-card-error input{
+  outline:1px solid #d00000;
+  outline-offset:-1px;
 }
 .db-contact-card-row{
   display:grid;
@@ -2669,10 +2706,10 @@ input.db-custom-line-input{
 
 @page{
   size:A4;
-  margin:10mm 0 0;
+  margin:10mm 0 40mm;
 }
 @page :first{
-  margin:0;
+  margin:0 0 40mm;
 }
 @media print{
   body.db-order-ack-printing{
@@ -2710,9 +2747,19 @@ input.db-custom-line-input{
   }
   body.db-order-ack-printing .db-order-ack-page{
     width:210mm;
-    min-height:297mm;
+    min-height:auto;
     margin:0;
+    padding:12mm 24mm 0 21mm;
     box-shadow:none;
+  }
+  body.db-order-ack-printing .db-order-ack-footer{
+    position:fixed;
+    left:0;
+    right:0;
+    bottom:0;
+    width:210mm;
+    max-width:none;
+    z-index:10;
   }
   body.db-order-ack-printing .db-order-ack-items,
   body.db-order-ack-printing .db-order-ack-positions{
