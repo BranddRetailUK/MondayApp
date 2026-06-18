@@ -4,7 +4,7 @@ const PROD_ORIGIN = window.location.origin;
 const ENDPOINTS = { data: '/api/board', auth: '/auth', scans: '/api/scan-states' };
 const DASHBOARD_TAB_STORAGE_KEY = 'ultimateHub.activeDashboardTab';
 const DASHBOARD_TAB_NAMES = ['dashboard', 'database', 'visuals'];
-const BOARD_AUTO_REFRESH_MS = 30000;
+const BOARD_AUTO_REFRESH_MS = 2000;
 const HIDDEN_BOARD_COLUMN_TYPES = new Set(['subtasks']);
 const HIDDEN_BOARD_COLUMN_IDS = new Set(['subitems__1']);
 let __boardRefreshTimer = null;
@@ -383,6 +383,7 @@ function startBoardAutoRefresh() {
 
 function renderBoard(payload) {
   const boardDiv = document.getElementById('board') || document.body;
+  const uiState = collectBoardUiState(boardDiv);
   boardDiv.innerHTML = '';
   const board = unwrapFirstBoard(payload);
   if (!board) {
@@ -407,6 +408,7 @@ function renderBoard(payload) {
     const groupWrap = document.createElement('section');
     groupWrap.className = 'group';
     groupWrap.dataset.groupKey = groupKey;
+    if (uiState.collapsedGroups.has(groupKey)) groupWrap.classList.add('collapsed');
     if (group.color) groupWrap.style.setProperty('--group-accent', group.color);
 
     const sectionTitle = document.createElement('button');
@@ -416,12 +418,19 @@ function renderBoard(payload) {
       <span class="chev" aria-hidden="true"></span>
       <span class="group-name">${escapeHtml(collectionName)}</span>
     `;
-    sectionTitle.setAttribute('aria-expanded', 'true');
-    sectionTitle.addEventListener('click', () => {
+    sectionTitle.setAttribute('aria-expanded', uiState.collapsedGroups.has(groupKey) ? 'false' : 'true');
+    const toggleGroup = () => {
       const collapsed = groupWrap.classList.toggle('collapsed');
       sectionTitle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-    });
+      groupSummary.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    };
+    sectionTitle.addEventListener('click', toggleGroup);
     groupWrap.appendChild(sectionTitle);
+
+    const groupSummary = buildGroupSummary(collectionName, items, gridSpec);
+    groupSummary.setAttribute('aria-expanded', uiState.collapsedGroups.has(groupKey) ? 'false' : 'true');
+    groupSummary.addEventListener('click', toggleGroup);
+    groupWrap.appendChild(groupSummary);
 
     const tableWrap = document.createElement('div');
     tableWrap.className = 'group-content';
@@ -446,15 +455,16 @@ function renderBoard(payload) {
       row.dataset.itemId = itemId;
       row.className = 'grid-row job-row';
       row.style.setProperty('--board-cols', gridSpec.template);
+      const subitemsOpen = uiState.openSubitems.has(itemId);
 
       for (const spec of gridSpec.columns) {
-        row.appendChild(buildItemCell(item, spec));
+        row.appendChild(buildItemCell(item, spec, { subitemsOpen }));
       }
       grid.appendChild(row);
 
       if (subitems.length > 0) {
         const subPanel = document.createElement('div');
-        subPanel.className = 'subitem-panel hidden';
+        subPanel.className = `subitem-panel ${subitemsOpen ? '' : 'hidden'}`.trim();
         subPanel.dataset.parent = itemId;
         subPanel.style.minWidth = `${gridSpec.minWidth}px`;
 
@@ -492,9 +502,122 @@ function renderBoard(payload) {
   }
 }
 
+function collectBoardUiState(boardDiv) {
+  const collapsedGroups = new Set();
+  const openSubitems = new Set();
+  try {
+    boardDiv.querySelectorAll('.group.collapsed[data-group-key]').forEach(group => {
+      collapsedGroups.add(group.dataset.groupKey);
+    });
+    boardDiv.querySelectorAll('.job-row[data-item-id] .row-toggle.open').forEach(toggle => {
+      const row = toggle.closest('.job-row[data-item-id]');
+      if (row?.dataset?.itemId) openSubitems.add(row.dataset.itemId);
+    });
+  } catch {}
+  return { collapsedGroups, openSubitems };
+}
+
 function toggleSubRows(parentId, open) {
   const rows = document.querySelectorAll(`.subitem-panel[data-parent="${CSS.escape(parentId)}"]`);
   rows.forEach(r => r.classList.toggle('hidden', !open));
+}
+
+function buildGroupSummary(groupName, items, gridSpec) {
+  const summary = document.createElement('button');
+  summary.type = 'button';
+  summary.className = 'group-summary';
+  summary.style.setProperty('--board-cols', gridSpec.template);
+  summary.style.minWidth = `${gridSpec.minWidth}px`;
+  summary.setAttribute('aria-expanded', 'true');
+
+  const left = document.createElement('span');
+  left.className = 'group-summary-left';
+  const itemCount = items.length;
+  const subitemCount = countSubitems(items);
+  left.innerHTML = `
+    <span class="chev" aria-hidden="true"></span>
+    <span class="group-summary-copy">
+      <span class="group-summary-name">${escapeHtml(groupName)}</span>
+      <span class="group-summary-count">${itemCount} Job${itemCount === 1 ? '' : 's'} / ${subitemCount} Subitem${subitemCount === 1 ? '' : 's'}</span>
+    </span>
+  `;
+  summary.appendChild(left);
+
+  for (const spec of gridSpec.columns.slice(2)) {
+    summary.appendChild(buildSummaryCell(items, spec.column));
+  }
+
+  return summary;
+}
+
+function countSubitems(items) {
+  return items.reduce((sum, item) => sum + (Array.isArray(item.subitems) ? item.subitems.length : 0), 0);
+}
+
+function buildSummaryCell(items, column) {
+  const cell = document.createElement('span');
+  cell.className = `group-summary-cell summary-${column.type}`;
+  if (column.type === 'status') {
+    cell.appendChild(buildSummaryLabel(column.title));
+    cell.appendChild(buildSummaryStatusBar(items, column));
+  } else if (column.type === 'checkbox') {
+    cell.appendChild(buildSummaryLabel(column.title));
+    const count = document.createElement('span');
+    count.className = 'group-summary-count-value';
+    count.textContent = `${countChecked(items, column.id)}/${items.length}`;
+    count.style.color = getCheckboxTickColor(column);
+    cell.appendChild(count);
+  } else {
+    cell.classList.add('empty');
+  }
+  return cell;
+}
+
+function buildSummaryLabel(title) {
+  const label = document.createElement('span');
+  label.className = 'group-summary-label';
+  label.textContent = title || '';
+  return label;
+}
+
+function buildSummaryStatusBar(items, column) {
+  const bar = document.createElement('span');
+  bar.className = 'group-summary-status-bar';
+  const counts = new Map();
+  const total = Math.max(items.length, 1);
+
+  for (const item of items) {
+    const value = findColumnValue(item, column.id);
+    const text = normalizeCellText(value?.text || '');
+    const key = text || '__empty__';
+    const current = counts.get(key) || {
+      count: 0,
+      color: text ? resolveStatusColor(column, value, text) : '#83899c'
+    };
+    current.count += 1;
+    counts.set(key, current);
+  }
+
+  if (!items.length) {
+    counts.set('__empty__', { count: 1, color: '#83899c' });
+  }
+
+  for (const entry of counts.values()) {
+    const segment = document.createElement('span');
+    segment.className = 'group-summary-status-segment';
+    segment.style.backgroundColor = entry.color;
+    segment.style.flexGrow = String(entry.count / total);
+    bar.appendChild(segment);
+  }
+
+  return bar;
+}
+
+function countChecked(items, columnId) {
+  return items.reduce((sum, item) => {
+    const value = findColumnValue(item, columnId);
+    return sum + (isCheckedValue(value) ? 1 : 0);
+  }, 0);
 }
 
 function getRenderableBoardColumns(columns) {
@@ -522,10 +645,8 @@ function normalizeColumns(columns) {
 
 function buildDashboardGridSpec(mondayColumns, { subitem = false } = {}) {
   const columns = [
-    { kind: 'select', title: '', width: 36 },
     { kind: 'print', title: subitem ? '' : 'Print', width: 82 },
     { kind: 'name', title: subitem ? 'Subitem' : 'Job', width: subitem ? 520 : 560 },
-    { kind: 'updates', title: '', width: 64 },
     ...mondayColumns.map(column => ({
       kind: 'column',
       title: column.title,
@@ -551,7 +672,7 @@ function getColumnWidth(column) {
   }
   if (column.type === 'checkbox') return title.length <= 5 ? 72 : 92;
   if (column.type === 'date') return 92;
-  if (column.type === 'file') return 90;
+  if (column.type === 'file') return title === 'PROOF' ? 100 : 90;
   if (column.type === 'people') return 150;
   if (column.type === 'timeline') return 150;
   if (column.type === 'numbers') return 92;
@@ -571,29 +692,16 @@ function buildHeaderCell(spec) {
   return cell;
 }
 
-function buildItemCell(item, spec) {
-  if (spec.kind === 'select') return buildSelectCell();
+function buildItemCell(item, spec, { subitemsOpen = false } = {}) {
   if (spec.kind === 'print') return buildPrintCell(item);
-  if (spec.kind === 'name') return buildNameCell(item);
-  if (spec.kind === 'updates') return buildUpdatesCell();
+  if (spec.kind === 'name') return buildNameCell(item, subitemsOpen);
   return buildColumnValueCell(item, spec.column);
 }
 
 function buildSubitemCell(subitem, spec) {
-  if (spec.kind === 'select') return buildSelectCell();
   if (spec.kind === 'print') return buildBlankCell('print-cell');
   if (spec.kind === 'name') return buildSubitemNameCell(subitem);
-  if (spec.kind === 'updates') return buildUpdatesCell();
   return buildColumnValueCell(subitem, spec.column, { subitem: true });
-}
-
-function buildSelectCell() {
-  const cell = document.createElement('div');
-  cell.className = 'grid-cell selector-cell';
-  const box = document.createElement('span');
-  box.className = 'monday-selector';
-  cell.appendChild(box);
-  return cell;
 }
 
 function buildPrintCell(item) {
@@ -616,7 +724,7 @@ function buildPrintCell(item) {
   return cell;
 }
 
-function buildNameCell(item) {
+function buildNameCell(item, initiallyOpen = false) {
   const itemId = String(item.id);
   const subitems = Array.isArray(item.subitems) ? item.subitems : [];
   const cell = document.createElement('div');
@@ -629,7 +737,8 @@ function buildNameCell(item) {
     rowToggle.className = 'row-toggle';
     rowToggle.type = 'button';
     rowToggle.setAttribute('aria-label', 'Toggle subitems');
-    rowToggle.setAttribute('aria-expanded', 'false');
+    rowToggle.classList.toggle('open', initiallyOpen);
+    rowToggle.setAttribute('aria-expanded', initiallyOpen ? 'true' : 'false');
     rowToggle.addEventListener('click', (e) => {
       e.stopPropagation();
       const isOpen = rowToggle.classList.toggle('open');
@@ -675,15 +784,6 @@ function buildSubitemNameCell(subitem) {
   return cell;
 }
 
-function buildUpdatesCell() {
-  const cell = document.createElement('div');
-  cell.className = 'grid-cell updates-cell';
-  const icon = document.createElement('span');
-  icon.className = 'updates-icon';
-  cell.appendChild(icon);
-  return cell;
-}
-
 function buildBlankCell(extraClass = '') {
   const cell = document.createElement('div');
   cell.className = `grid-cell ${extraClass}`.trim();
@@ -701,7 +801,7 @@ function buildColumnValueCell(entity, column, { subitem = false } = {}) {
   if (column.type === 'status') {
     renderStatusValue(cell, value, column, text);
   } else if (column.type === 'checkbox') {
-    renderCheckboxValue(cell, value);
+    renderCheckboxValue(cell, value, column);
   } else if (column.type === 'file') {
     renderFileValue(cell, value, text);
   } else if (column.type === 'people') {
@@ -743,29 +843,60 @@ function renderStatusValue(cell, value, column, text) {
   cell.appendChild(badge);
 }
 
-function renderCheckboxValue(cell, value) {
-  const checked = isCheckedValue(value);
+function renderCheckboxValue(cell, value, column) {
+  if (!isCheckedValue(value)) return;
   const mark = document.createElement('span');
-  mark.className = `monday-checkbox ${checked ? 'checked' : ''}`;
-  if (checked) mark.textContent = '✓';
+  mark.className = 'monday-check-tick';
+  mark.style.color = getCheckboxTickColor(column);
+  mark.textContent = '✓';
   cell.appendChild(mark);
+}
+
+function getCheckboxTickColor(column) {
+  const title = String(column?.title || '').toUpperCase();
+  if (title.includes('JAQ')) return '#fdab3d';
+  if (title.includes('CHECK')) return '#579bfc';
+  return '#579bfc';
 }
 
 function renderFileValue(cell, value, text) {
   const files = getFileList(value);
   if (!files.length && !text) return;
-  const wrap = document.createElement('span');
-  wrap.className = 'monday-file-stack';
-  const icon = document.createElement('span');
-  icon.className = 'monday-file-icon';
-  wrap.appendChild(icon);
+  const file = normalizeMondayFile(files[0]) || { name: text || 'File', url: text || '' };
+  const link = document.createElement(file.url ? 'a' : 'span');
+  link.className = 'monday-file-link';
+  if (file.url) {
+    link.href = file.url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+  }
+
+  if (isImageFile(file)) {
+    const img = document.createElement('img');
+    img.className = 'monday-file-thumb';
+    img.src = file.url;
+    img.alt = file.name || 'Attached file';
+    img.loading = 'lazy';
+    link.appendChild(img);
+  } else {
+    const icon = document.createElement('span');
+    icon.className = `monday-file-icon ${isPdfFile(file.name, file.mime) ? 'pdf' : ''}`;
+    link.appendChild(icon);
+  }
+
+  const name = document.createElement('span');
+  name.className = 'monday-file-name';
+  name.textContent = file.name || 'File';
+  link.title = file.name || text || 'Attached file';
+  link.appendChild(name);
+  cell.appendChild(link);
+
   if (files.length > 1) {
     const count = document.createElement('span');
     count.className = 'monday-file-count';
     count.textContent = `+${files.length - 1}`;
-    wrap.appendChild(count);
+    cell.appendChild(count);
   }
-  cell.appendChild(wrap);
 }
 
 function renderPeopleValue(cell, text) {
@@ -802,6 +933,39 @@ function isCheckedValue(value) {
 function getFileList(value) {
   const parsed = parseJsonMaybe(value?.value);
   return Array.isArray(parsed?.files) ? parsed.files : [];
+}
+
+function normalizeMondayFile(file) {
+  if (!file) return null;
+  const assetId = file.assetId || file.asset_id || file.id || '';
+  const name = file.name || file.fileName || 'File';
+  const url = assetId
+    ? `/api/assets/${encodeURIComponent(assetId)}/inline?name=${encodeURIComponent(name)}`
+    : (file.url || file.public_url || file.publicUrl || '');
+  return {
+    ...file,
+    assetId,
+    name,
+    url,
+    mime: file.mime || inferMimeTypeFromName(name)
+  };
+}
+
+function isImageFile(file) {
+  if (!file) return false;
+  const imageFlag = String(file.isImage || '').toLowerCase();
+  if (imageFlag === 'true') return true;
+  if (String(file.mime || '').toLowerCase().startsWith('image/')) return true;
+  return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name || '');
+}
+
+function inferMimeTypeFromName(name) {
+  if (/\.pdf$/i.test(name || '')) return 'application/pdf';
+  if (/\.png$/i.test(name || '')) return 'image/png';
+  if (/\.jpe?g$/i.test(name || '')) return 'image/jpeg';
+  if (/\.gif$/i.test(name || '')) return 'image/gif';
+  if (/\.webp$/i.test(name || '')) return 'image/webp';
+  return '';
 }
 
 function resolveStatusColor(column, value, text) {
