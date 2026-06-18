@@ -5,12 +5,17 @@ const { BOARD_CACHE_MS } = require('../config/env');
 
 let cache = { data: null, expires: 0, inFlight: null };
 
-router.get('/api/board', async (_req, res) => {
+router.get('/api/board', async (req, res) => {
   if (!getAccessToken()) return res.status(401).json({ error: 'Not authenticated. Visit /auth first.' });
 
   const now = Date.now();
-  if (cache.data && cache.expires > now) return res.json(cache.data);
-  if (cache.inFlight) {
+  const forceFresh =
+    req.query.fresh === '1' ||
+    req.query.refresh === '1' ||
+    /\bno-cache\b/i.test(req.get('cache-control') || '');
+
+  if (!forceFresh && cache.data && cache.expires > now) return res.json(cache.data);
+  if (!forceFresh && cache.inFlight) {
     try { const d = await cache.inFlight; return res.json(d); }
     catch (_) { cache.inFlight = null; }
   }

@@ -45,25 +45,35 @@ async function changeColumnValue(itemId, columnId, valueJson) {
   return gql(query, { board: String(BOARD_ID), item: String(itemId), col: columnId, val: valueJson });
 }
 
-// Paged board fetch with fields your dashboard expects
+// Paged board fetch with board and subitem column metadata for the dashboard.
 async function fetchBoardLitePaged(limit = BOARD_PAGE_LIMIT, maxPages = BOARD_MAX_PAGES) {
   let cursor = null, pages = 0, items = [];
+  let boardMeta = null;
+  let subitemColumns = [];
 
   while (pages < maxPages) {
     const query = `
       query($boardId: [ID!], $limit: Int!, $cursor: String) {
         boards(ids: $boardId) {
+          id
+          name
+          columns { id title type settings_str }
+          groups { id title color position }
           items_page(limit: $limit, cursor: $cursor) {
             cursor
             items {
               id
               name
-              group { title }
-              column_values { id text value }
+              group { id title color }
+              column_values { id text type value }
               subitems {
                 id
                 name
-                column_values { id text value }
+                board {
+                  id
+                  columns { id title type settings_str }
+                }
+                column_values { id text type value }
               }
             }
           }
@@ -72,34 +82,85 @@ async function fetchBoardLitePaged(limit = BOARD_PAGE_LIMIT, maxPages = BOARD_MA
     `;
     const vars = { boardId: [String(BOARD_ID)], limit, cursor };
     const data = await gql(query, vars);
-    const pageObj = data?.boards?.[0]?.items_page;
+    const boardObj = data?.boards?.[0];
+    if (!boardObj) break;
+    if (!boardMeta) {
+      boardMeta = {
+        id: boardObj.id,
+        name: boardObj.name,
+        columns: boardObj.columns || [],
+        groups: boardObj.groups || []
+      };
+    }
+
+    const pageObj = boardObj.items_page;
     if (!pageObj) break;
 
-    items = items.concat(pageObj.items || []);
+    const pageItems = pageObj.items || [];
+    for (const item of pageItems) {
+      for (const subitem of (item.subitems || [])) {
+        if (!subitemColumns.length && subitem?.board?.columns?.length) {
+          subitemColumns = subitem.board.columns;
+        }
+        if (subitem?.board) {
+          subitem.board = { id: subitem.board.id };
+        }
+      }
+    }
+
+    items = items.concat(pageItems);
     cursor = pageObj.cursor || null;
     pages++;
     if (!cursor) break;
   }
 
-  // Group to preserve your existing frontend shape
-  const grouped = {};
+  // Preserve Monday group ordering and colors rather than ordering by first item seen.
+  const grouped = new Map();
   for (const it of items) {
-    const title = it?.group?.title || 'Ungrouped';
-    if (!grouped[title]) grouped[title] = [];
-    grouped[title].push({
+    const key = it?.group?.id || it?.group?.title || 'ungrouped';
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push({
       id: it.id,
       name: it.name,
+      group: it.group || null,
       column_values: it.column_values || [],
       subitems: it.subitems || []
     });
   }
 
-  const groups = Object.entries(grouped).map(([title, arr]) => ({
-    title,
-    items_page: { items: arr }
-  }));
+  const knownGroupKeys = new Set();
+  const groups = (boardMeta?.groups || []).map(group => {
+    knownGroupKeys.add(group.id);
+    return {
+      id: group.id,
+      title: group.title,
+      color: group.color,
+      position: group.position,
+      items_page: { items: grouped.get(group.id) || [] }
+    };
+  });
 
-  return { boards: [{ groups }] };
+  for (const [key, arr] of grouped.entries()) {
+    if (knownGroupKeys.has(key)) continue;
+    const firstGroup = arr[0]?.group || {};
+    groups.push({
+      id: firstGroup.id || key,
+      title: firstGroup.title || 'Ungrouped',
+      color: firstGroup.color || null,
+      position: null,
+      items_page: { items: arr }
+    });
+  }
+
+  return {
+    boards: [{
+      id: boardMeta?.id || BOARD_ID,
+      name: boardMeta?.name || '',
+      columns: boardMeta?.columns || [],
+      subitemColumns,
+      groups
+    }]
+  };
 }
 
 // Upload a file to a Files column for a given item

@@ -232,7 +232,7 @@ Security rules:
 
 - `GET /auth`: redirects to Monday OAuth authorize URL.
 - `GET /callback`: exchanges OAuth code and redirects to `/`.
-- `GET /api/board`: returns cached Monday board data for dashboard. Requires Monday token/auth.
+- `GET /api/board`: returns cached Monday board data for dashboard. Requires Monday token/auth. The response includes board id/name, ordered parent column metadata (`id`, `title`, `type`, `settings_str`), ordered group metadata (`id`, `title`, `color`, `position`), grouped items with each item's Monday column values, and `subitemColumns` metadata from the Monday subitem board when subitems are present. Dashboard refreshes may bypass the route cache with `?fresh=1`, `?refresh=1`, or a `Cache-Control: no-cache` request header.
 
 ### Scanner And QR
 
@@ -247,6 +247,15 @@ Scanner progression:
 - scan 1: local status `STEP1_STATUS_LABEL`, tick `CHECKED_IN_COLUMN_ID`
 - scan 2: local status `STEP2_STATUS_LABEL`, set `STATUS_COLUMN_ID`
 - scan 3: local status `STEP3_STATUS_LABEL`, set `STATUS_COLUMN_ID`
+
+### Dashboard Board UI
+
+- The Dashboard tab renders the Monday workboard directly from `/api/board` metadata. It uses Monday group order and color values, a horizontally scrollable dark grid, and parent columns in Monday order, excluding the raw `Subitems` column because subitems are represented by the job-row toggle.
+- The dashboard no longer shows the hero copy (`Ultimate Promotions Job Board`, `Dashboard`, or `Live from Monday...`) or the local `Group colours` controls. Group titles sit above each grid and do not show a job-count line below the title.
+- Parent rows render a selector checkbox cell, the retained `Print` action button, the job name with a subitem-count badge when present, an updates-style icon cell, then live Monday columns. Status columns render colored Monday-style badges using Monday status settings when available; checkbox, file, text, date, people, and timeline columns render with type-specific formatting.
+- Row camera capture/upload logic remains in the frontend, but the per-row camera button is hidden from the dashboard grid. The camera modal and upload flow are otherwise unchanged.
+- Group and job/subitem toggles use Monday-style chevrons: right when collapsed and down when expanded. Expanding a job inserts a subitem grid directly below the parent row using the live Monday subitem column order (`SIZE`, `QTY`, `CODE`, `COLOUR`, `CHECK IN`, `Text`, or whatever the subitem board currently reports).
+- The frontend polls `/api/board?fresh=1` every 30 seconds while the Dashboard tab is visible, so Monday-side column/status changes flow one way into the dashboard without waiting for the server cache timeout. Manual `Update board info` also uses the fresh path.
 
 ### DATABASE
 

@@ -1,15 +1,14 @@
-// --- Monday Dashboard Frontend (with status dots + collapsible groups/subitems) ---
+// --- Monday Dashboard Frontend (Monday-style grid + collapsible groups/subitems) ---
 
 const PROD_ORIGIN = window.location.origin;
 const ENDPOINTS = { data: '/api/board', auth: '/auth', scans: '/api/scan-states' };
 const DASHBOARD_TAB_STORAGE_KEY = 'ultimateHub.activeDashboardTab';
 const DASHBOARD_TAB_NAMES = ['dashboard', 'database', 'visuals'];
-const SUBITEM_COLUMNS = {
-  code: 'text_mkvdj3cd',
-  size: 'text_mkxewsew',
-  colour: 'text_mkxdv9nk',
-  qty: 'text_mkr31cjs'
-};
+const BOARD_AUTO_REFRESH_MS = 30000;
+const HIDDEN_BOARD_COLUMN_TYPES = new Set(['subtasks']);
+const HIDDEN_BOARD_COLUMN_IDS = new Set(['subitems__1']);
+let __boardRefreshTimer = null;
+let __boardLoading = false;
 
 // --- Camera globals ---
 let __cameraStream = null;
@@ -30,7 +29,8 @@ document.addEventListener('DOMContentLoaded', () => {
   addCameraUI();
   addSerialScannerUI();
   attachSerialEvents();
-  loadBoard();
+  loadBoard({ forceRefresh: true });
+  startBoardAutoRefresh();
 });
 window.loadBoard = loadBoard;
 
@@ -61,7 +61,7 @@ function ensureAuthUI() {
   const loadBtn = document.getElementById('loadBtn');
   if (loadBtn) {
     loadBtn.textContent = 'Update board info';
-    loadBtn.onclick = () => loadBoard();
+    loadBtn.onclick = () => loadBoard({ forceRefresh: true });
     loadBtn.className = 'btn outline';
     if (loadBtn.parentElement !== bar) bar.appendChild(loadBtn);
   }
@@ -324,14 +324,19 @@ function stopCameraStream() {
 }
 
 
-async function loadBoard() {
+async function loadBoard(options = {}) {
+  if (__boardLoading) return;
   const boardDiv = document.getElementById('board') || document.body;
   const statusEl = document.getElementById('authStatus');
+  const forceRefresh = options === true || options?.forceRefresh === true;
+  const boardUrl = forceRefresh ? `${ENDPOINTS.data}?fresh=1` : ENDPOINTS.data;
   try {
-    const [resBoard, resScans] = await Promise.all([
-      fetch(ENDPOINTS.data, { cache: 'no-store', credentials: 'include' }),
-      fetch(ENDPOINTS.scans, { cache: 'no-store', credentials: 'include' })
-    ]);
+    __boardLoading = true;
+    const resBoard = await fetch(boardUrl, {
+      cache: 'no-store',
+      credentials: 'include',
+      headers: forceRefresh ? { 'Cache-Control': 'no-cache' } : {}
+    });
 
     if (!resBoard.ok) {
       let msg = `Failed to load board (HTTP ${resBoard.status})`;
@@ -350,22 +355,33 @@ async function loadBoard() {
     }
 
     const payload = await resBoard.json();
-    const scansPayload = resScans.ok ? await resScans.json() : { map: {} };
-    const scanMap = scansPayload.map || {};
-
-    renderBoard(payload, scanMap); // <<< pass scan states
+    window.__latestBoardPayload = payload;
+    renderBoard(payload);
     refreshVisualItemSelect(payload);
     const connectBtn = document.getElementById('connectBtn');
     if (connectBtn) connectBtn.style.display = 'none';
     if (statusEl) statusEl.textContent = 'Connected to Monday.';
-  } catch {
+  } catch (err) {
+    console.warn('Board load failed', err);
     boardDiv.textContent = 'Failed to load board: fetch error';
+  } finally {
+    __boardLoading = false;
   }
+}
+
+function startBoardAutoRefresh() {
+  if (__boardRefreshTimer) return;
+  __boardRefreshTimer = setInterval(() => {
+    if (document.hidden) return;
+    const dashboard = document.getElementById('tab-dashboard');
+    if (dashboard && !dashboard.classList.contains('active')) return;
+    loadBoard({ forceRefresh: true });
+  }, BOARD_AUTO_REFRESH_MS);
 }
 
 // --------------------------- RENDER BOARD ---------------------------
 
-function renderBoard(payload, scanMap) {
+function renderBoard(payload) {
   const boardDiv = document.getElementById('board') || document.body;
   boardDiv.innerHTML = '';
   const board = unwrapFirstBoard(payload);
@@ -378,25 +394,27 @@ function renderBoard(payload, scanMap) {
     return;
   }
 
+  const boardColumns = getRenderableBoardColumns(board.columns || []);
+  const subitemColumns = getRenderableSubitemColumns(board.subitemColumns || []);
+  const gridSpec = buildDashboardGridSpec(boardColumns, { subitem: false });
+  const subitemGridSpec = buildDashboardGridSpec(subitemColumns, { subitem: true });
+
   for (const group of (board.groups || [])) {
     const collectionName = group.title || 'Untitled Group';
     const items = (group.items_page && group.items_page.items) || [];
-    const groupKey = collectionName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const groupKey = slugify(collectionName);
 
-    // Group container + header with chevron
     const groupWrap = document.createElement('section');
     groupWrap.className = 'group';
     groupWrap.dataset.groupKey = groupKey;
+    if (group.color) groupWrap.style.setProperty('--group-accent', group.color);
 
     const sectionTitle = document.createElement('button');
     sectionTitle.className = 'group-title';
     sectionTitle.type = 'button';
     sectionTitle.innerHTML = `
       <span class="chev" aria-hidden="true"></span>
-      <div class="group-meta">
-        <span class="group-name">${escapeHtml(collectionName)}</span>
-        <span class="group-count">${items.length || 0} job${items.length === 1 ? '' : 's'}</span>
-      </div>
+      <span class="group-name">${escapeHtml(collectionName)}</span>
     `;
     sectionTitle.setAttribute('aria-expanded', 'true');
     sectionTitle.addEventListener('click', () => {
@@ -410,149 +428,60 @@ function renderBoard(payload, scanMap) {
 
     const grid = document.createElement('div');
     grid.className = 'board-grid';
+    grid.style.setProperty('--board-cols', gridSpec.template);
+    grid.style.minWidth = `${gridSpec.minWidth}px`;
 
     const headRow = document.createElement('div');
     headRow.className = 'grid-row grid-head';
-    headRow.innerHTML = `
-      <div class="grid-cell head actions-head">Actions</div>
-      <div class="grid-cell head job-head">Job</div>
-      <div class="grid-cell head sync-head">Sync</div>
-    `;
+    for (const spec of gridSpec.columns) {
+      headRow.appendChild(buildHeaderCell(spec));
+    }
     grid.appendChild(headRow);
 
     for (const item of items) {
-      const jobTitle = item.name || '';
       const itemId = String(item.id);
-      const scan = scanMap[itemId] || { scan_count: 0, status: 'Pending' };
+      const subitems = Array.isArray(item.subitems) ? item.subitems : [];
 
       const row = document.createElement('div');
       row.dataset.itemId = itemId;
       row.className = 'grid-row job-row';
+      row.style.setProperty('--board-cols', gridSpec.template);
 
-      // Actions
-      const actionsCell = document.createElement('div');
-      actionsCell.className = 'grid-cell actions-cell';
-      const printBtn = document.createElement('button');
-      printBtn.textContent = 'Print';
-      printBtn.className = 'job-action primary';
-      printBtn.addEventListener('click', () => printLabel(item.id, jobTitle));
-      actionsCell.appendChild(printBtn);
-
-      const photoBtn = document.createElement('button');
-      photoBtn.type = 'button';
-      photoBtn.className = 'job-action success camera-btn';
-      photoBtn.title = 'Capture image';
-      photoBtn.textContent = '📷';
-      photoBtn.addEventListener('click', () => openCaptureModal(item.id, jobTitle));
-      actionsCell.appendChild(photoBtn);
-
-      row.appendChild(actionsCell);
-
-      // Title + row subitem toggler (only if has subitems)
-      const titleCell = document.createElement('div');
-      titleCell.className = 'grid-cell job-cell title-cell';
-      const titleWrap = document.createElement('div');
-      titleWrap.className = 'title-wrap';
-
-      if (item.subitems && item.subitems.length > 0) {
-        const rowToggle = document.createElement('button');
-        rowToggle.className = 'row-toggle';
-        rowToggle.type = 'button';
-        rowToggle.setAttribute('aria-label', 'Toggle subitems');
-        rowToggle.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const isOpen = rowToggle.classList.toggle('open');
-          rowToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-          toggleSubRows(itemId, isOpen);
-        });
-        rowToggle.setAttribute('aria-expanded', 'false');
-        titleWrap.appendChild(rowToggle);
-      } else {
-        // placeholder to align
-        const spacer = document.createElement('span');
-        spacer.className = 'row-toggle-spacer';
-        titleWrap.appendChild(spacer);
+      for (const spec of gridSpec.columns) {
+        row.appendChild(buildItemCell(item, spec));
       }
-
-      const titleSpan = document.createElement('span');
-      titleSpan.className = 'job-title';
-      titleSpan.textContent = jobTitle;
-      titleWrap.appendChild(titleSpan);
-      titleCell.appendChild(titleWrap);
-      row.appendChild(titleCell);
-
-      // Status dots
-      const statusCell = document.createElement('div');
-      statusCell.className = 'grid-cell sync-cell status-cell';
-      statusCell.appendChild(buildStatusDots(scan.scan_count));
-      statusCell.title = scan.status || '';
-      row.appendChild(statusCell);
       grid.appendChild(row);
 
-      // Subitems (initially hidden; shown when parent toggles)
-      if (item.subitems && item.subitems.length > 0) {
-        // header row for subitems
+      if (subitems.length > 0) {
+        const subPanel = document.createElement('div');
+        subPanel.className = 'subitem-panel hidden';
+        subPanel.dataset.parent = itemId;
+        subPanel.style.minWidth = `${gridSpec.minWidth}px`;
+
+        const subGrid = document.createElement('div');
+        subGrid.className = 'subitem-grid';
+        subGrid.style.setProperty('--subitem-cols', subitemGridSpec.template);
+        subGrid.style.minWidth = `${Math.max(subitemGridSpec.minWidth, gridSpec.minWidth)}px`;
+
         const subHead = document.createElement('div');
-        subHead.className = 'grid-row sub-head hidden';
-        subHead.dataset.parent = itemId;
-        subHead.innerHTML = `
-          <div class="grid-cell actions-cell sub-col"></div>
-          <div class="grid-cell sub-col">Subitem</div>
-          <div class="grid-cell sub-col">Code</div>
-          <div class="grid-cell sub-col">Size</div>
-          <div class="grid-cell sub-col">Colour</div>
-          <div class="grid-cell sub-col">Qty</div>
-          <div class="grid-cell sub-col sync-cell">Sync</div>
-        `;
-        grid.appendChild(subHead);
-
-        for (const sub of item.subitems) {
-          const subRow = document.createElement('div');
-          subRow.className = 'grid-row sub-row hidden';
-          subRow.dataset.parent = itemId;
-
-          const subActions = document.createElement('div');
-          subActions.className = 'grid-cell actions-cell sub-print-cell';
-          subRow.appendChild(subActions);
-
-          const cols = sub.column_values || [];
-          const size = cols.find(c => c.id === SUBITEM_COLUMNS.size)?.text || cols.find(c => /size/i.test(c.title || ''))?.text || '';
-          const qty  = cols.find(c => c.id === SUBITEM_COLUMNS.qty)?.text || cols.find(c => /qty|quantity/i.test(c.title || ''))?.text || '';
-          const code = cols.find(c => c.id === SUBITEM_COLUMNS.code)?.text || cols.find(c => /code/i.test(c.title || ''))?.text || '';
-          const colour = cols.find(c => c.id === SUBITEM_COLUMNS.colour)?.text || cols.find(c => /colour|color/i.test(c.title || ''))?.text || '';
-
-          const subNameCell = document.createElement('div');
-          subNameCell.className = 'grid-cell sub-cell sub-name-cell';
-          subNameCell.innerHTML = `<span class="sub-arrow">▸</span><span class="sub-name">${escapeHtml(sub.name || '')}</span>`;
-          subRow.appendChild(subNameCell);
-
-          const subCode = document.createElement('div');
-          subCode.className = 'grid-cell sub-cell sub-code-cell';
-          subCode.textContent = code || '—';
-          subRow.appendChild(subCode);
-
-          const subSize = document.createElement('div');
-          subSize.className = 'grid-cell sub-cell sub-size-cell';
-          subSize.textContent = size || '—';
-          subRow.appendChild(subSize);
-
-          const subColour = document.createElement('div');
-          subColour.className = 'grid-cell sub-cell sub-colour-cell';
-          subColour.textContent = colour || '—';
-          subRow.appendChild(subColour);
-
-          const subQtyCell = document.createElement('div');
-          subQtyCell.className = 'grid-cell sub-cell sub-qty-cell';
-          subQtyCell.textContent = qty || '—';
-          subRow.appendChild(subQtyCell);
-
-          const subStatus = document.createElement('div');
-          subStatus.className = 'grid-cell sync-cell status-cell';
-          subStatus.appendChild(buildStatusDots(scan.scan_count));
-          subStatus.title = scan.status || '';
-          subRow.appendChild(subStatus);
-          grid.appendChild(subRow);
+        subHead.className = 'subitem-row sub-head';
+        for (const spec of subitemGridSpec.columns) {
+          subHead.appendChild(buildHeaderCell(spec));
         }
+        subGrid.appendChild(subHead);
+
+        for (const sub of subitems) {
+          const subRow = document.createElement('div');
+          subRow.className = 'subitem-row sub-row';
+          subRow.dataset.parent = itemId;
+          for (const spec of subitemGridSpec.columns) {
+            subRow.appendChild(buildSubitemCell(sub, spec));
+          }
+          subGrid.appendChild(subRow);
+        }
+
+        subPanel.appendChild(subGrid);
+        grid.appendChild(subPanel);
       }
     }
 
@@ -564,23 +493,383 @@ function renderBoard(payload, scanMap) {
 }
 
 function toggleSubRows(parentId, open) {
-  const rows = document.querySelectorAll(`.sub-row[data-parent="${CSS.escape(parentId)}"], .sub-head[data-parent="${CSS.escape(parentId)}"]`);
+  const rows = document.querySelectorAll(`.subitem-panel[data-parent="${CSS.escape(parentId)}"]`);
   rows.forEach(r => r.classList.toggle('hidden', !open));
 }
 
-function buildStatusDots(count) {
-  // count: 0..3
-  const wrap = document.createElement('div');
-  wrap.className = 'status-dots';
-  // dot1: purple (checked in), dot2: gold (in prod), dot3: bright green (completed)
-  const colors = ['var(--dot-purple)', 'var(--dot-gold)', 'var(--dot-green)'];
-  for (let i = 1; i <= 3; i++) {
-    const dot = document.createElement('span');
-    dot.className = 'dot';
-    if (count >= i) dot.style.background = colors[i-1];
-    wrap.appendChild(dot);
+function getRenderableBoardColumns(columns) {
+  return normalizeColumns(columns).filter(column =>
+    column.id !== 'name' &&
+    !HIDDEN_BOARD_COLUMN_IDS.has(column.id) &&
+    !HIDDEN_BOARD_COLUMN_TYPES.has(column.type)
+  );
+}
+
+function getRenderableSubitemColumns(columns) {
+  return normalizeColumns(columns).filter(column => column.id !== 'name');
+}
+
+function normalizeColumns(columns) {
+  return (Array.isArray(columns) ? columns : [])
+    .map(column => ({
+      id: String(column.id || ''),
+      title: column.title || column.id || '',
+      type: column.type || 'text',
+      settings_str: column.settings_str || ''
+    }))
+    .filter(column => column.id);
+}
+
+function buildDashboardGridSpec(mondayColumns, { subitem = false } = {}) {
+  const columns = [
+    { kind: 'select', title: '', width: 36 },
+    { kind: 'print', title: subitem ? '' : 'Print', width: 82 },
+    { kind: 'name', title: subitem ? 'Subitem' : 'Job', width: subitem ? 520 : 560 },
+    { kind: 'updates', title: '', width: 64 },
+    ...mondayColumns.map(column => ({
+      kind: 'column',
+      title: column.title,
+      width: getColumnWidth(column),
+      column
+    }))
+  ];
+  const minWidth = columns.reduce((sum, column) => sum + column.width, 0);
+  return {
+    columns,
+    minWidth,
+    template: columns.map(column => `${column.width}px`).join(' ')
+  };
+}
+
+function getColumnWidth(column) {
+  const title = String(column.title || '').toUpperCase();
+  if (column.type === 'status') {
+    if (title === 'TYPE') return 88;
+    if (title === 'STATUS') return 128;
+    if (title === 'PRIORITY') return 108;
+    return 112;
   }
-  return wrap;
+  if (column.type === 'checkbox') return title.length <= 5 ? 72 : 92;
+  if (column.type === 'date') return 92;
+  if (column.type === 'file') return 90;
+  if (column.type === 'people') return 150;
+  if (column.type === 'timeline') return 150;
+  if (column.type === 'numbers') return 92;
+  if (title === 'NOTES' || title === 'TEXT') return 320;
+  if (title === 'DES/PSG') return 122;
+  if (title === 'COLOUR' || title === 'COLOR') return 158;
+  if (title === 'CODE') return 142;
+  if (title === 'QTY') return 80;
+  if (title === 'SIZE') return 220;
+  return 150;
+}
+
+function buildHeaderCell(spec) {
+  const cell = document.createElement('div');
+  cell.className = `grid-cell head ${spec.kind}-head`;
+  cell.textContent = spec.title || '';
+  return cell;
+}
+
+function buildItemCell(item, spec) {
+  if (spec.kind === 'select') return buildSelectCell();
+  if (spec.kind === 'print') return buildPrintCell(item);
+  if (spec.kind === 'name') return buildNameCell(item);
+  if (spec.kind === 'updates') return buildUpdatesCell();
+  return buildColumnValueCell(item, spec.column);
+}
+
+function buildSubitemCell(subitem, spec) {
+  if (spec.kind === 'select') return buildSelectCell();
+  if (spec.kind === 'print') return buildBlankCell('print-cell');
+  if (spec.kind === 'name') return buildSubitemNameCell(subitem);
+  if (spec.kind === 'updates') return buildUpdatesCell();
+  return buildColumnValueCell(subitem, spec.column, { subitem: true });
+}
+
+function buildSelectCell() {
+  const cell = document.createElement('div');
+  cell.className = 'grid-cell selector-cell';
+  const box = document.createElement('span');
+  box.className = 'monday-selector';
+  cell.appendChild(box);
+  return cell;
+}
+
+function buildPrintCell(item) {
+  const cell = document.createElement('div');
+  cell.className = 'grid-cell print-cell';
+  const jobTitle = item.name || '';
+  const printBtn = document.createElement('button');
+  printBtn.textContent = 'Print';
+  printBtn.className = 'job-action primary';
+  printBtn.addEventListener('click', () => printLabel(item.id, jobTitle));
+  cell.appendChild(printBtn);
+
+  const photoBtn = document.createElement('button');
+  photoBtn.type = 'button';
+  photoBtn.className = 'job-action success camera-btn';
+  photoBtn.title = 'Capture image';
+  photoBtn.textContent = 'Camera';
+  photoBtn.addEventListener('click', () => openCaptureModal(item.id, jobTitle));
+  cell.appendChild(photoBtn);
+  return cell;
+}
+
+function buildNameCell(item) {
+  const itemId = String(item.id);
+  const subitems = Array.isArray(item.subitems) ? item.subitems : [];
+  const cell = document.createElement('div');
+  cell.className = 'grid-cell job-cell title-cell';
+  const titleWrap = document.createElement('div');
+  titleWrap.className = 'title-wrap';
+
+  if (subitems.length > 0) {
+    const rowToggle = document.createElement('button');
+    rowToggle.className = 'row-toggle';
+    rowToggle.type = 'button';
+    rowToggle.setAttribute('aria-label', 'Toggle subitems');
+    rowToggle.setAttribute('aria-expanded', 'false');
+    rowToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = rowToggle.classList.toggle('open');
+      rowToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      toggleSubRows(itemId, isOpen);
+    });
+    titleWrap.appendChild(rowToggle);
+  } else {
+    const spacer = document.createElement('span');
+    spacer.className = 'row-toggle-spacer';
+    titleWrap.appendChild(spacer);
+  }
+
+  const titleSpan = document.createElement('span');
+  titleSpan.className = 'job-title';
+  titleSpan.textContent = item.name || '';
+  titleWrap.appendChild(titleSpan);
+
+  if (subitems.length > 0) {
+    const badge = document.createElement('span');
+    badge.className = 'subitem-count-badge';
+    badge.textContent = String(subitems.length);
+    titleWrap.appendChild(badge);
+  }
+
+  cell.appendChild(titleWrap);
+  return cell;
+}
+
+function buildSubitemNameCell(subitem) {
+  const cell = document.createElement('div');
+  cell.className = 'grid-cell job-cell subitem-name-cell';
+  const wrap = document.createElement('div');
+  wrap.className = 'title-wrap';
+  const spacer = document.createElement('span');
+  spacer.className = 'row-toggle-spacer';
+  wrap.appendChild(spacer);
+  const title = document.createElement('span');
+  title.className = 'subitem-title';
+  title.textContent = subitem.name || '';
+  wrap.appendChild(title);
+  cell.appendChild(wrap);
+  return cell;
+}
+
+function buildUpdatesCell() {
+  const cell = document.createElement('div');
+  cell.className = 'grid-cell updates-cell';
+  const icon = document.createElement('span');
+  icon.className = 'updates-icon';
+  cell.appendChild(icon);
+  return cell;
+}
+
+function buildBlankCell(extraClass = '') {
+  const cell = document.createElement('div');
+  cell.className = `grid-cell ${extraClass}`.trim();
+  return cell;
+}
+
+function buildColumnValueCell(entity, column, { subitem = false } = {}) {
+  const cell = document.createElement('div');
+  cell.className = `grid-cell monday-value-cell ${subitem ? 'subitem-value-cell' : ''} column-${column.type}`;
+  cell.dataset.columnId = column.id;
+  const value = findColumnValue(entity, column.id);
+  const text = normalizeCellText(value?.text || '');
+  if (text) cell.title = text;
+
+  if (column.type === 'status') {
+    renderStatusValue(cell, value, column, text);
+  } else if (column.type === 'checkbox') {
+    renderCheckboxValue(cell, value);
+  } else if (column.type === 'file') {
+    renderFileValue(cell, value, text);
+  } else if (column.type === 'people') {
+    renderPeopleValue(cell, text);
+  } else if (column.type === 'date') {
+    renderPlainTextValue(cell, formatDateText(text));
+  } else if (column.type === 'timeline') {
+    renderPlainTextValue(cell, text);
+  } else if (column.type === 'text' || column.type === 'long_text') {
+    renderTextInputValue(cell, text);
+  } else {
+    renderPlainTextValue(cell, text);
+  }
+
+  return cell;
+}
+
+function findColumnValue(entity, columnId) {
+  return (entity.column_values || []).find(value => value.id === columnId) || null;
+}
+
+function normalizeCellText(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim();
+}
+
+function renderStatusValue(cell, value, column, text) {
+  const badge = document.createElement('span');
+  badge.className = 'monday-status-badge';
+  if (!text) {
+    badge.classList.add('empty');
+    cell.appendChild(badge);
+    return;
+  }
+
+  const color = resolveStatusColor(column, value, text);
+  badge.style.backgroundColor = color;
+  badge.style.color = readableTextColor(color);
+  badge.textContent = text;
+  cell.appendChild(badge);
+}
+
+function renderCheckboxValue(cell, value) {
+  const checked = isCheckedValue(value);
+  const mark = document.createElement('span');
+  mark.className = `monday-checkbox ${checked ? 'checked' : ''}`;
+  if (checked) mark.textContent = '✓';
+  cell.appendChild(mark);
+}
+
+function renderFileValue(cell, value, text) {
+  const files = getFileList(value);
+  if (!files.length && !text) return;
+  const wrap = document.createElement('span');
+  wrap.className = 'monday-file-stack';
+  const icon = document.createElement('span');
+  icon.className = 'monday-file-icon';
+  wrap.appendChild(icon);
+  if (files.length > 1) {
+    const count = document.createElement('span');
+    count.className = 'monday-file-count';
+    count.textContent = `+${files.length - 1}`;
+    wrap.appendChild(count);
+  }
+  cell.appendChild(wrap);
+}
+
+function renderPeopleValue(cell, text) {
+  if (!text) return;
+  const pill = document.createElement('span');
+  pill.className = 'monday-person-pill';
+  pill.textContent = text;
+  cell.appendChild(pill);
+}
+
+function renderTextInputValue(cell, text) {
+  if (!text) return;
+  const span = document.createElement('span');
+  span.className = 'monday-text-input';
+  span.textContent = text;
+  cell.appendChild(span);
+}
+
+function renderPlainTextValue(cell, text) {
+  if (!text) return;
+  const span = document.createElement('span');
+  span.className = 'monday-plain-text';
+  span.textContent = text;
+  cell.appendChild(span);
+}
+
+function isCheckedValue(value) {
+  const parsed = parseJsonMaybe(value?.value);
+  if (parsed?.checked === true || parsed?.checked === 'true') return true;
+  const text = normalizeCellText(value?.text || '').toLowerCase();
+  return text === 'v' || text === 'yes' || text === 'true' || text === 'checked' || text === '✓';
+}
+
+function getFileList(value) {
+  const parsed = parseJsonMaybe(value?.value);
+  return Array.isArray(parsed?.files) ? parsed.files : [];
+}
+
+function resolveStatusColor(column, value, text) {
+  const settings = parseJsonMaybe(column.settings_str) || {};
+  const statusIndex = findStatusIndex(settings, value, text);
+  const configuredColor = statusIndex != null ? settings.labels_colors?.[statusIndex]?.color : '';
+  if (configuredColor) return configuredColor;
+  return fallbackStatusColor(text);
+}
+
+function findStatusIndex(settings, value, text) {
+  const parsed = parseJsonMaybe(value?.value);
+  if (parsed?.index !== undefined && parsed?.index !== null) return String(parsed.index);
+  if (parsed?.label?.index !== undefined && parsed?.label?.index !== null) return String(parsed.label.index);
+
+  const labels = settings.labels || {};
+  const normalizedText = normalizeStatusLabel(text);
+  for (const [index, label] of Object.entries(labels)) {
+    if (normalizeStatusLabel(label) === normalizedText) return String(index);
+  }
+  return null;
+}
+
+function normalizeStatusLabel(label) {
+  return String(label || '').trim().toLowerCase();
+}
+
+function fallbackStatusColor(text) {
+  const label = normalizeStatusLabel(text);
+  if (label.includes('critical')) return '#bb3354';
+  if (label.includes('waiting')) return '#8088a8';
+  if (label.includes('sample')) return '#9cd326';
+  if (label.includes('stock') || label.includes('complete')) return '#00c875';
+  if (label.includes('emb')) return '#ff7575';
+  if (label.includes('print')) return '#fdab3d';
+  return '#579bfc';
+}
+
+function readableTextColor(color) {
+  const hex = String(color || '').replace('#', '');
+  if (!/^[0-9a-f]{6}$/i.test(hex)) return '#fff';
+  const r = parseInt(hex.slice(0, 2), 16) / 255;
+  const g = parseInt(hex.slice(2, 4), 16) / 255;
+  const b = parseInt(hex.slice(4, 6), 16) / 255;
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return luminance > 0.64 ? '#1f2329' : '#fff';
+}
+
+function parseJsonMaybe(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function formatDateText(text) {
+  const trimmed = normalizeCellText(text);
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return trimmed;
+  const date = new Date(`${trimmed}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return trimmed;
+  return new Intl.DateTimeFormat('en-GB', { month: 'short', day: 'numeric' }).format(date);
+}
+
+function slugify(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
 function unwrapFirstBoard(payload) {
@@ -851,8 +1140,8 @@ async function handleSerialScan(text) {
       body: JSON.stringify({ scan: text, url: scanUrl })
     });
     updateScanPill(r2.ok ? 'status: ok' : 'status: error');
-    // refresh status dots after a successful scan
-    if (r2.ok) loadBoard();
+    // Refresh Monday-backed board state after a successful scan.
+    if (r2.ok) loadBoard({ forceRefresh: true });
   } catch (e) {
     console.warn('POST /api/scanner failed:', e);
     updateScanPill('status: error');

@@ -35,39 +35,8 @@
     <main class="main-content">
       <!-- DASHBOARD (Labels replacement) -->
       <section id="tab-dashboard" class="tab-content active">
-        <header class="page-header">
-          <div class="header-left">
-            <p class="eyebrow">Ultimate Promotions Job Board</p>
-            <h1>Dashboard</h1>
-            <p class="muted">Live from Monday — grouped by production stage.</p>
-          </div>
-          <div class="header-actions">
-            <button id="labels-colours-btn" class="btn pill-btn">Group colours</button>
-          </div>
-        </header>
-
-        <section id="labels-colours-panel" class="card" style="display:none">
-          <div class="card-head">
-            <h2>Group Colours</h2>
-            <div class="card-actions">
-              <button id="labels-colours-close" class="btn">Done</button>
-            </div>
-          </div>
-          <div class="card-body">
-            <div id="labels-colour-form" class="colour-grid"></div>
-            <div class="small muted mt-8">Saved locally and applied after each refresh.</div>
-          </div>
-        </section>
-
-        <section class="board-shell card">
+        <section class="board-shell card monday-board-shell">
           <div class="board-shell-head">
-            <div class="board-status">
-              <div class="status-legend">
-                <span><span class="dot dot-purple"></span> Checked In</span>
-                <span><span class="dot dot-gold"></span> In Production</span>
-                <span><span class="dot dot-green"></span> Complete</span>
-              </div>
-            </div>
             <div id="labels-toolbar">
               <div id="authStatus" class="status-note">Connected to Monday.</div>
               <button id="loadBtn" class="btn outline">Refresh board</button>
