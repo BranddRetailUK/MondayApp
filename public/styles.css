@@ -1802,10 +1802,13 @@ body.modal-open{overflow:hidden}
 }
 .db-add-line-button-row td{
   height:23px;
+  padding:2px 0!important;
   text-align:center;
-  background:#ffffef;
+  background:#858585!important;
+  border-color:#858585!important;
 }
 .db-add-line-button{
+  display:inline-block;
   min-width:96px;
   height:19px;
   border:2px outset #fff;
@@ -2059,6 +2062,7 @@ input.db-custom-line-input{
   height:50px;
   vertical-align:top;
   padding:0;
+  background:#fff!important;
 }
 .db-design-edit{
   width:100%;
@@ -2066,7 +2070,7 @@ input.db-custom-line-input{
   display:block;
   border:0;
   border-radius:0;
-  background:#fff;
+  background:#fff!important;
   color:#000;
   font:12px Arial, Helvetica, sans-serif;
   line-height:15px;
@@ -2076,7 +2080,7 @@ input.db-custom-line-input{
   box-shadow:none;
 }
 .db-design-edit:focus{
-  background:#fff;
+  background:#fff!important;
   outline:none;
 }
 .db-design-filler{
