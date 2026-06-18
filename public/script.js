@@ -406,18 +406,21 @@ function renderBoard(payload) {
 
   const boardColumns = getRenderableBoardColumns(board.columns || []);
   const subitemColumns = getRenderableSubitemColumns(board.subitemColumns || []);
-  const gridSpec = buildDashboardGridSpec(boardColumns, { subitem: false });
+  const boardColumnWidths = buildBoardColumnWidthOverrides(boardColumns, board.groups || []);
+  const gridSpec = buildDashboardGridSpec(boardColumns, { subitem: false, widthOverrides: boardColumnWidths });
   const subitemGridSpec = buildDashboardGridSpec(subitemColumns, { subitem: true });
 
   for (const group of (board.groups || [])) {
     const collectionName = group.title || 'Untitled Group';
     const items = (group.items_page && group.items_page.items) || [];
     const groupKey = slugify(collectionName);
+    const isCollapsed = uiState.collapsedGroups.has(groupKey) ||
+      (!uiState.hasRenderedGroups && isDefaultCollapsedGroup(collectionName));
 
     const groupWrap = document.createElement('section');
     groupWrap.className = 'group';
     groupWrap.dataset.groupKey = groupKey;
-    if (uiState.collapsedGroups.has(groupKey)) groupWrap.classList.add('collapsed');
+    if (isCollapsed) groupWrap.classList.add('collapsed');
     if (group.color) groupWrap.style.setProperty('--group-accent', group.color);
 
     const sectionTitle = document.createElement('button');
@@ -427,7 +430,7 @@ function renderBoard(payload) {
       <span class="chev" aria-hidden="true"></span>
       <span class="group-name">${escapeHtml(collectionName)}</span>
     `;
-    sectionTitle.setAttribute('aria-expanded', uiState.collapsedGroups.has(groupKey) ? 'false' : 'true');
+    sectionTitle.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
     const toggleGroup = () => {
       const collapsed = groupWrap.classList.toggle('collapsed');
       sectionTitle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
@@ -437,7 +440,7 @@ function renderBoard(payload) {
     groupWrap.appendChild(sectionTitle);
 
     const groupSummary = buildGroupSummary(collectionName, items, gridSpec);
-    groupSummary.setAttribute('aria-expanded', uiState.collapsedGroups.has(groupKey) ? 'false' : 'true');
+    groupSummary.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
     groupSummary.addEventListener('click', toggleGroup);
     groupWrap.appendChild(groupSummary);
 
@@ -514,16 +517,24 @@ function renderBoard(payload) {
 function collectBoardUiState(boardDiv) {
   const collapsedGroups = new Set();
   const openSubitems = new Set();
+  let hasRenderedGroups = false;
   try {
-    boardDiv.querySelectorAll('.group.collapsed[data-group-key]').forEach(group => {
-      collapsedGroups.add(group.dataset.groupKey);
+    const groups = boardDiv.querySelectorAll('.group[data-group-key]');
+    hasRenderedGroups = groups.length > 0;
+    groups.forEach(group => {
+      if (group.classList.contains('collapsed')) collapsedGroups.add(group.dataset.groupKey);
     });
     boardDiv.querySelectorAll('.job-row[data-item-id] .row-toggle.open').forEach(toggle => {
       const row = toggle.closest('.job-row[data-item-id]');
       if (row?.dataset?.itemId) openSubitems.add(row.dataset.itemId);
     });
   } catch {}
-  return { collapsedGroups, openSubitems };
+  return { collapsedGroups, openSubitems, hasRenderedGroups };
+}
+
+function isDefaultCollapsedGroup(groupName) {
+  const normalized = String(groupName || '').trim().toUpperCase();
+  return normalized === 'HOLD' || normalized === 'COMPLETED';
 }
 
 function toggleSubRows(parentId, open) {
@@ -661,14 +672,14 @@ function normalizeColumns(columns) {
     .filter(column => column.id);
 }
 
-function buildDashboardGridSpec(mondayColumns, { subitem = false } = {}) {
+function buildDashboardGridSpec(mondayColumns, { subitem = false, widthOverrides = new Map() } = {}) {
   const columns = [
     { kind: 'print', title: subitem ? '' : 'Print', width: 82 },
     { kind: 'name', title: subitem ? 'Subitem' : 'Job', width: subitem ? 520 : 560 },
     ...mondayColumns.map(column => ({
       kind: 'column',
       title: column.title,
-      width: getColumnWidth(column),
+      width: widthOverrides.get(column.id) || getColumnWidth(column),
       column
     }))
   ];
@@ -684,7 +695,7 @@ function getColumnWidth(column) {
   const title = String(column.title || '').toUpperCase();
   if (column.type === 'status') {
     if (title === 'TYPE') return 88;
-    if (title === 'STATUS') return 128;
+    if (title === 'STATUS') return 168;
     if (title === 'PRIORITY') return 108;
     return 112;
   }
@@ -701,6 +712,46 @@ function getColumnWidth(column) {
   if (title === 'QTY') return 80;
   if (title === 'SIZE') return 220;
   return 150;
+}
+
+function buildBoardColumnWidthOverrides(columns, groups) {
+  const overrides = new Map();
+  for (const column of columns) {
+    const title = String(column.title || '').trim().toUpperCase();
+    if (title !== 'NOTES') continue;
+    const maxTextWidth = getMaxColumnTextWidth(groups, column.id);
+    if (maxTextWidth > 0) {
+      overrides.set(column.id, Math.max(getColumnWidth(column), Math.ceil(maxTextWidth + 34)));
+    }
+  }
+  return overrides;
+}
+
+function getMaxColumnTextWidth(groups, columnId) {
+  let max = 0;
+  for (const group of (Array.isArray(groups) ? groups : [])) {
+    const items = (group.items_page && group.items_page.items) || [];
+    for (const item of items) {
+      const value = findColumnValue(item, columnId);
+      const text = normalizeCellText(value?.text || '');
+      if (!text) continue;
+      max = Math.max(max, measureBoardTextWidth(text));
+    }
+  }
+  return max;
+}
+
+let __boardTextMeasureCanvas = null;
+function measureBoardTextWidth(text) {
+  try {
+    if (!__boardTextMeasureCanvas) __boardTextMeasureCanvas = document.createElement('canvas');
+    const ctx = __boardTextMeasureCanvas.getContext('2d');
+    if (ctx) {
+      ctx.font = "14px Manrope, 'Segoe UI', system-ui, sans-serif";
+      return ctx.measureText(String(text || '')).width;
+    }
+  } catch {}
+  return String(text || '').length * 7.5;
 }
 
 function buildHeaderCell(spec) {
@@ -856,7 +907,7 @@ function renderStatusValue(cell, value, column, text) {
 
   const color = resolveStatusColor(column, value, text);
   badge.style.backgroundColor = color;
-  badge.style.color = readableTextColor(color);
+  badge.style.color = '#fff';
   badge.textContent = text;
   cell.appendChild(badge);
 }
@@ -1327,16 +1378,6 @@ function fallbackStatusColor(text) {
   if (label.includes('emb')) return '#ff7575';
   if (label.includes('print')) return '#fdab3d';
   return '#579bfc';
-}
-
-function readableTextColor(color) {
-  const hex = String(color || '').replace('#', '');
-  if (!/^[0-9a-f]{6}$/i.test(hex)) return '#fff';
-  const r = parseInt(hex.slice(0, 2), 16) / 255;
-  const g = parseInt(hex.slice(2, 4), 16) / 255;
-  const b = parseInt(hex.slice(4, 6), 16) / 255;
-  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  return luminance > 0.64 ? '#1f2329' : '#fff';
 }
 
 function parseJsonMaybe(raw) {
