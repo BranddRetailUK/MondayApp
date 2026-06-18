@@ -466,8 +466,6 @@
   function resetNewCustomerForm() {
     if (!els.newCustomerForm) return;
     els.newCustomerForm.reset();
-    const marketing = els.newCustomerForm.elements.marketing_opt_in;
-    if (marketing) marketing.checked = true;
     populateNewCustomerAccountManagers();
     els.newCustomerStatus.textContent = '';
     els.newCustomerStatus.dataset.tone = '';
@@ -760,7 +758,6 @@
     return {
       customer_name: fields.customer_name.value,
       customer_code: fields.customer_code.value,
-      marketing_opt_in: fields.marketing_opt_in.checked,
       contact_name: fields.contact_name.value,
       contact_phone: fields.contact_phone.value,
       contact_mobile: fields.contact_mobile.value,

@@ -805,19 +805,6 @@ body.modal-open{overflow:hidden}
   grid-column:3!important;
   width:60px!important;
 }
-.db-new-customer-marketing-label{
-  grid-column:4;
-  justify-self:end;
-  padding-right:4px;
-  color:red;
-}
-.db-new-customer-code-row > input[type="checkbox"]{
-  grid-column:5;
-  justify-self:start;
-  width:13px;
-  height:13px;
-  margin:0;
-}
 .db-new-customer-address{
   position:relative;
   min-height:116px;
