@@ -610,6 +610,15 @@ body{
   color:#e9edf5;
   text-decoration:none;
   overflow:hidden;
+  flex:0 0 auto;
+}
+.monday-file-cell{
+  gap:6px;
+  overflow-x:auto;
+  scrollbar-width:none;
+}
+.monday-file-cell::-webkit-scrollbar{
+  display:none;
 }
 .monday-proof-trigger{
   appearance:none;
@@ -651,30 +660,15 @@ body{
   height:3px;
   background:#d83a3a;
 }
-.monday-file-thumb{
-  width:22px;
-  height:22px;
-  border-radius:3px;
-  object-fit:cover;
-  flex:0 0 auto;
-}
-.monday-file-name{
-  min-width:0;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-  font-size:12px;
-  font-weight:700;
-}
-.monday-file-count{
-  min-width:20px;
-  height:18px;
-  padding:0 5px;
-  border-radius:9px;
-  background:#4d4f56;
-  color:#fff;
-  font-size:11px;
-  line-height:18px;
+.monday-file-icon.image::before{
+  content:"";
+  position:absolute;
+  left:3px;
+  right:3px;
+  bottom:3px;
+  height:5px;
+  background:linear-gradient(135deg, #579bfc 0 45%, #00c875 45% 100%);
+  clip-path:polygon(0 100%, 42% 30%, 62% 62%, 78% 35%, 100% 100%);
 }
 .monday-person-pill{
   max-width:100%;

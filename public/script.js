@@ -7,6 +7,7 @@ const DASHBOARD_TAB_NAMES = ['dashboard', 'database', 'visuals'];
 const BOARD_AUTO_REFRESH_MS = 2000;
 const HIDDEN_BOARD_COLUMN_TYPES = new Set(['subtasks']);
 const HIDDEN_BOARD_COLUMN_IDS = new Set(['subitems__1']);
+const HIDDEN_BOARD_COLUMN_TITLES = new Set(['START/END', 'START-END']);
 let __boardRefreshTimer = null;
 let __boardLoading = false;
 let __proofModalState = {
@@ -631,13 +632,22 @@ function countChecked(items, columnId) {
 function getRenderableBoardColumns(columns) {
   return normalizeColumns(columns).filter(column =>
     column.id !== 'name' &&
+    !isHiddenBoardColumnTitle(column.title) &&
     !HIDDEN_BOARD_COLUMN_IDS.has(column.id) &&
     !HIDDEN_BOARD_COLUMN_TYPES.has(column.type)
   );
 }
 
 function getRenderableSubitemColumns(columns) {
-  return normalizeColumns(columns).filter(column => column.id !== 'name');
+  return normalizeColumns(columns).filter(column =>
+    column.id !== 'name' &&
+    !isHiddenBoardColumnTitle(column.title)
+  );
+}
+
+function isHiddenBoardColumnTitle(title) {
+  const normalized = String(title || '').trim().toUpperCase().replace(/\s*([/-])\s*/g, '$1');
+  return HIDDEN_BOARD_COLUMN_TITLES.has(normalized);
 }
 
 function normalizeColumns(columns) {
@@ -863,6 +873,7 @@ function renderCheckboxValue(cell, value, column) {
 function getCheckboxTickColor(column) {
   const title = String(column?.title || '').toUpperCase();
   if (title.includes('JAQ')) return '#fdab3d';
+  if (title.includes('JOB')) return '#00c875';
   if (title.includes('CHECK')) return '#579bfc';
   return '#579bfc';
 }
@@ -877,46 +888,14 @@ function renderFileValue(cell, value, text, column) {
     });
   }
   if (!files.length) return;
-  if (isProofColumn(column)) {
-    renderProofFileButton(cell, files, text);
-    return;
-  }
-
-  const file = files[0];
-  const link = document.createElement(file.url ? 'a' : 'span');
-  link.className = 'monday-file-link';
-  if (file.url) {
-    link.href = file.url;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-  }
-
-  if (isImageFile(file)) {
-    const img = document.createElement('img');
-    img.className = 'monday-file-thumb';
-    img.src = file.url;
-    img.alt = file.name || 'Attached file';
-    img.loading = 'lazy';
-    link.appendChild(img);
-  } else {
-    const icon = document.createElement('span');
-    icon.className = `monday-file-icon ${isPdfFile(file.name, file.mime) ? 'pdf' : ''}`;
-    link.appendChild(icon);
-  }
-
-  const name = document.createElement('span');
-  name.className = 'monday-file-name';
-  name.textContent = file.name || 'File';
-  link.title = file.name || text || 'Attached file';
-  link.appendChild(name);
-  cell.appendChild(link);
-
-  if (files.length > 1) {
-    const count = document.createElement('span');
-    count.className = 'monday-file-count';
-    count.textContent = `+${files.length - 1}`;
-    cell.appendChild(count);
-  }
+  cell.classList.add('monday-file-cell');
+  files.forEach((file, index) => {
+    if (isProofColumn(column)) {
+      renderProofFileButton(cell, files, index, text);
+    } else {
+      renderFileIconLink(cell, file, text);
+    }
+  });
 }
 
 function isProofColumn(column) {
@@ -927,30 +906,43 @@ function isLikelyFileUrl(value) {
   return /^(https?:\/\/|\/)/i.test(String(value || '').trim());
 }
 
-function renderProofFileButton(cell, files, text) {
-  const file = files[0];
+function renderFileIconLink(cell, file, text) {
+  const link = document.createElement(file.url ? 'a' : 'span');
+  link.className = 'monday-file-link';
+  link.title = file.name || text || 'Attached file';
+  if (file.url) {
+    link.href = file.url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+  }
+  link.appendChild(buildFileIcon(file));
+  cell.appendChild(link);
+}
+
+function renderProofFileButton(cell, files, index, text) {
+  const file = files[index];
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'monday-file-link monday-proof-trigger';
   button.title = file.name || text || 'Open proof';
   button.setAttribute('aria-label', button.title);
 
-  const icon = document.createElement('span');
-  icon.className = `monday-file-icon ${isPdfFile(file.name, file.mime) ? 'pdf' : ''}`;
-  button.appendChild(icon);
+  button.appendChild(buildFileIcon(file));
   button.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
-    openProofModal(files);
+    openProofModal(files, index);
   });
   cell.appendChild(button);
+}
 
-  if (files.length > 1) {
-    const count = document.createElement('span');
-    count.className = 'monday-file-count';
-    count.textContent = `+${files.length - 1}`;
-    cell.appendChild(count);
-  }
+function buildFileIcon(file) {
+  const icon = document.createElement('span');
+  const classes = ['monday-file-icon'];
+  if (isPdfFile(file.name, file.mime)) classes.push('pdf');
+  if (isImageFile(file)) classes.push('image');
+  icon.className = classes.join(' ');
+  return icon;
 }
 
 function ensureProofModal() {
@@ -999,16 +991,17 @@ function ensureProofModal() {
   return modal;
 }
 
-function openProofModal(files) {
+function openProofModal(files, startIndex = 0) {
   const normalized = (Array.isArray(files) ? files : [])
     .map(file => normalizeMondayFile(file) || file)
     .filter(file => file && (file.url || file.assetId || file.name));
   if (!normalized.length) return;
+  const safeStartIndex = Math.min(Math.max(Number.parseInt(startIndex, 10) || 0, 0), normalized.length - 1);
 
   ensureProofModal();
   __proofModalState = {
     files: normalized,
-    fileIndex: 0,
+    fileIndex: safeStartIndex,
     pageNumber: 1,
     pageCount: 1,
     pdf: null,
