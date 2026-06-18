@@ -9,7 +9,7 @@
   const LINE_ORDER_AUTOSAVE_MS = 3500;
   const ORDER_ACK_LOGO_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781699668/ultimate_logo_imyxvr.png';
   const ORDER_ACK_FOOTER_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781779546/LETTERHEAD_INFO_pxmlak.png';
-  const ORDER_ACK_PAGE_CONTENT_MAX_MM = 101;
+  const ORDER_ACK_PAGE_CONTENT_MAX_MM = 96;
   const ORDER_ACK_TABLE_TOP_MM = 6;
   const ORDER_ACK_TABLE_HEADER_MM = 5.5;
   const ORDER_ACK_EMPTY_ROW_MM = 12;

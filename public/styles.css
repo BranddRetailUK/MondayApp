@@ -1484,7 +1484,7 @@ body.modal-open{overflow:hidden}
   line-height:1.18;
 }
 .db-order-ack-page-content{
-  height:101mm;
+  height:96mm;
   overflow:hidden;
 }
 .db-order-ack-header{
@@ -1501,9 +1501,11 @@ body.modal-open{overflow:hidden}
   letter-spacing:0;
 }
 .db-order-ack-logo{
-  width:55mm;
+  margin-left:auto;
+  width:60.5mm;
   height:auto;
   object-fit:contain;
+  transform-origin:top right;
   display:block;
 }
 .db-order-ack-address{
@@ -1680,7 +1682,7 @@ body.modal-open{overflow:hidden}
 .db-order-ack-footer{
   position:absolute;
   left:50%;
-  bottom:0;
+  bottom:5mm;
   width:146mm;
   max-width:none;
   height:auto;
