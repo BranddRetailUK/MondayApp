@@ -1702,7 +1702,7 @@ body.modal-open{overflow:hidden}
 }
 .db-customer-panel{
   display:none;
-  height:396px;
+  height:372px;
   border:1px solid #fff;
   border-top:none;
   background:#92cdea;
@@ -1712,7 +1712,7 @@ body.modal-open{overflow:hidden}
   display:block;
 }
 .db-customer-table-frame{
-  height:366px;
+  height:342px;
   border:1px solid #000;
   background:#858585;
   display:flex;
@@ -1721,6 +1721,13 @@ body.modal-open{overflow:hidden}
 }
 .db-customer-table-frame .db-legacy-table{
   flex:0 0 auto;
+}
+#db-customer-orders-panel .db-customer-table-frame{
+  overflow-y:auto;
+  overflow-x:hidden;
+}
+#db-customer-orders-panel .db-customer-gray-fill{
+  display:none;
 }
 .db-customer-gray-fill{
   flex:1 1 auto;
