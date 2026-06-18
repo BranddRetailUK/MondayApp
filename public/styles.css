@@ -1298,8 +1298,12 @@ body.modal-open{overflow:hidden}
   font:22px Arial, Helvetica, sans-serif;
   padding:1px 4px;
 }
+#db-customer-code{
+  border:2px inset #fff;
+  background:#fff;
+}
 .db-customer-manager-label{
-  margin-left:84px;
+  margin-left:24px;
   color:#120080;
   font-size:18px;
   font-weight:700;
@@ -1596,7 +1600,7 @@ body.modal-open{overflow:hidden}
 .db-customer-meta-links{
   position:absolute;
   right:0;
-  top:0;
+  top:18px;
   width:306px;
   height:38px;
   color:#000;
