@@ -43,6 +43,7 @@
     lineOrderDirty: false,
     lineOrderSaving: false,
     lineOrderSaveQueued: false,
+    lineOrderPendingGroups: [],
     lineOrderLastSavedSignature: '[]',
     designDirty: false,
     designSaving: false,
@@ -151,6 +152,10 @@
     els.itemsPanel.addEventListener('focusin', handleLineDraftFocus);
     els.itemsPanel.addEventListener('keydown', handleLineDraftKeydown);
     els.itemsPanel.addEventListener('keydown', handleCustomLineDraftKeydown);
+    els.itemsPanel.addEventListener('keydown', handleLineItemEditKeydown);
+    els.itemsPanel.addEventListener('focusout', handleLineDraftFocusOut);
+    els.itemsPanel.addEventListener('focusout', handleCustomLineDraftFocusOut);
+    els.itemsPanel.addEventListener('focusout', handleLineItemEditFocusOut);
     els.itemsPanel.addEventListener('change', handleLineDraftChange);
     els.itemsPanel.addEventListener('mousedown', handleLineDraftMouseDown);
     els.itemsPanel.addEventListener('pointerdown', handleLineDragPointerDown);
@@ -1051,7 +1056,6 @@
       resetCustomLineDraftState();
       resetLineOrderAutosaveState();
       resetJobAutosaveState();
-      state.lineOrderLastSavedSignature = lineOrderSignature(stockLineItems());
       state.jobLastSavedSignature = jobSignature(state.selectedJob);
       renderOrder();
       renderOutstandingOrders();
@@ -1643,21 +1647,42 @@
   function renderStockRow(item, index) {
     const lineId = item.source_order_item_id || '';
     return `
-      <tr class="db-stock-line-row" data-line-id="${escapeAttr(lineId)}" data-stock-index="${escapeAttr(index)}">
+      <tr class="db-line-row db-stock-line-row" data-line-id="${escapeAttr(lineId)}" data-stock-index="${escapeAttr(index)}">
         <td class="db-row-selector">
           <button class="db-line-drag-handle" type="button" data-db-line-drag="true" aria-label="Reorder line item">&#9654;</button>
         </td>
-        <td>${escapeHtml(item.style_code || '')}</td>
-        <td>${escapeHtml(item.alt_style_code || '')}</td>
-        <td>${escapeHtml(item.style_name || item.line_description || '')}</td>
-        <td>${escapeHtml(item.colour || '')}</td>
-        <td>${escapeHtml(item.size || '')}</td>
-        <td>${escapeHtml(formatCurrency(item.unit_cost))}</td>
-        <td>${escapeHtml(formatCurrency(item.unit_price))}</td>
-        <td>${escapeHtml(formatNumber(item.quantity || 0))}</td>
-        <td>${escapeHtml(formatVat(item.vat_rate))}</td>
+        <td>${renderLineItemInput(item, 'style_code')}</td>
+        <td>${renderLineItemInput(item, 'alt_style_code')}</td>
+        <td>${renderLineItemInput(item, 'style_name')}</td>
+        <td>${renderLineItemInput(item, 'colour')}</td>
+        <td>${renderLineItemInput(item, 'size')}</td>
+        <td>${renderLineItemInput(item, 'unit_cost', 'db-line-money')}</td>
+        <td>${renderLineItemInput(item, 'unit_price', 'db-line-money')}</td>
+        <td>${renderLineItemInput(item, 'quantity', 'db-line-qty')}</td>
+        <td>${renderLineItemInput(item, 'vatPercent', 'db-line-vat')}</td>
       </tr>
     `;
+  }
+
+  function renderLineItemInput(item, field, className = '') {
+    const value = lineItemEditDisplayValue(item, field);
+    return `
+      <input
+        class="db-line-item-input ${escapeAttr(className)}"
+        data-line-item-field="${escapeAttr(field)}"
+        data-line-item-original="${escapeAttr(value)}"
+        value="${escapeAttr(value)}"
+      >
+    `;
+  }
+
+  function lineItemEditDisplayValue(item, field) {
+    if (!item) return '';
+    if (field === 'vatPercent') return formatVatInput(item.vat_rate);
+    if (field === 'quantity') return formatNumber(item.quantity || 0);
+    if (field === 'unit_cost' || field === 'unit_price') return formatMoneyInput(item[field]);
+    if (field === 'style_name') return item.style_name || item.line_description || '';
+    return item[field] || '';
   }
 
   function renderAddLineButtonRow() {
@@ -1673,14 +1698,11 @@
   function renderLineDraftRow() {
     const draft = state.lineDraft || createLineDraft();
     const product = selectedDraftProduct(draft);
-    const saveDisabled = product && !draft.saving ? '' : ' disabled';
     const status = draft.error || (draft.loadingVariants ? 'Loading variants' : '');
 
     return `
       <tr class="db-add-line-edit-row">
-        <td class="db-row-selector">
-          <button class="db-line-save-button" type="button" data-db-line-action="save"${saveDisabled}>+</button>
-        </td>
+        <td class="db-row-selector"></td>
         <td>${renderLineSearchInput('code', draft.codeQuery)}</td>
         <td><input class="db-line-input" readonly value="${escapeAttr(draft.altCode || product?.alt_style_code || '')}"></td>
         <td>${renderLineSearchInput('style', draft.styleQuery)}</td>
@@ -1851,6 +1873,20 @@
     }
 
     saveLineDraft();
+  }
+
+  function handleLineDraftFocusOut(event) {
+    if (!state.lineDraft) return;
+    const row = event.target.closest('.db-add-line-edit-row');
+    if (!row) return;
+    const nextTarget = event.relatedTarget;
+    if (nextTarget && (row.contains(nextTarget) || nextTarget.closest?.('.db-product-results'))) return;
+
+    window.setTimeout(() => {
+      if (!state.lineDraft || els.itemsPanel.querySelector('.db-add-line-edit-row:focus-within')) return;
+      syncDraftVariantSelection();
+      if (selectedDraftProduct(state.lineDraft)) saveLineDraft();
+    }, 0);
   }
 
   function handleLineDraftChange(event) {
@@ -2098,7 +2134,6 @@
         state.selectedJob.total_quantity = state.selectedLineItems.reduce((total, item) => total + Number(item.quantity || 0), 0);
       }
       resetLineOrderAutosaveState();
-      state.lineOrderLastSavedSignature = lineOrderSignature(stockLineItems());
       resetLineDraftState();
       renderItemsPanel();
       renderOutstandingOrders();
@@ -2127,11 +2162,83 @@
     return parsed > 1 ? parsed / 100 : parsed;
   }
 
+  function handleLineItemEditKeydown(event) {
+    if (!event.target.dataset.lineItemField) return;
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    saveLineItemEdit(event.target);
+  }
+
+  function handleLineItemEditFocusOut(event) {
+    if (!event.target.dataset.lineItemField) return;
+    saveLineItemEdit(event.target);
+  }
+
+  async function saveLineItemEdit(input) {
+    if (!input || input.dataset.lineItemSaving === 'true') return;
+
+    const row = input.closest('[data-line-id]');
+    const lineItemId = Number.parseInt(row?.dataset.lineId, 10);
+    const field = input.dataset.lineItemField;
+    if (!Number.isFinite(lineItemId) || !field || !state.selectedJob?.source_order_id) return;
+
+    const original = input.dataset.lineItemOriginal || '';
+    const current = input.value || '';
+    if (current.trim() === original.trim()) return;
+
+    const payload = lineItemEditPayload(field, current);
+    if (!payload) return;
+
+    input.dataset.lineItemSaving = 'true';
+    input.classList.remove('db-line-item-error');
+
+    try {
+      const data = await fetchJson(
+        `/api/database/jobs/${encodeURIComponent(state.selectedJob.source_order_id)}/line-items/${encodeURIComponent(lineItemId)}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      state.selectedLineItems = data.lineItems || state.selectedLineItems;
+      syncSelectedJobLineSummary();
+      renderOutstandingOrders();
+
+      const updatedItem = state.selectedLineItems.find((item) => Number(item.source_order_item_id) === lineItemId);
+      const displayValue = lineItemEditDisplayValue(updatedItem, field);
+      input.value = displayValue;
+      input.dataset.lineItemOriginal = displayValue;
+    } catch (err) {
+      input.classList.add('db-line-item-error');
+      console.error('Line item autosave failed', err);
+    } finally {
+      delete input.dataset.lineItemSaving;
+    }
+  }
+
+  function lineItemEditPayload(field, value) {
+    if (field === 'vatPercent') return { vat_rate: lineVatRate(value) };
+    if (field === 'quantity') return { quantity: lineInteger(value, 1) };
+    if (field === 'unit_cost' || field === 'unit_price') return { [field]: lineNumber(value) };
+    if (['style_code', 'alt_style_code', 'style_name', 'colour', 'size', 'line_description'].includes(field)) {
+      return { [field]: String(value || '').trim() };
+    }
+    return null;
+  }
+
+  function syncSelectedJobLineSummary() {
+    if (!state.selectedJob) return;
+    state.selectedJob.line_item_count = state.selectedLineItems.length;
+    state.selectedJob.total_quantity = state.selectedLineItems.reduce((total, item) => total + Number(item.quantity || 0), 0);
+  }
+
   function handleLineDragPointerDown(event) {
     const handle = event.target.closest('[data-db-line-drag]');
-    if (!handle || event.button !== 0 || state.lineDraft) return;
+    if (!handle || event.button !== 0 || state.lineDraft || state.customLineDraft) return;
 
-    const row = handle.closest('.db-stock-line-row');
+    const row = handle.closest('.db-line-row');
     const tbody = row?.parentElement;
     if (!row || !tbody || !row.dataset.lineId) return;
 
@@ -2144,7 +2251,7 @@
       row,
       tbody,
       offsetY: event.clientY - rect.top,
-      startOrder: currentDomStockLineIds(),
+      startOrder: currentDomLineIds(tbody),
       ghost: createLineDragGhost(row, rect),
     };
 
@@ -2169,11 +2276,11 @@
     const before = drag.startOrder.join('|');
     cleanupLineDrag();
 
-    const afterIds = currentDomStockLineIds();
+    const afterIds = currentDomLineIds(drag.tbody);
     const after = afterIds.join('|');
     if (after && after !== before) {
-      applyStockLineOrder(afterIds);
-      markLineOrderDirty();
+      applyLineOrder(afterIds);
+      markLineOrderDirty(afterIds);
     }
   }
 
@@ -2184,7 +2291,7 @@
     ghost.style.width = `${Math.round(rect.width)}px`;
 
     const table = document.createElement('table');
-    table.className = 'db-legacy-table db-items-table';
+    table.className = row.closest('table')?.className || 'db-legacy-table';
     const tbody = document.createElement('tbody');
     const clone = row.cloneNode(true);
     clone.classList.remove('db-line-row-dragging');
@@ -2204,7 +2311,8 @@
   function moveDraggedLineRow(clientY) {
     if (!lineDrag) return;
 
-    const rows = Array.from(lineDrag.tbody.querySelectorAll('.db-stock-line-row'))
+    const rows = Array.from(lineDrag.tbody.children)
+      .filter((row) => row.classList.contains('db-line-row'))
       .filter((row) => row !== lineDrag.row);
     let beforeRow = null;
 
@@ -2221,9 +2329,9 @@
       return;
     }
 
-    const firstNonStockRow = Array.from(lineDrag.tbody.children)
-      .find((row) => !row.classList.contains('db-stock-line-row'));
-    lineDrag.tbody.insertBefore(lineDrag.row, firstNonStockRow || null);
+    const firstNonLineRow = Array.from(lineDrag.tbody.children)
+      .find((row) => !row.classList.contains('db-line-row'));
+    lineDrag.tbody.insertBefore(lineDrag.row, firstNonLineRow || null);
   }
 
   function cleanupLineDrag() {
@@ -2234,34 +2342,46 @@
     lineDrag = null;
   }
 
-  function currentDomStockLineIds() {
-    const rows = Array.from(els.itemsPanel.querySelectorAll('.db-stock-line-row'));
+  function currentDomLineIds(tbody) {
+    const rows = Array.from(tbody?.children || [])
+      .filter((row) => row.classList.contains('db-line-row'));
     return rows
       .map((row) => Number.parseInt(row.dataset.lineId, 10))
       .filter((id) => Number.isFinite(id));
   }
 
-  function applyStockLineOrder(lineIds) {
-    const stockById = new Map(stockLineItems().map((item) => [Number(item.source_order_item_id), item]));
-    const orderedStock = lineIds
-      .map((lineId) => stockById.get(Number(lineId)))
+  function applyLineOrder(lineIds) {
+    const lineIdSet = new Set(lineIds.map((lineId) => Number(lineId)));
+    const lineById = new Map((state.selectedLineItems || []).map((item) => [Number(item.source_order_item_id), item]));
+    const orderedLines = lineIds
+      .map((lineId) => lineById.get(Number(lineId)))
       .filter(Boolean);
 
-    if (orderedStock.length !== stockById.size) return;
+    if (orderedLines.length !== lineIdSet.size) return;
 
-    let stockIndex = 0;
+    let orderedIndex = 0;
     state.selectedLineItems = state.selectedLineItems.map((item) => {
-      if (!isStockItem(item)) return item;
-      const orderedItem = orderedStock[stockIndex] || item;
-      stockIndex += 1;
+      if (!lineIdSet.has(Number(item.source_order_item_id))) return item;
+      const orderedItem = orderedLines[orderedIndex] || item;
+      orderedIndex += 1;
       return {
         ...orderedItem,
-        line_sort_order: stockIndex,
+        line_sort_order: orderedIndex,
       };
     });
   }
 
-  function markLineOrderDirty() {
+  function markLineOrderDirty(lineIds) {
+    const normalizedIds = lineIds
+      .map((lineId) => Number.parseInt(lineId, 10))
+      .filter((lineId) => Number.isFinite(lineId));
+    if (!normalizedIds.length) return;
+
+    const idSet = new Set(normalizedIds);
+    state.lineOrderPendingGroups = [
+      ...state.lineOrderPendingGroups.filter((group) => !group.some((lineId) => idSet.has(Number(lineId)))),
+      normalizedIds,
+    ];
     state.lineOrderDirty = true;
     scheduleLineOrderAutosave();
   }
@@ -2386,12 +2506,7 @@
   }
 
   async function saveLineOrder(options = {}) {
-    const lineItemIds = stockLineItems()
-      .map((item) => Number.parseInt(item.source_order_item_id, 10))
-      .filter((id) => Number.isFinite(id));
-    const signature = lineOrderSignature(lineItemIds);
-
-    if (signature === state.lineOrderLastSavedSignature) {
+    if (!state.lineOrderPendingGroups.length) {
       state.lineOrderDirty = false;
       return;
     }
@@ -2402,34 +2517,39 @@
     }
 
     state.lineOrderSaving = true;
+    const groups = state.lineOrderPendingGroups.map((group) => [...group]);
+    state.lineOrderPendingGroups = [];
 
     try {
-      const response = await fetch(`/api/database/jobs/${encodeURIComponent(state.selectedJob.source_order_id)}/line-items/order`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ line_item_ids: lineItemIds }),
-        keepalive: Boolean(options.keepalive),
-        cache: 'no-store',
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        if (response.status === 401) {
-          window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search + window.location.hash)}`);
-          return;
+      for (const lineItemIds of groups) {
+        const response = await fetch(`/api/database/jobs/${encodeURIComponent(state.selectedJob.source_order_id)}/line-items/order`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ line_item_ids: lineItemIds }),
+          keepalive: Boolean(options.keepalive),
+          cache: 'no-store',
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          if (response.status === 401) {
+            window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search + window.location.hash)}`);
+            return;
+          }
+          throw new Error(data.error || `Request failed: ${response.status}`);
         }
-        throw new Error(data.error || `Request failed: ${response.status}`);
+        state.selectedLineItems = data.lineItems || state.selectedLineItems;
+        state.lineOrderLastSavedSignature = lineOrderSignature(lineItemIds);
       }
 
-      state.selectedLineItems = data.lineItems || state.selectedLineItems;
-      state.lineOrderDirty = false;
-      state.lineOrderLastSavedSignature = lineOrderSignature(stockLineItems());
+      state.lineOrderDirty = state.lineOrderPendingGroups.length > 0;
       if (!options.keepalive && state.activeOrderTab === 'items') renderItemsPanel();
     } catch (err) {
+      state.lineOrderPendingGroups = [...groups, ...state.lineOrderPendingGroups];
       state.lineOrderDirty = true;
       console.error('Line item order autosave failed', err);
     } finally {
       state.lineOrderSaving = false;
-      if (state.lineOrderSaveQueued) {
+      if (state.lineOrderSaveQueued || state.lineOrderPendingGroups.length) {
         state.lineOrderSaveQueued = false;
         scheduleLineOrderAutosave();
       }
@@ -2441,11 +2561,8 @@
     state.lineOrderDirty = false;
     state.lineOrderSaving = false;
     state.lineOrderSaveQueued = false;
+    state.lineOrderPendingGroups = [];
     state.lineOrderLastSavedSignature = '[]';
-  }
-
-  function stockLineItems() {
-    return (state.selectedLineItems || []).filter(isStockItem);
   }
 
   function lineOrderSignature(value) {
@@ -2456,14 +2573,17 @@
   }
 
   function renderNonStockRow(item, index) {
+    const lineId = item.source_order_item_id || '';
     return `
-      <tr>
-        <td class="db-row-selector">${index === 0 ? '&#9654;' : ''}</td>
-        <td>${escapeHtml(item.line_description || item.style_name || '')}</td>
-        <td>${escapeHtml(formatCurrency(item.unit_cost))}</td>
-        <td>${escapeHtml(formatCurrency(item.unit_price))}</td>
-        <td>${escapeHtml(formatNumber(item.quantity || 0))}</td>
-        <td>${escapeHtml(formatVat(item.vat_rate))}</td>
+      <tr class="db-line-row db-custom-line-row" data-line-id="${escapeAttr(lineId)}">
+        <td class="db-row-selector">
+          <button class="db-line-drag-handle" type="button" data-db-line-drag="true" aria-label="Reorder line item">&#9654;</button>
+        </td>
+        <td>${renderLineItemInput(item, 'line_description')}</td>
+        <td>${renderLineItemInput(item, 'unit_cost', 'db-line-money')}</td>
+        <td>${renderLineItemInput(item, 'unit_price', 'db-line-money')}</td>
+        <td>${renderLineItemInput(item, 'quantity', 'db-line-qty')}</td>
+        <td>${renderLineItemInput(item, 'vatPercent', 'db-line-vat')}</td>
       </tr>
     `;
   }
@@ -2499,14 +2619,11 @@
 
   function renderCustomLineDraftRow(type, colspan) {
     const draft = state.customLineDraft || createCustomLineDraft(type);
-    const saveDisabled = draft.line_description.trim() && !draft.saving ? '' : ' disabled';
     const status = draft.error || '';
 
     return `
       <tr class="db-custom-line-edit-row" data-custom-line-type="${escapeAttr(type)}">
-        <td class="db-row-selector">
-          <button class="db-line-save-button" type="button" data-db-custom-line-action="save" data-db-line-type="${escapeAttr(type)}"${saveDisabled}>+</button>
-        </td>
+        <td class="db-row-selector"></td>
         <td><textarea class="db-custom-line-input" data-custom-line-field="line_description">${escapeHtml(draft.line_description)}</textarea></td>
         <td><input class="db-custom-line-input db-line-money" data-custom-line-field="unit_cost" value="${escapeAttr(draft.unit_cost)}"></td>
         <td><input class="db-custom-line-input db-line-money" data-custom-line-field="unit_price" value="${escapeAttr(draft.unit_price)}"></td>
@@ -2571,6 +2688,19 @@
       event.preventDefault();
       saveCustomLineDraft();
     }
+  }
+
+  function handleCustomLineDraftFocusOut(event) {
+    if (!state.customLineDraft) return;
+    const row = event.target.closest('[data-custom-line-type]');
+    if (!row || row.dataset.customLineType !== state.customLineDraft.type) return;
+    const nextTarget = event.relatedTarget;
+    if (nextTarget && row.contains(nextTarget)) return;
+
+    window.setTimeout(() => {
+      if (!state.customLineDraft || els.itemsPanel.querySelector('[data-custom-line-type]:focus-within')) return;
+      if (state.customLineDraft.line_description.trim()) saveCustomLineDraft();
+    }, 0);
   }
 
   async function saveCustomLineDraft() {
@@ -2766,13 +2896,15 @@
           </thead>
           <tbody>
             ${renderCustomSectionRows(items, lineType, 6, (item) => `
-              <tr>
-                <td class="db-row-selector"></td>
-                <td>${escapeHtml(item.line_description || item.style_name || '')}</td>
-                <td>${escapeHtml(formatCurrency(item.unit_cost))}</td>
-                <td>${escapeHtml(formatCurrency(item.unit_price))}</td>
-                <td>${escapeHtml(formatNumber(item.quantity || 0))}</td>
-                <td>${escapeHtml(formatVat(item.vat_rate))}</td>
+              <tr class="db-line-row db-custom-line-row" data-line-id="${escapeAttr(item.source_order_item_id || '')}">
+                <td class="db-row-selector">
+                  <button class="db-line-drag-handle" type="button" data-db-line-drag="true" aria-label="Reorder line item">&#9654;</button>
+                </td>
+                <td>${renderLineItemInput(item, 'line_description')}</td>
+                <td>${renderLineItemInput(item, 'unit_cost', 'db-line-money')}</td>
+                <td>${renderLineItemInput(item, 'unit_price', 'db-line-money')}</td>
+                <td>${renderLineItemInput(item, 'quantity', 'db-line-qty')}</td>
+                <td>${renderLineItemInput(item, 'vatPercent', 'db-line-vat')}</td>
               </tr>
             `)}
           </tbody>
@@ -3030,11 +3162,24 @@
     }).format(number);
   }
 
+  function formatMoneyInput(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return '';
+    return number.toFixed(2);
+  }
+
   function formatVat(value) {
     const number = Number(value);
     if (!Number.isFinite(number)) return '';
     const percent = number > 0 && number <= 1 ? number * 100 : number;
     return `${percent.toFixed(2)}%`;
+  }
+
+  function formatVatInput(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return '';
+    const percent = number > 0 && number <= 1 ? number * 100 : number;
+    return percent.toFixed(2);
   }
 
   function formatNumber(value) {

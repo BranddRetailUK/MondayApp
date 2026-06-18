@@ -1846,7 +1846,8 @@ body.modal-open{overflow:hidden}
 }
 .db-line-input,
 .db-line-select,
-.db-custom-line-input{
+.db-custom-line-input,
+.db-line-item-input{
   width:100%;
   height:16px;
   border:0;
@@ -1869,6 +1870,21 @@ input.db-custom-line-input{
 }
 .db-line-input[readonly]{
   background:#fff;
+}
+.db-line-item-input{
+  display:block;
+  outline:none;
+}
+.db-line-item-input:focus{
+  outline:2px solid #126fff;
+  outline-offset:-2px;
+}
+.db-line-item-input[data-line-item-saving="true"]{
+  color:#555;
+}
+.db-line-item-input.db-line-item-error{
+  outline:2px solid #d62727;
+  outline-offset:-2px;
 }
 .db-line-select{
   padding:0;

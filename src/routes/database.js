@@ -1094,6 +1094,81 @@ router.put('/api/database/jobs/:id/line-items/order', async (req, res) => {
   }
 });
 
+router.put('/api/database/jobs/:id/line-items/:lineItemId', async (req, res) => {
+  const id = Number.parseInt(req.params.id, 10);
+  const lineItemId = Number.parseInt(req.params.lineItemId, 10);
+  if (!Number.isFinite(id) || !Number.isFinite(lineItemId)) {
+    return res.status(400).json({ error: 'Invalid job or line item id' });
+  }
+
+  const update = buildLineItemUpdate(req.body || {});
+  if (update.error) {
+    return res.status(400).json({ error: update.error });
+  }
+  if (!update.assignments.length) {
+    return res.status(400).json({ error: 'No editable line item fields supplied' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(71060221)');
+
+    const job = await client.query(
+      `SELECT source_order_id
+       FROM database_jobs
+       WHERE source_order_id = $1 OR order_no = $1
+       ORDER BY CASE WHEN source_order_id = $1 THEN 0 ELSE 1 END
+       LIMIT 1
+       FOR UPDATE`,
+      [id]
+    );
+
+    if (!job.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Database job not found' });
+    }
+
+    const sourceOrderId = job.rows[0].source_order_id;
+    const existing = await client.query(
+      `SELECT source_order_item_id
+       FROM database_job_line_items
+       WHERE source_order_id = $1
+         AND source_order_item_id = $2
+       FOR UPDATE`,
+      [sourceOrderId, lineItemId]
+    );
+
+    if (!existing.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Line item not found for this order' });
+    }
+
+    const sourceOrderIndex = update.values.length + 1;
+    const lineItemIndex = update.values.length + 2;
+    await client.query(
+      `UPDATE database_job_line_items
+       SET ${update.assignments.join(', ')},
+           updated_at_source = NOW(),
+           imported_at = NOW()
+       WHERE source_order_id = $${sourceOrderIndex}
+         AND source_order_item_id = $${lineItemIndex}`,
+      [...update.values, sourceOrderId, lineItemId]
+    );
+
+    const lineItems = await fetchLineItems(client, sourceOrderId);
+
+    await client.query('COMMIT');
+    res.json({ lineItems });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('PUT /api/database/jobs/:id/line-items/:lineItemId', err);
+    res.status(500).json({ error: 'Failed to save database line item' });
+  } finally {
+    client.release();
+  }
+});
+
 router.get('/api/database/jobs/:id', async (req, res) => {
   const id = Number.parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) {
@@ -1242,6 +1317,48 @@ function normalizeLineOrderPayload(value) {
   }
 
   return ids;
+}
+
+function buildLineItemUpdate(payload) {
+  const assignments = [];
+  const values = [];
+  const addField = (column, value) => {
+    values.push(value);
+    assignments.push(`${column} = $${values.length}`);
+  };
+
+  if (hasOwn(payload, 'style_name')) {
+    const styleName = cleanNullable(payload.style_name);
+    addField('style_name', styleName);
+    if (!hasOwn(payload, 'line_description')) addField('line_description', styleName);
+  }
+
+  const textFields = ['style_code', 'alt_style_code', 'colour', 'size', 'line_description'];
+  for (const field of textFields) {
+    if (hasOwn(payload, field)) addField(field, cleanNullable(payload[field]));
+  }
+
+  for (const field of ['unit_cost', 'unit_price']) {
+    if (hasOwn(payload, field)) addField(field, nullableNumber(payload[field]));
+  }
+
+  if (hasOwn(payload, 'quantity')) {
+    const quantity = nullableInt(payload.quantity);
+    if (!quantity || quantity < 1 || quantity > 100000) {
+      return { error: 'Quantity must be between 1 and 100000', assignments: [], values: [] };
+    }
+    addField('quantity', quantity);
+  }
+
+  if (hasOwn(payload, 'vat_rate')) {
+    addField('vat_rate', normalizeVatRate(payload.vat_rate));
+  }
+
+  return { assignments, values };
+}
+
+function hasOwn(value, key) {
+  return Object.prototype.hasOwnProperty.call(value, key);
 }
 
 function nullableNumber(value) {
