@@ -26,12 +26,16 @@
     activeOrderTab: 'details',
     activeCustomerTab: 'orders',
     newOrderSubmitting: false,
+    newCustomerSubmitting: false,
     selectedCustomer: null,
     customerResults: [],
     selectedCustomerDetail: null,
     selectedCustomerOrders: [],
     selectedCustomerContacts: [],
     selectedCustomerAddresses: [],
+    customerUsers: [],
+    loadedCustomerUsers: false,
+    customerAccountManagerSaving: false,
     selectedJob: null,
     selectedLineItems: [],
     selectedPositions: [],
@@ -94,8 +98,6 @@
       customerCreatedAt: document.getElementById('db-customer-created-at'),
       customerUpdatedAt: document.getElementById('db-customer-updated-at'),
       customerUpdatedBy: document.getElementById('db-customer-updated-by'),
-      customerMetaName: document.getElementById('db-customer-meta-name'),
-      customerMetaCode: document.getElementById('db-customer-meta-code'),
       customerTabs: Array.from(document.querySelectorAll('.db-customer-tab')),
       customerPanels: Array.from(document.querySelectorAll('.db-customer-panel')),
       customerOrdersBody: document.getElementById('db-customer-orders-body'),
@@ -124,6 +126,11 @@
       newCustomerResults: document.getElementById('db-new-customer-results'),
       newDeliveryAddress: document.getElementById('db-new-delivery-address'),
       newInvoiceAddress: document.getElementById('db-new-invoice-address'),
+      newCustomerForm: document.getElementById('db-new-customer-form'),
+      newCustomerAccept: document.getElementById('db-new-customer-accept'),
+      newCustomerCancel: document.getElementById('db-new-customer-cancel'),
+      newCustomerStatus: document.getElementById('db-new-customer-status'),
+      newCustomerAccountManager: document.getElementById('db-new-customer-account-manager'),
     };
 
     if (!els.root) return;
@@ -137,6 +144,7 @@
     els.customerOrdersBody.addEventListener('click', handleCustomerOrderRowClick);
     els.customerOrdersBody.addEventListener('keydown', handleCustomerOrderRowKeydown);
     els.customersSearch.addEventListener('input', handleDatabaseCustomerSearchInput);
+    els.customerAccountManager?.addEventListener('change', handleCustomerAccountManagerChange);
     els.selectOrder?.addEventListener('change', () => openSelectedOrder(els.selectOrder.value));
     els.headerJobSelect?.addEventListener('change', () => openSelectedOrder(els.headerJobSelect.value));
     els.headerOrderSelect?.addEventListener('change', () => openSelectedOrder(els.headerOrderSelect.value));
@@ -146,6 +154,10 @@
     els.newOrderForm.addEventListener('input', validateNewOrderForm);
     els.newOrderForm.addEventListener('change', validateNewOrderForm);
     els.newOrderCancel.addEventListener('click', showHome);
+    els.newCustomerForm?.addEventListener('submit', submitNewCustomer);
+    els.newCustomerForm?.addEventListener('input', validateNewCustomerForm);
+    els.newCustomerForm?.addEventListener('change', validateNewCustomerForm);
+    els.newCustomerCancel?.addEventListener('click', showCustomers);
     els.newCustomerInput.addEventListener('input', handleNewCustomerInput);
     els.newCustomerInput.addEventListener('focus', showExistingCustomerResults);
     els.newCustomerInput.addEventListener('keydown', handleCustomerSearchKeydown);
@@ -296,6 +308,11 @@
       showNewOrder();
       return;
     }
+    if (action === 'new-customer') {
+      await flushOrderAutosaves();
+      showNewCustomer();
+      return;
+    }
     if (action === 'open-orders') {
       await flushOrderAutosaves();
       openOutstandingOrders('open');
@@ -380,6 +397,16 @@
     resetNewOrderForm();
   }
 
+  function showNewCustomer() {
+    showView('new-customer');
+    setFooterTitle('New Customer');
+    resetNewCustomerForm();
+    ensureCustomerUsers().then(() => {
+      populateNewCustomerAccountManagers();
+      validateNewCustomerForm();
+    });
+  }
+
   function showCustomers() {
     showView('customers');
     setFooterTitle('Customers');
@@ -389,6 +416,7 @@
   function setCurrentUser(user) {
     state.currentUser = user || null;
     updateNewOrderTakenBy();
+    populateNewCustomerAccountManagers();
   }
 
   function currentUserFullName() {
@@ -433,6 +461,53 @@
       && fields.delivery_date.value.trim()
     );
     els.newOrderAccept.disabled = !valid || state.newOrderSubmitting;
+  }
+
+  function resetNewCustomerForm() {
+    if (!els.newCustomerForm) return;
+    els.newCustomerForm.reset();
+    const marketing = els.newCustomerForm.elements.marketing_opt_in;
+    if (marketing) marketing.checked = true;
+    populateNewCustomerAccountManagers();
+    els.newCustomerStatus.textContent = '';
+    els.newCustomerStatus.dataset.tone = '';
+    validateNewCustomerForm();
+  }
+
+  function validateNewCustomerForm() {
+    if (!els.newCustomerForm || !els.newCustomerAccept) return;
+    const fields = els.newCustomerForm.elements;
+    const valid = Boolean(
+      fields.customer_name.value.trim()
+      && fields.customer_code.value.trim()
+    );
+    els.newCustomerAccept.disabled = !valid || state.newCustomerSubmitting;
+  }
+
+  function populateNewCustomerAccountManagers() {
+    const select = els.newCustomerAccountManager;
+    if (!select) return;
+    const currentValue = select.value;
+    const users = state.customerUsers || [];
+    const options = ['<option value=""></option>'];
+    const seen = new Set();
+
+    users.forEach((user) => {
+      const id = String(user.id || '');
+      const name = user.full_name || [user.first_name, user.last_name].filter(Boolean).join(' ');
+      const key = id || String(name || '').trim().toLowerCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      options.push(`<option value="${escapeAttr(id)}">${escapeHtml(name || user.email || id)}</option>`);
+    });
+
+    select.innerHTML = options.join('');
+    const currentUserId = String((state.currentUser || window.ultimateHubUser || {}).id || '');
+    if (currentValue && Array.from(select.options).some((option) => option.value === currentValue)) {
+      select.value = currentValue;
+    } else if (currentUserId && Array.from(select.options).some((option) => option.value === currentUserId)) {
+      select.value = currentUserId;
+    }
   }
 
   function handleNewCustomerInput() {
@@ -647,6 +722,67 @@
     }
   }
 
+  async function submitNewCustomer(event) {
+    event.preventDefault();
+    if (state.newCustomerSubmitting) return;
+    validateNewCustomerForm();
+    if (els.newCustomerAccept.disabled) return;
+
+    state.newCustomerSubmitting = true;
+    validateNewCustomerForm();
+    els.newCustomerStatus.textContent = 'Creating customer...';
+    els.newCustomerStatus.dataset.tone = 'info';
+
+    try {
+      const payload = collectNewCustomerPayload();
+      const data = await fetchJson('/api/database/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      state.loadedCustomers = false;
+      state.databaseCustomers = [];
+      els.newCustomerStatus.textContent = `Created customer ${data.customer?.business_name || ''}`;
+      els.newCustomerStatus.dataset.tone = 'success';
+      await openCustomer(data.customer.customer_key, 'orders');
+    } catch (err) {
+      els.newCustomerStatus.textContent = err.message;
+      els.newCustomerStatus.dataset.tone = 'error';
+    } finally {
+      state.newCustomerSubmitting = false;
+      validateNewCustomerForm();
+    }
+  }
+
+  function collectNewCustomerPayload() {
+    const fields = els.newCustomerForm.elements;
+    return {
+      customer_name: fields.customer_name.value,
+      customer_code: fields.customer_code.value,
+      marketing_opt_in: fields.marketing_opt_in.checked,
+      contact_title: fields.contact_title.value,
+      contact_first_name: fields.contact_first_name.value,
+      contact_last_name: fields.contact_last_name.value,
+      contact_phone: fields.contact_phone.value,
+      contact_mobile: fields.contact_mobile.value,
+      contact_email: fields.contact_email.value,
+      invoice_address_line1: fields.invoice_address_line1.value,
+      invoice_address_line2: fields.invoice_address_line2.value,
+      invoice_address_line3: fields.invoice_address_line3.value,
+      invoice_address_line4: fields.invoice_address_line4.value,
+      invoice_address_line5: fields.invoice_address_line5.value,
+      invoice_postcode: fields.invoice_postcode.value,
+      delivery_address_line1: fields.delivery_address_line1.value,
+      delivery_address_line2: fields.delivery_address_line2.value,
+      delivery_address_line3: fields.delivery_address_line3.value,
+      delivery_address_line4: fields.delivery_address_line4.value,
+      delivery_address_line5: fields.delivery_address_line5.value,
+      delivery_postcode: fields.delivery_postcode.value,
+      account_manager_user_id: fields.account_manager_user_id.value,
+    };
+  }
+
   function collectNewOrderPayload() {
     const fields = els.newOrderForm.elements;
     const selectedCustomer = selectedDatabaseCustomer(fields.customer_name.value);
@@ -784,7 +920,10 @@
     showCustomerTab(state.activeCustomerTab);
 
     try {
-      const data = await fetchJson(`/api/database/customers/${encodeURIComponent(customerKey)}`);
+      const [data] = await Promise.all([
+        fetchJson(`/api/database/customers/${encodeURIComponent(customerKey)}`),
+        ensureCustomerUsers(),
+      ]);
       state.selectedCustomerDetail = data.customer || {};
       state.selectedCustomerOrders = data.orders || [];
       state.selectedCustomerContacts = data.contacts || [];
@@ -803,45 +942,134 @@
     state.selectedCustomerAddresses = [];
     els.customerName.value = 'Loading...';
     els.customerCode.value = '';
-    setSelectValue(els.customerAccountManager, '');
+    setCustomerAccountManagerOptions(null, true);
     els.customerCreatedAt.textContent = '-';
     els.customerUpdatedAt.textContent = '-';
     els.customerUpdatedBy.textContent = '-';
-    setSelectValue(els.customerMetaName, '');
-    setSelectValue(els.customerMetaCode, '');
     els.customerOrdersBody.innerHTML = renderStatusRow('Loading customer orders', 14);
     els.customerContactsBody.innerHTML = renderStatusRow('Loading contacts', 7);
-    els.customerAddressesBody.innerHTML = renderStatusRow('Loading addresses', 6);
+    els.customerAddressesBody.innerHTML = '<div class="db-panel-message">Loading addresses</div>';
   }
 
   function renderCustomerError(message) {
     els.customerName.value = 'Customer unavailable';
     els.customerCode.value = '';
-    setSelectValue(els.customerAccountManager, '');
+    setCustomerAccountManagerOptions(null, true);
     els.customerCreatedAt.textContent = '-';
     els.customerUpdatedAt.textContent = '-';
     els.customerUpdatedBy.textContent = '-';
-    setSelectValue(els.customerMetaName, '');
-    setSelectValue(els.customerMetaCode, '');
     els.customerOrdersBody.innerHTML = renderStatusRow(message, 14);
     els.customerContactsBody.innerHTML = renderStatusRow(message, 7);
-    els.customerAddressesBody.innerHTML = renderStatusRow(message, 6);
+    els.customerAddressesBody.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
   }
 
   function renderCustomerPage() {
     const customer = state.selectedCustomerDetail || {};
     els.customerName.value = customer.business_name || '';
     els.customerCode.value = customer.customer_code || '';
-    setSelectValue(els.customerAccountManager, staffLabel(customer.account_manager));
+    setCustomerAccountManagerOptions(customer, false);
     els.customerCreatedAt.textContent = formatDateTime(customer.created_at_source);
     els.customerUpdatedAt.textContent = formatDateTime(customer.updated_at_source);
     els.customerUpdatedBy.textContent = staffLabel(customer.updated_by) || '-';
-    setSelectValue(els.customerMetaName, customer.business_name || '');
-    setSelectValue(els.customerMetaCode, customer.customer_code || '');
-
     renderCustomerOrders();
     renderCustomerContacts();
     renderCustomerAddresses();
+  }
+
+  async function ensureCustomerUsers() {
+    if (state.loadedCustomerUsers) return state.customerUsers;
+
+    try {
+      const data = await fetchJson('/api/database/users');
+      state.customerUsers = Array.isArray(data.users) ? data.users : [];
+      state.loadedCustomerUsers = true;
+    } catch (err) {
+      console.error('Failed to load DATABASE users', err);
+      state.customerUsers = [];
+      state.loadedCustomerUsers = true;
+    }
+
+    return state.customerUsers;
+  }
+
+  function setCustomerAccountManagerOptions(customer, disabled) {
+    const select = els.customerAccountManager;
+    if (!select) return;
+
+    if (!customer) {
+      select.innerHTML = '<option></option>';
+      select.disabled = true;
+      return;
+    }
+
+    const selectedId = Number.parseInt(customer.account_manager_user_id, 10);
+    const selectedName = staffLabel(customer.account_manager);
+    const users = state.customerUsers || [];
+    const options = selectedName ? [] : ['<option></option>'];
+    const seenNames = new Set();
+
+    if (selectedName && !users.some((user) => userMatchesAccountManager(user, selectedId, selectedName))) {
+      seenNames.add(selectedName.toLowerCase());
+      options.push(`<option value="${escapeAttr(selectedName)}">${escapeHtml(selectedName)}</option>`);
+    }
+
+    options.push(...users
+      .filter((user) => {
+        const name = user.full_name || [user.first_name, user.last_name].filter(Boolean).join(' ');
+        const key = String(name || '').trim().toLowerCase();
+        if (!key || seenNames.has(key)) return false;
+        seenNames.add(key);
+        return true;
+      })
+      .map((user) => {
+        const name = user.full_name || [user.first_name, user.last_name].filter(Boolean).join(' ');
+        const selected = userMatchesAccountManager(user, selectedId, selectedName) ? ' selected' : '';
+        return `<option value="${escapeAttr(name)}" data-user-id="${escapeAttr(user.id || '')}"${selected}>${escapeHtml(name)}</option>`;
+      }));
+
+    if (!options.length) options.push('<option></option>');
+    select.innerHTML = options.join('');
+    if (selectedName) select.value = selectedName;
+    select.disabled = Boolean(disabled || state.customerAccountManagerSaving || !state.selectedCustomerDetail?.customer_key);
+  }
+
+  function userMatchesAccountManager(user, selectedId, selectedName) {
+    const userId = Number.parseInt(user?.id, 10);
+    if (Number.isFinite(selectedId) && Number.isFinite(userId) && selectedId === userId) return true;
+    const name = String(user?.full_name || [user?.first_name, user?.last_name].filter(Boolean).join(' ')).trim();
+    return Boolean(selectedName && name && name.toLowerCase() === String(selectedName).trim().toLowerCase());
+  }
+
+  async function handleCustomerAccountManagerChange() {
+    const customerKey = state.selectedCustomerDetail?.customer_key;
+    if (!customerKey || state.customerAccountManagerSaving) return;
+
+    const select = els.customerAccountManager;
+    const option = select?.selectedOptions?.[0];
+    const accountManager = select?.value || '';
+    const userId = Number.parseInt(option?.dataset?.userId, 10);
+
+    state.customerAccountManagerSaving = true;
+    if (select) select.disabled = true;
+
+    try {
+      const data = await fetchJson(`/api/database/customers/${encodeURIComponent(customerKey)}/account-manager`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account_manager: accountManager,
+          user_id: Number.isFinite(userId) ? userId : null,
+        }),
+      });
+      state.selectedCustomerDetail = { ...state.selectedCustomerDetail, ...(data.customer || {}) };
+      renderCustomerPage();
+    } catch (err) {
+      console.error('Failed to update customer account manager', err);
+      renderCustomerPage();
+    } finally {
+      state.customerAccountManagerSaving = false;
+      setCustomerAccountManagerOptions(state.selectedCustomerDetail, false);
+    }
   }
 
   function renderCustomerOrders() {
@@ -897,21 +1125,105 @@
 
   function renderCustomerAddresses() {
     const addresses = state.selectedCustomerAddresses || [];
-    if (!addresses.length) {
-      els.customerAddressesBody.innerHTML = renderStatusRow('No addresses recorded for this customer', 6);
-      return;
-    }
+    const invoiceAddress = defaultCustomerAddress(addresses, 'invoice');
+    const deliveryAddress = defaultCustomerAddress(addresses, 'delivery') || blankCustomerAddress('As Per Order');
 
-    els.customerAddressesBody.innerHTML = addresses.map((address, index) => `
-      <tr>
-        <td class="db-row-selector">${index === 0 ? '&#9654;' : ''}</td>
-        <td>${escapeHtml(address.address_type || '')}</td>
-        <td>${escapeHtml(address.address || '')}</td>
-        <td>${escapeHtml(formatNumber(address.order_count || 0))}</td>
-        <td class="db-order-link">${escapeHtml(address.latest_order_no || '')}</td>
-        <td>${escapeHtml(formatDate(address.last_seen_at, 'long'))}</td>
-      </tr>
-    `).join('');
+    els.customerAddressesBody.innerHTML = `
+      <div class="db-customer-address-columns">
+        ${renderCustomerAddressBox('Invoice address (default):', invoiceAddress)}
+        ${renderCustomerAddressBox('Delivery address (default):', deliveryAddress)}
+      </div>
+      <button class="db-toolbar-button db-customer-manage-addresses" type="button" disabled>Manage Addresses</button>
+    `;
+  }
+
+  function defaultCustomerAddress(addresses, role) {
+    const normalizedRole = String(role || '').toLowerCase();
+    const matches = (addresses || []).filter((address) => customerAddressHasRole(address, normalizedRole));
+    if (matches.length) return matches[0];
+    if (normalizedRole === 'invoice') return (addresses || [])[0] || blankCustomerAddress('');
+    return null;
+  }
+
+  function customerAddressHasRole(address, role) {
+    const type = String(address?.address_type || '').toLowerCase();
+    if (role === 'invoice') return type.includes('invoice') || type.includes('inv');
+    if (role === 'delivery') return type.includes('delivery') || type.includes('deliver');
+    return false;
+  }
+
+  function blankCustomerAddress(line1) {
+    return {
+      address_line1: line1 || '',
+      address_line2: '',
+      address_line3: '',
+      address_line4: '',
+      address_line5: '',
+      postcode: '',
+      phone: '',
+      fax: '',
+      created_at_source: null,
+      updated_at_source: null,
+      updated_by: null,
+    };
+  }
+
+  function renderCustomerAddressBox(title, address) {
+    const fields = customerAddressFields(address || blankCustomerAddress(''));
+    return `
+      <section class="db-customer-address-box">
+        <h3>${escapeHtml(title)}</h3>
+        <div class="db-customer-address-inner">
+          ${customerAddressInputRow('Address 1:', fields.address_line1)}
+          ${customerAddressInputRow('Address 2:', fields.address_line2)}
+          ${customerAddressInputRow('Address 3:', fields.address_line3)}
+          ${customerAddressInputRow('Address 4:', fields.address_line4)}
+          ${customerAddressInputRow('Address 5:', fields.address_line5)}
+          ${customerAddressInputRow('Postcode:', fields.postcode, 'postcode')}
+          ${customerAddressInputRow('Tel:', fields.phone, 'tel')}
+          ${customerAddressInputRow('Fax:', fields.fax, 'tel')}
+          <div class="db-customer-address-meta">
+            <div><span>Created:</span><a href="#">${escapeHtml(formatDateTime(fields.created_at_source))}</a></div>
+            <div><span>Last edited:</span><a href="#">${escapeHtml(formatDateTime(fields.updated_at_source))}</a></div>
+            <div><span>By:</span><a href="#">${escapeHtml(staffLabel(fields.updated_by) || '')}</a></div>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function customerAddressInputRow(label, value, size = '') {
+    return `
+      <label class="db-customer-address-row ${size ? `db-customer-address-row-${escapeAttr(size)}` : ''}">
+        <span>${escapeHtml(label)}</span>
+        <input readonly value="${escapeAttr(value || '')}">
+      </label>
+    `;
+  }
+
+  function customerAddressFields(address) {
+    const fallback = splitCustomerAddress(address?.address || '');
+    return {
+      address_line1: address?.address_line1 || fallback[0] || '',
+      address_line2: address?.address_line2 || fallback[1] || '',
+      address_line3: address?.address_line3 || fallback[2] || '',
+      address_line4: address?.address_line4 || fallback[3] || '',
+      address_line5: address?.address_line5 || fallback[4] || '',
+      postcode: address?.postcode || fallback[5] || '',
+      phone: address?.phone || '',
+      fax: address?.fax || '',
+      created_at_source: address?.created_at_source || address?.first_seen_at || null,
+      updated_at_source: address?.updated_at_source || address?.last_seen_at || null,
+      updated_by: address?.updated_by || null,
+    };
+  }
+
+  function splitCustomerAddress(value) {
+    return String(value || '')
+      .split(/\r?\n|,\s*/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(0, 6);
   }
 
   function showCustomerTab(tab) {
@@ -1725,7 +2037,7 @@
   }
 
   function renderOrderAckItemsTable(items, totals) {
-    const rows = renderOrderAckItemRows(items);
+    const itemBodies = renderOrderAckItemBodies(items, totals);
 
     return `
       <table class="db-order-ack-items">
@@ -1739,42 +2051,44 @@
             <th>Rate</th>
           </tr>
         </thead>
-        <tbody>${rows}</tbody>
-        <tfoot>
-          <tr>
-            <td colspan="3"></td>
-            <td>${escapeHtml(formatCurrency(totals.net))}</td>
-            <td>${escapeHtml(formatCurrency(totals.vat))}</td>
-            <td></td>
-          </tr>
-        </tfoot>
+        ${itemBodies}
       </table>
     `;
   }
 
-  function renderOrderAckItemRows(items) {
+  function renderOrderAckItemBodies(items, totals) {
     if (!items.length) {
       return `
-        <tr>
-          <td colspan="6" class="db-order-ack-empty">No order line items</td>
-        </tr>
+        <tbody class="db-order-ack-item-group">
+          <tr>
+            <td colspan="6" class="db-order-ack-empty">No order line items</td>
+          </tr>
+        </tbody>
+        ${renderOrderAckSummaryRows(totals)}
       `;
     }
 
     const groups = groupedOrderAckLineItems(items);
-    const rows = [];
+    const bodies = [];
     let hasPreviousRows = false;
 
     for (const group of groups) {
       if (!group.items.length) continue;
+      const rows = [];
       if (group.type === 'nondelivery' && hasPreviousRows) {
         rows.push('<tr class="db-order-ack-item-gap"><td colspan="6"></td></tr>');
       }
       rows.push(...group.items.map(renderOrderAckItemRow));
+      bodies.push(`
+        <tbody class="db-order-ack-item-group db-order-ack-item-group-${escapeAttr(group.type)}">
+          ${rows.join('')}
+        </tbody>
+      `);
       hasPreviousRows = true;
     }
 
-    return rows.join('');
+    bodies.push(renderOrderAckSummaryRows(totals));
+    return bodies.join('');
   }
 
   function renderOrderAckItemRow(item) {
@@ -1783,7 +2097,7 @@
     const net = orderAckLineNet(item);
     const vat = orderAckLineVat(item);
     return `
-      <tr>
+      <tr class="db-order-ack-item-row">
         <td>${escapeHtml(orderAckItemDescription(item))}</td>
         <td>${escapeHtml(formatNumber(quantity))}</td>
         <td>${Number.isFinite(price) ? escapeHtml(formatCurrency(price)) : ''}</td>
@@ -1791,6 +2105,25 @@
         <td>${escapeHtml(formatCurrency(vat))}</td>
         <td>${escapeHtml(formatVat(item.vat_rate))}</td>
       </tr>
+    `;
+  }
+
+  function renderOrderAckSummaryRows(totals) {
+    return `
+      <tbody class="db-order-ack-summary">
+        <tr class="db-order-ack-summary-row">
+          <td colspan="4" class="db-order-ack-summary-label">Sub total</td>
+          <td colspan="2" class="db-order-ack-summary-amount">${escapeHtml(formatCurrency(totals.net))}</td>
+        </tr>
+        <tr class="db-order-ack-summary-row">
+          <td colspan="4" class="db-order-ack-summary-label">VAT</td>
+          <td colspan="2" class="db-order-ack-summary-amount">${escapeHtml(formatCurrency(totals.vat))}</td>
+        </tr>
+        <tr class="db-order-ack-summary-row">
+          <td colspan="4" class="db-order-ack-summary-label">Total</td>
+          <td colspan="2" class="db-order-ack-summary-amount">${escapeHtml(formatCurrency(totals.gross))}</td>
+        </tr>
+      </tbody>
     `;
   }
 
@@ -3407,7 +3740,7 @@
     }
 
     els.mainTabs.forEach((tab) => {
-      const active = (name === 'home' || name === 'new-order' || name === 'customers' || name === 'customer')
+      const active = (name === 'home' || name === 'new-order' || name === 'new-customer' || name === 'customers' || name === 'customer')
         ? tab.dataset.dbGo === 'home'
         : tab.dataset.dbGo === 'outstanding';
       tab.classList.toggle('active', active);
@@ -3433,6 +3766,7 @@
 
   function titleForView(name) {
     if (name === 'new-order') return 'New Order';
+    if (name === 'new-customer') return 'New Customer';
     if (name === 'customers') return 'Customers';
     if (name === 'customer') return 'Customer';
     if (name === 'outstanding') return state.orderMode === 'all' ? 'All Orders' : 'Open Orders';
@@ -3477,6 +3811,8 @@
   }
 
   function customerKeyForRecord(customer) {
+    const explicitKey = String(customer?.customer_key || '').trim();
+    if (explicitKey) return explicitKey;
     const id = Number.parseInt(customer?.customer_id, 10);
     if (Number.isFinite(id)) return String(id);
     const name = String(customer?.business_name || '').trim();

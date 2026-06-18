@@ -314,6 +314,7 @@
                 <label>Search:
                   <input id="db-customers-search" class="db-legacy-input" type="search" autocomplete="off">
                 </label>
+                <button id="db-add-customer-button" class="db-toolbar-button" type="button" data-db-action="new-customer">Add Customer</button>
               </div>
 
               <div class="db-table-frame db-customers-table-frame">
@@ -337,19 +338,102 @@
               </div>
             </section>
 
+            <section id="db-new-customer-view" class="db-view db-new-order-view db-new-customer-view" aria-label="New customer">
+              <form id="db-new-customer-form" class="db-new-order-box db-new-customer-box">
+                <div class="db-new-order-title">New Customer</div>
+
+                <div class="db-new-order-row db-new-customer-name-row">
+                  <label>Customer:</label>
+                  <input id="db-new-customer-name" name="customer_name" autocomplete="off">
+                </div>
+
+                <div class="db-new-order-row db-new-customer-code-row">
+                  <label>Code:</label>
+                  <input id="db-new-customer-code" name="customer_code" autocomplete="off">
+                  <label class="db-new-customer-marketing-label" for="db-new-customer-marketing">Marketing:</label>
+                  <input id="db-new-customer-marketing" name="marketing_opt_in" type="checkbox" checked>
+                </div>
+
+                <div class="db-new-order-row db-new-customer-contact-row">
+                  <label>Contact:</label>
+                  <input id="db-new-customer-contact-title" name="contact_title" autocomplete="off">
+                  <input id="db-new-customer-contact-first" name="contact_first_name" autocomplete="off">
+                  <input id="db-new-customer-contact-last" name="contact_last_name" autocomplete="off">
+                </div>
+
+                <div class="db-new-order-row db-new-customer-tel-row">
+                  <label>Tel:</label>
+                  <input id="db-new-customer-tel" name="contact_phone" autocomplete="off">
+                </div>
+
+                <div class="db-new-order-row db-new-customer-mobile-row">
+                  <label>Mobile:</label>
+                  <input id="db-new-customer-mobile" name="contact_mobile" autocomplete="off">
+                </div>
+
+                <div class="db-new-order-row db-new-customer-email-row">
+                  <label>Email:</label>
+                  <input id="db-new-customer-email" name="contact_email" autocomplete="off">
+                </div>
+
+                <fieldset class="db-new-customer-address db-new-customer-invoice-address">
+                  <legend>
+                    <span>Invoice Address:</span>
+                    <small>(also used as contact's marketing address)</small>
+                  </legend>
+                  <input name="invoice_address_line1" autocomplete="off">
+                  <input name="invoice_address_line2" autocomplete="off">
+                  <input name="invoice_address_line3" autocomplete="off">
+                  <input name="invoice_address_line4" autocomplete="off">
+                  <input name="invoice_address_line5" autocomplete="off">
+                  <label class="db-new-customer-postcode">
+                    <span>(postcode)</span>
+                    <input name="invoice_postcode" autocomplete="off">
+                  </label>
+                </fieldset>
+
+                <fieldset class="db-new-customer-address db-new-customer-delivery-address">
+                  <legend>
+                    <span>Delivery Address:</span>
+                    <small>(if different)</small>
+                  </legend>
+                  <input name="delivery_address_line1" autocomplete="off">
+                  <input name="delivery_address_line2" autocomplete="off">
+                  <input name="delivery_address_line3" autocomplete="off">
+                  <input name="delivery_address_line4" autocomplete="off">
+                  <input name="delivery_address_line5" autocomplete="off">
+                  <label class="db-new-customer-postcode">
+                    <span>(postcode)</span>
+                    <input name="delivery_postcode" autocomplete="off">
+                  </label>
+                </fieldset>
+
+                <div class="db-new-order-row db-new-customer-manager-row">
+                  <label>Account manager:</label>
+                  <select id="db-new-customer-account-manager" name="account_manager_user_id"></select>
+                </div>
+
+                <div id="db-new-customer-status" class="db-new-order-status"></div>
+
+                <div class="db-new-order-actions">
+                  <button id="db-new-customer-cancel" class="db-new-action-button" type="button">Cancel</button>
+                  <button id="db-new-customer-accept" class="db-new-action-button" type="submit" disabled>Accept</button>
+                </div>
+              </form>
+            </section>
+
             <section id="db-customer-view" class="db-view db-customer-view" aria-label="Database customer">
               <div class="db-customer-header">
                 <div class="db-customer-title-area">
                   <div class="db-customer-line">
                     <span class="db-order-label-large">Customer:</span>
                     <input id="db-customer-name" class="db-title-input" readonly>
-                    <button class="db-toolbar-button db-edit-button" type="button">Edit</button>
                   </div>
                   <div class="db-customer-line db-customer-code-line">
                     <span class="db-order-label-large">Code:</span>
                     <input id="db-customer-code" class="db-order-number-input" readonly>
                     <span class="db-customer-manager-label">Account manager:</span>
-                    <select id="db-customer-account-manager" class="db-customer-manager-select" disabled></select>
+                    <select id="db-customer-account-manager" class="db-customer-manager-select"></select>
                   </div>
                 </div>
 
@@ -364,14 +448,6 @@
                   </div>
                 </div>
 
-                <div class="db-customer-meta-panel">
-                  <label>Customer:
-                    <select id="db-customer-meta-name" disabled></select>
-                  </label>
-                  <label>Code:
-                    <select id="db-customer-meta-code" disabled></select>
-                  </label>
-                </div>
               </div>
 
               <div class="db-customer-tabs" role="tablist" aria-label="Customer tabs">
@@ -381,8 +457,6 @@
                 <button class="db-customer-tab" type="button" data-db-customer-tab="quotations">Quotations</button>
                 <button class="db-customer-tab" type="button" data-db-customer-tab="communications">Communications</button>
                 <button class="db-customer-tab" type="button" data-db-customer-tab="actions">Actions</button>
-                <button class="db-customer-tab-arrow" type="button" aria-label="Previous tab">&lt;</button>
-                <button class="db-customer-tab-arrow" type="button" aria-label="Next tab">&gt;</button>
               </div>
 
               <div class="db-customer-panel active" id="db-customer-orders-panel">
@@ -437,23 +511,8 @@
               </div>
 
               <div class="db-customer-panel" id="db-customer-addresses-panel">
-                <div class="db-customer-table-frame">
-                  <table id="db-customer-addresses-table" class="db-legacy-table">
-                    <thead>
-                      <tr>
-                        <th class="db-row-selector"></th>
-                        <th>Type:</th>
-                        <th>Address:</th>
-                        <th>Orders:</th>
-                        <th>Latest order:</th>
-                        <th>Last used:</th>
-                      </tr>
-                    </thead>
-                    <tbody id="db-customer-addresses-body">
-                      <tr><td colspan="6" class="db-empty-cell">Loading addresses</td></tr>
-                    </tbody>
-                  </table>
-                  <div class="db-customer-gray-fill"></div>
+                <div id="db-customer-addresses-body" class="db-customer-addresses-layout">
+                  <div class="db-panel-message">Loading addresses</div>
                 </div>
               </div>
 

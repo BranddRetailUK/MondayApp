@@ -183,6 +183,25 @@ router.get('/api/database/outstanding-counts', async (_req, res) => {
   }
 });
 
+router.get('/api/database/users', async (_req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id,
+             email,
+             first_name,
+             last_name,
+             CONCAT_WS(' ', NULLIF(TRIM(first_name), ''), NULLIF(TRIM(last_name), '')) AS full_name
+      FROM hub_users
+      ORDER BY LOWER(first_name), LOWER(last_name), LOWER(email)
+    `);
+
+    res.json({ users: result.rows });
+  } catch (err) {
+    console.error('GET /api/database/users', err);
+    res.status(500).json({ error: 'Failed to fetch database users' });
+  }
+});
+
 router.get('/api/database/customers', async (req, res) => {
   const search = cleanQuery(req.query.q);
   const params = [];
@@ -200,6 +219,15 @@ router.get('/api/database/customers', async (req, res) => {
       OR job_title ILIKE ${ref}
     )`;
   }
+
+  const profileSearchSql = search
+    ? `AND (
+      customer_name ILIKE $1
+      OR customer_code ILIKE $1
+      OR contact_name ILIKE $1
+      OR contact_email ILIKE $1
+    )`
+    : '';
 
   try {
     const result = await pool.query(
@@ -227,22 +255,69 @@ router.get('/api/database/customers', async (req, res) => {
          WHERE customer_name IS NOT NULL
            AND customer_name <> ''
            ${searchSql}
+       ),
+       job_customers AS (
+         SELECT
+           CASE
+             WHEN customer_id IS NOT NULL THEN customer_id::text
+             ELSE 'name:' || business_name
+           END AS customer_key,
+           NULL::integer AS profile_id,
+           customer_id,
+           business_name,
+           customer_code,
+           contact_name,
+           contact_email,
+           source_order_id AS latest_source_order_id,
+           order_no AS latest_order_no,
+           job_title AS latest_job_title,
+           order_date AS latest_order_date,
+           delivery_date AS latest_delivery_date,
+           last_seen_at,
+           order_count
+         FROM customer_jobs
+         WHERE customer_rank = 1
+       ),
+       profile_customers AS (
+         SELECT
+           'profile:' || id AS customer_key,
+           id AS profile_id,
+           customer_id,
+           customer_name AS business_name,
+           customer_code,
+           contact_name,
+           contact_email,
+           NULL::integer AS latest_source_order_id,
+           NULL::integer AS latest_order_no,
+           NULL::text AS latest_job_title,
+           NULL::timestamp AS latest_order_date,
+           NULL::timestamp AS latest_delivery_date,
+           COALESCE(updated_at_source, created_at_source) AS last_seen_at,
+           0::int AS order_count
+         FROM database_customer_profiles
+         WHERE customer_name IS NOT NULL
+           AND customer_name <> ''
+           AND NOT EXISTS (
+             SELECT 1
+             FROM database_jobs existing_job
+             WHERE existing_job.customer_name IS NOT NULL
+               AND existing_job.customer_name <> ''
+               AND (
+                 (
+                   database_customer_profiles.customer_id IS NOT NULL
+                   AND existing_job.customer_id = database_customer_profiles.customer_id
+                 )
+                 OR LOWER(existing_job.customer_name) = LOWER(database_customer_profiles.customer_name)
+               )
+           )
+           ${profileSearchSql}
        )
-       SELECT
-         customer_id,
-         business_name,
-         customer_code,
-         contact_name,
-         contact_email,
-         source_order_id AS latest_source_order_id,
-         order_no AS latest_order_no,
-         job_title AS latest_job_title,
-         order_date AS latest_order_date,
-         delivery_date AS latest_delivery_date,
-         last_seen_at,
-         order_count
-       FROM customer_jobs
-       WHERE customer_rank = 1
+       SELECT *
+       FROM (
+         SELECT * FROM job_customers
+         UNION ALL
+         SELECT * FROM profile_customers
+       ) combined
        ORDER BY LOWER(business_name) ASC, business_name ASC
        LIMIT 5000`,
       params
@@ -263,7 +338,11 @@ router.get('/api/database/customers/search', async (req, res) => {
     const result = await pool.query(
       `WITH candidates AS (
          SELECT
-           COALESCE(customer_id::text, LOWER(customer_name)) AS customer_key,
+           CASE
+             WHEN customer_id IS NOT NULL THEN customer_id::text
+             ELSE 'name:' || customer_name
+           END AS customer_key,
+           NULL::integer AS profile_id,
            customer_id,
            customer_name AS business_name,
            customer_code,
@@ -295,6 +374,54 @@ router.get('/api/database/customers/search', async (req, res) => {
              OR contact_name ILIKE $1
              OR contact_email ILIKE $1
            )
+         UNION ALL
+         SELECT
+           'profile:' || id AS customer_key,
+           id AS profile_id,
+           customer_id,
+           customer_name AS business_name,
+           customer_code,
+           NULL::integer AS contact_id,
+           contact_name,
+           contact_phone,
+           contact_mobile,
+           contact_email,
+           contact_email AS email,
+           delivery_address,
+           invoice_address,
+           NULL::integer AS source_order_id,
+           NULL::integer AS order_no,
+           COALESCE(updated_at_source, created_at_source) AS last_seen_at,
+           CASE
+             WHEN LOWER(customer_name) = LOWER($2) THEN 0
+             WHEN customer_name ILIKE $3 THEN 1
+             WHEN customer_code ILIKE $3 THEN 2
+             WHEN contact_name ILIKE $3 THEN 3
+             WHEN contact_email ILIKE $3 THEN 4
+             ELSE 5
+           END AS match_rank
+         FROM database_customer_profiles
+         WHERE customer_name IS NOT NULL
+           AND customer_name <> ''
+           AND NOT EXISTS (
+             SELECT 1
+             FROM database_jobs existing_job
+             WHERE existing_job.customer_name IS NOT NULL
+               AND existing_job.customer_name <> ''
+               AND (
+                 (
+                   database_customer_profiles.customer_id IS NOT NULL
+                   AND existing_job.customer_id = database_customer_profiles.customer_id
+                 )
+                 OR LOWER(existing_job.customer_name) = LOWER(database_customer_profiles.customer_name)
+               )
+           )
+           AND (
+             customer_name ILIKE $1
+             OR customer_code ILIKE $1
+             OR contact_name ILIKE $1
+             OR contact_email ILIKE $1
+           )
        ),
        ranked AS (
          SELECT *,
@@ -306,7 +433,9 @@ router.get('/api/database/customers/search', async (req, res) => {
                 ) AS customer_rank
          FROM candidates
        )
-       SELECT customer_id,
+       SELECT customer_key,
+              profile_id,
+              customer_id,
               business_name,
               customer_code,
               contact_id,
@@ -340,11 +469,36 @@ router.get('/api/database/customers/:key', async (req, res) => {
     return res.status(400).json({ error: 'Invalid customer key' });
   }
 
-  const where = customerKey.type === 'id'
-    ? 'j.customer_id = $1'
-    : 'LOWER(j.customer_name) = LOWER($1)';
-
   try {
+    let profile = null;
+    let where = customerKey.type === 'id'
+      ? 'j.customer_id = $1'
+      : 'LOWER(j.customer_name) = LOWER($1)';
+    let params = [customerKey.value];
+
+    if (customerKey.type === 'profile') {
+      const profileResult = await pool.query(
+        `SELECT *
+         FROM database_customer_profiles
+         WHERE id = $1
+         LIMIT 1`,
+        [customerKey.value]
+      );
+
+      if (!profileResult.rowCount) {
+        return res.status(404).json({ error: 'Database customer not found' });
+      }
+
+      profile = profileResult.rows[0];
+      params = [profile.customer_name];
+      where = 'LOWER(j.customer_name) = LOWER($1)';
+
+      if (isFiniteDatabaseValue(profile.customer_id)) {
+        params = [profile.customer_id, profile.customer_name];
+        where = '(j.customer_id = $1 OR LOWER(j.customer_name) = LOWER($2))';
+      }
+    }
+
     const result = await pool.query(
       `WITH line_summary AS (
          SELECT source_order_id,
@@ -368,17 +522,17 @@ router.get('/api/database/customers/:key', async (req, res) => {
        WHERE ${where}
        ORDER BY COALESCE(j.order_date, j.updated_at_source, j.created_at_source) DESC NULLS LAST,
                 j.order_no DESC NULLS LAST`,
-      [customerKey.value]
+      params
     );
 
     const orders = result.rows;
-    if (!orders.length) {
+    if (!orders.length && !profile) {
       return res.status(404).json({ error: 'Database customer not found' });
     }
 
     const customerId = customerKey.type === 'id'
       ? customerKey.value
-      : firstFinite(orders, 'customer_id');
+      : (isFiniteDatabaseValue(profile?.customer_id) ? Number(profile.customer_id) : firstFinite(orders, 'customer_id'));
     let addressRows = [];
 
     if (isFiniteDatabaseValue(customerId)) {
@@ -393,10 +547,186 @@ router.get('/api/database/customers/:key', async (req, res) => {
       addressRows = addresses.rows;
     }
 
-    res.json(buildCustomerDetail(customerKey, orders, addressRows));
+    res.json(buildCustomerDetail(customerKey, orders, addressRows, profile));
   } catch (err) {
     console.error('GET /api/database/customers/:key', err);
     res.status(500).json({ error: 'Failed to fetch database customer detail' });
+  }
+});
+
+router.put('/api/database/customers/:key/account-manager', async (req, res) => {
+  const customerKey = parseCustomerKey(req.params.key);
+  if (!customerKey) {
+    return res.status(400).json({ error: 'Invalid customer key' });
+  }
+
+  const userId = nullableInt(req.body?.user_id);
+  let accountManager = cleanNullable(req.body?.account_manager);
+  let accountManagerUserId = null;
+
+  try {
+    const resolved = await resolveAccountManager(userId, accountManager);
+    if (resolved.error) return res.status(400).json({ error: resolved.error });
+    accountManagerUserId = resolved.userId;
+    accountManager = resolved.name;
+
+    if (!accountManager) {
+      return res.status(400).json({ error: 'Account manager is required' });
+    }
+
+    if (customerKey.type === 'profile') {
+      const updated = await pool.query(
+        `UPDATE database_customer_profiles
+         SET account_manager_user_id = $2,
+             account_manager_name = $3,
+             updated_by_user_id = $4,
+             updated_by_name = $5,
+             updated_at_source = NOW(),
+             imported_at = NOW()
+         WHERE id = $1
+         RETURNING *`,
+        [
+          customerKey.value,
+          accountManagerUserId,
+          accountManager,
+          req.hubUser?.id || null,
+          req.hubUser ? fullName(req.hubUser) : accountManager,
+        ]
+      );
+
+      if (!updated.rowCount) {
+        return res.status(404).json({ error: 'Database customer not found' });
+      }
+
+      return res.json({ customer: customerProfileToCustomer(updated.rows[0]) });
+    }
+
+    const where = customerKey.type === 'id'
+      ? 'customer_id = $1'
+      : 'LOWER(customer_name) = LOWER($1)';
+
+    const updated = await pool.query(
+      `UPDATE database_jobs
+       SET order_owner_user_id = $2,
+           order_owner_name = $3,
+           updated_at_source = NOW()
+       WHERE ${where}
+       RETURNING source_order_id, updated_at_source`,
+      [customerKey.value, accountManagerUserId, accountManager]
+    );
+
+    if (!updated.rowCount) {
+      return res.status(404).json({ error: 'Database customer not found' });
+    }
+
+    res.json({
+      customer: {
+        customer_key: customerKey.type === 'id' ? String(customerKey.value) : `name:${customerKey.value}`,
+        account_manager: accountManager,
+        account_manager_user_id: accountManagerUserId,
+        updated_at_source: latestDate(updated.rows, 'updated_at_source'),
+        updated_by: req.hubUser ? fullName(req.hubUser) : accountManager,
+      },
+    });
+  } catch (err) {
+    console.error('PUT /api/database/customers/:key/account-manager', err);
+    res.status(500).json({ error: 'Failed to update customer account manager' });
+  }
+});
+
+router.post('/api/database/customers', async (req, res) => {
+  const payload = req.body || {};
+  const customerName = cleanNullable(payload.customer_name);
+  const customerCode = cleanNullable(payload.customer_code);
+  const contactName = contactNameFromPayload(payload);
+  const invoiceAddress = normalizedCustomerAddress(payload, 'invoice');
+  const deliveryAddress = normalizedCustomerAddress(payload, 'delivery');
+  const userId = nullableInt(payload.account_manager_user_id || payload.user_id);
+
+  if (!customerName) {
+    return res.status(400).json({ error: 'Customer is required' });
+  }
+
+  try {
+    const managerFallback = cleanNullable(payload.account_manager) || (req.hubUser ? fullName(req.hubUser) : null);
+    const resolvedManager = await resolveAccountManager(userId || req.hubUser?.id, managerFallback);
+    if (resolvedManager.error) return res.status(400).json({ error: resolvedManager.error });
+
+    const actorName = req.hubUser ? fullName(req.hubUser) : null;
+    const result = await pool.query(
+      `INSERT INTO database_customer_profiles (
+         customer_name,
+         customer_code,
+         contact_name,
+         contact_phone,
+         contact_mobile,
+         contact_email,
+         marketing_opt_in,
+         invoice_address,
+         invoice_address_line1,
+         invoice_address_line2,
+         invoice_address_line3,
+         invoice_address_line4,
+         invoice_address_line5,
+         invoice_postcode,
+         delivery_address,
+         delivery_address_line1,
+         delivery_address_line2,
+         delivery_address_line3,
+         delivery_address_line4,
+         delivery_address_line5,
+         delivery_postcode,
+         account_manager_user_id,
+         account_manager_name,
+         created_by_user_id,
+         created_by_name,
+         updated_by_user_id,
+         updated_by_name,
+         created_at_source,
+         updated_at_source,
+         imported_at
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8,
+         $9, $10, $11, $12, $13, $14, $15,
+         $16, $17, $18, $19, $20, $21, $22,
+         $23, $24, $25, $26, $27, NOW(), NOW(), NOW()
+       )
+       RETURNING *`,
+      [
+        customerName,
+        customerCode,
+        contactName,
+        cleanNullable(payload.contact_phone),
+        cleanNullable(payload.contact_mobile),
+        cleanNullable(payload.contact_email),
+        toBoolean(payload.marketing_opt_in),
+        invoiceAddress.address,
+        invoiceAddress.line1,
+        invoiceAddress.line2,
+        invoiceAddress.line3,
+        invoiceAddress.line4,
+        invoiceAddress.line5,
+        invoiceAddress.postcode,
+        deliveryAddress.address,
+        deliveryAddress.line1,
+        deliveryAddress.line2,
+        deliveryAddress.line3,
+        deliveryAddress.line4,
+        deliveryAddress.line5,
+        deliveryAddress.postcode,
+        resolvedManager.userId,
+        resolvedManager.name,
+        req.hubUser?.id || null,
+        actorName,
+        req.hubUser?.id || null,
+        actorName,
+      ]
+    );
+
+    res.status(201).json({ customer: customerProfileToCustomer(result.rows[0]) });
+  } catch (err) {
+    console.error('POST /api/database/customers', err);
+    res.status(500).json({ error: 'Failed to create database customer' });
   }
 });
 
@@ -1518,6 +1848,11 @@ function parseCustomerKey(value) {
   const clean = cleanQuery(value);
   if (!clean) return null;
 
+  if (clean.toLowerCase().startsWith('profile:')) {
+    const id = Number.parseInt(clean.slice(8).trim(), 10);
+    return Number.isFinite(id) ? { type: 'profile', value: id } : null;
+  }
+
   if (clean.toLowerCase().startsWith('name:')) {
     const name = clean.slice(5).trim();
     return name ? { type: 'name', value: name } : null;
@@ -1530,33 +1865,99 @@ function parseCustomerKey(value) {
   return { type: 'name', value: clean };
 }
 
-function buildCustomerDetail(customerKey, orders, addressRows = []) {
+function buildCustomerDetail(customerKey, orders, addressRows = [], profile = null) {
   const latest = orders[0] || {};
-  const businessName = firstNonEmpty(orders, 'customer_name');
-  const customerId = firstFinite(orders, 'customer_id');
+  const businessName = cleanNullable(profile?.customer_name) || firstNonEmpty(orders, 'customer_name');
+  const customerId = isFiniteDatabaseValue(profile?.customer_id) ? Number(profile.customer_id) : firstFinite(orders, 'customer_id');
+  const accountManager = customerAccountManagerFromProfile(profile) || customerAccountManagerFromOrders(orders);
 
   return {
     customer: {
-      customer_key: customerKey.type === 'id' ? String(customerKey.value) : `name:${businessName || customerKey.value}`,
+      customer_key: profile ? `profile:${profile.id}` : (customerKey.type === 'id' ? String(customerKey.value) : `name:${businessName || customerKey.value}`),
+      profile_id: profile?.id || null,
       customer_id: customerId,
       business_name: businessName,
-      customer_code: firstNonEmpty(orders, 'customer_code'),
-      account_manager: firstNonEmpty(orders, 'order_taken_by') || firstNonEmpty(orders, 'trace_staff_id'),
-      created_at_source: earliestDate(orders, 'created_at_source'),
-      updated_at_source: latestDate(orders, 'updated_at_source'),
-      updated_by: latest.order_taken_by || latest.trace_staff_id || null,
+      customer_code: cleanNullable(profile?.customer_code) || firstNonEmpty(orders, 'customer_code'),
+      contact_name: cleanNullable(profile?.contact_name) || firstNonEmpty(orders, 'contact_name'),
+      contact_phone: cleanNullable(profile?.contact_phone) || firstNonEmpty(orders, 'contact_phone'),
+      contact_mobile: cleanNullable(profile?.contact_mobile) || firstNonEmpty(orders, 'contact_mobile'),
+      contact_email: cleanNullable(profile?.contact_email) || firstNonEmpty(orders, 'contact_email'),
+      marketing_opt_in: Boolean(profile?.marketing_opt_in),
+      account_manager: accountManager.name,
+      account_manager_user_id: accountManager.user_id,
+      created_at_source: profile?.created_at_source || earliestDate(orders, 'created_at_source'),
+      updated_at_source: profile?.updated_at_source || latestDate(orders, 'updated_at_source'),
+      updated_by: profile?.updated_by_name || latest.order_taken_by || latest.trace_staff_id || null,
       latest_source_order_id: latest.source_order_id || null,
       latest_order_no: latest.order_no || null,
       order_count: orders.length,
     },
     orders,
-    contacts: groupedContacts(orders),
-    addresses: groupedAddresses(orders, addressRows),
+    contacts: groupedContacts(orders, profile),
+    addresses: groupedAddresses(orders, addressRows, profile),
   };
 }
 
-function groupedContacts(orders) {
+function customerAccountManagerFromProfile(profile) {
+  if (!profile || !cleanQuery(profile.account_manager_name)) return null;
+  return {
+    name: profile.account_manager_name,
+    user_id: isFiniteDatabaseValue(profile.account_manager_user_id) ? Number(profile.account_manager_user_id) : null,
+  };
+}
+
+function customerAccountManagerFromOrders(orders) {
+  const chronological = orders.slice().sort((a, b) => {
+    const byCreated = dateTime(a.created_at_source || a.order_date) - dateTime(b.created_at_source || b.order_date);
+    if (byCreated) return byCreated;
+    return Number(a.order_no || 0) - Number(b.order_no || 0);
+  });
+
+  const owner = chronological.find((order) => cleanQuery(order.order_owner_name));
+  if (owner) {
+    return {
+      name: owner.order_owner_name,
+      user_id: isFiniteDatabaseValue(owner.order_owner_user_id) ? Number(owner.order_owner_user_id) : null,
+    };
+  }
+
+  const takenBy = chronological.find((order) => cleanQuery(order.order_taken_by));
+  if (takenBy) return { name: takenBy.order_taken_by, user_id: null };
+
+  const legacyStaff = chronological.find((order) => cleanQuery(order.trace_staff_id));
+  if (legacyStaff) return { name: String(legacyStaff.trace_staff_id), user_id: null };
+
+  return { name: null, user_id: null };
+}
+
+function groupedContacts(orders, profile = null) {
   const contacts = new Map();
+
+  if (
+    profile &&
+    (profile.contact_name || profile.contact_phone || profile.contact_mobile || profile.contact_email)
+  ) {
+    const key = [
+      profile.contact_name,
+      profile.contact_phone,
+      profile.contact_mobile,
+      profile.contact_email,
+    ].map((value) => cleanQuery(value).toLowerCase()).join('|');
+
+    contacts.set(key, {
+      contact_id: null,
+      contact_name: profile.contact_name || null,
+      contact_phone: profile.contact_phone || null,
+      contact_mobile: profile.contact_mobile || null,
+      contact_email: profile.contact_email || null,
+      marketing_opt_in: Boolean(profile.marketing_opt_in),
+      latest_order_no: null,
+      latest_source_order_id: null,
+      order_count: 0,
+      first_seen_at: profile.created_at_source || null,
+      last_seen_at: profile.updated_at_source || profile.created_at_source || null,
+    });
+  }
 
   for (const order of orders) {
     if (!order.contact_name && !order.contact_phone && !order.contact_mobile && !order.contact_email) continue;
@@ -1576,6 +1977,7 @@ function groupedContacts(orders) {
       contact_phone: order.contact_phone || null,
       contact_mobile: order.contact_mobile || null,
       contact_email: order.contact_email || null,
+      marketing_opt_in: null,
       latest_order_no: order.order_no || null,
       latest_source_order_id: order.source_order_id || null,
       order_count: 0,
@@ -1609,8 +2011,13 @@ function groupedContacts(orders) {
   });
 }
 
-function groupedAddresses(orders, addressRows = []) {
+function groupedAddresses(orders, addressRows = [], profile = null) {
   const addresses = new Map();
+
+  if (profile) {
+    addProfileAddress(addresses, profile, 'invoice');
+    addProfileAddress(addresses, profile, 'delivery');
+  }
 
   for (const address of addressRows) {
     addImportedAddress(addresses, address, orders);
@@ -1630,6 +2037,49 @@ function groupedAddresses(orders, addressRows = []) {
     if (byDate) return byDate;
     return a.address.localeCompare(b.address, 'en', { sensitivity: 'base' });
   });
+}
+
+function addProfileAddress(addresses, profile, role) {
+  const fields = customerProfileAddressFields(profile, role);
+  if (!fields.address) return;
+
+  const key = normalizedAddressKey(fields.address);
+  const addressType = role === 'invoice' ? 'Invoice' : 'Delivery';
+  const existing = addresses.get(key) || {
+    source_address_id: null,
+    address_type: addressType,
+    address: fields.address,
+    address_line1: fields.line1,
+    address_line2: fields.line2,
+    address_line3: fields.line3,
+    address_line4: fields.line4,
+    address_line5: fields.line5,
+    postcode: fields.postcode,
+    phone: profile.contact_phone || null,
+    fax: null,
+    mobile: profile.contact_mobile || null,
+    created_at_source: profile.created_at_source || null,
+    updated_at_source: profile.updated_at_source || null,
+    updated_by: profile.updated_by_name || null,
+    latest_order_no: null,
+    latest_source_order_id: null,
+    order_count: 0,
+    first_seen_at: profile.created_at_source || null,
+    last_seen_at: profile.updated_at_source || profile.created_at_source || null,
+  };
+
+  existing.address_type = mergedAddressType(existing.address_type, [addressType]);
+  existing.address_line1 = existing.address_line1 || fields.line1 || null;
+  existing.address_line2 = existing.address_line2 || fields.line2 || null;
+  existing.address_line3 = existing.address_line3 || fields.line3 || null;
+  existing.address_line4 = existing.address_line4 || fields.line4 || null;
+  existing.address_line5 = existing.address_line5 || fields.line5 || null;
+  existing.postcode = existing.postcode || fields.postcode || null;
+  existing.phone = existing.phone || profile.contact_phone || null;
+  existing.mobile = existing.mobile || profile.contact_mobile || null;
+  existing.updated_by = existing.updated_by || profile.updated_by_name || null;
+
+  addresses.set(key, existing);
 }
 
 function addImportedAddress(addresses, addressRow, orders) {
@@ -1654,9 +2104,18 @@ function addImportedAddress(addresses, addressRow, orders) {
     source_address_id: addressRow.source_address_id || null,
     address_type: roles.size ? Array.from(roles).join(' / ') : 'Address',
     address,
+    address_line1: addressRow.address_line1 || null,
+    address_line2: addressRow.address_line2 || null,
+    address_line3: addressRow.address_line3 || null,
+    address_line4: addressRow.address_line4 || null,
+    address_line5: addressRow.address_line5 || null,
+    postcode: addressRow.postcode || null,
     phone: addressRow.phone || null,
     fax: addressRow.fax || null,
     mobile: addressRow.mobile || null,
+    created_at_source: addressRow.created_at_source || null,
+    updated_at_source: addressRow.updated_at_source || null,
+    updated_by: addressRow.trace_staff_id || null,
     latest_order_no: latestOrder?.order_no || null,
     latest_source_order_id: latestOrder?.source_order_id || null,
     order_count: matchingOrders.length,
@@ -1670,9 +2129,18 @@ function addImportedAddress(addresses, addressRow, orders) {
   }
 
   existing.address_type = mergedAddressType(existing.address_type, roles);
+  existing.address_line1 = existing.address_line1 || addressRow.address_line1 || null;
+  existing.address_line2 = existing.address_line2 || addressRow.address_line2 || null;
+  existing.address_line3 = existing.address_line3 || addressRow.address_line3 || null;
+  existing.address_line4 = existing.address_line4 || addressRow.address_line4 || null;
+  existing.address_line5 = existing.address_line5 || addressRow.address_line5 || null;
+  existing.postcode = existing.postcode || addressRow.postcode || null;
   existing.phone = existing.phone || addressRow.phone || null;
   existing.fax = existing.fax || addressRow.fax || null;
   existing.mobile = existing.mobile || addressRow.mobile || null;
+  existing.created_at_source = existing.created_at_source || addressRow.created_at_source || null;
+  existing.updated_at_source = existing.updated_at_source || addressRow.updated_at_source || null;
+  existing.updated_by = existing.updated_by || addressRow.trace_staff_id || null;
   existing.order_count = Math.max(existing.order_count || 0, matchingOrders.length);
 
   if (latestOrder && isLater(seenDate(latestOrder), existing.last_seen_at)) {
@@ -1687,9 +2155,11 @@ function addAddress(addresses, order, addressType, address) {
   if (!cleanAddress) return;
 
   const key = normalizedAddressKey(cleanAddress);
+  const fields = splitAddressFields(cleanAddress);
   const existing = addresses.get(key) || {
     address_type: addressType,
     address: cleanAddress,
+    ...fields,
     latest_order_no: order.order_no || null,
     latest_source_order_id: order.source_order_id || null,
     order_count: 0,
@@ -1722,6 +2192,133 @@ function formatImportedAddress(address) {
     address.address_line5,
     address.postcode,
   ].map(cleanQuery).filter(Boolean).join(', ');
+}
+
+function splitAddressFields(address) {
+  const parts = cleanQuery(address)
+    .split(/\r?\n|,\s*/)
+    .map((part) => cleanQuery(part))
+    .filter(Boolean);
+
+  return {
+    address_line1: parts[0] || null,
+    address_line2: parts[1] || null,
+    address_line3: parts[2] || null,
+    address_line4: parts[3] || null,
+    address_line5: parts[4] || null,
+    postcode: parts[5] || null,
+    phone: null,
+    fax: null,
+    mobile: null,
+    created_at_source: null,
+    updated_at_source: null,
+    updated_by: null,
+  };
+}
+
+function normalizedCustomerAddress(payload, prefix) {
+  const fieldPrefix = prefix === 'delivery' ? 'delivery' : 'invoice';
+  const lines = [1, 2, 3, 4, 5].map((index) => (
+    cleanNullable(payload?.[`${fieldPrefix}_address_line${index}`])
+  ));
+  const postcode = cleanNullable(payload?.[`${fieldPrefix}_postcode`]);
+  const suppliedAddress = cleanNullable(payload?.[`${fieldPrefix}_address`]);
+  const address = suppliedAddress || [...lines, postcode].filter(Boolean).join(', ') || null;
+
+  return {
+    address,
+    line1: lines[0],
+    line2: lines[1],
+    line3: lines[2],
+    line4: lines[3],
+    line5: lines[4],
+    postcode,
+  };
+}
+
+function customerProfileAddressFields(profile, role) {
+  const prefix = role === 'delivery' ? 'delivery' : 'invoice';
+  const lines = [1, 2, 3, 4, 5].map((index) => (
+    cleanNullable(profile?.[`${prefix}_address_line${index}`])
+  ));
+  const postcode = cleanNullable(profile?.[`${prefix}_postcode`]);
+  const address = cleanNullable(profile?.[`${prefix}_address`]) || [...lines, postcode].filter(Boolean).join(', ') || null;
+
+  return {
+    address,
+    line1: lines[0],
+    line2: lines[1],
+    line3: lines[2],
+    line4: lines[3],
+    line5: lines[4],
+    postcode,
+  };
+}
+
+function contactNameFromPayload(payload) {
+  const contactName = cleanNullable(payload?.contact_name);
+  if (contactName) return contactName;
+
+  const parts = [
+    payload?.contact_title,
+    payload?.contact_first_name,
+    payload?.contact_last_name,
+  ].map(cleanQuery).filter(Boolean);
+
+  return parts.length ? parts.join(' ') : null;
+}
+
+async function resolveAccountManager(userId, fallbackName) {
+  if (isFiniteDatabaseValue(userId)) {
+    const user = await pool.query(
+      `SELECT id, first_name, last_name
+       FROM hub_users
+       WHERE id = $1
+       LIMIT 1`,
+      [Number(userId)]
+    );
+
+    if (!user.rowCount) {
+      return { error: 'Account manager user was not found' };
+    }
+
+    return {
+      userId: user.rows[0].id,
+      name: fullName(user.rows[0]),
+    };
+  }
+
+  return {
+    userId: null,
+    name: cleanNullable(fallbackName),
+  };
+}
+
+function customerProfileToCustomer(profile) {
+  return {
+    customer_key: `profile:${profile.id}`,
+    profile_id: profile.id,
+    customer_id: profile.customer_id || null,
+    business_name: profile.customer_name || null,
+    customer_code: profile.customer_code || null,
+    contact_name: profile.contact_name || null,
+    contact_phone: profile.contact_phone || null,
+    contact_mobile: profile.contact_mobile || null,
+    contact_email: profile.contact_email || null,
+    marketing_opt_in: Boolean(profile.marketing_opt_in),
+    account_manager: profile.account_manager_name || null,
+    account_manager_user_id: profile.account_manager_user_id || null,
+    created_at_source: profile.created_at_source || null,
+    updated_at_source: profile.updated_at_source || null,
+    updated_by: profile.updated_by_name || null,
+    latest_source_order_id: null,
+    latest_order_no: null,
+    latest_job_title: null,
+    latest_order_date: null,
+    latest_delivery_date: null,
+    last_seen_at: profile.updated_at_source || profile.created_at_source || null,
+    order_count: 0,
+  };
 }
 
 function normalizedAddressKey(address) {

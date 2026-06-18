@@ -72,6 +72,75 @@ async function ensureDatabaseTables(db) {
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS is_manual_entry BOOLEAN NOT NULL DEFAULT FALSE;');
 
   await db.query(`
+    CREATE TABLE IF NOT EXISTS database_customer_profiles (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER,
+      customer_name TEXT NOT NULL,
+      customer_code TEXT,
+      contact_name TEXT,
+      contact_phone TEXT,
+      contact_mobile TEXT,
+      contact_email TEXT,
+      marketing_opt_in BOOLEAN NOT NULL DEFAULT FALSE,
+      invoice_address TEXT,
+      invoice_address_line1 TEXT,
+      invoice_address_line2 TEXT,
+      invoice_address_line3 TEXT,
+      invoice_address_line4 TEXT,
+      invoice_address_line5 TEXT,
+      invoice_postcode TEXT,
+      delivery_address TEXT,
+      delivery_address_line1 TEXT,
+      delivery_address_line2 TEXT,
+      delivery_address_line3 TEXT,
+      delivery_address_line4 TEXT,
+      delivery_address_line5 TEXT,
+      delivery_postcode TEXT,
+      account_manager_user_id INTEGER,
+      account_manager_name TEXT,
+      created_by_user_id INTEGER,
+      created_by_name TEXT,
+      updated_by_user_id INTEGER,
+      updated_by_name TEXT,
+      created_at_source TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at_source TIMESTAMP NOT NULL DEFAULT NOW(),
+      imported_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS customer_id INTEGER;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS customer_name TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS customer_code TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS contact_name TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS contact_phone TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS contact_mobile TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS contact_email TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS marketing_opt_in BOOLEAN NOT NULL DEFAULT FALSE;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS invoice_address TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS invoice_address_line1 TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS invoice_address_line2 TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS invoice_address_line3 TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS invoice_address_line4 TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS invoice_address_line5 TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS invoice_postcode TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS delivery_address TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS delivery_address_line1 TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS delivery_address_line2 TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS delivery_address_line3 TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS delivery_address_line4 TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS delivery_address_line5 TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS delivery_postcode TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS account_manager_user_id INTEGER;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS account_manager_name TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS created_by_user_id INTEGER;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS created_by_name TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS updated_by_user_id INTEGER;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS updated_by_name TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS created_at_source TIMESTAMP NOT NULL DEFAULT NOW();');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS updated_at_source TIMESTAMP NOT NULL DEFAULT NOW();');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS imported_at TIMESTAMP NOT NULL DEFAULT NOW();');
+
+  await db.query(`
     CREATE TABLE IF NOT EXISTS database_customer_addresses (
       id SERIAL PRIMARY KEY,
       source_address_id INTEGER NOT NULL UNIQUE,
@@ -248,6 +317,8 @@ async function ensureDatabaseTables(db) {
   await db.query('CREATE INDEX IF NOT EXISTS database_jobs_delivery_address_idx ON database_jobs(delivery_address_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_jobs_order_date_idx ON database_jobs(order_date);');
   await db.query('CREATE INDEX IF NOT EXISTS database_jobs_complete_idx ON database_jobs(is_complete);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_customer_profiles_name_idx ON database_customer_profiles(LOWER(customer_name));');
+  await db.query('CREATE INDEX IF NOT EXISTS database_customer_profiles_code_idx ON database_customer_profiles(LOWER(customer_code));');
   await db.query('CREATE UNIQUE INDEX IF NOT EXISTS database_customer_addresses_source_address_idx ON database_customer_addresses(source_address_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_customer_addresses_customer_idx ON database_customer_addresses(customer_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_job_line_items_order_idx ON database_job_line_items(source_order_id);');
