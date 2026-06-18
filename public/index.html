@@ -484,24 +484,8 @@
               </div>
 
               <div class="db-customer-panel" id="db-customer-contacts-panel">
-                <div class="db-customer-table-frame">
-                  <table id="db-customer-contacts-table" class="db-legacy-table">
-                    <thead>
-                      <tr>
-                        <th class="db-row-selector"></th>
-                        <th>Contact:</th>
-                        <th>Tel:</th>
-                        <th>Mobile:</th>
-                        <th>Email:</th>
-                        <th>Orders:</th>
-                        <th>Latest order:</th>
-                      </tr>
-                    </thead>
-                    <tbody id="db-customer-contacts-body">
-                      <tr><td colspan="7" class="db-empty-cell">Loading contacts</td></tr>
-                    </tbody>
-                  </table>
-                  <div class="db-customer-gray-fill"></div>
+                <div id="db-customer-contacts-body" class="db-customer-contacts-layout">
+                  <div class="db-panel-message">Loading contacts</div>
                 </div>
               </div>
 
@@ -520,6 +504,59 @@
               <div class="db-customer-panel" id="db-customer-actions-panel">
                 <div class="db-customer-table-frame"><div class="db-panel-message">No actions recorded</div><div class="db-customer-gray-fill"></div></div>
               </div>
+            </section>
+
+            <section id="db-new-contact-view" class="db-view db-new-contact-view" aria-label="Add contact">
+              <form id="db-add-contact-form" class="db-add-contact-box">
+                <div id="db-add-contact-title" class="db-add-contact-title">Add contact</div>
+
+                <div class="db-add-contact-row db-add-contact-title-row">
+                  <label>Title:</label>
+                  <input id="db-add-contact-contact-title" name="contact_title" autocomplete="off">
+                </div>
+
+                <div class="db-add-contact-row db-add-contact-required-row">
+                  <label>Firstname:</label>
+                  <input id="db-add-contact-firstname" name="contact_first_name" autocomplete="off">
+                </div>
+
+                <div class="db-add-contact-row">
+                  <label>Lastname:</label>
+                  <input id="db-add-contact-lastname" name="contact_last_name" autocomplete="off">
+                </div>
+
+                <div class="db-add-contact-row">
+                  <label>Tel:</label>
+                  <input id="db-add-contact-tel" name="contact_phone" autocomplete="off">
+                </div>
+
+                <div class="db-add-contact-row">
+                  <label>Fax:</label>
+                  <input id="db-add-contact-fax" name="contact_fax" autocomplete="off">
+                </div>
+
+                <div class="db-add-contact-row">
+                  <label>Mobile:</label>
+                  <input id="db-add-contact-mobile" name="contact_mobile" autocomplete="off">
+                </div>
+
+                <div class="db-add-contact-row">
+                  <label>Email:</label>
+                  <input id="db-add-contact-email" name="contact_email" autocomplete="off">
+                </div>
+
+                <div class="db-add-contact-row">
+                  <label>Address:</label>
+                  <input id="db-add-contact-address" name="contact_address" autocomplete="off">
+                </div>
+
+                <div id="db-add-contact-status" class="db-add-contact-status"></div>
+
+                <div class="db-add-contact-actions">
+                  <button id="db-add-contact-cancel" class="db-new-action-button" type="button">Cancel</button>
+                  <button id="db-add-contact-accept" class="db-new-action-button" type="submit" disabled>Accept</button>
+                </div>
+              </form>
             </section>
 
             <section id="db-outstanding-view" class="db-view db-outstanding-view" aria-label="Outstanding orders">

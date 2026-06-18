@@ -27,6 +27,7 @@
     activeCustomerTab: 'orders',
     newOrderSubmitting: false,
     newCustomerSubmitting: false,
+    newContactSubmitting: false,
     selectedCustomer: null,
     customerResults: [],
     selectedCustomerDetail: null,
@@ -131,6 +132,11 @@
       newCustomerCancel: document.getElementById('db-new-customer-cancel'),
       newCustomerStatus: document.getElementById('db-new-customer-status'),
       newCustomerAccountManager: document.getElementById('db-new-customer-account-manager'),
+      addContactForm: document.getElementById('db-add-contact-form'),
+      addContactTitle: document.getElementById('db-add-contact-title'),
+      addContactAccept: document.getElementById('db-add-contact-accept'),
+      addContactCancel: document.getElementById('db-add-contact-cancel'),
+      addContactStatus: document.getElementById('db-add-contact-status'),
     };
 
     if (!els.root) return;
@@ -158,6 +164,10 @@
     els.newCustomerForm?.addEventListener('input', validateNewCustomerForm);
     els.newCustomerForm?.addEventListener('change', validateNewCustomerForm);
     els.newCustomerCancel?.addEventListener('click', showCustomers);
+    els.addContactForm?.addEventListener('submit', submitNewContact);
+    els.addContactForm?.addEventListener('input', validateNewContactForm);
+    els.addContactForm?.addEventListener('change', validateNewContactForm);
+    els.addContactCancel?.addEventListener('click', cancelNewContact);
     els.newCustomerInput.addEventListener('input', handleNewCustomerInput);
     els.newCustomerInput.addEventListener('focus', showExistingCustomerResults);
     els.newCustomerInput.addEventListener('keydown', handleCustomerSearchKeydown);
@@ -313,6 +323,11 @@
       showNewCustomer();
       return;
     }
+    if (action === 'add-contact') {
+      await flushOrderAutosaves();
+      showNewContact();
+      return;
+    }
     if (action === 'open-orders') {
       await flushOrderAutosaves();
       openOutstandingOrders('open');
@@ -405,6 +420,19 @@
       populateNewCustomerAccountManagers();
       validateNewCustomerForm();
     });
+  }
+
+  function showNewContact() {
+    if (!state.selectedCustomerDetail?.customer_key) return;
+    showView('new-contact');
+    setFooterTitle('Add Contact');
+    resetNewContactForm();
+  }
+
+  function cancelNewContact() {
+    showView('customer');
+    setFooterTitle('Customer');
+    showCustomerTab('contacts');
   }
 
   function showCustomers() {
@@ -506,6 +534,24 @@
     } else if (currentUserId && Array.from(select.options).some((option) => option.value === currentUserId)) {
       select.value = currentUserId;
     }
+  }
+
+  function resetNewContactForm() {
+    if (!els.addContactForm) return;
+    els.addContactForm.reset();
+    const customer = state.selectedCustomerDetail || {};
+    const code = customer.customer_code || customer.business_name || 'Customer';
+    if (els.addContactTitle) els.addContactTitle.textContent = `${code} - Add contact`;
+    els.addContactStatus.textContent = '';
+    els.addContactStatus.dataset.tone = '';
+    validateNewContactForm();
+  }
+
+  function validateNewContactForm() {
+    if (!els.addContactForm || !els.addContactAccept) return;
+    const fields = els.addContactForm.elements;
+    const valid = Boolean(fields.contact_first_name.value.trim());
+    els.addContactAccept.disabled = !valid || state.newContactSubmitting;
   }
 
   function handleNewCustomerInput() {
@@ -753,6 +799,53 @@
     }
   }
 
+  async function submitNewContact(event) {
+    event.preventDefault();
+    if (state.newContactSubmitting) return;
+    validateNewContactForm();
+    if (els.addContactAccept.disabled) return;
+
+    const customerKey = state.selectedCustomerDetail?.customer_key;
+    if (!customerKey) return;
+
+    state.newContactSubmitting = true;
+    validateNewContactForm();
+    els.addContactStatus.textContent = 'Creating contact...';
+    els.addContactStatus.dataset.tone = 'info';
+
+    try {
+      await fetchJson(`/api/database/customers/${encodeURIComponent(customerKey)}/contacts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(collectNewContactPayload()),
+      });
+
+      els.addContactStatus.textContent = 'Created contact';
+      els.addContactStatus.dataset.tone = 'success';
+      await openCustomer(customerKey, 'contacts');
+    } catch (err) {
+      els.addContactStatus.textContent = err.message;
+      els.addContactStatus.dataset.tone = 'error';
+    } finally {
+      state.newContactSubmitting = false;
+      validateNewContactForm();
+    }
+  }
+
+  function collectNewContactPayload() {
+    const fields = els.addContactForm.elements;
+    return {
+      contact_title: fields.contact_title.value,
+      contact_first_name: fields.contact_first_name.value,
+      contact_last_name: fields.contact_last_name.value,
+      contact_phone: fields.contact_phone.value,
+      contact_fax: fields.contact_fax.value,
+      contact_mobile: fields.contact_mobile.value,
+      contact_email: fields.contact_email.value,
+      contact_address: fields.contact_address.value,
+    };
+  }
+
   function collectNewCustomerPayload() {
     const fields = els.newCustomerForm.elements;
     return {
@@ -942,7 +1035,7 @@
     els.customerUpdatedAt.textContent = '-';
     els.customerUpdatedBy.textContent = '-';
     els.customerOrdersBody.innerHTML = renderStatusRow('Loading customer orders', 14);
-    els.customerContactsBody.innerHTML = renderStatusRow('Loading contacts', 7);
+    els.customerContactsBody.innerHTML = '<div class="db-panel-message">Loading contacts</div>';
     els.customerAddressesBody.innerHTML = '<div class="db-panel-message">Loading addresses</div>';
   }
 
@@ -954,7 +1047,7 @@
     els.customerUpdatedAt.textContent = '-';
     els.customerUpdatedBy.textContent = '-';
     els.customerOrdersBody.innerHTML = renderStatusRow(message, 14);
-    els.customerContactsBody.innerHTML = renderStatusRow(message, 7);
+    els.customerContactsBody.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
     els.customerAddressesBody.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
   }
 
@@ -1100,22 +1193,62 @@
 
   function renderCustomerContacts() {
     const contacts = state.selectedCustomerContacts || [];
-    if (!contacts.length) {
-      els.customerContactsBody.innerHTML = renderStatusRow('No contact information recorded for this customer', 7);
-      return;
-    }
+    els.customerContactsBody.innerHTML = `
+      <div class="db-contact-cards-scroll">
+        ${contacts.length
+          ? contacts.map(renderCustomerContactCard).join('')
+          : '<div class="db-panel-message">No contact information recorded for this customer</div>'}
+      </div>
+      <div class="db-contact-actions-panel">
+        <button class="db-toolbar-button db-contact-add-button" type="button" data-db-action="add-contact">Add Contact</button>
+      </div>
+    `;
+  }
 
-    els.customerContactsBody.innerHTML = contacts.map((contact, index) => `
-      <tr>
-        <td class="db-row-selector">${index === 0 ? '&#9654;' : ''}</td>
-        <td>${escapeHtml(contact.contact_name || '')}</td>
-        <td>${escapeHtml(contact.contact_phone || '')}</td>
-        <td>${escapeHtml(contact.contact_mobile || '')}</td>
-        <td class="db-customer-email-cell">${escapeHtml(contact.contact_email || '')}</td>
-        <td>${escapeHtml(formatNumber(contact.order_count || 0))}</td>
-        <td class="db-order-link">${escapeHtml(contact.latest_order_no || '')}</td>
-      </tr>
-    `).join('');
+  function renderCustomerContactCard(contact) {
+    const parts = contactNameParts(contact);
+    return `
+      <article class="db-contact-card">
+        <div class="db-contact-card-row db-contact-name-row">
+          <label>Contact:</label>
+          <input class="db-contact-title-field" readonly value="${escapeAttr(parts.title)}">
+          <input readonly value="${escapeAttr(parts.firstName)}">
+          <input readonly value="${escapeAttr(parts.lastName)}">
+        </div>
+        <div class="db-contact-card-row db-contact-two-column-row">
+          <label>Tel:</label>
+          <input readonly value="${escapeAttr(contact.contact_phone || '')}">
+          <label>Email:</label>
+          <input readonly value="${escapeAttr(contact.contact_email || '')}">
+        </div>
+        <div class="db-contact-card-row db-contact-two-column-row">
+          <label>Fax:</label>
+          <input readonly value="${escapeAttr(contact.contact_fax || '')}">
+          <label>Mobile:</label>
+          <input readonly value="${escapeAttr(contact.contact_mobile || '')}">
+        </div>
+        <div class="db-contact-card-row db-contact-address-row">
+          <label>Address:</label>
+          <input readonly value="${escapeAttr(contact.contact_address || '')}">
+        </div>
+      </article>
+    `;
+  }
+
+  function contactNameParts(contact) {
+    const title = contact.contact_title || '';
+    const firstName = contact.contact_first_name || '';
+    const lastName = contact.contact_last_name || '';
+    if (firstName || lastName || title) return { title, firstName, lastName };
+
+    const parts = String(contact.contact_name || '').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return { title: '', firstName: '', lastName: '' };
+    if (parts.length === 1) return { title: '', firstName: parts[0], lastName: '' };
+    return {
+      title: '',
+      firstName: parts.slice(0, -1).join(' '),
+      lastName: parts[parts.length - 1],
+    };
   }
 
   function renderCustomerAddresses() {
@@ -2026,7 +2159,7 @@
   }
 
   function renderOrderAckItemsTable(items, totals) {
-    const itemBodies = renderOrderAckItemBodies(items, totals);
+    const itemBodies = renderOrderAckItemBodies(items);
 
     return `
       <table class="db-order-ack-items">
@@ -2042,10 +2175,11 @@
         </thead>
         ${itemBodies}
       </table>
+      ${renderOrderAckSummaryRows(totals)}
     `;
   }
 
-  function renderOrderAckItemBodies(items, totals) {
+  function renderOrderAckItemBodies(items) {
     if (!items.length) {
       return `
         <tbody class="db-order-ack-item-group">
@@ -2053,7 +2187,6 @@
             <td colspan="6" class="db-order-ack-empty">No order line items</td>
           </tr>
         </tbody>
-        ${renderOrderAckSummaryRows(totals)}
       `;
     }
 
@@ -2076,7 +2209,6 @@
       hasPreviousRows = true;
     }
 
-    bodies.push(renderOrderAckSummaryRows(totals));
     return bodies.join('');
   }
 
@@ -2099,20 +2231,20 @@
 
   function renderOrderAckSummaryRows(totals) {
     return `
-      <tbody class="db-order-ack-summary">
-        <tr class="db-order-ack-summary-row">
-          <td colspan="4" class="db-order-ack-summary-label">Sub total</td>
-          <td colspan="2" class="db-order-ack-summary-amount">${escapeHtml(formatCurrency(totals.net))}</td>
-        </tr>
-        <tr class="db-order-ack-summary-row">
-          <td colspan="4" class="db-order-ack-summary-label">VAT</td>
-          <td colspan="2" class="db-order-ack-summary-amount">${escapeHtml(formatCurrency(totals.vat))}</td>
-        </tr>
-        <tr class="db-order-ack-summary-row">
-          <td colspan="4" class="db-order-ack-summary-label">Total</td>
-          <td colspan="2" class="db-order-ack-summary-amount">${escapeHtml(formatCurrency(totals.gross))}</td>
-        </tr>
-      </tbody>
+      <section class="db-order-ack-summary" aria-label="Order totals">
+        <div class="db-order-ack-summary-row">
+          <span class="db-order-ack-summary-label">Sub total</span>
+          <span class="db-order-ack-summary-amount">${escapeHtml(formatCurrency(totals.net))}</span>
+        </div>
+        <div class="db-order-ack-summary-row">
+          <span class="db-order-ack-summary-label">VAT</span>
+          <span class="db-order-ack-summary-amount">${escapeHtml(formatCurrency(totals.vat))}</span>
+        </div>
+        <div class="db-order-ack-summary-row">
+          <span class="db-order-ack-summary-label">Total</span>
+          <span class="db-order-ack-summary-amount">${escapeHtml(formatCurrency(totals.gross))}</span>
+        </div>
+      </section>
     `;
   }
 
@@ -3731,7 +3863,7 @@
     }
 
     els.mainTabs.forEach((tab) => {
-      const active = (name === 'home' || name === 'new-order' || name === 'new-customer' || name === 'customers' || name === 'customer')
+      const active = (name === 'home' || name === 'new-order' || name === 'new-customer' || name === 'new-contact' || name === 'customers' || name === 'customer')
         ? tab.dataset.dbGo === 'home'
         : tab.dataset.dbGo === 'outstanding';
       tab.classList.toggle('active', active);
@@ -3758,6 +3890,7 @@
   function titleForView(name) {
     if (name === 'new-order') return 'New Order';
     if (name === 'new-customer') return 'New Customer';
+    if (name === 'new-contact') return 'Add Contact';
     if (name === 'customers') return 'Customers';
     if (name === 'customer') return 'Customer';
     if (name === 'outstanding') return state.orderMode === 'all' ? 'All Orders' : 'Open Orders';

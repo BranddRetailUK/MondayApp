@@ -141,6 +141,57 @@ async function ensureDatabaseTables(db) {
   await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS imported_at TIMESTAMP NOT NULL DEFAULT NOW();');
 
   await db.query(`
+    CREATE TABLE IF NOT EXISTS database_customer_contacts (
+      id SERIAL PRIMARY KEY,
+      source_contact_id INTEGER,
+      customer_id INTEGER,
+      profile_id INTEGER,
+      customer_name TEXT NOT NULL,
+      address_id INTEGER,
+      contact_title TEXT,
+      contact_first_name TEXT,
+      contact_last_name TEXT,
+      contact_name TEXT,
+      contact_phone TEXT,
+      contact_fax TEXT,
+      contact_mobile TEXT,
+      contact_email TEXT,
+      contact_address TEXT,
+      trace_staff_id INTEGER,
+      created_by_user_id INTEGER,
+      created_by_name TEXT,
+      updated_by_user_id INTEGER,
+      updated_by_name TEXT,
+      created_at_source TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at_source TIMESTAMP NOT NULL DEFAULT NOW(),
+      imported_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS source_contact_id INTEGER;');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS customer_id INTEGER;');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS profile_id INTEGER;');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS customer_name TEXT;');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS address_id INTEGER;');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS contact_title TEXT;');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS contact_first_name TEXT;');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS contact_last_name TEXT;');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS contact_name TEXT;');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS contact_phone TEXT;');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS contact_fax TEXT;');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS contact_mobile TEXT;');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS contact_email TEXT;');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS contact_address TEXT;');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS trace_staff_id INTEGER;');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS created_by_user_id INTEGER;');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS created_by_name TEXT;');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS updated_by_user_id INTEGER;');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS updated_by_name TEXT;');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS created_at_source TIMESTAMP NOT NULL DEFAULT NOW();');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS updated_at_source TIMESTAMP NOT NULL DEFAULT NOW();');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS imported_at TIMESTAMP NOT NULL DEFAULT NOW();');
+
+  await db.query(`
     CREATE TABLE IF NOT EXISTS database_customer_addresses (
       id SERIAL PRIMARY KEY,
       source_address_id INTEGER NOT NULL UNIQUE,
@@ -302,6 +353,7 @@ async function ensureDatabaseTables(db) {
       line_item_count INTEGER NOT NULL DEFAULT 0,
       position_count INTEGER NOT NULL DEFAULT 0,
       address_count INTEGER NOT NULL DEFAULT 0,
+      contact_count INTEGER NOT NULL DEFAULT 0,
       product_count INTEGER NOT NULL DEFAULT 0,
       started_at TIMESTAMP NOT NULL DEFAULT NOW(),
       finished_at TIMESTAMP,
@@ -319,6 +371,10 @@ async function ensureDatabaseTables(db) {
   await db.query('CREATE INDEX IF NOT EXISTS database_jobs_complete_idx ON database_jobs(is_complete);');
   await db.query('CREATE INDEX IF NOT EXISTS database_customer_profiles_name_idx ON database_customer_profiles(LOWER(customer_name));');
   await db.query('CREATE INDEX IF NOT EXISTS database_customer_profiles_code_idx ON database_customer_profiles(LOWER(customer_code));');
+  await db.query('CREATE UNIQUE INDEX IF NOT EXISTS database_customer_contacts_source_contact_idx ON database_customer_contacts(source_contact_id);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_customer_contacts_customer_idx ON database_customer_contacts(customer_id);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_customer_contacts_profile_idx ON database_customer_contacts(profile_id);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_customer_contacts_name_idx ON database_customer_contacts(LOWER(customer_name));');
   await db.query('CREATE UNIQUE INDEX IF NOT EXISTS database_customer_addresses_source_address_idx ON database_customer_addresses(source_address_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_customer_addresses_customer_idx ON database_customer_addresses(customer_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_job_line_items_order_idx ON database_job_line_items(source_order_id);');
@@ -332,6 +388,7 @@ async function ensureDatabaseTables(db) {
   await db.query('CREATE INDEX IF NOT EXISTS database_job_positions_order_idx ON database_job_positions(source_order_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_job_positions_sort_idx ON database_job_positions(source_order_id, position_sort_order);');
   await db.query('ALTER TABLE database_import_runs ADD COLUMN IF NOT EXISTS address_count INTEGER NOT NULL DEFAULT 0;');
+  await db.query('ALTER TABLE database_import_runs ADD COLUMN IF NOT EXISTS contact_count INTEGER NOT NULL DEFAULT 0;');
   await db.query('ALTER TABLE database_import_runs ADD COLUMN IF NOT EXISTS product_count INTEGER NOT NULL DEFAULT 0;');
 }
 

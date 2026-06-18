@@ -5,11 +5,12 @@ const { fullName } = require('../services/hubAuth');
 
 router.get('/api/database/summary', async (_req, res) => {
   try {
-    const [jobs, lineItems, positions, addresses, byYear, byType, latestRun] = await Promise.all([
+    const [jobs, lineItems, positions, addresses, contacts, byYear, byType, latestRun] = await Promise.all([
       pool.query('SELECT COUNT(*)::int AS count FROM database_jobs'),
       pool.query('SELECT COUNT(*)::int AS count FROM database_job_line_items'),
       pool.query('SELECT COUNT(*)::int AS count FROM database_job_positions'),
       pool.query('SELECT COUNT(*)::int AS count FROM database_customer_addresses'),
+      pool.query('SELECT COUNT(*)::int AS count FROM database_customer_contacts'),
       pool.query(`
         SELECT source_year, COUNT(*)::int AS count
         FROM database_jobs
@@ -24,7 +25,7 @@ router.get('/api/database/summary', async (_req, res) => {
       `),
       pool.query(`
         SELECT id, source_file, source_years, job_count, line_item_count,
-               position_count, address_count, started_at, finished_at, status, message
+               position_count, address_count, contact_count, started_at, finished_at, status, message
         FROM database_import_runs
         ORDER BY started_at DESC
         LIMIT 1
@@ -36,6 +37,7 @@ router.get('/api/database/summary', async (_req, res) => {
       lineItems: lineItems.rows[0].count,
       positions: positions.rows[0].count,
       customerAddresses: addresses.rows[0].count,
+      customerContacts: contacts.rows[0].count,
       byYear: byYear.rows,
       byType: byType.rows,
       latestRun: latestRun.rows[0] || null,
@@ -547,7 +549,9 @@ router.get('/api/database/customers/:key', async (req, res) => {
       addressRows = addresses.rows;
     }
 
-    res.json(buildCustomerDetail(customerKey, orders, addressRows, profile));
+    const manualContactRows = await fetchManualCustomerContacts(customerKey, profile, orders);
+
+    res.json(buildCustomerDetail(customerKey, orders, addressRows, profile, manualContactRows));
   } catch (err) {
     console.error('GET /api/database/customers/:key', err);
     res.status(500).json({ error: 'Failed to fetch database customer detail' });
@@ -727,6 +731,83 @@ router.post('/api/database/customers', async (req, res) => {
   } catch (err) {
     console.error('POST /api/database/customers', err);
     res.status(500).json({ error: 'Failed to create database customer' });
+  }
+});
+
+router.post('/api/database/customers/:key/contacts', async (req, res) => {
+  const customerKey = parseCustomerKey(req.params.key);
+  if (!customerKey) {
+    return res.status(400).json({ error: 'Invalid customer key' });
+  }
+
+  const payload = req.body || {};
+  const contactTitle = cleanNullable(payload.contact_title);
+  const contactFirstName = cleanNullable(payload.contact_first_name);
+  const contactLastName = cleanNullable(payload.contact_last_name);
+  const contactName = contactNameFromParts(contactTitle, contactFirstName, contactLastName);
+
+  if (!contactFirstName) {
+    return res.status(400).json({ error: 'Firstname is required' });
+  }
+
+  try {
+    const context = await resolveCustomerContactContext(customerKey);
+    if (!context) {
+      return res.status(404).json({ error: 'Database customer not found' });
+    }
+
+    const actorName = req.hubUser ? fullName(req.hubUser) : null;
+    const result = await pool.query(
+      `INSERT INTO database_customer_contacts (
+         customer_id,
+         profile_id,
+         customer_name,
+         contact_title,
+         contact_first_name,
+         contact_last_name,
+         contact_name,
+         contact_phone,
+         contact_fax,
+         contact_mobile,
+         contact_email,
+         contact_address,
+         created_by_user_id,
+         created_by_name,
+         updated_by_user_id,
+         updated_by_name,
+         created_at_source,
+         updated_at_source,
+         imported_at
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8,
+         $9, $10, $11, $12, $13, $14, $15,
+         $16, NOW(), NOW(), NOW()
+       )
+       RETURNING *`,
+      [
+        context.customer_id,
+        context.profile_id,
+        context.customer_name,
+        contactTitle,
+        contactFirstName,
+        contactLastName,
+        contactName,
+        cleanNullable(payload.contact_phone),
+        cleanNullable(payload.contact_fax),
+        cleanNullable(payload.contact_mobile),
+        cleanNullable(payload.contact_email),
+        cleanNullable(payload.contact_address),
+        req.hubUser?.id || null,
+        actorName,
+        req.hubUser?.id || null,
+        actorName,
+      ]
+    );
+
+    res.status(201).json({ contact: manualContactToContact(result.rows[0]) });
+  } catch (err) {
+    console.error('POST /api/database/customers/:key/contacts', err);
+    res.status(500).json({ error: 'Failed to create database customer contact' });
   }
 });
 
@@ -1865,7 +1946,7 @@ function parseCustomerKey(value) {
   return { type: 'name', value: clean };
 }
 
-function buildCustomerDetail(customerKey, orders, addressRows = [], profile = null) {
+function buildCustomerDetail(customerKey, orders, addressRows = [], profile = null, manualContactRows = []) {
   const latest = orders[0] || {};
   const businessName = cleanNullable(profile?.customer_name) || firstNonEmpty(orders, 'customer_name');
   const customerId = isFiniteDatabaseValue(profile?.customer_id) ? Number(profile.customer_id) : firstFinite(orders, 'customer_id');
@@ -1893,7 +1974,7 @@ function buildCustomerDetail(customerKey, orders, addressRows = [], profile = nu
       order_count: orders.length,
     },
     orders,
-    contacts: groupedContacts(orders, profile),
+    contacts: groupedContacts(orders, profile, manualContactRows),
     addresses: groupedAddresses(orders, addressRows, profile),
   };
 }
@@ -1930,8 +2011,124 @@ function customerAccountManagerFromOrders(orders) {
   return { name: null, user_id: null };
 }
 
-function groupedContacts(orders, profile = null) {
+async function fetchManualCustomerContacts(customerKey, profile, orders) {
+  const clauses = [];
+  const params = [];
+
+  if (isFiniteDatabaseValue(profile?.id)) {
+    params.push(Number(profile.id));
+    clauses.push(`profile_id = $${params.length}`);
+  }
+
+  const customerId = isFiniteDatabaseValue(profile?.customer_id)
+    ? Number(profile.customer_id)
+    : firstFinite(orders, 'customer_id');
+  if (isFiniteDatabaseValue(customerId)) {
+    params.push(Number(customerId));
+    clauses.push(`customer_id = $${params.length}`);
+  }
+
+  const customerName = cleanNullable(profile?.customer_name)
+    || firstNonEmpty(orders, 'customer_name')
+    || (customerKey.type === 'name' ? customerKey.value : null);
+  if (customerName) {
+    params.push(customerName);
+    clauses.push(`LOWER(customer_name) = LOWER($${params.length})`);
+  }
+
+  if (!clauses.length) return [];
+
+  const result = await pool.query(
+    `SELECT *
+     FROM database_customer_contacts
+     WHERE ${clauses.map((clause) => `(${clause})`).join(' OR ')}
+     ORDER BY COALESCE(updated_at_source, created_at_source) DESC NULLS LAST,
+              id DESC`,
+    params
+  );
+
+  return result.rows;
+}
+
+async function resolveCustomerContactContext(customerKey) {
+  if (customerKey.type === 'profile') {
+    const profile = await pool.query(
+      `SELECT id, customer_id, customer_name
+       FROM database_customer_profiles
+       WHERE id = $1
+       LIMIT 1`,
+      [customerKey.value]
+    );
+
+    if (!profile.rowCount) return null;
+    const row = profile.rows[0];
+    return {
+      profile_id: row.id,
+      customer_id: isFiniteDatabaseValue(row.customer_id) ? Number(row.customer_id) : null,
+      customer_name: row.customer_name,
+    };
+  }
+
+  const where = customerKey.type === 'id'
+    ? 'customer_id = $1'
+    : 'LOWER(customer_name) = LOWER($1)';
+
+  const result = await pool.query(
+    `SELECT customer_id, customer_name
+     FROM database_jobs
+     WHERE ${where}
+       AND customer_name IS NOT NULL
+       AND customer_name <> ''
+     ORDER BY COALESCE(order_date, updated_at_source, created_at_source) DESC NULLS LAST,
+              order_no DESC NULLS LAST
+     LIMIT 1`,
+    [customerKey.value]
+  );
+
+  if (!result.rowCount) return null;
+
+  return {
+    profile_id: null,
+    customer_id: isFiniteDatabaseValue(result.rows[0].customer_id) ? Number(result.rows[0].customer_id) : null,
+    customer_name: result.rows[0].customer_name,
+  };
+}
+
+function manualContactToContact(contact) {
+  return {
+    contact_id: contact.source_contact_id || null,
+    manual_contact_id: contact.id || null,
+    contact_title: contact.contact_title || null,
+    contact_first_name: contact.contact_first_name || null,
+    contact_last_name: contact.contact_last_name || null,
+    contact_name: contact.contact_name || contactNameFromParts(
+      contact.contact_title,
+      contact.contact_first_name,
+      contact.contact_last_name
+    ),
+    contact_phone: contact.contact_phone || null,
+    contact_fax: contact.contact_fax || null,
+    contact_mobile: contact.contact_mobile || null,
+    contact_email: contact.contact_email || null,
+    contact_address: contact.contact_address || null,
+    latest_order_no: null,
+    latest_source_order_id: null,
+    order_count: 0,
+    first_seen_at: contact.created_at_source || null,
+    last_seen_at: contact.updated_at_source || contact.created_at_source || null,
+  };
+}
+
+function groupedContacts(orders, profile = null, manualContactRows = []) {
   const contacts = new Map();
+
+  for (const contact of manualContactRows || []) {
+    const normalizedContact = manualContactToContact(contact);
+    const key = isFiniteDatabaseValue(normalizedContact.contact_id)
+      ? `id:${normalizedContact.contact_id}`
+      : `manual:${contact.id}`;
+    contacts.set(key, normalizedContact);
+  }
 
   if (
     profile &&
@@ -1946,11 +2143,16 @@ function groupedContacts(orders, profile = null) {
 
     contacts.set(key, {
       contact_id: null,
+      manual_contact_id: null,
+      contact_title: null,
+      contact_first_name: null,
+      contact_last_name: null,
       contact_name: profile.contact_name || null,
       contact_phone: profile.contact_phone || null,
+      contact_fax: null,
       contact_mobile: profile.contact_mobile || null,
       contact_email: profile.contact_email || null,
-      marketing_opt_in: Boolean(profile.marketing_opt_in),
+      contact_address: profile.invoice_address || null,
       latest_order_no: null,
       latest_source_order_id: null,
       order_count: 0,
@@ -1973,11 +2175,16 @@ function groupedContacts(orders, profile = null) {
 
     const existing = contacts.get(key) || {
       contact_id: order.contact_id || null,
+      manual_contact_id: null,
+      contact_title: null,
+      contact_first_name: null,
+      contact_last_name: null,
       contact_name: order.contact_name || null,
       contact_phone: order.contact_phone || null,
+      contact_fax: null,
       contact_mobile: order.contact_mobile || null,
       contact_email: order.contact_email || null,
-      marketing_opt_in: null,
+      contact_address: null,
       latest_order_no: order.order_no || null,
       latest_source_order_id: order.source_order_id || null,
       order_count: 0,
@@ -1991,7 +2198,7 @@ function groupedContacts(orders, profile = null) {
     existing.contact_email = existing.contact_email || order.contact_email || null;
     existing.order_count += 1;
 
-    if (isLater(seenDate(order), existing.last_seen_at)) {
+    if (!existing.latest_order_no || isLater(seenDate(order), existing.last_seen_at)) {
       existing.latest_order_no = order.order_no || null;
       existing.latest_source_order_id = order.source_order_id || null;
       existing.last_seen_at = seenDate(order);
@@ -2265,6 +2472,11 @@ function contactNameFromPayload(payload) {
     payload?.contact_last_name,
   ].map(cleanQuery).filter(Boolean);
 
+  return parts.length ? parts.join(' ') : null;
+}
+
+function contactNameFromParts(title, firstName, lastName) {
+  const parts = [firstName, lastName].map(cleanQuery).filter(Boolean);
   return parts.length ? parts.join(' ') : null;
 }
 

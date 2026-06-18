@@ -759,6 +759,10 @@ body.modal-open{overflow:hidden}
 .db-new-customer-view{
   height:640px;
 }
+.db-new-contact-view{
+  position:relative;
+  height:540px;
+}
 .db-new-order-box{
   position:absolute;
   left:50%;
@@ -778,11 +782,37 @@ body.modal-open{overflow:hidden}
   height:548px;
   padding:38px 9px 42px;
 }
+.db-add-contact-box{
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:292px;
+  height:310px;
+  margin:0;
+  padding:38px 7px 42px;
+  transform:translate(-50%, -50%);
+  border:1px solid #7f8fa1;
+  background:#c6def5;
+  color:#000;
+  font:12px Arial, Helvetica, sans-serif;
+}
 .db-new-order-title{
   position:absolute;
   top:10px;
   left:10px;
   color:#000;
+}
+.db-add-contact-title{
+  position:absolute;
+  top:0;
+  left:0;
+  right:0;
+  height:28px;
+  padding:7px 8px;
+  border-bottom:1px solid #d6d6d6;
+  background:#f2f2f2;
+  color:#000;
+  font:12px Arial, Helvetica, sans-serif;
 }
 .db-new-order-row{
   display:grid;
@@ -872,6 +902,28 @@ body.modal-open{overflow:hidden}
 .db-new-customer-manager-row{
   margin-top:2px;
 }
+.db-add-contact-row{
+  display:grid;
+  grid-template-columns:78px 1fr;
+  align-items:center;
+  height:27px;
+}
+.db-add-contact-row label{
+  color:#000;
+}
+.db-add-contact-required-row label{
+  color:red;
+}
+.db-add-contact-row input{
+  width:100%;
+  height:21px;
+  border:2px inset #fff;
+  border-radius:0;
+  background:#fff;
+  color:#000;
+  font:12px Arial, Helvetica, sans-serif;
+  padding:1px 3px;
+}
 .db-new-order-customer-row > input,
 .db-new-order-contact-row > input{
   grid-column:3 / 6;
@@ -945,6 +997,23 @@ body.modal-open{overflow:hidden}
 .db-new-order-status[data-tone="success"]{
   color:#006000;
 }
+.db-add-contact-status{
+  position:absolute;
+  left:8px;
+  right:146px;
+  bottom:12px;
+  min-height:16px;
+  color:#000;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.db-add-contact-status[data-tone="error"]{
+  color:red;
+}
+.db-add-contact-status[data-tone="success"]{
+  color:#006000;
+}
 .db-customer-results{
   position:absolute;
   left:126px;
@@ -1009,7 +1078,8 @@ body.modal-open{overflow:hidden}
   color:#555;
   font:12px Arial, Helvetica, sans-serif;
 }
-.db-new-order-actions{
+.db-new-order-actions,
+.db-add-contact-actions{
   position:absolute;
   right:8px;
   bottom:6px;
@@ -1119,13 +1189,6 @@ body.modal-open{overflow:hidden}
 #db-customer-orders-table th:nth-child(9){width:82px}
 #db-customer-orders-table th:nth-child(n+10){width:27px;text-align:center}
 #db-customer-orders-table td:nth-child(n+10){text-align:center}
-#db-customer-contacts-table th:nth-child(2){width:190px}
-#db-customer-contacts-table th:nth-child(3){width:130px}
-#db-customer-contacts-table th:nth-child(4){width:130px}
-#db-customer-contacts-table th:nth-child(5){width:auto}
-#db-customer-contacts-table th:nth-child(6){width:58px;text-align:center}
-#db-customer-contacts-table th:nth-child(7){width:86px}
-#db-customer-contacts-table td:nth-child(6){text-align:center}
 .db-outstanding-row{
   cursor:pointer;
 }
@@ -1426,7 +1489,7 @@ body.modal-open{overflow:hidden}
   letter-spacing:0;
 }
 .db-order-ack-logo{
-  width:50mm;
+  width:55mm;
   height:auto;
   object-fit:contain;
   display:block;
@@ -1491,7 +1554,7 @@ body.modal-open{overflow:hidden}
 .db-order-ack-items th,
 .db-order-ack-items td{
   border:1px solid #333;
-  padding:2mm 1.2mm;
+  padding:1.6mm 1.2mm;
   vertical-align:top;
 }
 .db-order-ack-items thead{
@@ -1522,24 +1585,40 @@ body.modal-open{overflow:hidden}
   page-break-inside:auto;
 }
 .db-order-ack-item-row,
-.db-order-ack-item-gap,
-.db-order-ack-summary-row{
+.db-order-ack-item-gap{
   break-inside:avoid;
   page-break-inside:avoid;
 }
 .db-order-ack-summary{
+  width:calc(100% - 12mm);
+  margin:2.8mm 0 0 12mm;
+  display:grid;
+  row-gap:0.7mm;
+  font-size:11px;
   break-inside:avoid;
   page-break-inside:avoid;
 }
-.db-order-ack-summary td{
-  font-weight:700;
+.db-order-ack-summary-row{
+  display:grid;
+  grid-template-columns:1fr 37mm;
+  break-inside:avoid;
+  page-break-inside:avoid;
 }
 .db-order-ack-summary-label{
+  padding:1.45mm 1.6mm 1.45mm 0;
   text-align:right!important;
-  border-left:0;
+  font-weight:700;
 }
 .db-order-ack-summary-amount{
+  min-height:5.7mm;
+  box-sizing:border-box;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  border:1px solid #333;
+  padding:1.45mm 1.2mm;
   text-align:right!important;
+  font-weight:700;
 }
 .db-order-ack-item-gap td{
   height:3mm;
@@ -1734,6 +1813,71 @@ body.modal-open{overflow:hidden}
   min-height:168px;
   background:#858585;
   border-top:1px solid #000;
+}
+.db-customer-contacts-layout{
+  display:grid;
+  grid-template-columns:650px 1fr;
+  gap:18px;
+  height:100%;
+}
+.db-contact-cards-scroll{
+  height:100%;
+  min-height:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  border:1px solid #000;
+  background:#c6def5;
+}
+.db-contact-card{
+  min-height:96px;
+  padding:7px 10px;
+  border-bottom:1px solid #000;
+  background:#c6def5;
+  color:#000;
+  font:12px Arial, Helvetica, sans-serif;
+}
+.db-contact-card:last-child{
+  border-bottom:0;
+}
+.db-contact-card-row{
+  display:grid;
+  align-items:center;
+  gap:4px;
+  height:24px;
+}
+.db-contact-card-row label{
+  color:#000;
+}
+.db-contact-card input{
+  width:100%;
+  min-width:0;
+  height:20px;
+  border:2px inset #fff;
+  border-radius:0;
+  background:#fff;
+  color:#000;
+  font:12px Arial, Helvetica, sans-serif;
+  padding:1px 3px;
+}
+.db-contact-name-row{
+  grid-template-columns:58px 54px 120px 120px;
+}
+.db-contact-two-column-row{
+  grid-template-columns:58px 180px 50px 1fr;
+}
+.db-contact-address-row{
+  grid-template-columns:58px 1fr;
+}
+.db-contact-actions-panel{
+  position:relative;
+  height:100%;
+}
+.db-contact-add-button{
+  position:absolute;
+  left:0;
+  bottom:14px;
+  width:150px;
+  height:37px;
 }
 .db-customer-addresses-layout{
   position:relative;
@@ -2525,6 +2669,9 @@ input.db-custom-line-input{
 
 @page{
   size:A4;
+  margin:10mm 0 0;
+}
+@page :first{
   margin:0;
 }
 @media print{

@@ -149,6 +149,14 @@ const ADDRESS_COLUMNS = [
   'created_at_source', 'updated_at_source',
 ];
 
+const CONTACT_COLUMNS = [
+  'source_contact_id', 'customer_id', 'profile_id', 'customer_name',
+  'address_id', 'contact_title', 'contact_first_name', 'contact_last_name',
+  'contact_name', 'contact_phone', 'contact_fax', 'contact_mobile',
+  'contact_email', 'contact_address', 'trace_staff_id',
+  'created_at_source', 'updated_at_source',
+];
+
 main().catch((err) => {
   console.error('[database-import] Fatal error:', err);
   process.exit(1);
@@ -198,7 +206,7 @@ async function main() {
   console.log(
     `[database-import] Snapshot: ${snapshot.jobs.length} jobs, ` +
     `${snapshot.lineItems.length} line items, ${snapshot.positions.length} positions, ` +
-    `${snapshot.addresses.length} customer addresses`
+    `${snapshot.addresses.length} customer addresses, ${snapshot.contacts.length} contacts`
   );
   if (addressesOnly) {
     console.log(`[database-import] Address-only mode: ${snapshot.jobAddressUpdates.length} existing job address rows prepared`);
@@ -226,6 +234,7 @@ Imports Access jobs dated 2025 or 2026 into Railway/Postgres tables:
   database_job_positions
   database_customer_addresses
   database_products
+  database_customer_contacts
 
 Options:
   --addresses-only  Import only customer addresses and job address fields.
@@ -480,6 +489,7 @@ function buildSnapshot(data) {
     selectedAddressIds,
     addressRoles
   );
+  const customerContacts = buildCustomerContactRows(data.tblContact, customers, addresses, selectedCustomerIds);
 
   jobs.sort((a, b) => {
     const dateA = a.order_date || a.created_at_source || '';
@@ -487,7 +497,7 @@ function buildSnapshot(data) {
     return dateA < dateB ? 1 : dateA > dateB ? -1 : b.order_no - a.order_no;
   });
 
-  return { jobs, lineItems, positions, addresses: customerAddresses };
+  return { jobs, lineItems, positions, addresses: customerAddresses, contacts: customerContacts };
 }
 
 function buildProductRows(data, selectedProductIds) {
@@ -592,6 +602,7 @@ function buildAddressSnapshot(data) {
     lineItems: [],
     positions: [],
     addresses: customerAddresses,
+    contacts: [],
     jobAddressUpdates,
   };
 }
@@ -624,6 +635,35 @@ function contactName(contact) {
     cleanText(contact.slastname),
   ].filter(Boolean);
   return parts.length ? parts.join(' ') : null;
+}
+
+function buildCustomerContactRows(contactRows, customers, addresses, selectedCustomerIds) {
+  return (contactRows || [])
+    .filter((contact) => selectedCustomerIds.has(toInt(contact.customerid)))
+    .map((contact) => {
+      const address = addresses.get(toInt(contact.addressid)) || {};
+      const customer = customers.get(toInt(contact.customerid)) || {};
+      return {
+        source_contact_id: toInt(contact.contactid),
+        customer_id: toInt(contact.customerid),
+        profile_id: null,
+        customer_name: cleanText(customer.scustomer),
+        address_id: toInt(contact.addressid),
+        contact_title: cleanText(contact.stitle),
+        contact_first_name: cleanText(contact.sfirstname),
+        contact_last_name: cleanText(contact.slastname),
+        contact_name: contactName(contact),
+        contact_phone: cleanText(contact.stel),
+        contact_fax: cleanText(contact.sfax),
+        contact_mobile: cleanText(contact.smobile),
+        contact_email: cleanText(contact.semail),
+        contact_address: formatAddress(address),
+        trace_staff_id: toInt(contact.tracestaffid),
+        created_at_source: toTimestamp(contact.dtcreate),
+        updated_at_source: toTimestamp(contact.dtedit),
+      };
+    })
+    .filter((contact) => contact.source_contact_id && contact.customer_name);
 }
 
 function buildAddressRoleMap(data, selectedOrderIds, selectedCustomerIds) {
@@ -743,6 +783,7 @@ function printDryRun(snapshot) {
   console.log(`[database-import] Jobs by year: ${JSON.stringify(byYear)}`);
   console.log(`[database-import] Jobs by type: ${JSON.stringify(byType)}`);
   console.log(`[database-import] Customer addresses: ${snapshot.addresses.length}`);
+  console.log(`[database-import] Contacts: ${snapshot.contacts.length}`);
   console.log('[database-import] Latest jobs:');
   snapshot.jobs.slice(0, 10).forEach((job) => {
     console.log(
@@ -794,6 +835,7 @@ async function importSnapshot(snapshot, options) {
              line_item_count = 0,
              position_count = 0,
              address_count = $2,
+             contact_count = 0,
              finished_at = NOW(),
              status = 'complete',
              message = $3
@@ -816,6 +858,7 @@ async function importSnapshot(snapshot, options) {
       await client.query('DELETE FROM database_job_line_items');
       await client.query('DELETE FROM database_jobs');
       await client.query('DELETE FROM database_customer_addresses');
+      await client.query('DELETE FROM database_customer_contacts WHERE source_contact_id IS NOT NULL');
     }
 
     console.log(`[database-import] Writing ${snapshot.addresses.length} customer addresses`);
@@ -825,6 +868,15 @@ async function importSnapshot(snapshot, options) {
       ADDRESS_COLUMNS,
       'source_address_id',
       snapshot.addresses
+    );
+
+    console.log(`[database-import] Writing ${snapshot.contacts.length} contacts`);
+    await upsertRows(
+      client,
+      'database_customer_contacts',
+      CONTACT_COLUMNS,
+      'source_contact_id',
+      snapshot.contacts
     );
 
     console.log(`[database-import] Writing ${snapshot.jobs.length} jobs`);
@@ -856,15 +908,17 @@ async function importSnapshot(snapshot, options) {
            line_item_count = $2,
            position_count = $3,
            address_count = $4,
+           contact_count = $5,
            finished_at = NOW(),
            status = 'complete',
-           message = $5
-       WHERE id = $6`,
+           message = $6
+       WHERE id = $7`,
       [
         snapshot.jobs.length,
         snapshot.lineItems.length,
         snapshot.positions.length,
         snapshot.addresses.length,
+        snapshot.contacts.length,
         options.replaceExisting ? 'Snapshot replaced' : 'Snapshot appended/upserted',
         runId,
       ]
