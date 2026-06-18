@@ -1509,12 +1509,12 @@ body.modal-open{overflow:hidden}
   display:block;
 }
 .db-order-ack-address{
-  margin-left:12mm;
+  margin-left:7.5mm;
   min-height:34mm;
   font-size:14px;
 }
 .db-order-ack-meta{
-  margin-left:18mm;
+  margin-left:13.5mm;
   width:82mm;
 }
 .db-order-ack-meta-row{
@@ -1532,7 +1532,7 @@ body.modal-open{overflow:hidden}
   font-weight:400;
 }
 .db-order-ack-letter{
-  margin:7mm 0 0 18mm;
+  margin:7mm 0 0 13.5mm;
   max-width:160mm;
   font-size:14px;
 }
@@ -1540,7 +1540,9 @@ body.modal-open{overflow:hidden}
   margin:0 0 3mm;
 }
 .db-order-ack-job{
-  margin:6mm 0 0 12mm;
+  width:153mm;
+  box-sizing:border-box;
+  margin:6mm 0 0 7.5mm;
   border-top:3px solid #000;
   border-bottom:3px solid #000;
   min-height:10mm;
@@ -1557,8 +1559,8 @@ body.modal-open{overflow:hidden}
   font-weight:400;
 }
 .db-order-ack-items{
-  width:calc(100% - 12mm);
-  margin:6mm 0 0 12mm;
+  width:153mm;
+  margin:6mm 0 0 7.5mm;
   border-collapse:collapse;
   table-layout:fixed;
   font-size:11px;
@@ -1604,8 +1606,8 @@ body.modal-open{overflow:hidden}
   page-break-inside:avoid;
 }
 .db-order-ack-summary{
-  width:calc(100% - 12mm);
-  margin:2.8mm 0 0 12mm;
+  width:153mm;
+  margin:2.8mm 0 0 7.5mm;
   display:grid;
   row-gap:0.7mm;
   font-size:11px;
@@ -1645,8 +1647,8 @@ body.modal-open{overflow:hidden}
   color:#555;
 }
 .db-order-ack-positions{
-  width:calc(100% - 12mm);
-  margin:6mm 0 0 12mm;
+  width:153mm;
+  margin:6mm 0 0 7.5mm;
   border-collapse:collapse;
   table-layout:fixed;
   font-size:12px;
@@ -1672,7 +1674,8 @@ body.modal-open{overflow:hidden}
   width:48mm;
 }
 .db-order-ack-comments{
-  margin:6mm 0 0 12mm;
+  width:153mm;
+  margin:6mm 0 0 7.5mm;
   font-size:12px;
 }
 .db-order-ack-comments p{
