@@ -9,6 +9,14 @@ const HIDDEN_BOARD_COLUMN_TYPES = new Set(['subtasks']);
 const HIDDEN_BOARD_COLUMN_IDS = new Set(['subitems__1']);
 let __boardRefreshTimer = null;
 let __boardLoading = false;
+let __proofModalState = {
+  files: [],
+  fileIndex: 0,
+  pageNumber: 1,
+  pageCount: 1,
+  pdf: null,
+  renderToken: 0
+};
 
 // --- Camera globals ---
 let __cameraStream = null;
@@ -803,7 +811,7 @@ function buildColumnValueCell(entity, column, { subitem = false } = {}) {
   } else if (column.type === 'checkbox') {
     renderCheckboxValue(cell, value, column);
   } else if (column.type === 'file') {
-    renderFileValue(cell, value, text);
+    renderFileValue(cell, value, text, column);
   } else if (column.type === 'people') {
     renderPeopleValue(cell, text);
   } else if (column.type === 'date') {
@@ -859,10 +867,22 @@ function getCheckboxTickColor(column) {
   return '#579bfc';
 }
 
-function renderFileValue(cell, value, text) {
-  const files = getFileList(value);
-  if (!files.length && !text) return;
-  const file = normalizeMondayFile(files[0]) || { name: text || 'File', url: text || '' };
+function renderFileValue(cell, value, text, column) {
+  const files = getFileList(value).map(normalizeMondayFile).filter(Boolean);
+  if (!files.length && text) {
+    files.push({
+      name: text || 'File',
+      url: isLikelyFileUrl(text) ? text : '',
+      mime: inferMimeTypeFromName(text)
+    });
+  }
+  if (!files.length) return;
+  if (isProofColumn(column)) {
+    renderProofFileButton(cell, files, text);
+    return;
+  }
+
+  const file = files[0];
   const link = document.createElement(file.url ? 'a' : 'span');
   link.className = 'monday-file-link';
   if (file.url) {
@@ -897,6 +917,318 @@ function renderFileValue(cell, value, text) {
     count.textContent = `+${files.length - 1}`;
     cell.appendChild(count);
   }
+}
+
+function isProofColumn(column) {
+  return String(column?.title || '').trim().toUpperCase() === 'PROOF';
+}
+
+function isLikelyFileUrl(value) {
+  return /^(https?:\/\/|\/)/i.test(String(value || '').trim());
+}
+
+function renderProofFileButton(cell, files, text) {
+  const file = files[0];
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'monday-file-link monday-proof-trigger';
+  button.title = file.name || text || 'Open proof';
+  button.setAttribute('aria-label', button.title);
+
+  const icon = document.createElement('span');
+  icon.className = `monday-file-icon ${isPdfFile(file.name, file.mime) ? 'pdf' : ''}`;
+  button.appendChild(icon);
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openProofModal(files);
+  });
+  cell.appendChild(button);
+
+  if (files.length > 1) {
+    const count = document.createElement('span');
+    count.className = 'monday-file-count';
+    count.textContent = `+${files.length - 1}`;
+    cell.appendChild(count);
+  }
+}
+
+function ensureProofModal() {
+  let modal = document.getElementById('proof-modal');
+  if (modal) return modal;
+
+  modal = document.createElement('div');
+  modal.id = 'proof-modal';
+  modal.className = 'proof-modal hidden';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', 'proof-modal-title');
+  modal.innerHTML = `
+    <div class="proof-modal-backdrop" data-proof-close></div>
+    <div class="proof-modal-inner">
+      <div class="proof-modal-head">
+        <div>
+          <div class="proof-modal-label">Proof</div>
+          <h3 id="proof-modal-title">Proof file</h3>
+        </div>
+        <button class="proof-modal-close" id="proof-modal-close" type="button" aria-label="Close proof">×</button>
+      </div>
+      <div id="proof-modal-body" class="proof-modal-body"></div>
+      <div class="proof-modal-foot">
+        <div id="proof-modal-file" class="proof-modal-file"></div>
+        <div class="proof-file-controls">
+          <button id="proof-file-prev" class="btn outline small" type="button">Prev file</button>
+          <button id="proof-file-next" class="btn outline small" type="button">Next file</button>
+        </div>
+        <div class="proof-modal-controls">
+          <button id="proof-page-prev" class="btn outline small" type="button">Previous</button>
+          <span id="proof-page-status" class="proof-modal-page">Page 1 / 1</span>
+          <button id="proof-page-next" class="btn outline small" type="button">Next</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector('[data-proof-close]').addEventListener('click', closeProofModal);
+  modal.querySelector('#proof-modal-close').addEventListener('click', closeProofModal);
+  modal.querySelector('#proof-file-prev').addEventListener('click', () => changeProofFile(-1));
+  modal.querySelector('#proof-file-next').addEventListener('click', () => changeProofFile(1));
+  modal.querySelector('#proof-page-prev').addEventListener('click', () => changeProofPage(-1));
+  modal.querySelector('#proof-page-next').addEventListener('click', () => changeProofPage(1));
+  document.addEventListener('keydown', handleProofModalKeydown);
+  return modal;
+}
+
+function openProofModal(files) {
+  const normalized = (Array.isArray(files) ? files : [])
+    .map(file => normalizeMondayFile(file) || file)
+    .filter(file => file && (file.url || file.assetId || file.name));
+  if (!normalized.length) return;
+
+  ensureProofModal();
+  __proofModalState = {
+    files: normalized,
+    fileIndex: 0,
+    pageNumber: 1,
+    pageCount: 1,
+    pdf: null,
+    renderToken: __proofModalState.renderToken + 1
+  };
+  document.getElementById('proof-modal')?.classList.remove('hidden');
+  document.body.classList.add('modal-open');
+  renderProofModalFile();
+}
+
+function closeProofModal() {
+  const modal = document.getElementById('proof-modal');
+  if (modal) modal.classList.add('hidden');
+  __proofModalState.pdf = null;
+  __proofModalState.renderToken += 1;
+  const anotherModalOpen = document.querySelector('.modal:not(.hidden), .va-lightbox:not(.hidden)');
+  if (!anotherModalOpen) document.body.classList.remove('modal-open');
+}
+
+function handleProofModalKeydown(event) {
+  const modal = document.getElementById('proof-modal');
+  if (!modal || modal.classList.contains('hidden')) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeProofModal();
+  } else if (event.key === 'ArrowLeft') {
+    changeProofPage(-1);
+  } else if (event.key === 'ArrowRight') {
+    changeProofPage(1);
+  }
+}
+
+function getProofModalElements() {
+  return {
+    modal: document.getElementById('proof-modal'),
+    body: document.getElementById('proof-modal-body'),
+    title: document.getElementById('proof-modal-title'),
+    file: document.getElementById('proof-modal-file'),
+    filePrev: document.getElementById('proof-file-prev'),
+    fileNext: document.getElementById('proof-file-next'),
+    prev: document.getElementById('proof-page-prev'),
+    next: document.getElementById('proof-page-next'),
+    page: document.getElementById('proof-page-status')
+  };
+}
+
+function setProofLoading(message) {
+  const { body } = getProofModalElements();
+  if (!body) return;
+  body.innerHTML = '';
+  const loader = document.createElement('div');
+  loader.className = 'proof-modal-loading';
+  loader.textContent = message;
+  body.appendChild(loader);
+}
+
+async function renderProofModalFile() {
+  const state = __proofModalState;
+  const token = ++state.renderToken;
+  const file = state.files[state.fileIndex];
+  const { title, file: fileLabel } = getProofModalElements();
+  if (title) title.textContent = file?.name || 'Proof file';
+  if (fileLabel) {
+    const fileTotal = state.files.length > 1 ? ` · File ${state.fileIndex + 1} / ${state.files.length}` : '';
+    fileLabel.textContent = `${file?.name || 'Attached proof'}${fileTotal}`;
+  }
+  state.pageNumber = 1;
+  state.pageCount = 1;
+  state.pdf = null;
+  updateProofPageControls();
+
+  if (!file) {
+    setProofLoading('No proof file available.');
+    return;
+  }
+
+  if (isPdfFile(file.name, file.mime)) {
+    await renderProofPdf(file, token);
+  } else if (isImageFile(file)) {
+    renderProofImage(file, token);
+  } else {
+    renderProofNativeViewer(file, token);
+  }
+}
+
+async function renderProofPdf(file, token) {
+  setProofLoading('Loading PDF...');
+  try {
+    const pdfjs = await ensurePdfJs();
+    const src = buildAssetSrc(file);
+    const resp = await fetch(src, { credentials: 'include', cache: 'no-store' });
+    if (!resp.ok) throw new Error(`PDF fetch failed (${resp.status})`);
+    const buffer = await resp.arrayBuffer();
+    if (token !== __proofModalState.renderToken) return;
+
+    const loadingTask = pdfjs.getDocument({
+      data: buffer,
+      useWorkerFetch: true,
+      isEvalSupported: true,
+      disableAutoFetch: false
+    });
+    const pdf = await loadingTask.promise;
+    if (token !== __proofModalState.renderToken) return;
+    __proofModalState.pdf = pdf;
+    __proofModalState.pageCount = Math.max(1, pdf.numPages || 1);
+    __proofModalState.pageNumber = 1;
+    await renderProofPdfPage();
+  } catch (err) {
+    console.error('Proof PDF render failed', err);
+    renderProofNativeViewer(file, token, 'PDF preview unavailable. Opening with the browser viewer.');
+  }
+}
+
+async function renderProofPdfPage() {
+  const state = __proofModalState;
+  const token = state.renderToken;
+  const { body } = getProofModalElements();
+  if (!body || !state.pdf) return;
+  setProofLoading('Rendering page...');
+  updateProofPageControls(true);
+
+  const page = await state.pdf.getPage(state.pageNumber);
+  if (token !== state.renderToken) return;
+  const baseViewport = page.getViewport({ scale: 1 });
+  const availableWidth = Math.max(320, (body.clientWidth || 920) - 32);
+  const scale = Math.min(1.8, Math.max(0.8, availableWidth / baseViewport.width));
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d', { alpha: false });
+  canvas.width = Math.floor(viewport.width);
+  canvas.height = Math.floor(viewport.height);
+  canvas.className = 'proof-pdf-canvas';
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  if (token !== state.renderToken) return;
+
+  body.innerHTML = '';
+  body.appendChild(canvas);
+  updateProofPageControls(false);
+}
+
+function renderProofImage(file, token) {
+  const { body } = getProofModalElements();
+  if (!body || token !== __proofModalState.renderToken) return;
+  const img = document.createElement('img');
+  img.className = 'proof-modal-image';
+  img.src = buildAssetSrc(file);
+  img.alt = file.name || 'Proof image';
+  body.innerHTML = '';
+  body.appendChild(img);
+  updateProofPageControls();
+}
+
+function renderProofNativeViewer(file, token, note = '') {
+  const { body } = getProofModalElements();
+  if (!body || token !== __proofModalState.renderToken) return;
+  const src = buildAssetSrc(file, { stripPdfUi: isPdfFile(file.name, file.mime) });
+  body.innerHTML = '';
+  if (note) {
+    const noteEl = document.createElement('div');
+    noteEl.className = 'proof-modal-note';
+    noteEl.textContent = note;
+    body.appendChild(noteEl);
+  }
+  if (src) {
+    const viewer = document.createElement('iframe');
+    viewer.className = 'proof-modal-viewer';
+    viewer.src = src;
+    viewer.title = file.name || 'Proof file';
+    body.appendChild(viewer);
+  } else {
+    const empty = document.createElement('div');
+    empty.className = 'proof-modal-loading';
+    empty.textContent = 'No preview URL is available for this proof.';
+    body.appendChild(empty);
+  }
+  updateProofPageControls();
+}
+
+function changeProofPage(delta) {
+  const state = __proofModalState;
+  if (!state.pdf) return;
+  const nextPage = state.pageNumber + delta;
+  if (nextPage < 1 || nextPage > state.pageCount) return;
+  state.pageNumber = nextPage;
+  state.renderToken += 1;
+  renderProofPdfPage().catch((err) => {
+    console.error('Proof PDF page render failed', err);
+    updateProofPageControls(false);
+  });
+}
+
+function changeProofFile(delta) {
+  const state = __proofModalState;
+  if (!Array.isArray(state.files) || state.files.length <= 1) return;
+  const nextIndex = state.fileIndex + delta;
+  if (nextIndex < 0 || nextIndex >= state.files.length) return;
+  state.fileIndex = nextIndex;
+  state.pageNumber = 1;
+  state.pageCount = 1;
+  state.pdf = null;
+  state.renderToken += 1;
+  renderProofModalFile();
+}
+
+function updateProofPageControls(loading = false) {
+  const { filePrev, fileNext, prev, next, page } = getProofModalElements();
+  const state = __proofModalState;
+  const isPdf = !!state.pdf;
+  if (page) page.textContent = `Page ${state.pageNumber} / ${state.pageCount}`;
+  const hasMultipleFiles = Array.isArray(state.files) && state.files.length > 1;
+  if (filePrev) {
+    filePrev.hidden = !hasMultipleFiles;
+    filePrev.disabled = loading || !hasMultipleFiles || state.fileIndex <= 0;
+  }
+  if (fileNext) {
+    fileNext.hidden = !hasMultipleFiles;
+    fileNext.disabled = loading || !hasMultipleFiles || state.fileIndex >= state.files.length - 1;
+  }
+  if (prev) prev.disabled = loading || !isPdf || state.pageNumber <= 1;
+  if (next) next.disabled = loading || !isPdf || state.pageNumber >= state.pageCount;
 }
 
 function renderPeopleValue(cell, text) {
@@ -1080,9 +1412,9 @@ async function printLabel(itemId, rawTitle) {
   } catch {}
   const qrImg = scanUrl ? `<img class="qr" src="/api/qr?data=${encodeURIComponent(scanUrl)}" alt="QR">` : '';
   const blocks = [
-    { head: 'JOB NUMBER', value: orderNumber, ratio: 0.62 },
-    { head: 'CUSTOMER', value: customerName, ratio: 0.46 },
-    { head: 'JOB TITLE', value: jobTitle, ratio: 0.50 }
+    { head: 'JOB NUMBER', value: orderNumber, ratio: 0.62, maxSize: 96 },
+    { head: 'CUSTOMER', value: customerName, ratio: 0.46, maxSize: 54 },
+    { head: 'JOB TITLE', value: jobTitle, ratio: 0.50, maxSize: 54 }
   ];
   const body = `
     <!doctype html>
@@ -1111,7 +1443,7 @@ async function printLabel(itemId, rawTitle) {
           ${blocks.map(b=>`
             <div class="block">
               <div class="head">${escapeHtml(b.head)}</div>
-              <div class="value" data-ratio="${b.ratio}">${escapeHtml(b.value)}</div>
+              <div class="value" data-ratio="${b.ratio}" data-max-size="${b.maxSize}">${escapeHtml(b.value)}</div>
             </div>
           `).join('')}
         </div>
@@ -1119,10 +1451,11 @@ async function printLabel(itemId, rawTitle) {
       </div>
       <script>
         (function(){
-          function fit(el, ratio, min){
+          function fit(el, ratio, min, max){
             var parent = el.parentElement;
             var w = parent.clientWidth || parent.getBoundingClientRect().width;
-            var size = Math.max(min, Math.floor(w * ratio));
+            var cap = max > 0 ? max : Number.POSITIVE_INFINITY;
+            var size = Math.min(cap, Math.max(min, Math.floor(w * ratio)));
             el.style.fontSize = size + 'px';
             var guard = 0;
             while ((el.scrollWidth > parent.clientWidth) && size > min && guard < 200){
@@ -1133,7 +1466,8 @@ async function printLabel(itemId, rawTitle) {
           }
           Array.prototype.slice.call(document.querySelectorAll('.value')).forEach(function(v){
             var ratio = parseFloat(v.getAttribute('data-ratio')) || 0.4;
-            fit(v, ratio, 10);
+            var max = parseFloat(v.getAttribute('data-max-size')) || 0;
+            fit(v, ratio, 10, max);
           });
           const qr = document.querySelector('.qr');
           if (qr) {

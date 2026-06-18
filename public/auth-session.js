@@ -22,6 +22,10 @@
 
   function updateSidebarUser(user) {
     const sub = document.querySelector('.sidebar-sub');
-    if (sub) sub.textContent = user?.first_name || 'User';
+    const fullName = [user?.first_name, user?.last_name]
+      .map((part) => String(part || '').trim())
+      .filter(Boolean)
+      .join(' ');
+    if (sub) sub.textContent = fullName || user?.email || 'User';
   }
 })();
