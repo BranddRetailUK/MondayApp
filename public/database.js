@@ -2450,11 +2450,14 @@
     const modal = document.getElementById('db-order-ack-modal');
     if (!modal || modal.hidden) return;
 
+    const previousTitle = document.title;
+    document.title = orderAckPdfFilename();
     document.body.classList.add('db-order-ack-printing');
     let cleaned = false;
     const cleanup = () => {
       if (cleaned) return;
       cleaned = true;
+      document.title = previousTitle;
       document.body.classList.remove('db-order-ack-printing');
       window.removeEventListener('afterprint', cleanup);
     };
@@ -2463,6 +2466,12 @@
       window.print();
       window.setTimeout(cleanup, 1500);
     }, 50);
+  }
+
+  function orderAckPdfFilename() {
+    const job = state.selectedJob || {};
+    const orderNo = String(job.order_no || job.source_order_id || '').trim();
+    return `${orderNo ? `${orderNo} - ` : ''}Order Acknowlegement`;
   }
 
   function renderOrderAcknowledgementPage() {
