@@ -482,6 +482,66 @@ body{
   text-transform:none;
   white-space:nowrap;
 }
+.grid-head .grid-cell{
+  position:relative;
+  overflow:visible;
+}
+.column-title-text{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.column-sort-btn{
+  position:absolute;
+  top:-12px;
+  left:50%;
+  transform:translateX(-50%);
+  width:22px;
+  height:22px;
+  border:0;
+  border-radius:50%;
+  background:#0073ea;
+  color:#fff;
+  font-size:14px;
+  font-weight:900;
+  line-height:22px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:0;
+  opacity:0;
+  pointer-events:none;
+  cursor:pointer;
+  z-index:5;
+  box-shadow:0 4px 12px rgba(0,115,234,.45);
+}
+.column-sort-btn::after{
+  content:"";
+  position:absolute;
+  left:50%;
+  bottom:-3px;
+  transform:translateX(-50%);
+  width:0;
+  height:0;
+  border-left:4px solid transparent;
+  border-right:4px solid transparent;
+  border-top:5px solid #0073ea;
+}
+.sortable-head:hover .column-sort-btn,
+.sortable-head:focus-within .column-sort-btn{
+  opacity:1;
+  pointer-events:auto;
+}
+.column-sort-btn:hover,
+.column-sort-btn:focus-visible{
+  background:#1f8bff;
+  outline:none;
+}
+.column-sort-btn:hover::after,
+.column-sort-btn:focus-visible::after{
+  border-top-color:#1f8bff;
+}
 .job-row:hover .grid-cell,
 .sub-row:hover .grid-cell{background:#303133}
 .monday-check-tick{

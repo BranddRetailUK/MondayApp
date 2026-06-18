@@ -10,6 +10,7 @@ const HIDDEN_BOARD_COLUMN_IDS = new Set(['subitems__1']);
 const HIDDEN_BOARD_COLUMN_TITLES = new Set(['START/END', 'START-END']);
 let __boardRefreshTimer = null;
 let __boardLoading = false;
+let __boardSortState = null;
 let __proofModalState = {
   files: [],
   fileIndex: 0,
@@ -409,10 +410,12 @@ function renderBoard(payload) {
   const boardColumnWidths = buildBoardColumnWidthOverrides(boardColumns, board.groups || []);
   const gridSpec = buildDashboardGridSpec(boardColumns, { subitem: false, widthOverrides: boardColumnWidths });
   const subitemGridSpec = buildDashboardGridSpec(subitemColumns, { subitem: true });
+  const activeSortColumn = getActiveSortColumn(boardColumns);
 
   for (const group of (board.groups || [])) {
     const collectionName = group.title || 'Untitled Group';
     const items = (group.items_page && group.items_page.items) || [];
+    const sortedItems = sortItemsForBoard(items, activeSortColumn);
     const groupKey = slugify(collectionName);
     const isCollapsed = uiState.collapsedGroups.has(groupKey) ||
       (!uiState.hasRenderedGroups && isDefaultCollapsedGroup(collectionName));
@@ -439,7 +442,7 @@ function renderBoard(payload) {
     sectionTitle.addEventListener('click', toggleGroup);
     groupWrap.appendChild(sectionTitle);
 
-    const groupSummary = buildGroupSummary(collectionName, items, gridSpec);
+    const groupSummary = buildGroupSummary(collectionName, sortedItems, gridSpec);
     groupSummary.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
     groupSummary.addEventListener('click', toggleGroup);
     groupWrap.appendChild(groupSummary);
@@ -455,11 +458,11 @@ function renderBoard(payload) {
     const headRow = document.createElement('div');
     headRow.className = 'grid-row grid-head';
     for (const spec of gridSpec.columns) {
-      headRow.appendChild(buildHeaderCell(spec));
+      headRow.appendChild(buildHeaderCell(spec, { sortable: true }));
     }
     grid.appendChild(headRow);
 
-    for (const item of items) {
+    for (const item of sortedItems) {
       const itemId = String(item.id);
       const subitems = Array.isArray(item.subitems) ? item.subitems : [];
 
@@ -488,7 +491,7 @@ function renderBoard(payload) {
         const subHead = document.createElement('div');
         subHead.className = 'subitem-row sub-head';
         for (const spec of subitemGridSpec.columns) {
-          subHead.appendChild(buildHeaderCell(spec));
+          subHead.appendChild(buildHeaderCell(spec, { sortable: false }));
         }
         subGrid.appendChild(subHead);
 
@@ -714,6 +717,106 @@ function getColumnWidth(column) {
   return 150;
 }
 
+function getActiveSortColumn(columns) {
+  if (!__boardSortState?.columnId) return null;
+  return (columns || []).find(column => column.id === __boardSortState.columnId) || null;
+}
+
+function sortItemsForBoard(items, column) {
+  const list = Array.isArray(items) ? items : [];
+  if (!column || !__boardSortState?.direction) return list;
+  const direction = __boardSortState.direction;
+  return list
+    .map((item, index) => ({ item, index, sortValue: getItemSortValue(item, column) }))
+    .sort((a, b) => {
+      if (a.sortValue.empty && b.sortValue.empty) return a.index - b.index;
+      if (a.sortValue.empty) return 1;
+      if (b.sortValue.empty) return -1;
+      const compared = compareSortValues(a.sortValue, b.sortValue);
+      if (compared !== 0) return direction === 'desc' ? -compared : compared;
+      return a.index - b.index;
+    })
+    .map(entry => entry.item);
+}
+
+function getItemSortValue(item, column) {
+  const value = findColumnValue(item, column.id);
+  const text = normalizeCellText(value?.text || '');
+  if (!text && !value?.value) return { empty: true, type: 'string', value: '' };
+
+  if (column.type === 'date' || column.type === 'timeline') {
+    const timestamp = parseSortDate(value, text);
+    if (Number.isFinite(timestamp)) {
+      // Earlier dates are treated as higher priority so first click is most urgent first.
+      return { empty: false, type: 'number', value: -timestamp };
+    }
+  }
+
+  if (column.type === 'status') {
+    const priorityRank = getPrioritySortRank(column, text);
+    if (priorityRank != null) return { empty: false, type: 'number', value: priorityRank };
+    const statusIndex = getStatusSortIndex(value);
+    if (statusIndex != null) return { empty: false, type: 'number', value: statusIndex };
+  }
+
+  if (column.type === 'checkbox') {
+    return { empty: false, type: 'number', value: isCheckedValue(value) ? 1 : 0 };
+  }
+
+  if (column.type === 'numbers') {
+    const number = Number.parseFloat(text.replace(/[^0-9.-]/g, ''));
+    if (Number.isFinite(number)) return { empty: false, type: 'number', value: number };
+  }
+
+  return { empty: !text, type: 'string', value: text.toLowerCase() };
+}
+
+function compareSortValues(a, b) {
+  if (a.type === 'number' && b.type === 'number') return a.value - b.value;
+  return String(a.value || '').localeCompare(String(b.value || ''), undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function parseSortDate(value, text) {
+  const parsed = parseJsonMaybe(value?.value);
+  const candidates = [
+    parsed?.date,
+    parsed?.from,
+    parsed?.to,
+    text
+  ].filter(Boolean);
+  const currentYear = new Date().getFullYear();
+  for (const candidate of candidates) {
+    const raw = String(candidate).trim();
+    if (!/\b\d{4}\b/.test(raw)) {
+      const withYear = Date.parse(`${raw} ${currentYear}`);
+      if (Number.isFinite(withYear)) return withYear;
+    }
+    const direct = Date.parse(raw);
+    if (Number.isFinite(direct)) return direct;
+  }
+  return NaN;
+}
+
+function getPrioritySortRank(column, text) {
+  const title = String(column?.title || '').toUpperCase();
+  if (!title.includes('PRIORITY')) return null;
+  const label = normalizeStatusLabel(text);
+  if (label.includes('critical')) return 100;
+  if (label.includes('urgent')) return 90;
+  if (label.includes('high')) return 80;
+  if (label.includes('medium')) return 50;
+  if (label.includes('low')) return 20;
+  return 0;
+}
+
+function getStatusSortIndex(value) {
+  const parsed = parseJsonMaybe(value?.value);
+  const raw = parsed?.index ?? parsed?.label?.index;
+  if (raw === undefined || raw === null || raw === '') return null;
+  const index = Number.parseFloat(raw);
+  return Number.isFinite(index) ? index : null;
+}
+
 function buildBoardColumnWidthOverrides(columns, groups) {
   const overrides = new Map();
   for (const column of columns) {
@@ -754,11 +857,49 @@ function measureBoardTextWidth(text) {
   return String(text || '').length * 7.5;
 }
 
-function buildHeaderCell(spec) {
+function buildHeaderCell(spec, { sortable = false } = {}) {
   const cell = document.createElement('div');
   cell.className = `grid-cell head ${spec.kind}-head`;
-  cell.textContent = spec.title || '';
+  const title = document.createElement('span');
+  title.className = 'column-title-text';
+  title.textContent = spec.title || '';
+  cell.appendChild(title);
+
+  if (sortable && spec.kind === 'column' && spec.column?.id) {
+    cell.classList.add('sortable-head');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'column-sort-btn';
+    if (__boardSortState?.columnId === spec.column.id) button.classList.add('active');
+    button.title = getColumnSortButtonTitle(spec.column);
+    button.setAttribute('aria-label', button.title);
+    button.textContent = '↕';
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleBoardColumnSort(spec.column);
+    });
+    cell.appendChild(button);
+  }
+
   return cell;
+}
+
+function getColumnSortButtonTitle(column) {
+  const active = __boardSortState?.columnId === column.id;
+  if (!active) return `Sort ${column.title || 'column'} high to low`;
+  return __boardSortState.direction === 'desc'
+    ? `Sort ${column.title || 'column'} low to high`
+    : `Sort ${column.title || 'column'} high to low`;
+}
+
+function toggleBoardColumnSort(column) {
+  const currentDirection = __boardSortState?.columnId === column.id ? __boardSortState.direction : '';
+  __boardSortState = {
+    columnId: column.id,
+    direction: currentDirection === 'desc' ? 'asc' : 'desc'
+  };
+  if (window.__latestBoardPayload) renderBoard(window.__latestBoardPayload);
 }
 
 function buildItemCell(item, spec, { subitemsOpen = false } = {}) {
