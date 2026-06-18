@@ -1730,7 +1730,7 @@ body.modal-open{overflow:hidden}
   font:12px Arial, Helvetica, sans-serif;
 }
 .db-customer-address-inner{
-  height:250px;
+  height:214px;
   border:1px solid #000;
   background:#c6def5;
   padding:17px 14px 8px;
@@ -1761,32 +1761,6 @@ body.modal-open{overflow:hidden}
 }
 .db-customer-address-row-tel input{
   width:170px;
-}
-.db-customer-address-meta{
-  display:grid;
-  grid-template-columns:1fr 1fr 1fr;
-  gap:8px;
-  margin-top:15px;
-  font-size:11px;
-}
-.db-customer-address-meta span{
-  display:block;
-}
-.db-customer-address-meta a{
-  display:block;
-  min-height:17px;
-  color:#00e;
-  border:1px dotted #00e;
-  background:#92cdea;
-  text-decoration:none;
-  padding:1px 2px;
-}
-.db-customer-manage-addresses{
-  position:absolute;
-  right:34px;
-  bottom:17px;
-  width:150px;
-  height:30px;
 }
 .db-panel-message{
   padding:24px;

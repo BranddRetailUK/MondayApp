@@ -1128,7 +1128,6 @@
         ${renderCustomerAddressBox('Invoice address (default):', invoiceAddress)}
         ${renderCustomerAddressBox('Delivery address (default):', deliveryAddress)}
       </div>
-      <button class="db-toolbar-button db-customer-manage-addresses" type="button" disabled>Manage Addresses</button>
     `;
   }
 
@@ -1177,11 +1176,6 @@
           ${customerAddressInputRow('Postcode:', fields.postcode, 'postcode')}
           ${customerAddressInputRow('Tel:', fields.phone, 'tel')}
           ${customerAddressInputRow('Fax:', fields.fax, 'tel')}
-          <div class="db-customer-address-meta">
-            <div><span>Created:</span><a href="#">${escapeHtml(formatDateTime(fields.created_at_source))}</a></div>
-            <div><span>Last edited:</span><a href="#">${escapeHtml(formatDateTime(fields.updated_at_source))}</a></div>
-            <div><span>By:</span><a href="#">${escapeHtml(staffLabel(fields.updated_by) || '')}</a></div>
-          </div>
         </div>
       </section>
     `;
