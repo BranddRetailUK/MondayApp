@@ -1134,6 +1134,7 @@
     ].forEach(([key, panel]) => {
       panel.classList.toggle('active', key === tab);
     });
+    syncOrderItemsExpansion();
   }
 
   function renderDetailsPanel() {
@@ -1249,8 +1250,7 @@
                 </tr>
               </thead>
               <tbody>
-                ${nonStockItems.length ? nonStockItems.map(renderNonStockRow).join('') : renderItemEmptyRow(6)}
-                ${state.customLineDraft?.type === 'nonstock' ? renderCustomLineDraftRow('nonstock', 6) : renderCustomAddLineButtonRow('nonstock', 6)}
+                ${renderCustomSectionRows(nonStockItems, 'nonstock', 6, renderNonStockRow)}
               </tbody>
             </table>
             <div class="db-supplier-row"><span>Supplier:</span><input readonly value="${escapeAttr(suppliers)}"></div>
@@ -2478,6 +2478,25 @@
     `;
   }
 
+  function renderCustomSectionRows(items, type, colspan, renderRow) {
+    const lineType = normalizeCustomLineType(type);
+    const itemRows = items.map(renderRow).join('');
+    const isEditing = state.customLineDraft?.type === lineType;
+
+    if (isEditing) {
+      return [
+        renderCustomLineDraftRow(lineType, colspan),
+        itemRows,
+        renderItemEmptyRow(colspan),
+      ].join('');
+    }
+
+    return [
+      itemRows,
+      renderCustomAddLineButtonRow(lineType, colspan),
+    ].join('');
+  }
+
   function renderCustomLineDraftRow(type, colspan) {
     const draft = state.customLineDraft || createCustomLineDraft(type);
     const saveDisabled = draft.line_description.trim() && !draft.saving ? '' : ' disabled';
@@ -2546,6 +2565,11 @@
     if (event.key === 'Escape') {
       event.preventDefault();
       cancelCustomLineDraft();
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      saveCustomLineDraft();
     }
   }
 
@@ -2741,7 +2765,7 @@
             </tr>
           </thead>
           <tbody>
-            ${items.length ? items.map((item) => `
+            ${renderCustomSectionRows(items, lineType, 6, (item) => `
               <tr>
                 <td class="db-row-selector"></td>
                 <td>${escapeHtml(item.line_description || item.style_name || '')}</td>
@@ -2750,8 +2774,7 @@
                 <td>${escapeHtml(formatNumber(item.quantity || 0))}</td>
                 <td>${escapeHtml(formatVat(item.vat_rate))}</td>
               </tr>
-            `).join('') : '<tr class="db-gray-fill"><td colspan="6"></td></tr>'}
-            ${state.customLineDraft?.type === lineType ? renderCustomLineDraftRow(lineType, 6) : renderCustomAddLineButtonRow(lineType, 6)}
+            `)}
           </tbody>
         </table>
       </div>
@@ -2769,6 +2792,11 @@
       view.classList.toggle('active', view.id === `db-${name}-view`);
     });
     els.stage?.classList.toggle('db-view-home', name === 'home');
+    els.stage?.classList.toggle('db-view-order', name === 'order');
+    if (name !== 'order') {
+      els.stage?.classList.remove('db-order-items-active');
+      els.root?.classList.remove('db-order-items-expanded');
+    }
 
     els.mainTabs.forEach((tab) => {
       const active = (name === 'home' || name === 'new-order' || name === 'customers' || name === 'customer')
@@ -2776,6 +2804,7 @@
         : tab.dataset.dbGo === 'outstanding';
       tab.classList.toggle('active', active);
     });
+    syncOrderItemsExpansion();
   }
 
   function goBackDatabaseView() {
@@ -2805,6 +2834,12 @@
 
   function setFooterTitle(title) {
     if (els.footerTitle) els.footerTitle.textContent = title;
+  }
+
+  function syncOrderItemsExpansion() {
+    const expanded = state.activeView === 'order' && state.activeOrderTab === 'items';
+    els.stage?.classList.toggle('db-order-items-active', expanded);
+    els.root?.classList.toggle('db-order-items-expanded', expanded);
   }
 
   function detailRow(label, controlHtml) {
