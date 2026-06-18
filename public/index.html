@@ -11,8 +11,8 @@
 <body class="dashboard-only">
   <div class="app-container">
     <nav class="sidebar">
+      <button id="sidebarToggle" class="sidebar-toggle" type="button" aria-label="Hide navigation" aria-expanded="true">‹</button>
       <div class="sidebar-top">
-        <div class="logo-mark">UH</div>
         <div class="logo-text">
           <div class="sidebar-logo">Ultimate Hub</div>
           <div class="sidebar-sub">User</div>
@@ -33,10 +33,7 @@
       <section id="tab-dashboard" class="tab-content active">
         <section class="board-shell card monday-board-shell">
           <div class="board-shell-head">
-            <div id="labels-toolbar">
-              <div id="authStatus" class="status-note">Connected to Monday.</div>
-              <button id="loadBtn" class="btn outline">Refresh board</button>
-            </div>
+            <div id="labels-toolbar"></div>
           </div>
           <div id="board"></div>
         </section>

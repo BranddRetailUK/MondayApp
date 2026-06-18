@@ -3,8 +3,9 @@
 const PROD_ORIGIN = window.location.origin;
 const ENDPOINTS = { data: '/api/board', auth: '/auth', scans: '/api/scan-states' };
 const DASHBOARD_TAB_STORAGE_KEY = 'ultimateHub.activeDashboardTab';
+const SIDEBAR_COLLAPSED_STORAGE_KEY = 'ultimateHub.sidebarCollapsed';
 const DASHBOARD_TAB_NAMES = ['dashboard', 'database', 'visuals'];
-const BOARD_AUTO_REFRESH_MS = 2000;
+const BOARD_AUTO_REFRESH_MS = 1000;
 const HIDDEN_BOARD_COLUMN_TYPES = new Set(['subtasks']);
 const HIDDEN_BOARD_COLUMN_IDS = new Set(['subitems__1']);
 const HIDDEN_BOARD_COLUMN_TITLES = new Set(['START/END', 'START-END']);
@@ -35,6 +36,7 @@ const __IDLE_MS = 140;
 const __BUFFER_HARD_LIMIT = 8192;
 
 document.addEventListener('DOMContentLoaded', () => {
+  ensureSidebarToggle();
   ensureAuthUI();
   addCameraUI();
   addSerialScannerUI();
@@ -57,15 +59,7 @@ function ensureAuthUI() {
     board.parentElement.insertBefore(bar, board); // toolbar sits above the board area
   }
 
-  // Status text
-  let statusEl = document.getElementById('authStatus');
-  if (!statusEl) {
-    statusEl = document.createElement('div');
-    statusEl.id = 'authStatus';
-    bar.appendChild(statusEl);
-  }
-  statusEl.className = 'status-note';
-  statusEl.textContent = 'Connected to Monday.'; // will be updated after loadBoard() too
+  document.getElementById('authStatus')?.remove();
 
   // Update button (give it proper styling + move into toolbar)
   const loadBtn = document.getElementById('loadBtn');
@@ -90,6 +84,31 @@ function ensureAuthUI() {
   // Scanner connect button will be inserted by addSerialScannerUI(); keep space updated
 }
 
+function ensureSidebarToggle() {
+  const app = document.querySelector('.app-container');
+  const button = document.getElementById('sidebarToggle');
+  if (!app || !button) return;
+
+  const collapsed = localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === '1';
+  setSidebarCollapsed(collapsed, { persist: false });
+  button.addEventListener('click', () => {
+    setSidebarCollapsed(!app.classList.contains('sidebar-collapsed'));
+  });
+}
+
+function setSidebarCollapsed(collapsed, { persist = true } = {}) {
+  const app = document.querySelector('.app-container');
+  const button = document.getElementById('sidebarToggle');
+  if (!app || !button) return;
+  app.classList.toggle('sidebar-collapsed', collapsed);
+  button.textContent = collapsed ? '›' : '‹';
+  button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+  button.setAttribute('aria-label', collapsed ? 'Show navigation' : 'Hide navigation');
+  if (persist) {
+    localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, collapsed ? '1' : '0');
+  }
+}
+
 // --------------------------- CAMERA UI ---------------------------
 
 function addCameraUI() {
@@ -97,20 +116,7 @@ function addCameraUI() {
   if (!bar) return;
 
   ensureCaptureModal();
-
-  if (!document.getElementById('connectCameraBtn')) {
-    const btn = document.createElement('button');
-    btn.id = 'connectCameraBtn';
-    btn.textContent = 'Connect Camera';
-    btn.className = 'btn success';
-    btn.addEventListener('click', connectCamera);
-    const scannerBtn = document.getElementById('connectScannerBtn');
-    if (scannerBtn && scannerBtn.parentElement === bar) {
-      bar.insertBefore(btn, scannerBtn);
-    } else {
-      bar.appendChild(btn);
-    }
-  }
+  document.getElementById('connectCameraBtn')?.remove();
 }
 
 function ensureCaptureModal() {
@@ -370,7 +376,7 @@ async function loadBoard(options = {}) {
     refreshVisualItemSelect(payload);
     const connectBtn = document.getElementById('connectBtn');
     if (connectBtn) connectBtn.style.display = 'none';
-    if (statusEl) statusEl.textContent = 'Connected to Monday.';
+    document.getElementById('authStatus')?.remove();
   } catch (err) {
     console.warn('Board load failed', err);
     boardDiv.textContent = 'Failed to load board: fetch error';
@@ -1711,14 +1717,7 @@ function addSerialScannerUI() {
     if (bar) bar.appendChild(btn);
   }
 
-  // Small status pill
-  if (!document.getElementById('scanPill')) {
-    const pill = document.createElement('span');
-    pill.id = 'scanPill';
-    pill.className = 'pill';
-    pill.textContent = 'ready';
-    if (bar) bar.appendChild(pill);
-  }
+  document.getElementById('scanPill')?.remove();
 }
 
 
