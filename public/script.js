@@ -79,6 +79,7 @@ function ensureAuthUI() {
     connectBtn.className = 'btn primary';
     connectBtn.addEventListener('click', () => (window.location.href = '/auth'));
   }
+  connectBtn.style.display = 'none';
   if (connectBtn.parentElement !== bar) bar.appendChild(connectBtn);
 
   // Scanner connect button will be inserted by addSerialScannerUI(); keep space updated
@@ -417,12 +418,12 @@ function renderBoard(payload) {
   const jobNameWidth = buildJobNameColumnWidth(board.groups || []);
   const gridSpec = buildDashboardGridSpec(boardColumns, { subitem: false, widthOverrides: boardColumnWidths, nameWidth: jobNameWidth });
   const subitemGridSpec = buildDashboardGridSpec(subitemColumns, { subitem: true });
-  const activeSortColumn = getActiveSortColumn(boardColumns);
+  const boardSortPlan = getBoardSortPlan(boardColumns);
 
   for (const group of (board.groups || [])) {
     const collectionName = group.title || 'Untitled Group';
     const items = (group.items_page && group.items_page.items) || [];
-    const sortedItems = sortItemsForBoard(items, activeSortColumn);
+    const sortedItems = sortItemsForBoard(items, boardSortPlan);
     const groupKey = slugify(collectionName);
     const isCollapsed = uiState.collapsedGroups.has(groupKey) ||
       (!uiState.hasRenderedGroups && isDefaultCollapsedGroup(collectionName));
@@ -732,21 +733,59 @@ function getActiveSortColumn(columns) {
   return (columns || []).find(column => column.id === __boardSortState.columnId) || null;
 }
 
-function sortItemsForBoard(items, column) {
+function getBoardSortPlan(columns) {
+  const activeSortColumn = getActiveSortColumn(columns);
+  if (activeSortColumn && __boardSortState?.direction) {
+    return [{ column: activeSortColumn, direction: __boardSortState.direction }];
+  }
+
+  const priorityColumn = (columns || []).find(isPriorityColumn);
+  const dateColumn = (columns || []).find(isDateColumn);
+  return [
+    priorityColumn ? { column: priorityColumn, direction: 'desc' } : null,
+    dateColumn ? { column: dateColumn, direction: 'desc' } : null
+  ].filter(Boolean);
+}
+
+function isPriorityColumn(column) {
+  return String(column?.title || '').trim().toUpperCase() === 'PRIORITY';
+}
+
+function isDateColumn(column) {
+  const title = String(column?.title || '').trim().toUpperCase();
+  return title === 'DATE' || column?.type === 'date';
+}
+
+function sortItemsForBoard(items, sortPlan) {
   const list = Array.isArray(items) ? items : [];
-  if (!column || !__boardSortState?.direction) return list;
-  const direction = __boardSortState.direction;
+  const plan = Array.isArray(sortPlan) ? sortPlan.filter(entry => entry?.column && entry?.direction) : [];
+  if (!plan.length) return list;
   return list
-    .map((item, index) => ({ item, index, sortValue: getItemSortValue(item, column) }))
+    .map((item, index) => ({
+      item,
+      index,
+      sortValues: plan.map(entry => ({
+        direction: entry.direction,
+        value: getItemSortValue(item, entry.column)
+      }))
+    }))
     .sort((a, b) => {
-      if (a.sortValue.empty && b.sortValue.empty) return a.index - b.index;
-      if (a.sortValue.empty) return 1;
-      if (b.sortValue.empty) return -1;
-      const compared = compareSortValues(a.sortValue, b.sortValue);
-      if (compared !== 0) return direction === 'desc' ? -compared : compared;
+      for (let i = 0; i < plan.length; i += 1) {
+        const compared = compareSortValuePair(a.sortValues[i], b.sortValues[i]);
+        if (compared !== 0) return compared;
+      }
       return a.index - b.index;
     })
     .map(entry => entry.item);
+}
+
+function compareSortValuePair(a, b) {
+  if (!a?.value || !b?.value) return 0;
+  if (a.value.empty && b.value.empty) return 0;
+  if (a.value.empty) return 1;
+  if (b.value.empty) return -1;
+  const compared = compareSortValues(a.value, b.value);
+  return a.direction === 'desc' ? -compared : compared;
 }
 
 function getItemSortValue(item, column) {
