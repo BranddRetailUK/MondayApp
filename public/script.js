@@ -638,6 +638,8 @@ function renderBoard(payload) {
     const grid = document.createElement('div');
     grid.className = 'board-grid';
     grid.style.setProperty('--board-cols', gridSpec.template);
+    grid.style.setProperty('--mobile-board-cols', gridSpec.mobileTemplate);
+    grid.style.setProperty('--mobile-board-min-width', `${gridSpec.mobileMinWidth}px`);
     grid.style.minWidth = `${gridSpec.minWidth}px`;
 
     const headRow = document.createElement('div');
@@ -668,6 +670,7 @@ function renderBoard(payload) {
         const subPanel = document.createElement('div');
         subPanel.className = `subitem-panel ${subitemsOpen ? '' : 'hidden'}`.trim();
         subPanel.dataset.parent = itemId;
+        subPanel.style.setProperty('--mobile-board-min-width', `${gridSpec.mobileMinWidth}px`);
         subPanel.style.minWidth = `${gridSpec.minWidth}px`;
 
         const subGrid = document.createElement('div');
@@ -887,7 +890,7 @@ function normalizeColumns(columns) {
 
 function buildDashboardGridSpec(mondayColumns, { subitem = false, widthOverrides = new Map(), nameWidth = null } = {}) {
   const columns = [
-    { kind: 'print', title: subitem ? '' : 'LABEL', width: 82 },
+    subitem ? null : { kind: 'print', title: 'LABEL', width: 82 },
     { kind: 'name', title: subitem ? 'Subitem' : 'JOB', width: nameWidth || (subitem ? 520 : 560) },
     ...mondayColumns.map(column => ({
       kind: 'column',
@@ -895,11 +898,15 @@ function buildDashboardGridSpec(mondayColumns, { subitem = false, widthOverrides
       width: widthOverrides.get(column.id) || getColumnWidth(column),
       column
     }))
-  ];
+  ].filter(Boolean);
   const minWidth = columns.reduce((sum, column) => sum + column.width, 0);
+  const mobileColumns = columns.filter(column => column.kind !== 'print');
+  const mobileMinWidth = mobileColumns.reduce((sum, column) => sum + column.width, 0);
   return {
     columns,
     minWidth,
+    mobileMinWidth,
+    mobileTemplate: mobileColumns.map(column => `${column.width}px`).join(' '),
     template: columns.map(column => `${column.width}px`).join(' ')
   };
 }
@@ -1343,9 +1350,6 @@ function buildSubitemNameCell(subitem) {
   cell.className = 'grid-cell job-cell subitem-name-cell';
   const wrap = document.createElement('div');
   wrap.className = 'title-wrap';
-  const spacer = document.createElement('span');
-  spacer.className = 'row-toggle-spacer';
-  wrap.appendChild(spacer);
   const title = document.createElement('span');
   title.className = 'subitem-title';
   title.textContent = subitem.name || '';
