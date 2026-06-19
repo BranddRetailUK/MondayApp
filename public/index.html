@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ultimate Hub · Dashboard</title>
   <link rel="stylesheet" href="styles.css">
   <script src="auth-session.js" defer></script>
@@ -10,7 +11,13 @@
 </head>
 <body class="dashboard-only">
   <div class="app-container">
-    <nav class="sidebar">
+    <button id="mobileNavToggle" class="mobile-nav-toggle" type="button" aria-label="Open navigation" aria-controls="appSidebar" aria-expanded="false">
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+    <div id="mobileNavBackdrop" class="mobile-nav-backdrop" hidden></div>
+    <nav id="appSidebar" class="sidebar">
       <button id="sidebarToggle" class="sidebar-toggle" type="button" aria-label="Hide navigation" aria-expanded="true">‹</button>
       <div class="sidebar-top">
         <div class="logo-text">
