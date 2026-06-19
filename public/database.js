@@ -20,9 +20,6 @@
   const ORDER_ACK_ITEM_ROW_EXTRA_LINE_MM = 3.4;
   const ORDER_ACK_ITEM_CHARS_PER_LINE = 48;
   const ORDER_ACK_SUMMARY_MM = 22;
-  const ORDER_ACK_POSITIONS_TOP_MM = 6;
-  const ORDER_ACK_POSITIONS_HEADER_MM = 7;
-  const ORDER_ACK_POSITION_ROW_MM = 7;
   const ORDER_ACK_COMMENTS_TOP_MM = 6;
   const ORDER_ACK_COMMENTS_BASE_MM = 11;
   const ORDER_ACK_COMMENTS_LINE_MM = 4.2;
@@ -2597,7 +2594,6 @@
   function renderOrderAcknowledgementPage() {
     const job = state.selectedJob || {};
     const items = orderAckLineItems();
-    const positions = state.selectedPositions || [];
     const totals = orderAckTotals(items);
     const invoiceLines = orderAckAddressLines(job.invoice_address, job.customer_name);
     const deliveryLines = String(job.delivery_address || '').trim()
@@ -2618,7 +2614,7 @@
       yourRef,
       salutation,
     };
-    const pages = buildOrderAckPages({ items, totals, positions, comments: job.comments });
+    const pages = buildOrderAckPages({ items, totals, comments: job.comments });
 
     return pages.map((pageContent, index) => renderOrderAckPage(context, pageContent, index)).join('');
   }
@@ -2672,7 +2668,6 @@
         ? renderOrderAckItemsTable(pageContent.itemEntries, context.items, { empty: pageContent.showEmptyItems })
         : ''}
       ${pageContent.showSummary ? renderOrderAckSummaryRows(context.totals) : ''}
-      ${pageContent.positions.length ? renderOrderAckPositionsTable(pageContent.positions, pageContent.hasDesign) : ''}
       ${pageContent.comments ? renderOrderAckComments(pageContent.comments) : ''}
     `;
   }
@@ -3104,11 +3099,7 @@
     return renderOrderAckItemRow(entry.item);
   }
 
-  function buildOrderAckPages({ items, totals, positions, comments }) {
-    const visiblePositions = (positions || []).filter((position) => (
-      position.position_name || position.colour_notes || position.design_ref
-    ));
-    const hasDesign = visiblePositions.some((position) => position.design_ref);
+  function buildOrderAckPages({ items, totals, comments }) {
     const pages = [];
     let page = emptyOrderAckPageContent();
     let usedMm = 0;
@@ -3144,15 +3135,6 @@
     page.showSummary = true;
     usedMm += ORDER_ACK_SUMMARY_MM;
 
-    for (const position of visiblePositions) {
-      let tableOverhead = page.positions.length ? 0 : ORDER_ACK_POSITIONS_TOP_MM + ORDER_ACK_POSITIONS_HEADER_MM;
-      ensureSpace(tableOverhead + ORDER_ACK_POSITION_ROW_MM);
-      tableOverhead = page.positions.length ? 0 : ORDER_ACK_POSITIONS_TOP_MM + ORDER_ACK_POSITIONS_HEADER_MM;
-      page.positions.push(position);
-      page.hasDesign = hasDesign;
-      usedMm += (page.positions.length === 1 ? tableOverhead : 0) + ORDER_ACK_POSITION_ROW_MM;
-    }
-
     if (comments) {
       const commentsHeight = orderAckCommentsHeight(comments);
       ensureSpace(commentsHeight);
@@ -3169,8 +3151,6 @@
       itemEntries: [],
       showEmptyItems: false,
       showSummary: false,
-      positions: [],
-      hasDesign: false,
       comments: '',
     };
   }
@@ -3180,7 +3160,6 @@
       page.itemEntries.length
       || page.showEmptyItems
       || page.showSummary
-      || page.positions.length
       || page.comments
     );
   }
@@ -3254,35 +3233,6 @@
           <span class="db-order-ack-summary-amount">${escapeHtml(formatCurrency(totals.gross))}</span>
         </div>
       </section>
-    `;
-  }
-
-  function renderOrderAckPositionsTable(positions, forceHasDesign = false) {
-    const visiblePositions = (positions || []).filter((position) => (
-      position.position_name || position.colour_notes || position.design_ref
-    ));
-    if (!visiblePositions.length) return '';
-
-    const hasDesign = forceHasDesign || visiblePositions.some((position) => position.design_ref);
-    return `
-      <table class="db-order-ack-positions ${hasDesign ? 'has-design' : ''}">
-        <thead>
-          <tr>
-            <th>Positions</th>
-            <th>Colours</th>
-            ${hasDesign ? '<th>Design</th>' : ''}
-          </tr>
-        </thead>
-        <tbody>
-          ${visiblePositions.map((position) => `
-            <tr>
-              <td>${escapeHtml(position.position_name || '')}</td>
-              <td>${escapeHtml(position.colour_notes || '')}</td>
-              ${hasDesign ? `<td>${escapeHtml(position.design_ref || '')}</td>` : ''}
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
     `;
   }
 
