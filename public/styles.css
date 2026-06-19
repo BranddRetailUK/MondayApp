@@ -2327,6 +2327,154 @@ body.modal-open{overflow:hidden}
   margin:2mm 0 0;
   white-space:pre-wrap;
 }
+.db-order-doc-page-content{
+  height:140mm;
+  overflow:hidden;
+}
+.db-order-doc-header{
+  min-height:34mm;
+}
+.db-order-doc-header h1{
+  font:700 25px/1.1 Arial, Helvetica, sans-serif;
+}
+.db-order-doc-address{
+  margin-left:7.5mm;
+  min-height:28mm;
+  font-size:12px;
+}
+.db-order-doc-meta-wrap{
+  width:153mm;
+  margin:0 0 0 7.5mm;
+  display:grid;
+  grid-template-columns:82mm 1fr;
+  column-gap:13mm;
+  align-items:start;
+}
+.db-order-doc-meta-wrap:not(.has-signature){
+  grid-template-columns:106mm;
+}
+.db-order-doc-meta .db-order-ack-meta-row{
+  grid-template-columns:30mm 1fr;
+  gap:3mm;
+  min-height:4.5mm;
+}
+.db-order-doc-meta .db-order-ack-meta-row span,
+.db-order-doc-meta .db-order-ack-meta-row strong{
+  font-size:11px;
+}
+.db-order-doc-signature{
+  padding-top:0.4mm;
+}
+.db-order-doc-signature-row{
+  display:grid;
+  grid-template-columns:21mm 1fr;
+  gap:3mm;
+  align-items:end;
+  min-height:7.2mm;
+  font-size:11px;
+}
+.db-order-doc-signature-row i{
+  display:block;
+  height:3.5mm;
+  border-bottom:1px dotted #000;
+}
+.db-order-doc-job{
+  margin-top:4mm;
+  min-height:8.5mm;
+  border-top-width:2px;
+  border-bottom-width:2px;
+  font-size:11px;
+}
+.db-order-doc-items{
+  width:153mm;
+  margin:5mm 0 0 7.5mm;
+  border-collapse:collapse;
+  table-layout:fixed;
+  font-size:9px;
+}
+.db-order-doc-items th,
+.db-order-doc-items td{
+  border:1px solid #333;
+  padding:1.2mm 1mm;
+  vertical-align:top;
+}
+.db-order-doc-items th{
+  text-align:left;
+  font-weight:700;
+}
+.db-invoice-items th:nth-child(1){width:17mm}
+.db-invoice-items th:nth-child(3){width:13mm}
+.db-invoice-items th:nth-child(4){width:18mm}
+.db-invoice-items th:nth-child(5){width:10mm}
+.db-invoice-items th:nth-child(6){width:16mm}
+.db-invoice-items th:nth-child(7){width:18mm}
+.db-invoice-items th:nth-child(8){width:17mm}
+.db-invoice-items th:nth-child(9){width:12mm}
+.db-invoice-items td:nth-child(n+5),
+.db-invoice-items th:nth-child(n+5){
+  text-align:right;
+}
+.db-delivery-note-items{
+  font-size:10px;
+}
+.db-delivery-note-items th:nth-child(1){width:22mm}
+.db-delivery-note-items th:nth-child(3){width:24mm}
+.db-delivery-note-items th:nth-child(4){width:32mm}
+.db-delivery-note-items th:nth-child(5){width:14mm}
+.db-delivery-note-items td:nth-child(5),
+.db-delivery-note-items th:nth-child(5){
+  text-align:right;
+}
+.db-invoice-summary{
+  width:153mm;
+  margin:5mm 0 0 7.5mm;
+  display:grid;
+  grid-template-columns:70mm 1fr;
+  column-gap:14mm;
+  align-items:start;
+  font-size:9px;
+}
+.db-invoice-tax-analysis strong{
+  display:block;
+  margin-bottom:1.5mm;
+  font-weight:700;
+}
+.db-invoice-tax-analysis table{
+  width:100%;
+  border-collapse:collapse;
+  table-layout:fixed;
+}
+.db-invoice-tax-analysis td{
+  border:1px solid #333;
+  padding:1.3mm 1mm;
+}
+.db-invoice-tax-analysis td:last-child{
+  width:25mm;
+  text-align:right;
+}
+.db-invoice-total-lines{
+  display:grid;
+  row-gap:0.7mm;
+}
+.db-invoice-total-row{
+  display:grid;
+  grid-template-columns:1fr 31mm;
+  align-items:stretch;
+}
+.db-invoice-total-row span{
+  padding:1.3mm 1.5mm 1.3mm 0;
+  text-align:right;
+  font-weight:700;
+}
+.db-invoice-total-row strong{
+  min-height:5mm;
+  box-sizing:border-box;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  border:1px solid #333;
+  padding:1.3mm 1mm;
+}
 .db-order-ack-footer{
   position:absolute;
   left:50%;
@@ -3425,7 +3573,8 @@ input.db-custom-line-input{
     page-break-after:auto;
   }
   body.db-order-ack-printing .db-order-ack-items,
-  body.db-order-ack-printing .db-order-ack-positions{
+  body.db-order-ack-printing .db-order-ack-positions,
+  body.db-order-ack-printing .db-order-doc-items{
     break-inside:auto;
     page-break-inside:auto;
   }
@@ -3444,7 +3593,9 @@ input.db-custom-line-input{
   body.db-order-ack-printing .db-order-ack-item-gap,
   body.db-order-ack-printing .db-order-ack-summary,
   body.db-order-ack-printing .db-order-ack-summary-row,
-  body.db-order-ack-printing .db-order-ack-positions tr{
+  body.db-order-ack-printing .db-order-ack-positions tr,
+  body.db-order-ack-printing .db-invoice-summary,
+  body.db-order-ack-printing .db-invoice-total-row{
     break-inside:avoid;
     page-break-inside:avoid;
   }

@@ -9,6 +9,7 @@
   const LINE_ORDER_AUTOSAVE_MS = 3500;
   const ORDER_ACK_LOGO_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781699668/ultimate_logo_imyxvr.png';
   const ORDER_ACK_FOOTER_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781779546/LETTERHEAD_INFO_pxmlak.png';
+  const ULTIMATE_VAT_NUMBER = '984 5655 65';
   const ORDER_ACK_PAGE_CONTENT_MAX_MM = 96;
   const ORDER_ACK_TABLE_TOP_MM = 6;
   const ORDER_ACK_TABLE_HEADER_MM = 5.5;
@@ -25,6 +26,32 @@
   const ORDER_ACK_COMMENTS_BASE_MM = 11;
   const ORDER_ACK_COMMENTS_LINE_MM = 4.2;
   const ORDER_ACK_COMMENTS_CHARS_PER_LINE = 95;
+  const ORDER_DOC_PAGE_CONTENT_MAX_MM = 140;
+  const ORDER_DOC_TABLE_TOP_MM = 5;
+  const ORDER_DOC_TABLE_HEADER_MM = 5.5;
+  const ORDER_DOC_EMPTY_ROW_MM = 10;
+  const ORDER_DOC_GAP_ROW_MM = 2.8;
+  const ORDER_DOC_ITEM_ROW_BASE_MM = 5.8;
+  const ORDER_DOC_ITEM_ROW_EXTRA_LINE_MM = 3;
+  const ORDER_DOC_ITEM_CHARS_PER_LINE = 42;
+  const INVOICE_SUMMARY_MM = 32;
+  const DATABASE_DOCUMENTS = {
+    'order-ack': {
+      toolbarTitle: 'Order acknowledgement',
+      ariaLabel: 'Order acknowledgement PDF preview',
+      filenameTitle: 'Order Acknowlegement',
+    },
+    invoice: {
+      toolbarTitle: 'Invoice',
+      ariaLabel: 'Invoice PDF preview',
+      filenameTitle: 'Invoice',
+    },
+    'delivery-note': {
+      toolbarTitle: 'Delivery note',
+      ariaLabel: 'Delivery note PDF preview',
+      filenameTitle: 'Delivery Note',
+    },
+  };
 
   const state = {
     loadedHome: false,
@@ -88,6 +115,8 @@
     designDeleteTarget: null,
     designDeleteSaving: false,
     currentUser: null,
+    activeDocumentType: 'order-ack',
+    documentGeneratedAt: null,
   };
 
   let els = {};
@@ -378,9 +407,10 @@
       return;
     }
 
-    if (button.dataset.dbOrderAck) {
+    const documentType = button.dataset.dbDocument || (button.dataset.dbOrderAck ? 'order-ack' : '');
+    if (documentType) {
       await flushOrderAutosaves();
-      openOrderAcknowledgement();
+      openDatabaseDocument(documentType);
       return;
     }
 
@@ -2056,11 +2086,25 @@
   }
 
   function openOrderAcknowledgement() {
+    openDatabaseDocument('order-ack');
+  }
+
+  function openDatabaseDocument(type) {
     if (!state.selectedJob?.source_order_id && !state.selectedJob?.order_no) return;
 
+    const documentType = databaseDocumentType(type);
+    state.activeDocumentType = documentType;
+    state.documentGeneratedAt = new Date();
+
     const modal = ensureOrderAckModal();
+    const config = databaseDocumentConfig(documentType);
+    const shell = modal.querySelector('.db-order-ack-shell');
+    const title = modal.querySelector('.db-order-ack-toolbar-title');
     const pages = modal.querySelector('.db-order-ack-pages');
-    pages.innerHTML = renderOrderAcknowledgementPage();
+    if (shell) shell.setAttribute('aria-label', config.ariaLabel);
+    if (title) title.textContent = config.toolbarTitle;
+    modal.dataset.dbDocumentType = documentType;
+    pages.innerHTML = renderDatabaseDocument(documentType);
     modal.hidden = false;
     modal.setAttribute('aria-hidden', 'false');
     document.body.classList.add('modal-open', 'db-order-ack-open');
@@ -2118,7 +2162,7 @@
     }
 
     if (button.dataset.dbAckPrint || button.dataset.dbAckDownload) {
-      printOrderAcknowledgement();
+      printDatabaseDocument();
     }
   }
 
@@ -2447,11 +2491,15 @@
   }
 
   function printOrderAcknowledgement() {
+    printDatabaseDocument();
+  }
+
+  function printDatabaseDocument() {
     const modal = document.getElementById('db-order-ack-modal');
     if (!modal || modal.hidden) return;
 
     const previousTitle = document.title;
-    document.title = orderAckPdfFilename();
+    document.title = databaseDocumentPdfFilename();
     document.body.classList.add('db-order-ack-printing');
     let cleaned = false;
     const cleanup = () => {
@@ -2469,9 +2517,29 @@
   }
 
   function orderAckPdfFilename() {
+    return databaseDocumentPdfFilename('order-ack');
+  }
+
+  function databaseDocumentPdfFilename(type = state.activeDocumentType) {
     const job = state.selectedJob || {};
     const orderNo = String(job.order_no || job.source_order_id || '').trim();
-    return `${orderNo ? `${orderNo} - ` : ''}Order Acknowlegement`;
+    const config = databaseDocumentConfig(type);
+    return `${orderNo ? `${orderNo} - ` : ''}${config.filenameTitle}`;
+  }
+
+  function databaseDocumentType(type) {
+    return Object.prototype.hasOwnProperty.call(DATABASE_DOCUMENTS, type) ? type : 'order-ack';
+  }
+
+  function databaseDocumentConfig(type) {
+    return DATABASE_DOCUMENTS[databaseDocumentType(type)] || DATABASE_DOCUMENTS['order-ack'];
+  }
+
+  function renderDatabaseDocument(type) {
+    const documentType = databaseDocumentType(type);
+    if (documentType === 'invoice') return renderInvoiceDocument();
+    if (documentType === 'delivery-note') return renderDeliveryNoteDocument();
+    return renderOrderAcknowledgementPage();
   }
 
   function renderOrderAcknowledgementPage() {
@@ -2555,6 +2623,393 @@
       ${pageContent.positions.length ? renderOrderAckPositionsTable(pageContent.positions, pageContent.hasDesign) : ''}
       ${pageContent.comments ? renderOrderAckComments(pageContent.comments) : ''}
     `;
+  }
+
+  function renderInvoiceDocument() {
+    const job = state.selectedJob || {};
+    const items = orderDocumentLineItems();
+    const totals = orderAckTotals(items);
+    const generatedAt = currentDatabaseDocumentDate();
+    const invoiceLines = orderAckAddressLines(job.invoice_address, job.customer_name);
+    const deliveryLines = String(job.delivery_address || '').trim()
+      ? orderAckAddressLines(job.delivery_address, job.customer_name)
+      : [];
+    const deliverySameAsInvoice = !deliveryLines.length || sameOrderAckAddress(invoiceLines, deliveryLines);
+    const deliveryDisplay = deliverySameAsInvoice ? ['(as above)'] : deliveryLines;
+    const context = {
+      type: 'invoice',
+      title: 'INVOICE',
+      job,
+      items,
+      totals,
+      addressLines: invoiceLines,
+      metaRows: [
+        { label: 'Invoice No.', value: job.order_no },
+        { label: 'Cust ref:', value: job.client_order_no || '' },
+        { label: 'VAT No.:', value: ULTIMATE_VAT_NUMBER },
+        { label: 'Invoice date:', value: formatDate(generatedAt, 'full') },
+        { label: 'Payment terms:', value: job.payment_terms || '' },
+        { label: 'Delivery address:', value: deliveryDisplay.map((line) => escapeHtml(line)).join('<br>'), html: true },
+      ],
+    };
+    const pages = buildOrderDocumentPages({ items, summaryHeightMm: INVOICE_SUMMARY_MM });
+    return pages.map((pageContent, index) => renderOrderDocumentPage(context, pageContent, index)).join('');
+  }
+
+  function renderDeliveryNoteDocument() {
+    const job = state.selectedJob || {};
+    const items = orderDocumentLineItems();
+    const generatedAt = currentDatabaseDocumentDate();
+    const addressLines = orderAckAddressLines(job.delivery_address || job.invoice_address, job.customer_name);
+    const context = {
+      type: 'delivery-note',
+      title: 'DELIVERY NOTE',
+      job,
+      items,
+      addressLines,
+      showSignature: true,
+      metaRows: [
+        { label: 'Invoice No', value: job.order_no },
+        { label: 'Your ref:', value: deliveryNoteYourRef(job) },
+        { label: 'Order date:', value: formatDate(job.order_date || job.created_at_source, 'full') },
+        { label: 'Delivery date:', value: formatDate(generatedAt, 'full') },
+        { label: 'Order taken by:', value: jobOwnerLabel(job) },
+      ],
+    };
+    const pages = buildOrderDocumentPages({ items });
+    return pages.map((pageContent, index) => renderOrderDocumentPage(context, pageContent, index)).join('');
+  }
+
+  function renderOrderDocumentPage(context, pageContent, pageIndex) {
+    return `
+      <section class="db-order-ack-page db-order-doc-page db-order-doc-page-${escapeAttr(context.type)}" aria-label="${escapeAttr(context.title)} page ${pageIndex + 1}">
+        ${renderOrderDocumentPageHeader(context)}
+        <section class="db-order-doc-page-content">
+          ${renderOrderDocumentPageContent(context, pageContent)}
+        </section>
+        <img class="db-order-ack-footer" src="${escapeAttr(ORDER_ACK_FOOTER_URL)}" alt="Ultimate letterhead footer" crossorigin="anonymous">
+      </section>
+    `;
+  }
+
+  function renderOrderDocumentPageHeader(context) {
+    return `
+      <header class="db-order-ack-header db-order-doc-header">
+        <h1>${escapeHtml(context.title)}</h1>
+        <img class="db-order-ack-logo" src="${escapeAttr(ORDER_ACK_LOGO_URL)}" alt="Ultimate logo" crossorigin="anonymous">
+      </header>
+      <section class="db-order-doc-address">
+        ${(context.addressLines || []).map((line) => `<div>${escapeHtml(line)}</div>`).join('')}
+      </section>
+      <section class="db-order-doc-meta-wrap ${context.showSignature ? 'has-signature' : ''}" aria-label="${escapeAttr(context.title)} details">
+        <section class="db-order-doc-meta">
+          ${(context.metaRows || []).map(orderDocumentMetaRow).join('')}
+        </section>
+        ${context.showSignature ? renderDeliveryNoteSignatureFields() : ''}
+      </section>
+      <section class="db-order-ack-job db-order-doc-job">
+        <span>Job title:</span>
+        <strong>${escapeHtml(context.job?.job_title || '')}</strong>
+      </section>
+    `;
+  }
+
+  function renderOrderDocumentPageContent(context, pageContent) {
+    if (context.type === 'invoice') {
+      return `
+        ${pageContent.itemEntries.length || pageContent.showEmptyItems
+          ? renderInvoiceItemsTable(pageContent.itemEntries, { empty: pageContent.showEmptyItems })
+          : ''}
+        ${pageContent.showSummary ? renderInvoiceSummary(context.items, context.totals) : ''}
+      `;
+    }
+
+    return pageContent.itemEntries.length || pageContent.showEmptyItems
+      ? renderDeliveryNoteItemsTable(pageContent.itemEntries, { empty: pageContent.showEmptyItems })
+      : '';
+  }
+
+  function orderDocumentMetaRow(row) {
+    const content = row.html ? (row.value || '') : escapeHtml(row.value || row.value === 0 ? row.value : '');
+    return `
+      <div class="db-order-ack-meta-row">
+        <span>${escapeHtml(row.label)}</span>
+        <strong>${content}</strong>
+      </div>
+    `;
+  }
+
+  function renderDeliveryNoteSignatureFields() {
+    return `
+      <section class="db-order-doc-signature" aria-label="Delivery recipient signature">
+        ${deliveryNoteSignatureRow('Signed by')}
+        ${deliveryNoteSignatureRow('Print Name')}
+        ${deliveryNoteSignatureRow('Date')}
+      </section>
+    `;
+  }
+
+  function deliveryNoteSignatureRow(label) {
+    return `
+      <div class="db-order-doc-signature-row">
+        <span>${escapeHtml(label)}:</span>
+        <i></i>
+      </div>
+    `;
+  }
+
+  function renderInvoiceItemsTable(entries, options = {}) {
+    return `
+      <table class="db-order-doc-items db-invoice-items">
+        <thead>
+          <tr>
+            <th>Stock item #</th>
+            <th>Description</th>
+            <th>Size</th>
+            <th>Colour</th>
+            <th>Qty</th>
+            <th>Price</th>
+            <th>Total</th>
+            <th>VAT</th>
+            <th>Rate</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${options.empty ? '<tr><td colspan="9" class="db-order-ack-empty">No invoice line items</td></tr>' : ''}
+          ${entries.map(renderInvoiceItemEntry).join('')}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function renderInvoiceItemEntry(entry) {
+    if (entry.type === 'gap') return '<tr class="db-order-ack-item-gap"><td colspan="9"></td></tr>';
+    return renderInvoiceItemRow(entry.item);
+  }
+
+  function renderInvoiceItemRow(item) {
+    const quantity = orderAckQuantity(item);
+    const price = orderAckNumber(item.unit_price);
+    const net = orderAckLineNet(item);
+    const vat = orderAckLineVat(item);
+    return `
+      <tr class="db-order-ack-item-row">
+        <td>${escapeHtml(orderDocumentItemCode(item))}</td>
+        <td>${escapeHtml(orderDocumentItemDescription(item))}</td>
+        <td>${escapeHtml(item.size || '')}</td>
+        <td>${escapeHtml(item.colour || '')}</td>
+        <td>${escapeHtml(formatNumber(quantity))}</td>
+        <td>${Number.isFinite(price) ? escapeHtml(formatCurrency(price)) : ''}</td>
+        <td>${Number.isFinite(price) ? escapeHtml(formatCurrency(net)) : ''}</td>
+        <td>${Number.isFinite(price) ? escapeHtml(formatCurrency(vat)) : ''}</td>
+        <td>${escapeHtml(formatVat(item.vat_rate))}</td>
+      </tr>
+    `;
+  }
+
+  function renderDeliveryNoteItemsTable(entries, options = {}) {
+    return `
+      <table class="db-order-doc-items db-delivery-note-items">
+        <thead>
+          <tr>
+            <th>Stock item #</th>
+            <th>Description</th>
+            <th>Size</th>
+            <th>Colour</th>
+            <th>Qty</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${options.empty ? '<tr><td colspan="5" class="db-order-ack-empty">No delivery note line items</td></tr>' : ''}
+          ${entries.map(renderDeliveryNoteItemEntry).join('')}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function renderDeliveryNoteItemEntry(entry) {
+    if (entry.type === 'gap') return '<tr class="db-order-ack-item-gap"><td colspan="5"></td></tr>';
+    return renderDeliveryNoteItemRow(entry.item);
+  }
+
+  function renderDeliveryNoteItemRow(item) {
+    return `
+      <tr class="db-order-ack-item-row">
+        <td>${escapeHtml(orderDocumentItemCode(item))}</td>
+        <td>${escapeHtml(orderDocumentItemDescription(item))}</td>
+        <td>${escapeHtml(item.size || '')}</td>
+        <td>${escapeHtml(item.colour || '')}</td>
+        <td>${escapeHtml(formatNumber(orderAckQuantity(item)))}</td>
+      </tr>
+    `;
+  }
+
+  function renderInvoiceSummary(items, totals) {
+    return `
+      <section class="db-invoice-summary" aria-label="Invoice totals">
+        <section class="db-invoice-tax-analysis" aria-label="Tax analysis">
+          <strong>Tax analysis</strong>
+          <table>
+            <tbody>
+              ${invoiceTaxAnalysisRows(items).map((row) => `
+                <tr>
+                  <td>${escapeHtml(row.label)}</td>
+                  <td>${escapeHtml(formatCurrency(row.net))}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </section>
+        <section class="db-invoice-total-lines" aria-label="Invoice total values">
+          ${invoiceTotalRow('TOTAL EXCLUDING VAT', totals.net)}
+          ${invoiceTotalRow('VAT', totals.vat)}
+          ${invoiceTotalRow('TOTAL', totals.gross)}
+        </section>
+      </section>
+    `;
+  }
+
+  function invoiceTotalRow(label, value) {
+    return `
+      <div class="db-invoice-total-row">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(formatCurrency(value))}</strong>
+      </div>
+    `;
+  }
+
+  function buildOrderDocumentPages({ items, summaryHeightMm = 0 }) {
+    const pages = [];
+    let page = emptyOrderDocumentPageContent();
+    let usedMm = 0;
+
+    const pushPage = () => {
+      pages.push(page);
+      page = emptyOrderDocumentPageContent();
+      usedMm = 0;
+    };
+    const ensureSpace = (heightMm) => {
+      if (usedMm > 0 && usedMm + heightMm > ORDER_DOC_PAGE_CONTENT_MAX_MM) pushPage();
+    };
+
+    const itemEntries = orderDocumentItemEntries(items);
+    if (!itemEntries.length) {
+      const emptyTableHeight = ORDER_DOC_TABLE_TOP_MM + ORDER_DOC_TABLE_HEADER_MM + ORDER_DOC_EMPTY_ROW_MM;
+      ensureSpace(emptyTableHeight);
+      page.showEmptyItems = true;
+      usedMm += emptyTableHeight;
+    } else {
+      for (const entry of itemEntries) {
+        if (entry.type === 'gap' && !page.itemEntries.length) continue;
+        let tableOverhead = page.itemEntries.length ? 0 : ORDER_DOC_TABLE_TOP_MM + ORDER_DOC_TABLE_HEADER_MM;
+        ensureSpace(tableOverhead + entry.heightMm);
+        if (entry.type === 'gap' && !page.itemEntries.length) continue;
+        tableOverhead = page.itemEntries.length ? 0 : ORDER_DOC_TABLE_TOP_MM + ORDER_DOC_TABLE_HEADER_MM;
+        page.itemEntries.push(entry);
+        usedMm += (page.itemEntries.length === 1 ? tableOverhead : 0) + entry.heightMm;
+      }
+    }
+
+    if (summaryHeightMm) {
+      ensureSpace(summaryHeightMm);
+      page.showSummary = true;
+      usedMm += summaryHeightMm;
+    }
+
+    if (pageHasOrderDocumentContent(page) || !pages.length) pushPage();
+    return pages;
+  }
+
+  function emptyOrderDocumentPageContent() {
+    return {
+      itemEntries: [],
+      showEmptyItems: false,
+      showSummary: false,
+    };
+  }
+
+  function pageHasOrderDocumentContent(page) {
+    return Boolean(page.itemEntries.length || page.showEmptyItems || page.showSummary);
+  }
+
+  function orderDocumentItemEntries(items) {
+    const entries = [];
+    let hasPreviousRows = false;
+
+    for (const group of groupedOrderAckLineItems(items)) {
+      if (!group.items.length) continue;
+      if (group.type === 'nondelivery' && hasPreviousRows) {
+        entries.push({ type: 'gap', heightMm: ORDER_DOC_GAP_ROW_MM });
+      }
+      for (const item of group.items) {
+        entries.push({
+          type: 'item',
+          item,
+          heightMm: orderDocumentItemRowHeight(item),
+        });
+      }
+      hasPreviousRows = true;
+    }
+
+    return entries;
+  }
+
+  function orderDocumentItemRowHeight(item) {
+    const description = orderDocumentItemDescription(item);
+    const lineCount = Math.max(1, Math.ceil(description.length / ORDER_DOC_ITEM_CHARS_PER_LINE));
+    return ORDER_DOC_ITEM_ROW_BASE_MM + ((lineCount - 1) * ORDER_DOC_ITEM_ROW_EXTRA_LINE_MM);
+  }
+
+  function orderDocumentLineItems() {
+    return orderAckLineItems();
+  }
+
+  function orderDocumentItemCode(item) {
+    if (isStockItem(item)) return item.style_code || item.alt_style_code || '';
+    if (isNonStockItem(item)) return 'Non-stock';
+    if (truthy(item.is_internal)) return 'Internal';
+    if (truthy(item.is_non_deliverable)) return 'Non-del';
+    return item.style_code || item.alt_style_code || '';
+  }
+
+  function orderDocumentItemDescription(item) {
+    return item.line_description || item.style_name || item.product_type || item.style_code || item.alt_style_code || '';
+  }
+
+  function invoiceTaxAnalysisRows(items) {
+    const rowsByRate = new Map();
+    for (const item of items || []) {
+      const rate = orderAckVatPercent(item.vat_rate);
+      const key = Number.isFinite(rate) ? rate.toFixed(2) : '0.00';
+      const current = rowsByRate.get(key) || { rate: Number(key), net: 0 };
+      current.net += orderAckLineNet(item);
+      rowsByRate.set(key, current);
+    }
+
+    if (!rowsByRate.size) {
+      return [{ label: 'This amount at Standard rate', net: 0 }];
+    }
+
+    return Array.from(rowsByRate.values())
+      .sort((left, right) => right.rate - left.rate)
+      .map((row) => ({
+        label: invoiceTaxAnalysisLabel(row.rate),
+        net: row.net,
+      }));
+  }
+
+  function invoiceTaxAnalysisLabel(rate) {
+    if (Math.abs(rate - 20) < 0.01) return 'This amount at Standard rate';
+    if (Math.abs(rate) < 0.01) return 'This amount at Zero rate';
+    return `This amount at ${rate.toFixed(2)}%`;
+  }
+
+  function deliveryNoteYourRef(job) {
+    return job.client_order_no || contactFirstName(job.contact_name) || job.contact_name || '';
+  }
+
+  function currentDatabaseDocumentDate() {
+    return state.documentGeneratedAt || new Date();
   }
 
   function orderAckMetaRow(label, value, options = {}) {
@@ -4527,6 +4982,10 @@
 
   function takenByLabel(job) {
     return staffLabel(job?.order_taken_by || job?.order_owner_name || job?.trace_staff_id);
+  }
+
+  function jobOwnerLabel(job) {
+    return staffLabel(job?.order_owner_name || job?.order_taken_by || job?.trace_staff_id);
   }
 
   function orderByLabel(job) {
