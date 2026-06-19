@@ -1,6 +1,7 @@
 (function () {
   const PAGE_LIMIT = 100;
-  const BACKGROUND_RENDER_BATCH_SIZE = PAGE_LIMIT * 5;
+  const ALL_ORDERS_VISIBLE_BATCH_SIZE = PAGE_LIMIT;
+  const BACKGROUND_LOAD_DELAY_MS = 50;
   const ORDER_SELECTOR_LIMIT = 500;
   const CUSTOMER_SEARCH_DELAY = 180;
   const PRODUCT_SEARCH_DELAY = 180;
@@ -62,6 +63,7 @@
     orderLoadToken: 0,
     orderLoadComplete: false,
     orderSearchQuery: '',
+    visibleOrderLimit: PAGE_LIMIT,
     loadingCustomers: false,
     loadedCustomers: false,
     databaseCustomers: [],
@@ -136,6 +138,7 @@
   let contactAutosaveTimer = 0;
   let lineOrderAutosaveTimer = 0;
   let orderSearchTimer = 0;
+  let outstandingScrollFrame = 0;
   let lineDrag = null;
 
   document.addEventListener('DOMContentLoaded', initDatabaseHub);
@@ -165,6 +168,7 @@
       customerContactsBody: document.getElementById('db-customer-contacts-body'),
       customerAddressesBody: document.getElementById('db-customer-addresses-body'),
       customerDesignNumbersBody: document.getElementById('db-customer-design-numbers-body'),
+      outstandingFrame: document.querySelector('.db-outstanding-table-frame'),
       outstandingBody: document.getElementById('db-outstanding-body'),
       orderSearch: document.getElementById('db-order-search'),
       selectOrder: document.getElementById('db-select-order'),
@@ -207,6 +211,7 @@
     els.root.addEventListener('click', handleRootClick);
     els.outstandingBody.addEventListener('click', handleOutstandingRowClick);
     els.outstandingBody.addEventListener('keydown', handleOutstandingRowKeydown);
+    els.outstandingFrame?.addEventListener('scroll', handleOutstandingScroll);
     els.customersBody.addEventListener('click', handleDatabaseCustomerRowClick);
     els.customersBody.addEventListener('keydown', handleDatabaseCustomerRowKeydown);
     els.customerOrdersBody.addEventListener('click', handleCustomerOrderRowClick);
@@ -271,6 +276,7 @@
     document.querySelectorAll('input[name="db-sort"]').forEach((input) => {
       input.addEventListener('change', () => {
         state.activeSort = input.value;
+        resetVisibleOrderLimit();
         renderOutstandingOrders();
       });
     });
@@ -437,6 +443,7 @@
       document.querySelectorAll('[data-db-group]').forEach((btn) => {
         btn.classList.toggle('active', btn.dataset.dbGroup === group);
       });
+      resetVisibleOrderLimit();
       renderOutstandingOrders();
       return;
     }
@@ -463,6 +470,36 @@
     if (!row) return;
     await flushOrderAutosaves();
     openOrder(row.dataset.jobId, 'details');
+  }
+
+  function handleOutstandingScroll() {
+    if (outstandingScrollFrame) return;
+    outstandingScrollFrame = window.requestAnimationFrame(() => {
+      outstandingScrollFrame = 0;
+      maybeExtendVisibleOrders();
+    });
+  }
+
+  function maybeExtendVisibleOrders() {
+    if (state.orderMode !== 'all' || !els.outstandingFrame) return;
+
+    const distanceFromBottom = els.outstandingFrame.scrollHeight
+      - els.outstandingFrame.scrollTop
+      - els.outstandingFrame.clientHeight;
+    if (distanceFromBottom > 140) return;
+
+    const nextLimit = Math.min(
+      state.visibleOrderLimit + ALL_ORDERS_VISIBLE_BATCH_SIZE,
+      state.outstandingJobs.length
+    );
+    if (nextLimit <= state.visibleOrderLimit) return;
+
+    state.visibleOrderLimit = nextLimit;
+    renderOutstandingOrders({ hydrateSelectors: false, preserveScroll: true });
+  }
+
+  function resetVisibleOrderLimit() {
+    if (state.orderMode === 'all') state.visibleOrderLimit = PAGE_LIMIT;
   }
 
   async function loadHomeMetrics() {
@@ -1753,6 +1790,7 @@
     clearTimeout(orderSearchTimer);
     orderSearchTimer = window.setTimeout(() => {
       if (state.orderMode !== 'all') return;
+      state.visibleOrderLimit = PAGE_LIMIT;
       loadOutstandingOrders({ force: true });
     }, CUSTOMER_SEARCH_DELAY);
   }
@@ -1786,6 +1824,7 @@
     state.loadedOrderMode = mode;
     state.outstandingJobs = [];
     state.outstandingTotal = 0;
+    state.visibleOrderLimit = PAGE_LIMIT;
     els.outstandingBody.innerHTML = renderStatusRow(mode === 'all' ? 'Loading all orders' : 'Loading outstanding orders');
 
     try {
@@ -1813,7 +1852,6 @@
 
   async function loadRemainingJobs(mode, offset, token) {
     let nextOffset = offset;
-    let lastRenderedCount = state.outstandingJobs.length;
 
     try {
       while (isCurrentOrderLoad(token, mode) && nextOffset < state.outstandingTotal) {
@@ -1823,14 +1861,7 @@
 
         state.outstandingJobs.push(...result.jobs);
         nextOffset = result.nextOffset;
-
-        const loadedSinceRender = state.outstandingJobs.length - lastRenderedCount;
-        const complete = nextOffset >= state.outstandingTotal;
-        if (loadedSinceRender >= BACKGROUND_RENDER_BATCH_SIZE || complete) {
-          renderOutstandingOrders({ hydrateSelectors: false });
-          lastRenderedCount = state.outstandingJobs.length;
-        }
-        await yieldOrderLoad();
+        await yieldOrderLoad(BACKGROUND_LOAD_DELAY_MS);
       }
     } catch (err) {
       if (isCurrentOrderLoad(token, mode)) {
@@ -1840,7 +1871,6 @@
       if (!isCurrentOrderLoad(token, mode)) return;
       state.loadingOrders = false;
       state.orderLoadComplete = true;
-      renderOutstandingOrders({ hydrateSelectors: false });
     }
   }
 
@@ -1875,13 +1905,13 @@
       && state.orderMode === mode;
   }
 
-  function yieldOrderLoad() {
-    return new Promise((resolve) => window.setTimeout(resolve, 0));
+  function yieldOrderLoad(delayMs = 0) {
+    return new Promise((resolve) => window.setTimeout(resolve, delayMs));
   }
 
   function renderOutstandingOrders(options = {}) {
     const hydrateSelectors = options.hydrateSelectors !== false;
-    const rows = groupedOutstandingRows();
+    const rows = groupedOutstandingRows(ordersForCurrentRender());
     const jobs = rows.flatMap((group) => group.jobs);
     if (!jobs.length) {
       els.outstandingBody.innerHTML = renderStatusRow('No matching orders');
@@ -1889,11 +1919,18 @@
       return;
     }
 
+    const scrollTop = options.preserveScroll ? els.outstandingFrame?.scrollTop : null;
     els.outstandingBody.innerHTML = jobs.map(renderOutstandingRow).join('');
+    if (scrollTop !== null && els.outstandingFrame) els.outstandingFrame.scrollTop = scrollTop;
     if (hydrateSelectors) hydrateOrderSelectors();
   }
 
-  function groupedOutstandingRows() {
+  function ordersForCurrentRender() {
+    if (state.orderMode !== 'all') return state.outstandingJobs;
+    return state.outstandingJobs.slice(0, state.visibleOrderLimit);
+  }
+
+  function groupedOutstandingRows(sourceJobs = state.outstandingJobs) {
     const groups = [
       { key: 'print', label: 'Print', jobs: [] },
       { key: 'embroidery', label: 'Embroidery', jobs: [] },
@@ -1902,7 +1939,7 @@
     ];
     const groupMap = new Map(groups.map((group) => [group.key, group]));
 
-    for (const job of filteredOutstandingJobs()) {
+    for (const job of filteredOutstandingJobs(sourceJobs)) {
       const category = categoryForJob(job);
       (groupMap.get(category) || groupMap.get('other')).jobs.push(job);
     }
@@ -1911,9 +1948,9 @@
     return groups.filter((group) => group.jobs.length);
   }
 
-  function filteredOutstandingJobs() {
+  function filteredOutstandingJobs(sourceJobs = state.outstandingJobs) {
     const active = state.activeGroup;
-    return state.outstandingJobs.filter((job) => {
+    return sourceJobs.filter((job) => {
       const category = categoryForJob(job);
       if (active === 'all') return true;
       if (active === 'ready') return isReady(job);
@@ -4456,11 +4493,12 @@
 
   function updateOutstandingJob(job) {
     if (!job?.source_order_id) return;
-    state.outstandingJobs = state.outstandingJobs.map((item) => (
+    const index = state.outstandingJobs.findIndex((item) => (
       Number(item.source_order_id) === Number(job.source_order_id)
-        ? { ...item, ...job }
-        : item
     ));
+    if (index >= 0) {
+      state.outstandingJobs[index] = { ...state.outstandingJobs[index], ...job };
+    }
   }
 
   function scheduleLineOrderAutosave() {
