@@ -412,7 +412,7 @@ body{
 .group.collapsed .group-title{display:none}
 .group-summary{
   display:none;
-  grid-template-columns:var(--board-cols);
+  grid-template-columns:var(--group-summary-cols, var(--board-cols));
   width:100%;
   margin:0 0 14px 42px;
   padding:0;
@@ -429,7 +429,7 @@ body{
   background:#193427;
 }
 .group-summary-left{
-  grid-column:span 2;
+  grid-column:auto;
   min-height:60px;
   display:flex;
   align-items:center;
@@ -3599,22 +3599,12 @@ input.db-custom-line-input{
   }
   .group-summary{
     margin-left:16px;
-    width:max-content;
-    min-width:0!important;
-    grid-template-columns:220px;
-    grid-auto-columns:112px;
-    grid-auto-flow:column;
   }
   .group-summary-left{
-    grid-column:auto;
-    width:220px;
-    min-width:0;
     gap:9px;
     padding:10px 12px 10px 11px;
   }
   .group-summary-cell{
-    width:112px;
-    min-width:112px;
     padding-left:7px;
     padding-right:7px;
   }

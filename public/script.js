@@ -590,6 +590,7 @@ function renderBoard(payload) {
   const boardColumnWidths = buildBoardColumnWidthOverrides(boardColumns, board.groups || []);
   const jobNameWidth = buildJobNameColumnWidth(board.groups || []);
   const gridSpec = buildDashboardGridSpec(boardColumns, { subitem: false, widthOverrides: boardColumnWidths, nameWidth: jobNameWidth });
+  const groupSummaryTitleWidth = buildGroupSummaryTitleWidth(board.groups || []);
   const boardSortPlan = getBoardSortPlan(boardColumns);
   const dueDateColumn = getDueDateColumn(boardColumns);
   const zoomLayer = document.createElement('div');
@@ -626,7 +627,7 @@ function renderBoard(payload) {
     sectionTitle.addEventListener('click', toggleGroup);
     groupWrap.appendChild(sectionTitle);
 
-    const groupSummary = buildGroupSummary(collectionName, sortedItems, gridSpec);
+    const groupSummary = buildGroupSummary(collectionName, sortedItems, gridSpec, groupSummaryTitleWidth);
     groupSummary.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
     groupSummary.addEventListener('click', toggleGroup);
     groupWrap.appendChild(groupSummary);
@@ -668,7 +669,8 @@ function renderBoard(payload) {
       if (subitems.length > 0) {
         const subitemGridSpec = buildDashboardGridSpec(subitemColumns, {
           subitem: true,
-          nameWidth: buildSubitemNameColumnWidth(subitems)
+          nameWidth: buildSubitemNameColumnWidth(subitems),
+          widthOverrides: buildSubitemColumnWidthOverrides(subitemColumns, subitems)
         });
         const subPanel = document.createElement('div');
         subPanel.className = `subitem-panel ${subitemsOpen ? '' : 'hidden'}`.trim();
@@ -743,14 +745,18 @@ function toggleSubRows(parentId, open) {
   rows.forEach(r => r.classList.toggle('hidden', !open));
 }
 
-function buildGroupSummary(groupName, items, gridSpec) {
+function buildGroupSummary(groupName, items, gridSpec, titleWidth) {
   const summary = document.createElement('button');
   const itemCount = items.length;
   summary.type = 'button';
   summary.className = 'group-summary';
   if (isToSampleGroup(groupName) && itemCount > 0) summary.classList.add('to-sample-has-jobs');
   summary.style.setProperty('--board-cols', gridSpec.template);
-  summary.style.minWidth = `${gridSpec.minWidth}px`;
+  const summaryColumns = gridSpec.columns.slice(2);
+  const summaryTitleWidth = titleWidth || 180;
+  const summaryMinWidth = summaryTitleWidth + summaryColumns.reduce((sum, spec) => sum + spec.width, 0);
+  summary.style.setProperty('--group-summary-cols', `${summaryTitleWidth}px ${summaryColumns.map(spec => `${spec.width}px`).join(' ')}`);
+  summary.style.minWidth = `${summaryMinWidth}px`;
   summary.setAttribute('aria-expanded', 'true');
 
   const left = document.createElement('span');
@@ -765,7 +771,7 @@ function buildGroupSummary(groupName, items, gridSpec) {
   `;
   summary.appendChild(left);
 
-  for (const spec of gridSpec.columns.slice(2)) {
+  for (const spec of summaryColumns) {
     summary.appendChild(buildSummaryCell(items, spec.column));
   }
 
@@ -1195,6 +1201,17 @@ function buildJobNameColumnWidth(groups) {
   return Math.max(560, Math.ceil(max + 122));
 }
 
+function buildGroupSummaryTitleWidth(groups) {
+  let max = 0;
+  for (const group of (Array.isArray(groups) ? groups : [])) {
+    const title = normalizeCellText(group?.title || 'Untitled Group').toUpperCase();
+    if (!title) continue;
+    max = Math.max(max, measureBoardTextWidth(title, "800 17px Manrope, 'Segoe UI', system-ui, sans-serif"));
+  }
+  const titleOnlyWidth = max ? Math.ceil(max * 1.2) : 120;
+  return Math.max(128, titleOnlyWidth + 54);
+}
+
 function buildSubitemNameColumnWidth(subitems) {
   let max = measureBoardTextWidth('Subitem', "700 14px Manrope, 'Segoe UI', system-ui, sans-serif");
   for (const subitem of (Array.isArray(subitems) ? subitems : [])) {
@@ -1203,6 +1220,30 @@ function buildSubitemNameColumnWidth(subitems) {
     max = Math.max(max, measureBoardTextWidth(text));
   }
   return Math.max(180, Math.ceil(max + 28));
+}
+
+function buildSubitemColumnWidthOverrides(columns, subitems) {
+  const overrides = new Map();
+  for (const column of (Array.isArray(columns) ? columns : [])) {
+    if (!isPerJobSubitemWidthColumn(column.title)) continue;
+    let max = measureBoardTextWidth(column.title || '', "700 13px Manrope, 'Segoe UI', system-ui, sans-serif");
+    for (const subitem of (Array.isArray(subitems) ? subitems : [])) {
+      const value = findColumnValue(subitem, column.id);
+      const text = normalizeCellText(value?.text || '');
+      if (!text) continue;
+      max = Math.max(max, measureBoardTextWidth(text));
+    }
+    overrides.set(column.id, Math.max(74, Math.ceil(max + 30)));
+  }
+  return overrides;
+}
+
+function isPerJobSubitemWidthColumn(title) {
+  const normalized = normalizeColumnTitle(title);
+  return normalized === 'SIZE' ||
+    normalized === 'CODE' ||
+    normalized === 'COLOUR' ||
+    normalized === 'COLOR';
 }
 
 function measureSubitemCountBadgeWidth(count) {
