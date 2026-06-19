@@ -1108,7 +1108,7 @@
     els.customerOrdersBody.innerHTML = renderStatusRow('Loading customer orders', 14);
     els.customerContactsBody.innerHTML = '<div class="db-panel-message">Loading contacts</div>';
     els.customerAddressesBody.innerHTML = '<div class="db-panel-message">Loading addresses</div>';
-    if (els.customerDesignNumbersBody) els.customerDesignNumbersBody.innerHTML = renderStatusRow('Loading design numbers', 4);
+    if (els.customerDesignNumbersBody) els.customerDesignNumbersBody.innerHTML = renderStatusRow('Loading design numbers', 5);
   }
 
   function renderCustomerError(message) {
@@ -1122,7 +1122,7 @@
     els.customerOrdersBody.innerHTML = renderStatusRow(message, 14);
     els.customerContactsBody.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
     els.customerAddressesBody.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
-    if (els.customerDesignNumbersBody) els.customerDesignNumbersBody.innerHTML = renderStatusRow(message, 4);
+    if (els.customerDesignNumbersBody) els.customerDesignNumbersBody.innerHTML = renderStatusRow(message, 5);
   }
 
   function renderCustomerPage() {
@@ -1270,7 +1270,7 @@
     if (!els.customerDesignNumbersBody) return;
     const designNumbers = state.selectedCustomerDesignNumbers || [];
     if (!designNumbers.length) {
-      els.customerDesignNumbersBody.innerHTML = renderStatusRow('No design numbers recorded for this customer', 4);
+      els.customerDesignNumbersBody.innerHTML = renderStatusRow('No design numbers recorded for this customer', 5);
       return;
     }
 
@@ -1283,6 +1283,7 @@
         <td class="db-row-selector">${index === 0 ? '&#9654;' : ''}</td>
         <td class="db-design-number-link">${escapeHtml(designNumber.design_ref || '')}</td>
         <td class="db-order-link">${escapeHtml(designNumber.order_no || '')}</td>
+        <td>${escapeHtml(formatDate(designNumber.order_date, 'long'))}</td>
         <td>${escapeHtml(designNumber.job_title || '')}</td>
       </tr>
     `;

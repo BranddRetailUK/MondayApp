@@ -2195,12 +2195,14 @@ async function fetchCustomerDesignNumbers(orders) {
     `SELECT design_ref,
             source_order_id,
             order_no,
+            order_date,
             job_title
      FROM (
        SELECT DISTINCT ON (LOWER(BTRIM(p.design_ref)), j.source_order_id)
               BTRIM(p.design_ref) AS design_ref,
               j.source_order_id,
               j.order_no,
+              j.order_date,
               j.job_title
        FROM database_job_positions p
        JOIN database_jobs j ON j.source_order_id = p.source_order_id
