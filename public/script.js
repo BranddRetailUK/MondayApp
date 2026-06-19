@@ -4,6 +4,7 @@ const PROD_ORIGIN = window.location.origin;
 const ENDPOINTS = { data: '/api/board', auth: '/auth', scans: '/api/scan-states' };
 const DASHBOARD_TAB_STORAGE_KEY = 'ultimateHub.activeDashboardTab';
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'ultimateHub.sidebarCollapsed';
+const PRIORITY_HIGHLIGHT_STORAGE_KEY = 'ultimateHub.priorityHighlights';
 const DASHBOARD_TAB_NAMES = ['dashboard', 'database', 'visuals'];
 const BOARD_AUTO_REFRESH_MS = 1000;
 const HIDDEN_BOARD_COLUMN_TYPES = new Set(['subtasks']);
@@ -13,6 +14,7 @@ const HIDDEN_SUBITEM_COLUMN_TITLES = new Set(['CHECK IN', 'TEXT']);
 let __boardRefreshTimer = null;
 let __boardLoading = false;
 let __boardSortState = null;
+let __priorityHighlightsEnabled = localStorage.getItem(PRIORITY_HIGHLIGHT_STORAGE_KEY) !== '0';
 let __proofModalState = {
   files: [],
   fileIndex: 0,
@@ -431,6 +433,7 @@ function renderBoard(payload) {
   const gridSpec = buildDashboardGridSpec(boardColumns, { subitem: false, widthOverrides: boardColumnWidths, nameWidth: jobNameWidth });
   const subitemGridSpec = buildDashboardGridSpec(subitemColumns, { subitem: true });
   const boardSortPlan = getBoardSortPlan(boardColumns);
+  const dueDateColumn = getDueDateColumn(boardColumns);
 
   for (const group of (board.groups || [])) {
     const collectionName = group.title || 'Untitled Group';
@@ -489,6 +492,8 @@ function renderBoard(payload) {
       const row = document.createElement('div');
       row.dataset.itemId = itemId;
       row.className = 'grid-row job-row';
+      const duePriorityClass = __priorityHighlightsEnabled ? getDuePriorityClass(item, dueDateColumn) : '';
+      if (duePriorityClass) row.classList.add(duePriorityClass);
       row.style.setProperty('--board-cols', gridSpec.template);
       const subitemsOpen = uiState.openSubitems.has(itemId);
 
@@ -766,7 +771,7 @@ function getBoardSortPlan(columns) {
   }
 
   const priorityColumn = (columns || []).find(isPriorityColumn);
-  const dateColumn = (columns || []).find(isDateColumn);
+  const dateColumn = getDueDateColumn(columns);
   return [
     priorityColumn ? { column: priorityColumn, direction: 'desc' } : null,
     dateColumn ? { column: dateColumn, direction: 'desc' } : null
@@ -780,6 +785,91 @@ function isPriorityColumn(column) {
 function isDateColumn(column) {
   const title = String(column?.title || '').trim().toUpperCase();
   return title === 'DATE' || column?.type === 'date';
+}
+
+function getDueDateColumn(columns) {
+  return (columns || []).find(isDateColumn) || null;
+}
+
+function getDuePriorityClass(item, dueDateColumn) {
+  if (!dueDateColumn) return '';
+  const value = findColumnValue(item, dueDateColumn.id);
+  const dueDate = parseDueDate(value, normalizeCellText(value?.text || ''));
+  if (!dueDate) return '';
+
+  const daysUntilDue = getLocalDayDiff(new Date(), dueDate);
+  if (daysUntilDue <= 1) return 'priority-due-urgent';
+  if (daysUntilDue <= 3) return 'priority-due-soon';
+  return '';
+}
+
+function parseDueDate(value, text) {
+  const parsed = parseJsonMaybe(value?.value);
+  const candidates = [
+    parsed?.date,
+    parsed?.to,
+    parsed?.from,
+    text
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const date = parseLocalDate(candidate);
+    if (date) return date;
+  }
+  return null;
+}
+
+function parseLocalDate(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return null;
+
+  let match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    return buildLocalDate(Number(match[1]), Number(match[2]), Number(match[3]));
+  }
+
+  match = value.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2}|\d{4})$/);
+  if (match) {
+    const year = normalizeDateYear(match[3]);
+    return buildLocalDate(year, Number(match[2]), Number(match[1]));
+  }
+
+  const currentYear = new Date().getFullYear();
+  const candidates = /\b\d{4}\b/.test(value) ? [value] : [`${value} ${currentYear}`, value];
+  for (const candidate of candidates) {
+    const timestamp = Date.parse(candidate);
+    if (Number.isFinite(timestamp)) return startOfLocalDay(new Date(timestamp));
+  }
+  return null;
+}
+
+function normalizeDateYear(rawYear) {
+  const year = Number(rawYear);
+  if (!Number.isFinite(year)) return new Date().getFullYear();
+  return year < 100 ? 2000 + year : year;
+}
+
+function buildLocalDate(year, month, day) {
+  if (![year, month, day].every(Number.isFinite)) return null;
+  const date = new Date(year, month - 1, day);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+  return date;
+}
+
+function getLocalDayDiff(fromDate, toDate) {
+  const from = startOfLocalDay(fromDate).getTime();
+  const to = startOfLocalDay(toDate).getTime();
+  return Math.round((to - from) / 86400000);
+}
+
+function startOfLocalDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
 function sortItemsForBoard(items, sortPlan) {
@@ -1782,7 +1872,47 @@ function addSerialScannerUI() {
     if (bar) bar.appendChild(btn);
   }
 
+  addPriorityHighlightUI();
   document.getElementById('scanPill')?.remove();
+}
+
+function addPriorityHighlightUI() {
+  const bar = document.getElementById('labels-toolbar');
+  if (!bar) return;
+
+  let btn = document.getElementById('priorityHighlightBtn');
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.id = 'priorityHighlightBtn';
+    btn.type = 'button';
+    btn.className = 'btn priority-highlight-toggle';
+    btn.addEventListener('click', () => {
+      setPriorityHighlightsEnabled(!__priorityHighlightsEnabled);
+    });
+  }
+
+  const scannerBtn = document.getElementById('connectScannerBtn');
+  if (scannerBtn?.parentElement === bar && btn.previousElementSibling !== scannerBtn) {
+    scannerBtn.insertAdjacentElement('afterend', btn);
+  } else if (btn.parentElement !== bar) {
+    bar.appendChild(btn);
+  }
+  updatePriorityHighlightButton(btn);
+}
+
+function setPriorityHighlightsEnabled(enabled) {
+  __priorityHighlightsEnabled = Boolean(enabled);
+  localStorage.setItem(PRIORITY_HIGHLIGHT_STORAGE_KEY, __priorityHighlightsEnabled ? '1' : '0');
+  updatePriorityHighlightButton();
+  if (window.__latestBoardPayload) renderBoard(window.__latestBoardPayload);
+}
+
+function updatePriorityHighlightButton(btn = document.getElementById('priorityHighlightBtn')) {
+  if (!btn) return;
+  btn.classList.toggle('active', __priorityHighlightsEnabled);
+  btn.setAttribute('aria-pressed', __priorityHighlightsEnabled ? 'true' : 'false');
+  btn.textContent = __priorityHighlightsEnabled ? 'Priority highlights On' : 'Priority highlights Off';
+  btn.title = __priorityHighlightsEnabled ? 'Turn priority row highlights off' : 'Turn priority row highlights on';
 }
 
 
