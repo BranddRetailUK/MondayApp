@@ -590,7 +590,6 @@ function renderBoard(payload) {
   const boardColumnWidths = buildBoardColumnWidthOverrides(boardColumns, board.groups || []);
   const jobNameWidth = buildJobNameColumnWidth(board.groups || []);
   const gridSpec = buildDashboardGridSpec(boardColumns, { subitem: false, widthOverrides: boardColumnWidths, nameWidth: jobNameWidth });
-  const subitemGridSpec = buildDashboardGridSpec(subitemColumns, { subitem: true });
   const boardSortPlan = getBoardSortPlan(boardColumns);
   const dueDateColumn = getDueDateColumn(boardColumns);
   const zoomLayer = document.createElement('div');
@@ -667,11 +666,15 @@ function renderBoard(payload) {
       grid.appendChild(row);
 
       if (subitems.length > 0) {
+        const subitemGridSpec = buildDashboardGridSpec(subitemColumns, {
+          subitem: true,
+          nameWidth: buildSubitemNameColumnWidth(subitems)
+        });
         const subPanel = document.createElement('div');
         subPanel.className = `subitem-panel ${subitemsOpen ? '' : 'hidden'}`.trim();
         subPanel.dataset.parent = itemId;
-        subPanel.style.setProperty('--mobile-board-min-width', `${gridSpec.mobileMinWidth}px`);
-        subPanel.style.minWidth = `${gridSpec.minWidth}px`;
+        subPanel.style.setProperty('--mobile-board-min-width', `${subitemGridSpec.mobileMinWidth}px`);
+        subPanel.style.minWidth = `calc(${subitemGridSpec.minWidth}px + var(--subitem-connector-width, 32px))`;
 
         const subGrid = document.createElement('div');
         subGrid.className = 'subitem-grid';
@@ -1190,6 +1193,16 @@ function buildJobNameColumnWidth(groups) {
   }
   if (!max) return 560;
   return Math.max(560, Math.ceil(max + 122));
+}
+
+function buildSubitemNameColumnWidth(subitems) {
+  let max = measureBoardTextWidth('Subitem', "700 14px Manrope, 'Segoe UI', system-ui, sans-serif");
+  for (const subitem of (Array.isArray(subitems) ? subitems : [])) {
+    const text = normalizeCellText(subitem?.name || '');
+    if (!text) continue;
+    max = Math.max(max, measureBoardTextWidth(text));
+  }
+  return Math.max(180, Math.ceil(max + 28));
 }
 
 function measureSubitemCountBadgeWidth(count) {
