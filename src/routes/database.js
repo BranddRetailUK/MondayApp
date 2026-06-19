@@ -2270,6 +2270,7 @@ async function fetchCustomerDesignNumbers(orders) {
 
   const rows = designResult.rows.map((row) => ({
     ...row,
+    design_ref: displayDesignReference(row.design_ref),
     psg_numbers: referencesByOrder.get(Number(row.source_order_id)) || '',
   }));
   const designOrderIds = new Set(rows.map((row) => Number(row.source_order_id)));
@@ -2288,7 +2289,7 @@ async function fetchCustomerDesignNumbers(orders) {
   return rows.sort(compareCustomerDesignNumberRows);
 }
 
-const ORDER_DESIGN_REFERENCE_PATTERN = /\b(P[\s._/-]*S[\s._/-]*G|S[\s._/-]*T)(?:[\s:._#/-]*(?:NO\.?|NUM(?:BER)?)?[\s:._#/-]*)?(\d{2,})\b/gi;
+const ORDER_DESIGN_REFERENCE_PATTERN = /\b(P[\s._/-]*S[\s._/-]*G|STITCH(?:ES)?|STITCH[\s._/-]*COUNT|S[\s._/-]*T(?:[\s._/-]*S)?)(?:[\s:._#/-]*(?:NO\.?|NUM(?:BER)?)?[\s:._#/-]*)?(\d[\d,\s]*\d)\b/gi;
 
 function extractOrderDesignReferences(value) {
   const references = [];
@@ -2309,6 +2310,17 @@ function extractOrderDesignReferences(value) {
   }
 
   return references;
+}
+
+function displayDesignReference(value) {
+  ORDER_DESIGN_REFERENCE_PATTERN.lastIndex = 0;
+  const withoutReferences = String(value || '').replace(ORDER_DESIGN_REFERENCE_PATTERN, ' ');
+  ORDER_DESIGN_REFERENCE_PATTERN.lastIndex = 0;
+
+  return withoutReferences
+    .replace(/\s+/g, ' ')
+    .replace(/^[,;:/|._\-\s]+|[,;:/|._\-\s]+$/g, '')
+    .trim();
 }
 
 function compareCustomerDesignNumberRows(a, b) {

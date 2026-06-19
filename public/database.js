@@ -9,6 +9,7 @@
   const LINE_ORDER_AUTOSAVE_MS = 3500;
   const ORDER_ACK_LOGO_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781699668/ultimate_logo_imyxvr.png';
   const ORDER_ACK_FOOTER_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781779546/LETTERHEAD_INFO_pxmlak.png';
+  const ORDER_ACK_NO_BANK_FOOTER_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781869078/LETTERHEAD_INFO_del_note_wcjsjt.png';
   const ULTIMATE_VAT_NUMBER = '984 5655 65';
   const ORDER_ACK_PAGE_CONTENT_MAX_MM = 96;
   const ORDER_ACK_TABLE_TOP_MM = 6;
@@ -1269,21 +1270,39 @@
   function renderCustomerDesignNumbers() {
     if (!els.customerDesignNumbersBody) return;
     const designNumbers = state.selectedCustomerDesignNumbers || [];
+    setCustomerDesignNumberColumnWidths(designNumbers);
     if (!designNumbers.length) {
-      els.customerDesignNumbersBody.innerHTML = renderStatusRow('No design or PSG/ST numbers recorded for this customer', 6);
+      els.customerDesignNumbersBody.innerHTML = renderStatusRow('No design or PSG / Stitch Count recorded for this customer', 6);
       return;
     }
 
     els.customerDesignNumbersBody.innerHTML = designNumbers.map(renderCustomerDesignNumberRow).join('');
   }
 
+  function setCustomerDesignNumberColumnWidths(designNumbers) {
+    const table = els.customerDesignNumbersBody?.closest('table');
+    if (!table) return;
+
+    const designLength = longestTextLength(designNumbers, 'design_ref', 'Design number:');
+    const referenceLength = longestTextLength(designNumbers, 'psg_numbers', 'PSG / Stitch Count');
+    table.style.setProperty('--db-design-number-column-width', `${designLength + 2}ch`);
+    table.style.setProperty('--db-psg-stitch-column-width', `${referenceLength + 2}ch`);
+  }
+
+  function longestTextLength(rows, field, heading) {
+    return (rows || []).reduce((longest, row) => {
+      const valueLength = String(row?.[field] || '').length;
+      return Math.max(longest, valueLength);
+    }, String(heading || '').length);
+  }
+
   function renderCustomerDesignNumberRow(designNumber, index) {
     return `
       <tr class="db-customer-design-number-row" data-job-id="${escapeAttr(designNumber.source_order_id || '')}" tabindex="0">
         <td class="db-row-selector">${index === 0 ? '&#9654;' : ''}</td>
+        <td class="db-order-link">${escapeHtml(designNumber.order_no || '')}</td>
         <td class="db-design-number-link">${escapeHtml(designNumber.design_ref || '')}</td>
         <td>${escapeHtml(designNumber.psg_numbers || '')}</td>
-        <td class="db-order-link">${escapeHtml(designNumber.order_no || '')}</td>
         <td>${escapeHtml(designNumber.job_title || '')}</td>
         <td>${escapeHtml(formatDate(designNumber.order_date, 'long'))}</td>
       </tr>
@@ -2611,7 +2630,7 @@
         <section class="db-order-ack-page-content">
           ${renderOrderAckPageContent(pageContent, context)}
         </section>
-        <img class="db-order-ack-footer" src="${escapeAttr(ORDER_ACK_FOOTER_URL)}" alt="Ultimate letterhead footer" crossorigin="anonymous">
+        <img class="db-order-ack-footer" src="${escapeAttr(orderDocumentFooterUrl('order-ack'))}" alt="Ultimate letterhead footer" crossorigin="anonymous">
       </section>
     `;
   }
@@ -2720,9 +2739,13 @@
         <section class="db-order-doc-page-content">
           ${renderOrderDocumentPageContent(context, pageContent)}
         </section>
-        <img class="db-order-ack-footer" src="${escapeAttr(ORDER_ACK_FOOTER_URL)}" alt="Ultimate letterhead footer" crossorigin="anonymous">
+        <img class="db-order-ack-footer" src="${escapeAttr(orderDocumentFooterUrl(context.type))}" alt="Ultimate letterhead footer" crossorigin="anonymous">
       </section>
     `;
+  }
+
+  function orderDocumentFooterUrl(type) {
+    return type === 'invoice' ? ORDER_ACK_FOOTER_URL : ORDER_ACK_NO_BANK_FOOTER_URL;
   }
 
   function renderOrderDocumentPageHeader(context) {
