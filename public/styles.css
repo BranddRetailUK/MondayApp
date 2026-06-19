@@ -414,6 +414,9 @@ body{
   overflow:hidden;
 }
 .group.collapsed .group-summary{display:grid}
+.group-summary.to-sample-has-jobs{
+  background:#193427;
+}
 .group-summary-left{
   grid-column:span 2;
   min-height:60px;
@@ -426,6 +429,20 @@ body{
   border-left:5px solid var(--group-accent, var(--accent));
   border-right:1px solid #55565a;
   color:var(--group-accent, var(--accent));
+}
+.group-summary.to-sample-has-jobs .group-summary-left,
+.group-summary.to-sample-has-jobs .group-summary-cell{
+  background:linear-gradient(0deg, rgba(0,200,117,.24), rgba(0,200,117,.24)), #2b2b2c;
+  border-top-color:#32785a;
+  border-bottom-color:#32785a;
+  border-right-color:#32785a;
+}
+.group-summary.to-sample-has-jobs .group-summary-left{
+  border-left-color:#00c875;
+  color:#dffbe9;
+}
+.group-summary.to-sample-has-jobs .group-summary-count{
+  color:#b9f1d2;
 }
 .group-summary .chev{
   width:8px;

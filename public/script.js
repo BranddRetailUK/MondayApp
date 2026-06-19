@@ -576,15 +576,16 @@ function toggleSubRows(parentId, open) {
 
 function buildGroupSummary(groupName, items, gridSpec) {
   const summary = document.createElement('button');
+  const itemCount = items.length;
   summary.type = 'button';
   summary.className = 'group-summary';
+  if (isToSampleGroup(groupName) && itemCount > 0) summary.classList.add('to-sample-has-jobs');
   summary.style.setProperty('--board-cols', gridSpec.template);
   summary.style.minWidth = `${gridSpec.minWidth}px`;
   summary.setAttribute('aria-expanded', 'true');
 
   const left = document.createElement('span');
   left.className = 'group-summary-left';
-  const itemCount = items.length;
   const subitemCount = countSubitems(items);
   left.innerHTML = `
     <span class="chev" aria-hidden="true"></span>
@@ -600,6 +601,10 @@ function buildGroupSummary(groupName, items, gridSpec) {
   }
 
   return summary;
+}
+
+function isToSampleGroup(groupName) {
+  return String(groupName || '').trim().toUpperCase() === 'TO SAMPLE';
 }
 
 function countSubitems(items) {
