@@ -9,6 +9,7 @@ const BOARD_AUTO_REFRESH_MS = 1000;
 const HIDDEN_BOARD_COLUMN_TYPES = new Set(['subtasks']);
 const HIDDEN_BOARD_COLUMN_IDS = new Set(['subitems__1']);
 const HIDDEN_BOARD_COLUMN_TITLES = new Set(['START/END', 'START-END']);
+const HIDDEN_SUBITEM_COLUMN_TITLES = new Set(['CHECK IN', 'TEXT']);
 let __boardRefreshTimer = null;
 let __boardLoading = false;
 let __boardSortState = null;
@@ -347,8 +348,10 @@ async function loadBoard(options = {}) {
   const statusEl = document.getElementById('authStatus');
   const forceRefresh = options === true || options?.forceRefresh === true;
   const boardUrl = forceRefresh ? `${ENDPOINTS.data}?fresh=1` : ENDPOINTS.data;
+  const showInitialLoading = !boardDiv.querySelector('.group, .board-loading');
   try {
     __boardLoading = true;
+    if (showInitialLoading) renderBoardLoadingState(boardDiv);
     const resBoard = await fetch(boardUrl, {
       cache: 'no-store',
       credentials: 'include',
@@ -384,6 +387,15 @@ async function loadBoard(options = {}) {
   } finally {
     __boardLoading = false;
   }
+}
+
+function renderBoardLoadingState(boardDiv) {
+  boardDiv.innerHTML = `
+    <div class="board-loading" role="status" aria-live="polite">
+      <span class="board-loading-spinner" aria-hidden="true"></span>
+      <span class="board-loading-text">Loading Monday board...</span>
+    </div>
+  `;
 }
 
 function startBoardAutoRefresh() {
@@ -494,7 +506,8 @@ function renderBoard(payload) {
         const subGrid = document.createElement('div');
         subGrid.className = 'subitem-grid';
         subGrid.style.setProperty('--subitem-cols', subitemGridSpec.template);
-        subGrid.style.minWidth = `${Math.max(subitemGridSpec.minWidth, gridSpec.minWidth)}px`;
+        subGrid.style.width = `${subitemGridSpec.minWidth}px`;
+        subGrid.style.minWidth = `${subitemGridSpec.minWidth}px`;
 
         const subHead = document.createElement('div');
         subHead.className = 'subitem-row sub-head';
@@ -666,13 +679,26 @@ function getRenderableBoardColumns(columns) {
 function getRenderableSubitemColumns(columns) {
   return normalizeColumns(columns).filter(column =>
     column.id !== 'name' &&
-    !isHiddenBoardColumnTitle(column.title)
+    !isHiddenBoardColumnTitle(column.title) &&
+    !isHiddenSubitemColumnTitle(column.title)
   );
 }
 
 function isHiddenBoardColumnTitle(title) {
   const normalized = String(title || '').trim().toUpperCase().replace(/\s*([/-])\s*/g, '$1');
   return HIDDEN_BOARD_COLUMN_TITLES.has(normalized);
+}
+
+function isHiddenSubitemColumnTitle(title) {
+  const normalized = normalizeColumnTitle(title);
+  const compact = normalized.replace(/[^A-Z0-9]/g, '');
+  return HIDDEN_SUBITEM_COLUMN_TITLES.has(normalized) ||
+    compact === 'CHECKIN' ||
+    compact === 'TEXT';
+}
+
+function normalizeColumnTitle(title) {
+  return String(title || '').trim().toUpperCase().replace(/\s+/g, ' ');
 }
 
 function normalizeColumns(columns) {
