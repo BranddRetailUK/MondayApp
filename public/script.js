@@ -8,6 +8,8 @@ const MOBILE_NAV_MEDIA = '(max-width: 720px), (max-width: 960px) and (max-height
 const PRIORITY_HIGHLIGHT_STORAGE_KEY = 'ultimateHub.priorityHighlights';
 const DASHBOARD_TAB_NAMES = ['dashboard', 'database', 'visuals'];
 const BOARD_AUTO_REFRESH_MS = 1000;
+const DASHBOARD_ZOOM_MIN = 0.45;
+const DASHBOARD_ZOOM_MAX = 1;
 const HIDDEN_BOARD_COLUMN_TYPES = new Set(['subtasks']);
 const HIDDEN_BOARD_COLUMN_IDS = new Set(['subitems__1']);
 const HIDDEN_BOARD_COLUMN_TITLES = new Set(['START/END', 'START-END']);
@@ -16,6 +18,8 @@ let __boardRefreshTimer = null;
 let __boardLoading = false;
 let __boardSortState = null;
 let __priorityHighlightsEnabled = localStorage.getItem(PRIORITY_HIGHLIGHT_STORAGE_KEY) !== '0';
+let __dashboardZoom = 1;
+let __dashboardPinchState = null;
 let __proofModalState = {
   files: [],
   fileIndex: 0,
@@ -45,6 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
   addCameraUI();
   addSerialScannerUI();
   attachSerialEvents();
+  initDashboardPinchZoom();
   loadBoard({ forceRefresh: true });
   startBoardAutoRefresh();
 });
@@ -108,6 +113,7 @@ function ensureSidebarToggle() {
     }
 
     const collapsed = localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === '1';
+    applyDashboardZoom(1);
     setSidebarCollapsed(collapsed, { persist: false });
   };
 
@@ -194,6 +200,76 @@ function closeMobileNav() {
 
 function isMobileNavLayout() {
   return window.matchMedia(MOBILE_NAV_MEDIA).matches;
+}
+
+function initDashboardPinchZoom() {
+  const board = document.getElementById('board');
+  const databaseTab = document.getElementById('tab-database');
+  if (board) {
+    applyDashboardZoom(__dashboardZoom);
+    board.addEventListener('touchstart', handleDashboardPinchStart, { passive: false });
+    board.addEventListener('touchmove', handleDashboardPinchMove, { passive: false });
+    board.addEventListener('touchend', handleDashboardPinchEnd, { passive: false });
+    board.addEventListener('touchcancel', handleDashboardPinchEnd, { passive: false });
+  }
+  if (databaseTab) {
+    databaseTab.addEventListener('touchstart', preventDatabasePinch, { passive: false });
+    databaseTab.addEventListener('touchmove', preventDatabasePinch, { passive: false });
+  }
+}
+
+function handleDashboardPinchStart(event) {
+  if (!canUseDashboardPinchZoom() || event.touches.length !== 2) return;
+  const distance = getTouchDistance(event.touches);
+  if (!distance) return;
+  event.preventDefault();
+  __dashboardPinchState = {
+    startDistance: distance,
+    startZoom: __dashboardZoom
+  };
+}
+
+function handleDashboardPinchMove(event) {
+  if (!__dashboardPinchState || event.touches.length !== 2) return;
+  event.preventDefault();
+  const distance = getTouchDistance(event.touches);
+  if (!distance) return;
+  const nextZoom = clampDashboardZoom(__dashboardPinchState.startZoom * (distance / __dashboardPinchState.startDistance));
+  applyDashboardZoom(nextZoom);
+}
+
+function handleDashboardPinchEnd(event) {
+  if (event.touches.length < 2) {
+    __dashboardPinchState = null;
+  }
+}
+
+function preventDatabasePinch(event) {
+  if (event.touches?.length > 1) {
+    event.preventDefault();
+  }
+}
+
+function canUseDashboardPinchZoom() {
+  const dashboard = document.getElementById('tab-dashboard');
+  return isMobileNavLayout() && dashboard?.classList.contains('active');
+}
+
+function getTouchDistance(touches) {
+  if (!touches || touches.length < 2) return 0;
+  const first = touches[0];
+  const second = touches[1];
+  return Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
+}
+
+function applyDashboardZoom(zoom) {
+  __dashboardZoom = clampDashboardZoom(zoom);
+  document.getElementById('board')?.style.setProperty('--dashboard-board-zoom', String(__dashboardZoom));
+}
+
+function clampDashboardZoom(zoom) {
+  const numericZoom = Number.isFinite(zoom) ? zoom : 1;
+  return Math.min(DASHBOARD_ZOOM_MAX, Math.max(DASHBOARD_ZOOM_MIN, numericZoom));
 }
 
 // --------------------------- CAMERA UI ---------------------------
@@ -517,6 +593,9 @@ function renderBoard(payload) {
   const subitemGridSpec = buildDashboardGridSpec(subitemColumns, { subitem: true });
   const boardSortPlan = getBoardSortPlan(boardColumns);
   const dueDateColumn = getDueDateColumn(boardColumns);
+  const zoomLayer = document.createElement('div');
+  zoomLayer.className = 'dashboard-zoom-layer';
+  boardDiv.appendChild(zoomLayer);
 
   for (const group of (board.groups || [])) {
     const collectionName = group.title || 'Untitled Group';
@@ -622,7 +701,7 @@ function renderBoard(payload) {
     tableWrap.appendChild(grid);
     groupWrap.appendChild(tableWrap);
 
-    boardDiv.appendChild(groupWrap);
+    zoomLayer.appendChild(groupWrap);
   }
 }
 
@@ -645,6 +724,7 @@ function collectBoardUiState(boardDiv) {
 }
 
 function isDefaultCollapsedGroup(groupName) {
+  if (isMobileNavLayout()) return true;
   const normalized = String(groupName || '').trim().toUpperCase();
   return normalized === 'HOLD' ||
     normalized === 'COMPLETED' ||

@@ -343,6 +343,13 @@ body{
   overflow-x:auto;
   overflow-y:hidden;
   scrollbar-color:#67686b #151617;
+  touch-action:pan-x pan-y;
+}
+.dashboard-zoom-layer{
+  width:max-content;
+  min-width:100%;
+  transform-origin:top left;
+  zoom:var(--dashboard-board-zoom, 1);
 }
 .board-loading{
   min-height:220px;
@@ -1200,6 +1207,7 @@ body.modal-open{overflow:hidden}
   align-items:center;
   font:12px/1.2 Arial, Helvetica, sans-serif;
   letter-spacing:0;
+  touch-action:pan-x pan-y;
 }
 #tab-database.db-legacy-tab.active{
   display:flex;
@@ -3511,6 +3519,10 @@ input.db-custom-line-input{
     flex:1 1 145px;
     min-height:38px;
   }
+  #connectScannerBtn,
+  #priorityHighlightBtn{
+    display:none!important;
+  }
   .board-shell #board{
     max-height:calc(100dvh - 132px);
     padding:8px 0 14px;
@@ -3544,7 +3556,7 @@ input.db-custom-line-input{
     margin:0 -10px -14px;
     min-height:calc(100dvh - 64px);
     padding:10px;
-    display:block;
+    display:none;
     overflow:auto;
     align-items:stretch;
     justify-content:flex-start;
