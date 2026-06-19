@@ -412,7 +412,7 @@
                 <button class="db-customer-tab" type="button" data-db-customer-tab="addresses">Addresses</button>
                 <button class="db-customer-tab" type="button" data-db-customer-tab="quotations">Quotations</button>
                 <button class="db-customer-tab" type="button" data-db-customer-tab="communications">Communications</button>
-                <button class="db-customer-tab" type="button" data-db-customer-tab="actions">Actions</button>
+                <button class="db-customer-tab" type="button" data-db-customer-tab="design-numbers">Design Numbers</button>
               </div>
 
               <div class="db-customer-panel active" id="db-customer-orders-panel">
@@ -462,8 +462,23 @@
               <div class="db-customer-panel" id="db-customer-communications-panel">
                 <div class="db-customer-table-frame"><div class="db-panel-message">No communications recorded</div><div class="db-customer-gray-fill"></div></div>
               </div>
-              <div class="db-customer-panel" id="db-customer-actions-panel">
-                <div class="db-customer-table-frame"><div class="db-panel-message">No actions recorded</div><div class="db-customer-gray-fill"></div></div>
+              <div class="db-customer-panel" id="db-customer-design-numbers-panel">
+                <div class="db-customer-table-frame">
+                  <table id="db-customer-design-numbers-table" class="db-legacy-table">
+                    <thead>
+                      <tr>
+                        <th class="db-row-selector"></th>
+                        <th>Design number:</th>
+                        <th>Job no:</th>
+                        <th>Job title:</th>
+                      </tr>
+                    </thead>
+                    <tbody id="db-customer-design-numbers-body">
+                      <tr><td colspan="4" class="db-empty-cell">Loading design numbers</td></tr>
+                    </tbody>
+                  </table>
+                  <div class="db-customer-gray-fill"></div>
+                </div>
               </div>
             </section>
 

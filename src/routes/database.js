@@ -549,9 +549,12 @@ router.get('/api/database/customers/:key', async (req, res) => {
       addressRows = addresses.rows;
     }
 
-    const manualContactRows = await fetchManualCustomerContacts(customerKey, profile, orders);
+    const [manualContactRows, designNumberRows] = await Promise.all([
+      fetchManualCustomerContacts(customerKey, profile, orders),
+      fetchCustomerDesignNumbers(orders),
+    ]);
 
-    res.json(buildCustomerDetail(customerKey, orders, addressRows, profile, manualContactRows));
+    res.json(buildCustomerDetail(customerKey, orders, addressRows, profile, manualContactRows, designNumberRows));
   } catch (err) {
     console.error('GET /api/database/customers/:key', err);
     res.status(500).json({ error: 'Failed to fetch database customer detail' });
@@ -2076,7 +2079,7 @@ function parseCustomerKey(value) {
   return { type: 'name', value: clean };
 }
 
-function buildCustomerDetail(customerKey, orders, addressRows = [], profile = null, manualContactRows = []) {
+function buildCustomerDetail(customerKey, orders, addressRows = [], profile = null, manualContactRows = [], designNumberRows = []) {
   const latest = orders[0] || {};
   const businessName = cleanNullable(profile?.customer_name) || firstNonEmpty(orders, 'customer_name');
   const customerId = isFiniteDatabaseValue(profile?.customer_id) ? Number(profile.customer_id) : firstFinite(orders, 'customer_id');
@@ -2106,6 +2109,7 @@ function buildCustomerDetail(customerKey, orders, addressRows = [], profile = nu
     orders,
     contacts: groupedContacts(orders, profile, manualContactRows),
     addresses: groupedAddresses(orders, addressRows, profile),
+    designNumbers: designNumberRows,
   };
 }
 
@@ -2175,6 +2179,40 @@ async function fetchManualCustomerContacts(customerKey, profile, orders) {
      ORDER BY COALESCE(updated_at_source, created_at_source) DESC NULLS LAST,
               id DESC`,
     params
+  );
+
+  return result.rows;
+}
+
+async function fetchCustomerDesignNumbers(orders) {
+  const sourceOrderIds = (orders || [])
+    .map((order) => Number.parseInt(order.source_order_id, 10))
+    .filter((orderId) => Number.isFinite(orderId));
+
+  if (!sourceOrderIds.length) return [];
+
+  const result = await pool.query(
+    `SELECT design_ref,
+            source_order_id,
+            order_no,
+            job_title
+     FROM (
+       SELECT DISTINCT ON (LOWER(BTRIM(p.design_ref)), j.source_order_id)
+              BTRIM(p.design_ref) AS design_ref,
+              j.source_order_id,
+              j.order_no,
+              j.job_title
+       FROM database_job_positions p
+       JOIN database_jobs j ON j.source_order_id = p.source_order_id
+       WHERE p.source_order_id = ANY($1::int[])
+         AND NULLIF(BTRIM(p.design_ref), '') IS NOT NULL
+       ORDER BY LOWER(BTRIM(p.design_ref)),
+                j.source_order_id,
+                COALESCE(p.position_sort_order, p.source_order_position_id),
+                p.source_order_position_id
+     ) design_numbers
+     ORDER BY LOWER(design_ref), order_no NULLS LAST, source_order_id`,
+    [sourceOrderIds]
   );
 
   return result.rows;

@@ -79,6 +79,7 @@
     selectedCustomerOrders: [],
     selectedCustomerContacts: [],
     selectedCustomerAddresses: [],
+    selectedCustomerDesignNumbers: [],
     customerUsers: [],
     loadedCustomerUsers: false,
     customerAccountManagerSaving: false,
@@ -158,6 +159,7 @@
       customerOrdersBody: document.getElementById('db-customer-orders-body'),
       customerContactsBody: document.getElementById('db-customer-contacts-body'),
       customerAddressesBody: document.getElementById('db-customer-addresses-body'),
+      customerDesignNumbersBody: document.getElementById('db-customer-design-numbers-body'),
       outstandingBody: document.getElementById('db-outstanding-body'),
       selectOrder: document.getElementById('db-select-order'),
       footerTitle: document.getElementById('db-footer-title'),
@@ -203,6 +205,8 @@
     els.customersBody.addEventListener('keydown', handleDatabaseCustomerRowKeydown);
     els.customerOrdersBody.addEventListener('click', handleCustomerOrderRowClick);
     els.customerOrdersBody.addEventListener('keydown', handleCustomerOrderRowKeydown);
+    els.customerDesignNumbersBody?.addEventListener('click', handleCustomerOrderRowClick);
+    els.customerDesignNumbersBody?.addEventListener('keydown', handleCustomerOrderRowKeydown);
     els.customerContactsBody.addEventListener('input', handleCustomerContactInput);
     els.customerContactsBody.addEventListener('focusout', handleCustomerContactFocusOut);
     els.customersSearch.addEventListener('input', handleDatabaseCustomerSearchInput);
@@ -1080,6 +1084,7 @@
       state.selectedCustomerOrders = data.orders || [];
       state.selectedCustomerContacts = data.contacts || [];
       state.selectedCustomerAddresses = data.addresses || [];
+      state.selectedCustomerDesignNumbers = data.designNumbers || [];
       renderCustomerPage();
       showCustomerTab(state.activeCustomerTab);
     } catch (err) {
@@ -1093,6 +1098,7 @@
     state.selectedCustomerOrders = [];
     state.selectedCustomerContacts = [];
     state.selectedCustomerAddresses = [];
+    state.selectedCustomerDesignNumbers = [];
     els.customerName.value = 'Loading...';
     els.customerCode.value = '';
     setCustomerAccountManagerOptions(null, true);
@@ -1102,6 +1108,7 @@
     els.customerOrdersBody.innerHTML = renderStatusRow('Loading customer orders', 14);
     els.customerContactsBody.innerHTML = '<div class="db-panel-message">Loading contacts</div>';
     els.customerAddressesBody.innerHTML = '<div class="db-panel-message">Loading addresses</div>';
+    if (els.customerDesignNumbersBody) els.customerDesignNumbersBody.innerHTML = renderStatusRow('Loading design numbers', 4);
   }
 
   function renderCustomerError(message) {
@@ -1115,6 +1122,7 @@
     els.customerOrdersBody.innerHTML = renderStatusRow(message, 14);
     els.customerContactsBody.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
     els.customerAddressesBody.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
+    if (els.customerDesignNumbersBody) els.customerDesignNumbersBody.innerHTML = renderStatusRow(message, 4);
   }
 
   function renderCustomerPage() {
@@ -1128,6 +1136,7 @@
     renderCustomerOrders();
     renderCustomerContacts();
     renderCustomerAddresses();
+    renderCustomerDesignNumbers();
   }
 
   async function ensureCustomerUsers() {
@@ -1253,6 +1262,28 @@
         <td>${renderCheck(order.has_shirts)}</td>
         <td>${renderCheck(order.is_reorder)}</td>
         <td>${renderCheck(order.customer_supplied)}</td>
+      </tr>
+    `;
+  }
+
+  function renderCustomerDesignNumbers() {
+    if (!els.customerDesignNumbersBody) return;
+    const designNumbers = state.selectedCustomerDesignNumbers || [];
+    if (!designNumbers.length) {
+      els.customerDesignNumbersBody.innerHTML = renderStatusRow('No design numbers recorded for this customer', 4);
+      return;
+    }
+
+    els.customerDesignNumbersBody.innerHTML = designNumbers.map(renderCustomerDesignNumberRow).join('');
+  }
+
+  function renderCustomerDesignNumberRow(designNumber, index) {
+    return `
+      <tr class="db-customer-design-number-row" data-job-id="${escapeAttr(designNumber.source_order_id || '')}" tabindex="0">
+        <td class="db-row-selector">${index === 0 ? '&#9654;' : ''}</td>
+        <td class="db-design-number-link">${escapeHtml(designNumber.design_ref || '')}</td>
+        <td class="db-order-link">${escapeHtml(designNumber.order_no || '')}</td>
+        <td>${escapeHtml(designNumber.job_title || '')}</td>
       </tr>
     `;
   }
