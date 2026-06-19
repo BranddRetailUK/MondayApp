@@ -17,7 +17,7 @@ const { ensureDatabaseTables } = require('../src/db/databaseSchema');
 const FIELD_DELIMITER = '\t';
 const RECORD_DELIMITER = '\x1e';
 const NULL_TOKEN = '__NULL__';
-const IMPORT_YEARS = new Set([2025, 2026]);
+const ALL_YEARS_LABEL = 'all';
 const INSERT_BATCH_SIZE = 250;
 const MDB_EXPORT_BIN = resolveMdbExportBin();
 const ADDRESS_SOURCE_TABLES = ['tblOrder', 'tblCustomer', 'tblAddress', 'tblContact'];
@@ -172,12 +172,18 @@ async function main() {
   const dryRun = args.includes('--dry-run');
   const append = args.includes('--append');
   const addressesOnly = args.includes('--addresses-only');
-  const productsOnly = args.includes('--products-only') || args.includes('--products-from-existing-orders');
+  const productsOnly = args.includes('--products-only');
+  const productsFromExistingOrders = args.includes('--products-from-existing-orders');
+  const yearFilter = parseYearFilter(args);
+  const sourceYearsLabel = formatYearFilter(yearFilter);
   const fileArg = args.find((arg) => !arg.startsWith('--')) || 'PS_XP_tab.mdb';
   const mdbPath = path.resolve(process.cwd(), fileArg);
 
-  if (addressesOnly && productsOnly) {
-    throw new Error('--addresses-only and --products-only cannot be used together');
+  if (addressesOnly && (productsOnly || productsFromExistingOrders)) {
+    throw new Error('--addresses-only cannot be used with product-only import modes');
+  }
+  if (productsOnly && productsFromExistingOrders) {
+    throw new Error('--products-only and --products-from-existing-orders cannot be used together');
   }
 
   if (!fs.existsSync(mdbPath)) {
@@ -187,31 +193,47 @@ async function main() {
   console.log(`[database-import] Reading ${mdbPath}`);
   const sourceTables = addressesOnly
     ? ADDRESS_SOURCE_TABLES
-    : productsOnly
+    : (productsOnly || productsFromExistingOrders)
       ? PRODUCT_SOURCE_TABLES
       : Object.keys(TABLE_COLUMNS);
   const data = readSourceData(mdbPath, sourceTables);
 
   if (productsOnly) {
-    await importProductsFromExistingOrders(data, {
+    const productRows = buildAllProductRows(data);
+    await importProductRows(productRows, {
       sourceFile: mdbPath,
       dryRun,
       replaceExisting: !append,
+      sourceYearsLabel,
+      modeLabel: 'Full product import',
+      replaceMessage: 'Full product catalogue replaced',
+      appendMessage: 'Full product catalogue appended/upserted',
     });
     return;
   }
 
-  const snapshot = addressesOnly ? buildAddressSnapshot(data) : buildSnapshot(data);
+  if (productsFromExistingOrders) {
+    await importProductsFromExistingOrders(data, {
+      sourceFile: mdbPath,
+      dryRun,
+      replaceExisting: !append,
+      sourceYearsLabel,
+    });
+    return;
+  }
+
+  const snapshot = addressesOnly ? buildAddressSnapshot(data, yearFilter) : buildSnapshot(data, yearFilter);
 
   console.log(
     `[database-import] Snapshot: ${snapshot.jobs.length} jobs, ` +
     `${snapshot.lineItems.length} line items, ${snapshot.positions.length} positions, ` +
-    `${snapshot.addresses.length} customer addresses, ${snapshot.contacts.length} contacts`
+    `${snapshot.addresses.length} customer addresses, ${snapshot.contacts.length} contacts, ` +
+    `${snapshot.products.length} products`
   );
   if (addressesOnly) {
     console.log(`[database-import] Address-only mode: ${snapshot.jobAddressUpdates.length} existing job address rows prepared`);
   }
-  console.log(`[database-import] Years: ${[...IMPORT_YEARS].join(', ')}`);
+  console.log(`[database-import] Years: ${sourceYearsLabel}`);
 
   if (dryRun) {
     printDryRun(snapshot);
@@ -222,13 +244,14 @@ async function main() {
     sourceFile: mdbPath,
     replaceExisting: !append,
     addressesOnly,
+    sourceYearsLabel,
   });
 }
 
 function printHelp() {
-  console.log(`Usage: node scripts/import-database-mdb.js [PS_XP_tab.mdb] [--dry-run] [--append]
+  console.log(`Usage: node scripts/import-database-mdb.js [PS_XP_tab.mdb] [--dry-run] [--append] [--years=2025,2026]
 
-Imports Access jobs dated 2025 or 2026 into Railway/Postgres tables:
+Imports Access jobs into Railway/Postgres tables:
   database_jobs
   database_job_line_items
   database_job_positions
@@ -237,8 +260,10 @@ Imports Access jobs dated 2025 or 2026 into Railway/Postgres tables:
   database_customer_contacts
 
 Options:
-  --addresses-only  Import only customer addresses and job address fields.
-  --products-only   Import only product rows referenced by existing database_job_line_items.
+  --years=...                    Optional comma-separated year filter for diagnostics.
+  --addresses-only               Import only customer addresses and job address fields.
+  --products-only                Import only the full product catalogue.
+  --products-from-existing-orders Import only products referenced by existing database_job_line_items.
 
 Run against Railway with:
   railway run --service DB node scripts/import-database-mdb.js PS_XP_tab.mdb
@@ -327,7 +352,7 @@ function decodeField(value) {
     .replace(/\\\\/g, '\\');
 }
 
-function buildSnapshot(data) {
+function buildSnapshot(data, yearFilter = null) {
   const customers = mapByInt(data.tblCustomer, 'customerid');
   const addresses = mapByInt(data.tblAddress, 'addressid');
   const contacts = mapByInt(data.tblContact, 'contactid');
@@ -348,7 +373,7 @@ function buildSnapshot(data) {
 
   for (const order of data.tblOrder) {
     const sourceYear = sourceYearForOrder(order);
-    if (!sourceYear) continue;
+    if (yearFilter && !yearFilter.has(sourceYear)) continue;
 
     const sourceOrderId = toInt(order.orderid);
     if (!sourceOrderId) continue;
@@ -490,6 +515,7 @@ function buildSnapshot(data) {
     addressRoles
   );
   const customerContacts = buildCustomerContactRows(data.tblContact, customers, addresses, selectedCustomerIds);
+  const productRows = buildAllProductRows(data);
 
   jobs.sort((a, b) => {
     const dateA = a.order_date || a.created_at_source || '';
@@ -497,7 +523,26 @@ function buildSnapshot(data) {
     return dateA < dateB ? 1 : dateA > dateB ? -1 : b.order_no - a.order_no;
   });
 
-  return { jobs, lineItems, positions, addresses: customerAddresses, contacts: customerContacts };
+  return {
+    jobs,
+    lineItems,
+    positions,
+    addresses: customerAddresses,
+    contacts: customerContacts,
+    products: productRows,
+  };
+}
+
+function buildAllProductRows(data) {
+  return buildProductRows(data, allProductIds(data));
+}
+
+function allProductIds(data) {
+  return new Set(
+    (data.tblProduct || [])
+      .map((product) => toInt(product.productid))
+      .filter((productId) => productId !== null)
+  );
 }
 
 function buildProductRows(data, selectedProductIds) {
@@ -549,7 +594,7 @@ function buildProductRows(data, selectedProductIds) {
     .sort((a, b) => a.source_product_id - b.source_product_id);
 }
 
-function buildAddressSnapshot(data) {
+function buildAddressSnapshot(data, yearFilter = null) {
   const customers = mapByInt(data.tblCustomer, 'customerid');
   const addresses = mapByInt(data.tblAddress, 'addressid');
   const contacts = mapByInt(data.tblContact, 'contactid');
@@ -560,7 +605,7 @@ function buildAddressSnapshot(data) {
 
   for (const order of data.tblOrder) {
     const sourceYear = sourceYearForOrder(order);
-    if (!sourceYear) continue;
+    if (yearFilter && !yearFilter.has(sourceYear)) continue;
 
     const sourceOrderId = toInt(order.orderid);
     if (!sourceOrderId) continue;
@@ -603,6 +648,7 @@ function buildAddressSnapshot(data) {
     positions: [],
     addresses: customerAddresses,
     contacts: [],
+    products: [],
     jobAddressUpdates,
   };
 }
@@ -611,7 +657,7 @@ function sourceYearForOrder(order) {
   const sourceDate = order.dtorder || order.dtcreate;
   if (!sourceDate || sourceDate.length < 4) return null;
   const year = Number.parseInt(sourceDate.slice(0, 4), 10);
-  return IMPORT_YEARS.has(year) ? year : null;
+  return Number.isFinite(year) ? year : null;
 }
 
 function mapByInt(rows, column) {
@@ -767,9 +813,31 @@ function toTimestamp(value) {
   return value;
 }
 
+function parseYearFilter(args) {
+  const option = args.find((arg) => arg.startsWith('--years='));
+  if (!option) return null;
+
+  const years = option
+    .slice('--years='.length)
+    .split(',')
+    .map((value) => Number.parseInt(value.trim(), 10))
+    .filter((year) => Number.isFinite(year));
+
+  if (!years.length) {
+    throw new Error('--years must include at least one numeric year, for example --years=2025,2026');
+  }
+
+  return new Set(years);
+}
+
+function formatYearFilter(yearFilter) {
+  return yearFilter ? [...yearFilter].sort((a, b) => a - b).join(',') : ALL_YEARS_LABEL;
+}
+
 function printDryRun(snapshot) {
   const byYear = snapshot.jobs.reduce((acc, job) => {
-    acc[job.source_year] = (acc[job.source_year] || 0) + 1;
+    const key = job.source_year || 'Unknown';
+    acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
 
@@ -784,6 +852,7 @@ function printDryRun(snapshot) {
   console.log(`[database-import] Jobs by type: ${JSON.stringify(byType)}`);
   console.log(`[database-import] Customer addresses: ${snapshot.addresses.length}`);
   console.log(`[database-import] Contacts: ${snapshot.contacts.length}`);
+  console.log(`[database-import] Products: ${snapshot.products.length}`);
   console.log('[database-import] Latest jobs:');
   snapshot.jobs.slice(0, 10).forEach((job) => {
     console.log(
@@ -805,7 +874,7 @@ async function importSnapshot(snapshot, options) {
       `INSERT INTO database_import_runs (source_file, source_years, status)
        VALUES ($1, $2, 'running')
        RETURNING id`,
-      [options.sourceFile, [...IMPORT_YEARS].join(',')]
+      [options.sourceFile, options.sourceYearsLabel || ALL_YEARS_LABEL]
     );
     runId = run.rows[0].id;
 
@@ -858,6 +927,7 @@ async function importSnapshot(snapshot, options) {
       await client.query('DELETE FROM database_job_line_items');
       await client.query('DELETE FROM database_jobs');
       await client.query('DELETE FROM database_customer_addresses');
+      await client.query('DELETE FROM database_products');
       await client.query('DELETE FROM database_customer_contacts WHERE source_contact_id IS NOT NULL');
     }
 
@@ -877,6 +947,15 @@ async function importSnapshot(snapshot, options) {
       CONTACT_COLUMNS,
       'source_contact_id',
       snapshot.contacts
+    );
+
+    console.log(`[database-import] Writing ${snapshot.products.length} products`);
+    await upsertRows(
+      client,
+      'database_products',
+      PRODUCT_COLUMNS,
+      'source_product_id',
+      snapshot.products
     );
 
     console.log(`[database-import] Writing ${snapshot.jobs.length} jobs`);
@@ -909,16 +988,18 @@ async function importSnapshot(snapshot, options) {
            position_count = $3,
            address_count = $4,
            contact_count = $5,
+           product_count = $6,
            finished_at = NOW(),
            status = 'complete',
-           message = $6
-       WHERE id = $7`,
+           message = $7
+       WHERE id = $8`,
       [
         snapshot.jobs.length,
         snapshot.lineItems.length,
         snapshot.positions.length,
         snapshot.addresses.length,
         snapshot.contacts.length,
+        snapshot.products.length,
         options.replaceExisting ? 'Snapshot replaced' : 'Snapshot appended/upserted',
         runId,
       ]
@@ -951,11 +1032,9 @@ async function importSnapshot(snapshot, options) {
 async function importProductsFromExistingOrders(data, options) {
   const pool = require('../src/db/pool');
   const client = await pool.connect();
-  let runId = null;
 
   try {
     await ensureDatabaseTables(client);
-
     const selectedProductIds = await fetchExistingOrderProductIds(client);
     const selectedProductIdSet = new Set(selectedProductIds);
     const productRows = buildProductRows(data, selectedProductIdSet);
@@ -967,31 +1046,60 @@ async function importProductsFromExistingOrders(data, options) {
       (missingCount ? ` (${missingCount} product ids were not found in the MDB)` : '')
     );
 
-    if (options.dryRun) {
-      console.log('[database-import] Dry run only. No database writes performed.');
-      console.log('[database-import] Sample products:');
-      productRows.slice(0, 10).forEach((product) => {
-        console.log(
-          `  - ${product.source_product_id} | ${product.style_code || 'No code'} | ` +
-          `${product.style_name || 'No style'} | ${product.colour || 'No colour'} | ` +
-          `${product.size || 'No size'} | stock ${product.stock ?? 'n/a'}`
-        );
-      });
-      return;
-    }
+    await importProductRows(productRows, {
+      ...options,
+      modeLabel: 'Referenced product import',
+      replaceMessage: 'Referenced product rows replaced',
+      appendMessage: 'Referenced product rows appended/upserted',
+      client,
+    });
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+async function importProductRows(productRows, options) {
+  console.log(`[database-import] Product rows prepared: ${productRows.length}`);
+
+  if (options.dryRun) {
+    console.log('[database-import] Dry run only. No database writes performed.');
+    console.log('[database-import] Sample products:');
+    productRows.slice(0, 10).forEach((product) => {
+      console.log(
+        `  - ${product.source_product_id} | ${product.style_code || 'No code'} | ` +
+        `${product.style_name || 'No style'} | ${product.colour || 'No colour'} | ` +
+        `${product.size || 'No size'} | stock ${product.stock ?? 'n/a'}`
+      );
+    });
+    return;
+  }
+
+  const pool = require('../src/db/pool');
+  const client = options.client || await pool.connect();
+  let runId = null;
+  let transactionStarted = false;
+
+  try {
+    await ensureDatabaseTables(client);
 
     const run = await client.query(
       `INSERT INTO database_import_runs (source_file, source_years, status, message)
        VALUES ($1, $2, 'running', $3)
        RETURNING id`,
-      [options.sourceFile, [...IMPORT_YEARS].join(','), 'Referenced product import started']
+      [
+        options.sourceFile,
+        options.sourceYearsLabel || ALL_YEARS_LABEL,
+        `${options.modeLabel || 'Product import'} started`,
+      ]
     );
     runId = run.rows[0].id;
 
     await client.query('BEGIN');
+    transactionStarted = true;
 
     if (options.replaceExisting) {
-      console.log('[database-import] Replacing existing referenced product rows');
+      console.log('[database-import] Replacing existing product rows');
       await client.query('DELETE FROM database_products');
     }
 
@@ -1015,19 +1123,19 @@ async function importProductsFromExistingOrders(data, options) {
        WHERE id = $3`,
       [
         productRows.length,
-        options.replaceExisting
-          ? 'Referenced product rows replaced'
-          : 'Referenced product rows appended/upserted',
+        options.replaceExisting ? options.replaceMessage : options.appendMessage,
         runId,
       ]
     );
 
     console.log('[database-import] Product import complete');
   } catch (err) {
-    try {
-      await client.query('ROLLBACK');
-    } catch {
-      // Ignore rollback errors after a pre-transaction failure.
+    if (transactionStarted) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // Ignore rollback errors after a pre-transaction failure.
+      }
     }
 
     if (runId) {
@@ -1041,8 +1149,10 @@ async function importProductsFromExistingOrders(data, options) {
 
     throw err;
   } finally {
-    client.release();
-    await pool.end();
+    if (!options.client) {
+      client.release();
+      await pool.end();
+    }
   }
 }
 

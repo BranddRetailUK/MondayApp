@@ -1986,33 +1986,6 @@
             <textarea readonly>${escapeHtml(job.comments || '')}</textarea>
           </div>
         </div>
-
-        <div class="db-detail-box db-print-box">
-          ${detailRow('Delivery note:', inputBox(formatDate(job.delivery_note_date, 'short'), 'db-green-input'))}
-          ${detailRow('Invoice no:', inputBox(job.invoice_no || '', 'db-green-input'))}
-          ${detailRow('Pro-forma:', inputBox(formatDate(job.pf_invoice_date, 'short'), 'db-green-input'))}
-        </div>
-
-        <div class="db-detail-box db-invoice-checks">
-          <label>${renderCheck(job.invoice_required)} Invoice required</label>
-          <label>${renderCheck(job.invoice_printed)} Invoice printed</label>
-          <label>${renderCheck(job.pf_invoice_printed)} Pro-forma printed</label>
-        </div>
-
-        <div class="db-detail-box db-flags-box">
-          <div>
-            <label>${renderCheck(job.has_artwork)} Artwork</label>
-            <label>${renderCheck(false)} Jacquard</label>
-            <label>${renderCheck(job.has_shirts)} Shirts</label>
-            <label>${renderCheck(job.is_reorder)} Re-order</label>
-            <label>${renderCheck(job.customer_supplied)} Customer supplied</label>
-          </div>
-          <div>
-            <label>${renderCheck(job.is_printed)} Printed</label>
-            <label>${renderCheck(job.is_bagged)} Bagged</label>
-            <label>${renderCheck(job.is_automatic)} Automatic</label>
-          </div>
-        </div>
       </div>
     `;
   }

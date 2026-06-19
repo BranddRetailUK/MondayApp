@@ -5,12 +5,13 @@ const { fullName } = require('../services/hubAuth');
 
 router.get('/api/database/summary', async (_req, res) => {
   try {
-    const [jobs, lineItems, positions, addresses, contacts, byYear, byType, latestRun] = await Promise.all([
+    const [jobs, lineItems, positions, addresses, contacts, products, byYear, byType, latestRun] = await Promise.all([
       pool.query('SELECT COUNT(*)::int AS count FROM database_jobs'),
       pool.query('SELECT COUNT(*)::int AS count FROM database_job_line_items'),
       pool.query('SELECT COUNT(*)::int AS count FROM database_job_positions'),
       pool.query('SELECT COUNT(*)::int AS count FROM database_customer_addresses'),
       pool.query('SELECT COUNT(*)::int AS count FROM database_customer_contacts'),
+      pool.query('SELECT COUNT(*)::int AS count FROM database_products'),
       pool.query(`
         SELECT source_year, COUNT(*)::int AS count
         FROM database_jobs
@@ -25,7 +26,8 @@ router.get('/api/database/summary', async (_req, res) => {
       `),
       pool.query(`
         SELECT id, source_file, source_years, job_count, line_item_count,
-               position_count, address_count, contact_count, started_at, finished_at, status, message
+               position_count, address_count, contact_count, product_count,
+               started_at, finished_at, status, message
         FROM database_import_runs
         ORDER BY started_at DESC
         LIMIT 1
@@ -38,6 +40,7 @@ router.get('/api/database/summary', async (_req, res) => {
       positions: positions.rows[0].count,
       customerAddresses: addresses.rows[0].count,
       customerContacts: contacts.rows[0].count,
+      products: products.rows[0].count,
       byYear: byYear.rows,
       byType: byType.rows,
       latestRun: latestRun.rows[0] || null,
@@ -967,10 +970,6 @@ router.post('/api/database/jobs', async (req, res) => {
     return res.status(400).json({ error: orderDate.error || deliveryDate.error });
   }
 
-  if (orderDate.year !== 2025 && orderDate.year !== 2026) {
-    return res.status(400).json({ error: 'Order date must be in 2025 or 2026 for the DATABASE snapshot' });
-  }
-
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -1857,7 +1856,7 @@ function buildJobFilters(query) {
   }
 
   const year = Number.parseInt(query.year, 10);
-  if (year === 2025 || year === 2026) {
+  if (Number.isFinite(year)) {
     params.push(year);
     where.push(`j.source_year = $${params.length}`);
   }

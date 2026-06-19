@@ -4,7 +4,7 @@ async function ensureDatabaseTables(db) {
       id SERIAL PRIMARY KEY,
       source_order_id INTEGER NOT NULL UNIQUE,
       order_no INTEGER NOT NULL,
-      source_year INTEGER NOT NULL CHECK (source_year IN (2025, 2026)),
+      source_year INTEGER,
       order_type_id INTEGER,
       order_type TEXT,
       order_type_abbr TEXT,
@@ -70,6 +70,8 @@ async function ensureDatabaseTables(db) {
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS delivery_address TEXT;');
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS invoice_address TEXT;');
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS is_manual_entry BOOLEAN NOT NULL DEFAULT FALSE;');
+  await db.query('ALTER TABLE database_jobs ALTER COLUMN source_year DROP NOT NULL;');
+  await db.query('ALTER TABLE database_jobs DROP CONSTRAINT IF EXISTS database_jobs_source_year_check;');
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS database_customer_profiles (
@@ -102,8 +104,8 @@ async function ensureDatabaseTables(db) {
       created_by_name TEXT,
       updated_by_user_id INTEGER,
       updated_by_name TEXT,
-      created_at_source TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at_source TIMESTAMP NOT NULL DEFAULT NOW(),
+      created_at_source TIMESTAMP,
+      updated_at_source TIMESTAMP,
       imported_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
   `);
@@ -187,9 +189,11 @@ async function ensureDatabaseTables(db) {
   await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS created_by_name TEXT;');
   await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS updated_by_user_id INTEGER;');
   await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS updated_by_name TEXT;');
-  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS created_at_source TIMESTAMP NOT NULL DEFAULT NOW();');
-  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS updated_at_source TIMESTAMP NOT NULL DEFAULT NOW();');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS created_at_source TIMESTAMP;');
+  await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS updated_at_source TIMESTAMP;');
   await db.query('ALTER TABLE database_customer_contacts ADD COLUMN IF NOT EXISTS imported_at TIMESTAMP NOT NULL DEFAULT NOW();');
+  await db.query('ALTER TABLE database_customer_contacts ALTER COLUMN created_at_source DROP NOT NULL;');
+  await db.query('ALTER TABLE database_customer_contacts ALTER COLUMN updated_at_source DROP NOT NULL;');
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS database_customer_addresses (
@@ -348,7 +352,7 @@ async function ensureDatabaseTables(db) {
     CREATE TABLE IF NOT EXISTS database_import_runs (
       id SERIAL PRIMARY KEY,
       source_file TEXT,
-      source_years TEXT NOT NULL DEFAULT '2025,2026',
+      source_years TEXT NOT NULL DEFAULT 'all',
       job_count INTEGER NOT NULL DEFAULT 0,
       line_item_count INTEGER NOT NULL DEFAULT 0,
       position_count INTEGER NOT NULL DEFAULT 0,
@@ -390,6 +394,7 @@ async function ensureDatabaseTables(db) {
   await db.query('ALTER TABLE database_import_runs ADD COLUMN IF NOT EXISTS address_count INTEGER NOT NULL DEFAULT 0;');
   await db.query('ALTER TABLE database_import_runs ADD COLUMN IF NOT EXISTS contact_count INTEGER NOT NULL DEFAULT 0;');
   await db.query('ALTER TABLE database_import_runs ADD COLUMN IF NOT EXISTS product_count INTEGER NOT NULL DEFAULT 0;');
+  await db.query("ALTER TABLE database_import_runs ALTER COLUMN source_years SET DEFAULT 'all';");
 }
 
 module.exports = { ensureDatabaseTables };
