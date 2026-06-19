@@ -1108,7 +1108,7 @@
     els.customerOrdersBody.innerHTML = renderStatusRow('Loading customer orders', 14);
     els.customerContactsBody.innerHTML = '<div class="db-panel-message">Loading contacts</div>';
     els.customerAddressesBody.innerHTML = '<div class="db-panel-message">Loading addresses</div>';
-    if (els.customerDesignNumbersBody) els.customerDesignNumbersBody.innerHTML = renderStatusRow('Loading design numbers', 5);
+    if (els.customerDesignNumbersBody) els.customerDesignNumbersBody.innerHTML = renderStatusRow('Loading design numbers', 6);
   }
 
   function renderCustomerError(message) {
@@ -1122,7 +1122,7 @@
     els.customerOrdersBody.innerHTML = renderStatusRow(message, 14);
     els.customerContactsBody.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
     els.customerAddressesBody.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
-    if (els.customerDesignNumbersBody) els.customerDesignNumbersBody.innerHTML = renderStatusRow(message, 5);
+    if (els.customerDesignNumbersBody) els.customerDesignNumbersBody.innerHTML = renderStatusRow(message, 6);
   }
 
   function renderCustomerPage() {
@@ -1270,7 +1270,7 @@
     if (!els.customerDesignNumbersBody) return;
     const designNumbers = state.selectedCustomerDesignNumbers || [];
     if (!designNumbers.length) {
-      els.customerDesignNumbersBody.innerHTML = renderStatusRow('No design numbers recorded for this customer', 5);
+      els.customerDesignNumbersBody.innerHTML = renderStatusRow('No design or PSG/ST numbers recorded for this customer', 6);
       return;
     }
 
@@ -1282,9 +1282,10 @@
       <tr class="db-customer-design-number-row" data-job-id="${escapeAttr(designNumber.source_order_id || '')}" tabindex="0">
         <td class="db-row-selector">${index === 0 ? '&#9654;' : ''}</td>
         <td class="db-design-number-link">${escapeHtml(designNumber.design_ref || '')}</td>
+        <td>${escapeHtml(designNumber.psg_numbers || '')}</td>
         <td class="db-order-link">${escapeHtml(designNumber.order_no || '')}</td>
-        <td>${escapeHtml(formatDate(designNumber.order_date, 'long'))}</td>
         <td>${escapeHtml(designNumber.job_title || '')}</td>
+        <td>${escapeHtml(formatDate(designNumber.order_date, 'long'))}</td>
       </tr>
     `;
   }

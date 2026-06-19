@@ -1834,10 +1834,11 @@ body.modal-open{overflow:hidden}
 #db-customer-orders-table th:nth-child(9){width:82px}
 #db-customer-orders-table th:nth-child(n+10){width:27px;text-align:center}
 #db-customer-orders-table td:nth-child(n+10){text-align:center}
-#db-customer-design-numbers-table th:nth-child(2){width:145px}
-#db-customer-design-numbers-table th:nth-child(3){width:90px}
-#db-customer-design-numbers-table th:nth-child(4){width:92px}
+#db-customer-design-numbers-table th:nth-child(2){width:120px}
+#db-customer-design-numbers-table th:nth-child(3){width:112px}
+#db-customer-design-numbers-table th:nth-child(4){width:74px}
 #db-customer-design-numbers-table th:nth-child(5){width:auto}
+#db-customer-design-numbers-table th:nth-child(6){width:92px}
 .db-outstanding-row{
   cursor:pointer;
 }
@@ -1866,6 +1867,9 @@ body.modal-open{overflow:hidden}
 .db-customer-link{
   color:#00e;
   text-decoration:underline;
+}
+.db-order-link:hover{
+  cursor:pointer;
 }
 .db-type-cell{
   text-align:center;

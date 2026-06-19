@@ -2191,33 +2191,139 @@ async function fetchCustomerDesignNumbers(orders) {
 
   if (!sourceOrderIds.length) return [];
 
-  const result = await pool.query(
-    `SELECT design_ref,
-            source_order_id,
-            order_no,
-            order_date,
-            job_title
-     FROM (
-       SELECT DISTINCT ON (LOWER(BTRIM(p.design_ref)), j.source_order_id)
-              BTRIM(p.design_ref) AS design_ref,
-              j.source_order_id,
+  const [designResult, referenceResult] = await Promise.all([
+    pool.query(
+      `SELECT design_ref,
+              source_order_id,
+              order_no,
+              order_date,
+              job_title
+       FROM (
+         SELECT DISTINCT ON (LOWER(BTRIM(p.design_ref)), j.source_order_id)
+                BTRIM(p.design_ref) AS design_ref,
+                j.source_order_id,
+                j.order_no,
+                j.order_date,
+                j.job_title
+         FROM database_job_positions p
+         JOIN database_jobs j ON j.source_order_id = p.source_order_id
+         WHERE p.source_order_id = ANY($1::int[])
+           AND NULLIF(BTRIM(p.design_ref), '') IS NOT NULL
+         ORDER BY LOWER(BTRIM(p.design_ref)),
+                  j.source_order_id,
+                  COALESCE(p.position_sort_order, p.source_order_position_id),
+                  p.source_order_position_id
+       ) design_numbers
+       ORDER BY LOWER(design_ref), order_no NULLS LAST, source_order_id`,
+      [sourceOrderIds]
+    ),
+    pool.query(
+      `WITH position_text AS (
+         SELECT source_order_id,
+                STRING_AGG(CONCAT_WS(' ', position_name, colour_notes, design_ref), ' ') AS text_value
+         FROM database_job_positions
+         WHERE source_order_id = ANY($1::int[])
+         GROUP BY source_order_id
+       ),
+       line_item_text AS (
+         SELECT source_order_id,
+                STRING_AGG(line_description, ' ') AS text_value
+         FROM database_job_line_items
+         WHERE source_order_id = ANY($1::int[])
+         GROUP BY source_order_id
+       )
+       SELECT j.source_order_id,
               j.order_no,
               j.order_date,
-              j.job_title
-       FROM database_job_positions p
-       JOIN database_jobs j ON j.source_order_id = p.source_order_id
-       WHERE p.source_order_id = ANY($1::int[])
-         AND NULLIF(BTRIM(p.design_ref), '') IS NOT NULL
-       ORDER BY LOWER(BTRIM(p.design_ref)),
-                j.source_order_id,
-                COALESCE(p.position_sort_order, p.source_order_position_id),
-                p.source_order_position_id
-     ) design_numbers
-     ORDER BY LOWER(design_ref), order_no NULLS LAST, source_order_id`,
-    [sourceOrderIds]
-  );
+              j.job_title,
+              CONCAT_WS(' ',
+                j.job_title,
+                j.client_order_no,
+                j.screen_numbers,
+                j.comments,
+                position_text.text_value,
+                line_item_text.text_value
+              ) AS reference_source_text
+       FROM database_jobs j
+       LEFT JOIN position_text ON position_text.source_order_id = j.source_order_id
+       LEFT JOIN line_item_text ON line_item_text.source_order_id = j.source_order_id
+       WHERE j.source_order_id = ANY($1::int[])`,
+      [sourceOrderIds]
+    ),
+  ]);
 
-  return result.rows;
+  const referencesByOrder = new Map();
+  const orderById = new Map();
+  for (const row of referenceResult.rows) {
+    const sourceOrderId = Number(row.source_order_id);
+    if (!Number.isFinite(sourceOrderId)) continue;
+
+    const references = extractOrderDesignReferences(row.reference_source_text).join(', ');
+    referencesByOrder.set(sourceOrderId, references);
+    orderById.set(sourceOrderId, {
+      source_order_id: row.source_order_id,
+      order_no: row.order_no,
+      order_date: row.order_date,
+      job_title: row.job_title,
+    });
+  }
+
+  const rows = designResult.rows.map((row) => ({
+    ...row,
+    psg_numbers: referencesByOrder.get(Number(row.source_order_id)) || '',
+  }));
+  const designOrderIds = new Set(rows.map((row) => Number(row.source_order_id)));
+
+  for (const [sourceOrderId, psgNumbers] of referencesByOrder.entries()) {
+    if (!psgNumbers || designOrderIds.has(sourceOrderId)) continue;
+    const order = orderById.get(sourceOrderId);
+    if (!order) continue;
+    rows.push({
+      design_ref: '',
+      psg_numbers: psgNumbers,
+      ...order,
+    });
+  }
+
+  return rows.sort(compareCustomerDesignNumberRows);
+}
+
+const ORDER_DESIGN_REFERENCE_PATTERN = /\b(P[\s._/-]*S[\s._/-]*G|S[\s._/-]*T)(?:[\s:._#/-]*(?:NO\.?|NUM(?:BER)?)?[\s:._#/-]*)?(\d{2,})\b/gi;
+
+function extractOrderDesignReferences(value) {
+  const references = [];
+  const seen = new Set();
+  const text = String(value || '');
+  ORDER_DESIGN_REFERENCE_PATTERN.lastIndex = 0;
+
+  let match;
+  while ((match = ORDER_DESIGN_REFERENCE_PATTERN.exec(text))) {
+    const prefix = /^P/i.test(String(match[1] || '').replace(/[^A-Za-z]/g, '')) ? 'PSG' : 'ST';
+    const digits = String(match[2] || '').replace(/\D/g, '');
+    if (!digits) continue;
+
+    const reference = `${prefix}${digits}`;
+    if (seen.has(reference)) continue;
+    seen.add(reference);
+    references.push(reference);
+  }
+
+  return references;
+}
+
+function compareCustomerDesignNumberRows(a, b) {
+  const designA = cleanQuery(a.design_ref);
+  const designB = cleanQuery(b.design_ref);
+  if (designA && !designB) return -1;
+  if (!designA && designB) return 1;
+
+  const byDesign = designA.localeCompare(designB, undefined, { sensitivity: 'base' });
+  if (byDesign) return byDesign;
+
+  const byOrder = Number(a.order_no || 0) - Number(b.order_no || 0);
+  if (byOrder) return byOrder;
+
+  return Number(a.source_order_id || 0) - Number(b.source_order_id || 0);
 }
 
 async function resolveCustomerContactContext(customerKey) {
