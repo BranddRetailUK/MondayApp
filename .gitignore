@@ -4,3 +4,4 @@ uploads
 tmp
 *.mdb
 *.ldb
+database2monday_script/

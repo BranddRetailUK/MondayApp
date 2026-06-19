@@ -1,6 +1,0 @@
-mdb_path = "/Users/lubos/Library/CloudStorage/OneDrive-ultimatepromotions/ultimate_vm_dropbox/uvm1.1"
-mdw_path = "/Users/lubos/Library/CloudStorage/OneDrive-ultimatepromotions/ultimate_vm_dropbox/uvm1.1"
-dropbox_path = "/Users/lubos/Library/CloudStorage/OneDrive-ultimatepromotions/ultimate_vm_dropbox/uvm1.1/MONDAY/open_orders.csv"
-onedrive_path = "/Users/lubos/Library/CloudStorage/OneDrive-ultimatepromotions/ultimate_vm_dropbox/uvm1.1"
-embroidery_link = "https://ultimatepromotions-my.sharepoint.com/:f:/g/personal/production_ultimatepromotions_co_uk/IgCeYM0h4akiR4ZlLUofvZW2AR0dUayFJBSJPuEu_D-IA0w?e=E2wkGV"
-repeat = "60"

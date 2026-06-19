@@ -1,3 +1,0 @@
-- creates csv
-- sanitises ( removes words ) from stock items only ( keeps non-stock description untouched )
-- only pulls items, not design numbers
