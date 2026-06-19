@@ -2286,41 +2286,119 @@ async function fetchCustomerDesignNumbers(orders) {
     });
   }
 
-  return rows.sort(compareCustomerDesignNumberRows);
+  return collapseCustomerDesignNumberRows(rows).sort(compareCustomerDesignNumberRows);
 }
 
-const ORDER_DESIGN_REFERENCE_PATTERN = /\b(P[\s._/-]*S[\s._/-]*G|STITCH(?:ES)?|STITCH[\s._/-]*COUNT|S[\s._/-]*T(?:[\s._/-]*S)?)(?:[\s:._#/-]*(?:NO\.?|NUM(?:BER)?)?[\s:._#/-]*)?(\d[\d,\s]*\d)\b/gi;
+const STITCH_REFERENCE_LABEL = String.raw`(?:STITCH[\s._/-]*COUNT|STITCHES?|S[\s._/-]*T(?:[\s._/-]*(?:S|C))?)`;
+const PSG_REFERENCE_PATTERN = new RegExp(
+  String.raw`\bP[\s._/-]*S[\s._/-]*G(?:[\s:._#/-]*(?:NO\.?|NUM(?:BER)?)?[\s:._#/-]*)?(\d+\s*[A-Z]?)\b` +
+    String.raw`(?:\s*(?:[,;/|+&-]\s*)?(?:${STITCH_REFERENCE_LABEL}[\s:._#/-]*(\d[\d,\s]*\d)|(\d[\d,\s]*\d)))?`,
+  'gi'
+);
+const STITCH_REFERENCE_PATTERN = new RegExp(
+  String.raw`\b${STITCH_REFERENCE_LABEL}(?:[\s:._#/-]*(?:NO\.?|NUM(?:BER)?)?[\s:._#/-]*)?(\d[\d,\s]*\d)\b`,
+  'gi'
+);
 
 function extractOrderDesignReferences(value) {
-  const references = [];
+  const psgReferences = [];
+  const stitchReferences = [];
   const seen = new Set();
   const text = String(value || '');
-  ORDER_DESIGN_REFERENCE_PATTERN.lastIndex = 0;
+  PSG_REFERENCE_PATTERN.lastIndex = 0;
+  STITCH_REFERENCE_PATTERN.lastIndex = 0;
 
   let match;
-  while ((match = ORDER_DESIGN_REFERENCE_PATTERN.exec(text))) {
-    const prefix = /^P/i.test(String(match[1] || '').replace(/[^A-Za-z]/g, '')) ? 'PSG' : 'ST';
-    const digits = String(match[2] || '').replace(/\D/g, '');
-    if (!digits) continue;
-
-    const reference = `${prefix}${digits}`;
-    if (seen.has(reference)) continue;
-    seen.add(reference);
-    references.push(reference);
+  while ((match = PSG_REFERENCE_PATTERN.exec(text))) {
+    addOrderDesignReference(psgReferences, seen, 'PSG', match[1]);
+    addOrderDesignReference(stitchReferences, seen, 'ST', match[2] || match[3]);
   }
 
-  return references;
+  while ((match = STITCH_REFERENCE_PATTERN.exec(text))) {
+    addOrderDesignReference(stitchReferences, seen, 'ST', match[1]);
+  }
+
+  return [...psgReferences, ...stitchReferences];
+}
+
+function addOrderDesignReference(references, seen, prefix, rawValue) {
+  const value = prefix === 'PSG'
+    ? String(rawValue || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase()
+    : String(rawValue || '').replace(/\D/g, '');
+  if (!value) return;
+
+  const reference = `${prefix}${value}`;
+  if (seen.has(reference)) return;
+  seen.add(reference);
+  references.push(reference);
 }
 
 function displayDesignReference(value) {
-  ORDER_DESIGN_REFERENCE_PATTERN.lastIndex = 0;
-  const withoutReferences = String(value || '').replace(ORDER_DESIGN_REFERENCE_PATTERN, ' ');
-  ORDER_DESIGN_REFERENCE_PATTERN.lastIndex = 0;
+  PSG_REFERENCE_PATTERN.lastIndex = 0;
+  STITCH_REFERENCE_PATTERN.lastIndex = 0;
+  const withoutReferences = String(value || '')
+    .replace(PSG_REFERENCE_PATTERN, ' ')
+    .replace(STITCH_REFERENCE_PATTERN, ' ');
+  PSG_REFERENCE_PATTERN.lastIndex = 0;
+  STITCH_REFERENCE_PATTERN.lastIndex = 0;
 
   return withoutReferences
     .replace(/\s+/g, ' ')
     .replace(/^[,;:/|._\-\s]+|[,;:/|._\-\s]+$/g, '')
     .trim();
+}
+
+function collapseCustomerDesignNumberRows(rows) {
+  const mergedByOrder = new Map();
+
+  for (const row of rows || []) {
+    const sourceOrderId = Number(row.source_order_id);
+    const key = Number.isFinite(sourceOrderId) ? `source:${sourceOrderId}` : `order:${row.order_no || ''}`;
+    const existing = mergedByOrder.get(key);
+
+    if (!existing) {
+      mergedByOrder.set(key, {
+        ...row,
+        design_ref: cleanMergedList(row.design_ref),
+        psg_numbers: cleanMergedList(row.psg_numbers),
+      });
+      continue;
+    }
+
+    existing.design_ref = mergeReferenceLists(existing.design_ref, row.design_ref);
+    existing.psg_numbers = mergeReferenceLists(existing.psg_numbers, row.psg_numbers);
+    existing.order_no = existing.order_no || row.order_no;
+    existing.order_date = existing.order_date || row.order_date;
+    existing.job_title = existing.job_title || row.job_title;
+  }
+
+  return Array.from(mergedByOrder.values())
+    .filter((row) => cleanQuery(row.design_ref) || cleanQuery(row.psg_numbers));
+}
+
+function mergeReferenceLists(left, right) {
+  const values = [];
+  const seen = new Set();
+
+  for (const value of [...splitReferenceList(left), ...splitReferenceList(right)]) {
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    values.push(value);
+  }
+
+  return values.join(', ');
+}
+
+function cleanMergedList(value) {
+  return mergeReferenceLists('', value);
+}
+
+function splitReferenceList(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function compareCustomerDesignNumberRows(a, b) {
