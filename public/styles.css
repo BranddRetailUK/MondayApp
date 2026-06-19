@@ -1948,6 +1948,28 @@ body.modal-open{overflow:hidden}
   gap:6px;
   padding-top:6px;
 }
+.db-order-search{
+  margin-left:auto;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  color:#fff;
+  font:13px Arial, Helvetica, sans-serif;
+}
+.db-order-search[hidden]{
+  display:none;
+}
+.db-order-search input{
+  width:260px;
+  height:24px;
+  border:2px inset #fff;
+  border-radius:0;
+  background:#fff;
+  color:#000;
+  font:13px Arial, Helvetica, sans-serif;
+  padding:1px 5px;
+  appearance:none;
+}
 .db-filter-buttons{
   display:flex;
   border:1px solid #fff;
@@ -3895,6 +3917,7 @@ input.db-custom-line-input{
   .db-outstanding-controls{
     height:auto;
     align-items:stretch;
+    flex-wrap:wrap;
     overflow-x:auto;
     padding-top:8px;
   }
@@ -3905,6 +3928,16 @@ input.db-custom-line-input{
   .db-toolbar-button{
     min-width:92px;
     min-height:36px;
+  }
+  .db-order-search{
+    flex:1 0 100%;
+    margin-left:0;
+    align-items:center;
+  }
+  .db-order-search input{
+    width:100%;
+    min-width:0;
+    height:34px;
   }
 
   .db-order-header,

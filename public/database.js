@@ -61,6 +61,7 @@
     outstandingTotal: 0,
     orderLoadToken: 0,
     orderLoadComplete: false,
+    orderSearchQuery: '',
     loadingCustomers: false,
     loadedCustomers: false,
     databaseCustomers: [],
@@ -134,6 +135,7 @@
   let jobAutosaveTimer = 0;
   let contactAutosaveTimer = 0;
   let lineOrderAutosaveTimer = 0;
+  let orderSearchTimer = 0;
   let lineDrag = null;
 
   document.addEventListener('DOMContentLoaded', initDatabaseHub);
@@ -164,6 +166,7 @@
       customerAddressesBody: document.getElementById('db-customer-addresses-body'),
       customerDesignNumbersBody: document.getElementById('db-customer-design-numbers-body'),
       outstandingBody: document.getElementById('db-outstanding-body'),
+      orderSearch: document.getElementById('db-order-search'),
       selectOrder: document.getElementById('db-select-order'),
       footerTitle: document.getElementById('db-footer-title'),
       orderTitle: document.getElementById('db-order-job-title'),
@@ -214,6 +217,7 @@
     els.customerContactsBody.addEventListener('focusout', handleCustomerContactFocusOut);
     els.customersSearch.addEventListener('input', handleDatabaseCustomerSearchInput);
     els.customerAccountManager?.addEventListener('change', handleCustomerAccountManagerChange);
+    els.orderSearch?.addEventListener('input', handleOrderSearchInput);
     els.selectOrder?.addEventListener('change', () => openSelectedOrder(els.selectOrder.value));
     els.headerJobSelect?.addEventListener('change', () => openSelectedOrder(els.headerJobSelect.value));
     els.headerOrderSelect?.addEventListener('change', () => openSelectedOrder(els.headerOrderSelect.value));
@@ -1738,7 +1742,30 @@
     state.orderMode = mode === 'all' ? 'all' : 'open';
     showView('outstanding');
     setFooterTitle(state.orderMode === 'all' ? 'All Orders' : 'Open Orders');
+    syncOrderSearchVisibility();
     loadOutstandingOrders({ force: false });
+  }
+
+  function handleOrderSearchInput() {
+    state.orderSearchQuery = els.orderSearch?.value.trim() || '';
+    if (state.orderMode !== 'all') return;
+
+    clearTimeout(orderSearchTimer);
+    orderSearchTimer = window.setTimeout(() => {
+      if (state.orderMode !== 'all') return;
+      loadOutstandingOrders({ force: true });
+    }, CUSTOMER_SEARCH_DELAY);
+  }
+
+  function syncOrderSearchVisibility() {
+    const wrapper = els.orderSearch?.closest('.db-order-search');
+    if (!wrapper) return;
+
+    const visible = state.orderMode === 'all';
+    wrapper.hidden = !visible;
+    if (visible && els.orderSearch.value !== state.orderSearchQuery) {
+      els.orderSearch.value = state.orderSearchQuery;
+    }
   }
 
   async function loadOutstandingOrders(options = {}) {
@@ -1825,6 +1852,7 @@
     });
     if (!includeTotal) params.set('includeTotal', 'false');
     if (mode !== 'all') params.set('status', 'open');
+    if (mode === 'all' && state.orderSearchQuery) params.set('q', state.orderSearchQuery);
 
     const data = await fetchJson(`/api/database/jobs?${params.toString()}`);
     const jobs = data.jobs || [];
