@@ -917,9 +917,9 @@ body{
 .subitem-row.sub-row::before{
   content:"";
   position:absolute;
-  left:calc(var(--subitem-connector-width, 32px) * -1);
+  left:calc((var(--subitem-connector-width, 32px) * -1) - 2px);
   top:-1px;
-  width:var(--subitem-connector-width, 32px);
+  width:calc(var(--subitem-connector-width, 32px) + 2px);
   height:calc(50% + 1px);
   border-left:1px solid var(--group-accent, var(--accent));
   border-bottom:1px solid var(--group-accent, var(--accent));
