@@ -1964,13 +1964,13 @@
       <div class="db-details-layout">
         <div class="db-detail-box db-customer-box">
           ${detailRow('Customer:', `${customerOpenButton(job)}<input class="db-legacy-input db-code-input" readonly value="${escapeAttr(job.customer_code || '')}">`)}
-          ${detailRow('Contact:', selectBox(job.contact_name))}
-          ${detailRow('Order type:', selectBox(job.order_type || typeLabel(job)))}
-          ${detailRow('Taken by:', selectBox(takenByLabel(job)))}
-          ${detailRow('Delivery:', selectBox(job.delivery_method))}
+          ${detailRow('Contact:', inputBox(job.contact_name))}
+          ${detailRow('Order type:', inputBox(job.order_type || typeLabel(job)))}
+          ${detailRow('Taken by:', inputBox(takenByLabel(job)))}
+          ${detailRow('Delivery:', inputBox(job.delivery_method))}
           ${detailRow('Order date:', inputBox(formatDate(job.order_date, 'short')))}
-          ${detailRow('Delivery:', `${inputBox(formatDate(job.delivery_date, 'short'))}<label class="db-inline-check">${renderCheck(job.customer_date_required)} Customer date</label>`)}
-          ${detailRow('Completion', `${inputBox(formatDate(job.complete_date, 'short'))}${renderCheck(job.is_complete)}`)}
+          ${detailRow('Delivery:', `${inputBox(formatDate(job.delivery_date, 'short'), 'db-delivery-date-field')}<label class="db-inline-check">${renderCheck(job.customer_date_required)} Customer date</label>`)}
+          ${detailRow('Completion', inputBox(formatDate(job.complete_date, 'short'), 'db-completion-date-field'))}
         </div>
 
         <div class="db-detail-box db-address-box">
@@ -2144,6 +2144,7 @@
     const documentType = databaseDocumentType(type);
     state.activeDocumentType = documentType;
     state.documentGeneratedAt = new Date();
+    applyGeneratedDocumentDateToOrderUi(documentType, state.documentGeneratedAt);
 
     const modal = ensureOrderAckModal();
     const config = databaseDocumentConfig(documentType);
@@ -2162,6 +2163,23 @@
       const printButton = modal.querySelector('[data-db-ack-print]');
       if (printButton) printButton.focus();
     });
+  }
+
+  function applyGeneratedDocumentDateToOrderUi(documentType, generatedAt) {
+    if (!state.selectedJob || (documentType !== 'invoice' && documentType !== 'delivery-note')) return;
+
+    const displayDate = formatDate(generatedAt, 'full');
+    if (documentType === 'invoice') {
+      state.selectedJob.complete_date = displayDate;
+      const input = els.detailsPanel?.querySelector('.db-completion-date-field');
+      if (input) input.value = displayDate;
+    }
+
+    if (documentType === 'delivery-note') {
+      state.selectedJob.delivery_date = displayDate;
+      const input = els.detailsPanel?.querySelector('.db-delivery-date-field');
+      if (input) input.value = displayDate;
+    }
   }
 
   function ensureOrderAckModal() {
