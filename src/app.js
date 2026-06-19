@@ -39,6 +39,11 @@ app.get('/api/status', (_req, res) => {
 });
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
+// Machine-to-machine webhooks must stay before Hub API auth middleware.
+app.use('/api/monday', require('./routes/monday-events'));
+app.use('/api/dropbox', require('./routes/dropbox-webhook'));
+console.log('[boot] monday-events mounted at /api/monday');
+
 // Routers
 app.use(requireHubApiAuth, require('./routes/board'));
 app.use(require('./routes/scanner'));
@@ -46,11 +51,6 @@ app.use(requireHubApiAuth, require('./routes/database'));
 app.use('/api/visual-jobs', visualJobs);
 app.use(requireHubApiAuth, visualApprovals);
 app.use(requireHubApiAuth, filesRoute);
-
-// Monday webhook routes
-app.use('/api/monday', require('./routes/monday-events'));
-app.use('/api/dropbox', require('./routes/dropbox-webhook'));
-console.log('[boot] monday-events mounted at /api/monday');
 
 // 404
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));

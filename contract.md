@@ -48,10 +48,12 @@ The most important production path is the Dropbox/Open Orders import:
 - Purpose: Dropbox challenge verification.
 - Query: `challenge`
 - Response: raw challenge string.
+- Auth: public machine-to-machine route mounted before Hub API auth.
 
 - Mounted path: `POST /api/dropbox/webhook`
 - Purpose: starts background sync from Dropbox `OPEN_ORDERS_DROPBOX_PATH` into Monday.
 - Response: immediately returns `{ ok: true }` before sync completes.
+- Auth: public machine-to-machine route mounted before Hub API auth.
 - Concurrency: route-local `syncInFlight` ignores duplicate webhook calls while one sync is running.
 - Main logic:
   - `syncOpenOrdersFromDropbox()`
@@ -91,6 +93,7 @@ The VM-side Access exporter lives in `database2monday_script/uvm_terminal_nohtml
 - Writes `open_orders.csv` via a temporary file and atomic replace so a failed export does not truncate the last good CSV.
 - Supports `--once` for a single diagnostic export pass.
 - `start_exporter.bat` starts the normal VM loop and `run_export_once.bat` runs one diagnostic export from the correct working directory.
+- `build_exe.bat` rebuilds the replacement Windows executable on the 32-bit Access VM using 32-bit Python and PyInstaller.
 
 ### Source Format
 
