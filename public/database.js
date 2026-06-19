@@ -1,6 +1,7 @@
 (function () {
   const PAGE_LIMIT = 100;
-  const MAX_JOBS = 2500;
+  const BACKGROUND_RENDER_BATCH_SIZE = PAGE_LIMIT * 5;
+  const ORDER_SELECTOR_LIMIT = 500;
   const CUSTOMER_SEARCH_DELAY = 180;
   const PRODUCT_SEARCH_DELAY = 180;
   const DESIGN_AUTOSAVE_MS = 5000;
@@ -58,6 +59,8 @@
     loadedOrderMode: '',
     outstandingJobs: [],
     outstandingTotal: 0,
+    orderLoadToken: 0,
+    orderLoadComplete: false,
     loadingCustomers: false,
     loadedCustomers: false,
     databaseCustomers: [],
@@ -113,6 +116,8 @@
     lineDeleteSaving: false,
     designDeleteTarget: null,
     designDeleteSaving: false,
+    closeOrderTarget: null,
+    closeOrderSaving: false,
     currentUser: null,
     activeDocumentType: 'order-ack',
     documentGeneratedAt: null,
@@ -325,6 +330,12 @@
     const deleteContactKey = button.dataset.dbContactDelete;
     if (deleteContactKey) {
       openContactDeleteConfirmation(deleteContactKey);
+      return;
+    }
+
+    if (button.dataset.dbCloseOrder) {
+      await flushOrderAutosaves();
+      openCloseOrderConfirmation();
       return;
     }
 
@@ -1731,64 +1742,127 @@
   }
 
   async function loadOutstandingOrders(options = {}) {
-    if (state.loadingOrders) return;
-    if (state.outstandingJobs.length && state.loadedOrderMode === state.orderMode && !options.force) {
+    const mode = state.orderMode;
+    if (state.loadingOrders && state.loadedOrderMode === mode && !options.force) {
+      renderOutstandingOrders();
+      return;
+    }
+    if (state.outstandingJobs.length && state.loadedOrderMode === mode && !options.force) {
       renderOutstandingOrders();
       return;
     }
 
+    const token = state.orderLoadToken + 1;
+    state.orderLoadToken = token;
     state.loadingOrders = true;
-    els.outstandingBody.innerHTML = renderStatusRow('Loading outstanding orders');
+    state.orderLoadComplete = false;
+    state.loadedOrderMode = mode;
+    state.outstandingJobs = [];
+    state.outstandingTotal = 0;
+    els.outstandingBody.innerHTML = renderStatusRow(mode === 'all' ? 'Loading all orders' : 'Loading outstanding orders');
 
     try {
-      const result = await fetchJobs(state.orderMode);
+      const result = await fetchJobsPage(mode, 0, { includeTotal: true });
+      if (!isCurrentOrderLoad(token, mode)) return;
+
       state.outstandingJobs = result.jobs;
       state.outstandingTotal = result.total;
-      state.loadedOrderMode = state.orderMode;
       renderOutstandingOrders();
       hydrateOrderSelectors();
+      if (result.hasMore) {
+        loadRemainingJobs(mode, result.nextOffset, token);
+      } else {
+        state.loadingOrders = false;
+        state.orderLoadComplete = true;
+      }
     } catch (err) {
-      els.outstandingBody.innerHTML = renderStatusRow(err.message);
-    } finally {
+      if (!isCurrentOrderLoad(token, mode)) return;
       state.loadingOrders = false;
+      state.orderLoadComplete = true;
+      state.loadedOrderMode = '';
+      els.outstandingBody.innerHTML = renderStatusRow(err.message);
     }
   }
 
-  async function fetchJobs(mode) {
-    const jobs = [];
-    let offset = 0;
-    let total = 0;
+  async function loadRemainingJobs(mode, offset, token) {
+    let nextOffset = offset;
+    let lastRenderedCount = state.outstandingJobs.length;
 
-    while (jobs.length < MAX_JOBS) {
-      const params = new URLSearchParams({
-        limit: String(PAGE_LIMIT),
-        offset: String(offset),
-      });
-      if (mode !== 'all') params.set('status', 'open');
+    try {
+      while (isCurrentOrderLoad(token, mode) && nextOffset < state.outstandingTotal) {
+        const result = await fetchJobsPage(mode, nextOffset, { includeTotal: false });
+        if (!isCurrentOrderLoad(token, mode)) return;
+        if (!result.jobs.length) break;
 
-      const data = await fetchJson(`/api/database/jobs?${params.toString()}`);
-      const batch = data.jobs || [];
-      total = data.total || batch.length;
-      jobs.push(...batch);
+        state.outstandingJobs.push(...result.jobs);
+        nextOffset = result.nextOffset;
 
-      offset += data.limit || PAGE_LIMIT;
-      if (!batch.length || offset >= total) break;
+        const loadedSinceRender = state.outstandingJobs.length - lastRenderedCount;
+        const complete = nextOffset >= state.outstandingTotal;
+        if (loadedSinceRender >= BACKGROUND_RENDER_BATCH_SIZE || complete) {
+          renderOutstandingOrders({ hydrateSelectors: false });
+          lastRenderedCount = state.outstandingJobs.length;
+        }
+        await yieldOrderLoad();
+      }
+    } catch (err) {
+      if (isCurrentOrderLoad(token, mode)) {
+        console.error('Background order load failed', err);
+      }
+    } finally {
+      if (!isCurrentOrderLoad(token, mode)) return;
+      state.loadingOrders = false;
+      state.orderLoadComplete = true;
+      renderOutstandingOrders({ hydrateSelectors: false });
     }
-
-    return { jobs, total };
   }
 
-  function renderOutstandingOrders() {
+  async function fetchJobsPage(mode, offset, options = {}) {
+    const includeTotal = options.includeTotal !== false;
+    const params = new URLSearchParams({
+      limit: String(PAGE_LIMIT),
+      offset: String(offset),
+    });
+    if (!includeTotal) params.set('includeTotal', 'false');
+    if (mode !== 'all') params.set('status', 'open');
+
+    const data = await fetchJson(`/api/database/jobs?${params.toString()}`);
+    const jobs = data.jobs || [];
+    const limit = data.limit || PAGE_LIMIT;
+    const nextOffset = offset + limit;
+    const total = Number.isFinite(Number(data.total))
+      ? Number(data.total)
+      : Math.max(state.outstandingTotal || 0, offset + jobs.length);
+    return {
+      jobs,
+      total,
+      nextOffset,
+      hasMore: jobs.length > 0 && nextOffset < total,
+    };
+  }
+
+  function isCurrentOrderLoad(token, mode) {
+    return state.orderLoadToken === token
+      && state.loadedOrderMode === mode
+      && state.orderMode === mode;
+  }
+
+  function yieldOrderLoad() {
+    return new Promise((resolve) => window.setTimeout(resolve, 0));
+  }
+
+  function renderOutstandingOrders(options = {}) {
+    const hydrateSelectors = options.hydrateSelectors !== false;
     const rows = groupedOutstandingRows();
     const jobs = rows.flatMap((group) => group.jobs);
     if (!jobs.length) {
       els.outstandingBody.innerHTML = renderStatusRow('No matching orders');
-      hydrateOrderSelectors();
+      if (hydrateSelectors) hydrateOrderSelectors();
       return;
     }
 
     els.outstandingBody.innerHTML = jobs.map(renderOutstandingRow).join('');
-    hydrateOrderSelectors();
+    if (hydrateSelectors) hydrateOrderSelectors();
   }
 
   function groupedOutstandingRows() {
@@ -1936,7 +2010,9 @@
   }
 
   function selectorJobs() {
-    const jobs = [...state.outstandingJobs];
+    const jobs = state.orderMode === 'all'
+      ? state.outstandingJobs.slice(0, ORDER_SELECTOR_LIMIT)
+      : [...state.outstandingJobs];
     if (state.selectedJob?.source_order_id && !jobs.some((job) => Number(job.source_order_id) === Number(state.selectedJob.source_order_id))) {
       jobs.unshift(state.selectedJob);
     }
@@ -1984,6 +2060,9 @@
           <div class="db-form-row db-comments-row">
             <label>Comments:</label>
             <textarea readonly>${escapeHtml(job.comments || '')}</textarea>
+          </div>
+          <div class="db-close-order-row">
+            <button class="db-close-order-button" type="button" data-db-close-order="true"${truthy(job.is_complete) ? ' disabled' : ''}>Close Order</button>
           </div>
         </div>
       </div>
@@ -2233,9 +2312,11 @@
     state.lineDeleteTarget = { lineItemId: id, label: lineDeleteLabel(item) };
     state.designDeleteTarget = null;
     state.contactDeleteTarget = null;
+    state.closeOrderTarget = null;
     state.lineDeleteSaving = false;
     state.designDeleteSaving = false;
     state.contactDeleteSaving = false;
+    state.closeOrderSaving = false;
 
     const modal = ensureLineDeleteModal();
     const message = modal.querySelector('.db-line-delete-message');
@@ -2299,7 +2380,9 @@
     }
 
     if (button.dataset.dbLineDeleteConfirm) {
-      if (state.contactDeleteTarget) {
+      if (state.closeOrderTarget) {
+        confirmCloseOrder();
+      } else if (state.contactDeleteTarget) {
         confirmDeleteContact();
       } else if (state.designDeleteTarget) {
         confirmDeleteDesignPosition();
@@ -2310,7 +2393,7 @@
   }
 
   function closeLineDeleteConfirmation() {
-    if (state.lineDeleteSaving || state.designDeleteSaving || state.contactDeleteSaving) return;
+    if (state.lineDeleteSaving || state.designDeleteSaving || state.contactDeleteSaving || state.closeOrderSaving) return;
     const modal = document.getElementById('db-line-delete-modal');
     if (!modal) return;
     modal.hidden = true;
@@ -2319,6 +2402,7 @@
     state.lineDeleteTarget = null;
     state.designDeleteTarget = null;
     state.contactDeleteTarget = null;
+    state.closeOrderTarget = null;
   }
 
   async function confirmDeleteLineItem() {
@@ -2358,7 +2442,7 @@
     const error = modal.querySelector('.db-line-delete-error');
     if (confirm) {
       confirm.disabled = saving;
-      confirm.textContent = saving ? 'Deleting...' : 'Confirm';
+      confirm.textContent = saving ? lineDeleteSavingLabel() : 'Confirm';
     }
     if (cancel) cancel.disabled = saving;
     if (error) error.textContent = errorMessage;
@@ -2377,9 +2461,11 @@
     state.designDeleteTarget = { designKey, label: designDeleteLabel(row) };
     state.lineDeleteTarget = null;
     state.contactDeleteTarget = null;
+    state.closeOrderTarget = null;
     state.designDeleteSaving = false;
     state.lineDeleteSaving = false;
     state.contactDeleteSaving = false;
+    state.closeOrderSaving = false;
 
     const modal = ensureLineDeleteModal();
     const message = modal.querySelector('.db-line-delete-message');
@@ -2467,9 +2553,11 @@
     };
     state.lineDeleteTarget = null;
     state.designDeleteTarget = null;
+    state.closeOrderTarget = null;
     state.contactDeleteSaving = false;
     state.lineDeleteSaving = false;
     state.designDeleteSaving = false;
+    state.closeOrderSaving = false;
 
     const modal = ensureLineDeleteModal();
     const message = modal.querySelector('.db-line-delete-message');
@@ -2522,12 +2610,81 @@
     }
   }
 
+  function lineDeleteSavingLabel() {
+    if (state.closeOrderTarget) return 'Closing...';
+    return 'Deleting...';
+  }
+
   function contactDeleteLabel(contact) {
     const parts = contactNameParts(contact);
     return [parts.firstName, parts.lastName].filter(Boolean).join(' ')
       || contact.contact_email
       || contact.contact_phone
       || 'this contact';
+  }
+
+  function openCloseOrderConfirmation() {
+    if (!state.selectedJob?.source_order_id || truthy(state.selectedJob.is_complete)) return;
+
+    state.closeOrderTarget = {
+      sourceOrderId: Number(state.selectedJob.source_order_id),
+      label: state.selectedJob.order_no || state.selectedJob.job_title || 'this order',
+    };
+    state.lineDeleteTarget = null;
+    state.designDeleteTarget = null;
+    state.contactDeleteTarget = null;
+    state.lineDeleteSaving = false;
+    state.designDeleteSaving = false;
+    state.contactDeleteSaving = false;
+    state.closeOrderSaving = false;
+
+    const modal = ensureLineDeleteModal();
+    const message = modal.querySelector('.db-line-delete-message');
+    const error = modal.querySelector('.db-line-delete-error');
+    if (message) message.textContent = `Close order ${state.closeOrderTarget.label}?`;
+    if (error) error.textContent = '';
+    setLineDeleteModalSaving(false);
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open', 'db-line-delete-open');
+
+    window.requestAnimationFrame(() => {
+      modal.querySelector('[data-db-line-delete-cancel]')?.focus();
+    });
+  }
+
+  async function confirmCloseOrder() {
+    const target = state.closeOrderTarget;
+    if (!target || state.closeOrderSaving || !state.selectedJob?.source_order_id) return;
+
+    state.closeOrderSaving = true;
+    setLineDeleteModalSaving(true);
+
+    try {
+      const data = await fetchJson(`/api/database/jobs/${encodeURIComponent(target.sourceOrderId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_complete: true }),
+      });
+      state.selectedJob = { ...state.selectedJob, ...data.job };
+      if (state.orderMode === 'all') {
+        updateOutstandingJob(state.selectedJob);
+      } else {
+        state.outstandingJobs = state.outstandingJobs.filter((job) => (
+          Number(job.source_order_id) !== Number(target.sourceOrderId)
+        ));
+      }
+      state.closeOrderSaving = false;
+      closeLineDeleteConfirmation();
+      renderDetailsPanel();
+      renderOutstandingOrders();
+      hydrateOrderSelectors();
+      await loadHomeMetrics();
+    } catch (err) {
+      state.closeOrderSaving = false;
+      setLineDeleteModalSaving(false, err.message || 'Failed to close order');
+      console.error('Close order failed', err);
+    }
   }
 
   function printOrderAcknowledgement() {

@@ -54,15 +54,18 @@ router.get('/api/database/summary', async (_req, res) => {
 router.get('/api/database/jobs', async (req, res) => {
   const limit = clampInt(req.query.limit, 100, 1, 100);
   const offset = clampInt(req.query.offset, 0, 0, 100000);
+  const includeTotal = cleanQuery(req.query.includeTotal).toLowerCase() !== 'false';
   const { whereSql, params } = buildJobFilters(req.query);
 
   try {
-    const count = await pool.query(
-      `SELECT COUNT(*)::int AS total
-       FROM database_jobs j
-       ${whereSql}`,
-      params
-    );
+    const count = includeTotal
+      ? await pool.query(
+        `SELECT COUNT(*)::int AS total
+         FROM database_jobs j
+         ${whereSql}`,
+        params
+      )
+      : null;
 
     const listParams = [...params, limit, offset];
     const limitParam = listParams.length - 1;
@@ -139,7 +142,7 @@ router.get('/api/database/jobs', async (req, res) => {
 
     res.json({
       jobs: jobs.rows,
-      total: count.rows[0].total,
+      total: includeTotal ? count.rows[0].total : null,
       limit,
       offset,
     });
@@ -1072,21 +1075,34 @@ router.put('/api/database/jobs/:id', async (req, res) => {
     return res.status(400).json({ error: 'Invalid job id' });
   }
 
-  if (!Object.prototype.hasOwnProperty.call(req.body || {}, 'job_title')) {
+  const payload = req.body || {};
+  const hasJobTitle = Object.prototype.hasOwnProperty.call(payload, 'job_title');
+  const hasIsComplete = Object.prototype.hasOwnProperty.call(payload, 'is_complete');
+
+  if (!hasJobTitle && !hasIsComplete) {
     return res.status(400).json({ error: 'No supported job fields supplied' });
   }
 
-  const jobTitle = cleanNullable(req.body.job_title);
+  const values = [id];
+  const updates = [];
+  if (hasJobTitle) {
+    values.push(cleanNullable(payload.job_title));
+    updates.push(`job_title = $${values.length}`);
+  }
+  if (hasIsComplete) {
+    values.push(toBoolean(payload.is_complete));
+    updates.push(`is_complete = $${values.length}`);
+  }
 
   try {
     const result = await pool.query(
       `UPDATE database_jobs
-       SET job_title = $2,
+       SET ${updates.join(', ')},
            updated_at_source = NOW(),
            imported_at = NOW()
        WHERE source_order_id = $1 OR order_no = $1
        RETURNING *`,
-      [id, jobTitle]
+      values
     );
 
     if (!result.rowCount) {

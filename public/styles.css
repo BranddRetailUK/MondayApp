@@ -2973,6 +2973,29 @@ body.modal-open{overflow:hidden}
   height:76px;
   resize:none;
 }
+.db-close-order-row{
+  display:flex;
+  justify-content:flex-end;
+  margin-top:10px;
+}
+.db-close-order-button{
+  min-width:104px;
+  height:28px;
+  border:2px outset #fff;
+  border-radius:0;
+  background:#eee;
+  color:#000;
+  font:13px Arial, Helvetica, sans-serif;
+  cursor:pointer;
+}
+.db-close-order-button:hover,
+.db-close-order-button:focus{
+  background:#fff;
+}
+.db-close-order-button:disabled{
+  color:#777;
+  cursor:default;
+}
 .db-green-input{
   background:#fff!important;
 }
