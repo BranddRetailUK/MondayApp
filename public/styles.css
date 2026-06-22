@@ -4308,6 +4308,18 @@ input.db-custom-line-input{
   #tab-dashboard #board{
     padding:6px 0 10px;
   }
+  .proof-modal{
+    align-items:stretch;
+    justify-content:stretch;
+  }
+  .proof-modal-inner{
+    width:100vw;
+    height:100vh;
+    height:100dvh;
+    border:0;
+    border-radius:0;
+    box-shadow:none;
+  }
   .proof-modal-head{
     min-height:38px;
     padding:5px 46px 5px 10px;
@@ -4330,13 +4342,28 @@ input.db-custom-line-input{
     color:#ff6b6b;
     font-size:24px;
   }
+  .proof-modal-body{
+    padding:4px 0 0;
+  }
   .proof-mobile-page-controls:not([hidden]){
-    margin:3px 0 0;
-    transform:translateY(-2px);
+    position:absolute;
+    left:50%;
+    bottom:max(8px, env(safe-area-inset-bottom));
+    z-index:6;
+    margin:0;
+    transform:translateX(-50%);
+    pointer-events:none;
+  }
+  .proof-modal-has-file-controls .proof-mobile-page-controls:not([hidden]){
+    bottom:44px;
   }
   .proof-mobile-page-button{
     height:30px;
     font-size:26px;
+    pointer-events:auto;
+  }
+  .proof-mobile-page-controls .proof-modal-page{
+    pointer-events:auto;
   }
   .proof-modal-page{
     min-width:76px;
