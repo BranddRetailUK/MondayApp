@@ -57,10 +57,10 @@ async function updateDashboardStatusColumn(req, res) {
   const itemId = String(req.params.itemId || '').trim();
   const columnId = String(req.body?.columnId || '').trim();
   const requestedLabel = String(req.body?.label || '').trim();
+  const clearRequested = req.body?.clear === true;
 
   if (!/^\d+$/.test(itemId)) return res.status(400).json({ error: 'Invalid item id' });
   if (!columnId) return res.status(400).json({ error: 'columnId is required' });
-  if (!requestedLabel) return res.status(400).json({ error: 'label is required' });
 
   try {
     const column = await fetchBoardColumn(columnId);
@@ -72,6 +72,25 @@ async function updateDashboardStatusColumn(req, res) {
     if (!matchesConfiguredColumn && !matchesEditableDashboardColumn) {
       return res.status(400).json({ error: 'Only dashboard STATUS and PRIORITY columns can be updated' });
     }
+
+    if (clearRequested) {
+      if (normalizedTitle !== 'PRIORITY') {
+        return res.status(400).json({ error: 'Only the dashboard PRIORITY column can be cleared' });
+      }
+
+      await changeColumnValue(itemId, columnId, JSON.stringify({}));
+      clearBoardCache();
+      return res.json({
+        ok: true,
+        itemId,
+        columnId,
+        columnTitle: column.title || columnId,
+        label: '',
+        cleared: true
+      });
+    }
+
+    if (!requestedLabel) return res.status(400).json({ error: 'label is required' });
 
     const matchedLabel = findConfiguredStatusLabel(column.settings_str, requestedLabel);
     if (!matchedLabel) {

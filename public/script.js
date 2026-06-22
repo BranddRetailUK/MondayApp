@@ -68,6 +68,7 @@ let __proofModalState = {
   pageNumber: 1,
   pageCount: 1,
   pdf: null,
+  modalLabel: 'Proof',
   renderToken: 0
 };
 
@@ -635,6 +636,7 @@ function renderBoard(payload) {
   boardDiv.style.setProperty('--mobile-closed-group-width', `${mobileClosedGroupWidth}px`);
   const boardSortPlan = getBoardSortPlan(boardColumns);
   const dueDateColumn = getDueDateColumn(boardColumns);
+  const globalJobNameWidth = buildJobNameColumnWidth(getAllBoardItems(board.groups || []));
   const zoomLayer = document.createElement('div');
   zoomLayer.className = 'dashboard-zoom-layer';
   boardDiv.appendChild(zoomLayer);
@@ -647,7 +649,7 @@ function renderBoard(payload) {
     const groupGridSpec = buildDashboardGridSpec(boardColumns, {
       subitem: false,
       widthOverrides: groupColumnWidths,
-      nameWidth: buildJobNameColumnWidth(sortedItems)
+      nameWidth: globalJobNameWidth
     });
     const groupKey = slugify(collectionName);
     const isCollapsed = uiState.collapsedGroups.has(groupKey) ||
@@ -1266,6 +1268,10 @@ function isDynamicBoardTextWidthColumn(title) {
     compact === 'DESIGNNUM';
 }
 
+function getAllBoardItems(groups) {
+  return (Array.isArray(groups) ? groups : []).flatMap(group => group?.items_page?.items || []);
+}
+
 function buildJobNameColumnWidth(items) {
   let max = measureBoardTextWidth('JOB', "700 13px Manrope, 'Segoe UI', system-ui, sans-serif");
   for (const item of (Array.isArray(items) ? items : [])) {
@@ -1595,7 +1601,7 @@ function isEditableDashboardStatusColumn(column) {
 function getStatusOptions(column) {
   const settings = parseJsonMaybe(column?.settings_str) || {};
   const labels = settings.labels || settings.labels_positions || {};
-  return Object.entries(labels)
+  const options = Object.entries(labels)
     .map(([index, label]) => {
       const cleanLabel = normalizeCellText(label);
       if (!cleanLabel) return null;
@@ -1608,6 +1614,21 @@ function getStatusOptions(column) {
     })
     .filter(Boolean)
     .sort(compareStatusOptions);
+  if (isPriorityStatusColumn(column)) {
+    return [{
+      clear: true,
+      index: '',
+      label: '',
+      displayLabel: 'No Priority',
+      color: '#7f879e',
+      position: -1
+    }, ...options];
+  }
+  return options;
+}
+
+function isPriorityStatusColumn(column) {
+  return normalizeColumnTitle(column?.title || '') === 'PRIORITY';
 }
 
 function resolveStatusOptionColor(settings, index, label) {
@@ -1670,12 +1691,13 @@ function openStatusDropdown({ anchor, item, column, currentText }) {
 
   for (const option of options) {
     const button = document.createElement('button');
-    const active = normalizeStatusLabel(option.label) === currentLabel;
+    const optionText = option.displayLabel || option.label;
+    const active = option.clear ? !currentLabel : normalizeStatusLabel(option.label) === currentLabel;
     button.type = 'button';
     button.className = 'monday-status-option';
     if (active) button.classList.add('active');
-    button.textContent = option.label;
-    button.title = option.label;
+    button.textContent = optionText;
+    button.title = optionText;
     button.style.backgroundColor = option.color;
     button.setAttribute('role', 'menuitemradio');
     button.setAttribute('aria-checked', active ? 'true' : 'false');
@@ -1756,7 +1778,7 @@ function handleStatusDropdownKeydown(event) {
 
 async function selectStatusOption(option) {
   const state = __statusDropdownState;
-  if (!state?.itemId || !state?.columnId || !option?.label) return;
+  if (!state?.itemId || !state?.columnId || (!option?.label && !option?.clear)) return;
   closeStatusDropdown();
   __statusUpdateInFlight += 1;
 
@@ -1770,7 +1792,8 @@ async function selectStatusOption(option) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         columnId: state.columnId,
-        label: option.label
+        label: option.clear ? '' : option.label,
+        clear: option.clear === true
       })
     });
     if (!response.ok) throw new Error(await readApiError(response));
@@ -1795,9 +1818,11 @@ function updateCachedBoardStatusValue(itemId, columnId, option) {
     item.column_values.push(value);
   }
 
-  value.text = option.label;
+  value.text = option.clear ? '' : option.label;
   value.type = 'status';
-  value.value = JSON.stringify({ index: normalizeStatusOptionIndex(option.index) });
+  value.value = option.clear
+    ? JSON.stringify({})
+    : JSON.stringify({ index: normalizeStatusOptionIndex(option.index) });
 }
 
 function normalizeStatusOptionIndex(index) {
@@ -1859,16 +1884,22 @@ function renderFileValue(cell, value, text, column) {
   if (!files.length) return;
   cell.classList.add('monday-file-cell');
   files.forEach((file, index) => {
-    if (isProofColumn(column)) {
-      renderProofFileButton(cell, files, index, text);
+    if (isPreviewModalFileColumn(column)) {
+      renderPreviewFileButton(cell, files, index, text, column);
     } else {
       renderFileIconLink(cell, file, text);
     }
   });
 }
 
-function isProofColumn(column) {
-  return String(column?.title || '').trim().toUpperCase() === 'PROOF';
+function isPreviewModalFileColumn(column) {
+  const normalized = normalizeColumnTitle(column?.title || '');
+  const compact = normalized.replace(/[^A-Z0-9]/g, '');
+  return compact === 'PROOF' ||
+    compact === 'FILE' ||
+    compact === 'FILES' ||
+    compact === 'IMAGE' ||
+    compact === 'IMAGES';
 }
 
 function isLikelyFileUrl(value) {
@@ -1888,21 +1919,29 @@ function renderFileIconLink(cell, file, text) {
   cell.appendChild(link);
 }
 
-function renderProofFileButton(cell, files, index, text) {
+function renderPreviewFileButton(cell, files, index, text, column) {
   const file = files[index];
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'monday-file-link monday-proof-trigger';
-  button.title = file.name || text || 'Open proof';
+  const label = getPreviewModalLabel(column);
+  button.title = file.name || text || `Open ${label.toLowerCase()}`;
   button.setAttribute('aria-label', button.title);
 
   button.appendChild(buildFileIcon(file));
   button.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
-    openProofModal(files, index);
+    openProofModal(files, index, { label });
   });
   cell.appendChild(button);
+}
+
+function getPreviewModalLabel(column) {
+  const title = normalizeCellText(column?.title || '');
+  if (!title) return 'File';
+  const lower = title.toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
 }
 
 function buildFileIcon(file) {
@@ -1930,7 +1969,7 @@ function ensureProofModal() {
       <button class="proof-modal-mobile-close" id="proof-modal-mobile-close" type="button" aria-label="Close proof">×</button>
       <div class="proof-modal-head">
         <div class="proof-modal-title-block">
-          <div class="proof-modal-label">Proof</div>
+          <div class="proof-modal-label" id="proof-modal-label">Proof</div>
           <h3 id="proof-modal-title">Proof file</h3>
         </div>
         <button class="proof-modal-close" id="proof-modal-close" type="button" aria-label="Close proof">×</button>
@@ -1968,12 +2007,13 @@ function ensureProofModal() {
   return modal;
 }
 
-function openProofModal(files, startIndex = 0) {
+function openProofModal(files, startIndex = 0, options = {}) {
   const normalized = (Array.isArray(files) ? files : [])
     .map(file => normalizeMondayFile(file) || file)
     .filter(file => file && (file.url || file.assetId || file.name));
   if (!normalized.length) return;
   const safeStartIndex = Math.min(Math.max(Number.parseInt(startIndex, 10) || 0, 0), normalized.length - 1);
+  const modalLabel = normalizeCellText(options.label || 'Proof') || 'Proof';
 
   ensureProofModal();
   __proofModalState = {
@@ -1982,6 +2022,7 @@ function openProofModal(files, startIndex = 0) {
     pageNumber: 1,
     pageCount: 1,
     pdf: null,
+    modalLabel,
     renderToken: __proofModalState.renderToken + 1
   };
   document.getElementById('proof-modal')?.classList.remove('hidden');
@@ -2015,6 +2056,7 @@ function getProofModalElements() {
   return {
     modal: document.getElementById('proof-modal'),
     body: document.getElementById('proof-modal-body'),
+    label: document.getElementById('proof-modal-label'),
     title: document.getElementById('proof-modal-title'),
     filePrev: document.getElementById('proof-file-prev'),
     fileNext: document.getElementById('proof-file-next'),
@@ -2042,8 +2084,10 @@ async function renderProofModalFile() {
   const state = __proofModalState;
   const token = ++state.renderToken;
   const file = state.files[state.fileIndex];
-  const { title } = getProofModalElements();
-  if (title) title.textContent = file?.name || 'Proof file';
+  const { label, title } = getProofModalElements();
+  const modalLabel = state.modalLabel || 'File';
+  if (label) label.textContent = modalLabel;
+  if (title) title.textContent = file?.name || `${modalLabel} file`;
   state.pageNumber = 1;
   state.pageCount = 1;
   state.pdf = null;
