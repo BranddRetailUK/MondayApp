@@ -600,9 +600,6 @@ function renderBoard(payload) {
 
   const boardColumns = getRenderableBoardColumns(board.columns || []);
   const subitemColumns = getRenderableSubitemColumns(board.subitemColumns || []);
-  const boardColumnWidths = buildBoardColumnWidthOverrides(boardColumns, board.groups || []);
-  const jobNameWidth = buildJobNameColumnWidth(board.groups || []);
-  const gridSpec = buildDashboardGridSpec(boardColumns, { subitem: false, widthOverrides: boardColumnWidths, nameWidth: jobNameWidth });
   const groupSummaryTitleWidth = buildGroupSummaryTitleWidth(board.groups || []);
   const mobileClosedGroupWidth = buildMobileClosedGroupSummaryWidth(board.groups || []);
   boardDiv.style.setProperty('--mobile-closed-group-width', `${mobileClosedGroupWidth}px`);
@@ -616,6 +613,12 @@ function renderBoard(payload) {
     const collectionName = group.title || 'Untitled Group';
     const items = (group.items_page && group.items_page.items) || [];
     const sortedItems = sortItemsForBoard(items, boardSortPlan);
+    const groupColumnWidths = buildBoardColumnWidthOverrides(boardColumns, sortedItems);
+    const groupGridSpec = buildDashboardGridSpec(boardColumns, {
+      subitem: false,
+      widthOverrides: groupColumnWidths,
+      nameWidth: buildJobNameColumnWidth(sortedItems)
+    });
     const groupKey = slugify(collectionName);
     const isCollapsed = uiState.collapsedGroups.has(groupKey) ||
       (!uiState.hasRenderedGroups && isDefaultCollapsedGroup(collectionName));
@@ -645,7 +648,7 @@ function renderBoard(payload) {
     sectionTitle.addEventListener('click', toggleGroup);
     groupWrap.appendChild(sectionTitle);
 
-    const groupSummary = buildGroupSummary(collectionName, sortedItems, gridSpec, groupSummaryTitleWidth);
+    const groupSummary = buildGroupSummary(collectionName, sortedItems, groupGridSpec, groupSummaryTitleWidth);
     groupSummary.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
     groupSummary.addEventListener('click', toggleGroup);
     groupWrap.appendChild(groupSummary);
@@ -655,15 +658,15 @@ function renderBoard(payload) {
 
     const grid = document.createElement('div');
     grid.className = 'board-grid';
-    const mobileGridSpec = buildMobileGridSpecForGroup(gridSpec, collectionName);
-    grid.style.setProperty('--board-cols', gridSpec.template);
+    const mobileGridSpec = buildMobileGridSpecForGroup(groupGridSpec, collectionName);
+    grid.style.setProperty('--board-cols', groupGridSpec.template);
     grid.style.setProperty('--mobile-board-cols', mobileGridSpec.template);
     grid.style.setProperty('--mobile-board-min-width', `${mobileGridSpec.minWidth}px`);
-    grid.style.minWidth = `${gridSpec.minWidth}px`;
+    grid.style.minWidth = `${groupGridSpec.minWidth}px`;
 
     const headRow = document.createElement('div');
     headRow.className = 'grid-row grid-head';
-    for (const spec of gridSpec.columns) {
+    for (const spec of groupGridSpec.columns) {
       headRow.appendChild(buildHeaderCell(spec, { sortable: true }));
     }
     grid.appendChild(headRow);
@@ -677,10 +680,10 @@ function renderBoard(payload) {
       row.className = 'grid-row job-row';
       const duePriorityClass = __priorityHighlightsEnabled ? getDuePriorityClass(item, dueDateColumn) : '';
       if (duePriorityClass) row.classList.add(duePriorityClass);
-      row.style.setProperty('--board-cols', gridSpec.template);
+      row.style.setProperty('--board-cols', groupGridSpec.template);
       const subitemsOpen = uiState.openSubitems.has(itemId);
 
-      for (const spec of gridSpec.columns) {
+      for (const spec of groupGridSpec.columns) {
         row.appendChild(buildItemCell(item, spec, { subitemsOpen }));
       }
       grid.appendChild(row);
@@ -1209,15 +1212,15 @@ function getStatusSortIndex(value) {
   return Number.isFinite(index) ? index : null;
 }
 
-function buildBoardColumnWidthOverrides(columns, groups) {
+function buildBoardColumnWidthOverrides(columns, items) {
   const overrides = new Map();
   for (const column of columns) {
     const title = String(column.title || '').trim().toUpperCase();
     if (!isDynamicBoardTextWidthColumn(title)) continue;
-    const maxTextWidth = getMaxColumnTextWidth(groups, column.id);
-    if (maxTextWidth > 0) {
-      overrides.set(column.id, Math.max(getColumnWidth(column), Math.ceil(maxTextWidth + 34)));
-    }
+    const maxTextWidth = getMaxColumnTextWidth(items, column.id);
+    const titleWidth = measureBoardTextWidth(column.title || column.id || '', "700 13px Manrope, 'Segoe UI', system-ui, sans-serif");
+    const widestText = Math.max(titleWidth, maxTextWidth);
+    overrides.set(column.id, Math.max(72, Math.ceil(widestText + 34)));
   }
   return overrides;
 }
@@ -1225,23 +1228,24 @@ function buildBoardColumnWidthOverrides(columns, groups) {
 function isDynamicBoardTextWidthColumn(title) {
   const normalized = String(title || '').trim().toUpperCase().replace(/\s+/g, ' ');
   const compact = normalized.replace(/[^A-Z0-9]/g, '');
-  return normalized === 'NOTES' || compact === 'DESPSG' || compact === 'DESNOPSG';
+  return normalized === 'NOTES' ||
+    compact === 'DESPSG' ||
+    compact === 'DESNOPSG' ||
+    compact === 'DESIGNNUMBER' ||
+    compact === 'DESIGNNO' ||
+    compact === 'DESIGNNUM';
 }
 
-function buildJobNameColumnWidth(groups) {
-  let max = 0;
-  for (const group of (Array.isArray(groups) ? groups : [])) {
-    const items = (group.items_page && group.items_page.items) || [];
-    for (const item of items) {
-      const text = normalizeCellText(item?.name || '');
-      if (!text) continue;
-      const subitems = Array.isArray(item?.subitems) ? item.subitems : [];
-      const subitemBadgeWidth = subitems.length > 0 ? measureSubitemCountBadgeWidth(subitems.length) : 0;
-      max = Math.max(max, measureBoardTextWidth(text) + subitemBadgeWidth);
-    }
+function buildJobNameColumnWidth(items) {
+  let max = measureBoardTextWidth('JOB', "700 13px Manrope, 'Segoe UI', system-ui, sans-serif");
+  for (const item of (Array.isArray(items) ? items : [])) {
+    const text = normalizeCellText(item?.name || '');
+    if (!text) continue;
+    const subitems = Array.isArray(item?.subitems) ? item.subitems : [];
+    const subitemBadgeWidth = subitems.length > 0 ? measureSubitemCountBadgeWidth(subitems.length) : 0;
+    max = Math.max(max, measureBoardTextWidth(text) + subitemBadgeWidth);
   }
-  if (!max) return 560;
-  return Math.max(560, Math.ceil(max + 122));
+  return Math.max(220, Math.ceil(max + 66));
 }
 
 function buildGroupSummaryTitleWidth(groups) {
@@ -1304,16 +1308,13 @@ function measureSubitemCountBadgeWidth(count) {
   return Math.max(18, Math.ceil(textWidth + 10)) + 9;
 }
 
-function getMaxColumnTextWidth(groups, columnId) {
+function getMaxColumnTextWidth(items, columnId) {
   let max = 0;
-  for (const group of (Array.isArray(groups) ? groups : [])) {
-    const items = (group.items_page && group.items_page.items) || [];
-    for (const item of items) {
-      const value = findColumnValue(item, columnId);
-      const text = normalizeCellText(value?.text || '');
-      if (!text) continue;
-      max = Math.max(max, measureBoardTextWidth(text));
-    }
+  for (const item of (Array.isArray(items) ? items : [])) {
+    const value = findColumnValue(item, columnId);
+    const text = normalizeCellText(value?.text || '');
+    if (!text) continue;
+    max = Math.max(max, measureBoardTextWidth(text));
   }
   return max;
 }
