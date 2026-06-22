@@ -1,7 +1,12 @@
 // --- Monday Dashboard Frontend (Monday-style grid + collapsible groups/subitems) ---
 
 const PROD_ORIGIN = window.location.origin;
-const ENDPOINTS = { data: '/api/board', auth: '/auth', scans: '/api/scan-states' };
+const ENDPOINTS = {
+  data: '/api/board',
+  auth: '/auth',
+  scans: '/api/scan-states',
+  statusColumn: (itemId) => `/api/board/items/${encodeURIComponent(itemId)}/status-column`
+};
 const DASHBOARD_TAB_STORAGE_KEY = 'ultimateHub.activeDashboardTab';
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'ultimateHub.sidebarCollapsed';
 const MOBILE_NAV_MEDIA = '(max-width: 720px), (max-width: 960px) and (max-height: 520px)';
@@ -27,12 +32,36 @@ const MOBILE_PRINT_EMBROIDERY_HIDDEN_COLUMN_TITLES = new Set([
   'CHECKED IN',
   'CHECKEDIN'
 ]);
+const STATUS_LABEL_FALLBACK_COLORS = {
+  'waiting approval': '#8088a8',
+  'stock in': '#66ccc9',
+  'part-stock': '#e35a75',
+  'to sample': '#a8d846',
+  'completed': '#33d391',
+  'checked in': '#e959b3',
+  'sampled': '#579bfc',
+  'in production': '#d8c95e',
+  'supplied clothing': '#3aa7c9',
+  'ready to print': '#2e9b69',
+  'invoiced': '#ff2f92',
+  'hold': '#c95778',
+  'pre-production': '#6840b3',
+  'no stock': '#ff7f50',
+  'ordered': '#2b7de9',
+  'critical': '#bb3354',
+  'urgent': '#e2445c',
+  'high': '#ff642e',
+  'medium': '#fdab3d',
+  'low': '#579bfc'
+};
 let __boardRefreshTimer = null;
 let __boardLoading = false;
 let __boardSortState = null;
 let __priorityHighlightsEnabled = localStorage.getItem(PRIORITY_HIGHLIGHT_STORAGE_KEY) !== '0';
 let __dashboardZoom = 1;
 let __dashboardPinchState = null;
+let __statusDropdownState = null;
+let __statusUpdateInFlight = 0;
 let __proofModalState = {
   files: [],
   fileIndex: 0,
@@ -578,6 +607,7 @@ function startBoardAutoRefresh() {
     if (document.hidden) return;
     const dashboard = document.getElementById('tab-dashboard');
     if (dashboard && !dashboard.classList.contains('active')) return;
+    if (isStatusDropdownOpen() || __statusUpdateInFlight > 0) return;
     loadBoard({ forceRefresh: true });
   }, BOARD_AUTO_REFRESH_MS);
 }
@@ -1489,7 +1519,7 @@ function buildColumnValueCell(entity, column, { subitem = false } = {}) {
   if (text) cell.title = text;
 
   if (column.type === 'status') {
-    renderStatusValue(cell, value, column, text);
+    renderStatusValue(cell, value, column, text, { entity, subitem });
   } else if (column.type === 'checkbox') {
     renderCheckboxValue(cell, value, column);
   } else if (column.type === 'file') {
@@ -1522,9 +1552,27 @@ function normalizeCellText(text) {
   return String(text || '').replace(/\s+/g, ' ').trim();
 }
 
-function renderStatusValue(cell, value, column, text) {
-  const badge = document.createElement('span');
+function renderStatusValue(cell, value, column, text, { entity = null, subitem = false } = {}) {
+  const editable = !subitem && entity?.id && isEditableDashboardStatusColumn(column) && getStatusOptions(column).length > 0;
+  const badge = document.createElement(editable ? 'button' : 'span');
   badge.className = 'monday-status-badge';
+  if (editable) {
+    badge.type = 'button';
+    badge.classList.add('monday-status-button');
+    badge.setAttribute('aria-haspopup', 'menu');
+    badge.setAttribute('aria-label', text ? `Change job status from ${text}` : 'Set job status');
+    badge.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openStatusDropdown({
+        anchor: badge,
+        item: entity,
+        column,
+        currentText: text
+      });
+    });
+  }
+
   if (!text) {
     badge.classList.add('empty');
     cell.appendChild(badge);
@@ -1536,6 +1584,250 @@ function renderStatusValue(cell, value, column, text) {
   badge.style.color = '#fff';
   badge.textContent = text;
   cell.appendChild(badge);
+}
+
+function isEditableDashboardStatusColumn(column) {
+  if (column?.type !== 'status') return false;
+  const title = normalizeColumnTitle(column.title);
+  return title === 'STATUS' || title === 'PRIORITY';
+}
+
+function getStatusOptions(column) {
+  const settings = parseJsonMaybe(column?.settings_str) || {};
+  const labels = settings.labels || settings.labels_positions || {};
+  return Object.entries(labels)
+    .map(([index, label]) => {
+      const cleanLabel = normalizeCellText(label);
+      if (!cleanLabel) return null;
+      return {
+        index: String(index),
+        label: cleanLabel,
+        color: resolveStatusOptionColor(settings, index, cleanLabel),
+        position: getStatusOptionPosition(settings, index)
+      };
+    })
+    .filter(Boolean)
+    .sort(compareStatusOptions);
+}
+
+function resolveStatusOptionColor(settings, index, label) {
+  const configuredColor = settings?.labels_colors?.[index]?.color;
+  return configuredColor || fallbackStatusColor(label);
+}
+
+function getStatusOptionPosition(settings, index) {
+  const positions = settings?.labels_positions_v2 || settings?.label_positions || settings?.labels_positions || {};
+  const raw = positions?.[index]?.position ?? positions?.[index];
+  const position = Number(raw);
+  return Number.isFinite(position) ? position : null;
+}
+
+function compareStatusOptions(a, b) {
+  if (a.position != null && b.position != null && a.position !== b.position) {
+    return a.position - b.position;
+  }
+  if (a.position != null && b.position == null) return -1;
+  if (a.position == null && b.position != null) return 1;
+  const aIndex = Number(a.index);
+  const bIndex = Number(b.index);
+  if (Number.isFinite(aIndex) && Number.isFinite(bIndex) && aIndex !== bIndex) {
+    return aIndex - bIndex;
+  }
+  return a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function ensureStatusDropdown() {
+  let dropdown = document.getElementById('monday-status-popover');
+  if (dropdown) return dropdown;
+
+  dropdown = document.createElement('div');
+  dropdown.id = 'monday-status-popover';
+  dropdown.className = 'monday-status-popover hidden';
+  dropdown.setAttribute('role', 'menu');
+  document.body.appendChild(dropdown);
+
+  document.addEventListener('pointerdown', handleStatusDropdownDocumentPointerDown, true);
+  document.addEventListener('keydown', handleStatusDropdownKeydown);
+  window.addEventListener('resize', closeStatusDropdown);
+  window.addEventListener('scroll', closeStatusDropdown, true);
+  return dropdown;
+}
+
+function openStatusDropdown({ anchor, item, column, currentText }) {
+  if (!anchor || !item?.id || !column?.id) return;
+  if (__statusDropdownState?.anchor === anchor && isStatusDropdownOpen()) {
+    closeStatusDropdown();
+    return;
+  }
+
+  const options = getStatusOptions(column);
+  if (!options.length) return;
+
+  const dropdown = ensureStatusDropdown();
+  const currentLabel = normalizeStatusLabel(currentText);
+  dropdown.innerHTML = '';
+  dropdown.setAttribute('aria-label', `Change ${column.title || 'status'}`);
+
+  for (const option of options) {
+    const button = document.createElement('button');
+    const active = normalizeStatusLabel(option.label) === currentLabel;
+    button.type = 'button';
+    button.className = 'monday-status-option';
+    if (active) button.classList.add('active');
+    button.textContent = option.label;
+    button.title = option.label;
+    button.style.backgroundColor = option.color;
+    button.setAttribute('role', 'menuitemradio');
+    button.setAttribute('aria-checked', active ? 'true' : 'false');
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      selectStatusOption(option);
+    });
+    dropdown.appendChild(button);
+  }
+
+  __statusDropdownState = {
+    anchor,
+    itemId: String(item.id),
+    columnId: String(column.id),
+    columnTitle: column.title || column.id
+  };
+  dropdown.classList.remove('hidden', 'above');
+  dropdown.style.visibility = 'hidden';
+  positionStatusDropdown(anchor, dropdown);
+  dropdown.style.visibility = '';
+}
+
+function positionStatusDropdown(anchor, dropdown) {
+  const rect = anchor.getBoundingClientRect();
+  if (!rect.width && !rect.height) {
+    closeStatusDropdown();
+    return;
+  }
+
+  const margin = 8;
+  const gap = 10;
+  const width = dropdown.offsetWidth;
+  const height = dropdown.offsetHeight;
+  const preferredLeft = rect.left + (rect.width / 2) - (width / 2);
+  const left = Math.max(margin, Math.min(preferredLeft, window.innerWidth - width - margin));
+  let top = rect.bottom + gap;
+  let above = false;
+
+  if (top + height > window.innerHeight - margin && rect.top - height - gap >= margin) {
+    top = rect.top - height - gap;
+    above = true;
+  }
+
+  const arrowLeft = Math.max(14, Math.min(rect.left + (rect.width / 2) - left, width - 14));
+  dropdown.style.left = `${Math.round(left)}px`;
+  dropdown.style.top = `${Math.round(top)}px`;
+  dropdown.style.setProperty('--status-popover-arrow-left', `${Math.round(arrowLeft)}px`);
+  dropdown.classList.toggle('above', above);
+}
+
+function isStatusDropdownOpen() {
+  const dropdown = document.getElementById('monday-status-popover');
+  return Boolean(dropdown && !dropdown.classList.contains('hidden'));
+}
+
+function closeStatusDropdown() {
+  const dropdown = document.getElementById('monday-status-popover');
+  if (dropdown) dropdown.classList.add('hidden');
+  __statusDropdownState = null;
+}
+
+function handleStatusDropdownDocumentPointerDown(event) {
+  if (!isStatusDropdownOpen()) return;
+  const dropdown = document.getElementById('monday-status-popover');
+  if (dropdown?.contains(event.target)) return;
+  if (__statusDropdownState?.anchor?.contains?.(event.target)) return;
+  closeStatusDropdown();
+}
+
+function handleStatusDropdownKeydown(event) {
+  if (!isStatusDropdownOpen()) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeStatusDropdown();
+  }
+}
+
+async function selectStatusOption(option) {
+  const state = __statusDropdownState;
+  if (!state?.itemId || !state?.columnId || !option?.label) return;
+  closeStatusDropdown();
+  __statusUpdateInFlight += 1;
+
+  updateCachedBoardStatusValue(state.itemId, state.columnId, option);
+  if (window.__latestBoardPayload) renderBoard(window.__latestBoardPayload);
+
+  try {
+    const response = await fetch(ENDPOINTS.statusColumn(state.itemId), {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        columnId: state.columnId,
+        label: option.label
+      })
+    });
+    if (!response.ok) throw new Error(await readApiError(response));
+    await loadBoard({ forceRefresh: true });
+  } catch (err) {
+    console.warn('Status update failed', err);
+    await loadBoard({ forceRefresh: true });
+    alert(`Failed to update ${state.columnTitle || 'status'}: ${err.message || 'Unknown error'}`);
+  } finally {
+    __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);
+  }
+}
+
+function updateCachedBoardStatusValue(itemId, columnId, option) {
+  const item = findBoardPayloadItem(window.__latestBoardPayload, itemId);
+  if (!item) return;
+
+  let value = findColumnValue(item, columnId);
+  if (!value) {
+    value = { id: columnId, type: 'status', text: '', value: '' };
+    if (!Array.isArray(item.column_values)) item.column_values = [];
+    item.column_values.push(value);
+  }
+
+  value.text = option.label;
+  value.type = 'status';
+  value.value = JSON.stringify({ index: normalizeStatusOptionIndex(option.index) });
+}
+
+function normalizeStatusOptionIndex(index) {
+  const numeric = Number(index);
+  return Number.isFinite(numeric) ? numeric : index;
+}
+
+function findBoardPayloadItem(payload, itemId) {
+  const board = unwrapFirstBoard(payload);
+  if (!board) return null;
+  const wanted = String(itemId);
+  for (const group of (board.groups || [])) {
+    const items = group?.items_page?.items || [];
+    const match = items.find(item => String(item?.id) === wanted);
+    if (match) return match;
+  }
+  return null;
+}
+
+async function readApiError(response) {
+  try {
+    const json = await response.json();
+    if (json?.error) return json.error;
+    if (json?.errors) return JSON.stringify(json.errors);
+  } catch {}
+  try {
+    const text = await response.text();
+    if (text) return text;
+  } catch {}
+  return `Request failed (${response.status})`;
 }
 
 function renderCheckboxValue(cell, value, column) {
@@ -2012,7 +2304,13 @@ function normalizeStatusLabel(label) {
 
 function fallbackStatusColor(text) {
   const label = normalizeStatusLabel(text);
+  if (STATUS_LABEL_FALLBACK_COLORS[label]) return STATUS_LABEL_FALLBACK_COLORS[label];
+  if (label.startsWith('supplied clothing')) return STATUS_LABEL_FALLBACK_COLORS['supplied clothing'];
   if (label.includes('critical')) return '#bb3354';
+  if (label.includes('urgent')) return '#e2445c';
+  if (label.includes('high')) return '#ff642e';
+  if (label.includes('medium')) return '#fdab3d';
+  if (label.includes('low')) return '#579bfc';
   if (label.includes('waiting')) return '#8088a8';
   if (label.includes('sample')) return '#9cd326';
   if (label.includes('stock') || label.includes('complete')) return '#00c875';

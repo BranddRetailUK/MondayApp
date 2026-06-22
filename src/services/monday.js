@@ -45,6 +45,21 @@ async function changeColumnValue(itemId, columnId, valueJson) {
   return gql(query, { board: String(BOARD_ID), item: String(itemId), col: columnId, val: valueJson });
 }
 
+async function fetchBoardColumn(columnId) {
+  const query = `
+    query($boardId: [ID!], $columnIds: [String!]) {
+      boards(ids: $boardId) {
+        columns(ids: $columnIds) { id title type settings_str }
+      }
+    }
+  `;
+  const data = await gql(query, {
+    boardId: [String(BOARD_ID)],
+    columnIds: [String(columnId)]
+  });
+  return data?.boards?.[0]?.columns?.[0] || null;
+}
+
 // Paged board fetch with board and subitem column metadata for the dashboard.
 async function fetchBoardLitePaged(limit = BOARD_PAGE_LIMIT, maxPages = BOARD_MAX_PAGES) {
   let cursor = null, pages = 0, items = [];
@@ -201,6 +216,7 @@ module.exports = {
   exchangeCodeForToken,
   getAccessToken,
   changeColumnValue,
+  fetchBoardColumn,
   fetchBoardLitePaged,
   addFileToColumn
 };
