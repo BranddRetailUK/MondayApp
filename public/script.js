@@ -1583,7 +1583,6 @@ function ensureProofModal() {
         <button id="proof-page-next-mobile" class="proof-mobile-page-button" type="button" aria-label="Next PDF page">›</button>
       </div>
       <div class="proof-modal-foot">
-        <div id="proof-modal-file" class="proof-modal-file"></div>
         <div class="proof-file-controls">
           <button id="proof-file-prev" class="btn outline small" type="button">Prev file</button>
           <button id="proof-file-next" class="btn outline small" type="button">Next file</button>
@@ -1658,7 +1657,6 @@ function getProofModalElements() {
     modal: document.getElementById('proof-modal'),
     body: document.getElementById('proof-modal-body'),
     title: document.getElementById('proof-modal-title'),
-    file: document.getElementById('proof-modal-file'),
     filePrev: document.getElementById('proof-file-prev'),
     fileNext: document.getElementById('proof-file-next'),
     prev: document.getElementById('proof-page-prev'),
@@ -1685,12 +1683,8 @@ async function renderProofModalFile() {
   const state = __proofModalState;
   const token = ++state.renderToken;
   const file = state.files[state.fileIndex];
-  const { title, file: fileLabel } = getProofModalElements();
+  const { title } = getProofModalElements();
   if (title) title.textContent = file?.name || 'Proof file';
-  if (fileLabel) {
-    const fileTotal = state.files.length > 1 ? ` · File ${state.fileIndex + 1} / ${state.files.length}` : '';
-    fileLabel.textContent = `${file?.name || 'Attached proof'}${fileTotal}`;
-  }
   state.pageNumber = 1;
   state.pageCount = 1;
   state.pdf = null;
@@ -1830,7 +1824,7 @@ function changeProofFile(delta) {
 }
 
 function updateProofPageControls(loading = false) {
-  const { filePrev, fileNext, prev, next, page, mobilePager, mobilePrev, mobileNext, mobilePage } = getProofModalElements();
+  const { modal, filePrev, fileNext, prev, next, page, mobilePager, mobilePrev, mobileNext, mobilePage } = getProofModalElements();
   const state = __proofModalState;
   const currentFile = Array.isArray(state.files) ? state.files[state.fileIndex] : null;
   const currentFileIsPdf = isPdfFile(currentFile?.name, currentFile?.mime);
@@ -1840,6 +1834,7 @@ function updateProofPageControls(loading = false) {
   if (mobilePage) mobilePage.textContent = pageText;
   if (mobilePager) mobilePager.hidden = !currentFileIsPdf;
   const hasMultipleFiles = Array.isArray(state.files) && state.files.length > 1;
+  if (modal) modal.classList.toggle('proof-modal-has-file-controls', hasMultipleFiles);
   if (filePrev) {
     filePrev.hidden = !hasMultipleFiles;
     filePrev.disabled = loading || !hasMultipleFiles || state.fileIndex <= 0;

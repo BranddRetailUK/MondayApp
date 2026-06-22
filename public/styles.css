@@ -1084,20 +1084,10 @@ body.modal-open{overflow:hidden}
   display:grid;
   grid-template-columns:minmax(0, 1fr) auto minmax(0, 1fr);
   align-items:center;
-  gap:14px;
-  padding:10px 16px;
+  gap:10px;
+  padding:6px 14px;
   border-top:1px solid #55565a;
   background:#2b2b2c;
-}
-.proof-modal-file{
-  grid-column:1;
-  min-width:0;
-  color:#c9ccd2;
-  font-size:12px;
-  font-weight:700;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
 }
 .proof-file-controls{
   grid-column:3;
@@ -1114,6 +1104,9 @@ body.modal-open{overflow:hidden}
   display:flex;
   align-items:center;
   gap:8px;
+}
+.proof-modal-foot .btn.small{
+  padding:5px 8px;
 }
 .proof-modal-page{
   min-width:86px;
@@ -1201,6 +1194,7 @@ body.modal-open{overflow:hidden}
     border:0;
     background:transparent;
     box-shadow:none;
+    transform:translateY(-3px);
   }
   .proof-mobile-page-button{
     width:42px;
@@ -1221,6 +1215,9 @@ body.modal-open{overflow:hidden}
   .proof-mobile-page-button:disabled{
     opacity:.42;
     cursor:not-allowed;
+  }
+  .proof-modal:not(.proof-modal-has-file-controls) .proof-modal-foot{
+    display:none;
   }
 }
 @media (max-width: 840px){
@@ -4335,6 +4332,7 @@ input.db-custom-line-input{
   }
   .proof-mobile-page-controls:not([hidden]){
     margin:3px 0 0;
+    transform:translateY(-2px);
   }
   .proof-mobile-page-button{
     height:30px;
