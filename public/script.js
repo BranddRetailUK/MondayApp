@@ -2144,11 +2144,28 @@ async function printLabel(itemId, rawTitle) {
             var max = parseFloat(v.getAttribute('data-max-size')) || 0;
             fit(v, ratio, 10, max);
           });
+          var closeTimer = null;
+          var printed = false;
+          function closeAfterPrint(){
+            if (closeTimer) return;
+            closeTimer = setTimeout(function(){
+              try { window.close(); } catch (e) {}
+            }, 250);
+          }
+          function startPrint(){
+            if (printed) return;
+            printed = true;
+            window.addEventListener('afterprint', closeAfterPrint, { once: true });
+            window.addEventListener('focus', function(){
+              if (printed) closeAfterPrint();
+            }, { once: true });
+            window.print();
+          }
           const qr = document.querySelector('.qr');
           if (qr) {
-            qr.addEventListener('load', () => { setTimeout(() => window.print(), 150); });
+            qr.addEventListener('load', () => { setTimeout(startPrint, 150); });
           } else {
-            setTimeout(() => window.print(), 150);
+            setTimeout(startPrint, 150);
           }
         })();
       </script>
