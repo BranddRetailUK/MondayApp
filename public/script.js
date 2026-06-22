@@ -14,6 +14,19 @@ const HIDDEN_BOARD_COLUMN_TYPES = new Set(['subtasks']);
 const HIDDEN_BOARD_COLUMN_IDS = new Set(['subitems__1']);
 const HIDDEN_BOARD_COLUMN_TITLES = new Set(['START/END', 'START-END']);
 const HIDDEN_SUBITEM_COLUMN_TITLES = new Set(['CHECK IN', 'TEXT']);
+const MOBILE_PRINT_EMBROIDERY_HIDDEN_COLUMN_TITLES = new Set([
+  'TRANS',
+  'TRAN',
+  'JAQ',
+  'STATUS',
+  'TYPE',
+  'IMAGE',
+  'IMAGES',
+  'CHECK IN',
+  'CHECKIN',
+  'CHECKED IN',
+  'CHECKEDIN'
+]);
 let __boardRefreshTimer = null;
 let __boardLoading = false;
 let __boardSortState = null;
@@ -591,6 +604,8 @@ function renderBoard(payload) {
   const jobNameWidth = buildJobNameColumnWidth(board.groups || []);
   const gridSpec = buildDashboardGridSpec(boardColumns, { subitem: false, widthOverrides: boardColumnWidths, nameWidth: jobNameWidth });
   const groupSummaryTitleWidth = buildGroupSummaryTitleWidth(board.groups || []);
+  const mobileClosedGroupWidth = buildMobileClosedGroupSummaryWidth(board.groups || []);
+  boardDiv.style.setProperty('--mobile-closed-group-width', `${mobileClosedGroupWidth}px`);
   const boardSortPlan = getBoardSortPlan(boardColumns);
   const dueDateColumn = getDueDateColumn(boardColumns);
   const zoomLayer = document.createElement('div');
@@ -609,6 +624,9 @@ function renderBoard(payload) {
     groupWrap.className = 'group';
     groupWrap.dataset.groupKey = groupKey;
     if (isCollapsed) groupWrap.classList.add('collapsed');
+    if (shouldHidePrintEmbroideryMobileColumns(collectionName)) {
+      groupWrap.classList.add('mobile-print-embroidery-hidden-columns');
+    }
     if (group.color) groupWrap.style.setProperty('--group-accent', group.color);
 
     const sectionTitle = document.createElement('button');
@@ -637,9 +655,10 @@ function renderBoard(payload) {
 
     const grid = document.createElement('div');
     grid.className = 'board-grid';
+    const mobileGridSpec = buildMobileGridSpecForGroup(gridSpec, collectionName);
     grid.style.setProperty('--board-cols', gridSpec.template);
-    grid.style.setProperty('--mobile-board-cols', gridSpec.mobileTemplate);
-    grid.style.setProperty('--mobile-board-min-width', `${gridSpec.mobileMinWidth}px`);
+    grid.style.setProperty('--mobile-board-cols', mobileGridSpec.template);
+    grid.style.setProperty('--mobile-board-min-width', `${mobileGridSpec.minWidth}px`);
     grid.style.minWidth = `${gridSpec.minWidth}px`;
 
     const headRow = document.createElement('div');
@@ -912,6 +931,36 @@ function buildDashboardGridSpec(mondayColumns, { subitem = false, widthOverrides
     mobileTemplate: mobileColumns.map(column => `${column.width}px`).join(' '),
     template: columns.map(column => `${column.width}px`).join(' ')
   };
+}
+
+function buildMobileGridSpecForGroup(gridSpec, groupName) {
+  const mobileColumns = getMobileVisibleGridColumns(gridSpec?.columns || [], groupName);
+  return {
+    columns: mobileColumns,
+    minWidth: mobileColumns.reduce((sum, column) => sum + column.width, 0),
+    template: mobileColumns.map(column => `${column.width}px`).join(' ')
+  };
+}
+
+function getMobileVisibleGridColumns(columns, groupName) {
+  const hidePrintEmbroideryColumns = shouldHidePrintEmbroideryMobileColumns(groupName);
+  return (Array.isArray(columns) ? columns : []).filter(column => {
+    if (column.kind === 'print') return false;
+    return !hidePrintEmbroideryColumns || !isPrintEmbroideryMobileHiddenColumn(column);
+  });
+}
+
+function shouldHidePrintEmbroideryMobileColumns(groupName) {
+  const normalized = normalizeColumnTitle(groupName);
+  return normalized.includes('PRINT') || normalized.includes('EMBROIDERY');
+}
+
+function isPrintEmbroideryMobileHiddenColumn(spec) {
+  if (spec?.kind !== 'column') return false;
+  const normalized = normalizeColumnTitle(spec.column?.title || spec.title || '');
+  const compact = normalized.replace(/[^A-Z0-9]/g, '');
+  return MOBILE_PRINT_EMBROIDERY_HIDDEN_COLUMN_TITLES.has(normalized) ||
+    MOBILE_PRINT_EMBROIDERY_HIDDEN_COLUMN_TITLES.has(compact);
 }
 
 function getColumnWidth(column) {
@@ -1206,6 +1255,16 @@ function buildGroupSummaryTitleWidth(groups) {
   return Math.max(128, titleOnlyWidth + 54);
 }
 
+function buildMobileClosedGroupSummaryWidth(groups) {
+  const preProductionGroup = (Array.isArray(groups) ? groups : []).find(group => {
+    const compact = normalizeColumnTitle(group?.title || '').replace(/[^A-Z0-9]/g, '');
+    return compact === 'PREPRODUCTION';
+  });
+  const title = normalizeCellText(preProductionGroup?.title || 'PRE-PRODUCTION').toUpperCase();
+  const titleWidth = measureBoardTextWidth(title, "800 17px Manrope, 'Segoe UI', system-ui, sans-serif");
+  return Math.max(128, Math.ceil(titleWidth + 54));
+}
+
 function buildSubitemNameColumnWidth(subitems) {
   let max = measureBoardTextWidth('Subitem', "700 14px Manrope, 'Segoe UI', system-ui, sans-serif");
   for (const subitem of (Array.isArray(subitems) ? subitems : [])) {
@@ -1275,6 +1334,7 @@ function measureBoardTextWidth(text, font = "14px Manrope, 'Segoe UI', system-ui
 function buildHeaderCell(spec, { sortable = false } = {}) {
   const cell = document.createElement('div');
   cell.className = `grid-cell head ${spec.kind}-head`;
+  applyPrintEmbroideryMobileHiddenCellClass(cell, spec);
   const title = document.createElement('span');
   title.className = 'column-title-text';
   title.textContent = spec.title || '';
@@ -1318,9 +1378,16 @@ function toggleBoardColumnSort(column) {
 }
 
 function buildItemCell(item, spec, { subitemsOpen = false } = {}) {
-  if (spec.kind === 'print') return buildPrintCell(item);
-  if (spec.kind === 'name') return buildNameCell(item, subitemsOpen);
-  return buildColumnValueCell(item, spec.column);
+  let cell;
+  if (spec.kind === 'print') {
+    cell = buildPrintCell(item);
+  } else if (spec.kind === 'name') {
+    cell = buildNameCell(item, subitemsOpen);
+  } else {
+    cell = buildColumnValueCell(item, spec.column);
+  }
+  applyPrintEmbroideryMobileHiddenCellClass(cell, spec);
+  return cell;
 }
 
 function buildSubitemCell(subitem, spec) {
@@ -1439,6 +1506,11 @@ function buildColumnValueCell(entity, column, { subitem = false } = {}) {
   }
 
   return cell;
+}
+
+function applyPrintEmbroideryMobileHiddenCellClass(cell, spec) {
+  if (!cell || !isPrintEmbroideryMobileHiddenColumn(spec)) return;
+  cell.classList.add('mobile-print-embroidery-hidden-cell');
 }
 
 function findColumnValue(entity, columnId) {

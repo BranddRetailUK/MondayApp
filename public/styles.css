@@ -3726,6 +3726,9 @@ input.db-custom-line-input{
   .print-cell{
     display:none;
   }
+  .mobile-print-embroidery-hidden-columns .board-grid > .grid-row > .mobile-print-embroidery-hidden-cell{
+    display:none;
+  }
   .group{
     margin-bottom:16px;
   }
@@ -3740,21 +3743,22 @@ input.db-custom-line-input{
   }
   .group.collapsed .group-summary{
     margin-left:16px;
-    width:max-content;
+    width:var(--mobile-closed-group-width, max-content);
     max-width:calc(100vw - 32px);
     min-width:0!important;
-    grid-template-columns:max-content!important;
+    grid-template-columns:minmax(0, 1fr)!important;
   }
   .group.collapsed .group-summary-left{
     gap:9px;
     padding:10px 12px 10px 11px;
-    max-width:calc(100vw - 32px);
+    width:100%;
+    max-width:100%;
   }
   .group.collapsed .group-summary-cell{
     display:none;
   }
   .group.collapsed .group-summary-name{
-    max-width:calc(100vw - 86px);
+    max-width:100%;
   }
   .subitem-panel{
     --subitem-connector-width:18px;
