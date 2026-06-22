@@ -761,12 +761,10 @@ function buildGroupSummary(groupName, items, gridSpec, titleWidth) {
 
   const left = document.createElement('span');
   left.className = 'group-summary-left';
-  const subitemCount = countSubitems(items);
   left.innerHTML = `
     <span class="chev" aria-hidden="true"></span>
     <span class="group-summary-copy">
       <span class="group-summary-name">${escapeHtml(groupName)}</span>
-      <span class="group-summary-count">${itemCount} Job${itemCount === 1 ? '' : 's'} / ${subitemCount} Subitem${subitemCount === 1 ? '' : 's'}</span>
     </span>
   `;
   summary.appendChild(left);
@@ -780,10 +778,6 @@ function buildGroupSummary(groupName, items, gridSpec, titleWidth) {
 
 function isToSampleGroup(groupName) {
   return String(groupName || '').trim().toUpperCase() === 'TO SAMPLE';
-}
-
-function countSubitems(items) {
-  return items.reduce((sum, item) => sum + (Array.isArray(item.subitems) ? item.subitems.length : 0), 0);
 }
 
 function buildSummaryCell(items, column) {

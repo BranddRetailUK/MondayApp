@@ -461,9 +461,6 @@ body{
   border-left-color:#00c875;
   color:#dffbe9;
 }
-.group-summary.to-sample-has-jobs .group-summary-count{
-  color:#b9f1d2;
-}
 .group-summary .chev{
   width:8px;
   height:8px;
@@ -481,12 +478,6 @@ body{
   font-weight:800;
   line-height:1.1;
   text-transform:uppercase;
-}
-.group-summary-count{
-  color:#a8abb1;
-  font-size:13px;
-  font-weight:600;
-  line-height:1.1;
 }
 .group-summary-cell{
   min-width:0;
@@ -3747,20 +3738,23 @@ input.db-custom-line-input{
   .group-content::before{
     left:16px;
   }
-  .group-summary{
+  .group.collapsed .group-summary{
     margin-left:16px;
+    width:max-content;
+    max-width:calc(100vw - 32px);
+    min-width:0!important;
+    grid-template-columns:max-content!important;
   }
-  .group-summary-left{
+  .group.collapsed .group-summary-left{
     gap:9px;
     padding:10px 12px 10px 11px;
+    max-width:calc(100vw - 32px);
   }
-  .group-summary-cell{
-    padding-left:7px;
-    padding-right:7px;
+  .group.collapsed .group-summary-cell{
+    display:none;
   }
-  .group-summary-name,
-  .group-summary-count{
-    max-width:100%;
+  .group.collapsed .group-summary-name{
+    max-width:calc(100vw - 86px);
   }
   .subitem-panel{
     --subitem-connector-width:18px;
