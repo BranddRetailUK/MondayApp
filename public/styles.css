@@ -240,7 +240,7 @@ body{
 .auth-status[data-tone="error"]{color:var(--danger)}
 .auth-status[data-tone="info"]{color:var(--muted)}
 
-.main-content{flex:1;padding:16px 22px;min-width:0}
+.main-content{flex:1;padding:16px 22px;min-width:0;overflow:visible}
 .tab-content{display:none}
 .tab-content.active{display:block}
 
@@ -342,6 +342,15 @@ body{
   padding:10px 0 18px;
   overflow-x:auto;
   overflow-y:hidden;
+  scrollbar-color:#67686b #151617;
+  touch-action:pan-x pan-y;
+}
+#tab-dashboard{
+  overflow:visible;
+}
+#tab-dashboard #board{
+  padding:10px 0 18px;
+  overflow:visible;
   scrollbar-color:#67686b #151617;
   touch-action:pan-x pan-y;
 }
@@ -973,6 +982,9 @@ body.modal-open{overflow:hidden}
   box-shadow:0 24px 70px rgba(0,0,0,.55);
   overflow:hidden;
 }
+.proof-modal-title-block{
+  min-width:0;
+}
 .proof-modal-head{
   display:flex;
   align-items:center;
@@ -1002,6 +1014,7 @@ body.modal-open{overflow:hidden}
 .proof-modal-close{
   width:34px;
   height:34px;
+  flex:0 0 34px;
   border:1px solid #55565a;
   border-radius:6px;
   background:#202123;
@@ -1009,6 +1022,10 @@ body.modal-open{overflow:hidden}
   font-size:22px;
   line-height:1;
   cursor:pointer;
+}
+.proof-modal-mobile-close,
+.proof-mobile-page-controls{
+  display:none;
 }
 .proof-modal-body{
   flex:1;
@@ -1108,10 +1125,90 @@ body.modal-open{overflow:hidden}
   .board-shell-head{flex-direction:column;align-items:flex-start}
   .data-table col.col-print{width:140px}
   .auth-name-grid{grid-template-columns:1fr}
-  .proof-modal-inner{width:calc(100vw - 24px);height:calc(100vh - 24px)}
-  .proof-modal-foot{align-items:flex-start;flex-direction:column}
+  .proof-modal{
+    align-items:center;
+    justify-content:center;
+  }
+  .proof-modal-inner{
+    width:calc(100vw - 16px);
+    height:calc(100vh - 16px);
+    height:calc(100dvh - 16px);
+    max-height:none;
+  }
+  .proof-modal-head{
+    min-height:52px;
+    padding:10px 54px 10px 12px;
+  }
+  .proof-modal-head h3{
+    max-width:100%;
+  }
+  .proof-modal-close{
+    display:none;
+  }
+  .proof-modal-mobile-close{
+    position:absolute;
+    top:9px;
+    right:9px;
+    z-index:5;
+    width:36px;
+    height:36px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border:1px solid #6a6b70;
+    border-radius:6px;
+    background:#111213;
+    color:#f0f1f2;
+    font-size:24px;
+    line-height:1;
+    cursor:pointer;
+  }
+  .proof-modal-body{
+    padding:10px;
+  }
+  .proof-modal-foot{
+    flex:0 0 auto;
+    align-items:flex-start;
+    flex-direction:column;
+    padding:8px 10px;
+  }
+  .proof-modal-foot .proof-modal-controls{
+    display:none;
+  }
   .proof-modal-controls,
   .proof-file-controls{width:100%;justify-content:flex-end}
+  .proof-mobile-page-controls:not([hidden]){
+    flex:0 0 auto;
+    align-self:center;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    margin:8px 10px 0;
+    padding:7px 9px;
+    border:1px solid #55565a;
+    border-radius:8px;
+    background:rgba(32,33,35,.94);
+    box-shadow:0 12px 30px rgba(0,0,0,.38);
+  }
+  .proof-mobile-page-button{
+    width:38px;
+    height:34px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    border:1px solid #6a6b70;
+    border-radius:6px;
+    background:#111213;
+    color:#f0f1f2;
+    font-size:28px;
+    line-height:1;
+    cursor:pointer;
+  }
+  .proof-mobile-page-button:disabled{
+    opacity:.42;
+    cursor:not-allowed;
+  }
 }
 @media (max-width: 840px){
   .modal-body{grid-template-columns:1fr}
@@ -3614,11 +3711,9 @@ input.db-custom-line-input{
   #priorityHighlightBtn{
     display:none!important;
   }
-  .board-shell #board{
-    max-height:calc(100dvh - 132px);
+  #tab-dashboard #board{
     padding:8px 0 14px;
-    overflow:auto;
-    -webkit-overflow-scrolling:touch;
+    overflow:visible;
   }
   .board-grid{
     min-width:var(--mobile-board-min-width)!important;
@@ -4200,8 +4295,7 @@ input.db-custom-line-input{
     min-height:32px;
     padding:8px 10px;
   }
-  .board-shell #board{
-    max-height:calc(100dvh - 100px);
+  #tab-dashboard #board{
     padding:6px 0 10px;
   }
   #tab-database.db-legacy-tab{

@@ -1568,14 +1568,20 @@ function ensureProofModal() {
   modal.innerHTML = `
     <div class="proof-modal-backdrop" data-proof-close></div>
     <div class="proof-modal-inner">
+      <button class="proof-modal-mobile-close" id="proof-modal-mobile-close" type="button" aria-label="Close proof">×</button>
       <div class="proof-modal-head">
-        <div>
+        <div class="proof-modal-title-block">
           <div class="proof-modal-label">Proof</div>
           <h3 id="proof-modal-title">Proof file</h3>
         </div>
         <button class="proof-modal-close" id="proof-modal-close" type="button" aria-label="Close proof">×</button>
       </div>
       <div id="proof-modal-body" class="proof-modal-body"></div>
+      <div id="proof-mobile-page-controls" class="proof-mobile-page-controls" hidden>
+        <button id="proof-page-prev-mobile" class="proof-mobile-page-button" type="button" aria-label="Previous PDF page">‹</button>
+        <span id="proof-page-status-mobile" class="proof-modal-page">Page 1 / 1</span>
+        <button id="proof-page-next-mobile" class="proof-mobile-page-button" type="button" aria-label="Next PDF page">›</button>
+      </div>
       <div class="proof-modal-foot">
         <div id="proof-modal-file" class="proof-modal-file"></div>
         <div class="proof-file-controls">
@@ -1593,10 +1599,13 @@ function ensureProofModal() {
   document.body.appendChild(modal);
   modal.querySelector('[data-proof-close]').addEventListener('click', closeProofModal);
   modal.querySelector('#proof-modal-close').addEventListener('click', closeProofModal);
+  modal.querySelector('#proof-modal-mobile-close').addEventListener('click', closeProofModal);
   modal.querySelector('#proof-file-prev').addEventListener('click', () => changeProofFile(-1));
   modal.querySelector('#proof-file-next').addEventListener('click', () => changeProofFile(1));
   modal.querySelector('#proof-page-prev').addEventListener('click', () => changeProofPage(-1));
   modal.querySelector('#proof-page-next').addEventListener('click', () => changeProofPage(1));
+  modal.querySelector('#proof-page-prev-mobile').addEventListener('click', () => changeProofPage(-1));
+  modal.querySelector('#proof-page-next-mobile').addEventListener('click', () => changeProofPage(1));
   document.addEventListener('keydown', handleProofModalKeydown);
   return modal;
 }
@@ -1654,7 +1663,11 @@ function getProofModalElements() {
     fileNext: document.getElementById('proof-file-next'),
     prev: document.getElementById('proof-page-prev'),
     next: document.getElementById('proof-page-next'),
-    page: document.getElementById('proof-page-status')
+    page: document.getElementById('proof-page-status'),
+    mobilePager: document.getElementById('proof-mobile-page-controls'),
+    mobilePrev: document.getElementById('proof-page-prev-mobile'),
+    mobileNext: document.getElementById('proof-page-next-mobile'),
+    mobilePage: document.getElementById('proof-page-status-mobile')
   };
 }
 
@@ -1817,10 +1830,15 @@ function changeProofFile(delta) {
 }
 
 function updateProofPageControls(loading = false) {
-  const { filePrev, fileNext, prev, next, page } = getProofModalElements();
+  const { filePrev, fileNext, prev, next, page, mobilePager, mobilePrev, mobileNext, mobilePage } = getProofModalElements();
   const state = __proofModalState;
+  const currentFile = Array.isArray(state.files) ? state.files[state.fileIndex] : null;
+  const currentFileIsPdf = isPdfFile(currentFile?.name, currentFile?.mime);
   const isPdf = !!state.pdf;
-  if (page) page.textContent = `Page ${state.pageNumber} / ${state.pageCount}`;
+  const pageText = `Page ${state.pageNumber} / ${state.pageCount}`;
+  if (page) page.textContent = pageText;
+  if (mobilePage) mobilePage.textContent = pageText;
+  if (mobilePager) mobilePager.hidden = !currentFileIsPdf;
   const hasMultipleFiles = Array.isArray(state.files) && state.files.length > 1;
   if (filePrev) {
     filePrev.hidden = !hasMultipleFiles;
@@ -1832,6 +1850,8 @@ function updateProofPageControls(loading = false) {
   }
   if (prev) prev.disabled = loading || !isPdf || state.pageNumber <= 1;
   if (next) next.disabled = loading || !isPdf || state.pageNumber >= state.pageCount;
+  if (mobilePrev) mobilePrev.disabled = loading || !isPdf || state.pageNumber <= 1;
+  if (mobileNext) mobileNext.disabled = loading || !isPdf || state.pageNumber >= state.pageCount;
 }
 
 function renderPeopleValue(cell, text) {
