@@ -10,6 +10,9 @@ const ENDPOINTS = {
 const DASHBOARD_TAB_STORAGE_KEY = 'ultimateHub.activeDashboardTab';
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'ultimateHub.sidebarCollapsed';
 const MOBILE_NAV_MEDIA = '(max-width: 720px), (max-width: 960px) and (max-height: 520px)';
+const PROOF_PDF_ZOOM_MIN = 0.5;
+const PROOF_PDF_ZOOM_MAX = 3;
+const PROOF_PDF_ZOOM_STEP = 0.25;
 const PRIORITY_HIGHLIGHT_STORAGE_KEY = 'ultimateHub.priorityHighlights';
 const DASHBOARD_TAB_NAMES = ['dashboard', 'database', 'visuals'];
 const BOARD_AUTO_REFRESH_MS = 1000;
@@ -68,6 +71,9 @@ let __proofModalState = {
   pageNumber: 1,
   pageCount: 1,
   pdf: null,
+  pdfZoom: 1,
+  pdfRotation: 0,
+  pdfDrag: null,
   modalLabel: 'Proof',
   renderToken: 0
 };
@@ -1981,6 +1987,14 @@ function ensureProofModal() {
         <button id="proof-page-next-mobile" class="proof-mobile-page-button" type="button" aria-label="Next PDF page">›</button>
       </div>
       <div class="proof-modal-foot">
+        <div class="proof-pdf-tools" id="proof-pdf-tools" hidden>
+          <div class="proof-zoom-controls" aria-label="PDF zoom controls">
+            <button id="proof-zoom-out" class="proof-icon-button" type="button" aria-label="Zoom out" title="Zoom out">-</button>
+            <span id="proof-zoom-status" class="proof-zoom-status" aria-live="polite">100%</span>
+            <button id="proof-zoom-in" class="proof-icon-button" type="button" aria-label="Zoom in" title="Zoom in">+</button>
+          </div>
+          <button id="proof-rotate" class="proof-icon-button proof-rotate-button" type="button" aria-label="Rotate PDF 180 degrees" title="Rotate 180 degrees">⟳</button>
+        </div>
         <div class="proof-file-controls">
           <button id="proof-file-prev" class="btn outline small" type="button">Prev file</button>
           <button id="proof-file-next" class="btn outline small" type="button">Next file</button>
@@ -2003,6 +2017,14 @@ function ensureProofModal() {
   modal.querySelector('#proof-page-next').addEventListener('click', () => changeProofPage(1));
   modal.querySelector('#proof-page-prev-mobile').addEventListener('click', () => changeProofPage(-1));
   modal.querySelector('#proof-page-next-mobile').addEventListener('click', () => changeProofPage(1));
+  modal.querySelector('#proof-zoom-out').addEventListener('click', () => changeProofZoom(-PROOF_PDF_ZOOM_STEP));
+  modal.querySelector('#proof-zoom-in').addEventListener('click', () => changeProofZoom(PROOF_PDF_ZOOM_STEP));
+  modal.querySelector('#proof-rotate').addEventListener('click', toggleProofPdfRotation);
+  modal.querySelector('#proof-modal-body').addEventListener('pointerdown', handleProofPdfPointerDown);
+  modal.querySelector('#proof-modal-body').addEventListener('pointermove', handleProofPdfPointerMove);
+  modal.querySelector('#proof-modal-body').addEventListener('pointerup', handleProofPdfPointerEnd);
+  modal.querySelector('#proof-modal-body').addEventListener('pointercancel', handleProofPdfPointerEnd);
+  window.addEventListener('resize', handleProofModalViewportChange);
   document.addEventListener('keydown', handleProofModalKeydown);
   return modal;
 }
@@ -2022,6 +2044,9 @@ function openProofModal(files, startIndex = 0, options = {}) {
     pageNumber: 1,
     pageCount: 1,
     pdf: null,
+    pdfZoom: 1,
+    pdfRotation: 0,
+    pdfDrag: null,
     modalLabel,
     renderToken: __proofModalState.renderToken + 1
   };
@@ -2034,7 +2059,9 @@ function closeProofModal() {
   const modal = document.getElementById('proof-modal');
   if (modal) modal.classList.add('hidden');
   __proofModalState.pdf = null;
+  __proofModalState.pdfDrag = null;
   __proofModalState.renderToken += 1;
+  resetProofPdfBodyState();
   const anotherModalOpen = document.querySelector('.modal:not(.hidden), .va-lightbox:not(.hidden)');
   if (!anotherModalOpen) document.body.classList.remove('modal-open');
 }
@@ -2060,6 +2087,11 @@ function getProofModalElements() {
     title: document.getElementById('proof-modal-title'),
     filePrev: document.getElementById('proof-file-prev'),
     fileNext: document.getElementById('proof-file-next'),
+    pdfTools: document.getElementById('proof-pdf-tools'),
+    zoomOut: document.getElementById('proof-zoom-out'),
+    zoomIn: document.getElementById('proof-zoom-in'),
+    zoomStatus: document.getElementById('proof-zoom-status'),
+    rotate: document.getElementById('proof-rotate'),
     prev: document.getElementById('proof-page-prev'),
     next: document.getElementById('proof-page-next'),
     page: document.getElementById('proof-page-status'),
@@ -2073,6 +2105,7 @@ function getProofModalElements() {
 function setProofLoading(message) {
   const { body } = getProofModalElements();
   if (!body) return;
+  resetProofPdfBodyState(body);
   body.innerHTML = '';
   const loader = document.createElement('div');
   loader.className = 'proof-modal-loading';
@@ -2091,6 +2124,10 @@ async function renderProofModalFile() {
   state.pageNumber = 1;
   state.pageCount = 1;
   state.pdf = null;
+  state.pdfZoom = 1;
+  state.pdfRotation = 0;
+  state.pdfDrag = null;
+  resetProofPdfBodyState();
   updateProofPageControls();
 
   if (!file) {
@@ -2140,6 +2177,7 @@ async function renderProofPdfPage() {
   const token = state.renderToken;
   const { body } = getProofModalElements();
   if (!body || !state.pdf) return;
+  const scrollPosition = getProofPdfScrollPosition(body);
   setProofLoading('Rendering page...');
   updateProofPageControls(true);
 
@@ -2148,7 +2186,8 @@ async function renderProofPdfPage() {
   const baseViewport = page.getViewport({ scale: 1 });
   const availableWidth = Math.max(320, (body.clientWidth || 920) - 32);
   const scale = Math.min(1.8, Math.max(0.8, availableWidth / baseViewport.width));
-  const viewport = page.getViewport({ scale });
+  const zoom = normalizeProofPdfZoom(state.pdfZoom);
+  const viewport = page.getViewport({ scale: scale * zoom, rotation: state.pdfRotation || 0 });
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { alpha: false });
   canvas.width = Math.floor(viewport.width);
@@ -2157,14 +2196,21 @@ async function renderProofPdfPage() {
   await page.render({ canvasContext: ctx, viewport }).promise;
   if (token !== state.renderToken) return;
 
+  const stage = document.createElement('div');
+  stage.className = 'proof-pdf-stage';
+  stage.appendChild(canvas);
   body.innerHTML = '';
-  body.appendChild(canvas);
+  body.classList.add('proof-pdf-body');
+  body.appendChild(stage);
+  restoreProofPdfScrollPosition(body, scrollPosition);
+  updateProofPdfPanState(body);
   updateProofPageControls(false);
 }
 
 function renderProofImage(file, token) {
   const { body } = getProofModalElements();
   if (!body || token !== __proofModalState.renderToken) return;
+  resetProofPdfBodyState(body);
   const img = document.createElement('img');
   img.className = 'proof-modal-image';
   img.src = buildAssetSrc(file);
@@ -2177,6 +2223,7 @@ function renderProofImage(file, token) {
 function renderProofNativeViewer(file, token, note = '') {
   const { body } = getProofModalElements();
   if (!body || token !== __proofModalState.renderToken) return;
+  resetProofPdfBodyState(body);
   const src = buildAssetSrc(file, { stripPdfUi: isPdfFile(file.name, file.mime) });
   body.innerHTML = '';
   if (note) {
@@ -2198,6 +2245,149 @@ function renderProofNativeViewer(file, token, note = '') {
     body.appendChild(empty);
   }
   updateProofPageControls();
+}
+
+function normalizeProofPdfZoom(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 1;
+  return Math.min(PROOF_PDF_ZOOM_MAX, Math.max(PROOF_PDF_ZOOM_MIN, Number(numeric.toFixed(2))));
+}
+
+function formatProofPdfZoom(value) {
+  return `${Math.round(normalizeProofPdfZoom(value) * 100)}%`;
+}
+
+function isProofDesktopView() {
+  return !window.matchMedia || !window.matchMedia(MOBILE_NAV_MEDIA).matches;
+}
+
+function resetProofPdfBodyState(body = document.getElementById('proof-modal-body')) {
+  __proofModalState.pdfDrag = null;
+  if (!body) return;
+  body.classList.remove('proof-pdf-body', 'proof-pdf-pan-enabled', 'proof-pdf-dragging');
+}
+
+function updateProofPdfPanState(body = document.getElementById('proof-modal-body')) {
+  if (!body) return;
+  const enabled = !!__proofModalState.pdf && normalizeProofPdfZoom(__proofModalState.pdfZoom) > 1 && isProofDesktopView();
+  body.classList.toggle('proof-pdf-pan-enabled', enabled);
+  if (!enabled) {
+    __proofModalState.pdfDrag = null;
+    body.classList.remove('proof-pdf-dragging');
+  }
+}
+
+function getProofPdfScrollPosition(body) {
+  if (!body || !body.classList.contains('proof-pdf-body')) return { x: 0.5, y: 0 };
+  const maxLeft = Math.max(0, body.scrollWidth - body.clientWidth);
+  const maxTop = Math.max(0, body.scrollHeight - body.clientHeight);
+  return {
+    x: maxLeft > 0 ? body.scrollLeft / maxLeft : 0.5,
+    y: maxTop > 0 ? body.scrollTop / maxTop : 0
+  };
+}
+
+function restoreProofPdfScrollPosition(body, position = { x: 0.5, y: 0 }) {
+  if (!body) return;
+  const maxLeft = Math.max(0, body.scrollWidth - body.clientWidth);
+  const maxTop = Math.max(0, body.scrollHeight - body.clientHeight);
+  const x = Number.isFinite(position.x) ? Math.min(1, Math.max(0, position.x)) : 0.5;
+  const y = Number.isFinite(position.y) ? Math.min(1, Math.max(0, position.y)) : 0;
+  body.scrollLeft = maxLeft * x;
+  body.scrollTop = maxTop * y;
+}
+
+function changeProofZoom(delta) {
+  const state = __proofModalState;
+  if (!state.pdf || !isProofDesktopView()) return;
+  const nextZoom = normalizeProofPdfZoom(normalizeProofPdfZoom(state.pdfZoom) + delta);
+  if (nextZoom === normalizeProofPdfZoom(state.pdfZoom)) return;
+  state.pdfZoom = nextZoom;
+  state.pdfDrag = null;
+  state.renderToken += 1;
+  renderProofPdfPage().catch((err) => {
+    console.error('Proof PDF zoom render failed', err);
+    updateProofPageControls(false);
+  });
+}
+
+function toggleProofPdfRotation() {
+  const state = __proofModalState;
+  if (!state.pdf || !isProofDesktopView()) return;
+  state.pdfRotation = state.pdfRotation === 180 ? 0 : 180;
+  state.pdfDrag = null;
+  state.renderToken += 1;
+  renderProofPdfPage().catch((err) => {
+    console.error('Proof PDF rotate render failed', err);
+    updateProofPageControls(false);
+  });
+}
+
+function handleProofModalViewportChange() {
+  const { modal, body } = getProofModalElements();
+  if (!modal || modal.classList.contains('hidden')) return;
+  const state = __proofModalState;
+  if (!state.pdf) {
+    updateProofPageControls();
+    return;
+  }
+  if (!isProofDesktopView() && (normalizeProofPdfZoom(state.pdfZoom) !== 1 || state.pdfRotation !== 0)) {
+    state.pdfZoom = 1;
+    state.pdfRotation = 0;
+    state.pdfDrag = null;
+    state.renderToken += 1;
+    renderProofPdfPage().catch((err) => {
+      console.error('Proof PDF viewport reset render failed', err);
+      updateProofPageControls(false);
+    });
+    return;
+  }
+  updateProofPdfPanState(body);
+  updateProofPageControls();
+}
+
+function handleProofPdfPointerDown(event) {
+  const state = __proofModalState;
+  if (!state.pdf || normalizeProofPdfZoom(state.pdfZoom) <= 1 || !isProofDesktopView()) return;
+  if (event.button !== undefined && event.button !== 0) return;
+  const { body } = getProofModalElements();
+  if (!body || !body.classList.contains('proof-pdf-body')) return;
+  if (event.target?.closest?.('button, a, input, select, textarea')) return;
+  if (body.scrollWidth <= body.clientWidth && body.scrollHeight <= body.clientHeight) return;
+
+  state.pdfDrag = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    scrollLeft: body.scrollLeft,
+    scrollTop: body.scrollTop
+  };
+  body.classList.add('proof-pdf-dragging');
+  body.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+}
+
+function handleProofPdfPointerMove(event) {
+  const state = __proofModalState;
+  const drag = state.pdfDrag;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  const { body } = getProofModalElements();
+  if (!body) return;
+  body.scrollLeft = drag.scrollLeft - (event.clientX - drag.startX);
+  body.scrollTop = drag.scrollTop - (event.clientY - drag.startY);
+  event.preventDefault();
+}
+
+function handleProofPdfPointerEnd(event) {
+  const state = __proofModalState;
+  const drag = state.pdfDrag;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  const { body } = getProofModalElements();
+  if (body) {
+    body.classList.remove('proof-pdf-dragging');
+    body.releasePointerCapture?.(event.pointerId);
+  }
+  state.pdfDrag = null;
 }
 
 function changeProofPage(delta) {
@@ -2227,17 +2417,44 @@ function changeProofFile(delta) {
 }
 
 function updateProofPageControls(loading = false) {
-  const { modal, filePrev, fileNext, prev, next, page, mobilePager, mobilePrev, mobileNext, mobilePage } = getProofModalElements();
+  const {
+    modal,
+    filePrev,
+    fileNext,
+    pdfTools,
+    zoomOut,
+    zoomIn,
+    zoomStatus,
+    rotate,
+    prev,
+    next,
+    page,
+    mobilePager,
+    mobilePrev,
+    mobileNext,
+    mobilePage
+  } = getProofModalElements();
   const state = __proofModalState;
   const currentFile = Array.isArray(state.files) ? state.files[state.fileIndex] : null;
   const currentFileIsPdf = isPdfFile(currentFile?.name, currentFile?.mime);
   const isPdf = !!state.pdf;
+  const zoom = normalizeProofPdfZoom(state.pdfZoom);
+  const showDesktopPdfTools = currentFileIsPdf && isPdf && isProofDesktopView();
   const pageText = `Page ${state.pageNumber} / ${state.pageCount}`;
   if (page) page.textContent = pageText;
   if (mobilePage) mobilePage.textContent = pageText;
   if (mobilePager) mobilePager.hidden = !currentFileIsPdf;
   const hasMultipleFiles = Array.isArray(state.files) && state.files.length > 1;
   if (modal) modal.classList.toggle('proof-modal-has-file-controls', hasMultipleFiles);
+  if (modal) modal.classList.toggle('proof-modal-has-pdf-tools', showDesktopPdfTools);
+  if (pdfTools) pdfTools.hidden = !showDesktopPdfTools;
+  if (zoomStatus) zoomStatus.textContent = formatProofPdfZoom(zoom);
+  if (zoomOut) zoomOut.disabled = loading || !showDesktopPdfTools || zoom <= PROOF_PDF_ZOOM_MIN;
+  if (zoomIn) zoomIn.disabled = loading || !showDesktopPdfTools || zoom >= PROOF_PDF_ZOOM_MAX;
+  if (rotate) {
+    rotate.disabled = loading || !showDesktopPdfTools;
+    rotate.setAttribute('aria-pressed', state.pdfRotation === 180 ? 'true' : 'false');
+  }
   if (filePrev) {
     filePrev.hidden = !hasMultipleFiles;
     filePrev.disabled = loading || !hasMultipleFiles || state.fileIndex <= 0;

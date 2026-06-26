@@ -1112,15 +1112,36 @@ body.modal-open{overflow:hidden}
   padding:16px;
   background:#111213;
 }
+.proof-modal-body.proof-pdf-body{
+  display:block;
+}
+.proof-modal-body.proof-pdf-pan-enabled{
+  cursor:grab;
+}
+.proof-modal-body.proof-pdf-dragging{
+  cursor:grabbing;
+  user-select:none;
+}
+.proof-pdf-stage{
+  width:max-content;
+  min-width:100%;
+  min-height:100%;
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
+}
 .proof-pdf-canvas,
 .proof-modal-image{
   display:block;
-  max-width:100%;
   height:auto;
   background:#fff;
   box-shadow:0 12px 34px rgba(0,0,0,.45);
 }
+.proof-pdf-canvas{
+  max-width:none;
+}
 .proof-modal-image{
+  max-width:100%;
   max-height:100%;
   object-fit:contain;
 }
@@ -1173,6 +1194,72 @@ body.modal-open{overflow:hidden}
   display:flex;
   align-items:center;
   gap:8px;
+}
+.proof-pdf-tools{
+  grid-column:1;
+  justify-self:start;
+  flex:0 0 auto;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.proof-pdf-tools[hidden]{
+  display:none;
+}
+.proof-zoom-controls{
+  display:flex;
+  align-items:center;
+  gap:0;
+  border:1px solid #55565a;
+  border-radius:6px;
+  overflow:hidden;
+  background:#202123;
+}
+.proof-icon-button{
+  width:30px;
+  height:30px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border:0;
+  border-right:1px solid #55565a;
+  background:#2f3033;
+  color:#f0f1f2;
+  font-size:17px;
+  font-weight:900;
+  line-height:1;
+  cursor:pointer;
+}
+.proof-zoom-controls .proof-icon-button:last-child{
+  border-right:0;
+}
+.proof-icon-button:hover:not(:disabled),
+.proof-icon-button:focus-visible{
+  background:#3b3c40;
+  outline:none;
+}
+.proof-icon-button:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+}
+.proof-zoom-status{
+  min-width:52px;
+  padding:0 8px;
+  color:#f0f1f2;
+  font-size:12px;
+  font-weight:900;
+  line-height:30px;
+  text-align:center;
+  border-right:1px solid #55565a;
+}
+.proof-rotate-button{
+  border:1px solid #55565a;
+  border-radius:6px;
+}
+.proof-rotate-button[aria-pressed="true"]{
+  border-color:#579bfc;
+  color:#d8e8ff;
+  background:#26476d;
 }
 .proof-modal-foot .btn.small{
   padding:5px 8px;
@@ -1248,6 +1335,9 @@ body.modal-open{overflow:hidden}
   }
   .proof-modal-foot .proof-modal-controls{
     display:none;
+  }
+  .proof-pdf-tools{
+    display:none !important;
   }
   .proof-modal-controls,
   .proof-file-controls{width:100%;justify-content:flex-end}
