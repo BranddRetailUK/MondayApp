@@ -472,6 +472,9 @@ async function fetchOpenDashboardJobs() {
     SELECT *
     FROM database_jobs
     WHERE is_complete IS NOT TRUE
+      AND invoice_printed IS NOT TRUE
+      AND pf_invoice_printed IS NOT TRUE
+      AND COALESCE(UPPER(TRIM(dashboard_status)), '') <> 'INVOICED'
     ORDER BY COALESCE(order_date, created_at_source, updated_at_source) DESC NULLS LAST,
              order_no DESC
   `);
