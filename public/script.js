@@ -69,6 +69,12 @@ let __boardRefreshTimer = null;
 let __boardLoading = false;
 let __testBoardRefreshTimer = null;
 let __testBoardLoading = false;
+let __testFileUploadInput = null;
+let __testFileUploadTarget = null;
+let __testFileUploadsInFlight = 0;
+const __testFileUploadingCells = new Set();
+const __testCheckboxOptimisticValues = new Map();
+let __testCheckboxOptimisticSeq = 0;
 let __boardSortState = null;
 let __priorityHighlightsEnabled = localStorage.getItem(PRIORITY_HIGHLIGHT_STORAGE_KEY) !== '0';
 let __dashboardZoom = 1;
@@ -645,6 +651,7 @@ async function loadTestBoard(options = {}) {
     }
     const payload = await response.json();
     window.__latestTestBoardPayload = payload;
+    pruneSyncedTestCheckboxOptimisticValues(payload);
     renderBoard(payload, { context: BOARD_CONTEXT_TEST, boardDiv });
   } catch (err) {
     console.warn('Test dashboard load failed', err);
@@ -680,7 +687,7 @@ function startTestBoardAutoRefresh() {
     if (document.hidden) return;
     const dashboard = document.getElementById('tab-test-dashboard');
     if (dashboard && !dashboard.classList.contains('active')) return;
-    if (isStatusDropdownOpen() || __statusUpdateInFlight > 0) return;
+    if (isStatusDropdownOpen() || __statusUpdateInFlight > 0 || __testFileUploadsInFlight > 0) return;
     loadTestBoard({ forceRefresh: true });
   }, BOARD_AUTO_REFRESH_MS);
 }
@@ -1623,9 +1630,9 @@ function buildColumnValueCell(entity, column, { subitem = false, context = BOARD
   } else if (column.type === 'checkbox') {
     renderCheckboxValue(cell, value, column, { entity, subitem, context });
   } else if (column.type === 'file') {
-    renderFileValue(cell, value, text, column);
+    const fileCount = renderFileValue(cell, value, text, column);
     if (context === BOARD_CONTEXT_TEST && !subitem) {
-      decorateTestFileDropCell(cell, entity, column);
+      decorateTestFileDropCell(cell, entity, column, { hasFiles: fileCount > 0 });
     }
   } else if (column.type === 'people') {
     renderPeopleValue(cell, text);
@@ -2013,7 +2020,10 @@ function getStatusColumnEndpoint(context, itemId) {
 }
 
 async function updateTestDashboardCheckbox(itemId, column, checked) {
+  const optimisticKey = testCheckboxOptimisticKey(itemId, column.id);
+  const requestId = ++__testCheckboxOptimisticSeq;
   __statusUpdateInFlight += 1;
+  __testCheckboxOptimisticValues.set(optimisticKey, { checked: Boolean(checked), requestId });
   updateCachedBoardCheckboxValue(itemId, column.id, checked);
   rerenderBoardContext(BOARD_CONTEXT_TEST);
 
@@ -2031,6 +2041,10 @@ async function updateTestDashboardCheckbox(itemId, column, checked) {
     await loadTestBoard({ forceRefresh: true });
   } catch (err) {
     console.warn('Checkbox update failed', err);
+    const optimistic = __testCheckboxOptimisticValues.get(optimisticKey);
+    if (optimistic?.requestId === requestId) {
+      __testCheckboxOptimisticValues.delete(optimisticKey);
+    }
     await loadTestBoard({ forceRefresh: true });
     alert(`Failed to update ${column?.title || 'checkbox'}: ${err.message || 'Unknown error'}`);
   } finally {
@@ -2080,6 +2094,34 @@ function updateCachedBoardCheckboxValue(itemId, columnId, checked) {
   value.value = checked ? JSON.stringify({ checked: 'true' }) : JSON.stringify({});
 }
 
+function testCheckboxOptimisticKey(itemId, columnId) {
+  return `${String(itemId)}:${String(columnId)}`;
+}
+
+function getTestCheckboxOptimisticValue(itemId, columnId) {
+  const optimistic = __testCheckboxOptimisticValues.get(testCheckboxOptimisticKey(itemId, columnId));
+  return optimistic ? optimistic.checked === true : null;
+}
+
+function pruneSyncedTestCheckboxOptimisticValues(payload = window.__latestTestBoardPayload) {
+  if (!__testCheckboxOptimisticValues.size) return;
+  for (const [key, optimistic] of Array.from(__testCheckboxOptimisticValues.entries())) {
+    const separatorIndex = key.indexOf(':');
+    if (separatorIndex <= 0) continue;
+    const itemId = key.slice(0, separatorIndex);
+    const columnId = key.slice(separatorIndex + 1);
+    const item = findBoardPayloadItem(payload, itemId);
+    if (!item) {
+      __testCheckboxOptimisticValues.delete(key);
+      continue;
+    }
+    const value = findColumnValue(item, columnId);
+    if (isCheckedValue(value) === optimistic.checked) {
+      __testCheckboxOptimisticValues.delete(key);
+    }
+  }
+}
+
 function normalizeStatusOptionIndex(index) {
   const numeric = Number(index);
   return Number.isFinite(numeric) ? numeric : index;
@@ -2111,7 +2153,10 @@ async function readApiError(response) {
 }
 
 function renderCheckboxValue(cell, value, column, { entity = null, subitem = false, context = BOARD_CONTEXT_MONDAY } = {}) {
-  const checked = isCheckedValue(value);
+  const optimisticChecked = context === BOARD_CONTEXT_TEST && !subitem && entity?.id
+    ? getTestCheckboxOptimisticValue(entity.id, column.id)
+    : null;
+  const checked = optimisticChecked === null ? isCheckedValue(value) : optimisticChecked;
   const editable = context === BOARD_CONTEXT_TEST && !subitem && entity?.id;
   const mark = document.createElement(editable ? 'button' : 'span');
   mark.className = 'monday-check-tick';
@@ -2151,7 +2196,7 @@ function renderFileValue(cell, value, text, column) {
       mime: inferMimeTypeFromName(text)
     });
   }
-  if (!files.length) return;
+  if (!files.length) return 0;
   cell.classList.add('monday-file-cell');
   files.forEach((file, index) => {
     if (isPreviewModalFileColumn(column)) {
@@ -2160,6 +2205,7 @@ function renderFileValue(cell, value, text, column) {
       renderFileIconLink(cell, file, text);
     }
   });
+  return files.length;
 }
 
 function isPreviewModalFileColumn(column) {
@@ -2207,14 +2253,44 @@ function renderPreviewFileButton(cell, files, index, text, column) {
   cell.appendChild(button);
 }
 
-function decorateTestFileDropCell(cell, entity, column) {
+function decorateTestFileDropCell(cell, entity, column, { hasFiles = false } = {}) {
   if (!cell || !entity?.id || !column?.id) return;
+  const uploadKey = testFileUploadKey(entity.id, column.id);
+  const uploading = __testFileUploadingCells.has(uploadKey);
   cell.classList.add('test-file-drop-target');
-  cell.title = cell.title || `Drop ${column.title || 'file'} here to upload`;
+  cell.classList.toggle('uploading', uploading);
+  cell.title = cell.title || `${hasFiles ? 'Drop another' : 'Drop or click to upload'} ${column.title || 'file'}`;
+  if (!hasFiles || uploading) renderTestFileUploadAffordance(cell, entity, column, { uploading });
   cell.addEventListener('dragenter', handleTestFileDragEnter);
   cell.addEventListener('dragover', handleTestFileDragOver);
   cell.addEventListener('dragleave', handleTestFileDragLeave);
   cell.addEventListener('drop', (event) => handleTestFileDrop(event, entity, column, cell));
+}
+
+function renderTestFileUploadAffordance(cell, entity, column, { uploading = false } = {}) {
+  cell.classList.add('monday-file-cell');
+
+  if (uploading) {
+    const spinner = document.createElement('span');
+    spinner.className = 'test-file-upload-spinner';
+    spinner.setAttribute('aria-label', 'Uploading file');
+    spinner.setAttribute('role', 'status');
+    cell.appendChild(spinner);
+    return;
+  }
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'test-file-upload-empty-button';
+  button.textContent = '+';
+  button.title = `Upload ${column.title || 'file'}`;
+  button.setAttribute('aria-label', button.title);
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openTestFilePicker(entity, column, cell);
+  });
+  cell.appendChild(button);
 }
 
 function handleTestFileDragEnter(event) {
@@ -2244,18 +2320,75 @@ async function handleTestFileDrop(event, entity, column, cell) {
   const files = Array.from(event.dataTransfer?.files || []).filter(Boolean);
   if (!files.length) return;
 
-  cell?.classList.add('uploading');
+  await uploadTestDashboardFiles(entity.id, column, files, cell);
+}
+
+function openTestFilePicker(entity, column, cell) {
+  const input = ensureTestFileUploadInput();
+  __testFileUploadTarget = { entity, column, cell };
+  input.value = '';
+  input.click();
+}
+
+function ensureTestFileUploadInput() {
+  if (__testFileUploadInput) return __testFileUploadInput;
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.multiple = true;
+  input.hidden = true;
+  input.addEventListener('change', handleTestFileInputChange);
+  document.body.appendChild(input);
+  __testFileUploadInput = input;
+  return input;
+}
+
+async function handleTestFileInputChange(event) {
+  const target = __testFileUploadTarget;
+  __testFileUploadTarget = null;
+  const files = Array.from(event.target?.files || []).filter(Boolean);
+  if (!target?.entity?.id || !target?.column?.id || !files.length) return;
+  await uploadTestDashboardFiles(target.entity.id, target.column, files, target.cell);
+}
+
+async function uploadTestDashboardFiles(itemId, column, files, cell) {
+  const uploadKey = testFileUploadKey(itemId, column.id);
+  __testFileUploadsInFlight += 1;
+  __testFileUploadingCells.add(uploadKey);
+  setTestFileCellUploading(cell, true);
+  let uploaded = false;
   try {
     for (const file of files) {
-      await uploadTestDashboardFile(entity.id, column, file);
+      await uploadTestDashboardFile(itemId, column, file);
     }
-    await loadTestBoard({ forceRefresh: true });
+    uploaded = true;
   } catch (err) {
     console.warn('Test dashboard file upload failed', err);
     alert(`File upload failed: ${err.message || 'Unknown error'}`);
   } finally {
-    cell?.classList.remove('uploading');
+    __testFileUploadingCells.delete(uploadKey);
+    __testFileUploadsInFlight = Math.max(0, __testFileUploadsInFlight - 1);
+    setTestFileCellUploading(cell, false, { itemId, column });
   }
+  if (uploaded) await loadTestBoard({ forceRefresh: true });
+}
+
+function setTestFileCellUploading(cell, uploading, target = {}) {
+  if (!cell) return;
+  cell.classList.toggle('uploading', Boolean(uploading));
+  cell.querySelector('.test-file-upload-empty-button, .test-file-upload-spinner')?.remove();
+  if (uploading) {
+    const spinner = document.createElement('span');
+    spinner.className = 'test-file-upload-spinner';
+    spinner.setAttribute('aria-label', 'Uploading file');
+    spinner.setAttribute('role', 'status');
+    cell.appendChild(spinner);
+  } else if (!cell.querySelector('.monday-file-link') && target?.column?.id) {
+    renderTestFileUploadAffordance(cell, { id: target.itemId }, target.column);
+  }
+}
+
+function testFileUploadKey(itemId, columnId) {
+  return `${String(itemId)}:${String(columnId)}`;
 }
 
 function hasDraggedFiles(event) {
@@ -2295,7 +2428,7 @@ async function uploadTestDashboardFile(itemId, column, file) {
   let uploadJson = null;
   try { uploadJson = await uploadResponse.json(); } catch {}
   if (!uploadResponse.ok) {
-    throw new Error(uploadJson?.error?.message || `Cloudinary upload failed (${uploadResponse.status})`);
+    throw new Error(formatCloudinaryUploadError(uploadJson?.error?.message, uploadResponse.status));
   }
 
   const saveResponse = await fetch(ENDPOINTS.testFiles(itemId), {
@@ -2320,6 +2453,14 @@ async function uploadTestDashboardFile(itemId, column, file) {
   });
   if (!saveResponse.ok) throw new Error(await readApiError(saveResponse));
   return saveResponse.json();
+}
+
+function formatCloudinaryUploadError(message, status) {
+  const clean = normalizeCellText(message || '');
+  if (/invalid cloud_name|cloud_name mismatch/i.test(clean)) {
+    return 'Cloudinary cloud name/API key mismatch. Check CLOUDINARY_CLOUD_NAME matches the API key product environment.';
+  }
+  return clean || `Cloudinary upload failed (${status})`;
 }
 
 function getPreviewModalLabel(column) {

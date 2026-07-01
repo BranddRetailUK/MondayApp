@@ -400,6 +400,32 @@ body{
   background:rgba(0,200,117,.12);
   pointer-events:none;
 }
+.test-file-upload-empty-button{
+  width:100%;
+  height:100%;
+  min-height:35px;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  color:rgba(214,218,226,.42);
+  font:700 22px/1 Arial, Helvetica, sans-serif;
+  cursor:pointer;
+}
+.test-file-upload-empty-button:hover,
+.test-file-upload-empty-button:focus-visible{
+  color:rgba(233,237,245,.78);
+  background:rgba(255,255,255,.035);
+  outline:1px solid rgba(87,155,252,.32);
+  outline-offset:-2px;
+}
+.test-file-upload-spinner{
+  width:16px;
+  height:16px;
+  border:2px solid rgba(214,218,226,.35);
+  border-top-color:#579bfc;
+  border-radius:50%;
+  animation:board-spin .75s linear infinite;
+}
 @keyframes board-spin{
   to{transform:rotate(360deg)}
 }
