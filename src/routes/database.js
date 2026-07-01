@@ -55,7 +55,7 @@ router.get('/api/database/jobs', async (req, res) => {
   const limit = clampInt(req.query.limit, 100, 1, 100);
   const offset = clampInt(req.query.offset, 0, 0, 100000);
   const includeTotal = cleanQuery(req.query.includeTotal).toLowerCase() !== 'false';
-  const { whereSql, params } = buildJobFilters(req.query);
+  const { whereSql, params, orderSql } = buildJobFilters(req.query);
 
   try {
     const count = includeTotal
@@ -133,8 +133,7 @@ router.get('/api/database/jobs', async (req, res) => {
        LEFT JOIN line_summary ls ON ls.source_order_id = j.source_order_id
        LEFT JOIN position_summary ps ON ps.source_order_id = j.source_order_id
        ${whereSql}
-       ORDER BY COALESCE(j.order_date, j.created_at_source) DESC NULLS LAST,
-                j.order_no DESC
+       ${orderSql}
        LIMIT $${limitParam}
        OFFSET $${offsetParam}`,
       listParams
@@ -1889,15 +1888,26 @@ function buildJobFilters(query) {
   }
 
   const status = cleanQuery(query.status).toLowerCase();
+  let orderSql = `ORDER BY COALESCE(j.order_date, j.created_at_source) DESC NULLS LAST,
+                         j.order_no DESC`;
   if (status === 'open') {
     where.push('j.is_complete IS NOT TRUE');
   } else if (status === 'complete' || status === 'completed') {
     where.push('j.is_complete IS TRUE');
+  } else if (status === 'to-invoice') {
+    where.push('j.is_complete IS TRUE');
+    where.push('j.invoice_required IS NOT FALSE');
+    where.push('j.invoice_printed IS NOT TRUE');
+    where.push('j.pf_invoice_printed IS NOT TRUE');
+    where.push(`COALESCE(UPPER(TRIM(j.dashboard_status)), '') <> 'INVOICED'`);
+    orderSql = `ORDER BY COALESCE(j.complete_date, j.updated_at_source, j.order_date) DESC NULLS LAST,
+                         j.order_no DESC`;
   }
 
   return {
     whereSql: where.length ? `WHERE ${where.join(' AND ')}` : '',
     params,
+    orderSql,
   };
 }
 

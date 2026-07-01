@@ -181,7 +181,7 @@
                 <button class="db-raised-button" type="button" data-db-action="placeholder">Configuration</button>
                 <button class="db-raised-button" type="button" data-db-action="placeholder">Error log</button>
                 <button class="db-raised-button" type="button" data-db-action="placeholder">Reports</button>
-                <button class="db-raised-button" type="button" data-db-action="placeholder">Marketing</button>
+                <button class="db-raised-button" type="button" data-db-action="to-invoice">To Invoice</button>
               </div>
             </section>
 
@@ -587,6 +587,27 @@
                   <span>Search:</span>
                   <input id="db-order-search" type="search" autocomplete="off">
                 </label>
+              </div>
+            </section>
+
+            <section id="db-to-invoice-view" class="db-view db-to-invoice-view" aria-label="To invoice">
+              <div class="db-table-frame db-to-invoice-table-frame">
+                <table id="db-to-invoice-table" class="db-legacy-table">
+                  <thead>
+                    <tr>
+                      <th class="db-row-selector"></th>
+                      <th>Order no:</th>
+                      <th>Customer:</th>
+                      <th>Type</th>
+                      <th>Job title:</th>
+                      <th>Completed:</th>
+                      <th>Invoice no:</th>
+                    </tr>
+                  </thead>
+                  <tbody id="db-to-invoice-body">
+                    <tr><td colspan="7" class="db-empty-cell">Loading jobs to invoice</td></tr>
+                  </tbody>
+                </table>
               </div>
             </section>
 

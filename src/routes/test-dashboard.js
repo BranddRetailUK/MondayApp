@@ -111,6 +111,59 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
   }
 });
 
+protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (req, res) => {
+  const sourceOrderId = Number.parseInt(req.params.jobId, 10);
+  if (!Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
+
+  const columnId = clean(req.body?.columnId);
+  if (!columnId) return res.status(400).json({ error: 'columnId is required' });
+  const checked = req.body?.checked === true || req.body?.checked === 'true' || req.body?.checked === 1 || req.body?.checked === '1';
+
+  try {
+    await ensureTestDashboardDefaults(pool);
+    const [job, columns] = await Promise.all([
+      fetchDashboardJob(sourceOrderId),
+      fetchDashboardColumns(false),
+    ]);
+    if (!job) return res.status(404).json({ error: 'Database job not found' });
+
+    const column = columns.find(col => col.id === columnId);
+    if (!column || column.type !== 'checkbox') {
+      return res.status(400).json({ error: 'Column is not a test dashboard checkbox column' });
+    }
+
+    const state = await fetchJobState(job.source_order_id);
+    const columnValues = { ...(state?.column_values || {}) };
+    columnValues[column.id] = checkboxValue(column, checked);
+
+    const nextState = {
+      group_id: state?.group_id || resolveDashboardGroupId(job, state, null),
+      item_name: state?.item_name || formatJobName(job),
+      column_values: columnValues,
+      archived: Boolean(state?.archived),
+    };
+    const saved = await upsertJobState(job.source_order_id, nextState);
+    let databaseJob = null;
+    if (isProofApprovalCheckbox(column)) {
+      databaseJob = await updateDatabaseJobProofApproved(pool, job.source_order_id, checked);
+    }
+
+    res.json({
+      ok: true,
+      itemId: String(job.source_order_id),
+      columnId: column.id,
+      columnTitle: column.title,
+      checked,
+      groupId: saved.group_id,
+      archived: saved.archived,
+      databaseJob,
+    });
+  } catch (err) {
+    console.error('PUT /api/test-dashboard/items/:jobId/checkbox-column', err);
+    res.status(500).json({ error: 'Failed to update test dashboard checkbox column' });
+  }
+});
+
 protectedRouter.get('/api/test-dashboard/scan-url', (req, res) => {
   const jobId = clean(req.query.jobId || req.query.itemId);
   if (!jobId) return res.status(400).json({ error: 'jobId required' });
@@ -372,7 +425,7 @@ function buildBoardItem({ job, state, columns, subitemColumns, lineItems, positi
   const designText = designTextFromPositions(positions, job);
 
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.PRIORITY, statusValueFromJobOrState(columns, TEST_DASHBOARD_COLUMN_IDS.PRIORITY, job.dashboard_priority, stateValues) || priorityValueFromDate(job.delivery_date));
-  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JOB, stateValues[TEST_DASHBOARD_COLUMN_IDS.JOB] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JOB), false));
+  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JOB, stateValues[TEST_DASHBOARD_COLUMN_IDS.JOB] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JOB), Boolean(job.proof_approved)));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.DATE, stateValues[TEST_DASHBOARD_COLUMN_IDS.DATE] || dateValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.DATE), job.delivery_date));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.TRANS, stateValues[TEST_DASHBOARD_COLUMN_IDS.TRANS] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.TRANS), false));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JAQ, stateValues[TEST_DASHBOARD_COLUMN_IDS.JAQ] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JAQ), Boolean(job.has_screens || job.screen_numbers)));
@@ -952,6 +1005,25 @@ function dashboardLabelsForChangedColumn(column, label) {
   if (title === 'PRIORITY') return { priority: label };
   if (title === 'TYPE') return { type: label };
   return {};
+}
+
+function isProofApprovalCheckbox(column) {
+  const title = normalizeColumnTitle(column?.title || '');
+  return column?.id === TEST_DASHBOARD_COLUMN_IDS.JOB || title.includes('APPROVED') || title.includes('JOB');
+}
+
+async function updateDatabaseJobProofApproved(db, sourceOrderId, approved) {
+  const result = await db.query(
+    `UPDATE database_jobs
+     SET proof_approved = $2,
+         proof_approved_at = CASE WHEN $2 IS TRUE THEN NOW() ELSE NULL END,
+         updated_at_source = NOW(),
+         imported_at = NOW()
+     WHERE source_order_id = $1
+     RETURNING source_order_id, proof_approved, proof_approved_at`,
+    [sourceOrderId, Boolean(approved)]
+  );
+  return result.rows[0] || null;
 }
 
 function getColumnText(value) {

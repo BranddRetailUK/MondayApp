@@ -10,6 +10,7 @@
   const CONTACT_AUTOSAVE_MS = DESIGN_AUTOSAVE_MS;
   const LINE_ORDER_AUTOSAVE_MS = 3500;
   const OUTSTANDING_TABLE_COLUMN_COUNT = 8;
+  const TO_INVOICE_TABLE_COLUMN_COUNT = 7;
   const OUTSTANDING_TABLE_FIXED_WIDTH = 19 + 68 + 198 + 36 + 65 + 88 + 82;
   const OUTSTANDING_TITLE_COLUMN_MIN_WIDTH = 170;
   const OUTSTANDING_TITLE_CELL_EXTRA_WIDTH = 12;
@@ -64,6 +65,9 @@
     loadedOrderMode: '',
     outstandingJobs: [],
     outstandingTotal: 0,
+    toInvoiceJobs: [],
+    toInvoiceLoaded: false,
+    toInvoiceLoading: false,
     orderLoadToken: 0,
     orderLoadComplete: false,
     orderSearchQuery: '',
@@ -177,6 +181,8 @@
       outstandingFrame: document.querySelector('.db-outstanding-table-frame'),
       outstandingTable: document.getElementById('db-outstanding-table'),
       outstandingBody: document.getElementById('db-outstanding-body'),
+      toInvoiceTable: document.getElementById('db-to-invoice-table'),
+      toInvoiceBody: document.getElementById('db-to-invoice-body'),
       orderSearch: document.getElementById('db-order-search'),
       selectOrder: document.getElementById('db-select-order'),
       footerTitle: document.getElementById('db-footer-title'),
@@ -218,6 +224,8 @@
     els.root.addEventListener('click', handleRootClick);
     els.outstandingBody.addEventListener('click', handleOutstandingRowClick);
     els.outstandingBody.addEventListener('keydown', handleOutstandingRowKeydown);
+    els.toInvoiceBody?.addEventListener('click', handleToInvoiceRowClick);
+    els.toInvoiceBody?.addEventListener('keydown', handleToInvoiceRowKeydown);
     els.outstandingFrame?.addEventListener('scroll', handleOutstandingScroll);
     window.addEventListener('resize', scheduleOutstandingTableLayout);
     els.customersBody.addEventListener('click', handleDatabaseCustomerRowClick);
@@ -437,6 +445,11 @@
       showCustomers();
       return;
     }
+    if (action === 'to-invoice') {
+      await flushOrderAutosaves();
+      showToInvoice();
+      return;
+    }
 
     const documentType = button.dataset.dbDocument || (button.dataset.dbOrderAck ? 'order-ack' : '');
     if (documentType) {
@@ -473,6 +486,21 @@
   }
 
   async function handleOutstandingRowKeydown(event) {
+    if (event.key !== 'Enter') return;
+    const row = event.target.closest('tr[data-job-id]');
+    if (!row) return;
+    await flushOrderAutosaves();
+    openOrder(row.dataset.jobId, 'details');
+  }
+
+  async function handleToInvoiceRowClick(event) {
+    const row = event.target.closest('tr[data-job-id]');
+    if (!row) return;
+    await flushOrderAutosaves();
+    openOrder(row.dataset.jobId, 'details');
+  }
+
+  async function handleToInvoiceRowKeydown(event) {
     if (event.key !== 'Enter') return;
     const row = event.target.closest('tr[data-job-id]');
     if (!row) return;
@@ -565,6 +593,12 @@
     showView('customers');
     setFooterTitle('Customers');
     loadDatabaseCustomers({ force: false });
+  }
+
+  function showToInvoice() {
+    showView('to-invoice');
+    setFooterTitle('To Invoice');
+    loadToInvoiceJobs({ force: true });
   }
 
   function setCurrentUser(user) {
@@ -1815,6 +1849,83 @@
     }
   }
 
+  async function loadToInvoiceJobs(options = {}) {
+    if (state.toInvoiceLoading && !options.force) {
+      renderToInvoiceJobs();
+      return;
+    }
+    if (state.toInvoiceLoaded && !options.force) {
+      renderToInvoiceJobs();
+      return;
+    }
+
+    state.toInvoiceLoading = true;
+    state.toInvoiceLoaded = false;
+    state.toInvoiceJobs = [];
+    if (els.toInvoiceBody) {
+      els.toInvoiceBody.innerHTML = renderStatusRow('Loading jobs to invoice', TO_INVOICE_TABLE_COLUMN_COUNT);
+    }
+
+    try {
+      const jobs = [];
+      let offset = 0;
+      let total = 0;
+      do {
+        const params = new URLSearchParams({
+          status: 'to-invoice',
+          limit: String(PAGE_LIMIT),
+          offset: String(offset),
+        });
+        if (offset > 0) params.set('includeTotal', 'false');
+        const data = await fetchJson(`/api/database/jobs?${params.toString()}`);
+        const pageJobs = data.jobs || [];
+        jobs.push(...pageJobs);
+        const limit = data.limit || PAGE_LIMIT;
+        total = data.total !== null && data.total !== undefined && Number.isFinite(Number(data.total))
+          ? Number(data.total)
+          : Math.max(total, offset + pageJobs.length);
+        offset += limit;
+        if (!pageJobs.length) break;
+      } while (offset < total);
+
+      state.toInvoiceJobs = jobs;
+      state.toInvoiceLoaded = true;
+      renderToInvoiceJobs();
+    } catch (err) {
+      state.toInvoiceLoaded = false;
+      if (els.toInvoiceBody) {
+        els.toInvoiceBody.innerHTML = renderStatusRow(err.message, TO_INVOICE_TABLE_COLUMN_COUNT);
+      }
+    } finally {
+      state.toInvoiceLoading = false;
+    }
+  }
+
+  function renderToInvoiceJobs() {
+    if (!els.toInvoiceBody) return;
+    const jobs = state.toInvoiceJobs || [];
+    if (!jobs.length) {
+      els.toInvoiceBody.innerHTML = renderStatusRow('No jobs to invoice', TO_INVOICE_TABLE_COLUMN_COUNT);
+      return;
+    }
+    els.toInvoiceBody.innerHTML = jobs.map(renderToInvoiceRow).join('');
+  }
+
+  function renderToInvoiceRow(job) {
+    const selected = state.selectedJob && Number(state.selectedJob.source_order_id) === Number(job.source_order_id);
+    return `
+      <tr class="db-outstanding-row ${selected ? 'selected' : ''}" data-job-id="${escapeAttr(job.source_order_id)}" tabindex="0">
+        <td class="db-row-selector">${selected ? '&#9654;' : ''}</td>
+        <td class="db-order-link">${escapeHtml(job.order_no || '')}</td>
+        <td class="db-customer-link">${escapeHtml(job.customer_name || '')}</td>
+        <td class="db-type-cell db-type-${categoryForJob(job)}">${escapeHtml(typeAbbr(job))}</td>
+        <td>${escapeHtml(job.job_title || '')}</td>
+        <td>${escapeHtml(formatDate(job.complete_date || job.updated_at_source, 'long'))}</td>
+        <td>${escapeHtml(job.invoice_no || '')}</td>
+      </tr>
+    `;
+  }
+
   async function loadOutstandingOrders(options = {}) {
     const mode = state.orderMode;
     if (state.loadingOrders && state.loadedOrderMode === mode && !options.force) {
@@ -2059,8 +2170,9 @@
 
   async function openOrder(id, tab) {
     state.activeOrderTab = tab || 'details';
+    const sourceView = state.activeView;
     showView('order');
-    setFooterTitle('Open Orders');
+    setFooterTitle(sourceView === 'to-invoice' ? 'To Invoice' : 'Open Orders');
     setOrderLoading();
 
     try {
@@ -5131,7 +5243,7 @@
     }
 
     els.mainTabs.forEach((tab) => {
-      const active = (name === 'home' || name === 'new-order' || name === 'new-customer' || name === 'new-contact' || name === 'customers' || name === 'customer')
+      const active = (name === 'home' || name === 'new-order' || name === 'new-customer' || name === 'new-contact' || name === 'customers' || name === 'customer' || name === 'to-invoice')
         ? tab.dataset.dbGo === 'home'
         : tab.dataset.dbGo === 'outstanding';
       tab.classList.toggle('active', active);
@@ -5161,6 +5273,7 @@
     if (name === 'new-contact') return 'Add Contact';
     if (name === 'customers') return 'Customers';
     if (name === 'customer') return 'Customer';
+    if (name === 'to-invoice') return 'To Invoice';
     if (name === 'outstanding') return state.orderMode === 'all' ? 'All Orders' : 'Open Orders';
     if (name === 'order') return 'Open Orders';
     return 'Main Menu';

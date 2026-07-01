@@ -703,6 +703,22 @@ body{
   font-weight:900;
   line-height:1;
 }
+.monday-check-button{
+  appearance:none;
+  border:0;
+  background:transparent;
+  cursor:pointer;
+  font-family:inherit;
+  padding:0;
+  width:100%;
+  height:100%;
+  min-height:35px;
+}
+.monday-check-button:hover,
+.monday-check-button:focus-visible{
+  outline:2px solid rgba(255,255,255,.45);
+  outline-offset:1px;
+}
 .print-cell{justify-content:center;gap:6px}
 .job-cell{min-width:0}
 .title-cell{font-weight:700}
@@ -2086,6 +2102,9 @@ body.modal-open{overflow:hidden}
 .db-outstanding-view{
   padding:15px 13px 0;
 }
+.db-to-invoice-view{
+  padding:15px 13px 0;
+}
 .db-customers-view{
   padding:15px 13px 0;
 }
@@ -2117,6 +2136,9 @@ body.modal-open{overflow:hidden}
 }
 .db-outstanding-table-frame{
   height:461px;
+}
+.db-to-invoice-table-frame{
+  height:502px;
 }
 .db-customers-table-frame{
   height:476px;
@@ -2162,6 +2184,16 @@ body.modal-open{overflow:hidden}
 #db-outstanding-table th:nth-child(6){width:65px}
 #db-outstanding-table th:nth-child(7){width:88px}
 #db-outstanding-table th:nth-child(8){width:82px}
+#db-to-invoice-table{
+  min-width:760px;
+}
+#db-to-invoice-table th:nth-child(2){width:68px}
+#db-to-invoice-table th:nth-child(3){width:198px}
+#db-to-invoice-table th:nth-child(4){width:36px;text-align:center}
+#db-to-invoice-table td:nth-child(4){text-align:center}
+#db-to-invoice-table th:nth-child(5){width:auto}
+#db-to-invoice-table th:nth-child(6){width:92px}
+#db-to-invoice-table th:nth-child(7){width:82px}
 #db-customers-table th:nth-child(2){width:250px}
 #db-customers-table th:nth-child(3){width:88px}
 #db-customers-table th:nth-child(4){width:auto}
@@ -2225,6 +2257,9 @@ body.modal-open{overflow:hidden}
 }
 .db-type-embroidery{
   background:#ffc477!important;
+}
+.db-type-print_embroidery{
+  background:#f0c2ff!important;
 }
 .db-type-gifts{
   background:#bff6bb!important;

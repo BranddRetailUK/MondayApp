@@ -8,6 +8,7 @@ const ENDPOINTS = {
   statusColumn: (itemId) => `/api/board/items/${encodeURIComponent(itemId)}/status-column`,
   testData: '/api/test-dashboard/board',
   testStatusColumn: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/status-column`,
+  testCheckboxColumn: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/checkbox-column`,
   testScanUrl: (itemId) => `/api/test-dashboard/scan-url?jobId=${encodeURIComponent(itemId)}`,
   testUploadSignature: '/api/test-dashboard/uploads/signature',
   testFiles: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/files`
@@ -1619,7 +1620,7 @@ function buildColumnValueCell(entity, column, { subitem = false, context = BOARD
   if (column.type === 'status') {
     renderStatusValue(cell, value, column, text, { entity, subitem, context });
   } else if (column.type === 'checkbox') {
-    renderCheckboxValue(cell, value, column);
+    renderCheckboxValue(cell, value, column, { entity, subitem, context });
   } else if (column.type === 'file') {
     renderFileValue(cell, value, text, column);
     if (context === BOARD_CONTEXT_TEST && !subitem) {
@@ -1911,6 +1912,32 @@ function getStatusColumnEndpoint(context, itemId) {
     : ENDPOINTS.statusColumn(itemId);
 }
 
+async function updateTestDashboardCheckbox(itemId, column, checked) {
+  __statusUpdateInFlight += 1;
+  updateCachedBoardCheckboxValue(itemId, column.id, checked);
+  rerenderBoardContext(BOARD_CONTEXT_TEST);
+
+  try {
+    const response = await fetch(ENDPOINTS.testCheckboxColumn(itemId), {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        columnId: column.id,
+        checked,
+      }),
+    });
+    if (!response.ok) throw new Error(await readApiError(response));
+    await loadTestBoard({ forceRefresh: true });
+  } catch (err) {
+    console.warn('Checkbox update failed', err);
+    await loadTestBoard({ forceRefresh: true });
+    alert(`Failed to update ${column?.title || 'checkbox'}: ${err.message || 'Unknown error'}`);
+  } finally {
+    __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);
+  }
+}
+
 async function loadBoardForContext(context, options = {}) {
   if (context === BOARD_CONTEXT_TEST) return loadTestBoard(options);
   return loadBoard(options);
@@ -1935,6 +1962,22 @@ function updateCachedBoardStatusValue(itemId, columnId, option, context = BOARD_
   value.value = option.clear
     ? JSON.stringify({})
     : JSON.stringify({ index: normalizeStatusOptionIndex(option.index) });
+}
+
+function updateCachedBoardCheckboxValue(itemId, columnId, checked) {
+  const item = findBoardPayloadItem(window.__latestTestBoardPayload, itemId);
+  if (!item) return;
+
+  let value = findColumnValue(item, columnId);
+  if (!value) {
+    value = { id: columnId, type: 'checkbox', text: '', value: '' };
+    if (!Array.isArray(item.column_values)) item.column_values = [];
+    item.column_values.push(value);
+  }
+
+  value.text = checked ? 'v' : '';
+  value.type = 'checkbox';
+  value.value = checked ? JSON.stringify({ checked: 'true' }) : JSON.stringify({});
 }
 
 function normalizeStatusOptionIndex(index) {
@@ -1967,12 +2010,27 @@ async function readApiError(response) {
   return `Request failed (${response.status})`;
 }
 
-function renderCheckboxValue(cell, value, column) {
-  if (!isCheckedValue(value)) return;
-  const mark = document.createElement('span');
+function renderCheckboxValue(cell, value, column, { entity = null, subitem = false, context = BOARD_CONTEXT_MONDAY } = {}) {
+  const checked = isCheckedValue(value);
+  const editable = context === BOARD_CONTEXT_TEST && !subitem && entity?.id;
+  const mark = document.createElement(editable ? 'button' : 'span');
   mark.className = 'monday-check-tick';
   mark.style.color = getCheckboxTickColor(column);
-  mark.textContent = '✓';
+  mark.textContent = checked ? '✓' : '';
+
+  if (editable) {
+    mark.type = 'button';
+    mark.classList.add('monday-check-button');
+    mark.setAttribute('aria-label', `${checked ? 'Clear' : 'Set'} ${column.title || 'checkbox'}`);
+    mark.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      updateTestDashboardCheckbox(entity.id, column, !checked);
+    });
+  } else if (!checked) {
+    return;
+  }
+
   cell.appendChild(mark);
 }
 
