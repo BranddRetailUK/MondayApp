@@ -292,7 +292,8 @@ async function buildTestDashboardBoardPayload() {
     fetchDashboardGroups(),
     fetchOpenDashboardJobs(),
   ]);
-  const sourceOrderIds = jobs.map(job => job.source_order_id);
+  const dashboardJobs = jobs.filter(job => deriveJobCategory(job) !== 'gifts');
+  const sourceOrderIds = dashboardJobs.map(job => job.source_order_id);
   const [states, lineItems, positions, files, scans] = await Promise.all([
     fetchStateMap(sourceOrderIds),
     fetchLineItemMap(sourceOrderIds),
@@ -302,7 +303,7 @@ async function buildTestDashboardBoardPayload() {
   ]);
 
   const grouped = new Map(groups.map(group => [group.id, []]));
-  for (const job of jobs) {
+  for (const job of dashboardJobs) {
     const state = states.get(job.source_order_id) || null;
     if (state?.archived) continue;
     const scan = scans.get(String(job.source_order_id)) || null;
