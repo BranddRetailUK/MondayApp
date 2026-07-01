@@ -2131,15 +2131,18 @@ body.modal-open{overflow:hidden}
   text-align:center;
   padding:0;
 }
+#db-outstanding-table{
+  width:var(--db-outstanding-table-width, 100%);
+  min-width:726px;
+}
 #db-outstanding-table th:nth-child(2){width:68px}
 #db-outstanding-table th:nth-child(3){width:198px}
 #db-outstanding-table th:nth-child(4){width:36px;text-align:center}
-#db-outstanding-table th:nth-child(5){width:auto}
+#db-outstanding-table td:nth-child(4){text-align:center}
+#db-outstanding-table th:nth-child(5){width:var(--db-outstanding-title-width, auto)}
 #db-outstanding-table th:nth-child(6){width:65px}
 #db-outstanding-table th:nth-child(7){width:88px}
 #db-outstanding-table th:nth-child(8){width:82px}
-#db-outstanding-table th:nth-child(n+9){width:28px;text-align:center}
-#db-outstanding-table td:nth-child(n+9){text-align:center}
 #db-customers-table th:nth-child(2){width:250px}
 #db-customers-table th:nth-child(3){width:88px}
 #db-customers-table th:nth-child(4){width:auto}
@@ -3264,7 +3267,8 @@ body.modal-open{overflow:hidden}
 .db-close-order-row{
   display:flex;
   justify-content:flex-end;
-  margin-top:10px;
+  margin-top:16px;
+  margin-right:-16px;
 }
 .db-close-order-button{
   min-width:104px;
@@ -4184,7 +4188,7 @@ input.db-custom-line-input{
     height:min(62dvh, 520px);
   }
   #db-outstanding-table{
-    min-width:900px;
+    min-width:726px;
   }
   #db-customers-table{
     min-width:860px;
@@ -4364,6 +4368,9 @@ input.db-custom-line-input{
   .db-form-row,
   .db-comments-row{
     grid-template-columns:86px minmax(0, 1fr);
+  }
+  .db-close-order-row{
+    margin-right:0;
   }
   .db-form-control{
     flex-wrap:wrap;

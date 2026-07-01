@@ -9,6 +9,10 @@
   const JOB_AUTOSAVE_MS = DESIGN_AUTOSAVE_MS;
   const CONTACT_AUTOSAVE_MS = DESIGN_AUTOSAVE_MS;
   const LINE_ORDER_AUTOSAVE_MS = 3500;
+  const OUTSTANDING_TABLE_COLUMN_COUNT = 8;
+  const OUTSTANDING_TABLE_FIXED_WIDTH = 19 + 68 + 198 + 36 + 65 + 88 + 82;
+  const OUTSTANDING_TITLE_COLUMN_MIN_WIDTH = 170;
+  const OUTSTANDING_TITLE_CELL_EXTRA_WIDTH = 12;
   const ORDER_ACK_LOGO_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781699668/ultimate_logo_imyxvr.png';
   const ORDER_ACK_FOOTER_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781779546/LETTERHEAD_INFO_pxmlak.png';
   const ORDER_ACK_NO_BANK_FOOTER_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781869078/LETTERHEAD_INFO_del_note_wcjsjt.png';
@@ -139,6 +143,8 @@
   let lineOrderAutosaveTimer = 0;
   let orderSearchTimer = 0;
   let outstandingScrollFrame = 0;
+  let outstandingLayoutFrame = 0;
+  let outstandingTitleMeasureCanvas = null;
   let lineDrag = null;
 
   document.addEventListener('DOMContentLoaded', initDatabaseHub);
@@ -169,6 +175,7 @@
       customerAddressesBody: document.getElementById('db-customer-addresses-body'),
       customerDesignNumbersBody: document.getElementById('db-customer-design-numbers-body'),
       outstandingFrame: document.querySelector('.db-outstanding-table-frame'),
+      outstandingTable: document.getElementById('db-outstanding-table'),
       outstandingBody: document.getElementById('db-outstanding-body'),
       orderSearch: document.getElementById('db-order-search'),
       selectOrder: document.getElementById('db-select-order'),
@@ -212,6 +219,7 @@
     els.outstandingBody.addEventListener('click', handleOutstandingRowClick);
     els.outstandingBody.addEventListener('keydown', handleOutstandingRowKeydown);
     els.outstandingFrame?.addEventListener('scroll', handleOutstandingScroll);
+    window.addEventListener('resize', scheduleOutstandingTableLayout);
     els.customersBody.addEventListener('click', handleDatabaseCustomerRowClick);
     els.customersBody.addEventListener('keydown', handleDatabaseCustomerRowKeydown);
     els.customerOrdersBody.addEventListener('click', handleCustomerOrderRowClick);
@@ -1827,6 +1835,7 @@
     state.outstandingTotal = 0;
     state.visibleOrderLimit = PAGE_LIMIT;
     els.outstandingBody.innerHTML = renderStatusRow(mode === 'all' ? 'Loading all orders' : 'Loading outstanding orders');
+    scheduleOutstandingTableLayout([]);
 
     try {
       const result = await fetchJobsPage(mode, 0, { includeTotal: true });
@@ -1848,6 +1857,7 @@
       state.orderLoadComplete = true;
       state.loadedOrderMode = '';
       els.outstandingBody.innerHTML = renderStatusRow(err.message);
+      scheduleOutstandingTableLayout([]);
     }
   }
 
@@ -1916,14 +1926,67 @@
     const jobs = rows.flatMap((group) => group.jobs);
     if (!jobs.length) {
       els.outstandingBody.innerHTML = renderStatusRow('No matching orders');
+      scheduleOutstandingTableLayout([]);
       if (hydrateSelectors) hydrateOrderSelectors();
       return;
     }
 
     const scrollTop = options.preserveScroll ? els.outstandingFrame?.scrollTop : null;
     els.outstandingBody.innerHTML = jobs.map(renderOutstandingRow).join('');
+    scheduleOutstandingTableLayout(jobs);
     if (scrollTop !== null && els.outstandingFrame) els.outstandingFrame.scrollTop = scrollTop;
     if (hydrateSelectors) hydrateOrderSelectors();
+  }
+
+  function scheduleOutstandingTableLayout(jobs = null) {
+    if (outstandingLayoutFrame) window.cancelAnimationFrame(outstandingLayoutFrame);
+    const layoutJobs = Array.isArray(jobs)
+      ? jobs
+      : groupedOutstandingRows(ordersForCurrentRender()).flatMap((group) => group.jobs);
+    outstandingLayoutFrame = window.requestAnimationFrame(() => {
+      outstandingLayoutFrame = 0;
+      updateOutstandingTableLayout(layoutJobs);
+    });
+  }
+
+  function updateOutstandingTableLayout(jobs = []) {
+    const table = els.outstandingTable;
+    if (!table) return;
+
+    const frameWidth = els.outstandingFrame?.clientWidth || 0;
+    const measuredTitleWidth = measureOutstandingTitleWidth(table, jobs);
+    const desiredTitleWidth = Math.ceil(Math.max(
+      OUTSTANDING_TITLE_COLUMN_MIN_WIDTH,
+      measuredTitleWidth + OUTSTANDING_TITLE_CELL_EXTRA_WIDTH
+    ));
+    const maxTitleWidth = frameWidth > OUTSTANDING_TABLE_FIXED_WIDTH
+      ? Math.max(OUTSTANDING_TITLE_COLUMN_MIN_WIDTH, frameWidth - OUTSTANDING_TABLE_FIXED_WIDTH - 2)
+      : desiredTitleWidth;
+    const titleWidth = Math.min(desiredTitleWidth, maxTitleWidth);
+    const tableWidth = OUTSTANDING_TABLE_FIXED_WIDTH + titleWidth;
+
+    table.style.setProperty('--db-outstanding-title-width', `${titleWidth}px`);
+    table.style.setProperty('--db-outstanding-table-width', `${tableWidth}px`);
+  }
+
+  function measureOutstandingTitleWidth(table, jobs = []) {
+    if (!outstandingTitleMeasureCanvas) {
+      outstandingTitleMeasureCanvas = document.createElement('canvas');
+    }
+    const context = outstandingTitleMeasureCanvas.getContext('2d');
+    if (!context) return OUTSTANDING_TITLE_COLUMN_MIN_WIDTH;
+
+    const sourceCell = table.querySelector('tbody td:nth-child(5)')
+      || table.querySelector('thead th:nth-child(5)')
+      || table;
+    const style = window.getComputedStyle(sourceCell);
+    context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+
+    let width = context.measureText('Job title:').width;
+    for (const job of jobs) {
+      width = Math.max(width, context.measureText(String(job?.job_title || '')).width);
+    }
+    return width;
   }
 
   function ordersForCurrentRender() {
@@ -1982,11 +2045,6 @@
         <td>${escapeHtml(staffShort(job.order_taken_by || job.trace_staff_id))}</td>
         <td>${escapeHtml(formatDate(job.order_date, 'long'))}</td>
         <td>${escapeHtml(delivery)}</td>
-        <td>${renderCheck(job.has_artwork)}</td>
-        <td>${renderCheck(truthy(job.has_screens) || Boolean(job.screen_numbers))}</td>
-        <td>${renderCheck(job.has_shirts)}</td>
-        <td>${renderCheck(job.is_printed)}</td>
-        <td>${renderCheck(job.customer_supplied)}</td>
       </tr>
     `;
   }
@@ -5155,7 +5213,7 @@
     select.innerHTML = `<option>${escapeHtml(value || '')}</option>`;
   }
 
-  function renderStatusRow(message, colspan = 13) {
+  function renderStatusRow(message, colspan = OUTSTANDING_TABLE_COLUMN_COUNT) {
     return `<tr><td colspan="${colspan}" class="db-empty-cell">${escapeHtml(message)}</td></tr>`;
   }
 
