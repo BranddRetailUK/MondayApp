@@ -116,6 +116,15 @@ const JOB_COLUMNS = [
   'pf_invoice_date',
 ];
 
+const DASHBOARD_JOB_FIELD_COLUMNS = [
+  'dashboard_status',
+  'dashboard_priority',
+  'dashboard_type',
+  'proof_approved',
+  'proof_approved_at',
+  'dashboard_status_updated_at',
+];
+
 const LINE_COLUMNS = [
   'source_order_item_id', 'source_order_id', 'line_sort_order',
   'source_product_id', 'supplier_order_id', 'line_description',
@@ -934,8 +943,10 @@ async function importSnapshot(snapshot, options) {
       return;
     }
 
+    let preservedDashboardJobFields = [];
     if (options.replaceExisting) {
       console.log('[database-import] Replacing existing database snapshot');
+      preservedDashboardJobFields = await fetchDashboardJobFieldSnapshot(client);
       await client.query('DELETE FROM database_job_positions');
       await client.query('DELETE FROM database_job_line_items');
       await client.query('DELETE FROM database_jobs');
@@ -985,6 +996,10 @@ async function importSnapshot(snapshot, options) {
       snapshot.jobs,
       { conflictAction }
     );
+    if (preservedDashboardJobFields.length) {
+      console.log(`[database-import] Restoring ${preservedDashboardJobFields.length} dashboard job status rows`);
+      await restoreDashboardJobFieldSnapshot(client, preservedDashboardJobFields);
+    }
 
     console.log(`[database-import] Writing ${snapshot.lineItems.length} line items`);
     const lineItemWrite = await writeRows(
@@ -1249,6 +1264,60 @@ async function writeRows(client, table, columns, conflictColumn, rows, options =
   }
 
   return { attempted: rows.length, affected };
+}
+
+async function fetchDashboardJobFieldSnapshot(client) {
+  const result = await client.query(`
+    SELECT source_order_id, ${DASHBOARD_JOB_FIELD_COLUMNS.join(', ')}
+    FROM database_jobs
+    WHERE dashboard_status IS NOT NULL
+       OR dashboard_priority IS NOT NULL
+       OR dashboard_type IS NOT NULL
+       OR proof_approved IS NOT NULL
+       OR proof_approved_at IS NOT NULL
+       OR dashboard_status_updated_at IS NOT NULL
+  `);
+  return result.rows;
+}
+
+async function restoreDashboardJobFieldSnapshot(client, rows) {
+  if (!rows.length) return;
+
+  const columns = ['source_order_id', ...DASHBOARD_JOB_FIELD_COLUMNS];
+  const casts = {
+    source_order_id: '::int',
+    dashboard_status: '::text',
+    dashboard_priority: '::text',
+    dashboard_type: '::text',
+    proof_approved: '::boolean',
+    proof_approved_at: '::timestamp',
+    dashboard_status_updated_at: '::timestamp',
+  };
+
+  for (let start = 0; start < rows.length; start += INSERT_BATCH_SIZE) {
+    const batch = rows.slice(start, start + INSERT_BATCH_SIZE);
+    const values = [];
+    const rowPlaceholders = batch.map((row, rowIndex) => {
+      const fields = columns.map((column, columnIndex) => {
+        values.push(row[column]);
+        return `$${(rowIndex * columns.length) + columnIndex + 1}${casts[column] || ''}`;
+      });
+      return `(${fields.join(', ')})`;
+    });
+
+    const setSql = DASHBOARD_JOB_FIELD_COLUMNS
+      .map((column) => `${column} = updates.${column}`)
+      .join(', ');
+
+    await client.query(
+      `UPDATE database_jobs AS jobs
+       SET ${setSql}
+       FROM (VALUES ${rowPlaceholders.join(', ')})
+         AS updates(${columns.join(', ')})
+       WHERE jobs.source_order_id = updates.source_order_id`,
+      values
+    );
+  }
 }
 
 async function updateJobAddressRows(client, rows) {

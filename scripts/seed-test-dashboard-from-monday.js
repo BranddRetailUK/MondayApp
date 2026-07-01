@@ -11,7 +11,7 @@ if (
 
 const path = require('path');
 const pool = require('../src/db/pool');
-const { ensureTestDashboardTables } = require('../src/db/databaseSchema');
+const { ensureDatabaseTables } = require('../src/db/databaseSchema');
 const { fetchBoardLitePaged } = require('../src/services/monday');
 const { downloadAsset } = require('../src/services/mondayAssets');
 const {
@@ -25,6 +25,10 @@ const {
   TEST_DASHBOARD_SUBITEM_COLUMNS,
   columnSlug,
 } = require('../src/services/testDashboardDefaults');
+const {
+  dashboardFieldLabelsFromValues,
+  updateDatabaseJobDashboardFields,
+} = require('../src/services/testDashboardDbFields');
 
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
@@ -38,7 +42,7 @@ main().catch(async (err) => {
 });
 
 async function main() {
-  await ensureTestDashboardTables(pool);
+  await ensureDatabaseTables(pool);
   await ensureDefaultMetadata();
 
   const seedRun = dryRun
@@ -119,6 +123,11 @@ async function main() {
               item.name || null,
               columnValues,
             ]
+          );
+          await updateDatabaseJobDashboardFields(
+            pool,
+            job.source_order_id,
+            dashboardFieldLabelsFromValues(columnValues)
           );
         }
 

@@ -2174,6 +2174,8 @@
           ${detailRow('Order date:', inputBox(formatDate(job.order_date, 'short')))}
           ${detailRow('Delivery:', `${inputBox(formatDate(job.delivery_date, 'short'), 'db-delivery-date-field')}<label class="db-inline-check">${renderCheck(job.customer_date_required)} Customer date</label>`)}
           ${detailRow('Completion', inputBox(formatDate(job.complete_date, 'short'), 'db-completion-date-field'))}
+          ${detailRow('Job status:', inputBox(job.dashboard_status))}
+          ${detailRow('Approved:', inputBox(approvalLabel(job.proof_approved)))}
         </div>
 
         <div class="db-detail-box db-address-box">
@@ -5223,6 +5225,12 @@
 
   function renderCheck(value) {
     return `<input class="db-tiny-check" type="checkbox" disabled ${truthy(value) ? 'checked' : ''}>`;
+  }
+
+  function approvalLabel(value) {
+    if (value === true || value === 'true' || value === 1 || value === '1') return 'Approved';
+    if (value === false || value === 'false' || value === 0 || value === '0') return 'Not approved';
+    return '';
   }
 
   function categoryForJob(job) {

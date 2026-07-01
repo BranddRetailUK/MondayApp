@@ -52,6 +52,12 @@ async function ensureDatabaseTables(db) {
       invoice_printed BOOLEAN,
       pf_invoice_printed BOOLEAN,
       pf_invoice_date TIMESTAMP,
+      dashboard_status TEXT,
+      dashboard_priority TEXT,
+      dashboard_type TEXT,
+      proof_approved BOOLEAN,
+      proof_approved_at TIMESTAMP,
+      dashboard_status_updated_at TIMESTAMP,
       imported_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
   `);
@@ -70,6 +76,12 @@ async function ensureDatabaseTables(db) {
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS delivery_address TEXT;');
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS invoice_address TEXT;');
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS is_manual_entry BOOLEAN NOT NULL DEFAULT FALSE;');
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS dashboard_status TEXT;');
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS dashboard_priority TEXT;');
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS dashboard_type TEXT;');
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS proof_approved BOOLEAN;');
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS proof_approved_at TIMESTAMP;');
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS dashboard_status_updated_at TIMESTAMP;');
   await db.query('ALTER TABLE database_jobs ALTER COLUMN source_year DROP NOT NULL;');
   await db.query('ALTER TABLE database_jobs DROP CONSTRAINT IF EXISTS database_jobs_source_year_check;');
 
@@ -373,6 +385,7 @@ async function ensureDatabaseTables(db) {
   await db.query('CREATE INDEX IF NOT EXISTS database_jobs_delivery_address_idx ON database_jobs(delivery_address_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_jobs_order_date_idx ON database_jobs(order_date);');
   await db.query('CREATE INDEX IF NOT EXISTS database_jobs_complete_idx ON database_jobs(is_complete);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_jobs_dashboard_status_idx ON database_jobs(dashboard_status);');
   await db.query('CREATE INDEX IF NOT EXISTS database_customer_profiles_name_idx ON database_customer_profiles(LOWER(customer_name));');
   await db.query('CREATE INDEX IF NOT EXISTS database_customer_profiles_code_idx ON database_customer_profiles(LOWER(customer_code));');
   await db.query('CREATE UNIQUE INDEX IF NOT EXISTS database_customer_contacts_source_contact_idx ON database_customer_contacts(source_contact_id);');
