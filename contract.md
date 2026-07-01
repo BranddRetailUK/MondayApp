@@ -4,7 +4,7 @@ Last reviewed: 2026-07-01
 
 ## Purpose
 
-MondayApp is a legacy Node/Express service that connects Monday.com, Dropbox CSV/XLSX files, a local dashboard, scanner/QR flows, and visual proof workflows.
+MondayApp is a legacy Node/Express service that connects Monday.com, Dropbox CSV/XLSX files, Railway/Postgres database views, Cloudinary-backed dashboard files, a local dashboard, scanner/QR flows, and visual proof workflows.
 
 The most important production path is the Dropbox/Open Orders import:
 
@@ -19,8 +19,8 @@ The most important production path is the Dropbox/Open Orders import:
 - Runtime entry: `server.js`, which loads `server.modular.js`.
 - App composition: `src/app.js`.
 - Static frontend: `public/`.
-- Hub auth: `/login` and `/signup` serve the app login/signup page. The dashboard entry points `/`, `/index.html`, `/database-job.html`, and `/launch.html` require a Hub session. Static assets remain public, but browser app APIs for the board, DATABASE, visual approvals, and file upload/proxy routes require a Hub session.
-- Ultimate Hub dashboard tabs: Dashboard, DATABASE, and Visual Approvals. The active top-level dashboard tab is stored in browser localStorage so a page refresh returns the user to the last selected tab, unless an explicit `?tab=` query or matching hash such as `#database` selects a valid tab. The old standalone `MERCH TRAFFIC`, Orders, Customers, Stock, Shipping, and PenCarrie tabs have been removed. DATABASE order/customer/stock workflows remain part of the DATABASE tab.
+- Hub auth: `/login` and `/signup` serve the app login/signup page. The dashboard entry points `/`, `/index.html`, `/database-job.html`, and `/launch.html` require a Hub session. Static assets remain public, but browser app APIs for the board, DATABASE, Test Dashboard, visual approvals, and file upload/proxy routes require a Hub session.
+- Ultimate Hub dashboard tabs: Dashboard, DATABASE, Visual Approvals, and Test Dashboard. The active top-level dashboard tab is stored in browser localStorage so a page refresh returns the user to the last selected tab, unless an explicit `?tab=` query or matching hash such as `#database` or `#test-dashboard` selects a valid tab. The old standalone `MERCH TRAFFIC`, Orders, Customers, Stock, Shipping, and PenCarrie tabs have been removed. DATABASE order/customer/stock workflows remain part of the DATABASE tab.
 - DB bootstrap: `src/db/migrate.js`.
 - Config: `src/config/env.js` and `src/config/mondayFields.js`.
 
@@ -35,6 +35,9 @@ The most important production path is the Dropbox/Open Orders import:
 - `src/routes/monday-events.js`: Monday webhook handler for visual status changes, file notifications, and create-item line-item imports.
 - `src/services/dropboxLineItemImporter.js`: imports per-job XLSX/CSV line-item files from Dropbox into an existing Monday item.
 - `src/routes/visual-jobs.js`: worker queue API for local visual generation.
+- `src/routes/test-dashboard.js`: DB-backed test dashboard API, scanner flow, status/priority state, and Cloudinary file metadata routes.
+- `src/services/testDashboardDefaults.js`: mirrored dashboard group/column/status defaults for the test dashboard.
+- `src/services/cloudinaryDashboard.js`: Cloudinary config, upload signing, seed upload, and asset deletion helpers for test dashboard file columns.
 - `src/routes/hub-auth.js`: Ultimate Hub signup/login/session endpoints.
 - `src/services/hubAuth.js`: scrypt password hashing, session-cookie creation, and current-user lookup.
 - `src/middleware/hubAuth.js`: attaches `req.hubUser` and protects page/API routes.
@@ -251,6 +254,17 @@ Security rules:
 - `GET /api/board`: returns cached Monday board data for dashboard. Requires Monday token/auth. The response includes board id/name, ordered parent column metadata (`id`, `title`, `type`, `settings_str`), ordered group metadata (`id`, `title`, `color`, `position`), grouped items with each item's Monday column values, and `subitemColumns` metadata from the Monday subitem board when subitems are present. Dashboard refreshes may bypass the route cache with `?fresh=1`, `?refresh=1`, or a `Cache-Control: no-cache` request header.
 - `PUT /api/board/items/:itemId/status-column`: updates one parent item Monday status-type column from the dashboard. Requires Hub API auth and Monday auth. Body: `{ "columnId": "...", "label": "..." }`; for clearing dashboard priority, body may be `{ "columnId": "...", "clear": true }`. The route only accepts dashboard parent columns titled `STATUS` or `PRIORITY`, plus the configured `STATUS_COLUMN_ID` for compatibility, verifies submitted labels exist in that column's Monday `settings_str`, writes via `change_column_value`, and clears the `/api/board` cache. Only the dashboard `PRIORITY` column can be cleared to an empty/default-grey status. `/api/board/items/:itemId/job-status` is retained as an alias for the same handler.
 
+### Test Dashboard
+
+- `GET /api/test-dashboard/board`: returns a Monday-shaped board payload for the Test Dashboard tab without reading Monday runtime board data. It is built from Railway/Postgres `database_jobs`, `database_job_line_items`, `database_job_positions`, `job_scans`, and test-dashboard state/file tables. It emits the same group/column/subitem/value shape as `/api/board`, with file columns backed by Cloudinary `secure_url` values and no Monday asset ids.
+- `PUT /api/test-dashboard/items/:jobId/status-column`: updates DB-backed test dashboard `STATUS` or `PRIORITY` state for a `database_jobs.source_order_id`. Body matches the Monday dashboard route: `{ "columnId": "...", "label": "..." }`, or `{ "columnId": "...", "clear": true }` for clearing `PRIORITY`. The route validates labels against the mirrored column settings, stores state in `test_dashboard_job_state`, and applies copied board automation logic for status-driven group moves, completed cleanup, invoiced archive, and priority clearing.
+- `GET /api/test-dashboard/scan-url?jobId=...`: returns a signed `/test-scan?j=...&ts=...&sig=...` URL for DB-backed label printing.
+- `GET /test-scan?j=...&ts=...&sig=...`: public signed scan endpoint for DB-backed labels. It records scanner state against the job source order id and updates the test-dashboard DB state only.
+- `POST /api/test-dashboard/scanner`: accepts scanner data for the Test Dashboard tab, including `/test-scan` URLs or bare numeric job ids, records scan state, and refreshes DB-backed status/check-in state without calling Monday.
+- `POST /api/test-dashboard/uploads/signature`: returns a short-lived signed Cloudinary browser-upload payload. It requires `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET`; the API secret never reaches the browser.
+- `POST /api/test-dashboard/items/:jobId/files`: saves Cloudinary upload metadata for a DB job/file column in `test_dashboard_files`.
+- `DELETE /api/test-dashboard/items/:jobId/files/:fileId`: deletes a test-dashboard file metadata row and best-effort destroys the Cloudinary asset.
+
 ### Scanner And QR
 
 - `GET /api/scan-states`: returns DB-backed scan state map.
@@ -279,6 +293,16 @@ Scanner progression:
 - Parent rows are dashboard-sorted by default inside each group by descending `PRIORITY`, then closest/earliest `DATE`. Parent column headers show a Monday-style blue sort control only while hovering/focusing the header; clicking it overrides the default with a dashboard-only sort using the selected pulled Monday column values, toggling high-to-low then low-to-high on repeat clicks. Header sorting treats earlier dates as the urgent/high side for date columns and does not write to or depend on Monday's item order. The active local sort is preserved across the 1-second polling renders.
 - The top dashboard toolbar includes a `Priority highlights` toggle next to `Connect Scanner` on desktop; both controls are hidden on mobile and phone landscape dashboard layouts. When enabled, parent job rows with an overdue/today/tomorrow `DATE` are tinted red across the whole row, and rows due in 2-3 days are tinted orange; the toggle state is stored in browser localStorage and does not write to Monday.
 - The frontend shows a loading wheel on the initial Dashboard board load until `/api/board` has returned and the board UI renders. It polls `/api/board?fresh=1` every 1 second while the Dashboard tab is visible, so Monday-side column/status changes flow into the dashboard without waiting for the server cache timeout; polling pauses while the status/priority picker is open or a dashboard status write is in flight. The top dashboard toolbar does not show `Connected to Monday`, `ready`, `Update board info`, or `Connect Camera`; the `Connect to Monday` button is hidden during page load and only shown after a Monday auth failure. Manual refresh logic remains available through `loadBoard({ forceRefresh: true })`.
+
+### Test Dashboard UI
+
+- The Test Dashboard sidebar tab sits at the bottom of the top-level nav list and uses the same board renderer, group layout, subitem expansion, local sorting, priority highlights, preview modal, print-label layout, and mobile pinch-zoom behavior as the Monday Dashboard tab.
+- The Test Dashboard reads only `/api/test-dashboard/board` for board data and writes only test-dashboard API routes for status, priority, scanner, and file actions. It must not use `/api/board`, Monday item ids, Monday status writes, Monday asset proxy URLs, or Monday camera/upload routes for its board state.
+- The Test Dashboard parent rows are keyed by `database_jobs.source_order_id`; subitems are populated from `database_job_line_items`; design text comes from `database_job_positions` plus job screen-number fields; open jobs exclude `database_jobs.is_complete = true`.
+- `PROOF`, `FILES`, `IMAGE`, and any future file/image columns render as icon-only cells using Cloudinary `secure_url` values from `test_dashboard_files`. The same dashboard preview modal opens images, PDFs, and other supported files directly from those Cloudinary URLs.
+- Dragging files onto a Test Dashboard file/image cell requests `/api/test-dashboard/uploads/signature`, uploads directly from the browser to Cloudinary, then stores metadata through `/api/test-dashboard/items/:jobId/files`. Column folders are `ultimate-hub/test-dashboard/<column-slug>/<order-no>/`, with built-in slugs `proof`, `files`, and `image`.
+- Test Dashboard label printing requests `/api/test-dashboard/scan-url` and prints `/test-scan` QR codes. Scanner input while the Test Dashboard tab is active expands bare numeric job ids through the test scan-url route and posts scan results to `/api/test-dashboard/scanner`.
+- The Test Dashboard polls `/api/test-dashboard/board?fresh=1` every 1 second only while the Test Dashboard tab is visible. Polling pauses while the shared status/priority picker is open or a status write is in flight.
 
 ### DATABASE
 
@@ -479,8 +503,21 @@ Created by `src/db/migrate.js`:
 - `database_job_positions`
 - `database_customer_addresses`
 - `database_import_runs`
+- `test_dashboard_groups`
+- `test_dashboard_columns`
+- `test_dashboard_job_state`
+- `test_dashboard_files`
+- `test_dashboard_seed_runs`
 
 The visual queue routes require `visual_jobs`, but the current migration file does not create it. Treat that as a known schema gap unless a deployment migration exists outside this repo.
+
+Test Dashboard schema:
+
+- `test_dashboard_groups`: mirrored group ids, titles, colors, positions, and sort order.
+- `test_dashboard_columns`: mirrored parent/subitem column metadata, including status settings JSON and file-column definitions.
+- `test_dashboard_job_state`: per-job dashboard state keyed by `database_jobs.source_order_id`, including mirrored Monday item id from one-time seed, group id, item name, JSONB column values, archive flag, and seed timestamps.
+- `test_dashboard_files`: Cloudinary metadata for file/image cells. Stores source order id, column id/title, `public_id`, `secure_url`, resource type, format, original filename, bytes, dimensions, metadata, creator, and timestamps. It does not store file bytes.
+- `test_dashboard_seed_runs`: one-time Monday seed audit rows with counts and status.
 
 ## Important Environment Variables
 
@@ -532,12 +569,20 @@ The visual queue routes require `visual_jobs`, but the current migration file do
 
 - `PORT`
 - `DATABASE_URL`
+- `DATABASE_PUBLIC_URL`
 - `PGSSLMODE`
 - `SCAN_SECRET`
 - `BOARD_PAGE_LIMIT`
 - `BOARD_MAX_PAGES`
 - `BOARD_CACHE_MS`
 - `VERBOSE_SQL`
+
+### Cloudinary
+
+- `CLOUDINARY_CLOUD_NAME`
+- `CLOUDINARY_API_KEY`
+- `CLOUDINARY_API_SECRET`
+- `CLOUDINARY_TEST_DASHBOARD_ROOT`: optional; defaults to `ultimate-hub/test-dashboard`.
 
 ### Visual/OpenAI
 
@@ -555,6 +600,7 @@ The visual queue routes require `visual_jobs`, but the current migration file do
 - `npm run smoke:open-orders -- <file>`: parse an open-orders CSV file.
 - `npm run sync:open-orders -- [file] [--dry-run]`: sync open-orders CSV from file or Dropbox.
 - `npm run import:database-mdb -- [PS_XP_tab.mdb] [--dry-run] [--append] [--insert-only]`: import full-history MDB jobs, contacts, addresses, positions, and products into DATABASE tables. Add `--years=2025,2026` for a scoped diagnostic import, `--products-only` to import only the full product catalogue, or `--insert-only` to add only source rows that do not already exist.
+- `npm run seed:test-dashboard -- [--dry-run] [--skip-files] [--limit-files-per-column=N]`: one-time Monday snapshot seed for Test Dashboard metadata. It copies groups, columns, item state, and current Monday file assets into Cloudinary folders and stores only Cloudinary metadata in Postgres. Use `--skip-files` for state-only diagnostics.
 
 ## Known Risks And Maintenance Notes
 

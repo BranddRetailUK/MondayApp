@@ -5,7 +5,12 @@ const ENDPOINTS = {
   data: '/api/board',
   auth: '/auth',
   scans: '/api/scan-states',
-  statusColumn: (itemId) => `/api/board/items/${encodeURIComponent(itemId)}/status-column`
+  statusColumn: (itemId) => `/api/board/items/${encodeURIComponent(itemId)}/status-column`,
+  testData: '/api/test-dashboard/board',
+  testStatusColumn: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/status-column`,
+  testScanUrl: (itemId) => `/api/test-dashboard/scan-url?jobId=${encodeURIComponent(itemId)}`,
+  testUploadSignature: '/api/test-dashboard/uploads/signature',
+  testFiles: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/files`
 };
 const DASHBOARD_TAB_STORAGE_KEY = 'ultimateHub.activeDashboardTab';
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'ultimateHub.sidebarCollapsed';
@@ -14,8 +19,10 @@ const PROOF_PDF_ZOOM_MIN = 0.5;
 const PROOF_PDF_ZOOM_MAX = 3;
 const PROOF_PDF_ZOOM_STEP = 0.25;
 const PRIORITY_HIGHLIGHT_STORAGE_KEY = 'ultimateHub.priorityHighlights';
-const DASHBOARD_TAB_NAMES = ['dashboard', 'database', 'visuals'];
+const DASHBOARD_TAB_NAMES = ['dashboard', 'database', 'visuals', 'test-dashboard'];
 const BOARD_AUTO_REFRESH_MS = 1000;
+const BOARD_CONTEXT_MONDAY = 'monday';
+const BOARD_CONTEXT_TEST = 'test-dashboard';
 const DASHBOARD_ZOOM_MIN = 0.45;
 const DASHBOARD_ZOOM_MAX = 1;
 const HIDDEN_BOARD_COLUMN_TYPES = new Set(['subtasks']);
@@ -59,6 +66,8 @@ const STATUS_LABEL_FALLBACK_COLORS = {
 };
 let __boardRefreshTimer = null;
 let __boardLoading = false;
+let __testBoardRefreshTimer = null;
+let __testBoardLoading = false;
 let __boardSortState = null;
 let __priorityHighlightsEnabled = localStorage.getItem(PRIORITY_HIGHLIGHT_STORAGE_KEY) !== '0';
 let __dashboardZoom = 1;
@@ -97,12 +106,15 @@ document.addEventListener('DOMContentLoaded', () => {
   ensureAuthUI();
   addCameraUI();
   addSerialScannerUI();
+  ensureTestDashboardUI();
   attachSerialEvents();
   initDashboardPinchZoom();
   loadBoard({ forceRefresh: true });
   startBoardAutoRefresh();
+  startTestBoardAutoRefresh();
 });
 window.loadBoard = loadBoard;
+window.loadTestBoard = loadTestBoard;
 
 // --------------------------- AUTH / LOADING ---------------------------
 
@@ -252,14 +264,19 @@ function isMobileNavLayout() {
 }
 
 function initDashboardPinchZoom() {
-  const board = document.getElementById('board');
+  const boards = [
+    document.getElementById('board'),
+    document.getElementById('test-board')
+  ].filter(Boolean);
   const databaseTab = document.getElementById('tab-database');
-  if (board) {
+  if (boards.length) {
     applyDashboardZoom(__dashboardZoom);
-    board.addEventListener('touchstart', handleDashboardPinchStart, { passive: false });
-    board.addEventListener('touchmove', handleDashboardPinchMove, { passive: false });
-    board.addEventListener('touchend', handleDashboardPinchEnd, { passive: false });
-    board.addEventListener('touchcancel', handleDashboardPinchEnd, { passive: false });
+    boards.forEach(board => {
+      board.addEventListener('touchstart', handleDashboardPinchStart, { passive: false });
+      board.addEventListener('touchmove', handleDashboardPinchMove, { passive: false });
+      board.addEventListener('touchend', handleDashboardPinchEnd, { passive: false });
+      board.addEventListener('touchcancel', handleDashboardPinchEnd, { passive: false });
+    });
   }
   if (databaseTab) {
     databaseTab.addEventListener('touchstart', preventDatabasePinch, { passive: false });
@@ -301,7 +318,11 @@ function preventDatabasePinch(event) {
 
 function canUseDashboardPinchZoom() {
   const dashboard = document.getElementById('tab-dashboard');
-  return isMobileNavLayout() && dashboard?.classList.contains('active');
+  const testDashboard = document.getElementById('tab-test-dashboard');
+  return isMobileNavLayout() && (
+    dashboard?.classList.contains('active') ||
+    testDashboard?.classList.contains('active')
+  );
 }
 
 function getTouchDistance(touches) {
@@ -314,6 +335,7 @@ function getTouchDistance(touches) {
 function applyDashboardZoom(zoom) {
   __dashboardZoom = clampDashboardZoom(zoom);
   document.getElementById('board')?.style.setProperty('--dashboard-board-zoom', String(__dashboardZoom));
+  document.getElementById('test-board')?.style.setProperty('--dashboard-board-zoom', String(__dashboardZoom));
 }
 
 function clampDashboardZoom(zoom) {
@@ -586,7 +608,7 @@ async function loadBoard(options = {}) {
 
     const payload = await resBoard.json();
     window.__latestBoardPayload = payload;
-    renderBoard(payload);
+    renderBoard(payload, { context: BOARD_CONTEXT_MONDAY, boardDiv });
     refreshVisualItemSelect(payload);
     const connectBtn = document.getElementById('connectBtn');
     if (connectBtn) connectBtn.style.display = 'none';
@@ -599,11 +621,42 @@ async function loadBoard(options = {}) {
   }
 }
 
-function renderBoardLoadingState(boardDiv) {
+async function loadTestBoard(options = {}) {
+  if (__testBoardLoading) return;
+  const boardDiv = document.getElementById('test-board');
+  if (!boardDiv) return;
+  const forceRefresh = options === true || options?.forceRefresh === true;
+  const boardUrl = forceRefresh ? `${ENDPOINTS.testData}?fresh=1` : ENDPOINTS.testData;
+  const showInitialLoading = !boardDiv.querySelector('.group, .board-loading');
+  try {
+    __testBoardLoading = true;
+    if (showInitialLoading) renderBoardLoadingState(boardDiv, 'Loading test dashboard...');
+    const response = await fetch(boardUrl, {
+      cache: 'no-store',
+      credentials: 'include',
+      headers: forceRefresh ? { 'Cache-Control': 'no-cache' } : {}
+    });
+    if (!response.ok) {
+      const error = await readApiError(response);
+      boardDiv.textContent = `Failed to load test dashboard: ${error}`;
+      return;
+    }
+    const payload = await response.json();
+    window.__latestTestBoardPayload = payload;
+    renderBoard(payload, { context: BOARD_CONTEXT_TEST, boardDiv });
+  } catch (err) {
+    console.warn('Test dashboard load failed', err);
+    boardDiv.textContent = 'Failed to load test dashboard: fetch error';
+  } finally {
+    __testBoardLoading = false;
+  }
+}
+
+function renderBoardLoadingState(boardDiv, message = 'Loading Monday board...') {
   boardDiv.innerHTML = `
     <div class="board-loading" role="status" aria-live="polite">
       <span class="board-loading-spinner" aria-hidden="true"></span>
-      <span class="board-loading-text">Loading Monday board...</span>
+      <span class="board-loading-text">${escapeHtml(message)}</span>
     </div>
   `;
 }
@@ -619,10 +672,22 @@ function startBoardAutoRefresh() {
   }, BOARD_AUTO_REFRESH_MS);
 }
 
+function startTestBoardAutoRefresh() {
+  if (__testBoardRefreshTimer) return;
+  __testBoardRefreshTimer = setInterval(() => {
+    if (document.hidden) return;
+    const dashboard = document.getElementById('tab-test-dashboard');
+    if (dashboard && !dashboard.classList.contains('active')) return;
+    if (isStatusDropdownOpen() || __statusUpdateInFlight > 0) return;
+    loadTestBoard({ forceRefresh: true });
+  }, BOARD_AUTO_REFRESH_MS);
+}
+
 // --------------------------- RENDER BOARD ---------------------------
 
-function renderBoard(payload) {
-  const boardDiv = document.getElementById('board') || document.body;
+function renderBoard(payload, options = {}) {
+  const context = options.context || BOARD_CONTEXT_MONDAY;
+  const boardDiv = options.boardDiv || document.getElementById(context === BOARD_CONTEXT_TEST ? 'test-board' : 'board') || document.body;
   const uiState = collectBoardUiState(boardDiv);
   boardDiv.innerHTML = '';
   const board = unwrapFirstBoard(payload);
@@ -705,7 +770,7 @@ function renderBoard(payload) {
     const headRow = document.createElement('div');
     headRow.className = 'grid-row grid-head';
     for (const spec of groupGridSpec.columns) {
-      headRow.appendChild(buildHeaderCell(spec, { sortable: true }));
+      headRow.appendChild(buildHeaderCell(spec, { sortable: true, context }));
     }
     grid.appendChild(headRow);
 
@@ -722,7 +787,7 @@ function renderBoard(payload) {
       const subitemsOpen = uiState.openSubitems.has(itemId);
 
       for (const spec of groupGridSpec.columns) {
-        row.appendChild(buildItemCell(item, spec, { subitemsOpen }));
+        row.appendChild(buildItemCell(item, spec, { subitemsOpen, context }));
       }
       grid.appendChild(row);
 
@@ -747,7 +812,7 @@ function renderBoard(payload) {
         const subHead = document.createElement('div');
         subHead.className = 'subitem-row sub-head';
         for (const spec of subitemGridSpec.columns) {
-          subHead.appendChild(buildHeaderCell(spec, { sortable: false }));
+          subHead.appendChild(buildHeaderCell(spec, { sortable: false, context }));
         }
         subGrid.appendChild(subHead);
 
@@ -756,7 +821,7 @@ function renderBoard(payload) {
           subRow.className = 'subitem-row sub-row';
           subRow.dataset.parent = itemId;
           for (const spec of subitemGridSpec.columns) {
-            subRow.appendChild(buildSubitemCell(sub, spec));
+            subRow.appendChild(buildSubitemCell(sub, spec, { context }));
           }
           subGrid.appendChild(subRow);
         }
@@ -1374,7 +1439,7 @@ function measureBoardTextWidth(text, font = "14px Manrope, 'Segoe UI', system-ui
   return String(text || '').length * 7.5;
 }
 
-function buildHeaderCell(spec, { sortable = false } = {}) {
+function buildHeaderCell(spec, { sortable = false, context = BOARD_CONTEXT_MONDAY } = {}) {
   const cell = document.createElement('div');
   cell.className = `grid-cell head ${spec.kind}-head`;
   applyPrintEmbroideryMobileHiddenCellClass(cell, spec);
@@ -1395,7 +1460,7 @@ function buildHeaderCell(spec, { sortable = false } = {}) {
     button.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      toggleBoardColumnSort(spec.column);
+      toggleBoardColumnSort(spec.column, context);
     });
     cell.appendChild(button);
   }
@@ -1411,43 +1476,63 @@ function getColumnSortButtonTitle(column) {
     : `Sort ${column.title || 'column'} high to low`;
 }
 
-function toggleBoardColumnSort(column) {
+function toggleBoardColumnSort(column, context = BOARD_CONTEXT_MONDAY) {
   const currentDirection = __boardSortState?.columnId === column.id ? __boardSortState.direction : '';
   __boardSortState = {
     columnId: column.id,
     direction: currentDirection === 'desc' ? 'asc' : 'desc'
   };
-  if (window.__latestBoardPayload) renderBoard(window.__latestBoardPayload);
+  rerenderBoardContext(context);
 }
 
-function buildItemCell(item, spec, { subitemsOpen = false } = {}) {
+function rerenderBoardContext(context = BOARD_CONTEXT_MONDAY) {
+  if (context === BOARD_CONTEXT_TEST) {
+    if (window.__latestTestBoardPayload) {
+      renderBoard(window.__latestTestBoardPayload, {
+        context,
+        boardDiv: document.getElementById('test-board')
+      });
+    }
+    return;
+  }
+  if (window.__latestBoardPayload) {
+    renderBoard(window.__latestBoardPayload, {
+      context: BOARD_CONTEXT_MONDAY,
+      boardDiv: document.getElementById('board')
+    });
+  }
+}
+
+function buildItemCell(item, spec, { subitemsOpen = false, context = BOARD_CONTEXT_MONDAY } = {}) {
   let cell;
   if (spec.kind === 'print') {
-    cell = buildPrintCell(item);
+    cell = buildPrintCell(item, context);
   } else if (spec.kind === 'name') {
     cell = buildNameCell(item, subitemsOpen);
   } else {
-    cell = buildColumnValueCell(item, spec.column);
+    cell = buildColumnValueCell(item, spec.column, { context });
   }
   applyPrintEmbroideryMobileHiddenCellClass(cell, spec);
   return cell;
 }
 
-function buildSubitemCell(subitem, spec) {
+function buildSubitemCell(subitem, spec, { context = BOARD_CONTEXT_MONDAY } = {}) {
   if (spec.kind === 'print') return buildBlankCell('print-cell');
   if (spec.kind === 'name') return buildSubitemNameCell(subitem);
-  return buildColumnValueCell(subitem, spec.column, { subitem: true });
+  return buildColumnValueCell(subitem, spec.column, { subitem: true, context });
 }
 
-function buildPrintCell(item) {
+function buildPrintCell(item, context = BOARD_CONTEXT_MONDAY) {
   const cell = document.createElement('div');
   cell.className = 'grid-cell print-cell';
   const jobTitle = item.name || '';
   const printBtn = document.createElement('button');
   printBtn.textContent = 'Print';
   printBtn.className = 'job-action primary';
-  printBtn.addEventListener('click', () => printLabel(item.id, jobTitle));
+  printBtn.addEventListener('click', () => printLabel(item.id, jobTitle, context));
   cell.appendChild(printBtn);
+
+  if (context === BOARD_CONTEXT_TEST) return cell;
 
   const photoBtn = document.createElement('button');
   photoBtn.type = 'button';
@@ -1522,20 +1607,24 @@ function buildBlankCell(extraClass = '') {
   return cell;
 }
 
-function buildColumnValueCell(entity, column, { subitem = false } = {}) {
+function buildColumnValueCell(entity, column, { subitem = false, context = BOARD_CONTEXT_MONDAY } = {}) {
   const cell = document.createElement('div');
   cell.className = `grid-cell monday-value-cell ${subitem ? 'subitem-value-cell' : ''} column-${column.type}`;
   cell.dataset.columnId = column.id;
+  if (entity?.id) cell.dataset.itemId = String(entity.id);
   const value = findColumnValue(entity, column.id);
   const text = normalizeCellText(value?.text || '');
   if (text) cell.title = text;
 
   if (column.type === 'status') {
-    renderStatusValue(cell, value, column, text, { entity, subitem });
+    renderStatusValue(cell, value, column, text, { entity, subitem, context });
   } else if (column.type === 'checkbox') {
     renderCheckboxValue(cell, value, column);
   } else if (column.type === 'file') {
     renderFileValue(cell, value, text, column);
+    if (context === BOARD_CONTEXT_TEST && !subitem) {
+      decorateTestFileDropCell(cell, entity, column);
+    }
   } else if (column.type === 'people') {
     renderPeopleValue(cell, text);
   } else if (column.type === 'date') {
@@ -1564,7 +1653,7 @@ function normalizeCellText(text) {
   return String(text || '').replace(/\s+/g, ' ').trim();
 }
 
-function renderStatusValue(cell, value, column, text, { entity = null, subitem = false } = {}) {
+function renderStatusValue(cell, value, column, text, { entity = null, subitem = false, context = BOARD_CONTEXT_MONDAY } = {}) {
   const editable = !subitem && entity?.id && isEditableDashboardStatusColumn(column) && getStatusOptions(column).length > 0;
   const badge = document.createElement(editable ? 'button' : 'span');
   badge.className = 'monday-status-badge';
@@ -1580,7 +1669,8 @@ function renderStatusValue(cell, value, column, text, { entity = null, subitem =
         anchor: badge,
         item: entity,
         column,
-        currentText: text
+        currentText: text,
+        context
       });
     });
   }
@@ -1680,7 +1770,7 @@ function ensureStatusDropdown() {
   return dropdown;
 }
 
-function openStatusDropdown({ anchor, item, column, currentText }) {
+function openStatusDropdown({ anchor, item, column, currentText, context = BOARD_CONTEXT_MONDAY }) {
   if (!anchor || !item?.id || !column?.id) return;
   if (__statusDropdownState?.anchor === anchor && isStatusDropdownOpen()) {
     closeStatusDropdown();
@@ -1719,7 +1809,8 @@ function openStatusDropdown({ anchor, item, column, currentText }) {
     anchor,
     itemId: String(item.id),
     columnId: String(column.id),
-    columnTitle: column.title || column.id
+    columnTitle: column.title || column.id,
+    context
   };
   dropdown.classList.remove('hidden', 'above');
   dropdown.style.visibility = 'hidden';
@@ -1787,12 +1878,13 @@ async function selectStatusOption(option) {
   if (!state?.itemId || !state?.columnId || (!option?.label && !option?.clear)) return;
   closeStatusDropdown();
   __statusUpdateInFlight += 1;
+  const context = state.context || BOARD_CONTEXT_MONDAY;
 
-  updateCachedBoardStatusValue(state.itemId, state.columnId, option);
-  if (window.__latestBoardPayload) renderBoard(window.__latestBoardPayload);
+  updateCachedBoardStatusValue(state.itemId, state.columnId, option, context);
+  rerenderBoardContext(context);
 
   try {
-    const response = await fetch(ENDPOINTS.statusColumn(state.itemId), {
+    const response = await fetch(getStatusColumnEndpoint(context, state.itemId), {
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -1803,18 +1895,32 @@ async function selectStatusOption(option) {
       })
     });
     if (!response.ok) throw new Error(await readApiError(response));
-    await loadBoard({ forceRefresh: true });
+    await loadBoardForContext(context, { forceRefresh: true });
   } catch (err) {
     console.warn('Status update failed', err);
-    await loadBoard({ forceRefresh: true });
+    await loadBoardForContext(context, { forceRefresh: true });
     alert(`Failed to update ${state.columnTitle || 'status'}: ${err.message || 'Unknown error'}`);
   } finally {
     __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);
   }
 }
 
-function updateCachedBoardStatusValue(itemId, columnId, option) {
-  const item = findBoardPayloadItem(window.__latestBoardPayload, itemId);
+function getStatusColumnEndpoint(context, itemId) {
+  return context === BOARD_CONTEXT_TEST
+    ? ENDPOINTS.testStatusColumn(itemId)
+    : ENDPOINTS.statusColumn(itemId);
+}
+
+async function loadBoardForContext(context, options = {}) {
+  if (context === BOARD_CONTEXT_TEST) return loadTestBoard(options);
+  return loadBoard(options);
+}
+
+function updateCachedBoardStatusValue(itemId, columnId, option, context = BOARD_CONTEXT_MONDAY) {
+  const item = findBoardPayloadItem(
+    context === BOARD_CONTEXT_TEST ? window.__latestTestBoardPayload : window.__latestBoardPayload,
+    itemId
+  );
   if (!item) return;
 
   let value = findColumnValue(item, columnId);
@@ -1941,6 +2047,121 @@ function renderPreviewFileButton(cell, files, index, text, column) {
     openProofModal(files, index, { label });
   });
   cell.appendChild(button);
+}
+
+function decorateTestFileDropCell(cell, entity, column) {
+  if (!cell || !entity?.id || !column?.id) return;
+  cell.classList.add('test-file-drop-target');
+  cell.title = cell.title || `Drop ${column.title || 'file'} here to upload`;
+  cell.addEventListener('dragenter', handleTestFileDragEnter);
+  cell.addEventListener('dragover', handleTestFileDragOver);
+  cell.addEventListener('dragleave', handleTestFileDragLeave);
+  cell.addEventListener('drop', (event) => handleTestFileDrop(event, entity, column, cell));
+}
+
+function handleTestFileDragEnter(event) {
+  if (!hasDraggedFiles(event)) return;
+  event.preventDefault();
+  event.currentTarget?.classList.add('drag-over');
+}
+
+function handleTestFileDragOver(event) {
+  if (!hasDraggedFiles(event)) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+  event.currentTarget?.classList.add('drag-over');
+}
+
+function handleTestFileDragLeave(event) {
+  const target = event.currentTarget;
+  if (!target || target.contains(event.relatedTarget)) return;
+  target.classList.remove('drag-over');
+}
+
+async function handleTestFileDrop(event, entity, column, cell) {
+  if (!hasDraggedFiles(event)) return;
+  event.preventDefault();
+  event.stopPropagation();
+  cell?.classList.remove('drag-over');
+  const files = Array.from(event.dataTransfer?.files || []).filter(Boolean);
+  if (!files.length) return;
+
+  cell?.classList.add('uploading');
+  try {
+    for (const file of files) {
+      await uploadTestDashboardFile(entity.id, column, file);
+    }
+    await loadTestBoard({ forceRefresh: true });
+  } catch (err) {
+    console.warn('Test dashboard file upload failed', err);
+    alert(`File upload failed: ${err.message || 'Unknown error'}`);
+  } finally {
+    cell?.classList.remove('uploading');
+  }
+}
+
+function hasDraggedFiles(event) {
+  const types = Array.from(event?.dataTransfer?.types || []);
+  return types.includes('Files');
+}
+
+async function uploadTestDashboardFile(itemId, column, file) {
+  const signatureResponse = await fetch(ENDPOINTS.testUploadSignature, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jobId: itemId,
+      columnId: column.id,
+      filename: file.name || 'file'
+    })
+  });
+  if (!signatureResponse.ok) throw new Error(await readApiError(signatureResponse));
+  const signature = await signatureResponse.json();
+  if (!signature?.uploadUrl || !signature?.signature || !signature?.apiKey) {
+    throw new Error('Upload signature response was incomplete');
+  }
+
+  const form = new FormData();
+  form.append('file', file);
+  form.append('api_key', signature.apiKey);
+  form.append('timestamp', signature.timestamp);
+  form.append('signature', signature.signature);
+  form.append('folder', signature.folder);
+  form.append('public_id', signature.publicId);
+
+  const uploadResponse = await fetch(signature.uploadUrl, {
+    method: 'POST',
+    body: form
+  });
+  let uploadJson = null;
+  try { uploadJson = await uploadResponse.json(); } catch {}
+  if (!uploadResponse.ok) {
+    throw new Error(uploadJson?.error?.message || `Cloudinary upload failed (${uploadResponse.status})`);
+  }
+
+  const saveResponse = await fetch(ENDPOINTS.testFiles(itemId), {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      columnId: column.id,
+      publicId: uploadJson.public_id,
+      secureUrl: uploadJson.secure_url,
+      resourceType: uploadJson.resource_type,
+      format: uploadJson.format,
+      originalFilename: file.name || uploadJson.original_filename || uploadJson.public_id,
+      bytes: uploadJson.bytes || file.size || null,
+      width: uploadJson.width || null,
+      height: uploadJson.height || null,
+      metadata: {
+        upload_source: 'test_dashboard_drag_drop',
+        column_title: column.title || column.id
+      }
+    })
+  });
+  if (!saveResponse.ok) throw new Error(await readApiError(saveResponse));
+  return saveResponse.json();
 }
 
 function getPreviewModalLabel(column) {
@@ -2634,11 +2855,14 @@ function parseTitle(raw) {
 
 // --------------------------- PRINT LABEL ---------------------------
 
-async function printLabel(itemId, rawTitle) {
+async function printLabel(itemId, rawTitle, context = BOARD_CONTEXT_MONDAY) {
   const { orderNumber, customerName, jobTitle } = parseTitle(rawTitle);
   let scanUrl = '';
   try {
-    const r = await fetch(`/api/scan-url?itemId=${encodeURIComponent(itemId)}`, { credentials: 'include' });
+    const url = context === BOARD_CONTEXT_TEST
+      ? ENDPOINTS.testScanUrl(itemId)
+      : `/api/scan-url?itemId=${encodeURIComponent(itemId)}`;
+    const r = await fetch(url, { credentials: 'include' });
     if (r.ok) {
       const j = await r.json();
       scanUrl = j.url || '';
@@ -2760,6 +2984,34 @@ function addSerialScannerUI() {
   document.getElementById('scanPill')?.remove();
 }
 
+function ensureTestDashboardUI() {
+  const bar = document.getElementById('test-labels-toolbar');
+  if (!bar) return;
+
+  if (!document.getElementById('testConnectScannerBtn')) {
+    const scannerBtn = document.createElement('button');
+    scannerBtn.id = 'testConnectScannerBtn';
+    scannerBtn.type = 'button';
+    scannerBtn.textContent = 'Connect Scanner';
+    scannerBtn.className = 'btn success';
+    scannerBtn.addEventListener('click', connectSerialScanner);
+    bar.appendChild(scannerBtn);
+  }
+
+  let priorityBtn = document.getElementById('testPriorityHighlightBtn');
+  if (!priorityBtn) {
+    priorityBtn = document.createElement('button');
+    priorityBtn.id = 'testPriorityHighlightBtn';
+    priorityBtn.type = 'button';
+    priorityBtn.className = 'btn priority-highlight-toggle';
+    priorityBtn.addEventListener('click', () => {
+      setPriorityHighlightsEnabled(!__priorityHighlightsEnabled);
+    });
+    bar.appendChild(priorityBtn);
+  }
+  updatePriorityHighlightButton(priorityBtn);
+}
+
 function addPriorityHighlightUI() {
   const bar = document.getElementById('labels-toolbar');
   if (!bar) return;
@@ -2788,7 +3040,9 @@ function setPriorityHighlightsEnabled(enabled) {
   __priorityHighlightsEnabled = Boolean(enabled);
   localStorage.setItem(PRIORITY_HIGHLIGHT_STORAGE_KEY, __priorityHighlightsEnabled ? '1' : '0');
   updatePriorityHighlightButton();
-  if (window.__latestBoardPayload) renderBoard(window.__latestBoardPayload);
+  updatePriorityHighlightButton(document.getElementById('testPriorityHighlightBtn'));
+  rerenderBoardContext(BOARD_CONTEXT_MONDAY);
+  rerenderBoardContext(BOARD_CONTEXT_TEST);
 }
 
 function updatePriorityHighlightButton(btn = document.getElementById('priorityHighlightBtn')) {
@@ -2902,10 +3156,18 @@ function startSerialReadLoop(port) {
 }
 
 async function handleSerialScan(text) {
+  const testScan = normalizeTestScanUrl(text);
+  if (testScan) {
+    await postScannerResult('/api/test-dashboard/scanner', text, 'test-dashboard');
+    return;
+  }
+
   let scanUrl = normalizeScanUrl(text);
   if (!scanUrl && /^\d+$/.test(text)) {
     try {
-      const r = await fetch(`/api/scan-url?itemId=${encodeURIComponent(text)}`, { cache: 'no-store', credentials: 'include' });
+      const activeTestDashboard = document.getElementById('tab-test-dashboard')?.classList.contains('active');
+      const url = activeTestDashboard ? ENDPOINTS.testScanUrl(text) : `/api/scan-url?itemId=${encodeURIComponent(text)}`;
+      const r = await fetch(url, { cache: 'no-store', credentials: 'include' });
       if (r.ok) {
         const j = await r.json();
         if (j && j.url) scanUrl = j.url;
@@ -2914,18 +3176,29 @@ async function handleSerialScan(text) {
   }
   if (!scanUrl) { updateScanPill('unrecognized code'); return; }
 
+  if (normalizeTestScanUrl(scanUrl)) {
+    await postScannerResult('/api/test-dashboard/scanner', scanUrl, 'test-dashboard');
+    return;
+  }
+
+  await postScannerResult('/api/scanner', scanUrl || text, 'monday');
+}
+
+async function postScannerResult(endpoint, scanText, context) {
   try {
-    const r2 = await fetch('/api/scanner', {
+    const r2 = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ scan: text, url: scanUrl })
+      body: JSON.stringify({ scan: scanText })
     });
     updateScanPill(r2.ok ? 'status: ok' : 'status: error');
-    // Refresh Monday-backed board state after a successful scan.
-    if (r2.ok) loadBoard({ forceRefresh: true });
+    if (r2.ok) {
+      if (context === 'test-dashboard') loadTestBoard({ forceRefresh: true });
+      else loadBoard({ forceRefresh: true });
+    }
   } catch (e) {
-    console.warn('POST /api/scanner failed:', e);
+    console.warn(`POST ${endpoint} failed:`, e);
     updateScanPill('status: error');
   }
 }
@@ -2934,6 +3207,16 @@ function normalizeScanUrl(input) {
   if (/^https?:\/\/.+\/scan\?.*i=\d+.*ts=\d+.*sig=[a-f0-9]+/i.test(input)) return input;
   if (/(^|[?&])i=\d+/.test(input) && /ts=\d+/.test(input) && /sig=/.test(input)) {
     return `${PROD_ORIGIN}/scan?${String(input).replace(/^[^?]*\?/, '')}`;
+  }
+  return null;
+}
+
+function normalizeTestScanUrl(input) {
+  const value = String(input || '').trim();
+  if (!value) return null;
+  if (/^https?:\/\/.+\/test-scan\?.*(j|i)=\d+.*ts=\d+.*sig=[a-f0-9]+/i.test(value)) return value;
+  if (/\/test-scan\?/i.test(value) && /(^|[?&])(j|i)=\d+/.test(value) && /ts=\d+/.test(value) && /sig=/.test(value)) {
+    return `${PROD_ORIGIN}${value.startsWith('/') ? value : `/test-scan?${value.replace(/^[^?]*\?/, '')}`}`;
   }
   return null;
 }
@@ -2972,6 +3255,9 @@ function activateDashboardTab(target) {
     content.classList.toggle("active", content.id === `tab-${activeTab}`);
   });
   setStoredDashboardTab(activeTab);
+  if (activeTab === 'test-dashboard') {
+    loadTestBoard({ forceRefresh: true });
+  }
   closeMobileNav();
 }
 

@@ -337,18 +337,22 @@ body{
   flex-wrap:wrap;
   background:#111213;
 }
-#labels-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-left:auto}
-.board-shell #board{
+#labels-toolbar,
+#test-labels-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-left:auto}
+.board-shell #board,
+.board-shell #test-board{
   padding:10px 0 18px;
   overflow-x:auto;
   overflow-y:hidden;
   scrollbar-color:#67686b #151617;
   touch-action:pan-x pan-y;
 }
-#tab-dashboard{
+#tab-dashboard,
+#tab-test-dashboard{
   overflow:visible;
 }
-#tab-dashboard #board{
+#tab-dashboard #board,
+#tab-test-dashboard #test-board{
   padding:10px 0 18px;
   overflow:visible;
   scrollbar-color:#67686b #151617;
@@ -380,6 +384,21 @@ body{
 }
 .board-loading-text{
   font-size:14px;
+}
+.test-file-drop-target{
+  position:relative;
+  outline:1px solid transparent;
+  outline-offset:-3px;
+  transition:outline-color .12s ease, background .12s ease;
+}
+.test-file-drop-target.drag-over{
+  outline-color:#579bfc;
+  background:rgba(87,155,252,.14);
+}
+.test-file-drop-target.uploading{
+  outline-color:#00c875;
+  background:rgba(0,200,117,.12);
+  pointer-events:none;
 }
 @keyframes board-spin{
   to{transform:rotate(360deg)}
@@ -3870,21 +3889,26 @@ input.db-custom-line-input{
     align-items:stretch;
     padding:8px;
   }
-  #labels-toolbar{
+  #labels-toolbar,
+  #test-labels-toolbar{
     width:100%;
     margin-left:0;
     justify-content:stretch;
     gap:8px;
   }
-  #labels-toolbar .btn{
+  #labels-toolbar .btn,
+  #test-labels-toolbar .btn{
     flex:1 1 145px;
     min-height:38px;
   }
   #connectScannerBtn,
-  #priorityHighlightBtn{
+  #priorityHighlightBtn,
+  #testConnectScannerBtn,
+  #testPriorityHighlightBtn{
     display:none!important;
   }
-  #tab-dashboard #board{
+  #tab-dashboard #board,
+  #tab-test-dashboard #test-board{
     padding:8px 0 14px;
     overflow:visible;
   }
@@ -4484,11 +4508,13 @@ input.db-custom-line-input{
   .board-shell-head{
     padding:6px 8px;
   }
-  #labels-toolbar .btn{
+  #labels-toolbar .btn,
+  #test-labels-toolbar .btn{
     min-height:32px;
     padding:8px 10px;
   }
-  #tab-dashboard #board{
+  #tab-dashboard #board,
+  #tab-test-dashboard #test-board{
     padding:6px 0 10px;
   }
   .proof-modal{

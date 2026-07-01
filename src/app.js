@@ -10,6 +10,7 @@ const { attachHubUser, requireHubApiAuth, requireHubPageAuth } = require('./midd
 const visualJobs = require('./routes/visual-jobs');
 const visualApprovals = require('./routes/visual-approvals');
 const filesRoute = require('./routes/files');
+const testDashboardRoutes = require('./routes/test-dashboard');
 
 
 // ---- parse JSON BEFORE routes
@@ -45,9 +46,11 @@ app.use('/api/dropbox', require('./routes/dropbox-webhook'));
 console.log('[boot] monday-events mounted at /api/monday');
 
 // Routers
+app.use(testDashboardRoutes.publicRouter);
 app.use(requireHubApiAuth, require('./routes/board'));
 app.use(require('./routes/scanner'));
 app.use(requireHubApiAuth, require('./routes/database'));
+app.use(requireHubApiAuth, testDashboardRoutes.protectedRouter);
 app.use('/api/visual-jobs', visualJobs);
 app.use(requireHubApiAuth, visualApprovals);
 app.use(requireHubApiAuth, filesRoute);

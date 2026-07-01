@@ -8,10 +8,12 @@
     "import:dropbox": "node scripts/dropbox-lineitem-importer.js",
     "smoke:open-orders": "node scripts/open-orders-smoke.js",
     "sync:open-orders": "node scripts/open-orders-sync.js",
-    "import:database-mdb": "node scripts/import-database-mdb.js"
+    "import:database-mdb": "node scripts/import-database-mdb.js",
+    "seed:test-dashboard": "node scripts/seed-test-dashboard-from-monday.js"
   },
   "dependencies": {
     "axios": "^1.13.2",
+    "cloudinary": "^2.10.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.0",
     "dropbox": "^10.34.0",
