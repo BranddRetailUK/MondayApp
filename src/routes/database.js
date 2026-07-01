@@ -125,6 +125,9 @@ router.get('/api/database/jobs', async (req, res) => {
               j.invoice_printed,
               j.pf_invoice_printed,
               j.pf_invoice_date,
+              j.dashboard_status,
+              j.dashboard_status_updated_at,
+              j.proof_approved,
               j.comments,
               COALESCE(ls.line_item_count, 0)::int AS line_item_count,
               COALESCE(ls.total_quantity, 0)::int AS total_quantity,
@@ -1895,12 +1898,12 @@ function buildJobFilters(query) {
   } else if (status === 'complete' || status === 'completed') {
     where.push('j.is_complete IS TRUE');
   } else if (status === 'to-invoice') {
-    where.push('j.is_complete IS TRUE');
+    where.push(`COALESCE(UPPER(TRIM(j.dashboard_status)), '') = 'COMPLETED'`);
+    where.push('j.is_complete IS NOT TRUE');
     where.push('j.invoice_required IS NOT FALSE');
     where.push('j.invoice_printed IS NOT TRUE');
     where.push('j.pf_invoice_printed IS NOT TRUE');
-    where.push(`COALESCE(UPPER(TRIM(j.dashboard_status)), '') <> 'INVOICED'`);
-    orderSql = `ORDER BY COALESCE(j.complete_date, j.updated_at_source, j.order_date) DESC NULLS LAST,
+    orderSql = `ORDER BY COALESCE(j.dashboard_status_updated_at, j.updated_at_source, j.order_date) DESC NULLS LAST,
                          j.order_no DESC`;
   }
 

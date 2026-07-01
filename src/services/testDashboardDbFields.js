@@ -34,10 +34,6 @@ async function updateDatabaseJobDashboardFields(db, sourceOrderId, labels = {}, 
     values.push(statusLabel || null);
     fields.push(`dashboard_status = $${values.length}`);
     fields.push('dashboard_status_updated_at = NOW()');
-    if (statusLabel.toUpperCase() === 'COMPLETED') {
-      fields.push('is_complete = TRUE');
-      fields.push('complete_date = COALESCE(complete_date, NOW())');
-    }
 
     if (options.updateProofApproved !== false) {
       const proofApproved = inferProofApproved(labels.status);

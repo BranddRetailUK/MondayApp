@@ -1920,7 +1920,7 @@
         <td class="db-customer-link">${escapeHtml(job.customer_name || '')}</td>
         <td class="db-type-cell db-type-${categoryForJob(job)}">${escapeHtml(typeAbbr(job))}</td>
         <td>${escapeHtml(job.job_title || '')}</td>
-        <td>${escapeHtml(formatDate(job.complete_date || job.updated_at_source, 'long'))}</td>
+        <td>${escapeHtml(formatDate(job.dashboard_status_updated_at || job.complete_date || job.updated_at_source, 'long'))}</td>
         <td>${escapeHtml(job.invoice_no || '')}</td>
       </tr>
     `;
