@@ -454,7 +454,7 @@
     const documentType = button.dataset.dbDocument || (button.dataset.dbOrderAck ? 'order-ack' : '');
     if (documentType) {
       await flushOrderAutosaves();
-      openDatabaseDocument(documentType);
+      await openDatabaseDocument(documentType);
       return;
     }
 
@@ -2432,14 +2432,26 @@
     openDatabaseDocument('order-ack');
   }
 
-  function openDatabaseDocument(type) {
+  async function openDatabaseDocument(type) {
     if (!state.selectedJob?.source_order_id && !state.selectedJob?.order_no) return;
 
     const documentType = databaseDocumentType(type);
     if (documentType === 'invoice' && invoiceNotRequired(state.selectedJob)) return;
 
+    let generatedAt = new Date();
+    if (documentType === 'invoice') {
+      try {
+        const invoicedJob = await markSelectedJobInvoiced();
+        generatedAt = validDateOrNow(invoicedJob?.complete_date || invoicedJob?.dashboard_status_updated_at);
+      } catch (err) {
+        console.error('Invoice mark failed', err);
+        alert(err.message || 'Failed to mark order invoiced');
+        return;
+      }
+    }
+
     state.activeDocumentType = documentType;
-    state.documentGeneratedAt = new Date();
+    state.documentGeneratedAt = generatedAt;
     applyGeneratedDocumentDateToOrderUi(documentType, state.documentGeneratedAt);
 
     const modal = ensureOrderAckModal();
@@ -2466,7 +2478,6 @@
 
     const displayDate = formatDate(generatedAt, 'full');
     if (documentType === 'invoice') {
-      state.selectedJob.complete_date = displayDate;
       const input = els.detailsPanel?.querySelector('.db-completion-date-field');
       if (input) input.value = displayDate;
     }
@@ -2476,6 +2487,39 @@
       const input = els.detailsPanel?.querySelector('.db-delivery-date-field');
       if (input) input.value = displayDate;
     }
+  }
+
+  async function markSelectedJobInvoiced() {
+    if (!state.selectedJob?.source_order_id) return state.selectedJob;
+
+    const sourceOrderId = Number(state.selectedJob.source_order_id);
+    const data = await fetchJson(`/api/database/jobs/${encodeURIComponent(sourceOrderId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mark_invoiced: true }),
+    });
+    state.selectedJob = { ...state.selectedJob, ...data.job };
+
+    if (state.orderMode === 'all') {
+      updateOutstandingJob(state.selectedJob);
+    } else {
+      state.outstandingJobs = state.outstandingJobs.filter((job) => (
+        Number(job.source_order_id) !== sourceOrderId
+      ));
+    }
+    state.toInvoiceJobs = state.toInvoiceJobs.filter((job) => (
+      Number(job.source_order_id) !== sourceOrderId
+    ));
+
+    els.updatedAt.textContent = formatDateTime(state.selectedJob.updated_at_source);
+    els.updatedBy.textContent = orderByLabel(state.selectedJob);
+    renderDetailsPanel();
+    renderOutstandingOrders();
+    renderToInvoiceJobs();
+    hydrateOrderSelectors();
+    syncOrderDocumentButtons(state.selectedJob);
+    loadHomeMetrics();
+    return state.selectedJob;
   }
 
   function ensureOrderAckModal() {
@@ -5443,6 +5487,11 @@
       ? String(date.getFullYear()).slice(-2)
       : String(date.getFullYear());
     return `${day}/${month}/${year}`;
+  }
+
+  function validDateOrNow(value) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? new Date() : date;
   }
 
   function formatDateTime(value) {

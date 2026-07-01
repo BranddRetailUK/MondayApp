@@ -1091,9 +1091,61 @@ router.put('/api/database/jobs/:id', async (req, res) => {
   const payload = req.body || {};
   const hasJobTitle = Object.prototype.hasOwnProperty.call(payload, 'job_title');
   const hasIsComplete = Object.prototype.hasOwnProperty.call(payload, 'is_complete');
+  const hasMarkInvoiced = payload.mark_invoiced === true || payload.mark_invoiced === 'true';
 
-  if (!hasJobTitle && !hasIsComplete) {
+  if (!hasJobTitle && !hasIsComplete && !hasMarkInvoiced) {
     return res.status(400).json({ error: 'No supported job fields supplied' });
+  }
+
+  if (hasMarkInvoiced) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(71060217)');
+
+      const values = [id];
+      const updates = [];
+      if (hasJobTitle) {
+        values.push(cleanNullable(payload.job_title));
+        updates.push(`job_title = $${values.length}`);
+      }
+
+      const result = await client.query(
+        `WITH next_invoice AS (
+           SELECT (GREATEST(COALESCE(MAX(invoice_no), 50000), 50000) + 1)::int AS invoice_no
+           FROM database_jobs
+         )
+         UPDATE database_jobs AS j
+         SET ${updates.length ? `${updates.join(', ')},` : ''}
+             invoice_no = COALESCE(j.invoice_no, next_invoice.invoice_no),
+             invoice_required = TRUE,
+             invoice_printed = TRUE,
+             is_complete = TRUE,
+             complete_date = COALESCE(j.complete_date, NOW()),
+             dashboard_status = 'INVOICED',
+             dashboard_status_updated_at = NOW(),
+             updated_at_source = NOW(),
+             imported_at = NOW()
+         FROM next_invoice
+         WHERE j.source_order_id = $1 OR j.order_no = $1
+         RETURNING j.*`,
+        values
+      );
+
+      if (!result.rowCount) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Database job not found' });
+      }
+
+      await client.query('COMMIT');
+      return res.json({ job: result.rows[0] });
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      console.error('PUT /api/database/jobs/:id', err);
+      return res.status(500).json({ error: 'Failed to mark database job invoiced' });
+    } finally {
+      client.release();
+    }
   }
 
   const values = [id];

@@ -75,6 +75,7 @@ let __dashboardZoom = 1;
 let __dashboardPinchState = null;
 let __statusDropdownState = null;
 let __statusUpdateInFlight = 0;
+let __testCompleteConfirmResolve = null;
 let __proofModalState = {
   files: [],
   fileIndex: 0,
@@ -1809,6 +1810,7 @@ function openStatusDropdown({ anchor, item, column, currentText, context = BOARD
   __statusDropdownState = {
     anchor,
     itemId: String(item.id),
+    itemName: normalizeCellText(item.name || ''),
     columnId: String(column.id),
     columnTitle: column.title || column.id,
     context
@@ -1877,9 +1879,15 @@ function handleStatusDropdownKeydown(event) {
 async function selectStatusOption(option) {
   const state = __statusDropdownState;
   if (!state?.itemId || !state?.columnId || (!option?.label && !option?.clear)) return;
-  closeStatusDropdown();
-  __statusUpdateInFlight += 1;
   const context = state.context || BOARD_CONTEXT_MONDAY;
+  closeStatusDropdown();
+
+  if (shouldConfirmTestDashboardCompletedStatus(state, option)) {
+    const confirmed = await confirmTestDashboardCompletedStatus(state);
+    if (!confirmed) return;
+  }
+
+  __statusUpdateInFlight += 1;
 
   updateCachedBoardStatusValue(state.itemId, state.columnId, option, context);
   rerenderBoardContext(context);
@@ -1904,6 +1912,98 @@ async function selectStatusOption(option) {
   } finally {
     __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);
   }
+}
+
+function shouldConfirmTestDashboardCompletedStatus(state, option) {
+  return state?.context === BOARD_CONTEXT_TEST
+    && normalizeColumnTitle(state.columnTitle) === 'STATUS'
+    && !option?.clear
+    && normalizeColumnTitle(option?.label) === 'COMPLETED';
+}
+
+function confirmTestDashboardCompletedStatus(state) {
+  if (__testCompleteConfirmResolve) closeTestDashboardCompleteConfirm(false);
+
+  const modal = ensureTestDashboardCompleteConfirmModal();
+  const message = modal.querySelector('.test-dashboard-complete-confirm-message');
+  const label = state?.itemName || state?.itemId || 'this job';
+  if (message) message.textContent = `Set ${label} to completed?`;
+
+  modal.hidden = false;
+  modal.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open', 'test-dashboard-complete-confirm-open');
+
+  window.requestAnimationFrame(() => {
+    modal.querySelector('[data-test-dashboard-complete-cancel]')?.focus();
+  });
+
+  return new Promise((resolve) => {
+    __testCompleteConfirmResolve = resolve;
+  });
+}
+
+function ensureTestDashboardCompleteConfirmModal() {
+  let modal = document.getElementById('test-dashboard-complete-confirm-modal');
+  if (modal) return modal;
+
+  modal = document.createElement('div');
+  modal.id = 'test-dashboard-complete-confirm-modal';
+  modal.className = 'test-dashboard-complete-confirm-modal';
+  modal.hidden = true;
+  modal.setAttribute('aria-hidden', 'true');
+  modal.innerHTML = `
+    <div class="test-dashboard-complete-confirm-shell" role="dialog" aria-modal="true" aria-labelledby="test-dashboard-complete-confirm-title">
+      <div class="test-dashboard-complete-confirm-title" id="test-dashboard-complete-confirm-title">Are you sure?</div>
+      <div class="test-dashboard-complete-confirm-message">Set this job to completed?</div>
+      <div class="test-dashboard-complete-confirm-actions">
+        <button class="test-dashboard-complete-confirm-button confirm" type="button" data-test-dashboard-complete-confirm="true">Confirm</button>
+        <button class="test-dashboard-complete-confirm-button cancel" type="button" data-test-dashboard-complete-cancel="true">No</button>
+      </div>
+    </div>
+  `;
+  modal.addEventListener('click', handleTestDashboardCompleteConfirmClick);
+  document.addEventListener('keydown', handleTestDashboardCompleteConfirmKeydown);
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function handleTestDashboardCompleteConfirmClick(event) {
+  const modal = document.getElementById('test-dashboard-complete-confirm-modal');
+  if (!modal || modal.hidden) return;
+
+  if (event.target === modal) {
+    closeTestDashboardCompleteConfirm(false);
+    return;
+  }
+
+  const button = event.target.closest('button');
+  if (!button || !modal.contains(button)) return;
+
+  if (button.dataset.testDashboardCompleteConfirm) {
+    closeTestDashboardCompleteConfirm(true);
+  } else if (button.dataset.testDashboardCompleteCancel) {
+    closeTestDashboardCompleteConfirm(false);
+  }
+}
+
+function handleTestDashboardCompleteConfirmKeydown(event) {
+  const modal = document.getElementById('test-dashboard-complete-confirm-modal');
+  if (!modal || modal.hidden || event.key !== 'Escape') return;
+  event.preventDefault();
+  closeTestDashboardCompleteConfirm(false);
+}
+
+function closeTestDashboardCompleteConfirm(confirmed) {
+  const modal = document.getElementById('test-dashboard-complete-confirm-modal');
+  if (modal) {
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+  }
+  document.body.classList.remove('modal-open', 'test-dashboard-complete-confirm-open');
+
+  const resolve = __testCompleteConfirmResolve;
+  __testCompleteConfirmResolve = null;
+  if (resolve) resolve(Boolean(confirmed));
 }
 
 function getStatusColumnEndpoint(context, itemId) {
