@@ -171,6 +171,7 @@ async function main() {
 
   const dryRun = args.includes('--dry-run');
   const append = args.includes('--append');
+  const insertOnly = args.includes('--insert-only');
   const addressesOnly = args.includes('--addresses-only');
   const productsOnly = args.includes('--products-only');
   const productsFromExistingOrders = args.includes('--products-from-existing-orders');
@@ -184,6 +185,12 @@ async function main() {
   }
   if (productsOnly && productsFromExistingOrders) {
     throw new Error('--products-only and --products-from-existing-orders cannot be used together');
+  }
+  if (append && insertOnly) {
+    throw new Error('--append and --insert-only cannot be used together; --append updates existing rows');
+  }
+  if (addressesOnly && insertOnly) {
+    throw new Error('--insert-only cannot be used with --addresses-only because address-only mode updates existing job address fields');
   }
 
   if (!fs.existsSync(mdbPath)) {
@@ -203,11 +210,13 @@ async function main() {
     await importProductRows(productRows, {
       sourceFile: mdbPath,
       dryRun,
-      replaceExisting: !append,
+      replaceExisting: !append && !insertOnly,
+      insertOnly,
       sourceYearsLabel,
       modeLabel: 'Full product import',
       replaceMessage: 'Full product catalogue replaced',
       appendMessage: 'Full product catalogue appended/upserted',
+      insertOnlyMessage: 'Full product catalogue insert-only complete',
     });
     return;
   }
@@ -216,7 +225,8 @@ async function main() {
     await importProductsFromExistingOrders(data, {
       sourceFile: mdbPath,
       dryRun,
-      replaceExisting: !append,
+      replaceExisting: !append && !insertOnly,
+      insertOnly,
       sourceYearsLabel,
     });
     return;
@@ -242,14 +252,15 @@ async function main() {
 
   await importSnapshot(snapshot, {
     sourceFile: mdbPath,
-    replaceExisting: !append,
+    replaceExisting: !append && !insertOnly,
+    insertOnly,
     addressesOnly,
     sourceYearsLabel,
   });
 }
 
 function printHelp() {
-  console.log(`Usage: node scripts/import-database-mdb.js [PS_XP_tab.mdb] [--dry-run] [--append] [--years=2025,2026]
+  console.log(`Usage: node scripts/import-database-mdb.js [PS_XP_tab.mdb] [--dry-run] [--append] [--insert-only] [--years=2025,2026]
 
 Imports Access jobs into Railway/Postgres tables:
   database_jobs
@@ -261,6 +272,8 @@ Imports Access jobs into Railway/Postgres tables:
 
 Options:
   --years=...                    Optional comma-separated year filter for diagnostics.
+  --append                       Skip deletes and upsert source rows into existing rows.
+  --insert-only                  Skip deletes and insert only source rows that do not already exist.
   --addresses-only               Import only customer addresses and job address fields.
   --products-only                Import only the full product catalogue.
   --products-from-existing-orders Import only products referenced by existing database_job_line_items.
@@ -885,7 +898,7 @@ async function importSnapshot(snapshot, options) {
       await client.query('DELETE FROM database_customer_addresses');
 
       console.log(`[database-import] Writing ${snapshot.addresses.length} customer addresses`);
-      await upsertRows(
+      await writeRows(
         client,
         'database_customer_addresses',
         ADDRESS_COLUMNS,
@@ -931,52 +944,66 @@ async function importSnapshot(snapshot, options) {
       await client.query('DELETE FROM database_customer_contacts WHERE source_contact_id IS NOT NULL');
     }
 
+    const conflictAction = options.insertOnly ? 'ignore' : 'update';
+
     console.log(`[database-import] Writing ${snapshot.addresses.length} customer addresses`);
-    await upsertRows(
+    const addressWrite = await writeRows(
       client,
       'database_customer_addresses',
       ADDRESS_COLUMNS,
       'source_address_id',
-      snapshot.addresses
+      snapshot.addresses,
+      { conflictAction }
     );
 
     console.log(`[database-import] Writing ${snapshot.contacts.length} contacts`);
-    await upsertRows(
+    const contactWrite = await writeRows(
       client,
       'database_customer_contacts',
       CONTACT_COLUMNS,
       'source_contact_id',
-      snapshot.contacts
+      snapshot.contacts,
+      { conflictAction }
     );
 
     console.log(`[database-import] Writing ${snapshot.products.length} products`);
-    await upsertRows(
+    const productWrite = await writeRows(
       client,
       'database_products',
       PRODUCT_COLUMNS,
       'source_product_id',
-      snapshot.products
+      snapshot.products,
+      { conflictAction }
     );
 
     console.log(`[database-import] Writing ${snapshot.jobs.length} jobs`);
-    await upsertRows(client, 'database_jobs', JOB_COLUMNS, 'source_order_id', snapshot.jobs);
+    const jobWrite = await writeRows(
+      client,
+      'database_jobs',
+      JOB_COLUMNS,
+      'source_order_id',
+      snapshot.jobs,
+      { conflictAction }
+    );
 
     console.log(`[database-import] Writing ${snapshot.lineItems.length} line items`);
-    await upsertRows(
+    const lineItemWrite = await writeRows(
       client,
       'database_job_line_items',
       LINE_COLUMNS,
       'source_order_item_id',
-      snapshot.lineItems
+      snapshot.lineItems,
+      { conflictAction }
     );
 
     console.log(`[database-import] Writing ${snapshot.positions.length} positions`);
-    await upsertRows(
+    const positionWrite = await writeRows(
       client,
       'database_job_positions',
       POSITION_COLUMNS,
       'source_order_position_id',
-      snapshot.positions
+      snapshot.positions,
+      { conflictAction }
     );
 
     await client.query('COMMIT');
@@ -994,13 +1021,17 @@ async function importSnapshot(snapshot, options) {
            message = $7
        WHERE id = $8`,
       [
-        snapshot.jobs.length,
-        snapshot.lineItems.length,
-        snapshot.positions.length,
-        snapshot.addresses.length,
-        snapshot.contacts.length,
-        snapshot.products.length,
-        options.replaceExisting ? 'Snapshot replaced' : 'Snapshot appended/upserted',
+        options.insertOnly ? jobWrite.affected : snapshot.jobs.length,
+        options.insertOnly ? lineItemWrite.affected : snapshot.lineItems.length,
+        options.insertOnly ? positionWrite.affected : snapshot.positions.length,
+        options.insertOnly ? addressWrite.affected : snapshot.addresses.length,
+        options.insertOnly ? contactWrite.affected : snapshot.contacts.length,
+        options.insertOnly ? productWrite.affected : snapshot.products.length,
+        options.insertOnly
+          ? 'Snapshot insert-only complete'
+          : options.replaceExisting
+            ? 'Snapshot replaced'
+            : 'Snapshot appended/upserted',
         runId,
       ]
     );
@@ -1051,6 +1082,7 @@ async function importProductsFromExistingOrders(data, options) {
       modeLabel: 'Referenced product import',
       replaceMessage: 'Referenced product rows replaced',
       appendMessage: 'Referenced product rows appended/upserted',
+      insertOnlyMessage: 'Referenced product rows insert-only complete',
       client,
     });
   } finally {
@@ -1104,12 +1136,13 @@ async function importProductRows(productRows, options) {
     }
 
     console.log(`[database-import] Writing ${productRows.length} products`);
-    await upsertRows(
+    const productWrite = await writeRows(
       client,
       'database_products',
       PRODUCT_COLUMNS,
       'source_product_id',
-      productRows
+      productRows,
+      { conflictAction: options.insertOnly ? 'ignore' : 'update' }
     );
 
     await client.query('COMMIT');
@@ -1122,8 +1155,12 @@ async function importProductRows(productRows, options) {
            message = $2
        WHERE id = $3`,
       [
-        productRows.length,
-        options.replaceExisting ? options.replaceMessage : options.appendMessage,
+        options.insertOnly ? productWrite.affected : productRows.length,
+        options.insertOnly
+          ? options.insertOnlyMessage
+          : options.replaceExisting
+            ? options.replaceMessage
+            : options.appendMessage,
         runId,
       ]
     );
@@ -1169,13 +1206,17 @@ async function fetchExistingOrderProductIds(client) {
     .filter((productId) => productId !== null);
 }
 
-async function upsertRows(client, table, columns, conflictColumn, rows) {
-  if (!rows.length) return;
+async function writeRows(client, table, columns, conflictColumn, rows, options = {}) {
+  if (!rows.length) return { attempted: 0, affected: 0 };
+
+  const conflictAction = options.conflictAction || 'update';
 
   const updates = columns
     .filter((column) => column !== conflictColumn)
     .map((column) => `${column} = EXCLUDED.${column}`);
   updates.push('imported_at = NOW()');
+
+  let affected = 0;
 
   for (let start = 0; start < rows.length; start += INSERT_BATCH_SIZE) {
     const batch = rows.slice(start, start + INSERT_BATCH_SIZE);
@@ -1188,18 +1229,26 @@ async function upsertRows(client, table, columns, conflictColumn, rows) {
       return `(${fields.join(', ')})`;
     });
 
+    const conflictSql = conflictAction === 'ignore'
+      ? `ON CONFLICT (${conflictColumn}) DO NOTHING`
+      : `ON CONFLICT (${conflictColumn}) DO UPDATE
+      SET ${updates.join(', ')}`;
+
     const sql = `
       INSERT INTO ${table} (${columns.join(', ')})
       VALUES ${rowPlaceholders.join(', ')}
-      ON CONFLICT (${conflictColumn}) DO UPDATE
-      SET ${updates.join(', ')}
+      ${conflictSql}
     `;
 
-    await client.query(sql, values);
+    const result = await client.query(sql, values);
+    affected += result.rowCount;
 
     const count = Math.min(start + batch.length, rows.length);
-    console.log(`[database-import] ${table}: ${count}/${rows.length}`);
+    const inserted = conflictAction === 'ignore' ? ` (${affected} inserted)` : '';
+    console.log(`[database-import] ${table}: ${count}/${rows.length}${inserted}`);
   }
+
+  return { attempted: rows.length, affected };
 }
 
 async function updateJobAddressRows(client, rows) {

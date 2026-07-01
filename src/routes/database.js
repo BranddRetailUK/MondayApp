@@ -981,12 +981,17 @@ router.post('/api/database/jobs', async (req, res) => {
     const next = await client.query(`
       SELECT
         (COALESCE(MAX(source_order_id), 0) + 1)::int AS source_order_id,
-        (GREATEST(COALESCE(MAX(order_no), 50000), 50000) + 1)::int AS order_no
+        (GREATEST(
+          COALESCE(MAX(order_no), 50000),
+          COALESCE(MAX(invoice_no), 50000),
+          50000
+        ) + 1)::int AS document_no
       FROM database_jobs
     `);
 
     const sourceOrderId = next.rows[0].source_order_id;
-    const orderNo = next.rows[0].order_no;
+    const orderNo = next.rows[0].document_no;
+    const invoiceNo = orderNo;
     const orderTypeAbbr = orderTypeAbbreviation(orderType);
 
     const inserted = await client.query(
@@ -1016,6 +1021,7 @@ router.post('/api/database/jobs', async (req, res) => {
          order_date,
          delivery_date,
          customer_date_required,
+         invoice_no,
          invoice_required,
          is_complete,
          is_manual_entry,
@@ -1024,7 +1030,7 @@ router.post('/api/database/jobs', async (req, res) => {
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
          $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
-         $25, $26,
+         $25, $26, $27,
          FALSE, TRUE, NOW(), NOW()
        )
        RETURNING *`,
@@ -1054,6 +1060,7 @@ router.post('/api/database/jobs', async (req, res) => {
         orderDate.iso,
         deliveryDate.iso,
         toBoolean(payload.customer_date_required),
+        invoiceNo,
         invoiceRequiredValue(payload.invoice_required),
       ]
     );

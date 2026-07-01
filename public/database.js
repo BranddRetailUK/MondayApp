@@ -2024,6 +2024,7 @@
   function setOrderLoading() {
     resetDesignAutosaveState();
     resetJobAutosaveState();
+    syncOrderDocumentButtons(null);
     els.orderTitle.value = 'Loading...';
     els.orderNumber.value = '';
     els.createdAt.textContent = '-';
@@ -2037,6 +2038,7 @@
   function renderOrderError(message) {
     resetDesignAutosaveState();
     resetJobAutosaveState();
+    syncOrderDocumentButtons(null);
     els.orderTitle.value = 'Order unavailable';
     els.orderNumber.value = '';
     els.detailsPanel.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
@@ -2056,6 +2058,7 @@
     renderDetailsPanel();
     renderItemsPanel();
     renderDesignPanel();
+    syncOrderDocumentButtons(job);
   }
 
   function hydrateOrderSelectors() {
@@ -2259,6 +2262,8 @@
     if (!state.selectedJob?.source_order_id && !state.selectedJob?.order_no) return;
 
     const documentType = databaseDocumentType(type);
+    if (documentType === 'invoice' && invoiceNotRequired(state.selectedJob)) return;
+
     state.activeDocumentType = documentType;
     state.documentGeneratedAt = new Date();
     applyGeneratedDocumentDateToOrderUi(documentType, state.documentGeneratedAt);
@@ -2784,9 +2789,36 @@
 
   function databaseDocumentPdfFilename(type = state.activeDocumentType) {
     const job = state.selectedJob || {};
-    const orderNo = String(job.order_no || job.source_order_id || '').trim();
+    const documentType = databaseDocumentType(type);
+    const documentNo = documentType === 'invoice' ? invoiceDocumentNo(job) : job.order_no;
+    const orderNo = String(documentNo || job.source_order_id || '').trim();
     const config = databaseDocumentConfig(type);
     return `${orderNo ? `${orderNo} - ` : ''}${config.filenameTitle}`;
+  }
+
+  function syncOrderDocumentButtons(job = state.selectedJob) {
+    document.querySelectorAll('[data-db-document]').forEach((button) => {
+      const documentType = databaseDocumentType(button.dataset.dbDocument);
+      const noSelectedJob = !job || (!job.source_order_id && !job.order_no);
+      const invoiceDisabled = documentType === 'invoice' && invoiceNotRequired(job);
+      button.disabled = noSelectedJob || invoiceDisabled;
+      if (invoiceDisabled) {
+        button.title = 'Invoice not required for this job';
+      } else {
+        button.removeAttribute('title');
+      }
+    });
+  }
+
+  function invoiceNotRequired(job) {
+    const value = job?.invoice_required;
+    const clean = String(value ?? '').trim().toLowerCase();
+    return value === false || value === 0 || clean === 'false' || clean === '0' || clean === 'no';
+  }
+
+  function invoiceDocumentNo(job) {
+    if (invoiceNotRequired(job)) return '';
+    return job?.invoice_no || job?.order_no || '';
   }
 
   function databaseDocumentType(type) {
@@ -2904,7 +2936,7 @@
       totals,
       addressLines: invoiceLines,
       metaRows: [
-        { label: 'Invoice No.', value: job.order_no },
+        { label: 'Invoice No.', value: invoiceDocumentNo(job) },
         { label: 'Cust ref:', value: job.client_order_no || '' },
         { label: 'VAT No.:', value: ULTIMATE_VAT_NUMBER },
         { label: 'Invoice date:', value: formatDate(generatedAt, 'full') },
@@ -2929,7 +2961,7 @@
       addressLines,
       showSignature: true,
       metaRows: [
-        { label: 'Invoice No', value: job.order_no },
+        { label: 'Invoice No', value: invoiceDocumentNo(job) },
         { label: 'Your ref:', value: deliveryNoteYourRef(job) },
         { label: 'Order date:', value: formatDate(job.order_date || job.created_at_source, 'full') },
         { label: 'Delivery date:', value: formatDate(generatedAt, 'full') },
