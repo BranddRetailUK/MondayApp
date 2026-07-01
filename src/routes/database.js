@@ -1024,6 +1024,8 @@ router.post('/api/database/jobs', async (req, res) => {
          customer_date_required,
          invoice_no,
          invoice_required,
+         dashboard_status,
+         dashboard_status_updated_at,
          is_complete,
          is_manual_entry,
          created_at_source,
@@ -1032,6 +1034,7 @@ router.post('/api/database/jobs', async (req, res) => {
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
          $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
          $25, $26, $27,
+         'PRE-PRODUCTION', NOW(),
          FALSE, TRUE, NOW(), NOW()
        )
        RETURNING *`,
@@ -2067,6 +2070,9 @@ function parseDatabaseDate(value, label) {
 
 function orderTypeAbbreviation(orderType) {
   const normalized = cleanQuery(orderType).toLowerCase();
+  const isPrint = normalized.includes('print');
+  const isEmbroidery = normalized.includes('embro') || /\bemb\b/.test(normalized);
+  if (isPrint && isEmbroidery) return 'PE';
   if (normalized.includes('embro')) return 'E';
   if (normalized.includes('gift')) return 'G';
   if (normalized.includes('print')) return 'P';

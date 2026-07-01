@@ -1997,6 +1997,7 @@
   function groupedOutstandingRows(sourceJobs = state.outstandingJobs) {
     const groups = [
       { key: 'print', label: 'Print', jobs: [] },
+      { key: 'print_embroidery', label: 'Print + Emb', jobs: [] },
       { key: 'embroidery', label: 'Embroidery', jobs: [] },
       { key: 'gifts', label: 'Gifts', jobs: [] },
       { key: 'other', label: 'Other', jobs: [] },
@@ -5236,9 +5237,12 @@
   function categoryForJob(job) {
     const type = `${job.order_type || ''} ${job.order_type_abbr || ''}`.toLowerCase();
     const abbr = String(job.order_type_abbr || '').trim().toLowerCase();
+    const isPrint = type.includes('print') || abbr === 'p' || abbr === 'pe' || abbr === 'ep';
+    const isEmbroidery = type.includes('embro') || /\bemb\b/.test(type) || abbr === 'e' || abbr === 'pe' || abbr === 'ep';
     if (type.includes('gift') || abbr === 'g') return 'gifts';
-    if (type.includes('embro') || abbr === 'e') return 'embroidery';
-    if (type.includes('print') || abbr === 'p') return 'print';
+    if (isPrint && isEmbroidery) return 'print_embroidery';
+    if (isEmbroidery) return 'embroidery';
+    if (isPrint) return 'print';
     return 'other';
   }
 
@@ -5246,6 +5250,7 @@
     if (job.order_type_abbr) return job.order_type_abbr;
     const category = categoryForJob(job);
     if (category === 'gifts') return 'G';
+    if (category === 'print_embroidery') return 'PE';
     if (category === 'embroidery') return 'E';
     if (category === 'print') return 'P';
     return '';
@@ -5254,6 +5259,7 @@
   function typeLabel(job) {
     const category = categoryForJob(job);
     if (category === 'gifts') return 'Business gifts';
+    if (category === 'print_embroidery') return 'Print + Emb';
     if (category === 'embroidery') return 'Embroidery';
     if (category === 'print') return 'Printing';
     return '';

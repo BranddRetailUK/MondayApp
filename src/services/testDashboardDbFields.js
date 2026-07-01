@@ -30,9 +30,14 @@ async function updateDatabaseJobDashboardFields(db, sourceOrderId, labels = {}, 
   const values = [sourceOrderId];
 
   if (Object.prototype.hasOwnProperty.call(labels, 'status')) {
-    values.push(clean(labels.status) || null);
+    const statusLabel = clean(labels.status);
+    values.push(statusLabel || null);
     fields.push(`dashboard_status = $${values.length}`);
     fields.push('dashboard_status_updated_at = NOW()');
+    if (statusLabel.toUpperCase() === 'COMPLETED') {
+      fields.push('is_complete = TRUE');
+      fields.push('complete_date = COALESCE(complete_date, NOW())');
+    }
 
     if (options.updateProofApproved !== false) {
       const proofApproved = inferProofApproved(labels.status);
@@ -60,7 +65,7 @@ async function updateDatabaseJobDashboardFields(db, sourceOrderId, labels = {}, 
          updated_at_source = NOW(),
          imported_at = NOW()
      WHERE source_order_id = $1
-     RETURNING source_order_id, dashboard_status, dashboard_priority, dashboard_type, proof_approved, proof_approved_at`,
+     RETURNING source_order_id, dashboard_status, dashboard_priority, dashboard_type, proof_approved, proof_approved_at, is_complete, complete_date`,
     values
   );
   return result.rows[0] || null;

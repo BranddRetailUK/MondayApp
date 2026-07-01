@@ -292,8 +292,8 @@ async function buildTestDashboardBoardPayload() {
     fetchDashboardGroups(),
     fetchOpenDashboardJobs(),
   ]);
-  const dashboardJobs = jobs.filter(job => deriveJobCategory(job) !== 'gifts');
-  const sourceOrderIds = dashboardJobs.map(job => job.source_order_id);
+  const candidateJobs = jobs.filter(job => deriveJobCategory(job) !== 'gifts');
+  const sourceOrderIds = candidateJobs.map(job => job.source_order_id);
   const [states, lineItems, positions, files, scans] = await Promise.all([
     fetchStateMap(sourceOrderIds),
     fetchLineItemMap(sourceOrderIds),
@@ -303,10 +303,10 @@ async function buildTestDashboardBoardPayload() {
   ]);
 
   const grouped = new Map(groups.map(group => [group.id, []]));
-  for (const job of dashboardJobs) {
+  for (const job of candidateJobs) {
     const state = states.get(job.source_order_id) || null;
-    if (state?.archived) continue;
     const scan = scans.get(String(job.source_order_id)) || null;
+    if (!shouldRenderDashboardJob(job, state, scan)) continue;
     const item = buildBoardItem({
       job,
       state,
@@ -339,6 +339,30 @@ async function buildTestDashboardBoardPayload() {
   };
 }
 
+function shouldRenderDashboardJob(job, state, scan) {
+  if (deriveJobCategory(job) === 'gifts') return false;
+  if (state?.archived) return false;
+  const stateValues = state?.column_values || {};
+  const statusText = normalizeColumnTitle(
+    job.dashboard_status || getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]) || scan?.status || ''
+  );
+  if (statusText === 'COMPLETED' || statusText === 'INVOICED') return false;
+  return hasDashboardIdentity(job, state, scan);
+}
+
+function hasDashboardIdentity(job, state, scan) {
+  const stateValues = state?.column_values || {};
+  return Boolean(
+    clean(job.dashboard_status) ||
+    clean(job.dashboard_priority) ||
+    clean(scan?.status) ||
+    state?.monday_item_id ||
+    clean(state?.group_id) ||
+    clean(getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS])) ||
+    clean(getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.PRIORITY]))
+  );
+}
+
 function buildBoardItem({ job, state, columns, subitemColumns, lineItems, positions, files, scan }) {
   const stateValues = state?.column_values || {};
   const values = new Map();
@@ -353,7 +377,7 @@ function buildBoardItem({ job, state, columns, subitemColumns, lineItems, positi
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.TRANS, stateValues[TEST_DASHBOARD_COLUMN_IDS.TRANS] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.TRANS), false));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JAQ, stateValues[TEST_DASHBOARD_COLUMN_IDS.JAQ] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JAQ), Boolean(job.has_screens || job.screen_numbers)));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, statusValueFromJobOrState(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, job.dashboard_status, stateValues) || statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, scan?.status || ''));
-  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.TYPE, statusValueFromJobOrState(columns, TEST_DASHBOARD_COLUMN_IDS.TYPE, job.dashboard_type, stateValues) || statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.TYPE, typeLabel));
+  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.TYPE, statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.TYPE, typeLabel) || stateValues[TEST_DASHBOARD_COLUMN_IDS.TYPE] || statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.TYPE, job.dashboard_type));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.DESIGN, stateValues[TEST_DASHBOARD_COLUMN_IDS.DESIGN] || textValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.DESIGN), designText));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.NOTES, stateValues[TEST_DASHBOARD_COLUMN_IDS.NOTES] || textValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.NOTES), job.comments || ''));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN, stateValues[TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN), Boolean(scan?.scan_count >= 1)));
@@ -474,7 +498,7 @@ async function fetchOpenDashboardJobs() {
     WHERE is_complete IS NOT TRUE
       AND invoice_printed IS NOT TRUE
       AND pf_invoice_printed IS NOT TRUE
-      AND COALESCE(UPPER(TRIM(dashboard_status)), '') <> 'INVOICED'
+      AND COALESCE(UPPER(TRIM(dashboard_status)), '') NOT IN ('INVOICED', 'COMPLETED')
     ORDER BY COALESCE(order_date, created_at_source, updated_at_source) DESC NULLS LAST,
              order_no DESC
   `);
@@ -610,7 +634,7 @@ function applyDashboardAutomations({ job, currentState, column, columnValues, ch
   let archived = Boolean(currentState?.archived);
   const title = normalizeColumnTitle(column.title);
   const statusText = normalizeColumnTitle(changedLabel || getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]));
-  const typeText = normalizeColumnTitle(getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.TYPE]) || deriveTypeLabel(job));
+  const typeText = normalizeColumnTitle(deriveTypeLabel(job) || getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.TYPE]) || job.dashboard_type);
 
   if (title === 'STATUS' && !clearRequested) {
     if (statusText === 'INVOICED') {
@@ -710,7 +734,7 @@ function resolveDashboardGroupId(job, state, scan) {
     job.dashboard_status || getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]) || scan?.status || ''
   );
   const typeText = normalizeColumnTitle(
-    job.dashboard_type || getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.TYPE]) || deriveTypeLabel(job)
+    deriveTypeLabel(job) || getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.TYPE]) || job.dashboard_type
   );
   const automatedGroupId = groupIdForStatusAndType(statusText, typeText);
   if (automatedGroupId) return automatedGroupId;
@@ -734,6 +758,7 @@ function groupIdForStatusAndType(statusText, typeText) {
 
 function deriveDefaultGroupId(job) {
   const category = deriveJobCategory(job);
+  if (category === 'print_embroidery') return TEST_DASHBOARD_GROUP_IDS.EMBROIDERY;
   if (category === 'embroidery') return TEST_DASHBOARD_GROUP_IDS.EMBROIDERY;
   if (category === 'print') return TEST_DASHBOARD_GROUP_IDS.PRINT;
   return DEFAULT_OFFICE_GROUP_ID;
@@ -741,6 +766,7 @@ function deriveDefaultGroupId(job) {
 
 function deriveTypeLabel(job) {
   const category = deriveJobCategory(job);
+  if (category === 'print_embroidery') return 'EMB / PRINT';
   if (category === 'embroidery') return 'EMB';
   if (category === 'print') return 'PRINT';
   return '';
@@ -749,9 +775,12 @@ function deriveTypeLabel(job) {
 function deriveJobCategory(job) {
   const raw = `${job.order_type || ''} ${job.order_type_abbr || ''}`.toLowerCase();
   const abbr = clean(job.order_type_abbr).toLowerCase();
+  const isPrint = raw.includes('print') || abbr === 'p' || abbr === 'pe' || abbr === 'ep';
+  const isEmbroidery = raw.includes('embro') || /\bemb\b/.test(raw) || abbr === 'e' || abbr === 'pe' || abbr === 'ep';
   if (raw.includes('gift') || abbr === 'g') return 'gifts';
-  if (raw.includes('embro') || abbr === 'e') return 'embroidery';
-  if (raw.includes('print') || abbr === 'p') return 'print';
+  if (isPrint && isEmbroidery) return 'print_embroidery';
+  if (isEmbroidery) return 'embroidery';
+  if (isPrint) return 'print';
   return 'other';
 }
 
