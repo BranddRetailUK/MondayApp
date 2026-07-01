@@ -605,6 +605,7 @@
       && fields.job_title.value.trim()
       && fields.order_date.value.trim()
       && fields.delivery_date.value.trim()
+      && fields.invoice_required.value.trim()
     );
     els.newOrderAccept.disabled = !valid || state.newOrderSubmitting;
   }
@@ -2818,7 +2819,7 @@
 
   function invoiceDocumentNo(job) {
     if (invoiceNotRequired(job)) return '';
-    return job?.invoice_no || job?.order_no || '';
+    return job?.invoice_no || '';
   }
 
   function databaseDocumentType(type) {

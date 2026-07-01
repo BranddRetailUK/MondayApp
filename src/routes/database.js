@@ -962,10 +962,11 @@ router.post('/api/database/jobs', async (req, res) => {
   const deliveryDate = parseDatabaseDate(payload.delivery_date, 'Delivery date');
   const orderOwnerName = req.hubUser ? fullName(req.hubUser) : cleanNullable(payload.order_taken_by);
   const orderTakenBy = orderOwnerName || cleanNullable(payload.order_taken_by);
+  const invoiceRequired = invoiceRequiredValue(payload.invoice_required);
 
-  if (!customerName || !orderType || !jobTitle || !orderDate || !deliveryDate) {
+  if (!customerName || !orderType || !jobTitle || !orderDate || !deliveryDate || invoiceRequired === null) {
     return res.status(400).json({
-      error: 'Customer, order type, job title, order date, and delivery date are required',
+      error: 'Customer, order type, job title, order date, delivery date, and invoice required are required',
     });
   }
 
@@ -981,17 +982,17 @@ router.post('/api/database/jobs', async (req, res) => {
     const next = await client.query(`
       SELECT
         (COALESCE(MAX(source_order_id), 0) + 1)::int AS source_order_id,
-        (GREATEST(
-          COALESCE(MAX(order_no), 50000),
-          COALESCE(MAX(invoice_no), 50000),
-          50000
-        ) + 1)::int AS document_no
+        (GREATEST(COALESCE(MAX(order_no), 50000), 50000) + 1)::int AS order_no,
+        CASE
+          WHEN $1::boolean THEN (GREATEST(COALESCE(MAX(invoice_no), 50000), 50000) + 1)::int
+          ELSE NULL::int
+        END AS invoice_no
       FROM database_jobs
-    `);
+    `, [invoiceRequired]);
 
     const sourceOrderId = next.rows[0].source_order_id;
-    const orderNo = next.rows[0].document_no;
-    const invoiceNo = orderNo;
+    const orderNo = next.rows[0].order_no;
+    const invoiceNo = next.rows[0].invoice_no;
     const orderTypeAbbr = orderTypeAbbreviation(orderType);
 
     const inserted = await client.query(
@@ -1061,7 +1062,7 @@ router.post('/api/database/jobs', async (req, res) => {
         deliveryDate.iso,
         toBoolean(payload.customer_date_required),
         invoiceNo,
-        invoiceRequiredValue(payload.invoice_required),
+        invoiceRequired,
       ]
     );
 
