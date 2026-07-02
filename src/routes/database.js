@@ -118,6 +118,7 @@ router.get('/api/database/jobs', async (req, res) => {
               j.customer_supplied,
               j.delivery_note_date,
               j.invoice_no,
+              j.invoice_date,
               j.trace_staff_id,
               j.created_at_source,
               j.updated_at_source,
@@ -1092,12 +1093,25 @@ router.put('/api/database/jobs/:id', async (req, res) => {
   const hasJobTitle = Object.prototype.hasOwnProperty.call(payload, 'job_title');
   const hasIsComplete = Object.prototype.hasOwnProperty.call(payload, 'is_complete');
   const hasMarkInvoiced = payload.mark_invoiced === true || payload.mark_invoiced === 'true';
+  const hasManualInvoiceDate = payload.manual_invoice_date === true || payload.manual_invoice_date === 'true';
 
   if (!hasJobTitle && !hasIsComplete && !hasMarkInvoiced) {
     return res.status(400).json({ error: 'No supported job fields supplied' });
   }
 
   if (hasMarkInvoiced) {
+    let manualInvoiceDate = null;
+    if (hasManualInvoiceDate) {
+      const parsedInvoiceDate = parseDatabaseDate(payload.invoice_date, 'Invoice date');
+      if (!parsedInvoiceDate) {
+        return res.status(400).json({ error: 'Manual invoice date is required' });
+      }
+      if (!parsedInvoiceDate.valid) {
+        return res.status(400).json({ error: parsedInvoiceDate.error });
+      }
+      manualInvoiceDate = parsedInvoiceDate.iso;
+    }
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -1109,6 +1123,8 @@ router.put('/api/database/jobs/:id', async (req, res) => {
         values.push(cleanNullable(payload.job_title));
         updates.push(`job_title = $${values.length}`);
       }
+      values.push(manualInvoiceDate);
+      const invoiceDateParam = `$${values.length}`;
 
       const result = await client.query(
         `WITH next_invoice AS (
@@ -1120,8 +1136,18 @@ router.put('/api/database/jobs/:id', async (req, res) => {
              invoice_no = COALESCE(j.invoice_no, next_invoice.invoice_no),
              invoice_required = TRUE,
              invoice_printed = TRUE,
+             invoice_date = CASE
+               WHEN ${invoiceDateParam}::timestamp IS NOT NULL THEN ${invoiceDateParam}::timestamp
+               ELSE COALESCE(j.invoice_date, j.complete_date, NOW())
+             END,
              is_complete = TRUE,
-             complete_date = COALESCE(j.complete_date, NOW()),
+             complete_date = COALESCE(
+               j.complete_date,
+               CASE
+                 WHEN ${invoiceDateParam}::timestamp IS NOT NULL THEN ${invoiceDateParam}::timestamp
+                 ELSE NOW()
+               END
+             ),
              dashboard_status = 'INVOICED',
              dashboard_status_updated_at = NOW(),
              updated_at_source = NOW(),

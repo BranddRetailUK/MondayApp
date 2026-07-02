@@ -45,6 +45,7 @@ async function ensureDatabaseTables(db) {
       customer_supplied BOOLEAN,
       delivery_note_date TIMESTAMP,
       invoice_no INTEGER,
+      invoice_date TIMESTAMP,
       trace_staff_id INTEGER,
       created_at_source TIMESTAMP,
       updated_at_source TIMESTAMP,
@@ -82,6 +83,7 @@ async function ensureDatabaseTables(db) {
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS proof_approved BOOLEAN;');
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS proof_approved_at TIMESTAMP;');
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS dashboard_status_updated_at TIMESTAMP;');
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS invoice_date TIMESTAMP;');
   await db.query('ALTER TABLE database_jobs ALTER COLUMN source_year DROP NOT NULL;');
   await db.query('ALTER TABLE database_jobs DROP CONSTRAINT IF EXISTS database_jobs_source_year_check;');
 

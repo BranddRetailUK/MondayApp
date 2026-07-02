@@ -286,6 +286,7 @@
     els.itemsPanel.addEventListener('change', handleLineDraftChange);
     els.itemsPanel.addEventListener('mousedown', handleLineDraftMouseDown);
     els.itemsPanel.addEventListener('pointerdown', handleLineDragPointerDown);
+    els.detailsPanel.addEventListener('change', handleDetailsPanelChange);
     els.designPanel.addEventListener('input', handleDesignInput);
     els.designPanel.addEventListener('focusout', handleDesignFocusOut);
     els.designPanel.addEventListener('pointerdown', handleLineDragPointerDown);
@@ -2318,6 +2319,7 @@
           ${detailRow('Delivery:', inputBox(job.delivery_method))}
           ${detailRow('Order date:', inputBox(formatDate(job.order_date, 'short')))}
           ${detailRow('Delivery:', `${inputBox(formatDate(job.delivery_date, 'short'), 'db-delivery-date-field')}<label class="db-inline-check">${renderCheck(job.customer_date_required)} Customer date</label>`)}
+          ${detailRow('Invoice date:', manualInvoiceDateControl(job))}
           ${detailRow('Completion', inputBox(formatDate(job.complete_date, 'short'), 'db-completion-date-field'))}
           ${detailRow('Job status:', inputBox(job.dashboard_status))}
           ${detailRow('Approved:', inputBox(approvalLabel(job.proof_approved)))}
@@ -2341,6 +2343,34 @@
         </div>
       </div>
     `;
+  }
+
+  function manualInvoiceDateControl(job) {
+    return `${inputBox(formatDate(job.invoice_date, 'short'), 'db-invoice-date-field db-manual-invoice-date-field')}<label class="db-inline-check"><input class="db-tiny-check" type="checkbox" data-db-manual-invoice-date="true"> Manual Date</label>`;
+  }
+
+  function handleDetailsPanelChange(event) {
+    if (!event.target?.matches?.('[data-db-manual-invoice-date]')) return;
+    syncManualInvoiceDateInput(event.target.checked);
+  }
+
+  function syncManualInvoiceDateInput(isManual) {
+    const input = els.detailsPanel?.querySelector('.db-manual-invoice-date-field');
+    if (!input) return;
+
+    if (isManual) {
+      input.readOnly = false;
+      input.value = formatDate(
+        state.selectedJob?.invoice_date || new Date(),
+        'short'
+      );
+      input.focus();
+      input.select();
+      return;
+    }
+
+    input.readOnly = true;
+    input.value = formatDate(state.selectedJob?.invoice_date, 'short');
   }
 
   function renderItemsPanel() {
@@ -2474,7 +2504,7 @@
     if (documentType === 'invoice') {
       try {
         const invoicedJob = await markSelectedJobInvoiced();
-        generatedAt = validDateOrNow(invoicedJob?.complete_date || invoicedJob?.dashboard_status_updated_at);
+        generatedAt = validDateOrNow(invoicedJob?.invoice_date || invoicedJob?.complete_date || invoicedJob?.dashboard_status_updated_at);
       } catch (err) {
         console.error('Invoice mark failed', err);
         alert(err.message || 'Failed to mark order invoiced');
@@ -2718,7 +2748,7 @@
 
     const displayDate = formatDate(generatedAt, 'full');
     if (documentType === 'invoice') {
-      const input = els.detailsPanel?.querySelector('.db-completion-date-field');
+      const input = els.detailsPanel?.querySelector('.db-invoice-date-field');
       if (input) input.value = displayDate;
     }
 
@@ -2733,10 +2763,17 @@
     if (!state.selectedJob?.source_order_id) return state.selectedJob;
 
     const sourceOrderId = Number(state.selectedJob.source_order_id);
+    const payload = { mark_invoiced: true };
+    const manualInvoiceDate = selectedManualInvoiceDate();
+    if (manualInvoiceDate) {
+      payload.manual_invoice_date = true;
+      payload.invoice_date = manualInvoiceDate;
+    }
+
     const data = await fetchJson(`/api/database/jobs/${encodeURIComponent(sourceOrderId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mark_invoiced: true }),
+      body: JSON.stringify(payload),
     });
     state.selectedJob = { ...state.selectedJob, ...data.job };
 
@@ -2760,6 +2797,16 @@
     syncOrderDocumentButtons(state.selectedJob);
     loadHomeMetrics();
     return state.selectedJob;
+  }
+
+  function selectedManualInvoiceDate() {
+    const checkbox = els.detailsPanel?.querySelector('[data-db-manual-invoice-date]');
+    if (!checkbox?.checked) return '';
+
+    const input = els.detailsPanel?.querySelector('.db-manual-invoice-date-field');
+    const value = String(input?.value || '').trim();
+    if (!value) throw new Error('Manual invoice date is required');
+    return legacyInputDateToIso(value);
   }
 
   function ensureOrderAckModal() {

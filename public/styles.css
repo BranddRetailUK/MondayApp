@@ -3391,7 +3391,7 @@ body.modal-open{overflow:hidden}
   left:24px;
   top:18px;
   width:434px;
-  height:242px;
+  height:270px;
 }
 .db-address-box{
   left:472px;
@@ -3458,6 +3458,10 @@ body.modal-open{overflow:hidden}
 .db-form-control .db-legacy-input{
   width:100%;
   min-width:0;
+}
+.db-form-control .db-invoice-date-field{
+  width:104px;
+  flex:0 0 104px;
 }
 .db-control-link{
   color:#00e!important;
