@@ -45,6 +45,9 @@ body{
   padding:18px 18px;
   position:sticky;
   top:0;
+  left:0;
+  z-index:900;
+  align-self:flex-start;
   height:100vh;
   display:flex;
   flex-direction:column;
