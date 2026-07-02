@@ -106,6 +106,11 @@
     selectedCustomerDesignNumbers: [],
     customerUsers: [],
     loadedCustomerUsers: false,
+    registeredUsers: [],
+    usersLoaded: false,
+    usersLoading: false,
+    userDeleteTarget: null,
+    userDeleteSaving: false,
     customerAccountManagerSaving: false,
     selectedJob: null,
     selectedLineItems: [],
@@ -196,6 +201,8 @@
       outstandingBody: document.getElementById('db-outstanding-body'),
       toInvoiceTable: document.getElementById('db-to-invoice-table'),
       toInvoiceBody: document.getElementById('db-to-invoice-body'),
+      usersTable: document.getElementById('db-users-table'),
+      usersBody: document.getElementById('db-users-body'),
       orderSearch: document.getElementById('db-order-search'),
       selectOrder: document.getElementById('db-select-order'),
       footerTitle: document.getElementById('db-footer-title'),
@@ -373,6 +380,12 @@
       return;
     }
 
+    const deleteUserId = button.dataset.dbUserRemove;
+    if (deleteUserId) {
+      openUserDeleteConfirmation(deleteUserId);
+      return;
+    }
+
     if (button.dataset.dbCloseOrder) {
       await flushOrderAutosaves();
       openCloseOrderConfirmation();
@@ -457,6 +470,11 @@
     if (action === 'customers') {
       await flushOrderAutosaves();
       showCustomers();
+      return;
+    }
+    if (action === 'users') {
+      await flushOrderAutosaves();
+      showUsers();
       return;
     }
     if (action === 'to-invoice') {
@@ -629,6 +647,12 @@
     showView('to-invoice');
     setFooterTitle('To Invoice');
     loadToInvoiceJobs({ force: true });
+  }
+
+  function showUsers() {
+    showView('users');
+    setFooterTitle('Users');
+    loadRegisteredUsers({ force: true });
   }
 
   function setCurrentUser(user) {
@@ -1276,6 +1300,61 @@
     }
 
     return state.customerUsers;
+  }
+
+  async function loadRegisteredUsers(options = {}) {
+    if (state.usersLoading && !options.force) {
+      renderRegisteredUsers();
+      return;
+    }
+    if (state.usersLoaded && !options.force) {
+      renderRegisteredUsers();
+      return;
+    }
+
+    state.usersLoading = true;
+    state.usersLoaded = false;
+    if (els.usersBody) {
+      els.usersBody.innerHTML = renderStatusRow('Loading users', 4);
+    }
+
+    try {
+      const data = await fetchJson('/api/database/users');
+      const users = Array.isArray(data.users) ? data.users : [];
+      state.registeredUsers = users;
+      state.customerUsers = users;
+      state.loadedCustomerUsers = true;
+      state.usersLoaded = true;
+      renderRegisteredUsers();
+    } catch (err) {
+      state.usersLoaded = false;
+      if (els.usersBody) {
+        els.usersBody.innerHTML = renderStatusRow(err.message || 'Failed to load users', 4);
+      }
+    } finally {
+      state.usersLoading = false;
+    }
+  }
+
+  function renderRegisteredUsers() {
+    if (!els.usersBody) return;
+    const users = state.registeredUsers || [];
+    if (!users.length) {
+      els.usersBody.innerHTML = renderStatusRow('No registered users', 4);
+      return;
+    }
+    els.usersBody.innerHTML = users.map(renderRegisteredUserRow).join('');
+  }
+
+  function renderRegisteredUserRow(user) {
+    return `
+      <tr>
+        <td>${escapeHtml(user.full_name || [user.first_name, user.last_name].filter(Boolean).join(' ') || '-')}</td>
+        <td>${escapeHtml(user.email || '')}</td>
+        <td>${escapeHtml(formatDate(user.created_at, 'long'))}</td>
+        <td><button class="db-user-remove-button" type="button" data-db-user-remove="${escapeAttr(user.id || '')}">Remove</button></td>
+      </tr>
+    `;
   }
 
   function setCustomerAccountManagerOptions(customer, disabled) {
@@ -2888,10 +2967,12 @@
     state.designDeleteTarget = null;
     state.contactDeleteTarget = null;
     state.closeOrderTarget = null;
+    state.userDeleteTarget = null;
     state.lineDeleteSaving = false;
     state.designDeleteSaving = false;
     state.contactDeleteSaving = false;
     state.closeOrderSaving = false;
+    state.userDeleteSaving = false;
 
     const modal = ensureLineDeleteModal();
     const message = modal.querySelector('.db-line-delete-message');
@@ -2957,6 +3038,8 @@
     if (button.dataset.dbLineDeleteConfirm) {
       if (state.closeOrderTarget) {
         confirmCloseOrder();
+      } else if (state.userDeleteTarget) {
+        confirmDeleteUser();
       } else if (state.contactDeleteTarget) {
         confirmDeleteContact();
       } else if (state.designDeleteTarget) {
@@ -2968,7 +3051,7 @@
   }
 
   function closeLineDeleteConfirmation() {
-    if (state.lineDeleteSaving || state.designDeleteSaving || state.contactDeleteSaving || state.closeOrderSaving) return;
+    if (state.lineDeleteSaving || state.designDeleteSaving || state.contactDeleteSaving || state.closeOrderSaving || state.userDeleteSaving) return;
     const modal = document.getElementById('db-line-delete-modal');
     if (!modal) return;
     modal.hidden = true;
@@ -2978,6 +3061,7 @@
     state.designDeleteTarget = null;
     state.contactDeleteTarget = null;
     state.closeOrderTarget = null;
+    state.userDeleteTarget = null;
   }
 
   async function confirmDeleteLineItem() {
@@ -3037,10 +3121,12 @@
     state.lineDeleteTarget = null;
     state.contactDeleteTarget = null;
     state.closeOrderTarget = null;
+    state.userDeleteTarget = null;
     state.designDeleteSaving = false;
     state.lineDeleteSaving = false;
     state.contactDeleteSaving = false;
     state.closeOrderSaving = false;
+    state.userDeleteSaving = false;
 
     const modal = ensureLineDeleteModal();
     const message = modal.querySelector('.db-line-delete-message');
@@ -3129,10 +3215,12 @@
     state.lineDeleteTarget = null;
     state.designDeleteTarget = null;
     state.closeOrderTarget = null;
+    state.userDeleteTarget = null;
     state.contactDeleteSaving = false;
     state.lineDeleteSaving = false;
     state.designDeleteSaving = false;
     state.closeOrderSaving = false;
+    state.userDeleteSaving = false;
 
     const modal = ensureLineDeleteModal();
     const message = modal.querySelector('.db-line-delete-message');
@@ -3187,7 +3275,73 @@
 
   function lineDeleteSavingLabel() {
     if (state.closeOrderTarget) return 'Closing...';
+    if (state.userDeleteTarget) return 'Removing...';
     return 'Deleting...';
+  }
+
+  function openUserDeleteConfirmation(userId) {
+    const user = findRegisteredUser(userId);
+    if (!user) return;
+
+    state.userDeleteTarget = {
+      userId: Number(user.id),
+      label: user.full_name || [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email || 'this user',
+    };
+    state.lineDeleteTarget = null;
+    state.designDeleteTarget = null;
+    state.contactDeleteTarget = null;
+    state.closeOrderTarget = null;
+    state.userDeleteSaving = false;
+    state.lineDeleteSaving = false;
+    state.designDeleteSaving = false;
+    state.contactDeleteSaving = false;
+    state.closeOrderSaving = false;
+
+    const modal = ensureLineDeleteModal();
+    const message = modal.querySelector('.db-line-delete-message');
+    const error = modal.querySelector('.db-line-delete-error');
+    if (message) message.textContent = `Remove ${state.userDeleteTarget.label}?`;
+    if (error) error.textContent = '';
+    setLineDeleteModalSaving(false);
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open', 'db-line-delete-open');
+
+    window.requestAnimationFrame(() => {
+      modal.querySelector('[data-db-line-delete-cancel]')?.focus();
+    });
+  }
+
+  async function confirmDeleteUser() {
+    const target = state.userDeleteTarget;
+    if (!target || state.userDeleteSaving) return;
+
+    state.userDeleteSaving = true;
+    setLineDeleteModalSaving(true);
+
+    try {
+      await fetchJson(`/api/database/users/${encodeURIComponent(target.userId)}`, {
+        method: 'DELETE',
+      });
+      state.registeredUsers = (state.registeredUsers || []).filter((user) => (
+        Number(user.id) !== Number(target.userId)
+      ));
+      state.customerUsers = (state.customerUsers || []).filter((user) => (
+        Number(user.id) !== Number(target.userId)
+      ));
+      state.userDeleteSaving = false;
+      closeLineDeleteConfirmation();
+      renderRegisteredUsers();
+      populateNewCustomerAccountManagers();
+    } catch (err) {
+      state.userDeleteSaving = false;
+      setLineDeleteModalSaving(false, err.message || 'Failed to remove user');
+      console.error('User delete failed', err);
+    }
+  }
+
+  function findRegisteredUser(userId) {
+    return (state.registeredUsers || []).find((user) => Number(user.id) === Number(userId));
   }
 
   function contactDeleteLabel(contact) {
@@ -3208,10 +3362,12 @@
     state.lineDeleteTarget = null;
     state.designDeleteTarget = null;
     state.contactDeleteTarget = null;
+    state.userDeleteTarget = null;
     state.lineDeleteSaving = false;
     state.designDeleteSaving = false;
     state.contactDeleteSaving = false;
     state.closeOrderSaving = false;
+    state.userDeleteSaving = false;
 
     const modal = ensureLineDeleteModal();
     const message = modal.querySelector('.db-line-delete-message');
@@ -5581,7 +5737,7 @@
     }
 
     els.mainTabs.forEach((tab) => {
-      const active = (name === 'home' || name === 'new-order' || name === 'new-customer' || name === 'new-contact' || name === 'customers' || name === 'customer' || name === 'to-invoice')
+      const active = (name === 'home' || name === 'new-order' || name === 'new-customer' || name === 'new-contact' || name === 'customers' || name === 'customer' || name === 'to-invoice' || name === 'users')
         ? tab.dataset.dbGo === 'home'
         : tab.dataset.dbGo === 'outstanding';
       tab.classList.toggle('active', active);
@@ -5611,6 +5767,7 @@
     if (name === 'new-contact') return 'Add Contact';
     if (name === 'customers') return 'Customers';
     if (name === 'customer') return 'Customer';
+    if (name === 'users') return 'Users';
     if (name === 'to-invoice') return 'To Invoice';
     if (name === 'outstanding') return state.orderMode === 'all' ? 'All Orders' : 'Open Orders';
     if (name === 'order') return 'Open Orders';

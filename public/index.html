@@ -176,12 +176,12 @@
               </div>
 
               <div class="db-menu-column db-menu-right">
-                <button class="db-raised-button" type="button" data-db-action="placeholder">Users</button>
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="users">Users</button>
                 <button class="db-raised-button" type="button" data-db-action="placeholder">Passwords</button>
                 <button class="db-raised-button" type="button" data-db-action="placeholder">Configuration</button>
                 <button class="db-raised-button" type="button" data-db-action="placeholder">Error log</button>
                 <button class="db-raised-button" type="button" data-db-action="placeholder">Reports</button>
-                <button class="db-raised-button" type="button" data-db-action="to-invoice">To Invoice</button>
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="to-invoice">To Invoice</button>
               </div>
             </section>
 
@@ -607,6 +607,24 @@
                   </thead>
                   <tbody id="db-to-invoice-body">
                     <tr><td colspan="7" class="db-empty-cell">Loading jobs to invoice</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section id="db-users-view" class="db-view db-users-view" aria-label="Users">
+              <div class="db-table-frame db-users-table-frame">
+                <table id="db-users-table" class="db-legacy-table">
+                  <thead>
+                    <tr>
+                      <th>Name:</th>
+                      <th>Email:</th>
+                      <th>Date registered:</th>
+                      <th>Remove:</th>
+                    </tr>
+                  </thead>
+                  <tbody id="db-users-body">
+                    <tr><td colspan="4" class="db-empty-cell">Loading users</td></tr>
                   </tbody>
                 </table>
               </div>

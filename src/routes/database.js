@@ -201,7 +201,8 @@ router.get('/api/database/users', async (_req, res) => {
              email,
              first_name,
              last_name,
-             CONCAT_WS(' ', NULLIF(TRIM(first_name), ''), NULLIF(TRIM(last_name), '')) AS full_name
+             CONCAT_WS(' ', NULLIF(TRIM(first_name), ''), NULLIF(TRIM(last_name), '')) AS full_name,
+             created_at
       FROM hub_users
       ORDER BY LOWER(first_name), LOWER(last_name), LOWER(email)
     `);
@@ -210,6 +211,31 @@ router.get('/api/database/users', async (_req, res) => {
   } catch (err) {
     console.error('GET /api/database/users', err);
     res.status(500).json({ error: 'Failed to fetch database users' });
+  }
+});
+
+router.delete('/api/database/users/:id', async (req, res) => {
+  const id = Number.parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: 'Invalid user id' });
+  }
+
+  try {
+    const result = await pool.query(
+      `DELETE FROM hub_users
+       WHERE id = $1
+       RETURNING id, email, first_name, last_name`,
+      [id]
+    );
+
+    if (!result.rowCount) {
+      return res.status(404).json({ error: 'Database user not found' });
+    }
+
+    res.json({ ok: true, user: result.rows[0] });
+  } catch (err) {
+    console.error('DELETE /api/database/users/:id', err);
+    res.status(500).json({ error: 'Failed to delete database user' });
   }
 });
 
