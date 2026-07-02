@@ -636,6 +636,7 @@ async function loadTestBoard(options = {}) {
   const boardDiv = document.getElementById('test-board');
   if (!boardDiv) return;
   const forceRefresh = options === true || options?.forceRefresh === true;
+  const allowDuringDesignEdit = options?.allowDuringDesignEdit === true;
   const boardUrl = forceRefresh ? `${ENDPOINTS.testData}?fresh=1` : ENDPOINTS.testData;
   const showInitialLoading = !boardDiv.querySelector('.group, .board-loading');
   try {
@@ -654,6 +655,7 @@ async function loadTestBoard(options = {}) {
     const payload = await response.json();
     window.__latestTestBoardPayload = payload;
     pruneSyncedTestCheckboxOptimisticValues(payload);
+    if (!allowDuringDesignEdit && isTestDesignEditActive()) return;
     renderBoard(payload, { context: BOARD_CONTEXT_TEST, boardDiv });
   } catch (err) {
     console.warn('Test dashboard load failed', err);
@@ -2147,7 +2149,7 @@ async function saveTestDesignInput(input, entity, column) {
       }),
     });
     if (!response.ok) throw new Error(await readApiError(response));
-    await loadTestBoard({ forceRefresh: true });
+    await loadTestBoard({ forceRefresh: true, allowDuringDesignEdit: true });
   } catch (err) {
     console.warn('DES/PSG update failed', err);
     input.value = previousValue;
@@ -3255,7 +3257,7 @@ function splitDesignDisplaySegments(value) {
 }
 
 function isPsgDisplayReference(value) {
-  return /^(?:P\s*S\s*G|ST|S\s*T)\b/i.test(String(value || '').trim());
+  return /^(?:P\s*S\s*G|S\s*T)(?=[\s:._#/-]*\d)/i.test(String(value || '').trim());
 }
 
 function renderPlainTextValue(cell, text) {
