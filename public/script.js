@@ -3167,13 +3167,11 @@ function renderColoredDesignText(container, text) {
 function splitDesignDisplaySegments(value) {
   const segments = [];
   const slashParts = String(value || '').split(/(\s*\/\s*)/);
-  let afterSlash = false;
 
   for (const part of slashParts) {
     if (!part) continue;
     if (part.includes('/')) {
       segments.push({ kind: 'separator', text: part });
-      afterSlash = true;
       continue;
     }
 
@@ -3181,11 +3179,11 @@ function splitDesignDisplaySegments(value) {
     for (const ref of refs) {
       if (!ref) continue;
       if (/^,\s*$/.test(ref)) {
-        segments.push({ kind: afterSlash ? 'psg' : 'design', text: ref });
+        segments.push({ kind: 'separator', text: ref });
         continue;
       }
       const trimmed = ref.trim();
-      const kind = afterSlash || isPsgDisplayReference(trimmed) ? 'psg' : 'design';
+      const kind = isPsgDisplayReference(trimmed) ? 'psg' : 'design';
       segments.push({ kind, text: ref });
     }
   }
