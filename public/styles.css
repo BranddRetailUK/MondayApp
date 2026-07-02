@@ -615,6 +615,8 @@ body{
   width:5px;
   background:var(--group-accent, var(--accent));
   border-radius:4px 4px 0 0;
+  pointer-events:none;
+  z-index:2;
 }
 .group.collapsed .group-content{display:none}
 
