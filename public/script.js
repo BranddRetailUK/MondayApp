@@ -2130,10 +2130,6 @@ async function saveTestDesignInput(input, entity, column) {
   const previousValue = normalizeCellText(input.dataset.originalValue || '');
   const nextValue = normalizeCellText(input.value || '');
   if (nextValue === previousValue) return;
-  if (!nextValue) {
-    input.value = previousValue;
-    return;
-  }
 
   input.disabled = true;
   input.classList.add('saving');

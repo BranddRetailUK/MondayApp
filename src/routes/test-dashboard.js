@@ -180,8 +180,9 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/design-column', async (req
   if (!Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
 
   const columnId = clean(req.body?.columnId);
+  const hasValue = Object.prototype.hasOwnProperty.call(req.body || {}, 'value');
   const rawValue = cleanDesignColumnText(req.body?.value);
-  if (!rawValue) return res.status(400).json({ error: 'Design / PSG value is required' });
+  if (!hasValue) return res.status(400).json({ error: 'Design / PSG value is required' });
 
   try {
     await ensureTestDashboardDefaults(pool);
@@ -201,6 +202,8 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/design-column', async (req
       columnId: column.id,
       inserted: result.inserted,
       insertedCount: result.insertedCount || 0,
+      updatedCount: result.updatedCount || 0,
+      removedCount: result.removedCount || 0,
       designText: designTextFromPositions(result.positions, job),
       positions: result.positions,
     });
@@ -953,7 +956,6 @@ async function appendDashboardDesignPosition(job, rawValue) {
 
 async function appendDashboardDesignPositionWithClient(client, job, rawValue) {
   const value = cleanDesignColumnText(rawValue);
-  if (!value) return { inserted: false, positions: [] };
 
   const lockedJob = await client.query(
     `SELECT *
@@ -967,52 +969,69 @@ async function appendDashboardDesignPositionWithClient(client, job, rawValue) {
 
   const currentJob = lockedJob.rows[0] || job;
   const positions = await fetchPositionsForUpdate(client, currentJob.source_order_id);
-  const valuesToInsert = designPositionInsertValues(value, positions, currentJob);
-  if (!valuesToInsert.length) {
-    await clearDashboardDesignStateValueWithClient(client, currentJob.source_order_id);
-    return { inserted: false, insertedCount: 0, positions };
-  }
-
-  const nextId = await client.query(`
-    SELECT (COALESCE(MAX(source_order_position_id), 0) + 1)::int AS next_id
-    FROM database_job_positions
-  `);
-  const nextSort = await client.query(
-    `SELECT (COALESCE(MAX(COALESCE(position_sort_order, source_order_position_id)), 0) + 1)::int AS next_sort_order
-     FROM database_job_positions
-     WHERE source_order_id = $1`,
-    [currentJob.source_order_id]
-  );
-
-  const firstId = Number(nextId.rows[0].next_id) || 1;
-  const firstSort = Number(nextSort.rows[0].next_sort_order) || 1;
-  for (let index = 0; index < valuesToInsert.length; index += 1) {
-    await client.query(
-      `INSERT INTO database_job_positions (
-         source_order_position_id,
-         source_order_id,
-         position_sort_order,
-         position_name,
-         colour_notes,
-         design_ref,
-         created_at_source,
-         updated_at_source
-       ) VALUES ($1, $2, $3, NULL, NULL, $4, NOW(), NOW())`,
-      [
-        firstId + index,
-        currentJob.source_order_id,
-        firstSort + index,
-        valuesToInsert[index],
-      ]
-    );
-  }
+  const saveResult = await reconcileDashboardDesignPositionsWithClient(client, currentJob, positions, value);
   await clearDashboardDesignStateValueWithClient(client, currentJob.source_order_id);
 
   return {
-    inserted: true,
-    insertedCount: valuesToInsert.length,
+    inserted: saveResult.insertedCount > 0,
+    insertedCount: saveResult.insertedCount,
+    updatedCount: saveResult.updatedCount,
+    removedCount: saveResult.removedCount,
     positions: await fetchPositionsForUpdate(client, currentJob.source_order_id),
   };
+}
+
+async function reconcileDashboardDesignPositionsWithClient(client, currentJob, positions, rawValue) {
+  const desiredRefs = designPositionDesiredReferences(rawValue, currentJob);
+  const protectedKeys = protectedDashboardDesignKeys(currentJob);
+  const entries = designPositionRowEntries(positions);
+  const assignments = new Map();
+  const usedDesiredIndexes = new Set();
+  let updatedCount = 0;
+  let removedCount = 0;
+
+  for (const entry of entries) {
+    const desiredIndex = desiredRefs.findIndex((desired, index) => (
+      !usedDesiredIndexes.has(index) &&
+      entry.refs.some((current) => current.kind === desired.kind && current.key === desired.key)
+    ));
+    if (desiredIndex < 0) continue;
+    assignments.set(entry.row.source_order_position_id, desiredRefs[desiredIndex]);
+    usedDesiredIndexes.add(desiredIndex);
+  }
+
+  for (const entry of entries) {
+    if (assignments.has(entry.row.source_order_position_id)) continue;
+    const currentKind = entry.refs[0]?.kind || 'design';
+    const desiredIndex = desiredRefs.findIndex((desired, index) => (
+      !usedDesiredIndexes.has(index) &&
+      desired.kind === currentKind &&
+      !protectedKeys.has(desired.key)
+    ));
+    if (desiredIndex < 0) continue;
+    assignments.set(entry.row.source_order_position_id, desiredRefs[desiredIndex]);
+    usedDesiredIndexes.add(desiredIndex);
+  }
+
+  for (const entry of entries) {
+    const desired = assignments.get(entry.row.source_order_position_id);
+    if (!desired) {
+      await clearOrDeleteDashboardDesignPositionWithClient(client, entry.row);
+      removedCount += 1;
+      continue;
+    }
+    if (cleanDesignColumnText(entry.row.design_ref) !== desired.value || entry.refs.length !== 1) {
+      await updateDashboardDesignPositionValueWithClient(client, entry.row, desired.value);
+      updatedCount += 1;
+    }
+  }
+
+  const valuesToInsert = desiredRefs
+    .filter((desired, index) => !usedDesiredIndexes.has(index) && !protectedKeys.has(desired.key))
+    .map((desired) => desired.value);
+  const insertedCount = await insertDashboardDesignPositionsWithClient(client, currentJob.source_order_id, valuesToInsert);
+
+  return { insertedCount, updatedCount, removedCount };
 }
 
 async function clearDashboardDesignStateValueWithClient(client, sourceOrderId) {
@@ -1038,32 +1057,6 @@ async function fetchPositionsForUpdate(client, sourceOrderId) {
   return result.rows;
 }
 
-function designPositionInsertValues(rawValue, positions, job) {
-  const existing = designPartsFromSources(positions, job);
-  const designKeys = new Set(existing.designRefs.map(normalizeReferenceKey));
-  const psgKeys = new Set(existing.psgRefs.map(normalizeReferenceKey));
-  const incomingDesignKeys = new Set();
-  const incomingPsgKeys = new Set();
-  const values = [];
-
-  for (const segment of splitDesignPositionRows(rawValue)) {
-    for (const reference of designPositionReferencesFromSegment(segment)) {
-      const key = normalizeReferenceKey(reference.value);
-      if (!key) continue;
-      if (reference.kind === 'psg') {
-        if (psgKeys.has(key) || incomingPsgKeys.has(key)) continue;
-        incomingPsgKeys.add(key);
-      } else {
-        if (designKeys.has(key) || incomingDesignKeys.has(key)) continue;
-        incomingDesignKeys.add(key);
-      }
-      values.push(reference.value);
-    }
-  }
-
-  return values;
-}
-
 function splitDesignPositionRows(value) {
   return cleanDesignColumnText(value)
     .split('/')
@@ -1081,6 +1074,120 @@ function designPositionReferencesFromSegment(segment) {
     references.push({ kind: 'psg', value: reference });
   }
   return references;
+}
+
+function designPositionDesiredReferences(rawValue, job) {
+  const designRefs = [];
+  const psgRefs = [];
+  const designSeen = new Set();
+  const psgSeen = new Set();
+
+  for (const segment of splitDesignPositionRows(rawValue)) {
+    for (const reference of designPositionReferencesFromSegment(segment)) {
+      const normalized = normalizeDashboardDesignReference(reference);
+      if (!normalized) continue;
+      const seen = normalized.kind === 'psg' ? psgSeen : designSeen;
+      const values = normalized.kind === 'psg' ? psgRefs : designRefs;
+      if (seen.has(normalized.key)) continue;
+      seen.add(normalized.key);
+      values.push(normalized);
+    }
+  }
+
+  return [...designRefs, ...psgRefs];
+}
+
+function designPositionRowEntries(positions) {
+  return (positions || [])
+    .map((row) => ({
+      row,
+      refs: designPositionReferencesFromSegment(row.design_ref)
+        .map(normalizeDashboardDesignReference)
+        .filter(Boolean),
+    }))
+    .filter((entry) => entry.refs.length > 0);
+}
+
+function normalizeDashboardDesignReference(reference) {
+  const kind = reference?.kind === 'psg' ? 'psg' : 'design';
+  const value = cleanDesignColumnText(reference?.value);
+  const key = normalizeReferenceKey(value);
+  if (!key) return null;
+  return { kind, value, key };
+}
+
+function protectedDashboardDesignKeys(job) {
+  return new Set(
+    extractOrderDesignReferences(job?.screen_numbers)
+      .map(normalizeReferenceKey)
+      .filter(Boolean)
+  );
+}
+
+async function updateDashboardDesignPositionValueWithClient(client, row, value) {
+  await client.query(
+    `UPDATE database_job_positions
+     SET design_ref = $3,
+         updated_at_source = NOW(),
+         imported_at = NOW()
+     WHERE source_order_id = $1
+       AND source_order_position_id = $2`,
+    [row.source_order_id, row.source_order_position_id, value]
+  );
+}
+
+async function clearOrDeleteDashboardDesignPositionWithClient(client, row) {
+  if (!clean(row.position_name) && !clean(row.colour_notes)) {
+    await client.query(
+      `DELETE FROM database_job_positions
+       WHERE source_order_id = $1
+         AND source_order_position_id = $2`,
+      [row.source_order_id, row.source_order_position_id]
+    );
+    return;
+  }
+
+  await updateDashboardDesignPositionValueWithClient(client, row, null);
+}
+
+async function insertDashboardDesignPositionsWithClient(client, sourceOrderId, values) {
+  if (!values.length) return 0;
+
+  const nextId = await client.query(`
+    SELECT (COALESCE(MAX(source_order_position_id), 0) + 1)::int AS next_id
+    FROM database_job_positions
+  `);
+  const nextSort = await client.query(
+    `SELECT (COALESCE(MAX(COALESCE(position_sort_order, source_order_position_id)), 0) + 1)::int AS next_sort_order
+     FROM database_job_positions
+     WHERE source_order_id = $1`,
+    [sourceOrderId]
+  );
+
+  const firstId = Number(nextId.rows[0].next_id) || 1;
+  const firstSort = Number(nextSort.rows[0].next_sort_order) || 1;
+  for (let index = 0; index < values.length; index += 1) {
+    await client.query(
+      `INSERT INTO database_job_positions (
+         source_order_position_id,
+         source_order_id,
+         position_sort_order,
+         position_name,
+         colour_notes,
+         design_ref,
+         created_at_source,
+         updated_at_source
+       ) VALUES ($1, $2, $3, NULL, NULL, $4, NOW(), NOW())`,
+      [
+        firstId + index,
+        sourceOrderId,
+        firstSort + index,
+        values[index],
+      ]
+    );
+  }
+
+  return values.length;
 }
 
 function designPartsFromSources(positions, job) {
