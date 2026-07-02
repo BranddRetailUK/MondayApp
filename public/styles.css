@@ -2999,47 +2999,9 @@ body.modal-open{overflow:hidden}
 .db-outstanding-report-header .db-order-ack-logo{
   width:52mm;
 }
-.db-outstanding-report-meta{
-  width:168mm;
-  min-height:12mm;
-  box-sizing:border-box;
-  display:grid;
-  grid-template-columns:repeat(5, minmax(0, 1fr));
-  gap:0;
-  margin:0 0 4mm;
-  border-top:2px solid #000;
-  border-bottom:2px solid #000;
-  font:9px Arial, Helvetica, sans-serif;
-}
-.db-outstanding-report-meta.has-search{
-  grid-template-columns:repeat(6, minmax(0, 1fr));
-}
-.db-outstanding-report-meta div{
-  min-width:0;
-  padding:1.4mm 1.6mm;
-  border-right:1px solid #000;
-}
-.db-outstanding-report-meta div:last-child{
-  border-right:0;
-}
-.db-outstanding-report-meta span,
-.db-outstanding-report-meta strong{
-  display:block;
-  min-width:0;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-}
-.db-outstanding-report-meta span{
-  margin-bottom:0.8mm;
-  font-weight:700;
-}
-.db-outstanding-report-meta strong{
-  font-weight:400;
-}
 .db-outstanding-report-content{
   width:168mm;
-  height:204mm;
+  height:220mm;
   overflow:hidden;
 }
 .db-outstanding-report-section{

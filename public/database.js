@@ -40,7 +40,7 @@
   const ORDER_DOC_ITEM_ROW_EXTRA_LINE_MM = 3;
   const ORDER_DOC_ITEM_CHARS_PER_LINE = 42;
   const INVOICE_SUMMARY_MM = 32;
-  const OUTSTANDING_REPORT_PAGE_CONTENT_MAX_MM = 204;
+  const OUTSTANDING_REPORT_PAGE_CONTENT_MAX_MM = 220;
   const OUTSTANDING_REPORT_GROUP_HEADER_MM = 7;
   const OUTSTANDING_REPORT_TABLE_HEADER_MM = 7;
   const OUTSTANDING_REPORT_ROW_BASE_MM = 6.2;
@@ -2563,7 +2563,7 @@
     const snapshot = state.outstandingReportSnapshot || buildOutstandingReportSnapshot();
     const pages = buildOutstandingReportPages(snapshot.groups);
     return pages.map((page, index) => (
-      renderOutstandingReportPage(snapshot, page, index, pages.length)
+      renderOutstandingReportPage(snapshot, page, index)
     )).join('');
   }
 
@@ -2635,41 +2635,17 @@
     return OUTSTANDING_REPORT_ROW_BASE_MM + ((lines - 1) * OUTSTANDING_REPORT_ROW_EXTRA_LINE_MM);
   }
 
-  function renderOutstandingReportPage(snapshot, page, pageIndex, pageCount) {
+  function renderOutstandingReportPage(snapshot, page, pageIndex) {
     return `
       <section class="db-order-ack-page db-outstanding-report-page" aria-label="${escapeAttr(snapshot.title)} page ${pageIndex + 1}">
         <header class="db-outstanding-report-header">
           <h1>${escapeHtml(snapshot.title.toUpperCase())}</h1>
           <img class="db-order-ack-logo" src="${escapeAttr(ORDER_ACK_LOGO_URL)}" alt="Ultimate logo" crossorigin="anonymous">
         </header>
-        ${renderOutstandingReportMeta(snapshot, pageIndex, pageCount)}
         <section class="db-outstanding-report-content">
           ${page.sections.map(renderOutstandingReportSection).join('')}
         </section>
         <img class="db-order-ack-footer" src="${escapeAttr(orderDocumentFooterUrl('delivery-note'))}" alt="Ultimate letterhead footer" crossorigin="anonymous">
-      </section>
-    `;
-  }
-
-  function renderOutstandingReportMeta(snapshot, pageIndex, pageCount) {
-    const hasSearch = Boolean(snapshot.searchQuery);
-    const rows = [
-      { label: 'View', value: snapshot.modeLabel },
-      { label: 'Filter', value: snapshot.filterLabel },
-      { label: 'Orders', value: formatNumber(snapshot.jobs.length) },
-      { label: 'Generated', value: formatDateTime(snapshot.generatedAt) },
-      { label: 'Page', value: `${pageIndex + 1} of ${pageCount}` },
-    ];
-    if (hasSearch) rows.splice(2, 0, { label: 'Search', value: snapshot.searchQuery });
-
-    return `
-      <section class="db-outstanding-report-meta ${hasSearch ? 'has-search' : ''}" aria-label="Report details">
-        ${rows.map((row) => `
-          <div>
-            <span>${escapeHtml(row.label)}</span>
-            <strong>${escapeHtml(row.value)}</strong>
-          </div>
-        `).join('')}
       </section>
     `;
   }
