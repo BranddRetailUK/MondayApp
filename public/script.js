@@ -9,6 +9,7 @@ const ENDPOINTS = {
   testData: '/api/test-dashboard/board',
   testStatusColumn: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/status-column`,
   testCheckboxColumn: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/checkbox-column`,
+  testDesignColumn: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/design-column`,
   testScanUrl: (itemId) => `/api/test-dashboard/scan-url?jobId=${encodeURIComponent(itemId)}`,
   testUploadSignature: '/api/test-dashboard/uploads/signature',
   testFiles: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/files`
@@ -75,6 +76,7 @@ let __testFileUploadsInFlight = 0;
 const __testFileUploadingCells = new Set();
 const __testCheckboxOptimisticValues = new Map();
 let __testCheckboxOptimisticSeq = 0;
+let __testDesignEditInFlight = 0;
 let __boardSortState = null;
 let __priorityHighlightsEnabled = localStorage.getItem(PRIORITY_HIGHLIGHT_STORAGE_KEY) !== '0';
 let __dashboardZoom = 1;
@@ -687,7 +689,7 @@ function startTestBoardAutoRefresh() {
     if (document.hidden) return;
     const dashboard = document.getElementById('tab-test-dashboard');
     if (dashboard && !dashboard.classList.contains('active')) return;
-    if (isStatusDropdownOpen() || __statusUpdateInFlight > 0 || __testFileUploadsInFlight > 0) return;
+    if (isStatusDropdownOpen() || __statusUpdateInFlight > 0 || __testFileUploadsInFlight > 0 || isTestDesignEditActive()) return;
     loadTestBoard({ forceRefresh: true });
   }, BOARD_AUTO_REFRESH_MS);
 }
@@ -1663,7 +1665,11 @@ function buildColumnValueCell(entity, column, { subitem = false, context = BOARD
   } else if (column.type === 'timeline') {
     renderPlainTextValue(cell, text);
   } else if (column.type === 'text' || column.type === 'long_text') {
-    renderTextInputValue(cell, text);
+    if (context === BOARD_CONTEXT_TEST && !subitem && entity?.id && isTestDesignColumn(column)) {
+      renderTestDesignInputValue(cell, text, entity, column);
+    } else {
+      renderTextInputValue(cell, text);
+    }
   } else {
     renderPlainTextValue(cell, text);
   }
@@ -2039,6 +2045,53 @@ function getStatusColumnEndpoint(context, itemId) {
   return context === BOARD_CONTEXT_TEST
     ? ENDPOINTS.testStatusColumn(itemId)
     : ENDPOINTS.statusColumn(itemId);
+}
+
+async function saveTestDesignInput(input, entity, column) {
+  if (!input || !entity?.id || !column?.id) return;
+  const previousValue = normalizeCellText(input.dataset.originalValue || '');
+  const nextValue = normalizeCellText(input.value || '');
+  if (nextValue === previousValue) return;
+  if (!nextValue) {
+    input.value = previousValue;
+    return;
+  }
+
+  input.disabled = true;
+  input.classList.add('saving');
+  __testDesignEditInFlight += 1;
+  try {
+    const response = await fetch(ENDPOINTS.testDesignColumn(entity.id), {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        columnId: column.id,
+        value: nextValue,
+      }),
+    });
+    if (!response.ok) throw new Error(await readApiError(response));
+    await loadTestBoard({ forceRefresh: true });
+  } catch (err) {
+    console.warn('DES/PSG update failed', err);
+    input.value = previousValue;
+    alert(`Failed to update ${column?.title || 'DES/PSG'}: ${err.message || 'Unknown error'}`);
+  } finally {
+    __testDesignEditInFlight = Math.max(0, __testDesignEditInFlight - 1);
+    input.disabled = false;
+    input.classList.remove('saving');
+  }
+}
+
+function isTestDesignColumn(column) {
+  if (column?.type !== 'text') return false;
+  const compact = normalizeColumnTitle(column?.title || '').replace(/[^A-Z0-9]/g, '');
+  return compact === 'DESPSG' || compact === 'DESNOPSG';
+}
+
+function isTestDesignEditActive() {
+  return __testDesignEditInFlight > 0 ||
+    Boolean(document.activeElement?.classList?.contains('test-design-input'));
 }
 
 async function updateTestDashboardCheckbox(itemId, column, checked) {
@@ -3025,6 +3078,39 @@ function renderTextInputValue(cell, text) {
   span.className = 'monday-text-input';
   span.textContent = text;
   cell.appendChild(span);
+}
+
+function renderTestDesignInputValue(cell, text, entity, column) {
+  const input = document.createElement('input');
+  input.className = 'test-design-input';
+  input.type = 'text';
+  input.value = text || '';
+  input.dataset.originalValue = text || '';
+  input.setAttribute('aria-label', `Set ${column?.title || 'DES/PSG'}`);
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+
+  input.addEventListener('pointerdown', (event) => event.stopPropagation());
+  input.addEventListener('click', (event) => event.stopPropagation());
+  input.addEventListener('focus', () => {
+    input.dataset.originalValue = normalizeCellText(input.value || '');
+  });
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      input.blur();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      input.value = input.dataset.originalValue || '';
+      input.blur();
+    }
+  });
+  input.addEventListener('blur', () => {
+    saveTestDesignInput(input, entity, column);
+  });
+
+  cell.classList.add('test-design-cell');
+  cell.appendChild(input);
 }
 
 function renderPlainTextValue(cell, text) {

@@ -27,6 +27,17 @@ const protectedRouter = express.Router();
 
 const EDITABLE_STATUS_TITLES = new Set(['STATUS', 'PRIORITY']);
 const DEFAULT_OFFICE_GROUP_ID = TEST_DASHBOARD_GROUP_IDS.OFFICE;
+const DESIGN_POSITION_LOCK_KEY = 71060217;
+const STITCH_REFERENCE_LABEL = String.raw`(?:STITCH[\s._/-]*COUNT|STITCHES?|S[\s._/-]*T(?:[\s._/-]*(?:S|C))?)`;
+const PSG_REFERENCE_PATTERN = new RegExp(
+  String.raw`\bP[\s._/-]*S[\s._/-]*G(?:[\s:._#/-]*(?:NO\.?|NUM(?:BER)?)?[\s:._#/-]*)?(\d+\s*[A-Z]?)\b` +
+    String.raw`(?:\s*(?:[,;/|+&-]\s*)?(?:${STITCH_REFERENCE_LABEL}[\s:._#/-]*(\d[\d,\s]*\d)|(\d[\d,\s]*\d)))?`,
+  'gi'
+);
+const STITCH_REFERENCE_PATTERN = new RegExp(
+  String.raw`\b${STITCH_REFERENCE_LABEL}(?:[\s:._#/-]*(?:NO\.?|NUM(?:BER)?)?[\s:._#/-]*)?(\d[\d,\s]*\d)\b`,
+  'gi'
+);
 
 protectedRouter.get('/api/test-dashboard/board', async (_req, res) => {
   try {
@@ -161,6 +172,40 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (r
   } catch (err) {
     console.error('PUT /api/test-dashboard/items/:jobId/checkbox-column', err);
     res.status(500).json({ error: 'Failed to update test dashboard checkbox column' });
+  }
+});
+
+protectedRouter.put('/api/test-dashboard/items/:jobId/design-column', async (req, res) => {
+  const sourceOrderId = Number.parseInt(req.params.jobId, 10);
+  if (!Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
+
+  const columnId = clean(req.body?.columnId);
+  const rawValue = cleanDesignColumnText(req.body?.value);
+  if (!rawValue) return res.status(400).json({ error: 'Design / PSG value is required' });
+
+  try {
+    await ensureTestDashboardDefaults(pool);
+    const [job, column] = await Promise.all([
+      fetchDashboardJob(sourceOrderId),
+      columnId ? fetchDashboardColumn(columnId) : Promise.resolve(columnById(TEST_DASHBOARD_COLUMNS, TEST_DASHBOARD_COLUMN_IDS.DESIGN)),
+    ]);
+    if (!job) return res.status(404).json({ error: 'Database job not found' });
+    if (!isDesignDashboardColumn(column)) {
+      return res.status(400).json({ error: 'Column is not the test dashboard DES/PSG column' });
+    }
+
+    const result = await appendDashboardDesignPosition(job, rawValue);
+    res.json({
+      ok: true,
+      itemId: String(job.source_order_id),
+      columnId: column.id,
+      inserted: result.inserted,
+      designText: designTextFromPositions(result.positions, job),
+      positions: result.positions,
+    });
+  } catch (err) {
+    console.error('PUT /api/test-dashboard/items/:jobId/design-column', err);
+    res.status(500).json({ error: 'Failed to save test dashboard design / PSG value' });
   }
 });
 
@@ -347,13 +392,17 @@ async function buildTestDashboardBoardPayload() {
   ]);
   const candidateJobs = jobs.filter(job => deriveJobCategory(job) !== 'gifts');
   const sourceOrderIds = candidateJobs.map(job => job.source_order_id);
-  const [states, lineItems, positions, files, scans] = await Promise.all([
+  const [states, lineItems, initialPositions, files, scans] = await Promise.all([
     fetchStateMap(sourceOrderIds),
     fetchLineItemMap(sourceOrderIds),
     fetchPositionMap(sourceOrderIds),
     fetchFileMap(sourceOrderIds),
     fetchScanMap(sourceOrderIds),
   ]);
+  let positions = initialPositions;
+  if (await backfillDashboardDesignPositions(candidateJobs, states, positions, scans)) {
+    positions = await fetchPositionMap(sourceOrderIds);
+  }
 
   const grouped = new Map(groups.map(group => [group.id, []]));
   for (const job of candidateJobs) {
@@ -423,6 +472,7 @@ function buildBoardItem({ job, state, columns, subitemColumns, lineItems, positi
   const groupId = resolveDashboardGroupId(job, state, scan);
   const typeLabel = deriveTypeLabel(job);
   const designText = designTextFromPositions(positions, job);
+  const fallbackDesignText = getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.DESIGN]);
 
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.PRIORITY, statusValueFromJobOrState(columns, TEST_DASHBOARD_COLUMN_IDS.PRIORITY, job.dashboard_priority, stateValues) || priorityValueFromDate(job.delivery_date));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JOB, stateValues[TEST_DASHBOARD_COLUMN_IDS.JOB] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JOB), Boolean(job.proof_approved)));
@@ -431,7 +481,7 @@ function buildBoardItem({ job, state, columns, subitemColumns, lineItems, positi
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JAQ, stateValues[TEST_DASHBOARD_COLUMN_IDS.JAQ] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JAQ), Boolean(job.has_screens || job.screen_numbers)));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, statusValueFromJobOrState(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, job.dashboard_status, stateValues) || statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, scan?.status || ''));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.TYPE, statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.TYPE, typeLabel) || stateValues[TEST_DASHBOARD_COLUMN_IDS.TYPE] || statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.TYPE, job.dashboard_type));
-  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.DESIGN, stateValues[TEST_DASHBOARD_COLUMN_IDS.DESIGN] || textValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.DESIGN), designText));
+  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.DESIGN, textValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.DESIGN), designText || fallbackDesignText));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.NOTES, stateValues[TEST_DASHBOARD_COLUMN_IDS.NOTES] || textValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.NOTES), job.comments || ''));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN, stateValues[TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN), Boolean(scan?.scan_count >= 1)));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JOB_OWNER, stateValues[TEST_DASHBOARD_COLUMN_IDS.JOB_OWNER] || textValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JOB_OWNER), job.order_owner_name || job.order_taken_by || ''));
@@ -838,12 +888,267 @@ function deriveJobCategory(job) {
 }
 
 function designTextFromPositions(positions, job) {
-  const parts = [];
-  if (job.screen_numbers) parts.push(job.screen_numbers);
-  for (const row of positions || []) {
-    if (row.design_ref) parts.push(row.design_ref);
+  return formatDesignColumnText(designPartsFromSources(positions, job));
+}
+
+async function backfillDashboardDesignPositions(jobs, states, positionMap, scans) {
+  const candidates = [];
+  for (const job of jobs || []) {
+    const state = states.get(job.source_order_id) || null;
+    const scan = scans.get(String(job.source_order_id)) || null;
+    if (!shouldRenderDashboardJob(job, state, scan)) continue;
+    const stateValues = state?.column_values || {};
+    const stateDesignText = cleanDesignColumnText(getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.DESIGN]));
+    if (!stateDesignText) continue;
+    const positions = positionMap.get(job.source_order_id) || [];
+    if (isDesignTextRepresented(stateDesignText, positions, job)) continue;
+    candidates.push({ job, value: stateDesignText });
   }
-  return Array.from(new Set(parts.map(clean).filter(Boolean))).join(', ');
+  if (!candidates.length) return false;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock($1)', [DESIGN_POSITION_LOCK_KEY]);
+    let insertedCount = 0;
+    for (const candidate of candidates) {
+      const result = await appendDashboardDesignPositionWithClient(client, candidate.job, candidate.value);
+      if (result.inserted) insertedCount += 1;
+    }
+    await client.query('COMMIT');
+    return insertedCount > 0;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[test-dashboard] DES/PSG backfill failed:', err);
+    return false;
+  } finally {
+    client.release();
+  }
+}
+
+async function appendDashboardDesignPosition(job, rawValue) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock($1)', [DESIGN_POSITION_LOCK_KEY]);
+    const result = await appendDashboardDesignPositionWithClient(client, job, rawValue);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function appendDashboardDesignPositionWithClient(client, job, rawValue) {
+  const value = cleanDesignColumnText(rawValue);
+  if (!value) return { inserted: false, positions: [] };
+
+  const lockedJob = await client.query(
+    `SELECT *
+     FROM database_jobs
+     WHERE source_order_id = $1
+     LIMIT 1
+     FOR UPDATE`,
+    [job.source_order_id]
+  );
+  if (!lockedJob.rowCount) throw new Error('Database job not found');
+
+  const currentJob = lockedJob.rows[0] || job;
+  const positions = await fetchPositionsForUpdate(client, currentJob.source_order_id);
+  if (isDesignTextRepresented(value, positions, currentJob)) {
+    return { inserted: false, positions };
+  }
+
+  const nextId = await client.query(`
+    SELECT (COALESCE(MAX(source_order_position_id), 0) + 1)::int AS next_id
+    FROM database_job_positions
+  `);
+  const nextSort = await client.query(
+    `SELECT (COALESCE(MAX(COALESCE(position_sort_order, source_order_position_id)), 0) + 1)::int AS next_sort_order
+     FROM database_job_positions
+     WHERE source_order_id = $1`,
+    [currentJob.source_order_id]
+  );
+
+  await client.query(
+    `INSERT INTO database_job_positions (
+       source_order_position_id,
+       source_order_id,
+       position_sort_order,
+       position_name,
+       colour_notes,
+       design_ref,
+       created_at_source,
+       updated_at_source
+     ) VALUES ($1, $2, $3, NULL, NULL, $4, NOW(), NOW())`,
+    [
+      nextId.rows[0].next_id,
+      currentJob.source_order_id,
+      nextSort.rows[0].next_sort_order,
+      value,
+    ]
+  );
+
+  return {
+    inserted: true,
+    positions: await fetchPositionsForUpdate(client, currentJob.source_order_id),
+  };
+}
+
+async function fetchPositionsForUpdate(client, sourceOrderId) {
+  const result = await client.query(
+    `SELECT *
+     FROM database_job_positions
+     WHERE source_order_id = $1
+     ORDER BY COALESCE(position_sort_order, source_order_position_id), source_order_position_id
+     FOR UPDATE`,
+    [sourceOrderId]
+  );
+  return result.rows;
+}
+
+function isDesignTextRepresented(rawValue, positions, job) {
+  const incoming = designPartsFromRaw(rawValue);
+  const existing = designPartsFromSources(positions, job);
+  if (!incoming.designRefs.length && !incoming.psgRefs.length) return false;
+
+  const designKeys = new Set(existing.designRefs.map(normalizeReferenceKey));
+  const psgKeys = new Set(existing.psgRefs.map(normalizeReferenceKey));
+  return incoming.designRefs.every((value) => designKeys.has(normalizeReferenceKey(value))) &&
+    incoming.psgRefs.every((value) => psgKeys.has(normalizeReferenceKey(value)));
+}
+
+function designPartsFromSources(positions, job) {
+  const parts = createDesignParts();
+  addPsgReferencesFromText(parts, job?.screen_numbers, { fallbackRaw: true });
+  for (const row of positions || []) {
+    addDesignReferencesFromText(parts, row.design_ref);
+    addPsgReferencesFromText(parts, `${row.position_name || ''} ${row.colour_notes || ''} ${row.design_ref || ''}`);
+  }
+  return parts;
+}
+
+function designPartsFromRaw(value) {
+  const parts = createDesignParts();
+  addDesignReferencesFromText(parts, value);
+  addPsgReferencesFromText(parts, value);
+  return parts;
+}
+
+function createDesignParts() {
+  return {
+    designRefs: [],
+    psgRefs: [],
+    designSeen: new Set(),
+    psgSeen: new Set(),
+  };
+}
+
+function addDesignReferencesFromText(parts, value) {
+  const designText = displayDesignReference(value);
+  for (const reference of splitReferenceList(designText)) {
+    addUniqueReference(parts.designRefs, parts.designSeen, reference);
+  }
+}
+
+function addPsgReferencesFromText(parts, value, options = {}) {
+  const beforeCount = parts.psgRefs.length;
+  for (const reference of extractOrderDesignReferences(value)) {
+    addUniqueReference(parts.psgRefs, parts.psgSeen, reference);
+  }
+  if (options.fallbackRaw && parts.psgRefs.length === beforeCount) {
+    for (const reference of splitReferenceList(value)) {
+      addUniqueReference(parts.psgRefs, parts.psgSeen, reference);
+    }
+  }
+}
+
+function formatDesignColumnText(parts) {
+  const designText = (parts.designRefs || []).join(', ');
+  const psgText = (parts.psgRefs || []).join(', ');
+  if (designText && psgText) return `${designText} / ${psgText}`;
+  return designText || psgText;
+}
+
+function extractOrderDesignReferences(value) {
+  const psgReferences = [];
+  const stitchReferences = [];
+  const seen = new Set();
+  const text = String(value || '');
+  PSG_REFERENCE_PATTERN.lastIndex = 0;
+  STITCH_REFERENCE_PATTERN.lastIndex = 0;
+
+  let match;
+  while ((match = PSG_REFERENCE_PATTERN.exec(text))) {
+    addOrderDesignReference(psgReferences, seen, 'PSG', match[1]);
+    addOrderDesignReference(stitchReferences, seen, 'ST', match[2] || match[3]);
+  }
+
+  while ((match = STITCH_REFERENCE_PATTERN.exec(text))) {
+    addOrderDesignReference(stitchReferences, seen, 'ST', match[1]);
+  }
+
+  return [...psgReferences, ...stitchReferences];
+}
+
+function addOrderDesignReference(references, seen, prefix, rawValue) {
+  const value = prefix === 'PSG'
+    ? String(rawValue || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase()
+    : String(rawValue || '').replace(/\D/g, '');
+  if (!value) return;
+
+  const reference = `${prefix}${value}`;
+  if (seen.has(reference)) return;
+  seen.add(reference);
+  references.push(reference);
+}
+
+function displayDesignReference(value) {
+  PSG_REFERENCE_PATTERN.lastIndex = 0;
+  STITCH_REFERENCE_PATTERN.lastIndex = 0;
+  const withoutReferences = String(value || '')
+    .replace(PSG_REFERENCE_PATTERN, ' ')
+    .replace(STITCH_REFERENCE_PATTERN, ' ');
+  PSG_REFERENCE_PATTERN.lastIndex = 0;
+  STITCH_REFERENCE_PATTERN.lastIndex = 0;
+
+  return withoutReferences
+    .replace(/\s+/g, ' ')
+    .replace(/^[,;:/|._\-\s]+|[,;:/|._\-\s]+$/g, '')
+    .trim();
+}
+
+function splitReferenceList(value) {
+  return String(value || '')
+    .split(/[,;\n|]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function addUniqueReference(values, seen, value) {
+  const reference = clean(value).replace(/\s+/g, ' ');
+  const key = normalizeReferenceKey(reference);
+  if (!key || seen.has(key)) return;
+  seen.add(key);
+  values.push(reference);
+}
+
+function normalizeReferenceKey(value) {
+  return String(value || '').replace(/[^A-Za-z0-9]+/g, '').toUpperCase();
+}
+
+function cleanDesignColumnText(value) {
+  return clean(value).replace(/\s+/g, ' ').slice(0, 500);
+}
+
+function isDesignDashboardColumn(column) {
+  if (!column || column.type !== 'text') return false;
+  if (column.id === TEST_DASHBOARD_COLUMN_IDS.DESIGN) return true;
+  const compactTitle = normalizeColumnTitle(column.title).replace(/[^A-Z0-9]/g, '');
+  return compactTitle === 'DESPSG' || compactTitle === 'DESNOPSG';
 }
 
 function priorityValueFromDate(dateValueRaw) {

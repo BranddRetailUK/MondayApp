@@ -1043,6 +1043,30 @@ body{
   text-align:center;
   color:#fff;
 }
+.test-design-cell{
+  padding:0 4px;
+}
+.test-design-input{
+  width:100%;
+  height:calc(100% - 8px);
+  min-height:28px;
+  border:1px solid transparent;
+  border-radius:4px;
+  background:transparent;
+  color:#fff;
+  font:inherit;
+  font-weight:700;
+  text-align:center;
+  padding:0 6px;
+}
+.test-design-input:focus{
+  outline:none;
+  border-color:#579bfc;
+  background:#1d2430;
+}
+.test-design-input.saving{
+  opacity:.65;
+}
 .monday-file-link{
   display:inline-flex;
   align-items:center;
