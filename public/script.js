@@ -894,8 +894,13 @@ function buildGroupSummary(groupName, items, gridSpec, titleWidth, options = {})
   const summaryColumns = gridSpec.columns.slice(2);
   const summaryTitleWidth = titleWidth || 180;
   const summaryMinWidth = summaryTitleWidth + summaryColumns.reduce((sum, spec) => sum + spec.width, 0);
-  summary.style.setProperty('--group-summary-cols', `${summaryTitleWidth}px ${summaryColumns.map(spec => `${spec.width}px`).join(' ')}`);
-  summary.style.minWidth = `${summaryMinWidth}px`;
+  summary.style.setProperty(
+    '--group-summary-cols',
+    simpleSummary
+      ? `${summaryTitleWidth}px minmax(0, 1fr)`
+      : `${summaryTitleWidth}px ${summaryColumns.map(spec => `${spec.width}px`).join(' ')}`
+  );
+  summary.style.minWidth = simpleSummary ? '0' : `${summaryMinWidth}px`;
   summary.setAttribute('aria-expanded', 'true');
 
   const left = document.createElement('span');
