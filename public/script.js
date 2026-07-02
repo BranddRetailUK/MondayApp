@@ -733,7 +733,7 @@ function renderBoard(payload, options = {}) {
     });
     const groupKey = slugify(collectionName);
     const isCollapsed = uiState.collapsedGroups.has(groupKey) ||
-      (!uiState.hasRenderedGroups && isDefaultCollapsedGroup(collectionName));
+      (!uiState.hasRenderedGroups && isDefaultCollapsedGroup(collectionName, context));
 
     const groupWrap = document.createElement('section');
     groupWrap.className = 'group';
@@ -760,7 +760,9 @@ function renderBoard(payload, options = {}) {
     sectionTitle.addEventListener('click', toggleGroup);
     groupWrap.appendChild(sectionTitle);
 
-    const groupSummary = buildGroupSummary(collectionName, sortedItems, groupGridSpec, groupSummaryTitleWidth);
+    const groupSummary = buildGroupSummary(collectionName, sortedItems, groupGridSpec, groupSummaryTitleWidth, {
+      simple: context === BOARD_CONTEXT_TEST
+    });
     groupSummary.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
     groupSummary.addEventListener('click', toggleGroup);
     groupWrap.appendChild(groupSummary);
@@ -865,7 +867,8 @@ function collectBoardUiState(boardDiv) {
   return { collapsedGroups, openSubitems, hasRenderedGroups };
 }
 
-function isDefaultCollapsedGroup(groupName) {
+function isDefaultCollapsedGroup(groupName, context = BOARD_CONTEXT_MONDAY) {
+  if (context === BOARD_CONTEXT_TEST) return true;
   if (isMobileNavLayout()) return true;
   const normalized = String(groupName || '').trim().toUpperCase();
   return normalized === 'HOLD' ||
@@ -879,11 +882,13 @@ function toggleSubRows(parentId, open) {
   rows.forEach(r => r.classList.toggle('hidden', !open));
 }
 
-function buildGroupSummary(groupName, items, gridSpec, titleWidth) {
+function buildGroupSummary(groupName, items, gridSpec, titleWidth, options = {}) {
   const summary = document.createElement('button');
   const itemCount = items.length;
+  const simpleSummary = options.simple === true;
   summary.type = 'button';
   summary.className = 'group-summary';
+  if (simpleSummary) summary.classList.add('simple-closed-summary');
   if (isToSampleGroup(groupName) && itemCount > 0) summary.classList.add('to-sample-has-jobs');
   summary.style.setProperty('--board-cols', gridSpec.template);
   const summaryColumns = gridSpec.columns.slice(2);
@@ -899,15 +904,27 @@ function buildGroupSummary(groupName, items, gridSpec, titleWidth) {
     <span class="chev" aria-hidden="true"></span>
     <span class="group-summary-copy">
       <span class="group-summary-name">${escapeHtml(groupName)}</span>
+      ${simpleSummary ? `<span class="group-summary-job-count">${escapeHtml(formatGroupJobCount(itemCount))}</span>` : ''}
     </span>
   `;
   summary.appendChild(left);
 
-  for (const spec of summaryColumns) {
-    summary.appendChild(buildSummaryCell(items, spec.column));
+  if (simpleSummary) {
+    const fill = document.createElement('span');
+    fill.className = 'group-summary-empty-fill';
+    summary.appendChild(fill);
+  } else {
+    for (const spec of summaryColumns) {
+      summary.appendChild(buildSummaryCell(items, spec.column));
+    }
   }
 
   return summary;
+}
+
+function formatGroupJobCount(count) {
+  const total = Number.isFinite(Number(count)) ? Number(count) : 0;
+  return `${total} ${total === 1 ? 'Job' : 'Jobs'}`;
 }
 
 function isToSampleGroup(groupName) {
