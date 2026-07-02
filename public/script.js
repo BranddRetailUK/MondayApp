@@ -1554,7 +1554,7 @@ function buildItemCell(item, spec, { subitemsOpen = false, context = BOARD_CONTE
   if (spec.kind === 'print') {
     cell = buildPrintCell(item, context);
   } else if (spec.kind === 'name') {
-    cell = buildNameCell(item, subitemsOpen);
+    cell = buildNameCell(item, subitemsOpen, { context });
   } else {
     cell = buildColumnValueCell(item, spec.column, { context });
   }
@@ -1590,7 +1590,7 @@ function buildPrintCell(item, context = BOARD_CONTEXT_MONDAY) {
   return cell;
 }
 
-function buildNameCell(item, initiallyOpen = false) {
+function buildNameCell(item, initiallyOpen = false, { context = BOARD_CONTEXT_MONDAY } = {}) {
   const itemId = String(item.id);
   const subitems = Array.isArray(item.subitems) ? item.subitems : [];
   const cell = document.createElement('div');
@@ -1620,7 +1620,11 @@ function buildNameCell(item, initiallyOpen = false) {
 
   const titleSpan = document.createElement('span');
   titleSpan.className = 'job-title';
-  titleSpan.textContent = item.name || '';
+  if (context === BOARD_CONTEXT_TEST) {
+    renderTestDashboardJobTitle(titleSpan, item);
+  } else {
+    titleSpan.textContent = item.name || '';
+  }
   titleWrap.appendChild(titleSpan);
 
   if (subitems.length > 0) {
@@ -1632,6 +1636,65 @@ function buildNameCell(item, initiallyOpen = false) {
 
   cell.appendChild(titleWrap);
   return cell;
+}
+
+function renderTestDashboardJobTitle(container, item) {
+  const title = String(item?.name || '');
+  const parts = splitLeadingTestDashboardJobNumber(title, item);
+  if (!parts.jobNumber) {
+    container.textContent = title;
+    return;
+  }
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'test-dashboard-job-number-link';
+  button.textContent = parts.jobNumber;
+  button.setAttribute('aria-label', `Open DATABASE order ${parts.jobNumber}`);
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openTestDashboardDatabaseOrder(item);
+  });
+  container.appendChild(button);
+  container.appendChild(document.createTextNode(parts.rest));
+}
+
+function splitLeadingTestDashboardJobNumber(title, item) {
+  const text = String(title || '');
+  const orderNo = normalizeCellText(item?.database_job?.order_no || '');
+  if (orderNo && text.startsWith(orderNo)) {
+    return {
+      jobNumber: orderNo,
+      rest: text.slice(orderNo.length),
+    };
+  }
+
+  const match = text.match(/^(\d{4,6})(?=\s*(?:-|$))/);
+  if (!match) return { jobNumber: '', rest: text };
+  return {
+    jobNumber: match[1],
+    rest: text.slice(match[1].length),
+  };
+}
+
+function openTestDashboardDatabaseOrder(item) {
+  const sourceOrderId = item?.database_job?.source_order_id || item?.id;
+  const numericId = Number.parseInt(sourceOrderId, 10);
+  if (!Number.isFinite(numericId)) return;
+
+  if (typeof window.ultimateHubOpenDatabaseOrder === 'function') {
+    window.ultimateHubOpenDatabaseOrder(numericId, 'details').catch((err) => {
+      console.warn('Failed to open DATABASE order', err);
+    });
+    return;
+  }
+
+  if (typeof window.activateDashboardTab === 'function') {
+    window.activateDashboardTab('database');
+  } else {
+    document.querySelector('.nav-tabs li[data-tab="database"]')?.click();
+  }
 }
 
 function buildSubitemNameCell(subitem) {
@@ -3724,6 +3787,8 @@ function activateDashboardTab(target) {
   }
   closeMobileNav();
 }
+
+window.activateDashboardTab = activateDashboardTab;
 
 function getExplicitDashboardTab() {
   const params = new URLSearchParams(window.location.search);

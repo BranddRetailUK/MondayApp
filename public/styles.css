@@ -833,6 +833,22 @@ body{
   min-width:0;
 }
 .job-title{font-weight:700}
+.test-dashboard-job-number-link{
+  appearance:none;
+  border:0;
+  background:transparent;
+  color:#579bfc;
+  font:inherit;
+  font-weight:800;
+  line-height:inherit;
+  padding:0;
+  cursor:pointer;
+}
+.test-dashboard-job-number-link:hover,
+.test-dashboard-job-number-link:focus-visible{
+  text-decoration:underline;
+  outline:none;
+}
 .subitem-title{font-weight:600}
 .subitem-count-badge{
   flex:0 0 auto;

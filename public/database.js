@@ -323,6 +323,7 @@
         if (!state.loadedHome) loadHomeMetrics();
       });
     }
+    window.ultimateHubOpenDatabaseOrder = openDatabaseOrderFromDashboard;
     document.addEventListener('ultimatehub:user', (event) => setCurrentUser(event.detail));
     if (window.ultimateHubUser) setCurrentUser(window.ultimateHubUser);
     window.ultimateHubUserPromise?.then((user) => {
@@ -2278,6 +2279,19 @@
     if (!Number.isFinite(id)) return;
     await flushOrderAutosaves();
     await openOrder(id, state.activeOrderTab || 'details');
+  }
+
+  async function openDatabaseOrderFromDashboard(id, tab = 'details') {
+    const sourceOrderId = Number.parseInt(id, 10);
+    if (!Number.isFinite(sourceOrderId)) return;
+    await flushOrderAutosaves();
+    if (typeof window.activateDashboardTab === 'function') {
+      window.activateDashboardTab('database');
+    } else {
+      els.sideTab?.click();
+    }
+    if (!state.loadedHome) loadHomeMetrics();
+    await openOrder(sourceOrderId, tab || 'details');
   }
 
   async function openOrder(id, tab) {
