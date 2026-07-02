@@ -40,6 +40,13 @@
   const ORDER_DOC_ITEM_ROW_EXTRA_LINE_MM = 3;
   const ORDER_DOC_ITEM_CHARS_PER_LINE = 42;
   const INVOICE_SUMMARY_MM = 32;
+  const OUTSTANDING_REPORT_PAGE_CONTENT_MAX_MM = 204;
+  const OUTSTANDING_REPORT_GROUP_HEADER_MM = 7;
+  const OUTSTANDING_REPORT_TABLE_HEADER_MM = 7;
+  const OUTSTANDING_REPORT_ROW_BASE_MM = 6.2;
+  const OUTSTANDING_REPORT_ROW_EXTRA_LINE_MM = 3.4;
+  const OUTSTANDING_REPORT_TITLE_CHARS_PER_LINE = 36;
+  const OUTSTANDING_REPORT_CUSTOMER_CHARS_PER_LINE = 31;
   const DATABASE_DOCUMENTS = {
     'order-ack': {
       toolbarTitle: 'Order acknowledgement',
@@ -55,6 +62,11 @@
       toolbarTitle: 'Delivery note',
       ariaLabel: 'Delivery note PDF preview',
       filenameTitle: 'Delivery Note',
+    },
+    'outstanding-orders': {
+      toolbarTitle: 'Outstanding orders',
+      ariaLabel: 'Outstanding orders PDF preview',
+      filenameTitle: 'Outstanding Orders',
     },
   };
 
@@ -132,6 +144,7 @@
     currentUser: null,
     activeDocumentType: 'order-ack',
     documentGeneratedAt: null,
+    outstandingReportSnapshot: null,
   };
 
   let els = {};
@@ -450,6 +463,11 @@
       showToInvoice();
       return;
     }
+    if (action === 'print-outstanding') {
+      await flushOrderAutosaves();
+      openOutstandingReportDocument();
+      return;
+    }
 
     const documentType = button.dataset.dbDocument || (button.dataset.dbOrderAck ? 'order-ack' : '');
     if (documentType) {
@@ -461,10 +479,15 @@
     const group = button.dataset.dbGroup;
     if (group) {
       state.activeGroup = group;
-      document.querySelectorAll('[data-db-group]').forEach((btn) => {
-        btn.classList.toggle('active', btn.dataset.dbGroup === group);
-      });
+      syncOutstandingFilterButtons();
       resetVisibleOrderLimit();
+      if (group === 'all' && state.orderMode !== 'open') {
+        state.orderMode = 'open';
+        setFooterTitle('Open Orders');
+        syncOrderSearchVisibility();
+        loadOutstandingOrders({ force: false });
+        return;
+      }
       renderOutstandingOrders();
       return;
     }
@@ -536,6 +559,12 @@
 
   function resetVisibleOrderLimit() {
     if (state.orderMode === 'all') state.visibleOrderLimit = PAGE_LIMIT;
+  }
+
+  function syncOutstandingFilterButtons() {
+    document.querySelectorAll('[data-db-group]').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.dbGroup === state.activeGroup);
+    });
   }
 
   async function loadHomeMetrics() {
@@ -2146,7 +2175,6 @@
 
   function renderOutstandingRow(job) {
     const selected = state.selectedJob && Number(state.selectedJob.source_order_id) === Number(job.source_order_id);
-    const delivery = `${formatDate(job.delivery_date, 'long')}${truthy(job.customer_date_required) ? ' *' : ''}`;
     return `
       <tr class="db-outstanding-row ${selected ? 'selected' : ''}" data-job-id="${escapeAttr(job.source_order_id)}" tabindex="0">
         <td class="db-row-selector">${selected ? '&#9654;' : ''}</td>
@@ -2156,9 +2184,13 @@
         <td>${escapeHtml(job.job_title || '')}</td>
         <td>${escapeHtml(staffShort(job.order_taken_by || job.trace_staff_id))}</td>
         <td>${escapeHtml(formatDate(job.order_date, 'long'))}</td>
-        <td>${escapeHtml(delivery)}</td>
+        <td>${escapeHtml(outstandingDeliveryLabel(job))}</td>
       </tr>
     `;
+  }
+
+  function outstandingDeliveryLabel(job) {
+    return `${formatDate(job?.delivery_date, 'long')}${truthy(job?.customer_date_required) ? ' *' : ''}`;
   }
 
   async function openSelectedOrder(value) {
@@ -2471,6 +2503,238 @@
       const printButton = modal.querySelector('[data-db-ack-print]');
       if (printButton) printButton.focus();
     });
+  }
+
+  function openOutstandingReportDocument() {
+    const snapshot = buildOutstandingReportSnapshot();
+    if (!snapshot.jobs.length) {
+      alert('No orders to print');
+      return;
+    }
+
+    state.activeDocumentType = 'outstanding-orders';
+    state.documentGeneratedAt = snapshot.generatedAt;
+    state.outstandingReportSnapshot = snapshot;
+
+    const modal = ensureOrderAckModal();
+    const shell = modal.querySelector('.db-order-ack-shell');
+    const title = modal.querySelector('.db-order-ack-toolbar-title');
+    const pages = modal.querySelector('.db-order-ack-pages');
+    if (shell) shell.setAttribute('aria-label', DATABASE_DOCUMENTS['outstanding-orders'].ariaLabel);
+    if (title) title.textContent = snapshot.toolbarTitle;
+    modal.dataset.dbDocumentType = 'outstanding-orders';
+    pages.innerHTML = renderOutstandingReportDocument();
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open', 'db-order-ack-open');
+
+    window.requestAnimationFrame(() => {
+      const printButton = modal.querySelector('[data-db-ack-print]');
+      if (printButton) printButton.focus();
+    });
+  }
+
+  function buildOutstandingReportSnapshot() {
+    const groups = groupedOutstandingRows(ordersForCurrentRender()).map((group) => ({
+      key: group.key,
+      label: outstandingReportGroupLabel(group.key, group.label),
+      jobs: [...group.jobs],
+    }));
+    const jobs = groups.flatMap((group) => group.jobs);
+    const modeLabel = state.orderMode === 'all' ? 'All Orders' : 'Open Orders';
+    const filterLabel = outstandingFilterLabel(state.activeGroup);
+    const title = state.orderMode === 'all' ? 'All Orders' : 'Outstanding Orders';
+    const filterSuffix = filterLabel && filterLabel !== 'All outstanding' ? ` - ${filterLabel}` : '';
+
+    return {
+      title,
+      toolbarTitle: `${title} PDF`,
+      filenameTitle: `${modeLabel}${filterSuffix}`,
+      modeLabel,
+      filterLabel,
+      searchQuery: state.orderMode === 'all' ? state.orderSearchQuery : '',
+      generatedAt: new Date(),
+      groups,
+      jobs,
+    };
+  }
+
+  function renderOutstandingReportDocument() {
+    const snapshot = state.outstandingReportSnapshot || buildOutstandingReportSnapshot();
+    const pages = buildOutstandingReportPages(snapshot.groups);
+    return pages.map((page, index) => (
+      renderOutstandingReportPage(snapshot, page, index, pages.length)
+    )).join('');
+  }
+
+  function buildOutstandingReportPages(groups) {
+    const pages = [];
+    let page = emptyOutstandingReportPage();
+    let usedMm = 0;
+
+    const pushPage = () => {
+      if (page.sections.length) pages.push(page);
+      page = emptyOutstandingReportPage();
+      usedMm = 0;
+    };
+
+    for (const group of groups || []) {
+      const jobs = group.jobs || [];
+      if (!jobs.length) continue;
+
+      let index = 0;
+      let sectionIndex = 0;
+      while (index < jobs.length) {
+        const sectionHeaderMm = OUTSTANDING_REPORT_GROUP_HEADER_MM + OUTSTANDING_REPORT_TABLE_HEADER_MM;
+        if (usedMm > 0 && usedMm + sectionHeaderMm + OUTSTANDING_REPORT_ROW_BASE_MM > OUTSTANDING_REPORT_PAGE_CONTENT_MAX_MM) {
+          pushPage();
+        }
+
+        const section = {
+          key: group.key,
+          label: group.label,
+          total: jobs.length,
+          continued: sectionIndex > 0,
+          jobs: [],
+        };
+        page.sections.push(section);
+        usedMm += sectionHeaderMm;
+
+        while (index < jobs.length) {
+          const rowHeightMm = outstandingReportRowHeight(jobs[index]);
+          if (section.jobs.length && usedMm + rowHeightMm > OUTSTANDING_REPORT_PAGE_CONTENT_MAX_MM) break;
+          section.jobs.push(jobs[index]);
+          usedMm += rowHeightMm;
+          index += 1;
+          if (usedMm >= OUTSTANDING_REPORT_PAGE_CONTENT_MAX_MM) break;
+        }
+
+        if (index < jobs.length) pushPage();
+        sectionIndex += 1;
+      }
+    }
+
+    if (page.sections.length) pages.push(page);
+    return pages;
+  }
+
+  function emptyOutstandingReportPage() {
+    return { sections: [] };
+  }
+
+  function outstandingReportRowHeight(job) {
+    const titleLines = Math.max(
+      1,
+      Math.ceil(String(job?.job_title || '').length / OUTSTANDING_REPORT_TITLE_CHARS_PER_LINE)
+    );
+    const customerLines = Math.max(
+      1,
+      Math.ceil(String(job?.customer_name || '').length / OUTSTANDING_REPORT_CUSTOMER_CHARS_PER_LINE)
+    );
+    const lines = Math.max(titleLines, customerLines);
+    return OUTSTANDING_REPORT_ROW_BASE_MM + ((lines - 1) * OUTSTANDING_REPORT_ROW_EXTRA_LINE_MM);
+  }
+
+  function renderOutstandingReportPage(snapshot, page, pageIndex, pageCount) {
+    return `
+      <section class="db-order-ack-page db-outstanding-report-page" aria-label="${escapeAttr(snapshot.title)} page ${pageIndex + 1}">
+        <header class="db-outstanding-report-header">
+          <h1>${escapeHtml(snapshot.title.toUpperCase())}</h1>
+          <img class="db-order-ack-logo" src="${escapeAttr(ORDER_ACK_LOGO_URL)}" alt="Ultimate logo" crossorigin="anonymous">
+        </header>
+        ${renderOutstandingReportMeta(snapshot, pageIndex, pageCount)}
+        <section class="db-outstanding-report-content">
+          ${page.sections.map(renderOutstandingReportSection).join('')}
+        </section>
+        <img class="db-order-ack-footer" src="${escapeAttr(orderDocumentFooterUrl('delivery-note'))}" alt="Ultimate letterhead footer" crossorigin="anonymous">
+      </section>
+    `;
+  }
+
+  function renderOutstandingReportMeta(snapshot, pageIndex, pageCount) {
+    const hasSearch = Boolean(snapshot.searchQuery);
+    const rows = [
+      { label: 'View', value: snapshot.modeLabel },
+      { label: 'Filter', value: snapshot.filterLabel },
+      { label: 'Orders', value: formatNumber(snapshot.jobs.length) },
+      { label: 'Generated', value: formatDateTime(snapshot.generatedAt) },
+      { label: 'Page', value: `${pageIndex + 1} of ${pageCount}` },
+    ];
+    if (hasSearch) rows.splice(2, 0, { label: 'Search', value: snapshot.searchQuery });
+
+    return `
+      <section class="db-outstanding-report-meta ${hasSearch ? 'has-search' : ''}" aria-label="Report details">
+        ${rows.map((row) => `
+          <div>
+            <span>${escapeHtml(row.label)}</span>
+            <strong>${escapeHtml(row.value)}</strong>
+          </div>
+        `).join('')}
+      </section>
+    `;
+  }
+
+  function renderOutstandingReportSection(section) {
+    return `
+      <section class="db-outstanding-report-section db-outstanding-report-section-${escapeAttr(section.key)}">
+        <h2>
+          <span>${escapeHtml(section.label)}${section.continued ? ' continued' : ''}</span>
+          <strong>${escapeHtml(formatNumber(section.total))} orders</strong>
+        </h2>
+        ${renderOutstandingReportTable(section.jobs)}
+      </section>
+    `;
+  }
+
+  function renderOutstandingReportTable(jobs) {
+    return `
+      <table class="db-outstanding-report-table">
+        <thead>
+          <tr>
+            <th>Order no:</th>
+            <th>Customer:</th>
+            <th>Type</th>
+            <th>Job title:</th>
+            <th>Taken by:</th>
+            <th>Order date:</th>
+            <th>Delivery:</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${jobs.map(renderOutstandingReportRow).join('')}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function renderOutstandingReportRow(job) {
+    return `
+      <tr>
+        <td>${escapeHtml(job.order_no || '')}</td>
+        <td>${escapeHtml(job.customer_name || '')}</td>
+        <td>${escapeHtml(typeAbbr(job))}</td>
+        <td>${escapeHtml(job.job_title || '')}</td>
+        <td>${escapeHtml(staffShort(job.order_taken_by || job.trace_staff_id))}</td>
+        <td>${escapeHtml(formatDate(job.order_date, 'long'))}</td>
+        <td>${escapeHtml(outstandingDeliveryLabel(job))}</td>
+      </tr>
+    `;
+  }
+
+  function outstandingReportGroupLabel(key, fallback = '') {
+    if (key === 'print') return 'Printing';
+    if (key === 'print_embroidery') return 'Print + Embroidery';
+    if (key === 'embroidery') return 'Embroidery';
+    if (key === 'gifts') return 'Business Gifts';
+    if (key === 'other') return 'Other';
+    return fallback || key || '';
+  }
+
+  function outstandingFilterLabel(key) {
+    if (key === 'all') return 'All outstanding';
+    if (key === 'ready') return 'Approved';
+    if (key === 'not-ready') return 'Not approved';
+    return outstandingReportGroupLabel(key);
   }
 
   function applyGeneratedDocumentDateToOrderUi(documentType, generatedAt) {
@@ -3008,10 +3272,16 @@
   function databaseDocumentPdfFilename(type = state.activeDocumentType) {
     const job = state.selectedJob || {};
     const documentType = databaseDocumentType(type);
+    if (documentType === 'outstanding-orders') return outstandingReportPdfFilename();
     const documentNo = documentType === 'invoice' ? invoiceDocumentNo(job) : job.order_no;
     const orderNo = String(documentNo || job.source_order_id || '').trim();
     const config = databaseDocumentConfig(type);
     return `${orderNo ? `${orderNo} - ` : ''}${config.filenameTitle}`;
+  }
+
+  function outstandingReportPdfFilename() {
+    return state.outstandingReportSnapshot?.filenameTitle
+      || DATABASE_DOCUMENTS['outstanding-orders'].filenameTitle;
   }
 
   function syncOrderDocumentButtons(job = state.selectedJob) {
@@ -3049,6 +3319,7 @@
 
   function renderDatabaseDocument(type) {
     const documentType = databaseDocumentType(type);
+    if (documentType === 'outstanding-orders') return renderOutstandingReportDocument();
     if (documentType === 'invoice') return renderInvoiceDocument();
     if (documentType === 'delivery-note') return renderDeliveryNoteDocument();
     return renderOrderAcknowledgementPage();
