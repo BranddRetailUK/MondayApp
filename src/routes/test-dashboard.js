@@ -893,6 +893,7 @@ function designTextFromPositions(positions, job) {
 
 async function backfillDashboardDesignPositions(jobs, states, positionMap, scans) {
   const candidates = [];
+  const stateOnlyCleanupIds = [];
   for (const job of jobs || []) {
     const state = states.get(job.source_order_id) || null;
     const scan = scans.get(String(job.source_order_id)) || null;
@@ -901,15 +902,22 @@ async function backfillDashboardDesignPositions(jobs, states, positionMap, scans
     const stateDesignText = cleanDesignColumnText(getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.DESIGN]));
     if (!stateDesignText) continue;
     const positions = positionMap.get(job.source_order_id) || [];
-    if (isDesignTextRepresented(stateDesignText, positions, job)) continue;
+    const databaseDesignText = designTextFromPositions(positions, job);
+    if (databaseDesignText) {
+      stateOnlyCleanupIds.push(job.source_order_id);
+      continue;
+    }
     candidates.push({ job, value: stateDesignText });
   }
-  if (!candidates.length) return false;
+  if (!candidates.length && !stateOnlyCleanupIds.length) return false;
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock($1)', [DESIGN_POSITION_LOCK_KEY]);
+    for (const sourceOrderId of stateOnlyCleanupIds) {
+      await clearDashboardDesignStateValueWithClient(client, sourceOrderId);
+    }
     let insertedCount = 0;
     for (const candidate of candidates) {
       const result = await appendDashboardDesignPositionWithClient(client, candidate.job, candidate.value);
@@ -959,6 +967,7 @@ async function appendDashboardDesignPositionWithClient(client, job, rawValue) {
   const currentJob = lockedJob.rows[0] || job;
   const positions = await fetchPositionsForUpdate(client, currentJob.source_order_id);
   if (isDesignTextRepresented(value, positions, currentJob)) {
+    await clearDashboardDesignStateValueWithClient(client, currentJob.source_order_id);
     return { inserted: false, positions };
   }
 
@@ -991,11 +1000,23 @@ async function appendDashboardDesignPositionWithClient(client, job, rawValue) {
       value,
     ]
   );
+  await clearDashboardDesignStateValueWithClient(client, currentJob.source_order_id);
 
   return {
     inserted: true,
     positions: await fetchPositionsForUpdate(client, currentJob.source_order_id),
   };
+}
+
+async function clearDashboardDesignStateValueWithClient(client, sourceOrderId) {
+  await client.query(
+    `UPDATE test_dashboard_job_state
+     SET column_values = column_values - $2,
+         updated_at = NOW()
+     WHERE source_order_id = $1
+       AND column_values ? $2`,
+    [sourceOrderId, TEST_DASHBOARD_COLUMN_IDS.DESIGN]
+  );
 }
 
 async function fetchPositionsForUpdate(client, sourceOrderId) {
