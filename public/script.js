@@ -1353,10 +1353,14 @@ function buildBoardColumnWidthOverrides(columns, items) {
   for (const column of columns) {
     const title = String(column.title || '').trim().toUpperCase();
     if (!isDynamicBoardTextWidthColumn(title)) continue;
-    const maxTextWidth = getMaxColumnTextWidth(items, column.id);
+    const isDesignColumn = isDesignBoardTextWidthColumn(title);
+    const valueFont = isDesignColumn
+      ? "700 14px Manrope, 'Segoe UI', system-ui, sans-serif"
+      : "14px Manrope, 'Segoe UI', system-ui, sans-serif";
+    const maxTextWidth = getMaxColumnTextWidth(items, column.id, valueFont);
     const titleWidth = measureBoardTextWidth(column.title || column.id || '', "700 13px Manrope, 'Segoe UI', system-ui, sans-serif");
     const widestText = Math.max(titleWidth, maxTextWidth);
-    overrides.set(column.id, Math.max(72, Math.ceil(widestText + 34)));
+    overrides.set(column.id, Math.max(72, Math.ceil(widestText + (isDesignColumn ? 58 : 34))));
   }
   return overrides;
 }
@@ -1366,6 +1370,15 @@ function isDynamicBoardTextWidthColumn(title) {
   const compact = normalized.replace(/[^A-Z0-9]/g, '');
   return normalized === 'NOTES' ||
     compact === 'DESPSG' ||
+    compact === 'DESNOPSG' ||
+    compact === 'DESIGNNUMBER' ||
+    compact === 'DESIGNNO' ||
+    compact === 'DESIGNNUM';
+}
+
+function isDesignBoardTextWidthColumn(title) {
+  const compact = String(title || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return compact === 'DESPSG' ||
     compact === 'DESNOPSG' ||
     compact === 'DESIGNNUMBER' ||
     compact === 'DESIGNNO' ||
@@ -1448,13 +1461,13 @@ function measureSubitemCountBadgeWidth(count) {
   return Math.max(18, Math.ceil(textWidth + 10)) + 9;
 }
 
-function getMaxColumnTextWidth(items, columnId) {
+function getMaxColumnTextWidth(items, columnId, font = "14px Manrope, 'Segoe UI', system-ui, sans-serif") {
   let max = 0;
   for (const item of (Array.isArray(items) ? items : [])) {
     const value = findColumnValue(item, columnId);
     const text = normalizeCellText(value?.text || '');
     if (!text) continue;
-    max = Math.max(max, measureBoardTextWidth(text));
+    max = Math.max(max, measureBoardTextWidth(text, font));
   }
   return max;
 }
@@ -3081,6 +3094,12 @@ function renderTextInputValue(cell, text) {
 }
 
 function renderTestDesignInputValue(cell, text, entity, column) {
+  const display = document.createElement('button');
+  display.className = 'test-design-display';
+  display.type = 'button';
+  display.setAttribute('aria-label', text ? `Edit ${column?.title || 'DES/PSG'} ${text}` : `Set ${column?.title || 'DES/PSG'}`);
+  renderColoredDesignText(display, text);
+
   const input = document.createElement('input');
   input.className = 'test-design-input';
   input.type = 'text';
@@ -3089,6 +3108,18 @@ function renderTestDesignInputValue(cell, text, entity, column) {
   input.setAttribute('aria-label', `Set ${column?.title || 'DES/PSG'}`);
   input.autocomplete = 'off';
   input.spellcheck = false;
+  if (text) input.classList.add('hidden');
+
+  display.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    display.classList.add('hidden');
+    input.classList.remove('hidden');
+    window.requestAnimationFrame(() => {
+      input.focus();
+      input.select();
+    });
+  });
 
   input.addEventListener('pointerdown', (event) => event.stopPropagation());
   input.addEventListener('click', (event) => event.stopPropagation());
@@ -3106,11 +3137,64 @@ function renderTestDesignInputValue(cell, text, entity, column) {
     }
   });
   input.addEventListener('blur', () => {
-    saveTestDesignInput(input, entity, column);
+    saveTestDesignInput(input, entity, column).finally(() => {
+      if (!input.isConnected || !display.isConnected) return;
+      if (document.activeElement === input) return;
+      input.classList.add('hidden');
+      display.classList.remove('hidden');
+    });
   });
 
   cell.classList.add('test-design-cell');
+  if (text) cell.appendChild(display);
   cell.appendChild(input);
+}
+
+function renderColoredDesignText(container, text) {
+  container.textContent = '';
+  const value = normalizeCellText(text || '');
+  if (!value) return;
+
+  const segments = splitDesignDisplaySegments(value);
+  for (const segment of segments) {
+    const span = document.createElement('span');
+    span.className = `test-design-segment ${segment.kind}`;
+    span.textContent = segment.text;
+    container.appendChild(span);
+  }
+}
+
+function splitDesignDisplaySegments(value) {
+  const segments = [];
+  const slashParts = String(value || '').split(/(\s*\/\s*)/);
+  let afterSlash = false;
+
+  for (const part of slashParts) {
+    if (!part) continue;
+    if (part.includes('/')) {
+      segments.push({ kind: 'separator', text: part });
+      afterSlash = true;
+      continue;
+    }
+
+    const refs = part.split(/(,\s*)/);
+    for (const ref of refs) {
+      if (!ref) continue;
+      if (/^,\s*$/.test(ref)) {
+        segments.push({ kind: afterSlash ? 'psg' : 'design', text: ref });
+        continue;
+      }
+      const trimmed = ref.trim();
+      const kind = afterSlash || isPsgDisplayReference(trimmed) ? 'psg' : 'design';
+      segments.push({ kind, text: ref });
+    }
+  }
+
+  return segments;
+}
+
+function isPsgDisplayReference(value) {
+  return /^(?:P\s*S\s*G|ST|S\s*T)\b/i.test(String(value || '').trim());
 }
 
 function renderPlainTextValue(cell, text) {
@@ -3375,7 +3459,7 @@ async function printLabel(itemId, rawTitle, context = BOARD_CONTEXT_MONDAY) {
 // --------------------------- SERIAL UI (unchanged core) ---------------------------
 
 function addSerialScannerUI() {
-  const bar = document.getElementById('labels-toolbar');
+  const bar = document.getElementById('sidebarDashboardControls') || document.getElementById('labels-toolbar');
 
   // Connect Scanner button
   if (!document.getElementById('connectScannerBtn')) {
@@ -3392,35 +3476,11 @@ function addSerialScannerUI() {
 }
 
 function ensureTestDashboardUI() {
-  const bar = document.getElementById('test-labels-toolbar');
-  if (!bar) return;
-
-  if (!document.getElementById('testConnectScannerBtn')) {
-    const scannerBtn = document.createElement('button');
-    scannerBtn.id = 'testConnectScannerBtn';
-    scannerBtn.type = 'button';
-    scannerBtn.textContent = 'Connect Scanner';
-    scannerBtn.className = 'btn success';
-    scannerBtn.addEventListener('click', connectSerialScanner);
-    bar.appendChild(scannerBtn);
-  }
-
-  let priorityBtn = document.getElementById('testPriorityHighlightBtn');
-  if (!priorityBtn) {
-    priorityBtn = document.createElement('button');
-    priorityBtn.id = 'testPriorityHighlightBtn';
-    priorityBtn.type = 'button';
-    priorityBtn.className = 'btn priority-highlight-toggle';
-    priorityBtn.addEventListener('click', () => {
-      setPriorityHighlightsEnabled(!__priorityHighlightsEnabled);
-    });
-    bar.appendChild(priorityBtn);
-  }
-  updatePriorityHighlightButton(priorityBtn);
+  addSerialScannerUI();
 }
 
 function addPriorityHighlightUI() {
-  const bar = document.getElementById('labels-toolbar');
+  const bar = document.getElementById('sidebarDashboardControls') || document.getElementById('labels-toolbar');
   if (!bar) return;
 
   let btn = document.getElementById('priorityHighlightBtn');
@@ -3447,7 +3507,6 @@ function setPriorityHighlightsEnabled(enabled) {
   __priorityHighlightsEnabled = Boolean(enabled);
   localStorage.setItem(PRIORITY_HIGHLIGHT_STORAGE_KEY, __priorityHighlightsEnabled ? '1' : '0');
   updatePriorityHighlightButton();
-  updatePriorityHighlightButton(document.getElementById('testPriorityHighlightBtn'));
   rerenderBoardContext(BOARD_CONTEXT_MONDAY);
   rerenderBoardContext(BOARD_CONTEXT_TEST);
 }

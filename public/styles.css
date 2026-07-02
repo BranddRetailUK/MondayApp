@@ -123,6 +123,24 @@ body{
   border-color:#55565a;
   box-shadow:inset 4px 0 0 var(--accent);
 }
+.sidebar-dashboard-controls{
+  margin-top:auto;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  padding-top:16px;
+  transition:opacity .12s ease, visibility .12s ease;
+}
+.sidebar-dashboard-controls .btn{
+  width:100%;
+  min-height:42px;
+  border-radius:8px;
+  padding:10px 12px;
+}
+.sidebar-dashboard-controls .btn.priority-highlight-toggle{
+  min-width:0;
+  font-size:13px;
+}
 .app-container.sidebar-collapsed .sidebar{
   width:0;
   flex-basis:0;
@@ -131,7 +149,8 @@ body{
   border-right-color:transparent;
 }
 .app-container.sidebar-collapsed .sidebar-top,
-.app-container.sidebar-collapsed .nav-group{
+.app-container.sidebar-collapsed .nav-group,
+.app-container.sidebar-collapsed .sidebar-dashboard-controls{
   opacity:0;
   visibility:hidden;
   pointer-events:none;
@@ -336,6 +355,9 @@ body{
   gap:10px;
   flex-wrap:wrap;
   background:#111213;
+}
+.dashboard-board-head{
+  display:none;
 }
 #labels-toolbar,
 #test-labels-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-left:auto}
@@ -1046,10 +1068,45 @@ body{
 .test-design-cell{
   padding:0 4px;
 }
+.test-design-display{
+  appearance:none;
+  width:100%;
+  height:calc(100% - 8px);
+  min-height:28px;
+  border:1px solid transparent;
+  border-radius:4px;
+  background:transparent;
+  font:inherit;
+  font-weight:700;
+  text-align:center;
+  padding:0 10px;
+  cursor:text;
+  white-space:nowrap;
+}
+.test-design-display:focus-visible,
+.test-design-display:hover{
+  outline:none;
+  border-color:rgba(87,155,252,.72);
+  background:rgba(87,155,252,.08);
+}
+.test-design-display.hidden,
+.test-design-input.hidden{
+  display:none;
+}
+.test-design-segment.design{
+  color:#579bfc;
+}
+.test-design-segment.psg{
+  color:#fdab3d;
+}
+.test-design-segment.separator{
+  color:#fff;
+}
 .test-design-input{
   width:100%;
   height:calc(100% - 8px);
   min-height:28px;
+  min-width:0;
   border:1px solid transparent;
   border-radius:4px;
   background:transparent;
@@ -1057,7 +1114,7 @@ body{
   font:inherit;
   font-weight:700;
   text-align:center;
-  padding:0 6px;
+  padding:0 10px;
 }
 .test-design-input:focus{
   outline:none;
@@ -4165,7 +4222,8 @@ input.db-custom-line-input{
     border-right-color:#2f3033;
   }
   .app-container.sidebar-collapsed .sidebar-top,
-  .app-container.sidebar-collapsed .nav-group{
+  .app-container.sidebar-collapsed .nav-group,
+  .app-container.sidebar-collapsed .sidebar-dashboard-controls{
     opacity:1;
     visibility:visible;
     pointer-events:auto;
