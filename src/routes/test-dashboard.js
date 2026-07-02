@@ -200,6 +200,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/design-column', async (req
       itemId: String(job.source_order_id),
       columnId: column.id,
       inserted: result.inserted,
+      insertedCount: result.insertedCount || 0,
       designText: designTextFromPositions(result.positions, job),
       positions: result.positions,
     });
@@ -921,7 +922,7 @@ async function backfillDashboardDesignPositions(jobs, states, positionMap, scans
     let insertedCount = 0;
     for (const candidate of candidates) {
       const result = await appendDashboardDesignPositionWithClient(client, candidate.job, candidate.value);
-      if (result.inserted) insertedCount += 1;
+      insertedCount += result.insertedCount || (result.inserted ? 1 : 0);
     }
     await client.query('COMMIT');
     return insertedCount > 0;
@@ -966,9 +967,10 @@ async function appendDashboardDesignPositionWithClient(client, job, rawValue) {
 
   const currentJob = lockedJob.rows[0] || job;
   const positions = await fetchPositionsForUpdate(client, currentJob.source_order_id);
-  if (isDesignTextRepresented(value, positions, currentJob)) {
+  const valuesToInsert = designPositionInsertValues(value, positions, currentJob);
+  if (!valuesToInsert.length) {
     await clearDashboardDesignStateValueWithClient(client, currentJob.source_order_id);
-    return { inserted: false, positions };
+    return { inserted: false, insertedCount: 0, positions };
   }
 
   const nextId = await client.query(`
@@ -982,28 +984,33 @@ async function appendDashboardDesignPositionWithClient(client, job, rawValue) {
     [currentJob.source_order_id]
   );
 
-  await client.query(
-    `INSERT INTO database_job_positions (
-       source_order_position_id,
-       source_order_id,
-       position_sort_order,
-       position_name,
-       colour_notes,
-       design_ref,
-       created_at_source,
-       updated_at_source
-     ) VALUES ($1, $2, $3, NULL, NULL, $4, NOW(), NOW())`,
-    [
-      nextId.rows[0].next_id,
-      currentJob.source_order_id,
-      nextSort.rows[0].next_sort_order,
-      value,
-    ]
-  );
+  const firstId = Number(nextId.rows[0].next_id) || 1;
+  const firstSort = Number(nextSort.rows[0].next_sort_order) || 1;
+  for (let index = 0; index < valuesToInsert.length; index += 1) {
+    await client.query(
+      `INSERT INTO database_job_positions (
+         source_order_position_id,
+         source_order_id,
+         position_sort_order,
+         position_name,
+         colour_notes,
+         design_ref,
+         created_at_source,
+         updated_at_source
+       ) VALUES ($1, $2, $3, NULL, NULL, $4, NOW(), NOW())`,
+      [
+        firstId + index,
+        currentJob.source_order_id,
+        firstSort + index,
+        valuesToInsert[index],
+      ]
+    );
+  }
   await clearDashboardDesignStateValueWithClient(client, currentJob.source_order_id);
 
   return {
     inserted: true,
+    insertedCount: valuesToInsert.length,
     positions: await fetchPositionsForUpdate(client, currentJob.source_order_id),
   };
 }
@@ -1031,15 +1038,49 @@ async function fetchPositionsForUpdate(client, sourceOrderId) {
   return result.rows;
 }
 
-function isDesignTextRepresented(rawValue, positions, job) {
-  const incoming = designPartsFromRaw(rawValue);
+function designPositionInsertValues(rawValue, positions, job) {
   const existing = designPartsFromSources(positions, job);
-  if (!incoming.designRefs.length && !incoming.psgRefs.length) return false;
-
   const designKeys = new Set(existing.designRefs.map(normalizeReferenceKey));
   const psgKeys = new Set(existing.psgRefs.map(normalizeReferenceKey));
-  return incoming.designRefs.every((value) => designKeys.has(normalizeReferenceKey(value))) &&
-    incoming.psgRefs.every((value) => psgKeys.has(normalizeReferenceKey(value)));
+  const incomingDesignKeys = new Set();
+  const incomingPsgKeys = new Set();
+  const values = [];
+
+  for (const segment of splitDesignPositionRows(rawValue)) {
+    for (const reference of designPositionReferencesFromSegment(segment)) {
+      const key = normalizeReferenceKey(reference.value);
+      if (!key) continue;
+      if (reference.kind === 'psg') {
+        if (psgKeys.has(key) || incomingPsgKeys.has(key)) continue;
+        incomingPsgKeys.add(key);
+      } else {
+        if (designKeys.has(key) || incomingDesignKeys.has(key)) continue;
+        incomingDesignKeys.add(key);
+      }
+      values.push(reference.value);
+    }
+  }
+
+  return values;
+}
+
+function splitDesignPositionRows(value) {
+  return cleanDesignColumnText(value)
+    .split('/')
+    .map((segment) => cleanDesignColumnText(segment))
+    .filter(Boolean);
+}
+
+function designPositionReferencesFromSegment(segment) {
+  const references = [];
+  const designText = displayDesignReference(segment);
+  for (const reference of splitReferenceList(designText)) {
+    references.push({ kind: 'design', value: reference });
+  }
+  for (const reference of extractOrderDesignReferences(segment)) {
+    references.push({ kind: 'psg', value: reference });
+  }
+  return references;
 }
 
 function designPartsFromSources(positions, job) {
@@ -1049,13 +1090,6 @@ function designPartsFromSources(positions, job) {
     addDesignReferencesFromText(parts, row.design_ref);
     addPsgReferencesFromText(parts, `${row.position_name || ''} ${row.colour_notes || ''} ${row.design_ref || ''}`);
   }
-  return parts;
-}
-
-function designPartsFromRaw(value) {
-  const parts = createDesignParts();
-  addDesignReferencesFromText(parts, value);
-  addPsgReferencesFromText(parts, value);
   return parts;
 }
 
