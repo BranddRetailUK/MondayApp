@@ -3601,7 +3601,7 @@
 
   function renderInvoiceDocument() {
     const job = state.selectedJob || {};
-    const items = orderDocumentLineItems();
+    const items = orderDocumentLineItems('invoice');
     const totals = orderAckTotals(items);
     const generatedAt = currentDatabaseDocumentDate();
     const invoiceLines = orderAckAddressLines(job.invoice_address, job.customer_name);
@@ -3632,7 +3632,7 @@
 
   function renderDeliveryNoteDocument() {
     const job = state.selectedJob || {};
-    const items = orderDocumentLineItems();
+    const items = orderDocumentLineItems('delivery-note');
     const generatedAt = currentDatabaseDocumentDate();
     const addressLines = orderAckAddressLines(job.delivery_address || job.invoice_address, job.customer_name);
     const context = {
@@ -3938,8 +3938,16 @@
     return ORDER_DOC_ITEM_ROW_BASE_MM + ((lineCount - 1) * ORDER_DOC_ITEM_ROW_EXTRA_LINE_MM);
   }
 
-  function orderDocumentLineItems() {
-    return orderAckLineItems();
+  function orderDocumentLineItems(type) {
+    const items = orderAckLineItems();
+    if (type === 'invoice') return items.filter((item) => !truthy(item.is_internal));
+    if (type === 'delivery-note') {
+      return items.filter((item) => (
+        !truthy(item.is_internal)
+        && !truthy(item.is_non_deliverable)
+      ));
+    }
+    return items;
   }
 
   function orderDocumentItemCode(item) {
@@ -5357,7 +5365,7 @@
       <tr class="db-custom-line-edit-row" data-custom-line-type="${escapeAttr(type)}">
         <td class="db-row-selector db-line-delete-cell"></td>
         <td class="db-row-selector"></td>
-        <td><textarea class="db-custom-line-input" data-custom-line-field="line_description">${escapeHtml(draft.line_description)}</textarea></td>
+        <td><input class="db-custom-line-input" data-custom-line-field="line_description" value="${escapeAttr(draft.line_description)}"></td>
         <td><input class="db-custom-line-input db-line-money" data-custom-line-field="unit_cost" value="${escapeAttr(draft.unit_cost)}"></td>
         <td><input class="db-custom-line-input db-line-money" data-custom-line-field="unit_price" value="${escapeAttr(draft.unit_price)}"></td>
         <td><input class="db-custom-line-input db-line-qty" data-custom-line-field="quantity" inputmode="numeric" value="${escapeAttr(draft.quantity)}"></td>

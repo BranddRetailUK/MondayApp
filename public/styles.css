@@ -3778,14 +3778,14 @@ body.modal-open{overflow:hidden}
 }
 textarea.db-custom-line-input{
   display:block;
-  height:32px;
-  min-height:32px;
-  line-height:14px;
-  padding:2px 3px;
+  height:16px;
+  min-height:16px;
+  line-height:15px;
+  padding:0 3px;
   resize:none;
 }
 input.db-custom-line-input{
-  height:32px;
+  height:16px;
 }
 .db-line-input[readonly]{
   background:#fff;
@@ -4040,9 +4040,8 @@ input.db-custom-line-input{
   overflow-x:hidden;
   background:#858585;
 }
-.db-custom-table-scroll .db-legacy-table{
-  min-height:100%;
-}
+.db-custom-table-scroll .db-legacy-table{height:auto}
+.db-custom-table-scroll:not(:has(.db-custom-line-edit-row)) .db-legacy-table{min-height:100%}
 .db-small-item-box th:nth-child(1),
 .db-small-item-box th:nth-child(2){width:19px}
 .db-small-item-box th:nth-child(3){width:auto}
