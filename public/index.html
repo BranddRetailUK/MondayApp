@@ -198,7 +198,9 @@
 
                 <div class="db-new-order-row db-new-order-contact-row">
                   <label>Contact:</label>
-                  <input id="db-new-contact" name="contact_name" autocomplete="off">
+                  <select id="db-new-contact" name="contact_name">
+                    <option value=""></option>
+                  </select>
                 </div>
 
                 <div class="db-new-order-row db-new-short-row">
@@ -255,12 +257,16 @@
 
                 <div class="db-new-order-row db-new-wide-combo-row">
                   <label>Delivery adds:</label>
-                  <input id="db-new-delivery-address" name="delivery_address" autocomplete="off">
+                  <select id="db-new-delivery-address" name="delivery_address">
+                    <option value=""></option>
+                  </select>
                 </div>
 
                 <div class="db-new-order-row db-new-wide-combo-row">
                   <label>Invoice adds:</label>
-                  <input id="db-new-invoice-address" name="invoice_address" autocomplete="off">
+                  <select id="db-new-invoice-address" name="invoice_address">
+                    <option value=""></option>
+                  </select>
                 </div>
 
                 <div class="db-new-order-row db-new-order-invoice-row">
@@ -566,6 +572,7 @@
                       <th>Taken by:</th>
                       <th>Order date:</th>
                       <th>Delivery:</th>
+                      <th>Invoice number:</th>
                     </tr>
                   </thead>
                   <tbody id="db-outstanding-body">

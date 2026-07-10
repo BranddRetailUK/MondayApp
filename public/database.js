@@ -10,6 +10,8 @@
   const CONTACT_AUTOSAVE_MS = DESIGN_AUTOSAVE_MS;
   const LINE_ORDER_AUTOSAVE_MS = 3500;
   const OUTSTANDING_TABLE_COLUMN_COUNT = 8;
+  const OUTSTANDING_ALL_TABLE_COLUMN_COUNT = 9;
+  const OUTSTANDING_INVOICE_COLUMN_WIDTH = 98;
   const TO_INVOICE_TABLE_COLUMN_COUNT = 7;
   const OUTSTANDING_TABLE_FIXED_WIDTH = 19 + 68 + 198 + 36 + 65 + 88 + 82;
   const OUTSTANDING_TITLE_COLUMN_MIN_WIDTH = 170;
@@ -19,7 +21,8 @@
   const ORDER_ACK_NO_BANK_FOOTER_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781869078/LETTERHEAD_INFO_del_note_wcjsjt.png';
   const ORDER_APPROVED_ICON_URL = 'https://res.cloudinary.com/brandduk/image/upload/v1783668662/approved_tcqr9k.png';
   const ULTIMATE_VAT_NUMBER = '984 5655 65';
-  const ORDER_ACK_PAGE_CONTENT_MAX_MM = 96;
+  const ORDER_ACK_FIRST_PAGE_CONTENT_MAX_MM = 96;
+  const ORDER_ACK_CONTINUATION_PAGE_CONTENT_MAX_MM = 220;
   const ORDER_ACK_TABLE_TOP_MM = 6;
   const ORDER_ACK_TABLE_HEADER_MM = 5.5;
   const ORDER_ACK_EMPTY_ROW_MM = 12;
@@ -48,6 +51,10 @@
   const OUTSTANDING_REPORT_ROW_EXTRA_LINE_MM = 3.4;
   const OUTSTANDING_REPORT_TITLE_CHARS_PER_LINE = 36;
   const OUTSTANDING_REPORT_CUSTOMER_CHARS_PER_LINE = 31;
+  const CHILD_PRODUCT_TITLE_PATTERN = /\b(kids?|children'?s?|childrens?|child|youth|junior|juniors?|boys?|girls?)\b/i;
+  const CHILD_YOUTH_SIZE_PATTERN = /\bY(?:XS|S|M|L|XL|XXL)\b/i;
+  const CHILD_AGE_RANGE_SIZE_PATTERN = /\b(?:[1-9]|1[0-8])\s*[-\u2010-\u2015]\s*(?:[1-9]|1[0-8])\b/;
+  const CHILD_TODDLER_SIZE_PATTERN = /\b[2-5]T\b/i;
   const DATABASE_DOCUMENTS = {
     'order-ack': {
       toolbarTitle: 'Order acknowledgement',
@@ -99,8 +106,10 @@
     newCustomerSubmitting: false,
     newContactSubmitting: false,
     selectedCustomer: null,
+    newOrderCustomerDetail: null,
     customerResults: [],
     selectedCustomerDetail: null,
+    orderCustomerDetail: null,
     selectedCustomerOrders: [],
     selectedCustomerContacts: [],
     selectedCustomerAddresses: [],
@@ -714,8 +723,10 @@
     clearTimeout(customerSearchTimer);
     customerSearchRequest += 1;
     state.selectedCustomer = null;
+    state.newOrderCustomerDetail = null;
     state.customerResults = [];
     closeCustomerResults();
+    populateNewOrderCustomerChoices();
     const today = new Date();
     const delivery = addDays(today, 14);
     document.getElementById('db-new-order-date').value = formatLegacyInputDate(today);
@@ -805,6 +816,8 @@
 
   function handleNewCustomerInput() {
     state.selectedCustomer = null;
+    state.newOrderCustomerDetail = null;
+    populateNewOrderCustomerChoices();
     const query = els.newCustomerInput.value.trim();
     clearTimeout(customerSearchTimer);
 
@@ -928,13 +941,17 @@
 
   function selectCustomer(customer) {
     state.selectedCustomer = customer;
+    state.newOrderCustomerDetail = null;
     els.newCustomerInput.value = customer.business_name || '';
-    els.newContactInput.value = customer.contact_name || '';
 
     const invoiceAddress = formatCustomerAddress(customer, 'inv') || customer.business_name || '';
     const deliveryAddress = formatCustomerAddress(customer, 'ship') || invoiceAddress;
-    els.newDeliveryAddress.value = deliveryAddress || '';
-    els.newInvoiceAddress.value = invoiceAddress || deliveryAddress || '';
+    populateNewOrderCustomerChoices({
+      contactName: customer.contact_name || '',
+      deliveryAddress: deliveryAddress || '',
+      invoiceAddress: invoiceAddress || deliveryAddress || '',
+    });
+    loadNewOrderCustomerDetail(customer);
 
     state.customerResults = [];
     closeCustomerResults();
@@ -958,6 +975,261 @@
       customer[`${prefix}_postcode`],
       customer[`${prefix}_country`],
     ].map((part) => String(part || '').trim()).filter(Boolean).join(', ');
+  }
+
+  async function loadNewOrderCustomerDetail(customer) {
+    const key = customerKeyForRecord(customer);
+    if (!key) return;
+    const selectedKey = key;
+
+    try {
+      const detail = await fetchJson(`/api/database/customers/${encodeURIComponent(key)}`);
+      if (!state.selectedCustomer || customerKeyForRecord(state.selectedCustomer) !== selectedKey) return;
+      state.newOrderCustomerDetail = detail;
+      populateNewOrderCustomerChoices();
+    } catch (err) {
+      console.warn('New order customer detail load failed', err);
+    }
+  }
+
+  async function loadOrderCustomerDetail(job) {
+    const key = customerKeyForRecord({
+      customer_id: job?.customer_id,
+      business_name: job?.customer_name,
+      customer_key: job?.customer_key,
+    });
+    if (!key) return null;
+
+    try {
+      return await fetchJson(`/api/database/customers/${encodeURIComponent(key)}`);
+    } catch (err) {
+      console.warn('Order customer detail load failed', err);
+      return null;
+    }
+  }
+
+  function populateNewOrderCustomerChoices(fallback = {}) {
+    populateContactSelect(els.newContactInput, newOrderContactChoices(fallback.contactName));
+    populateAddressSelect(
+      els.newDeliveryAddress,
+      newOrderAddressChoices('delivery', fallback.deliveryAddress),
+      fallback.deliveryAddress
+    );
+    populateAddressSelect(
+      els.newInvoiceAddress,
+      newOrderAddressChoices('invoice', fallback.invoiceAddress),
+      fallback.invoiceAddress
+    );
+  }
+
+  function newOrderContactChoices(fallbackContactName = '') {
+    const contacts = [];
+    for (const contact of state.newOrderCustomerDetail?.contacts || []) {
+      const normalized = normalizeCustomerContact(contact);
+      if (normalized.contact_name || normalized.contact_email || normalized.contact_phone || normalized.contact_mobile) {
+        contacts.push(normalized);
+      }
+    }
+
+    const selected = state.selectedCustomer || {};
+    if (!contacts.length && (selected.contact_name || fallbackContactName)) {
+      contacts.push(normalizeCustomerContact({
+        contact_id: selected.contact_id,
+        contact_name: fallbackContactName || selected.contact_name,
+        contact_phone: selected.contact_phone,
+        contact_mobile: selected.contact_mobile,
+        contact_email: selected.contact_email || selected.email,
+      }));
+    }
+
+    return dedupeContacts(contacts);
+  }
+
+  function newOrderAddressChoices(role, fallbackAddress = '') {
+    const addresses = customerAddressChoices(state.newOrderCustomerDetail, fallbackAddress);
+    if (addresses.length) {
+      return sortAddressChoicesForRole(addresses, role);
+    }
+
+    const selected = state.selectedCustomer || {};
+    const directAddress = role === 'invoice'
+      ? (fallbackAddress || selected.invoice_address)
+      : (fallbackAddress || selected.delivery_address);
+    return directAddress ? [normalizeCustomerAddress({ address: directAddress, address_type: role })] : [];
+  }
+
+  function populateContactSelect(select, contacts) {
+    if (!select) return;
+    const current = select.value;
+    const options = ['<option value=""></option>'];
+    contacts.forEach((contact, index) => {
+      const value = contactOptionValue(contact, index);
+      options.push(`
+        <option
+          value="${escapeAttr(value)}"
+          data-contact-index="${escapeAttr(index)}"
+        >${escapeHtml(contactOptionLabel(contact))}</option>
+      `);
+    });
+    select.innerHTML = options.join('');
+    select.dataset.contactChoices = JSON.stringify(contacts);
+    select.value = contacts.some((contact, index) => contactOptionValue(contact, index) === current)
+      ? current
+      : (contacts.length ? contactOptionValue(contacts[0], 0) : '');
+  }
+
+  function populateAddressSelect(select, addresses, preferredAddress = '') {
+    if (!select) return;
+    const current = preferredAddress || select.value;
+    const options = ['<option value=""></option>'];
+    addresses.forEach((address, index) => {
+      options.push(`
+        <option
+          value="${escapeAttr(address.address || '')}"
+          data-address-index="${escapeAttr(index)}"
+        >${escapeHtml(addressOptionLabel(address))}</option>
+      `);
+    });
+    select.innerHTML = options.join('');
+    select.dataset.addressChoices = JSON.stringify(addresses);
+    const normalizedCurrent = normalizeOrderAckText(current);
+    const matching = addresses.find((address) => normalizeOrderAckText(address.address) === normalizedCurrent);
+    select.value = matching?.address || addresses[0]?.address || '';
+  }
+
+  function selectedNewOrderContact() {
+    return selectedContactFromSelect(els.newContactInput);
+  }
+
+  function selectedNewOrderAddress(role) {
+    return selectedAddressFromSelect(role === 'invoice' ? els.newInvoiceAddress : els.newDeliveryAddress);
+  }
+
+  function selectedContactFromSelect(select) {
+    if (!select) return null;
+    const choices = parseSelectChoices(select.dataset.contactChoices);
+    const selectedOption = select.selectedOptions?.[0];
+    const index = Number.parseInt(selectedOption?.dataset.contactIndex, 10);
+    return Number.isFinite(index) ? choices[index] || null : null;
+  }
+
+  function selectedAddressFromSelect(select) {
+    if (!select) return null;
+    const choices = parseSelectChoices(select.dataset.addressChoices);
+    const selectedOption = select.selectedOptions?.[0];
+    const index = Number.parseInt(selectedOption?.dataset.addressIndex, 10);
+    return Number.isFinite(index) ? choices[index] || null : null;
+  }
+
+  function parseSelectChoices(value) {
+    try {
+      const parsed = JSON.parse(value || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function normalizeCustomerContact(contact) {
+    return {
+      contact_id: contact?.contact_id || null,
+      contact_name: contact?.contact_name || contactNameFromParts(contact?.contact_title, contact?.contact_first_name, contact?.contact_last_name) || '',
+      contact_phone: contact?.contact_phone || '',
+      contact_mobile: contact?.contact_mobile || '',
+      contact_email: contact?.contact_email || contact?.email || '',
+    };
+  }
+
+  function dedupeContacts(contacts) {
+    const seen = new Set();
+    const uniqueContacts = [];
+    for (const contact of contacts || []) {
+      const key = [
+        contact.contact_id || '',
+        normalizeOrderAckText(contact.contact_name),
+        normalizeOrderAckText(contact.contact_email),
+        normalizeOrderAckText(contact.contact_phone),
+      ].join('|');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      uniqueContacts.push(contact);
+    }
+    return uniqueContacts;
+  }
+
+  function contactOptionLabel(contact) {
+    const name = contact.contact_name || contact.contact_email || contact.contact_phone || 'Contact';
+    const meta = [contact.contact_email, contact.contact_phone || contact.contact_mobile].filter(Boolean).join(' | ');
+    return meta ? `${name} - ${meta}` : name;
+  }
+
+  function contactOptionValue(contact, index) {
+    return contact.contact_name || contact.contact_email || contact.contact_phone || contact.contact_mobile || `contact:${index}`;
+  }
+
+  function contactNameFromParts(title, firstName, lastName) {
+    return [title, firstName, lastName].map((part) => String(part || '').trim()).filter(Boolean).join(' ');
+  }
+
+  function customerAddressChoices(detail, fallbackAddress = '') {
+    const addresses = [];
+    for (const address of detail?.addresses || []) {
+      const normalized = normalizeCustomerAddress(address);
+      if (normalized.address) addresses.push(normalized);
+    }
+    if (fallbackAddress) addresses.push(normalizeCustomerAddress({ address: fallbackAddress, address_type: 'Address' }));
+    return dedupeAddresses(addresses);
+  }
+
+  function normalizeCustomerAddress(address) {
+    const addressText = address?.address || [
+      address?.address_line1,
+      address?.address_line2,
+      address?.address_line3,
+      address?.address_line4,
+      address?.address_line5,
+      address?.postcode,
+    ].map((part) => String(part || '').trim()).filter(Boolean).join(', ');
+    return {
+      source_address_id: address?.source_address_id || null,
+      address_type: address?.address_type || '',
+      address: String(addressText || '').trim(),
+    };
+  }
+
+  function dedupeAddresses(addresses) {
+    const seen = new Set();
+    const uniqueAddresses = [];
+    for (const address of addresses || []) {
+      const key = normalizeOrderAckText(address.address);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      uniqueAddresses.push(address);
+    }
+    return uniqueAddresses;
+  }
+
+  function sortAddressChoicesForRole(addresses, role) {
+    const wanted = role === 'invoice' ? 'invoice' : 'delivery';
+    return [...addresses].sort((a, b) => {
+      const aScore = addressRoleScore(a, wanted);
+      const bScore = addressRoleScore(b, wanted);
+      if (aScore !== bScore) return aScore - bScore;
+      return String(a.address || '').localeCompare(String(b.address || ''), 'en', { sensitivity: 'base' });
+    });
+  }
+
+  function addressRoleScore(address, wanted) {
+    const type = String(address?.address_type || '').toLowerCase();
+    if (wanted === 'invoice' && type.includes('invoice')) return 0;
+    if (wanted === 'delivery' && type.includes('delivery')) return 0;
+    if (type.includes('address')) return 1;
+    return 2;
+  }
+
+  function addressOptionLabel(address) {
+    const label = String(address.address || '').replace(/\s*,\s*/g, ', ');
+    return address.address_type ? `${address.address_type}: ${label}` : label;
   }
 
   function highlightMatch(value, query) {
@@ -1123,15 +1395,18 @@
   function collectNewOrderPayload() {
     const fields = els.newOrderForm.elements;
     const selectedCustomer = selectedDatabaseCustomer(fields.customer_name.value);
+    const selectedContact = selectedNewOrderContact();
+    const deliveryAddress = selectedNewOrderAddress('delivery');
+    const invoiceAddress = selectedNewOrderAddress('invoice');
     return {
       customer_id: selectedCustomer?.customer_id,
       customer_name: fields.customer_name.value,
       customer_code: selectedCustomer?.customer_code,
-      contact_id: selectedCustomer?.contact_id,
-      contact_name: fields.contact_name.value,
-      contact_phone: selectedCustomer?.contact_phone,
-      contact_mobile: selectedCustomer?.contact_mobile,
-      contact_email: selectedCustomer?.contact_email || selectedCustomer?.email,
+      contact_id: selectedContact?.contact_id || selectedCustomer?.contact_id,
+      contact_name: selectedContact?.contact_name || fields.contact_name.value,
+      contact_phone: selectedContact?.contact_phone || selectedCustomer?.contact_phone,
+      contact_mobile: selectedContact?.contact_mobile || selectedCustomer?.contact_mobile,
+      contact_email: selectedContact?.contact_email || selectedCustomer?.contact_email || selectedCustomer?.email,
       order_type: fields.order_type.value,
       job_title: fields.job_title.value,
       order_date: legacyInputDateToIso(fields.order_date.value),
@@ -1140,8 +1415,10 @@
       delivery_method: fields.delivery_method.value,
       payment_terms: fields.payment_terms.value,
       order_taken_by: fields.order_taken_by.value,
-      delivery_address: fields.delivery_address.value,
-      invoice_address: fields.invoice_address.value,
+      delivery_address_id: deliveryAddress?.source_address_id || null,
+      delivery_address: deliveryAddress?.address || fields.delivery_address.value,
+      invoice_address_id: invoiceAddress?.source_address_id || null,
+      invoice_address: invoiceAddress?.address || fields.invoice_address.value,
       invoice_required: fields.invoice_required.value,
       client_order_no: fields.client_order_no.value,
     };
@@ -2088,7 +2365,8 @@
     state.outstandingJobs = [];
     state.outstandingTotal = 0;
     state.visibleOrderLimit = PAGE_LIMIT;
-    els.outstandingBody.innerHTML = renderStatusRow(mode === 'all' ? 'Loading all orders' : 'Loading outstanding orders');
+    syncOutstandingTableMode();
+    els.outstandingBody.innerHTML = renderStatusRow(mode === 'all' ? 'Loading all orders' : 'Loading outstanding orders', outstandingTableColumnCount());
     scheduleOutstandingTableLayout([]);
 
     try {
@@ -2110,7 +2388,7 @@
       state.loadingOrders = false;
       state.orderLoadComplete = true;
       state.loadedOrderMode = '';
-      els.outstandingBody.innerHTML = renderStatusRow(err.message);
+      els.outstandingBody.innerHTML = renderStatusRow(err.message, outstandingTableColumnCount());
       scheduleOutstandingTableLayout([]);
     }
   }
@@ -2176,10 +2454,11 @@
 
   function renderOutstandingOrders(options = {}) {
     const hydrateSelectors = options.hydrateSelectors !== false;
+    syncOutstandingTableMode();
     const rows = groupedOutstandingRows(ordersForCurrentRender());
     const jobs = rows.flatMap((group) => group.jobs);
     if (!jobs.length) {
-      els.outstandingBody.innerHTML = renderStatusRow('No matching orders');
+      els.outstandingBody.innerHTML = renderStatusRow('No matching orders', outstandingTableColumnCount());
       scheduleOutstandingTableLayout([]);
       if (hydrateSelectors) hydrateOrderSelectors();
       return;
@@ -2213,14 +2492,27 @@
       OUTSTANDING_TITLE_COLUMN_MIN_WIDTH,
       measuredTitleWidth + OUTSTANDING_TITLE_CELL_EXTRA_WIDTH
     ));
-    const maxTitleWidth = frameWidth > OUTSTANDING_TABLE_FIXED_WIDTH
-      ? Math.max(OUTSTANDING_TITLE_COLUMN_MIN_WIDTH, frameWidth - OUTSTANDING_TABLE_FIXED_WIDTH - 2)
+    const fixedWidth = outstandingTableFixedWidth();
+    const maxTitleWidth = frameWidth > fixedWidth
+      ? Math.max(OUTSTANDING_TITLE_COLUMN_MIN_WIDTH, frameWidth - fixedWidth - 2)
       : desiredTitleWidth;
     const titleWidth = Math.min(desiredTitleWidth, maxTitleWidth);
-    const tableWidth = OUTSTANDING_TABLE_FIXED_WIDTH + titleWidth;
+    const tableWidth = fixedWidth + titleWidth;
 
     table.style.setProperty('--db-outstanding-title-width', `${titleWidth}px`);
     table.style.setProperty('--db-outstanding-table-width', `${tableWidth}px`);
+  }
+
+  function syncOutstandingTableMode() {
+    els.outstandingTable?.classList.toggle('db-all-orders-mode', state.orderMode === 'all');
+  }
+
+  function outstandingTableColumnCount() {
+    return state.orderMode === 'all' ? OUTSTANDING_ALL_TABLE_COLUMN_COUNT : OUTSTANDING_TABLE_COLUMN_COUNT;
+  }
+
+  function outstandingTableFixedWidth() {
+    return OUTSTANDING_TABLE_FIXED_WIDTH + (state.orderMode === 'all' ? OUTSTANDING_INVOICE_COLUMN_WIDTH : 0);
   }
 
   function measureOutstandingTitleWidth(table, jobs = []) {
@@ -2299,6 +2591,7 @@
         <td>${escapeHtml(staffShort(job.order_taken_by || job.trace_staff_id))}</td>
         <td>${escapeHtml(formatDate(job.order_date, 'long'))}</td>
         <td>${escapeHtml(outstandingDeliveryLabel(job))}</td>
+        <td class="db-invoice-number-cell">${escapeHtml(job.invoice_no || '')}</td>
       </tr>
     `;
   }
@@ -2340,6 +2633,7 @@
       state.selectedLineItems = data.lineItems || [];
       state.selectedPositions = data.positions || [];
       state.selectedProofFiles = normalizeDatabaseProofFiles(data.proofFiles || []);
+      state.orderCustomerDetail = await loadOrderCustomerDetail(state.selectedJob);
       resetDatabaseProofViewerState();
       resetLineDraftState();
       resetCustomLineDraftState();
@@ -2357,6 +2651,7 @@
   function setOrderLoading() {
     resetDesignAutosaveState();
     resetJobAutosaveState();
+    state.orderCustomerDetail = null;
     syncOrderDocumentButtons(null);
     els.orderTitle.value = 'Loading...';
     els.orderNumber.value = '';
@@ -2458,8 +2753,8 @@
         ${renderOrderApprovedMark(job)}
 
         <div class="db-detail-box db-address-box">
-          ${detailRow('Invoice to:', selectBox(job.invoice_address || job.customer_name))}
-          ${detailRow('Deliver to:', selectBox(job.delivery_address || job.customer_name))}
+          ${detailRow('Invoice to:', orderAddressSelect('invoice', job.invoice_address || job.customer_name))}
+          ${detailRow('Deliver to:', orderAddressSelect('delivery', job.delivery_address || job.customer_name))}
         </div>
 
         <div class="db-detail-box db-payment-box">
@@ -2484,12 +2779,17 @@
   }
 
   function manualInvoiceDateControl(job) {
-    return `${inputBox(formatDate(job.invoice_date, 'short'), 'db-invoice-date-field db-manual-invoice-date-field')}<label class="db-inline-check"><input class="db-tiny-check" type="checkbox" data-db-manual-invoice-date="true"> Manual Date</label>`;
+    return `${inputBox(formatDate(job.invoice_date, 'short'), 'db-invoice-date-field db-manual-invoice-date-field')}<label class="db-inline-check"><input class="db-tiny-check" type="checkbox" data-db-manual-invoice-date="true"> Manual Date</label><input class="db-legacy-input db-invoice-number-field" readonly value="${escapeAttr(job.invoice_no || '')}">`;
   }
 
   function handleDetailsPanelChange(event) {
-    if (!event.target?.matches?.('[data-db-manual-invoice-date]')) return;
-    syncManualInvoiceDateInput(event.target.checked);
+    if (event.target?.matches?.('[data-db-manual-invoice-date]')) {
+      syncManualInvoiceDateInput(event.target.checked);
+      return;
+    }
+    if (event.target?.matches?.('[data-db-address-select]')) {
+      saveOrderAddressSelection(event.target);
+    }
   }
 
   function handleDetailsPanelInput(event) {
@@ -3939,9 +4239,10 @@
   }
 
   function renderOrderAckPage(context, pageContent, pageIndex) {
+    const isFirstPage = pageIndex === 0;
     return `
-      <section class="db-order-ack-page" aria-label="Order acknowledgement page ${pageIndex + 1}">
-        ${renderOrderAckPageHeader(context)}
+      <section class="db-order-ack-page ${isFirstPage ? 'db-order-ack-page-first' : 'db-order-ack-page-continued'}" aria-label="Order acknowledgement page ${pageIndex + 1}">
+        ${isFirstPage ? renderOrderAckPageHeader(context) : ''}
         <section class="db-order-ack-page-content">
           ${renderOrderAckPageContent(pageContent, context)}
         </section>
@@ -4173,7 +4474,7 @@
         <td>${Number.isFinite(price) ? escapeHtml(formatCurrency(price)) : ''}</td>
         <td>${Number.isFinite(price) ? escapeHtml(formatCurrency(net)) : ''}</td>
         <td>${Number.isFinite(price) ? escapeHtml(formatCurrency(vat)) : ''}</td>
-        <td>${escapeHtml(formatVat(item.vat_rate))}</td>
+        <td>${escapeHtml(formatVat(effectiveLineVatRate(item)))}</td>
       </tr>
     `;
   }
@@ -4358,7 +4659,7 @@
   function invoiceTaxAnalysisRows(items) {
     const rowsByRate = new Map();
     for (const item of items || []) {
-      const rate = orderAckVatPercent(item.vat_rate);
+      const rate = effectiveLineVatPercent(item);
       const key = Number.isFinite(rate) ? rate.toFixed(2) : '0.00';
       const current = rowsByRate.get(key) || { rate: Number(key), net: 0 };
       current.net += orderAckLineNet(item);
@@ -4432,13 +4733,16 @@
     let page = emptyOrderAckPageContent();
     let usedMm = 0;
 
+    const currentPageContentMaxMm = () => (
+      pages.length === 0 ? ORDER_ACK_FIRST_PAGE_CONTENT_MAX_MM : ORDER_ACK_CONTINUATION_PAGE_CONTENT_MAX_MM
+    );
     const pushPage = () => {
       pages.push(page);
       page = emptyOrderAckPageContent();
       usedMm = 0;
     };
     const ensureSpace = (heightMm) => {
-      if (usedMm > 0 && usedMm + heightMm > ORDER_ACK_PAGE_CONTENT_MAX_MM) pushPage();
+      if (usedMm > 0 && usedMm + heightMm > currentPageContentMaxMm()) pushPage();
     };
 
     const itemEntries = orderAckItemEntries(items);
@@ -4540,7 +4844,7 @@
         <td>${Number.isFinite(price) ? escapeHtml(formatCurrency(price)) : ''}</td>
         <td>${escapeHtml(formatCurrency(net))}</td>
         <td>${escapeHtml(formatCurrency(vat))}</td>
-        <td>${escapeHtml(formatVat(item.vat_rate))}</td>
+        <td>${escapeHtml(formatVat(effectiveLineVatRate(item)))}</td>
       </tr>
     `;
   }
@@ -4639,8 +4943,45 @@
   }
 
   function orderAckLineVat(item) {
-    const rate = orderAckVatPercent(item.vat_rate);
+    const rate = effectiveLineVatPercent(item);
     return orderAckLineNet(item) * (rate / 100);
+  }
+
+  function effectiveLineVatRate(item) {
+    return effectiveLineVatPercent(item) / 100;
+  }
+
+  function effectiveLineVatPercent(item) {
+    if (isChildrensClothingLineItem(item)) return 0;
+    return orderAckVatPercent(item?.vat_rate);
+  }
+
+  function isChildrensClothingLineItem(item) {
+    if (!item) return false;
+    const size = normalizeChildProductText(item.size);
+    if (
+      CHILD_AGE_RANGE_SIZE_PATTERN.test(size)
+      || CHILD_YOUTH_SIZE_PATTERN.test(size)
+      || CHILD_TODDLER_SIZE_PATTERN.test(size)
+    ) {
+      return true;
+    }
+
+    const titleText = normalizeChildProductText([
+      item.line_description,
+      item.style_name,
+      item.product_type,
+      item.style_code,
+      item.alt_style_code,
+    ].filter(Boolean).join(' '));
+    return CHILD_PRODUCT_TITLE_PATTERN.test(titleText);
+  }
+
+  function normalizeChildProductText(value) {
+    return String(value || '')
+      .replace(/\u00a0/g, ' ')
+      .replace(/[\u2010-\u2015]/g, '-')
+      .trim();
   }
 
   function orderAckQuantity(item) {
@@ -4783,7 +5124,7 @@
 
   function lineItemEditDisplayValue(item, field) {
     if (!item) return '';
-    if (field === 'vatPercent') return formatVatInput(item.vat_rate);
+    if (field === 'vatPercent') return formatVatInput(effectiveLineVatRate(item));
     if (field === 'quantity') return formatNumber(item.quantity || 0);
     if (field === 'unit_cost' || field === 'unit_price') return formatMoneyInput(item[field]);
     if (field === 'style_name') return item.style_name || item.line_description || '';
@@ -5287,6 +5628,14 @@
     if (product) {
       draft.colourValue = variantColourValue(product);
       draft.sizeValue = variantSizeValue(product);
+      syncDraftVatForProduct(draft, product);
+    }
+  }
+
+  function syncDraftVatForProduct(draft, product) {
+    if (!draft || !product) return;
+    if (isChildrensClothingLineItem(product)) {
+      draft.vatPercent = '0.00';
     }
   }
 
@@ -6123,6 +6472,9 @@
     const row = event.target.closest('[data-custom-line-type]');
     if (!row || row.dataset.customLineType !== state.customLineDraft.type) return;
     state.customLineDraft[field] = event.target.value;
+    if (isChildrensClothingLineItem(state.customLineDraft)) {
+      state.customLineDraft.vatPercent = '0.00';
+    }
     state.customLineDraft.error = '';
     window.requestAnimationFrame(applyNonStockTableLayout);
   }
@@ -6536,8 +6888,78 @@
     return `<input class="db-legacy-input ${className}" readonly value="${escapeAttr(value || '')}">`;
   }
 
+  function orderAddressSelect(role, currentValue) {
+    const addresses = sortAddressChoicesForRole(
+      customerAddressChoices(state.orderCustomerDetail, currentValue),
+      role
+    );
+    const selectedAddress = String(currentValue || '').trim();
+    const options = ['<option value=""></option>'];
+    addresses.forEach((address, index) => {
+      const selected = normalizeOrderAckText(address.address) === normalizeOrderAckText(selectedAddress);
+      options.push(`
+        <option
+          value="${escapeAttr(address.address || '')}"
+          data-address-index="${escapeAttr(index)}"
+          ${selected ? 'selected' : ''}
+        >${escapeHtml(addressOptionLabel(address))}</option>
+      `);
+    });
+    if (selectedAddress && !addresses.some((address) => normalizeOrderAckText(address.address) === normalizeOrderAckText(selectedAddress))) {
+      options.push(`<option value="${escapeAttr(selectedAddress)}" selected>${escapeHtml(selectedAddress)}</option>`);
+    }
+    return `
+      <select
+        class="db-address-select"
+        data-db-address-select="${escapeAttr(role)}"
+        data-address-choices="${escapeAttr(JSON.stringify(addresses))}"
+      >${options.join('')}</select>
+    `;
+  }
+
   function selectBox(value, className = '') {
     return `<select class="${className}" disabled><option>${escapeHtml(value || '')}</option></select>`;
+  }
+
+  async function saveOrderAddressSelection(select) {
+    if (!select || select.dataset.addressSaving === 'true') return;
+    const role = select.dataset.dbAddressSelect === 'delivery' ? 'delivery' : 'invoice';
+    const sourceOrderId = state.selectedJob?.source_order_id;
+    if (!sourceOrderId) return;
+
+    const address = selectedAddressFromSelect(select) || { address: select.value, source_address_id: null };
+    const payload = role === 'delivery'
+      ? {
+        delivery_address: address.address || '',
+        delivery_address_id: address.source_address_id || null,
+      }
+      : {
+        invoice_address: address.address || '',
+        invoice_address_id: address.source_address_id || null,
+      };
+
+    select.dataset.addressSaving = 'true';
+    select.disabled = true;
+    select.classList.remove('db-line-item-error');
+
+    try {
+      const data = await fetchJson(`/api/database/jobs/${encodeURIComponent(sourceOrderId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      state.selectedJob = { ...state.selectedJob, ...data.job };
+      updateOutstandingJob(state.selectedJob);
+      renderOutstandingOrders();
+      state.jobLastSavedSignature = jobSignature(state.selectedJob);
+    } catch (err) {
+      select.classList.add('db-line-item-error');
+      window.alert(`Failed to update ${role === 'delivery' ? 'delivery' : 'invoice'} address: ${err.message || 'Unknown error'}`);
+      renderDetailsPanel();
+    } finally {
+      delete select.dataset.addressSaving;
+      if (select.isConnected) select.disabled = false;
+    }
   }
 
   function customerOpenButton(job) {

@@ -1050,6 +1050,8 @@ router.post('/api/database/jobs', async (req, res) => {
          order_taken_by,
          order_owner_user_id,
          order_owner_name,
+         invoice_address_id,
+         delivery_address_id,
          delivery_address,
          invoice_address,
          order_date,
@@ -1066,7 +1068,7 @@ router.post('/api/database/jobs', async (req, res) => {
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
          $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
-         $25, $26, $27,
+         $25, $26, $27, $28, $29,
          'AWAITING APPROVAL', NOW(),
          FALSE, TRUE, NOW(), NOW()
        )
@@ -1092,6 +1094,8 @@ router.post('/api/database/jobs', async (req, res) => {
         orderTakenBy,
         req.hubUser?.id || null,
         orderOwnerName,
+        nullableInt(payload.invoice_address_id),
+        nullableInt(payload.delivery_address_id),
         cleanNullable(payload.delivery_address),
         cleanNullable(payload.invoice_address),
         orderDate.iso,
@@ -1125,8 +1129,12 @@ router.put('/api/database/jobs/:id', async (req, res) => {
   const hasIsComplete = Object.prototype.hasOwnProperty.call(payload, 'is_complete');
   const hasMarkInvoiced = payload.mark_invoiced === true || payload.mark_invoiced === 'true';
   const hasManualInvoiceDate = payload.manual_invoice_date === true || payload.manual_invoice_date === 'true';
+  const hasContactFields = ['contact_id', 'contact_name', 'contact_phone', 'contact_mobile', 'contact_email']
+    .some((field) => Object.prototype.hasOwnProperty.call(payload, field));
+  const hasAddressFields = ['invoice_address_id', 'invoice_address', 'delivery_address_id', 'delivery_address']
+    .some((field) => Object.prototype.hasOwnProperty.call(payload, field));
 
-  if (!hasJobTitle && !hasComments && !hasIsComplete && !hasMarkInvoiced) {
+  if (!hasJobTitle && !hasComments && !hasIsComplete && !hasMarkInvoiced && !hasContactFields && !hasAddressFields) {
     return res.status(400).json({ error: 'No supported job fields supplied' });
   }
 
@@ -1150,14 +1158,7 @@ router.put('/api/database/jobs/:id', async (req, res) => {
 
       const values = [id];
       const updates = [];
-      if (hasJobTitle) {
-        values.push(cleanNullable(payload.job_title));
-        updates.push(`job_title = $${values.length}`);
-      }
-      if (hasComments) {
-        values.push(cleanNullable(payload.comments));
-        updates.push(`comments = $${values.length}`);
-      }
+      appendDatabaseJobUpdates(payload, values, updates);
       values.push(manualInvoiceDate);
       const invoiceDateParam = `$${values.length}`;
 
@@ -1211,14 +1212,7 @@ router.put('/api/database/jobs/:id', async (req, res) => {
 
   const values = [id];
   const updates = [];
-  if (hasJobTitle) {
-    values.push(cleanNullable(payload.job_title));
-    updates.push(`job_title = $${values.length}`);
-  }
-  if (hasComments) {
-    values.push(cleanNullable(payload.comments));
-    updates.push(`comments = $${values.length}`);
-  }
+  appendDatabaseJobUpdates(payload, values, updates);
   if (hasIsComplete) {
     values.push(toBoolean(payload.is_complete));
     updates.push(`is_complete = $${values.length}`);
@@ -2022,6 +2016,7 @@ function buildJobFilters(query) {
       OR j.contact_email ILIKE ${ref}
       OR j.client_order_no ILIKE ${ref}
       OR CAST(j.order_no AS TEXT) ILIKE ${ref}
+      OR CAST(j.invoice_no AS TEXT) ILIKE ${ref}
       OR EXISTS (
         SELECT 1
         FROM database_job_line_items li_search
@@ -2199,6 +2194,31 @@ function buildLineItemUpdate(payload) {
 function addLineItemUpdateField(update, column, value) {
   update.values.push(value);
   update.assignments.push(`${column} = $${update.values.length}`);
+}
+
+function appendDatabaseJobUpdates(payload, values, updates) {
+  const textFields = [
+    'job_title',
+    'comments',
+    'contact_name',
+    'contact_phone',
+    'contact_mobile',
+    'contact_email',
+    'invoice_address',
+    'delivery_address',
+  ];
+  for (const field of textFields) {
+    if (!hasOwn(payload, field)) continue;
+    values.push(cleanNullable(payload[field]));
+    updates.push(`${field} = $${values.length}`);
+  }
+
+  const intFields = ['contact_id', 'invoice_address_id', 'delivery_address_id'];
+  for (const field of intFields) {
+    if (!hasOwn(payload, field)) continue;
+    values.push(nullableInt(payload[field]));
+    updates.push(`${field} = $${values.length}`);
+  }
 }
 
 function appendLineItemProductUpdate(update, productRow) {

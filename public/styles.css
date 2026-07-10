@@ -2207,10 +2207,12 @@ body.modal-open{overflow:hidden}
   padding:1px 3px;
 }
 .db-new-order-customer-row > input,
-.db-new-order-contact-row > input{
+.db-new-order-contact-row > input,
+.db-new-order-contact-row > select{
   grid-column:3 / 6;
 }
-.db-new-order-contact-row > input{
+.db-new-order-contact-row > input,
+.db-new-order-contact-row > select{
   width:100%;
 }
 .db-new-short-row > select{
@@ -2222,7 +2224,8 @@ body.modal-open{overflow:hidden}
   grid-column:3;
   width:164px;
 }
-.db-new-wide-combo-row > input{
+.db-new-wide-combo-row > input,
+.db-new-wide-combo-row > select{
   grid-column:3 / 6;
 }
 .db-new-order-date-row > input{
@@ -2460,6 +2463,9 @@ body.modal-open{overflow:hidden}
   width:var(--db-outstanding-table-width, 100%);
   min-width:726px;
 }
+#db-outstanding-table.db-all-orders-mode{
+  min-width:824px;
+}
 #db-outstanding-table th:nth-child(2){width:68px}
 #db-outstanding-table th:nth-child(3){width:198px}
 #db-outstanding-table th:nth-child(4){width:36px;text-align:center}
@@ -2468,6 +2474,15 @@ body.modal-open{overflow:hidden}
 #db-outstanding-table th:nth-child(6){width:65px}
 #db-outstanding-table th:nth-child(7){width:88px}
 #db-outstanding-table th:nth-child(8){width:82px}
+#db-outstanding-table th:nth-child(9),
+#db-outstanding-table td:nth-child(9){
+  display:none;
+}
+#db-outstanding-table.db-all-orders-mode th:nth-child(9),
+#db-outstanding-table.db-all-orders-mode td:nth-child(9){
+  display:table-cell;
+  width:98px;
+}
 #db-to-invoice-table{
   min-width:760px;
 }
@@ -2834,6 +2849,9 @@ body.modal-open{overflow:hidden}
 .db-order-ack-page-content{
   height:96mm;
   overflow:hidden;
+}
+.db-order-ack-page-continued .db-order-ack-page-content{
+  height:220mm;
 }
 .db-order-ack-header{
   min-height:42mm;
@@ -3796,6 +3814,11 @@ body.modal-open{overflow:hidden}
   width:104px;
   flex:0 0 104px;
 }
+.db-form-control .db-invoice-number-field{
+  width:82px;
+  flex:0 0 82px;
+  text-align:center;
+}
 .db-control-link{
   color:#00e!important;
   text-decoration:underline;
@@ -4743,10 +4766,12 @@ input.db-custom-line-input{
   .db-new-customer-box .db-new-order-row > select,
   .db-new-order-customer-row > input,
   .db-new-order-contact-row > input,
+  .db-new-order-contact-row > select,
   .db-new-short-row > select,
   .db-new-combo-row > input,
   .db-new-combo-row > select,
   .db-new-wide-combo-row > input,
+  .db-new-wide-combo-row > select,
   .db-new-order-date-row > input,
   .db-new-order-delivery-date-row > input,
   .db-new-order-invoice-row > select,
@@ -4829,6 +4854,9 @@ input.db-custom-line-input{
   }
   #db-outstanding-table{
     min-width:726px;
+  }
+  #db-outstanding-table.db-all-orders-mode{
+    min-width:824px;
   }
   #db-customers-table{
     min-width:860px;
