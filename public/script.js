@@ -15,6 +15,7 @@ const ENDPOINTS = {
   testItemGroup: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/group`,
   testDateColumn: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/date-column`,
   testPrivateJobs: '/api/test-dashboard/private-jobs',
+  testPrivateJob: (itemId) => `/api/test-dashboard/private-jobs/${encodeURIComponent(itemId)}`,
   testScanUrl: (itemId) => `/api/test-dashboard/scan-url?jobId=${encodeURIComponent(itemId)}`,
   testUploadSignature: '/api/test-dashboard/uploads/signature',
   testFiles: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/files`
@@ -2238,6 +2239,7 @@ function ensureTestRowMenu() {
         <button type="button" role="menuitem" data-test-row-move-group="PRE-PRODUCTION">Pre-Production</button>
       </div>
     </div>
+    <button class="test-row-action-button danger" type="button" role="menuitem" data-test-row-delete-private="true" hidden>Delete</button>
   `;
   menu.addEventListener('click', handleTestRowMenuClick);
   document.body.appendChild(menu);
@@ -2261,7 +2263,10 @@ function openTestRowMenu(anchor, item) {
     anchor,
     itemId: String(item.id),
     itemName: normalizeCellText(item.name || ''),
+    privateJob: item?.dashboard_private_job === true,
   };
+  const deleteButton = menu.querySelector('[data-test-row-delete-private]');
+  if (deleteButton) deleteButton.hidden = !__testRowMenuState.privateJob;
   menu.classList.remove('hidden');
   menu.style.visibility = 'hidden';
   positionTestRowMenu(anchor, menu);
@@ -2295,6 +2300,16 @@ function closeTestRowMenu() {
 }
 
 function handleTestRowMenuClick(event) {
+  const deleteButton = event.target.closest('[data-test-row-delete-private]');
+  if (deleteButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    const state = __testRowMenuState;
+    closeTestRowMenu();
+    if (state?.privateJob && state.itemId) deleteTestDashboardPrivateJob(state.itemId, state.itemName);
+    return;
+  }
+
   const button = event.target.closest('[data-test-row-move-group]');
   if (!button) return;
   event.preventDefault();
@@ -2336,6 +2351,28 @@ async function moveTestDashboardItemToGroup(itemId, group) {
   } catch (err) {
     console.warn('Test dashboard move failed', err);
     alert(`Failed to move job: ${err.message || 'Unknown error'}`);
+    await loadTestBoard({ forceRefresh: true });
+  } finally {
+    __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);
+  }
+}
+
+async function deleteTestDashboardPrivateJob(itemId, itemName = '') {
+  if (!isTestPrivateItemId(itemId)) return;
+  const label = itemName ? `"${itemName}"` : 'this private job';
+  if (!window.confirm(`Delete ${label}?`)) return;
+
+  __statusUpdateInFlight += 1;
+  try {
+    const response = await fetch(ENDPOINTS.testPrivateJob(itemId), {
+      method: 'DELETE',
+      credentials: 'include'
+    });
+    if (!response.ok) throw new Error(await readApiError(response));
+    await loadTestBoard({ forceRefresh: true });
+  } catch (err) {
+    console.warn('Private job delete failed', err);
+    alert(`Failed to delete private job: ${err.message || 'Unknown error'}`);
     await loadTestBoard({ forceRefresh: true });
   } finally {
     __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);

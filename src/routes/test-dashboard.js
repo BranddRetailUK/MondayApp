@@ -77,6 +77,36 @@ protectedRouter.post('/api/test-dashboard/private-jobs', async (req, res) => {
   }
 });
 
+protectedRouter.delete('/api/test-dashboard/private-jobs/:jobId', async (req, res) => {
+  const jobId = clean(req.params.jobId);
+  if (!isPrivateDashboardJobId(jobId)) return res.status(400).json({ error: 'Invalid private dashboard job id' });
+
+  try {
+    await ensureTestDashboardDefaults(pool);
+    const job = await fetchPrivateDashboardJob(jobId);
+    if (!job) return res.status(404).json({ error: 'Private dashboard job not found' });
+
+    const deleted = await pool.query(
+      `DELETE FROM test_dashboard_private_jobs
+       WHERE id = $1
+       RETURNING id`,
+      [jobId]
+    );
+    if (!deleted.rowCount) return res.status(404).json({ error: 'Private dashboard job not found' });
+
+    for (const asset of privateDashboardFileAssets(job)) {
+      destroyAsset(asset.publicId, asset.resourceType).catch((err) => {
+        console.warn('[test-dashboard] Cloudinary private job cleanup failed:', err?.message || err);
+      });
+    }
+
+    res.json({ ok: true, itemId: jobId });
+  } catch (err) {
+    console.error('DELETE /api/test-dashboard/private-jobs/:jobId', err);
+    res.status(500).json({ error: 'Failed to delete private dashboard job' });
+  }
+});
+
 protectedRouter.put('/api/test-dashboard/items/:jobId/name', async (req, res) => {
   const jobId = clean(req.params.jobId);
   if (!isPrivateDashboardJobId(jobId)) return res.status(400).json({ error: 'Only private dashboard jobs can be renamed here' });
@@ -981,7 +1011,10 @@ function isAllowedUnapprovedManualStatus(label) {
   const normalized = normalizeColumnTitle(label);
   return normalized === HOLD_LABEL ||
     normalized === NO_STOCK_LABEL ||
-    normalized === PRE_PRODUCTION_LABEL;
+    normalized === PRE_PRODUCTION_LABEL ||
+    normalized === COMPLETED_LABEL ||
+    normalized === 'TO SAMPLE' ||
+    normalized === 'SAMPLED';
 }
 
 function applyAwaitingApprovalColumnValues(job, columns, columnValues) {
@@ -1363,6 +1396,22 @@ function applyDashboardAutomations({ job, currentState, column, columnValues, ch
   const typeText = normalizeColumnTitle(deriveTypeLabel(job) || getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.TYPE]) || job.dashboard_type);
   const jobApproved = resolveJobApproved(job, columnValues);
 
+  if (title === 'STATUS' && !clearRequested && isManualStatusAutomationOverride(statusText)) {
+    const automatedGroupId = groupIdForStatusAndType(statusText, typeText);
+    if (statusText === COMPLETED_LABEL) {
+      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.PRIORITY];
+      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.DATE];
+      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.TRANS];
+      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.JAQ];
+    }
+    return {
+      group_id: automatedGroupId || groupId,
+      item_name: currentState?.item_name || formatJobName(job),
+      column_values: columnValues,
+      archived: false,
+    };
+  }
+
   if (!jobApproved) {
     applyAwaitingApprovalColumnValues(job, TEST_DASHBOARD_COLUMNS, columnValues);
     return {
@@ -1397,6 +1446,12 @@ function applyDashboardAutomations({ job, currentState, column, columnValues, ch
     column_values: columnValues,
     archived,
   };
+}
+
+function isManualStatusAutomationOverride(statusText) {
+  return statusText === COMPLETED_LABEL ||
+    statusText === 'TO SAMPLE' ||
+    statusText === 'SAMPLED';
 }
 
 function applyPrivateDashboardAutomations({ currentJob, column, columnValues, changedLabel, clearRequested }) {
@@ -2054,6 +2109,22 @@ function privateFilesFromColumnValue(value) {
   return Array.isArray(parsed?.files) ? parsed.files : [];
 }
 
+function privateDashboardFileAssets(job) {
+  const assets = [];
+  const values = job?.column_values || {};
+  for (const value of Object.values(values)) {
+    for (const file of privateFilesFromColumnValue(value)) {
+      const publicId = clean(file?.publicId || file?.public_id);
+      if (!publicId) continue;
+      assets.push({
+        publicId,
+        resourceType: clean(file?.resourceType || file?.resource_type) || 'image',
+      });
+    }
+  }
+  return assets;
+}
+
 function privateUploadFileFromBody(body, column, { publicId, secureUrl, createdByName }) {
   const originalFilename = clean(body?.originalFilename || body?.original_filename) || publicId || 'File';
   return {
@@ -2264,7 +2335,11 @@ function normalizeStatusLookupLabel(value) {
 
 function dashboardLabelsForChangedColumn(column, label) {
   const title = normalizeColumnTitle(column?.title || '');
-  if (title === 'STATUS') return { status: label };
+  if (title === 'STATUS') {
+    const labels = { status: label };
+    if (normalizeColumnTitle(label) === COMPLETED_LABEL) labels.priority = '';
+    return labels;
+  }
   if (title === 'PRIORITY') return { priority: label };
   if (title === 'TYPE') return { type: label };
   return {};
