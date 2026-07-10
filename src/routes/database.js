@@ -2,6 +2,14 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db/pool');
 const { fullName } = require('../services/hubAuth');
+const { jobApprovedFromColumnValues } = require('../services/testDashboardDbFields');
+
+function resolveJobApproved(job, dashboardState) {
+  if (!job) return job?.proof_approved;
+  const stateApproved = jobApprovedFromColumnValues(dashboardState?.column_values || {});
+  if (stateApproved !== null) return stateApproved;
+  return job.proof_approved;
+}
 
 router.get('/api/database/summary', async (_req, res) => {
   try {
@@ -1923,7 +1931,7 @@ router.get('/api/database/jobs/:id', async (req, res) => {
     if (!job.rowCount) return res.status(404).json({ error: 'Database job not found' });
 
     const sourceOrderId = job.rows[0].source_order_id;
-    const [lineItems, positions] = await Promise.all([
+    const [lineItems, positions, dashboardState] = await Promise.all([
       fetchLineItems(pool, sourceOrderId),
       pool.query(
         `SELECT *
@@ -1932,10 +1940,21 @@ router.get('/api/database/jobs/:id', async (req, res) => {
          ORDER BY COALESCE(position_sort_order, source_order_position_id), source_order_position_id`,
         [sourceOrderId]
       ),
+      pool.query(
+        `SELECT column_values
+         FROM test_dashboard_job_state
+         WHERE source_order_id = $1
+         LIMIT 1`,
+        [sourceOrderId]
+      ),
     ]);
+    const resolvedJob = {
+      ...job.rows[0],
+      proof_approved: resolveJobApproved(job.rows[0], dashboardState.rows[0]),
+    };
 
     res.json({
-      job: job.rows[0],
+      job: resolvedJob,
       lineItems,
       positions: positions.rows,
     });

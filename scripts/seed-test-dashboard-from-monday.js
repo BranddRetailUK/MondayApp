@@ -127,7 +127,8 @@ async function main() {
           await updateDatabaseJobDashboardFields(
             pool,
             job.source_order_id,
-            dashboardFieldLabelsFromValues(columnValues)
+            dashboardFieldLabelsFromValues(columnValues),
+            { onlyBackfillJobApproved: true }
           );
         }
 

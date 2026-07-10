@@ -19,6 +19,7 @@ const {
   requireCloudinaryConfig,
 } = require('../services/cloudinaryDashboard');
 const {
+  jobApprovedFromColumnValues,
   updateDatabaseJobDashboardFields,
 } = require('../services/testDashboardDbFields');
 
@@ -477,9 +478,11 @@ function buildBoardItem({ job, state, columns, subitemColumns, lineItems, positi
   const typeLabel = deriveTypeLabel(job);
   const designText = designTextFromPositions(positions, job);
   const fallbackDesignText = getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.DESIGN]);
+  const seededJobApproved = jobApprovedFromColumnValues(stateValues);
+  const jobApproved = seededJobApproved === null ? job.proof_approved === true : seededJobApproved;
 
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.PRIORITY, statusValueFromJobOrState(columns, TEST_DASHBOARD_COLUMN_IDS.PRIORITY, job.dashboard_priority, stateValues) || priorityValueFromDate(job.delivery_date));
-  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JOB, stateValues[TEST_DASHBOARD_COLUMN_IDS.JOB] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JOB), Boolean(job.proof_approved)));
+  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JOB, checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JOB), jobApproved));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.DATE, stateValues[TEST_DASHBOARD_COLUMN_IDS.DATE] || dateValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.DATE), job.delivery_date));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.TRANS, stateValues[TEST_DASHBOARD_COLUMN_IDS.TRANS] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.TRANS), false));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JAQ, stateValues[TEST_DASHBOARD_COLUMN_IDS.JAQ] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JAQ), Boolean(job.has_screens || job.screen_numbers)));
@@ -600,12 +603,22 @@ async function fetchDashboardColumn(columnId) {
 
 async function fetchOpenDashboardJobs() {
   const result = await pool.query(`
-    SELECT *
-    FROM database_jobs
-    WHERE is_complete IS NOT TRUE
-      AND invoice_printed IS NOT TRUE
-      AND pf_invoice_printed IS NOT TRUE
-      AND COALESCE(UPPER(TRIM(dashboard_status)), '') <> 'INVOICED'
+    SELECT j.*
+    FROM database_jobs j
+    LEFT JOIN test_dashboard_job_state td_state ON td_state.source_order_id = j.source_order_id
+    LEFT JOIN job_scans scan ON scan.item_id = j.source_order_id::text
+    WHERE COALESCE(UPPER(TRIM(j.dashboard_status)), '') <> 'INVOICED'
+      AND (
+        (
+          j.is_complete IS NOT TRUE
+          AND j.invoice_printed IS NOT TRUE
+          AND j.pf_invoice_printed IS NOT TRUE
+        )
+        OR j.dashboard_status IS NOT NULL
+        OR j.dashboard_priority IS NOT NULL
+        OR td_state.source_order_id IS NOT NULL
+        OR scan.item_id IS NOT NULL
+      )
     ORDER BY COALESCE(order_date, created_at_source, updated_at_source) DESC NULLS LAST,
              order_no DESC
   `);
