@@ -618,8 +618,7 @@ protectedRouter.post('/api/test-dashboard/uploads/signature', async (req, res) =
 
     const folder = folderForColumn(column, privateJob ? `private-${job.id}` : (job.order_no || sourceOrderId));
     const publicId = publicIdForUpload({ filename, source: privateJob ? `private-${job.id}` : `job-${job.order_no || sourceOrderId}` });
-    const format = /\.pdf$/i.test(filename) ? 'pdf' : '';
-    res.json(signUpload({ folder, publicId, format }));
+    res.json(signUpload({ folder, publicId }));
   } catch (err) {
     console.error('POST /api/test-dashboard/uploads/signature', err);
     res.status(500).json({ error: err.message || 'Failed to sign Cloudinary upload' });

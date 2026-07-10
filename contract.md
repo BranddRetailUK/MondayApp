@@ -269,7 +269,7 @@ Security rules:
 - `GET /api/test-dashboard/scan-url?jobId=...`: returns a signed `/test-scan?j=...&ts=...&sig=...` URL for DB-backed label printing.
 - `GET /test-scan?j=...&ts=...&sig=...`: public signed scan endpoint for DB-backed labels. It records scanner state against the job source order id and updates the test-dashboard DB state only.
 - `POST /api/test-dashboard/scanner`: accepts scanner data for the Test Dashboard tab, including `/test-scan` URLs or bare numeric job ids, records scan state, and refreshes DB-backed status/check-in state without calling Monday.
-- `POST /api/test-dashboard/uploads/signature`: returns a short-lived signed Cloudinary browser-upload payload. It requires `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET`; the API secret never reaches the browser. `.pdf` filenames are signed with `format = pdf` so Illustrator-compatible PDFs are delivered back as PDFs instead of Cloudinary `ai` assets.
+- `POST /api/test-dashboard/uploads/signature`: returns a short-lived signed Cloudinary browser-upload payload. It requires `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET`; the API secret never reaches the browser. The signed params are limited to Cloudinary upload params that Cloudinary includes in its signature check; PDF delivery handling is done after upload from the original filename and saved metadata.
 - `POST /api/test-dashboard/items/:jobId/files`: saves Cloudinary upload metadata for a DB job/file column in `test_dashboard_files`.
 - `DELETE /api/test-dashboard/items/:jobId/files/:fileId`: deletes a test-dashboard file metadata row and best-effort destroys the Cloudinary asset.
 
