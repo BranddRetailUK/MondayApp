@@ -3675,10 +3675,10 @@ body.modal-open{overflow:hidden}
 }
 .db-order-approved-mark{
   position:absolute;
-  left:130px;
-  top:300px;
-  width:150px;
-  height:72px;
+  left:24px;
+  top:312px;
+  width:180px;
+  height:86px;
   display:flex;
   align-items:center;
   justify-content:flex-start;
@@ -4801,9 +4801,9 @@ input.db-custom-line-input{
   }
   .db-order-approved-mark{
     position:static;
-    width:150px;
-    height:72px;
-    margin:2px 0 0 86px;
+    width:180px;
+    height:86px;
+    margin:8px 0 0 0;
   }
   .db-form-control{
     flex-wrap:wrap;
