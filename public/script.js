@@ -742,7 +742,11 @@ function renderBoard(payload, options = {}) {
   boardDiv.style.setProperty('--mobile-closed-group-width', `${mobileClosedGroupWidth}px`);
   const boardSortPlan = getBoardSortPlan(boardColumns);
   const dueDateColumn = getDueDateColumn(boardColumns);
-  const globalJobNameWidth = buildJobNameColumnWidth(getAllBoardItems(board.groups || []));
+  const allBoardItems = getAllBoardItems(board.groups || []);
+  const globalJobNameWidth = buildJobNameColumnWidth(allBoardItems);
+  const parentTotalColumn = context === BOARD_CONTEXT_TEST
+    ? buildParentTotalColumnSpec(allBoardItems, subitemColumns)
+    : null;
   const zoomLayer = document.createElement('div');
   zoomLayer.className = 'dashboard-zoom-layer';
   boardDiv.appendChild(zoomLayer);
@@ -756,6 +760,7 @@ function renderBoard(payload, options = {}) {
       subitem: false,
       widthOverrides: groupColumnWidths,
       nameWidth: globalJobNameWidth,
+      parentTotalColumn,
       printWidth: context === BOARD_CONTEXT_TEST ? 116 : 82
     });
     const groupKey = slugify(collectionName);
@@ -1133,10 +1138,16 @@ function normalizeColumns(columns) {
     .filter(column => column.id);
 }
 
-function buildDashboardGridSpec(mondayColumns, { subitem = false, widthOverrides = new Map(), nameWidth = null, printWidth = 82 } = {}) {
+function buildDashboardGridSpec(mondayColumns, { subitem = false, widthOverrides = new Map(), nameWidth = null, printWidth = 82, parentTotalColumn = null } = {}) {
   const columns = [
     subitem ? null : { kind: 'print', title: 'LABEL', width: printWidth },
     { kind: 'name', title: subitem ? 'Subitem' : 'JOB', width: nameWidth || (subitem ? 520 : 560) },
+    !subitem && parentTotalColumn ? {
+      kind: 'jobTotal',
+      title: 'TOTAL',
+      width: parentTotalColumn.width,
+      qtyColumn: parentTotalColumn.qtyColumn
+    } : null,
     ...mondayColumns.map(column => ({
       kind: 'column',
       title: column.title,
@@ -1569,6 +1580,35 @@ function buildDashboardSubitemsWithTotal(subitems, subitemColumns, parentId = ''
   return [...lineSubitems, totalSubitem];
 }
 
+function buildParentTotalColumnSpec(items, subitemColumns) {
+  const qtyColumn = findSubitemQuantityColumn(subitemColumns);
+  const titleWidth = measureBoardTextWidth('TOTAL', "700 13px Manrope, 'Segoe UI', system-ui, sans-serif");
+  let maxValueWidth = 0;
+  if (qtyColumn?.id) {
+    for (const item of (Array.isArray(items) ? items : [])) {
+      const text = getDashboardParentTotalText(item, qtyColumn);
+      if (!text) continue;
+      maxValueWidth = Math.max(maxValueWidth, measureBoardTextWidth(text, "800 15.4px Manrope, 'Segoe UI', system-ui, sans-serif"));
+    }
+  }
+  return {
+    qtyColumn,
+    width: Math.max(58, Math.ceil(Math.max(titleWidth, maxValueWidth) + 22))
+  };
+}
+
+function getDashboardParentTotalText(item, qtyColumn) {
+  if (!qtyColumn?.id) return '';
+  const subitems = Array.isArray(item?.subitems) ? item.subitems : [];
+  const lineSubitems = subitems.filter(subitem => !isDashboardTotalSubitem(subitem));
+  if (!lineSubitems.length) return '';
+  const total = lineSubitems.reduce((sum, subitem) => {
+    const value = findColumnValue(subitem, qtyColumn.id);
+    return sum + parseDashboardQuantity(value?.text);
+  }, 0);
+  return formatDashboardQuantity(total);
+}
+
 function findSubitemQuantityColumn(columns) {
   return (Array.isArray(columns) ? columns : []).find(column => {
     const title = normalizeColumnTitle(column?.title || '').replace(/[^A-Z0-9]/g, '');
@@ -1702,6 +1742,8 @@ function buildItemCell(item, spec, { subitemsOpen = false, context = BOARD_CONTE
     cell = buildPrintCell(item, context);
   } else if (spec.kind === 'name') {
     cell = buildNameCell(item, subitemsOpen, { context });
+  } else if (spec.kind === 'jobTotal') {
+    cell = buildParentTotalCell(item, spec);
   } else {
     cell = buildColumnValueCell(item, spec.column, { context });
   }
@@ -1713,6 +1755,17 @@ function buildSubitemCell(subitem, spec, { context = BOARD_CONTEXT_MONDAY } = {}
   if (spec.kind === 'print') return buildBlankCell('print-cell');
   if (spec.kind === 'name') return buildSubitemNameCell(subitem);
   return buildColumnValueCell(subitem, spec.column, { subitem: true, context });
+}
+
+function buildParentTotalCell(item, spec) {
+  const cell = document.createElement('div');
+  cell.className = 'grid-cell monday-value-cell job-total-cell';
+  const text = getDashboardParentTotalText(item, spec?.qtyColumn);
+  if (text) {
+    cell.title = text;
+    renderPlainTextValue(cell, text);
+  }
+  return cell;
 }
 
 function buildPrintCell(item, context = BOARD_CONTEXT_MONDAY) {
