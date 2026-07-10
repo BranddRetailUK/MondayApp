@@ -3363,6 +3363,8 @@ body.modal-open{overflow:hidden}
 .db-invoice-items td:nth-child(n+5),
 .db-invoice-items th:nth-child(n+5){
   text-align:right;
+  padding-left:0.55mm;
+  padding-right:0.55mm;
 }
 .db-delivery-note-items{
   font-size:10px;
@@ -3379,14 +3381,17 @@ body.modal-open{overflow:hidden}
   width:153mm;
   margin:5mm 0 0 7.5mm;
   display:grid;
-  grid-template-columns:70mm 1fr;
-  column-gap:14mm;
+  grid-template-columns:62mm 44mm 18mm 1fr;
+  column-gap:0;
   align-items:start;
   font-size:9px;
 }
+.db-invoice-tax-analysis{
+  grid-column:1;
+}
 .db-invoice-tax-analysis strong{
   display:block;
-  margin-bottom:1.5mm;
+  margin-bottom:1.2mm;
   font-weight:700;
 }
 .db-invoice-tax-analysis table{
@@ -3396,34 +3401,41 @@ body.modal-open{overflow:hidden}
 }
 .db-invoice-tax-analysis td{
   border:1px solid #333;
-  padding:1.3mm 1mm;
+  padding:1mm 0.75mm;
 }
 .db-invoice-tax-analysis td:last-child{
-  width:25mm;
+  width:20mm;
   text-align:right;
+  padding-left:0.55mm;
+  padding-right:0.55mm;
 }
 .db-invoice-total-lines{
+  grid-column:2 / 4;
   display:grid;
-  row-gap:0.7mm;
+  row-gap:0;
+  margin-top:4.6mm;
 }
 .db-invoice-total-row{
   display:grid;
-  grid-template-columns:1fr 31mm;
+  grid-template-columns:44mm 18mm;
   align-items:stretch;
 }
 .db-invoice-total-row span{
-  padding:1.3mm 1.5mm 1.3mm 0;
+  padding:1.1mm 1.2mm 1.1mm 0;
   text-align:right;
   font-weight:700;
+  white-space:nowrap;
 }
 .db-invoice-total-row strong{
-  min-height:5mm;
+  min-height:5.2mm;
   box-sizing:border-box;
   display:flex;
   align-items:center;
   justify-content:flex-end;
   border:1px solid #333;
-  padding:1.3mm 1mm;
+  padding:1mm 0.55mm;
+  font-size:10.5px;
+  font-weight:800;
 }
 .db-outstanding-report-page{
   padding:12mm 21mm 35mm;
