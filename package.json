@@ -10,6 +10,7 @@
     "sync:open-orders": "node scripts/open-orders-sync.js",
     "import:database-mdb": "node scripts/import-database-mdb.js",
     "verify:mdb-invoices": "node scripts/verify-mdb-invoice-numbers.js",
+    "verify:mdb-numbering": "node scripts/verify-mdb-invoice-numbers.js",
     "seed:test-dashboard": "node scripts/seed-test-dashboard-from-monday.js"
   },
   "dependencies": {

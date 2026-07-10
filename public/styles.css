@@ -4089,24 +4089,52 @@ input.db-custom-line-input{
 .db-nonstock-box .db-custom-table-scroll{
   flex:1 1 auto;
 }
+.db-nonstock-table col.db-row-selector-col{
+  width:19px;
+}
+.db-nonstock-table col.db-nonstock-desc-col,
+.db-nonstock-table col.db-nonstock-supplier-col{
+  width:auto;
+}
+.db-nonstock-table col.db-nonstock-cost-col{
+  width:var(--db-nonstock-cost-width, 68px);
+}
+.db-nonstock-table col.db-nonstock-price-col{
+  width:var(--db-nonstock-price-width, 68px);
+}
+.db-nonstock-table col.db-nonstock-qty-col{
+  width:var(--db-nonstock-qty-width, 52px);
+}
+.db-nonstock-table col.db-nonstock-vat-col{
+  width:var(--db-nonstock-vat-width, 66px);
+}
 .db-nonstock-table th:nth-child(1),
 .db-nonstock-table th:nth-child(2){width:19px}
 .db-nonstock-table th:nth-child(3){width:auto}
-.db-nonstock-table th:nth-child(n+4){width:68px}
+.db-nonstock-table th:nth-child(n+4){width:auto}
 .db-nonstock-table td:nth-child(n+4){
   text-align:right;
 }
 .db-nonstock-table.has-supplier th:nth-child(4){
-  width:96px;
+  width:auto;
 }
 .db-nonstock-table.has-supplier th:nth-child(n+5){
-  width:68px;
+  width:auto;
 }
 .db-nonstock-table.has-supplier td:nth-child(4){
   text-align:left;
 }
 .db-nonstock-table.has-supplier td:nth-child(n+5){
   text-align:right;
+}
+.db-nonstock-table input[data-line-item-field="line_description"],
+.db-nonstock-table input[data-line-item-field="supplier_name"],
+.db-nonstock-table input[data-custom-line-field="line_description"],
+.db-nonstock-table input[data-custom-line-field="supplier_name"]{
+  cursor:text;
+}
+.db-nonstock-table .db-line-text-scrolling{
+  caret-color:transparent;
 }
 .db-gray-fill td{
   height:76px;

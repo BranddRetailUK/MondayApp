@@ -32,23 +32,25 @@ async function main() {
     throw new Error(`MDB file not found: ${mdbPath}`);
   }
 
-  console.log(`[invoice-verify] Reading invoices from ${mdbPath}`);
-  const mdbInvoices = readMdbInvoices(mdbPath);
+  console.log(`[invoice-verify] Reading order and invoice numbers from ${mdbPath}`);
+  const mdbOrders = readMdbOrders(mdbPath);
 
   console.log('[invoice-verify] Reading source-backed jobs from Postgres');
-  const dbInvoices = await readDbInvoices();
+  const dbOrders = await readDbOrders();
 
-  const mismatches = compareInvoices(mdbInvoices, dbInvoices);
+  const mismatches = compareOrders(mdbOrders, dbOrders);
   const duplicateDbInvoices = await readDuplicateDbInvoices();
   const maxes = await readMaxes();
+  const nativeJobs = await readNativeJobsAfterMdb(maxes.mdb_max_source_order_id);
 
   if (mismatches.length || duplicateDbInvoices.length) {
     console.error('[invoice-verify] FAILED');
-    console.error(`[invoice-verify] Source-backed invoice mismatches: ${mismatches.length}`);
+    console.error(`[invoice-verify] Source-backed order/invoice mismatches: ${mismatches.length}`);
     for (const mismatch of mismatches.slice(0, maxMismatches)) {
       console.error(
         `[invoice-verify] source_order_id=${mismatch.source_order_id} ` +
-        `mdb=${formatInvoice(mismatch.mdb_invoice_no)} db=${formatInvoice(mismatch.db_invoice_no)}`
+        `mdb_order=${formatNumber(mismatch.mdb_order_no)} db_order=${formatNumber(mismatch.db_order_no)} ` +
+        `mdb_invoice=${formatNumber(mismatch.mdb_invoice_no)} db_invoice=${formatNumber(mismatch.db_invoice_no)}`
       );
     }
     if (mismatches.length > maxMismatches) {
@@ -70,13 +72,27 @@ async function main() {
   }
 
   console.log('[invoice-verify] OK');
-  console.log(`[invoice-verify] Checked ${mdbInvoices.size} MDB orders against ${dbInvoices.size} DB source-backed jobs`);
-  console.log(`[invoice-verify] MDB max invoice: ${formatInvoice(maxInvoice(mdbInvoices))}`);
-  console.log(`[invoice-verify] DB max invoice: ${formatInvoice(maxes.max_invoice_no)}`);
+  console.log(`[invoice-verify] Checked ${mdbOrders.size} MDB orders against ${dbOrders.size} DB source-backed jobs`);
+  console.log(
+    `[invoice-verify] MDB max source/order/invoice: ` +
+    `source=${maxes.mdb_max_source_order_id}, ` +
+    `order=${maxes.mdb_max_order_no}, ` +
+    `invoice=${formatNumber(maxes.mdb_max_invoice_no)}`
+  );
+  console.log(`[invoice-verify] DB max invoice: ${formatNumber(maxes.max_invoice_no)}`);
   console.log(`[invoice-verify] DB max order/source ids: order=${maxes.max_order_no}, source=${maxes.max_source_order_id}`);
+  if (nativeJobs.length) {
+    console.log('[invoice-verify] Native DB jobs after MDB max:');
+    for (const job of nativeJobs) {
+      console.log(
+        `[invoice-verify] source=${job.source_order_id}, order=${job.order_no}, ` +
+        `invoice=${formatNumber(job.invoice_no)}, customer=${job.customer_name || ''}`
+      );
+    }
+  }
 }
 
-function readMdbInvoices(mdbPath) {
+function readMdbOrders(mdbPath) {
   const result = spawnSync(MDB_EXPORT_BIN, [
     '-d',
     FIELD_DELIMITER,
@@ -104,25 +120,29 @@ function readMdbInvoices(mdbPath) {
 
   const headers = header.split(FIELD_DELIMITER);
   const orderIdIndex = headers.indexOf('OrderID');
+  const orderNoIndex = headers.indexOf('lngOrderNo');
   const invoiceNoIndex = headers.indexOf('lngInvoiceNo');
-  if (orderIdIndex === -1 || invoiceNoIndex === -1) {
-    throw new Error('tblOrder export is missing OrderID or lngInvoiceNo');
+  if (orderIdIndex === -1 || orderNoIndex === -1 || invoiceNoIndex === -1) {
+    throw new Error('tblOrder export is missing OrderID, lngOrderNo, or lngInvoiceNo');
   }
 
-  const invoices = new Map();
+  const orders = new Map();
   for (const record of records) {
     const fields = record.split(FIELD_DELIMITER);
     const sourceOrderId = toInt(fields[orderIdIndex]);
     if (!sourceOrderId) continue;
-    invoices.set(sourceOrderId, toInt(fields[invoiceNoIndex]));
+    orders.set(sourceOrderId, {
+      order_no: toInt(fields[orderNoIndex]),
+      invoice_no: toInt(fields[invoiceNoIndex]),
+    });
   }
 
-  return invoices;
+  return orders;
 }
 
-async function readDbInvoices() {
+async function readDbOrders() {
   const result = await pool.query(`
-    SELECT source_order_id, invoice_no
+    SELECT source_order_id, order_no, invoice_no
     FROM database_jobs
     WHERE is_manual_entry IS NOT TRUE
     ORDER BY source_order_id
@@ -130,7 +150,10 @@ async function readDbInvoices() {
 
   return new Map(result.rows.map((row) => [
     Number(row.source_order_id),
-    row.invoice_no === null ? null : Number(row.invoice_no),
+    {
+      order_no: row.order_no === null ? null : Number(row.order_no),
+      invoice_no: row.invoice_no === null ? null : Number(row.invoice_no),
+    },
   ]));
 }
 
@@ -153,45 +176,55 @@ async function readMaxes() {
   const result = await pool.query(`
     SELECT MAX(invoice_no)::int AS max_invoice_no,
            MAX(order_no)::int AS max_order_no,
-           MAX(source_order_id)::int AS max_source_order_id
+           MAX(source_order_id)::int AS max_source_order_id,
+           MAX(source_order_id) FILTER (WHERE is_manual_entry IS NOT TRUE)::int AS mdb_max_source_order_id,
+           MAX(order_no) FILTER (WHERE is_manual_entry IS NOT TRUE)::int AS mdb_max_order_no,
+           MAX(invoice_no) FILTER (WHERE is_manual_entry IS NOT TRUE)::int AS mdb_max_invoice_no
     FROM database_jobs
   `);
   return result.rows[0] || {};
 }
 
-function compareInvoices(mdbInvoices, dbInvoices) {
+async function readNativeJobsAfterMdb(maxSourceOrderId) {
+  if (!maxSourceOrderId) return [];
+  const result = await pool.query(`
+    SELECT source_order_id, order_no, invoice_no, customer_name, job_title
+    FROM database_jobs
+    WHERE source_order_id > $1
+    ORDER BY source_order_id
+  `, [maxSourceOrderId]);
+  return result.rows;
+}
+
+function compareOrders(mdbOrders, dbOrders) {
   const mismatches = [];
 
-  for (const [sourceOrderId, mdbInvoiceNo] of mdbInvoices) {
-    const dbInvoiceNo = dbInvoices.has(sourceOrderId) ? dbInvoices.get(sourceOrderId) : undefined;
-    if (dbInvoiceNo !== mdbInvoiceNo) {
+  for (const [sourceOrderId, mdbOrder] of mdbOrders) {
+    const dbOrder = dbOrders.get(sourceOrderId);
+    if (!dbOrder || dbOrder.order_no !== mdbOrder.order_no || dbOrder.invoice_no !== mdbOrder.invoice_no) {
       mismatches.push({
         source_order_id: sourceOrderId,
-        mdb_invoice_no: mdbInvoiceNo,
-        db_invoice_no: dbInvoiceNo,
+        mdb_order_no: mdbOrder.order_no,
+        db_order_no: dbOrder?.order_no,
+        mdb_invoice_no: mdbOrder.invoice_no,
+        db_invoice_no: dbOrder?.invoice_no,
       });
     }
   }
 
-  for (const sourceOrderId of dbInvoices.keys()) {
-    if (!mdbInvoices.has(sourceOrderId)) {
+  for (const [sourceOrderId, dbOrder] of dbOrders) {
+    if (!mdbOrders.has(sourceOrderId)) {
       mismatches.push({
         source_order_id: sourceOrderId,
+        mdb_order_no: undefined,
+        db_order_no: dbOrder.order_no,
         mdb_invoice_no: undefined,
-        db_invoice_no: dbInvoices.get(sourceOrderId),
+        db_invoice_no: dbOrder.invoice_no,
       });
     }
   }
 
   return mismatches.sort((a, b) => a.source_order_id - b.source_order_id);
-}
-
-function maxInvoice(invoices) {
-  let max = null;
-  for (const invoiceNo of invoices.values()) {
-    if (invoiceNo !== null && (max === null || invoiceNo > max)) max = invoiceNo;
-  }
-  return max;
 }
 
 function parseMaxMismatches(args) {
@@ -208,7 +241,7 @@ function toInt(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function formatInvoice(value) {
+function formatNumber(value) {
   return value === null || value === undefined ? 'NULL' : String(value);
 }
 
@@ -227,10 +260,10 @@ function resolveMdbExportBin() {
 function printHelp() {
   console.log(`Usage: node scripts/verify-mdb-invoice-numbers.js [PS_XP_tab.mdb] [--max-mismatches=25]
 
-Compares source-backed database_jobs.invoice_no values against tblOrder.lngInvoiceNo
-from the supplied MDB file. Manual Hub-created jobs are not present in the MDB and
-are excluded from source-backed invoice matching, but duplicate invoice numbers are
-still checked across the whole database_jobs table.`);
+Compares source-backed database_jobs.order_no and invoice_no values against
+tblOrder.lngOrderNo and tblOrder.lngInvoiceNo from the supplied MDB file.
+Manual Hub-created jobs are not present in the MDB and are reported separately,
+while duplicate invoice numbers are still checked across the whole database_jobs table.`);
 }
 
 main()

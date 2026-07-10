@@ -168,7 +168,9 @@
   let outstandingScrollFrame = 0;
   let outstandingLayoutFrame = 0;
   let outstandingTitleMeasureCanvas = null;
+  let lineItemMeasureCanvas = null;
   let lineDrag = null;
+  const lineTextScrollAnimations = new WeakMap();
 
   document.addEventListener('DOMContentLoaded', initDatabaseHub);
 
@@ -285,6 +287,7 @@
     els.itemsPanel.addEventListener('input', handleLineDraftInput);
     els.itemsPanel.addEventListener('input', handleCustomLineDraftInput);
     els.itemsPanel.addEventListener('focusin', handleLineDraftFocus);
+    els.itemsPanel.addEventListener('focusin', handleLineTextFocusIn);
     els.itemsPanel.addEventListener('keydown', handleLineDraftKeydown);
     els.itemsPanel.addEventListener('keydown', handleCustomLineDraftKeydown);
     els.itemsPanel.addEventListener('keydown', handleLineItemEditKeydown);
@@ -294,6 +297,8 @@
     els.itemsPanel.addEventListener('change', handleLineDraftChange);
     els.itemsPanel.addEventListener('mousedown', handleLineDraftMouseDown);
     els.itemsPanel.addEventListener('pointerdown', handleLineDragPointerDown);
+    els.itemsPanel.addEventListener('pointerover', handleLineTextHoverIn);
+    els.itemsPanel.addEventListener('pointerout', handleLineTextHoverOut);
     els.detailsPanel.addEventListener('input', handleDetailsPanelInput);
     els.detailsPanel.addEventListener('change', handleDetailsPanelChange);
     els.detailsPanel.addEventListener('focusout', handleDetailsPanelFocusOut);
@@ -2533,6 +2538,7 @@
           <div class="db-nonstock-box">
             <div class="db-custom-table-scroll" data-db-item-scroll>
               <table class="db-legacy-table db-nonstock-table ${showNonStockSupplier ? 'has-supplier' : ''}">
+                ${renderNonStockColgroup(showNonStockSupplier)}
                 <thead>
                   <tr>
                     <th class="db-row-selector"></th>
@@ -2557,9 +2563,52 @@
       </div>
     `;
     window.requestAnimationFrame(() => {
+      applyNonStockTableLayout();
       scrollItemSectionsToAddLine();
       paintProductResults();
     });
+  }
+
+  function renderNonStockColgroup(showSupplier) {
+    return `
+      <colgroup>
+        <col class="db-row-selector-col">
+        <col class="db-row-selector-col">
+        <col class="db-nonstock-desc-col">
+        ${showSupplier ? '<col class="db-nonstock-supplier-col">' : ''}
+        <col class="db-nonstock-cost-col">
+        <col class="db-nonstock-price-col">
+        <col class="db-nonstock-qty-col">
+        <col class="db-nonstock-vat-col">
+      </colgroup>
+    `;
+  }
+
+  function applyNonStockTableLayout() {
+    const table = els.itemsPanel?.querySelector('.db-nonstock-table');
+    if (!table) return;
+
+    [
+      { field: 'unit_cost', header: 'Cost:', property: '--db-nonstock-cost-width' },
+      { field: 'unit_price', header: 'Price:', property: '--db-nonstock-price-width' },
+      { field: 'quantity', header: 'Qty:', property: '--db-nonstock-qty-width' },
+      { field: 'vatPercent', header: 'VAT:', property: '--db-nonstock-vat-width' },
+    ].forEach((column) => {
+      const values = [column.header];
+      table.querySelectorAll(`[data-line-item-field="${column.field}"], [data-custom-line-field="${column.field}"]`).forEach((input) => {
+        values.push(input.value || '');
+      });
+
+      const width = Math.ceil(Math.max(...values.map(measureLineItemTextWidth)) + 14);
+      table.style.setProperty(column.property, `${width}px`);
+    });
+  }
+
+  function measureLineItemTextWidth(value) {
+    if (!lineItemMeasureCanvas) lineItemMeasureCanvas = document.createElement('canvas');
+    const context = lineItemMeasureCanvas.getContext('2d');
+    context.font = '12px Arial';
+    return context.measureText(String(value || '')).width;
   }
 
   function scrollItemSectionsToAddLine() {
@@ -4918,6 +4967,7 @@
       const displayValue = lineItemEditDisplayValue(updatedItem, field);
       input.value = displayValue;
       input.dataset.lineItemOriginal = displayValue;
+      window.requestAnimationFrame(applyNonStockTableLayout);
     } catch (err) {
       input.classList.add('db-line-item-error');
       console.error('Line item autosave failed', err);
@@ -4934,6 +4984,68 @@
       return { [field]: String(value || '').trim() };
     }
     return null;
+  }
+
+  function handleLineTextFocusIn(event) {
+    const input = event.target;
+    if (!isLineTextHoverInput(input)) return;
+    stopLineTextHoverScroll(input);
+  }
+
+  function handleLineTextHoverIn(event) {
+    const input = event.target;
+    if (!isLineTextHoverInput(input) || document.activeElement === input) return;
+    startLineTextHoverScroll(input);
+  }
+
+  function handleLineTextHoverOut(event) {
+    const input = event.target;
+    if (!isLineTextHoverInput(input)) return;
+    if (event.relatedTarget === input) return;
+    stopLineTextHoverScroll(input);
+  }
+
+  function isLineTextHoverInput(input) {
+    if (!input?.matches?.('input')) return false;
+    if (!input.closest('.db-nonstock-table')) return false;
+    const field = input.dataset.lineItemField || input.dataset.customLineField;
+    return field === 'line_description' || field === 'supplier_name';
+  }
+
+  function startLineTextHoverScroll(input) {
+    stopLineTextHoverScroll(input);
+    const maxScroll = input.scrollWidth - input.clientWidth;
+    if (maxScroll <= 1) return;
+
+    input.classList.add('db-line-text-scrolling');
+    input.scrollLeft = 0;
+
+    const delayMs = 250;
+    const durationMs = Math.max(900, Math.min(2600, maxScroll * 34));
+    const startAt = window.performance.now() + delayMs;
+    const animation = { frame: 0 };
+
+    const tick = (now) => {
+      if (now < startAt) {
+        animation.frame = window.requestAnimationFrame(tick);
+        return;
+      }
+
+      const progress = Math.min((now - startAt) / durationMs, 1);
+      input.scrollLeft = Math.round(maxScroll * progress);
+      if (progress < 1) animation.frame = window.requestAnimationFrame(tick);
+    };
+
+    animation.frame = window.requestAnimationFrame(tick);
+    lineTextScrollAnimations.set(input, animation);
+  }
+
+  function stopLineTextHoverScroll(input) {
+    const animation = lineTextScrollAnimations.get(input);
+    if (animation) window.cancelAnimationFrame(animation.frame);
+    lineTextScrollAnimations.delete(input);
+    input.classList.remove('db-line-text-scrolling');
+    input.scrollLeft = 0;
   }
 
   function syncSelectedJobLineSummary() {
@@ -5448,6 +5560,7 @@
     if (!row || row.dataset.customLineType !== state.customLineDraft.type) return;
     state.customLineDraft[field] = event.target.value;
     state.customLineDraft.error = '';
+    window.requestAnimationFrame(applyNonStockTableLayout);
   }
 
   function handleCustomLineDraftKeydown(event) {
