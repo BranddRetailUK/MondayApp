@@ -454,7 +454,12 @@ function shouldRenderDashboardJob(job, state, scan) {
     job.dashboard_status || getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]) || scan?.status || ''
   );
   if (statusText === 'INVOICED') return false;
+  if (statusText === 'COMPLETED' && isDashboardJobInvoiced(job)) return false;
   return hasDashboardIdentity(job, state, scan);
+}
+
+function isDashboardJobInvoiced(job) {
+  return Boolean(job?.is_complete || job?.invoice_printed || job?.pf_invoice_printed);
 }
 
 function hasDashboardIdentity(job, state, scan) {
