@@ -129,7 +129,10 @@ body{
   pointer-events:none;
 }
 .nav-tabs li[data-tab="test-dashboard"]{
-  order:-1;
+  order:1;
+}
+.nav-tabs li[data-tab="visuals"]{
+  order:2;
 }
 .nav-tab-label-dashboard,
 .nav-tab-label-visuals{
@@ -2704,10 +2707,6 @@ body.modal-open{overflow:hidden}
   padding:0 2px;
   line-height:15px;
 }
-.db-doc-button:nth-child(n+5){
-  flex-basis:45px;
-  width:45px;
-}
 .db-order-ack-modal{
   position:fixed;
   inset:0;
@@ -3315,7 +3314,7 @@ body.modal-open{overflow:hidden}
 }
 .db-order-tabs{
   display:grid;
-  grid-template-columns:1fr 1fr 1fr;
+  grid-template-columns:repeat(4, 1fr);
   height:28px;
   margin-top:8px;
 }
@@ -3360,6 +3359,138 @@ body.modal-open{overflow:hidden}
 .db-order-panel select,
 .db-order-panel textarea{
   background:#fff!important;
+}
+.db-proof-layout{
+  height:447px;
+  display:grid;
+  grid-template-columns:36px minmax(0, 1fr) 36px;
+  gap:8px;
+  padding:14px 16px;
+  background:#92cdea;
+}
+.db-proof-frame{
+  min-width:0;
+  height:100%;
+  display:flex;
+  flex-direction:column;
+  border:1px solid #000;
+  background:#858585;
+}
+.db-proof-toolbar{
+  flex:0 0 30px;
+  display:grid;
+  grid-template-columns:48px minmax(0, 1fr) 64px;
+  align-items:center;
+  gap:6px;
+  padding:4px 6px;
+  border-bottom:1px solid #000;
+  background:#efefef;
+  color:#000;
+  font:12px Arial, Helvetica, sans-serif;
+}
+.db-proof-name-field{
+  width:100%;
+  min-width:0;
+}
+.db-proof-file-count{
+  text-align:right;
+  white-space:nowrap;
+}
+.db-proof-viewer{
+  position:relative;
+  flex:1 1 auto;
+  min-height:0;
+  overflow:auto;
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
+  padding:10px;
+  background:#858585;
+}
+.db-proof-pdf-stage{
+  width:max-content;
+  min-width:100%;
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
+}
+.db-proof-pdf-canvas,
+.db-proof-image{
+  display:block;
+  max-width:100%;
+  height:auto;
+  background:#fff;
+  border:1px solid #000;
+}
+.db-proof-native-viewer{
+  width:100%;
+  height:100%;
+  min-height:100%;
+  flex:1 1 auto;
+  border:1px solid #000;
+  background:#fff;
+}
+.db-proof-note{
+  position:absolute;
+  top:12px;
+  left:50%;
+  transform:translateX(-50%);
+  z-index:2;
+  max-width:80%;
+  padding:5px 8px;
+  border:1px solid #000;
+  background:#efefef;
+  color:#000;
+  font:12px Arial, Helvetica, sans-serif;
+}
+.db-proof-page-controls{
+  flex:0 0 30px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  border-top:1px solid #000;
+  background:#efefef;
+  color:#000;
+  font:12px Arial, Helvetica, sans-serif;
+}
+.db-proof-page-controls[hidden]{
+  display:none;
+}
+.db-proof-page-controls .db-small-button{
+  width:30px;
+  height:22px;
+  padding:0;
+  font-size:16px;
+  line-height:18px;
+}
+.db-proof-page-controls span{
+  min-width:82px;
+  text-align:center;
+}
+.db-proof-file-arrow{
+  align-self:center;
+  width:32px;
+  height:76px;
+  padding:0;
+  border:2px outset #fff;
+  border-radius:0;
+  background:#eee;
+  color:#000;
+  font:28px/1 Arial, Helvetica, sans-serif;
+  cursor:pointer;
+}
+.db-proof-file-arrow[hidden]{
+  visibility:hidden;
+  display:block;
+}
+.db-proof-file-arrow:active{
+  border-style:inset;
+}
+.db-proof-file-arrow:disabled,
+.db-proof-page-controls .db-small-button:disabled{
+  color:#777;
+  cursor:default;
 }
 .db-customer-panel{
   display:none;
@@ -4746,11 +4877,10 @@ input.db-custom-line-input{
   .db-document-buttons{
     grid-column:1 / -1;
     display:grid;
-    grid-template-columns:repeat(3, minmax(0, 1fr));
+    grid-template-columns:repeat(4, minmax(0, 1fr));
     gap:4px;
   }
-  .db-doc-button,
-  .db-doc-button:nth-child(n+5){
+  .db-doc-button{
     width:auto;
     min-width:0;
     flex-basis:auto;
@@ -4797,7 +4927,7 @@ input.db-custom-line-input{
   .db-order-tab,
   .db-customer-tab{
     flex:0 0 auto;
-    min-width:116px;
+    min-width:96px;
     height:32px;
   }
   .db-order-panel,
@@ -4853,7 +4983,8 @@ input.db-custom-line-input{
   }
 
   .db-items-layout,
-  .db-design-layout{
+  .db-design-layout,
+  .db-proof-layout{
     height:auto;
     padding:10px;
   }
@@ -4903,6 +5034,23 @@ input.db-custom-line-input{
   }
   .db-design-filler{
     display:none;
+  }
+  .db-proof-layout{
+    grid-template-columns:30px minmax(0, 1fr) 30px;
+    min-height:360px;
+  }
+  .db-proof-frame{
+    min-height:360px;
+  }
+  .db-proof-toolbar{
+    grid-template-columns:44px minmax(0, 1fr);
+  }
+  .db-proof-file-count{
+    display:none;
+  }
+  .db-proof-file-arrow{
+    width:28px;
+    height:58px;
   }
 
   .db-customer-contacts-layout{

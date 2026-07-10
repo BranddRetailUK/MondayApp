@@ -116,6 +116,14 @@
     selectedJob: null,
     selectedLineItems: [],
     selectedPositions: [],
+    selectedProofFiles: [],
+    proofViewer: {
+      fileIndex: 0,
+      pageNumber: 1,
+      pageCount: 1,
+      pdf: null,
+      renderToken: 0,
+    },
     lineDraft: null,
     productResults: [],
     productSearchOpen: false,
@@ -220,6 +228,7 @@
       detailsPanel: document.getElementById('db-order-details-panel'),
       itemsPanel: document.getElementById('db-order-items-panel'),
       designPanel: document.getElementById('db-order-design-panel'),
+      proofPanel: document.getElementById('db-order-proof-panel'),
       newOrderForm: document.getElementById('db-new-order-form'),
       newOrderAccept: document.getElementById('db-new-order-accept'),
       newOrderCancel: document.getElementById('db-new-order-cancel'),
@@ -421,6 +430,18 @@
     if (button.id === 'db-home-button') {
       await flushOrderAutosaves();
       goBackDatabaseView();
+      return;
+    }
+
+    const proofFileDelta = button.dataset.dbProofFile;
+    if (proofFileDelta !== undefined) {
+      changeDatabaseProofFile(Number.parseInt(proofFileDelta, 10));
+      return;
+    }
+
+    const proofPageDelta = button.dataset.dbProofPage;
+    if (proofPageDelta !== undefined) {
+      changeDatabaseProofPage(Number.parseInt(proofPageDelta, 10));
       return;
     }
 
@@ -2314,6 +2335,8 @@
       state.selectedJob = data.job || {};
       state.selectedLineItems = data.lineItems || [];
       state.selectedPositions = data.positions || [];
+      state.selectedProofFiles = normalizeDatabaseProofFiles(data.proofFiles || []);
+      resetDatabaseProofViewerState();
       resetLineDraftState();
       resetCustomLineDraftState();
       resetLineOrderAutosaveState();
@@ -2339,6 +2362,7 @@
     els.detailsPanel.innerHTML = '<div class="db-panel-message">Loading order details</div>';
     els.itemsPanel.innerHTML = '';
     els.designPanel.innerHTML = '';
+    if (els.proofPanel) els.proofPanel.innerHTML = '';
   }
 
   function renderOrderError(message) {
@@ -2350,6 +2374,7 @@
     els.detailsPanel.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
     els.itemsPanel.innerHTML = '';
     els.designPanel.innerHTML = '';
+    if (els.proofPanel) els.proofPanel.innerHTML = '';
   }
 
   function renderOrder() {
@@ -2364,6 +2389,7 @@
     renderDetailsPanel();
     renderItemsPanel();
     renderDesignPanel();
+    renderProofPanel();
     syncOrderDocumentButtons(job);
   }
 
@@ -2402,10 +2428,12 @@
       ['details', els.detailsPanel],
       ['items', els.itemsPanel],
       ['design', els.designPanel],
+      ['proof', els.proofPanel],
     ].forEach(([key, panel]) => {
-      panel.classList.toggle('active', key === tab);
+      panel?.classList.toggle('active', key === tab);
     });
     syncOrderItemsExpansion();
+    if (tab === 'proof') queueRenderDatabaseProofFile();
   }
 
   function renderDetailsPanel() {
@@ -2654,6 +2682,292 @@
     `;
     state.designDirty = false;
     state.designLastSavedSignature = designSignature(collectDesignPositions());
+  }
+
+  function renderProofPanel() {
+    if (!els.proofPanel) return;
+    const files = state.selectedProofFiles || [];
+    const viewer = state.proofViewer || {};
+    const fileIndex = clampNumber(viewer.fileIndex, 0, Math.max(0, files.length - 1));
+    const currentFile = files[fileIndex];
+    const hasMultiple = files.length > 1;
+    const fileCount = files.length ? `${fileIndex + 1} of ${files.length}` : '';
+
+    els.proofPanel.innerHTML = `
+      <div class="db-proof-layout">
+        <button class="db-proof-file-arrow db-proof-file-arrow-left" type="button" data-db-proof-file="-1" aria-label="Previous proof file" ${hasMultiple ? '' : 'hidden'} ${fileIndex <= 0 ? 'disabled' : ''}>‹</button>
+        <div class="db-proof-frame">
+          <div class="db-proof-toolbar">
+            <span>Proof:</span>
+            <input class="db-legacy-input db-proof-name-field" readonly value="${escapeAttr(currentFile?.name || '')}">
+            <span class="db-proof-file-count">${escapeHtml(fileCount)}</span>
+          </div>
+          <div class="db-proof-viewer" data-db-proof-viewer>
+            <div class="db-panel-message">${files.length ? 'Loading proof file' : 'No proof PDFs attached in the Test Dashboard proof column'}</div>
+          </div>
+          <div class="db-proof-page-controls" data-db-proof-page-controls hidden>
+            <button class="db-small-button" type="button" data-db-proof-page="-1">‹</button>
+            <span data-db-proof-page-status>Page 1 / 1</span>
+            <button class="db-small-button" type="button" data-db-proof-page="1">›</button>
+          </div>
+        </div>
+        <button class="db-proof-file-arrow db-proof-file-arrow-right" type="button" data-db-proof-file="1" aria-label="Next proof file" ${hasMultiple ? '' : 'hidden'} ${fileIndex >= files.length - 1 ? 'disabled' : ''}>›</button>
+      </div>
+    `;
+
+    if (state.activeOrderTab === 'proof') queueRenderDatabaseProofFile();
+  }
+
+  function normalizeDatabaseProofFiles(files) {
+    return (Array.isArray(files) ? files : [])
+      .map((file) => {
+        const name = file?.name || file?.original_filename || file?.public_id || 'Proof file';
+        const url = file?.url || file?.secure_url || file?.public_url || '';
+        if (!url && !file?.assetId && !file?.asset_id) return null;
+        return {
+          ...file,
+          assetId: file.assetId || file.asset_id || '',
+          name,
+          url,
+          mime: file.mime || inferDatabaseMimeFromName(name, file.format, file.resource_type || file.resourceType),
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function inferDatabaseMimeFromName(name, format, resourceType) {
+    const cleanFormat = String(format || '').toLowerCase();
+    if (cleanFormat === 'pdf' || /\.pdf$/i.test(name || '')) return 'application/pdf';
+    if (resourceType === 'image' && cleanFormat) return `image/${cleanFormat === 'jpg' ? 'jpeg' : cleanFormat}`;
+    if (typeof window.inferMimeTypeFromName === 'function') return window.inferMimeTypeFromName(name);
+    if (/\.png$/i.test(name || '')) return 'image/png';
+    if (/\.jpe?g$/i.test(name || '')) return 'image/jpeg';
+    if (/\.gif$/i.test(name || '')) return 'image/gif';
+    if (/\.webp$/i.test(name || '')) return 'image/webp';
+    return '';
+  }
+
+  function resetDatabaseProofViewerState() {
+    state.proofViewer = {
+      fileIndex: 0,
+      pageNumber: 1,
+      pageCount: 1,
+      pdf: null,
+      renderToken: (state.proofViewer?.renderToken || 0) + 1,
+    };
+  }
+
+  function queueRenderDatabaseProofFile() {
+    if (!els.proofPanel?.classList.contains('active')) return;
+    window.requestAnimationFrame(() => renderDatabaseProofFile());
+  }
+
+  async function renderDatabaseProofFile() {
+    if (!els.proofPanel?.classList.contains('active')) return;
+    const files = state.selectedProofFiles || [];
+    const viewer = state.proofViewer;
+    viewer.fileIndex = clampNumber(viewer.fileIndex, 0, Math.max(0, files.length - 1));
+    const file = files[viewer.fileIndex];
+    const token = ++viewer.renderToken;
+    viewer.pageNumber = 1;
+    viewer.pageCount = 1;
+    viewer.pdf = null;
+    updateDatabaseProofControls(true);
+
+    if (!file) {
+      setDatabaseProofViewerMessage('No proof PDFs attached in the Test Dashboard proof column');
+      updateDatabaseProofControls(false);
+      return;
+    }
+
+    if (isDatabasePdfFile(file)) {
+      await renderDatabaseProofPdf(file, token);
+    } else if (isDatabaseImageFile(file)) {
+      renderDatabaseProofImage(file, token);
+    } else {
+      renderDatabaseProofNativeViewer(file, token);
+    }
+  }
+
+  async function renderDatabaseProofPdf(file, token) {
+    setDatabaseProofViewerMessage('Loading PDF...');
+    try {
+      const pdfjs = await ensureDatabasePdfJs();
+      const src = buildDatabaseAssetSrc(file);
+      const resp = await fetch(src, { credentials: 'include', cache: 'no-store' });
+      if (!resp.ok) throw new Error(`PDF fetch failed (${resp.status})`);
+      const buffer = await resp.arrayBuffer();
+      if (token !== state.proofViewer.renderToken) return;
+
+      const loadingTask = pdfjs.getDocument({
+        data: buffer,
+        useWorkerFetch: true,
+        isEvalSupported: true,
+        disableAutoFetch: false,
+      });
+      const pdf = await loadingTask.promise;
+      if (token !== state.proofViewer.renderToken) return;
+      state.proofViewer.pdf = pdf;
+      state.proofViewer.pageCount = Math.max(1, pdf.numPages || 1);
+      state.proofViewer.pageNumber = 1;
+      await renderDatabaseProofPdfPage();
+    } catch (err) {
+      console.error('Database proof PDF render failed', err);
+      renderDatabaseProofNativeViewer(file, token, 'PDF preview unavailable. Opening with the browser viewer.');
+    }
+  }
+
+  async function renderDatabaseProofPdfPage() {
+    const viewer = state.proofViewer;
+    const token = viewer.renderToken;
+    const body = els.proofPanel?.querySelector('[data-db-proof-viewer]');
+    if (!body || !viewer.pdf) return;
+    setDatabaseProofViewerMessage('Rendering page...');
+    updateDatabaseProofControls(true);
+
+    const page = await viewer.pdf.getPage(viewer.pageNumber);
+    if (token !== viewer.renderToken) return;
+    const baseViewport = page.getViewport({ scale: 1 });
+    const availableWidth = Math.max(300, (body.clientWidth || 860) - 26);
+    const scale = Math.min(1.75, Math.max(0.65, availableWidth / baseViewport.width));
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { alpha: false });
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    canvas.className = 'db-proof-pdf-canvas';
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    if (token !== viewer.renderToken) return;
+
+    const stage = document.createElement('div');
+    stage.className = 'db-proof-pdf-stage';
+    stage.appendChild(canvas);
+    body.innerHTML = '';
+    body.appendChild(stage);
+    updateDatabaseProofControls(false);
+  }
+
+  function renderDatabaseProofImage(file, token) {
+    if (token !== state.proofViewer.renderToken) return;
+    const body = els.proofPanel?.querySelector('[data-db-proof-viewer]');
+    if (!body) return;
+    const img = document.createElement('img');
+    img.className = 'db-proof-image';
+    img.src = buildDatabaseAssetSrc(file);
+    img.alt = file.name || 'Proof file';
+    body.innerHTML = '';
+    body.appendChild(img);
+    updateDatabaseProofControls(false);
+  }
+
+  function renderDatabaseProofNativeViewer(file, token, note = '') {
+    if (token !== state.proofViewer.renderToken) return;
+    const body = els.proofPanel?.querySelector('[data-db-proof-viewer]');
+    if (!body) return;
+    const src = buildDatabaseAssetSrc(file, { stripPdfUi: isDatabasePdfFile(file) });
+    body.innerHTML = '';
+    if (note) {
+      const noteEl = document.createElement('div');
+      noteEl.className = 'db-proof-note';
+      noteEl.textContent = note;
+      body.appendChild(noteEl);
+    }
+    if (src) {
+      const iframe = document.createElement('iframe');
+      iframe.className = 'db-proof-native-viewer';
+      iframe.src = src;
+      iframe.title = file.name || 'Proof file';
+      body.appendChild(iframe);
+    } else {
+      setDatabaseProofViewerMessage('No preview URL is available for this proof.');
+    }
+    updateDatabaseProofControls(false);
+  }
+
+  function setDatabaseProofViewerMessage(message) {
+    const body = els.proofPanel?.querySelector('[data-db-proof-viewer]');
+    if (!body) return;
+    body.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
+  }
+
+  function changeDatabaseProofFile(delta) {
+    if (!Number.isFinite(delta) || !delta) return;
+    const files = state.selectedProofFiles || [];
+    if (files.length <= 1) return;
+    const viewer = state.proofViewer;
+    const nextIndex = clampNumber(viewer.fileIndex + delta, 0, files.length - 1);
+    if (nextIndex === viewer.fileIndex) return;
+    viewer.fileIndex = nextIndex;
+    viewer.pageNumber = 1;
+    viewer.pageCount = 1;
+    viewer.pdf = null;
+    viewer.renderToken += 1;
+    renderProofPanel();
+    queueRenderDatabaseProofFile();
+  }
+
+  function changeDatabaseProofPage(delta) {
+    if (!Number.isFinite(delta) || !delta) return;
+    const viewer = state.proofViewer;
+    if (!viewer.pdf) return;
+    const nextPage = clampNumber(viewer.pageNumber + delta, 1, viewer.pageCount);
+    if (nextPage === viewer.pageNumber) return;
+    viewer.pageNumber = nextPage;
+    viewer.renderToken += 1;
+    renderDatabaseProofPdfPage().catch((err) => {
+      console.error('Database proof page render failed', err);
+      updateDatabaseProofControls(false);
+    });
+  }
+
+  function updateDatabaseProofControls(loading = false) {
+    const files = state.selectedProofFiles || [];
+    const viewer = state.proofViewer || {};
+    const file = files[viewer.fileIndex];
+    const isPdf = Boolean(viewer.pdf);
+    const pageControls = els.proofPanel?.querySelector('[data-db-proof-page-controls]');
+    const pageStatus = els.proofPanel?.querySelector('[data-db-proof-page-status]');
+    const pagePrev = els.proofPanel?.querySelector('[data-db-proof-page="-1"]');
+    const pageNext = els.proofPanel?.querySelector('[data-db-proof-page="1"]');
+    const filePrev = els.proofPanel?.querySelector('[data-db-proof-file="-1"]');
+    const fileNext = els.proofPanel?.querySelector('[data-db-proof-file="1"]');
+    const nameField = els.proofPanel?.querySelector('.db-proof-name-field');
+    const fileCount = els.proofPanel?.querySelector('.db-proof-file-count');
+
+    if (nameField) nameField.value = file?.name || '';
+    if (fileCount) fileCount.textContent = files.length ? `${viewer.fileIndex + 1} of ${files.length}` : '';
+    if (pageStatus) pageStatus.textContent = `Page ${viewer.pageNumber || 1} / ${viewer.pageCount || 1}`;
+    if (pageControls) pageControls.hidden = !isDatabasePdfFile(file);
+    if (pagePrev) pagePrev.disabled = loading || !isPdf || viewer.pageNumber <= 1;
+    if (pageNext) pageNext.disabled = loading || !isPdf || viewer.pageNumber >= viewer.pageCount;
+    if (filePrev) filePrev.disabled = loading || files.length <= 1 || viewer.fileIndex <= 0;
+    if (fileNext) fileNext.disabled = loading || files.length <= 1 || viewer.fileIndex >= files.length - 1;
+  }
+
+  async function ensureDatabasePdfJs() {
+    if (typeof window.ensurePdfJs === 'function') return window.ensurePdfJs();
+    if (window.pdfjsLib) return window.pdfjsLib;
+    throw new Error('PDF renderer is not available');
+  }
+
+  function isDatabasePdfFile(file) {
+    if (!file) return false;
+    if (typeof window.isPdfFile === 'function') return window.isPdfFile(file.name, file.mime);
+    return String(file.mime || '').toLowerCase().includes('pdf') || /\.pdf(\?|$)/i.test(file.name || '');
+  }
+
+  function isDatabaseImageFile(file) {
+    if (!file) return false;
+    if (typeof window.isImageFile === 'function') return window.isImageFile(file);
+    if (String(file.mime || '').toLowerCase().startsWith('image/')) return true;
+    return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name || '');
+  }
+
+  function buildDatabaseAssetSrc(file, options = {}) {
+    if (typeof window.buildAssetSrc === 'function') return window.buildAssetSrc(file, options);
+    const url = file?.url || file?.secure_url || file?.public_url || '';
+    if (options.stripPdfUi && url) return `${url}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`;
+    return url;
   }
 
   function openOrderAcknowledgement() {
@@ -5951,6 +6265,12 @@
     const expanded = state.activeView === 'order' && state.activeOrderTab === 'items';
     els.stage?.classList.toggle('db-order-items-active', expanded);
     els.root?.classList.toggle('db-order-items-expanded', expanded);
+  }
+
+  function clampNumber(value, min, max) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return min;
+    return Math.min(max, Math.max(min, numeric));
   }
 
   function detailRow(label, controlHtml) {

@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db/pool');
 const { fullName } = require('../services/hubAuth');
 const { jobApprovedFromColumnValues } = require('../services/testDashboardDbFields');
+const { TEST_DASHBOARD_COLUMN_IDS } = require('../services/testDashboardDefaults');
 
 function resolveJobApproved(job, dashboardState) {
   if (!job) return job?.proof_approved;
@@ -1935,7 +1936,7 @@ router.get('/api/database/jobs/:id', async (req, res) => {
     if (!job.rowCount) return res.status(404).json({ error: 'Database job not found' });
 
     const sourceOrderId = job.rows[0].source_order_id;
-    const [lineItems, positions, dashboardState] = await Promise.all([
+    const [lineItems, positions, dashboardState, proofFiles] = await Promise.all([
       fetchLineItems(pool, sourceOrderId),
       pool.query(
         `SELECT *
@@ -1951,6 +1952,14 @@ router.get('/api/database/jobs/:id', async (req, res) => {
          LIMIT 1`,
         [sourceOrderId]
       ),
+      pool.query(
+        `SELECT *
+         FROM test_dashboard_files
+         WHERE source_order_id = $1
+           AND (column_id = $2 OR UPPER(TRIM(column_title)) = 'PROOF')
+         ORDER BY created_at, id`,
+        [sourceOrderId, TEST_DASHBOARD_COLUMN_IDS.PROOF]
+      ),
     ]);
     const resolvedJob = {
       ...job.rows[0],
@@ -1961,6 +1970,7 @@ router.get('/api/database/jobs/:id', async (req, res) => {
       job: resolvedJob,
       lineItems,
       positions: positions.rows,
+      proofFiles: proofFiles.rows.map(databaseProofFileToApi),
     });
   } catch (err) {
     console.error('GET /api/database/jobs/:id', err);
@@ -2039,6 +2049,37 @@ function buildJobFilters(query) {
     params,
     orderSql,
   };
+}
+
+function databaseProofFileToApi(row) {
+  const name = row.original_filename || row.public_id || 'Proof file';
+  return {
+    id: row.id,
+    dashboardFileId: row.id,
+    source_order_id: row.source_order_id,
+    column_id: row.column_id,
+    column_title: row.column_title,
+    name,
+    publicId: row.public_id,
+    public_id: row.public_id,
+    url: row.secure_url,
+    public_url: row.secure_url,
+    secure_url: row.secure_url,
+    mime: mimeFromDatabaseProofFile(row, name),
+    resourceType: row.resource_type || '',
+    resource_type: row.resource_type || '',
+    format: row.format || '',
+    bytes: row.bytes,
+    width: row.width,
+    height: row.height,
+  };
+}
+
+function mimeFromDatabaseProofFile(row, name) {
+  const format = cleanQuery(row.format).toLowerCase();
+  if (format === 'pdf' || /\.pdf$/i.test(name || '')) return 'application/pdf';
+  if (row.resource_type === 'image' && format) return `image/${format === 'jpg' ? 'jpeg' : format}`;
+  return '';
 }
 
 function cleanQuery(value) {
