@@ -719,6 +719,57 @@ protectedRouter.post('/api/test-dashboard/items/:jobId/files', async (req, res) 
   }
 });
 
+protectedRouter.delete('/api/test-dashboard/items/:jobId/proof-files', async (req, res) => {
+  const jobId = clean(req.params.jobId);
+  const privateJob = isPrivateDashboardJobId(jobId);
+  const sourceOrderId = Number.parseInt(jobId, 10);
+  if (!privateJob && !Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
+
+  try {
+    await ensureTestDashboardDefaults(pool);
+
+    if (privateJob) {
+      const job = await fetchPrivateDashboardJob(jobId);
+      if (!job) return res.status(404).json({ error: 'Private dashboard job not found' });
+
+      const columnValues = { ...(job.column_values || {}) };
+      const files = privateFilesFromColumnValue(columnValues[TEST_DASHBOARD_COLUMN_IDS.PROOF]);
+      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.PROOF];
+      await updatePrivateDashboardJob(job.id, {
+        group_id: job.group_id || TEST_DASHBOARD_GROUP_IDS.OFFICE,
+        item_name: job.item_name || '',
+        column_values: columnValues,
+        archived: Boolean(job.archived),
+      });
+
+      destroyPrivateFileAssets(files, 'proof cleanup');
+      return res.json({ ok: true, itemId: job.id, removed: files.length });
+    }
+
+    const job = await fetchDashboardJob(sourceOrderId);
+    if (!job) return res.status(404).json({ error: 'Database job not found' });
+
+    const deleted = await pool.query(
+      `DELETE FROM test_dashboard_files
+       WHERE source_order_id = $1
+         AND column_id = $2
+       RETURNING *`,
+      [sourceOrderId, TEST_DASHBOARD_COLUMN_IDS.PROOF]
+    );
+
+    for (const row of deleted.rows) {
+      destroyAsset(row.public_id, row.resource_type).catch((err) => {
+        console.warn('[test-dashboard] Cloudinary proof cleanup failed:', err?.message || err);
+      });
+    }
+
+    res.json({ ok: true, itemId: String(sourceOrderId), removed: deleted.rowCount });
+  } catch (err) {
+    console.error('DELETE /api/test-dashboard/items/:jobId/proof-files', err);
+    res.status(500).json({ error: 'Failed to remove test dashboard proof' });
+  }
+});
+
 protectedRouter.delete('/api/test-dashboard/items/:jobId/files/:fileId', async (req, res) => {
   const sourceOrderId = Number.parseInt(req.params.jobId, 10);
   const fileId = Number.parseInt(req.params.fileId, 10);
@@ -2113,15 +2164,30 @@ function privateDashboardFileAssets(job) {
   const values = job?.column_values || {};
   for (const value of Object.values(values)) {
     for (const file of privateFilesFromColumnValue(value)) {
-      const publicId = clean(file?.publicId || file?.public_id);
-      if (!publicId) continue;
-      assets.push({
-        publicId,
-        resourceType: clean(file?.resourceType || file?.resource_type) || 'image',
-      });
+      const asset = privateFileAsset(file);
+      if (asset) assets.push(asset);
     }
   }
   return assets;
+}
+
+function privateFileAsset(file) {
+  const publicId = clean(file?.publicId || file?.public_id);
+  if (!publicId) return null;
+  return {
+    publicId,
+    resourceType: clean(file?.resourceType || file?.resource_type) || 'image',
+  };
+}
+
+function destroyPrivateFileAssets(files, context = 'cleanup') {
+  for (const file of files || []) {
+    const asset = privateFileAsset(file);
+    if (!asset) continue;
+    destroyAsset(asset.publicId, asset.resourceType).catch((err) => {
+      console.warn(`[test-dashboard] Cloudinary private file ${context} failed:`, err?.message || err);
+    });
+  }
 }
 
 function privateUploadFileFromBody(body, column, { publicId, secureUrl, createdByName }) {

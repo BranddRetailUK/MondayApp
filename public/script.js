@@ -16,6 +16,7 @@ const ENDPOINTS = {
   testDateColumn: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/date-column`,
   testPrivateJobs: '/api/test-dashboard/private-jobs',
   testPrivateJob: (itemId) => `/api/test-dashboard/private-jobs/${encodeURIComponent(itemId)}`,
+  testProofFiles: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/proof-files`,
   testScanUrl: (itemId) => `/api/test-dashboard/scan-url?jobId=${encodeURIComponent(itemId)}`,
   testUploadSignature: '/api/test-dashboard/uploads/signature',
   testFiles: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/files`
@@ -2239,6 +2240,7 @@ function ensureTestRowMenu() {
         <button type="button" role="menuitem" data-test-row-move-group="PRE-PRODUCTION">Pre-Production</button>
       </div>
     </div>
+    <button class="test-row-action-button" type="button" role="menuitem" data-test-row-remove-proof="true">Remove Proof</button>
     <button class="test-row-action-button danger" type="button" role="menuitem" data-test-row-delete-private="true" hidden>Delete</button>
   `;
   menu.addEventListener('click', handleTestRowMenuClick);
@@ -2300,6 +2302,16 @@ function closeTestRowMenu() {
 }
 
 function handleTestRowMenuClick(event) {
+  const removeProofButton = event.target.closest('[data-test-row-remove-proof]');
+  if (removeProofButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    const state = __testRowMenuState;
+    closeTestRowMenu();
+    if (state?.itemId) removeTestDashboardProof(state.itemId, state.itemName);
+    return;
+  }
+
   const deleteButton = event.target.closest('[data-test-row-delete-private]');
   if (deleteButton) {
     event.preventDefault();
@@ -2351,6 +2363,27 @@ async function moveTestDashboardItemToGroup(itemId, group) {
   } catch (err) {
     console.warn('Test dashboard move failed', err);
     alert(`Failed to move job: ${err.message || 'Unknown error'}`);
+    await loadTestBoard({ forceRefresh: true });
+  } finally {
+    __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);
+  }
+}
+
+async function removeTestDashboardProof(itemId, itemName = '') {
+  const label = itemName ? `"${itemName}"` : 'this job';
+  if (!window.confirm(`Remove proof from ${label}?`)) return;
+
+  __statusUpdateInFlight += 1;
+  try {
+    const response = await fetch(ENDPOINTS.testProofFiles(itemId), {
+      method: 'DELETE',
+      credentials: 'include'
+    });
+    if (!response.ok) throw new Error(await readApiError(response));
+    await loadTestBoard({ forceRefresh: true });
+  } catch (err) {
+    console.warn('Proof removal failed', err);
+    alert(`Failed to remove proof: ${err.message || 'Unknown error'}`);
     await loadTestBoard({ forceRefresh: true });
   } finally {
     __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);
