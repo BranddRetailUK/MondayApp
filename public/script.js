@@ -804,9 +804,6 @@ function renderBoard(payload, options = {}) {
     groupSummary.addEventListener('click', toggleGroup);
     const groupSummaryRow = document.createElement('div');
     groupSummaryRow.className = 'group-summary-row';
-    if (isTestOfficeGroup) {
-      groupSummaryRow.appendChild(buildTestDashboardAddJobButton(group));
-    }
     groupSummaryRow.appendChild(groupSummary);
     groupWrap.appendChild(groupSummaryRow);
 

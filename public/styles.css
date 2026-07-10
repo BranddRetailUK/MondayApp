@@ -569,9 +569,6 @@ body{
   width:calc(100% - 54px);
   min-width:0!important;
 }
-#tab-test-dashboard .group-summary-row > .test-dashboard-add-job-button + .group-summary.simple-closed-summary{
-  width:calc(100% - 92px);
-}
 .group-summary.to-sample-has-jobs{
   background:#193427;
 }
