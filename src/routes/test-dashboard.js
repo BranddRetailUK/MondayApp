@@ -29,6 +29,10 @@ const protectedRouter = express.Router();
 const EDITABLE_STATUS_TITLES = new Set(['STATUS', 'PRIORITY']);
 const EDITABLE_TEXT_TITLES = new Set(['NOTES']);
 const DEFAULT_OFFICE_GROUP_ID = TEST_DASHBOARD_GROUP_IDS.OFFICE;
+const AWAITING_APPROVAL_LABEL = 'AWAITING APPROVAL';
+const WAITING_APPROVAL_LABEL = 'WAITING APPROVAL';
+const NO_STOCK_LABEL = 'NO STOCK';
+const APPROVAL_REQUIREMENTS_MESSAGE = 'Please add design number and/or Visual Proof.';
 const DESIGN_POSITION_LOCK_KEY = 71060217;
 const STITCH_REFERENCE_LABEL = String.raw`(?:STITCH[\s._/-]*COUNT|STITCHES?|S[\s._/-]*T(?:[\s._/-]*(?:S|C))?)`;
 const PSG_REFERENCE_PATTERN = new RegExp(
@@ -147,19 +151,59 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (r
 
     const state = await fetchJobState(job.source_order_id);
     const columnValues = { ...(state?.column_values || {}) };
-    columnValues[column.id] = checkboxValue(column, checked);
-
-    const nextState = {
-      group_id: state?.group_id || resolveDashboardGroupId(job, state, null),
-      item_name: state?.item_name || formatJobName(job),
-      column_values: columnValues,
-      archived: Boolean(state?.archived),
-    };
-    const saved = await upsertJobState(job.source_order_id, nextState);
+    const isApprovalCheckbox = isProofApprovalCheckbox(column);
+    let nextState = null;
     let databaseJob = null;
-    if (isProofApprovalCheckbox(column)) {
-      databaseJob = await updateDatabaseJobProofApproved(pool, job.source_order_id, checked);
+
+    if (isApprovalCheckbox) {
+      if (checked) {
+        const requirements = await getApprovalRequirements(job, columnValues);
+        if (!requirements.ok) {
+          return res.status(400).json({
+            error: APPROVAL_REQUIREMENTS_MESSAGE,
+            code: 'approval_requirements_missing',
+            missing: requirements.missing,
+          });
+        }
+        columnValues[column.id] = checkboxValue(column, true);
+        applyApprovedDashboardColumnValues(columns, columnValues);
+        nextState = {
+          group_id: TEST_DASHBOARD_GROUP_IDS.PRE_PRODUCTION,
+          item_name: state?.item_name || formatJobName(job),
+          column_values: columnValues,
+          archived: false,
+        };
+        databaseJob = await updateDatabaseJobDashboardFields(pool, job.source_order_id, {
+          status: NO_STOCK_LABEL,
+          priority: '',
+          jobApproved: true,
+        });
+      } else {
+        columnValues[column.id] = checkboxValue(column, false);
+        applyAwaitingApprovalColumnValues(job, columns, columnValues);
+        nextState = {
+          group_id: TEST_DASHBOARD_GROUP_IDS.OFFICE,
+          item_name: state?.item_name || formatJobName(job),
+          column_values: columnValues,
+          archived: false,
+        };
+        databaseJob = await updateDatabaseJobDashboardFields(pool, job.source_order_id, {
+          status: AWAITING_APPROVAL_LABEL,
+          priority: '',
+          jobApproved: false,
+        });
+      }
+    } else {
+      columnValues[column.id] = checkboxValue(column, checked);
+      nextState = {
+        group_id: state?.group_id || resolveDashboardGroupId(job, state, null),
+        item_name: state?.item_name || formatJobName(job),
+        column_values: columnValues,
+        archived: Boolean(state?.archived),
+      };
     }
+
+    const saved = await upsertJobState(job.source_order_id, nextState);
 
     res.json({
       ok: true,
@@ -538,15 +582,18 @@ function buildBoardItem({ job, state, columns, subitemColumns, lineItems, positi
   const typeLabel = deriveTypeLabel(job);
   const designText = designTextFromPositions(positions, job);
   const fallbackDesignText = getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.DESIGN]);
-  const seededJobApproved = jobApprovedFromColumnValues(stateValues);
-  const jobApproved = seededJobApproved === null ? job.proof_approved === true : seededJobApproved;
+  const jobApproved = resolveJobApproved(job, stateValues);
 
-  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.PRIORITY, statusValueFromJobOrState(columns, TEST_DASHBOARD_COLUMN_IDS.PRIORITY, job.dashboard_priority, stateValues) || priorityValueFromDate(job.delivery_date));
+  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.PRIORITY, jobApproved ? statusValueFromJobOrState(columns, TEST_DASHBOARD_COLUMN_IDS.PRIORITY, job.dashboard_priority, stateValues) : null);
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JOB, checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JOB), jobApproved));
-  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.DATE, stateValues[TEST_DASHBOARD_COLUMN_IDS.DATE] || dateValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.DATE), job.delivery_date));
+  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.DATE, jobApproved
+    ? (stateValues[TEST_DASHBOARD_COLUMN_IDS.DATE] || customerDateValue(job, columns))
+    : customerDateValue(job, columns));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.TRANS, stateValues[TEST_DASHBOARD_COLUMN_IDS.TRANS] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.TRANS), false));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JAQ, stateValues[TEST_DASHBOARD_COLUMN_IDS.JAQ] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JAQ), Boolean(job.has_screens || job.screen_numbers)));
-  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, statusValueFromJobOrState(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, job.dashboard_status, stateValues) || statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, scan?.status || ''));
+  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, jobApproved
+    ? (statusValueFromJobOrState(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, job.dashboard_status, stateValues) || statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, scan?.status || ''))
+    : awaitingApprovalStatusValue(columns));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.TYPE, statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.TYPE, typeLabel) || stateValues[TEST_DASHBOARD_COLUMN_IDS.TYPE] || statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.TYPE, job.dashboard_type));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.DESIGN, textValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.DESIGN), designText || fallbackDesignText));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.NOTES, stateValues[TEST_DASHBOARD_COLUMN_IDS.NOTES] || textValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.NOTES), job.comments || ''));
@@ -574,8 +621,24 @@ function buildBoardItem({ job, state, columns, subitemColumns, lineItems, positi
       order_no: job.order_no,
     },
     column_values: Array.from(values.values()).filter(Boolean),
-    subitems: lineItems.map(line => buildSubitem(line, subitemColumns)),
+    subitems: lineItems
+      .filter(isDashboardVisibleLineItem)
+      .map(line => buildSubitem(line, subitemColumns)),
   };
+}
+
+function isDashboardVisibleLineItem(line) {
+  if (!line) return false;
+  if (isTruthyDatabaseValue(line.is_non_deliverable) || isTruthyDatabaseValue(line.is_internal)) return false;
+
+  const description = clean(line.line_description || line.style_name || '');
+  return !/^delivery\b/i.test(description);
+}
+
+function isTruthyDatabaseValue(value) {
+  if (value === true || value === 1) return true;
+  const text = clean(value).toLowerCase();
+  return text === 'true' || text === 't' || text === 'yes' || text === 'y' || text === '1';
 }
 
 function buildSubitem(line, columns) {
@@ -590,6 +653,83 @@ function buildSubitem(line, columns) {
     name: line.line_description || line.style_name || line.style_code || `Line ${line.source_order_item_id}`,
     column_values: values,
   };
+}
+
+function resolveJobApproved(job, stateValues = {}) {
+  const seededJobApproved = jobApprovedFromColumnValues(stateValues);
+  return seededJobApproved === null ? job?.proof_approved === true : seededJobApproved;
+}
+
+function customerDateValue(job, columns) {
+  if (!isTruthyDatabaseValue(job?.customer_date_required)) return null;
+  return dateValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.DATE), job?.delivery_date);
+}
+
+function awaitingApprovalStatusValue(columns) {
+  return statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, AWAITING_APPROVAL_LABEL);
+}
+
+function applyAwaitingApprovalColumnValues(job, columns, columnValues) {
+  delete columnValues[TEST_DASHBOARD_COLUMN_IDS.PRIORITY];
+
+  const dueDateValue = customerDateValue(job, columns);
+  if (dueDateValue) {
+    columnValues[TEST_DASHBOARD_COLUMN_IDS.DATE] = dueDateValue;
+  } else {
+    delete columnValues[TEST_DASHBOARD_COLUMN_IDS.DATE];
+  }
+
+  const status = awaitingApprovalStatusValue(columns);
+  if (status) columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS] = status;
+}
+
+function applyApprovedDashboardColumnValues(columns, columnValues) {
+  delete columnValues[TEST_DASHBOARD_COLUMN_IDS.PRIORITY];
+
+  const dueDate = dateValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.DATE), addDaysFromTodayIso(14));
+  if (dueDate) columnValues[TEST_DASHBOARD_COLUMN_IDS.DATE] = dueDate;
+
+  const status = statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, NO_STOCK_LABEL);
+  if (status) columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS] = status;
+}
+
+async function getApprovalRequirements(job, stateValues = {}) {
+  const [positions, hasProof] = await Promise.all([
+    fetchPositionsForApproval(job.source_order_id),
+    hasProofFile(job.source_order_id),
+  ]);
+  const designText = designTextFromPositions(positions, job) ||
+    cleanDesignColumnText(getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.DESIGN]));
+  const missing = [];
+  if (!designText) missing.push('design');
+  if (!hasProof) missing.push('proof');
+  return {
+    ok: missing.length === 0,
+    missing,
+  };
+}
+
+async function fetchPositionsForApproval(sourceOrderId) {
+  const result = await pool.query(
+    `SELECT *
+     FROM database_job_positions
+     WHERE source_order_id = $1
+     ORDER BY COALESCE(position_sort_order, source_order_position_id), source_order_position_id`,
+    [sourceOrderId]
+  );
+  return result.rows;
+}
+
+async function hasProofFile(sourceOrderId) {
+  const result = await pool.query(
+    `SELECT 1
+     FROM test_dashboard_files
+     WHERE source_order_id = $1
+       AND column_id = $2
+     LIMIT 1`,
+    [sourceOrderId, TEST_DASHBOARD_COLUMN_IDS.PROOF]
+  );
+  return result.rowCount > 0;
 }
 
 async function ensureTestDashboardDefaults(db) {
@@ -815,6 +955,17 @@ function applyDashboardAutomations({ job, currentState, column, columnValues, ch
   const title = normalizeColumnTitle(column.title);
   const statusText = normalizeColumnTitle(changedLabel || getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]));
   const typeText = normalizeColumnTitle(deriveTypeLabel(job) || getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.TYPE]) || job.dashboard_type);
+  const jobApproved = resolveJobApproved(job, columnValues);
+
+  if (!jobApproved) {
+    applyAwaitingApprovalColumnValues(job, TEST_DASHBOARD_COLUMNS, columnValues);
+    return {
+      group_id: TEST_DASHBOARD_GROUP_IDS.OFFICE,
+      item_name: currentState?.item_name || formatJobName(job),
+      column_values: columnValues,
+      archived: false,
+    };
+  }
 
   if (title === 'STATUS' && !clearRequested) {
     if (statusText === 'INVOICED') {
@@ -910,6 +1061,7 @@ function formatJobName(job) {
 
 function resolveDashboardGroupId(job, state, scan) {
   const stateValues = state?.column_values || {};
+  if (!resolveJobApproved(job, stateValues)) return TEST_DASHBOARD_GROUP_IDS.OFFICE;
   const statusText = normalizeColumnTitle(
     job.dashboard_status || getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]) || scan?.status || ''
   );
@@ -922,6 +1074,7 @@ function resolveDashboardGroupId(job, state, scan) {
 }
 
 function groupIdForStatusAndType(statusText, typeText) {
+  if (statusText === 'AWAITING APPROVAL' || statusText === 'WAITING APPROVAL') return TEST_DASHBOARD_GROUP_IDS.OFFICE;
   if (statusText === 'COMPLETED') return TEST_DASHBOARD_GROUP_IDS.COMPLETED;
   if (statusText === 'HOLD') return TEST_DASHBOARD_GROUP_IDS.HOLD;
   if (statusText === 'TO SAMPLE') return TEST_DASHBOARD_GROUP_IDS.TO_SAMPLE;
@@ -936,11 +1089,7 @@ function groupIdForStatusAndType(statusText, typeText) {
   return '';
 }
 
-function deriveDefaultGroupId(job) {
-  const category = deriveJobCategory(job);
-  if (category === 'print_embroidery') return TEST_DASHBOARD_GROUP_IDS.EMBROIDERY;
-  if (category === 'embroidery') return TEST_DASHBOARD_GROUP_IDS.EMBROIDERY;
-  if (category === 'print') return TEST_DASHBOARD_GROUP_IDS.PRINT;
+function deriveDefaultGroupId(_job) {
   return DEFAULT_OFFICE_GROUP_ID;
 }
 
@@ -1386,19 +1535,6 @@ function isDesignDashboardColumn(column) {
   return compactTitle === 'DESPSG' || compactTitle === 'DESNOPSG';
 }
 
-function priorityValueFromDate(dateValueRaw) {
-  const date = parseDate(dateValueRaw);
-  if (!date) return null;
-  const today = new Date();
-  const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  const startDue = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-  const days = Math.round((startDue - startToday) / 86400000);
-  if (days <= 1) return statusValueByLabel(null, TEST_DASHBOARD_COLUMN_IDS.PRIORITY, 'Critical');
-  if (days <= 3) return statusValueByLabel(null, TEST_DASHBOARD_COLUMN_IDS.PRIORITY, 'High');
-  if (days <= 7) return statusValueByLabel(null, TEST_DASHBOARD_COLUMN_IDS.PRIORITY, 'Medium');
-  return null;
-}
-
 function parseDate(value) {
   if (!value) return null;
   const date = new Date(value);
@@ -1438,7 +1574,7 @@ function dateValue(column, rawDate) {
   const iso = date.toISOString().slice(0, 10);
   return {
     id: column.id,
-    text: formatUkDate(iso),
+    text: iso,
     type: 'date',
     value: JSON.stringify({ date: iso }),
   };
@@ -1460,7 +1596,7 @@ function statusValueByLabel(columns, columnId, label) {
     : TEST_DASHBOARD_COLUMNS.find(col => col.id === columnId);
   if (!column || !label) return null;
   const option = findStatusOption(column, label);
-  return option ? statusValue(column, option.label, option.index) : null;
+  return option ? statusValue(column, option.displayLabel || option.label, option.index) : null;
 }
 
 function statusValueFromJobOrState(columns, columnId, label, stateValues) {
@@ -1529,14 +1665,24 @@ function mimeFromCloudinary(row) {
 function findStatusOption(column, requestedLabel) {
   const settings = parseJsonMaybe(column?.settings_str) || {};
   const labels = settings.labels || {};
-  const wanted = normalizeColumnTitle(requestedLabel);
+  const wanted = normalizeStatusLookupLabel(requestedLabel);
   for (const [index, label] of Object.entries(labels)) {
     const cleanLabel = clean(label);
-    if (cleanLabel && normalizeColumnTitle(cleanLabel) === wanted) {
-      return { index, label: cleanLabel };
+    if (cleanLabel && normalizeStatusLookupLabel(cleanLabel) === wanted) {
+      return {
+        index,
+        label: cleanLabel,
+        displayLabel: clean(requestedLabel) || cleanLabel,
+      };
     }
   }
   return null;
+}
+
+function normalizeStatusLookupLabel(value) {
+  const normalized = normalizeColumnTitle(value);
+  if (normalized === AWAITING_APPROVAL_LABEL || normalized === WAITING_APPROVAL_LABEL) return WAITING_APPROVAL_LABEL;
+  return normalized;
 }
 
 function dashboardLabelsForChangedColumn(column, label) {
@@ -1552,20 +1698,6 @@ function isProofApprovalCheckbox(column) {
   return column?.id === TEST_DASHBOARD_COLUMN_IDS.JOB || title.includes('APPROVED') || title.includes('JOB');
 }
 
-async function updateDatabaseJobProofApproved(db, sourceOrderId, approved) {
-  const result = await db.query(
-    `UPDATE database_jobs
-     SET proof_approved = $2,
-         proof_approved_at = CASE WHEN $2 IS TRUE THEN NOW() ELSE NULL END,
-         updated_at_source = NOW(),
-         imported_at = NOW()
-     WHERE source_order_id = $1
-     RETURNING source_order_id, proof_approved, proof_approved_at`,
-    [sourceOrderId, Boolean(approved)]
-  );
-  return result.rows[0] || null;
-}
-
 function getColumnText(value) {
   return clean(value?.text || '');
 }
@@ -1575,10 +1707,17 @@ function normalizeStatusIndex(index) {
   return Number.isFinite(numeric) ? numeric : index;
 }
 
-function formatUkDate(iso) {
-  const [year, month, day] = String(iso || '').split('-');
-  if (!year || !month || !day) return '';
-  return `${day}/${month}/${year}`;
+function addDaysFromTodayIso(days) {
+  const now = new Date();
+  const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + Number(days || 0));
+  return localDateIso(date);
+}
+
+function localDateIso(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function parseJsonMaybe(raw) {

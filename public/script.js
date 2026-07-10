@@ -26,6 +26,12 @@ const DASHBOARD_TAB_NAMES = ['dashboard', 'database', 'visuals', 'test-dashboard
 const BOARD_AUTO_REFRESH_MS = 1000;
 const BOARD_CONTEXT_MONDAY = 'monday';
 const BOARD_CONTEXT_TEST = 'test-dashboard';
+const TEST_DASHBOARD_CLIENT_COLUMN_IDS = Object.freeze({
+  JOB: 'checkbox1__1',
+  DESIGN: 'text_mkmesygk',
+  PROOF: 'file_mky43tg9'
+});
+const TEST_DASHBOARD_APPROVAL_REQUIREMENTS_MESSAGE = 'Please add design number and/or Visual Proof.';
 const DASHBOARD_ZOOM_MIN = 0.45;
 const DASHBOARD_ZOOM_MAX = 1;
 const HIDDEN_BOARD_COLUMN_TYPES = new Set(['subtasks']);
@@ -47,6 +53,7 @@ const MOBILE_PRINT_EMBROIDERY_HIDDEN_COLUMN_TITLES = new Set([
 ]);
 const STATUS_LABEL_FALLBACK_COLORS = {
   'waiting approval': '#8088a8',
+  'awaiting approval': '#8088a8',
   'stock in': '#66ccc9',
   'part-stock': '#e35a75',
   'to sample': '#a8d846',
@@ -2190,6 +2197,66 @@ function closeTestDashboardCompleteConfirm(confirmed) {
   if (resolve) resolve(Boolean(confirmed));
 }
 
+function showTestDashboardApprovalWarning(message = TEST_DASHBOARD_APPROVAL_REQUIREMENTS_MESSAGE) {
+  const modal = ensureTestDashboardApprovalWarningModal();
+  const messageEl = modal.querySelector('.test-dashboard-complete-confirm-message');
+  if (messageEl) messageEl.textContent = message;
+  modal.hidden = false;
+  modal.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open', 'test-dashboard-approval-warning-open');
+  window.requestAnimationFrame(() => {
+    modal.querySelector('[data-test-dashboard-approval-ok]')?.focus();
+  });
+}
+
+function ensureTestDashboardApprovalWarningModal() {
+  let modal = document.getElementById('test-dashboard-approval-warning-modal');
+  if (modal) return modal;
+
+  modal = document.createElement('div');
+  modal.id = 'test-dashboard-approval-warning-modal';
+  modal.className = 'test-dashboard-complete-confirm-modal test-dashboard-approval-warning-modal';
+  modal.hidden = true;
+  modal.setAttribute('aria-hidden', 'true');
+  modal.innerHTML = `
+    <div class="test-dashboard-complete-confirm-shell" role="dialog" aria-modal="true" aria-labelledby="test-dashboard-approval-warning-title">
+      <div class="test-dashboard-complete-confirm-title" id="test-dashboard-approval-warning-title">Approval blocked</div>
+      <div class="test-dashboard-complete-confirm-message">${escapeHtml(TEST_DASHBOARD_APPROVAL_REQUIREMENTS_MESSAGE)}</div>
+      <div class="test-dashboard-complete-confirm-actions">
+        <button class="test-dashboard-complete-confirm-button confirm" type="button" data-test-dashboard-approval-ok="true">Okay</button>
+      </div>
+    </div>
+  `;
+  modal.addEventListener('click', handleTestDashboardApprovalWarningClick);
+  document.addEventListener('keydown', handleTestDashboardApprovalWarningKeydown);
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function handleTestDashboardApprovalWarningClick(event) {
+  const modal = document.getElementById('test-dashboard-approval-warning-modal');
+  if (!modal || modal.hidden) return;
+  if (event.target === modal || event.target.closest('[data-test-dashboard-approval-ok]')) {
+    closeTestDashboardApprovalWarning();
+  }
+}
+
+function handleTestDashboardApprovalWarningKeydown(event) {
+  const modal = document.getElementById('test-dashboard-approval-warning-modal');
+  if (!modal || modal.hidden || event.key !== 'Escape') return;
+  event.preventDefault();
+  closeTestDashboardApprovalWarning();
+}
+
+function closeTestDashboardApprovalWarning() {
+  const modal = document.getElementById('test-dashboard-approval-warning-modal');
+  if (modal) {
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+  }
+  document.body.classList.remove('modal-open', 'test-dashboard-approval-warning-open');
+}
+
 function getStatusColumnEndpoint(context, itemId) {
   return context === BOARD_CONTEXT_TEST
     ? ENDPOINTS.testStatusColumn(itemId)
@@ -2286,6 +2353,14 @@ function isTestDashboardTextEditActive() {
 }
 
 async function updateTestDashboardCheckbox(itemId, column, checked) {
+  if (checked && isTestJobApprovalColumn(column)) {
+    const readiness = getTestDashboardApprovalReadiness(itemId);
+    if (readiness && !readiness.ok) {
+      showTestDashboardApprovalWarning();
+      return;
+    }
+  }
+
   const optimisticKey = testCheckboxOptimisticKey(itemId, column.id);
   const requestId = ++__testCheckboxOptimisticSeq;
   __statusUpdateInFlight += 1;
@@ -2312,10 +2387,49 @@ async function updateTestDashboardCheckbox(itemId, column, checked) {
       __testCheckboxOptimisticValues.delete(optimisticKey);
     }
     await loadTestBoard({ forceRefresh: true });
-    alert(`Failed to update ${column?.title || 'checkbox'}: ${err.message || 'Unknown error'}`);
+    const message = err.message || 'Unknown error';
+    if (isTestApprovalRequirementsMessage(message)) {
+      showTestDashboardApprovalWarning();
+    } else {
+      alert(`Failed to update ${column?.title || 'checkbox'}: ${message}`);
+    }
   } finally {
     __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);
   }
+}
+
+function getTestDashboardApprovalReadiness(itemId) {
+  const payload = window.__latestTestBoardPayload;
+  const board = unwrapFirstBoard(payload);
+  const item = findBoardPayloadItem(payload, itemId);
+  if (!board || !item) return null;
+
+  const designColumn = findBoardColumnByIdOrCompactTitle(board, TEST_DASHBOARD_CLIENT_COLUMN_IDS.DESIGN, 'DESPSG');
+  const proofColumn = findBoardColumnByIdOrCompactTitle(board, TEST_DASHBOARD_CLIENT_COLUMN_IDS.PROOF, 'PROOF');
+  const designText = designColumn ? normalizeCellText(findColumnValue(item, designColumn.id)?.text || '') : '';
+  const proofValue = proofColumn ? findColumnValue(item, proofColumn.id) : null;
+  const proofFiles = getFileList(proofValue);
+  const proofText = normalizeCellText(proofValue?.text || '');
+
+  return {
+    ok: Boolean(designText) && (proofFiles.length > 0 || Boolean(proofText)),
+    hasDesign: Boolean(designText),
+    hasProof: proofFiles.length > 0 || Boolean(proofText),
+  };
+}
+
+function findBoardColumnByIdOrCompactTitle(board, columnId, compactTitle) {
+  const wantedTitle = String(compactTitle || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  return (board?.columns || []).find((column) => {
+    if (column?.id === columnId) return true;
+    const title = normalizeColumnTitle(column?.title || '').replace(/[^A-Z0-9]/g, '');
+    return title === wantedTitle;
+  }) || null;
+}
+
+function isTestApprovalRequirementsMessage(message) {
+  return String(message || '').toLowerCase().includes('design number') &&
+    String(message || '').toLowerCase().includes('visual proof');
 }
 
 async function loadBoardForContext(context, options = {}) {
@@ -2443,6 +2557,11 @@ function renderCheckboxValue(cell, value, column, { entity = null, subitem = fal
   }
 
   cell.appendChild(mark);
+}
+
+function isTestJobApprovalColumn(column) {
+  const title = normalizeColumnTitle(column?.title || '');
+  return column?.id === TEST_DASHBOARD_CLIENT_COLUMN_IDS.JOB || title.includes('JOB');
 }
 
 function getCheckboxTickColor(column) {
@@ -3497,7 +3616,9 @@ function findStatusIndex(settings, value, text) {
 }
 
 function normalizeStatusLabel(label) {
-  return String(label || '').trim().toLowerCase();
+  const normalized = String(label || '').trim().toLowerCase();
+  if (normalized === 'waiting approval' || normalized === 'awaiting approval') return 'awaiting approval';
+  return normalized;
 }
 
 function fallbackStatusColor(text) {
@@ -3528,9 +3649,16 @@ function parseJsonMaybe(raw) {
 
 function formatDateText(text) {
   const trimmed = normalizeCellText(text);
-  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return trimmed;
-  const date = new Date(`${trimmed}T00:00:00`);
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const ukMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  let normalized = trimmed;
+  if (ukMatch) {
+    const year = ukMatch[3].length === 2 ? `20${ukMatch[3]}` : ukMatch[3];
+    normalized = `${year}-${ukMatch[2].padStart(2, '0')}-${ukMatch[1].padStart(2, '0')}`;
+  } else if (!isoMatch) {
+    return trimmed;
+  }
+  const date = new Date(`${normalized}T00:00:00`);
   if (Number.isNaN(date.getTime())) return trimmed;
   return new Intl.DateTimeFormat('en-GB', { month: 'short', day: 'numeric' }).format(date);
 }

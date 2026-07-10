@@ -49,8 +49,8 @@ function dashboardFieldLabelsFromValues(columnValues = {}) {
 function inferJobApproved(statusLabel) {
   const normalized = clean(statusLabel).toUpperCase();
   if (!normalized) return null;
+  if (normalized.includes('WAITING APPROVAL') || normalized.includes('AWAITING APPROVAL') || normalized.includes('NOT APPROVED')) return false;
   if (normalized.includes('APPROVED')) return true;
-  if (normalized.includes('WAITING APPROVAL') || normalized.includes('NOT APPROVED')) return false;
   if (normalized === 'READY TO PRINT' || normalized === 'IN PRODUCTION' || normalized === 'COMPLETED') return true;
   return null;
 }

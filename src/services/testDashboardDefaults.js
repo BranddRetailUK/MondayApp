@@ -27,7 +27,7 @@ const STATUS_SETTINGS = {
     2: 'IN PRODUCTION',
     3: 'INVOICED',
     4: 'PRE-PRODUCTION',
-    5: 'WAITING APPROVAL',
+    5: 'AWAITING APPROVAL',
     6: 'TO SAMPLE',
     7: 'SAMPLED',
     8: 'READY TO PRINT',
