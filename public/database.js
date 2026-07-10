@@ -2818,7 +2818,7 @@
       await renderDatabaseProofPdfPage();
     } catch (err) {
       console.error('Database proof PDF render failed', err);
-      renderDatabaseProofNativeViewer(file, token, 'PDF preview unavailable. Opening with the browser viewer.');
+      renderDatabaseProofNativeViewer(file, token);
     }
   }
 

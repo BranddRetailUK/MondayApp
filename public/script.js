@@ -794,7 +794,9 @@ function renderBoard(payload, options = {}) {
     for (const item of sortedItems) {
       const itemId = String(item.id);
       const sourceSubitems = Array.isArray(item.subitems) ? item.subitems : [];
-      const subitems = buildDashboardSubitemsWithTotal(sourceSubitems, subitemColumns, itemId);
+      const subitems = context === BOARD_CONTEXT_TEST
+        ? buildDashboardSubitemsWithTotal(sourceSubitems, subitemColumns, itemId)
+        : sourceSubitems;
       const rowItem = subitems === sourceSubitems ? item : { ...item, subitems };
 
       const row = document.createElement('div');
@@ -2968,7 +2970,7 @@ async function renderProofPdf(file, token) {
     await renderProofPdfPage();
   } catch (err) {
     console.error('Proof PDF render failed', err);
-    renderProofNativeViewer(file, token, 'PDF preview unavailable. Opening with the browser viewer.');
+    renderProofNativeViewer(file, token);
   }
 }
 

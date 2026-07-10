@@ -3391,13 +3391,16 @@ body.modal-open{overflow:hidden}
 .db-order-panel.active{
   display:block;
 }
+#db-order-proof-panel.active{
+  min-height:650px;
+}
 .db-order-panel input,
 .db-order-panel select,
 .db-order-panel textarea{
   background:#fff!important;
 }
 .db-proof-layout{
-  height:447px;
+  height:clamp(620px, calc(100vh - 305px), 860px);
   display:grid;
   grid-template-columns:36px minmax(0, 1fr) 36px;
   gap:8px;
