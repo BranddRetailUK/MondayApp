@@ -1108,6 +1108,9 @@ body{
 .test-design-cell{
   padding:0 4px;
 }
+.test-text-cell{
+  padding:0 4px;
+}
 .test-design-display{
   appearance:none;
   width:100%;
@@ -1162,6 +1165,27 @@ body{
   background:#1d2430;
 }
 .test-design-input.saving{
+  opacity:.65;
+}
+.test-text-input{
+  width:100%;
+  height:calc(100% - 8px);
+  min-height:28px;
+  min-width:0;
+  border:1px solid transparent;
+  border-radius:4px;
+  background:transparent;
+  color:#fff;
+  font:inherit;
+  text-align:center;
+  padding:0 8px;
+}
+.test-text-input:focus{
+  outline:none;
+  border-color:#579bfc;
+  background:#1d2430;
+}
+.test-text-input.saving{
   opacity:.65;
 }
 .monday-file-link{
@@ -1269,6 +1293,18 @@ body{
 .subitem-grid .grid-cell{background:#2b2b2c}
 .subitem-row{
   position:relative;
+}
+.subitem-total-row .grid-cell{
+  background:#242527;
+  font-weight:800;
+}
+.subitem-total-row .subitem-title{
+  font-weight:900;
+  letter-spacing:0;
+}
+.subitem-total-row .monday-text-input,
+.subitem-total-row .monday-plain-text{
+  font-weight:900;
 }
 .subitem-row.sub-row::before{
   content:"";
@@ -3955,7 +3991,8 @@ input.db-custom-line-input{
 .db-line-item-input[data-line-item-saving="true"]{
   color:#555;
 }
-.db-line-item-input.db-line-item-error{
+.db-line-item-input.db-line-item-error,
+.db-line-select.db-line-item-error{
   outline:2px solid #d62727;
   outline-offset:-2px;
 }

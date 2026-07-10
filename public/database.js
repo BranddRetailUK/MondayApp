@@ -126,6 +126,9 @@
     },
     lineDraft: null,
     productResults: [],
+    productVariantCache: new Map(),
+    productVariantLoading: new Map(),
+    stockVariantSavingIds: new Set(),
     productSearchOpen: false,
     productSearchField: 'style',
     productSearchQuery: '',
@@ -304,6 +307,7 @@
     els.itemsPanel.addEventListener('focusout', handleCustomLineDraftFocusOut);
     els.itemsPanel.addEventListener('focusout', handleLineItemEditFocusOut);
     els.itemsPanel.addEventListener('change', handleLineDraftChange);
+    els.itemsPanel.addEventListener('change', handleStockVariantChange);
     els.itemsPanel.addEventListener('mousedown', handleLineDraftMouseDown);
     els.itemsPanel.addEventListener('pointerdown', handleLineDragPointerDown);
     els.itemsPanel.addEventListener('pointerover', handleLineTextHoverIn);
@@ -2594,6 +2598,7 @@
       applyNonStockTableLayout();
       scrollItemSectionsToAddLine();
       paintProductResults();
+      preloadStockItemVariants();
     });
   }
 
@@ -4701,8 +4706,8 @@
         </td>
         <td>${renderLineItemInput(item, 'style_code')}</td>
         <td>${renderLineItemInput(item, 'style_name')}</td>
-        <td>${renderLineItemInput(item, 'colour')}</td>
-        <td>${renderLineItemInput(item, 'size')}</td>
+        <td>${renderStockVariantSelect(item, 'colour')}</td>
+        <td>${renderStockVariantSelect(item, 'size')}</td>
         <td>${renderLineItemInput(item, 'unit_cost', 'db-line-money')}</td>
         <td>${renderLineItemInput(item, 'unit_price', 'db-line-money')}</td>
         <td>${renderLineItemInput(item, 'quantity', 'db-line-qty')}</td>
@@ -4728,6 +4733,51 @@
         data-line-item-original="${escapeAttr(value)}"
         value="${escapeAttr(value)}"
       >
+    `;
+  }
+
+  function renderStockVariantSelect(item, field) {
+    const lineId = item?.source_order_item_id || '';
+    const styleId = Number.parseInt(item?.style_id, 10);
+    if (!lineId || !Number.isFinite(styleId)) return renderLineItemInput(item, field);
+
+    const variants = getCachedStyleVariants(styleId);
+    const saving = state.stockVariantSavingIds.has(String(lineId));
+    const currentText = lineItemEditDisplayValue(item, field);
+
+    if (!variants.length) {
+      return `
+        <select
+          class="db-line-select db-stock-variant-select db-stock-variant-select-loading"
+          data-stock-variant-select="${escapeAttr(field)}"
+          data-line-id="${escapeAttr(lineId)}"
+          data-style-id="${escapeAttr(styleId)}"
+          aria-label="${escapeAttr(field === 'colour' ? 'Colour' : 'Size')}"
+        >
+          <option value="">${escapeHtml(currentText)}</option>
+        </select>
+      `;
+    }
+
+    const options = stockVariantOptionsForLine(item, variants, field);
+    const selectedValue = stockVariantSelectedValue(item, variants, field);
+    const optionHtml = options.length
+      ? options.map((option) => (
+        `<option value="${escapeAttr(option.value)}" ${option.value === selectedValue ? 'selected' : ''}>${escapeHtml(option.label)}</option>`
+      )).join('')
+      : `<option value="">${escapeHtml(currentText)}</option>`;
+
+    return `
+      <select
+        class="db-line-select db-stock-variant-select"
+        data-stock-variant-select="${escapeAttr(field)}"
+        data-line-id="${escapeAttr(lineId)}"
+        data-style-id="${escapeAttr(styleId)}"
+        aria-label="${escapeAttr(field === 'colour' ? 'Colour' : 'Size')}"
+        ${saving ? 'disabled' : ''}
+      >
+        ${optionHtml}
+      </select>
     `;
   }
 
@@ -4978,6 +5028,125 @@
     renderItemsPanel();
   }
 
+  async function handleStockVariantChange(event) {
+    const field = event.target.dataset.stockVariantSelect;
+    if (field !== 'colour' && field !== 'size') return;
+
+    const select = event.target;
+    const row = select.closest('[data-line-id]');
+    const lineItemId = Number.parseInt(row?.dataset.lineId, 10);
+    const styleId = Number.parseInt(select.dataset.styleId, 10);
+    if (!Number.isFinite(lineItemId) || !Number.isFinite(styleId) || !state.selectedJob?.source_order_id) return;
+
+    const item = (state.selectedLineItems || []).find((line) => Number(line.source_order_item_id) === lineItemId);
+    if (!item) return;
+
+    const variants = await loadStyleVariants(styleId);
+    if (!variants.length) {
+      renderItemsPanel();
+      return;
+    }
+
+    const product = selectLineItemVariantProduct(item, variants, field, select.value);
+    if (!product?.source_product_id) {
+      renderItemsPanel();
+      return;
+    }
+
+    if (String(product.source_product_id) === String(item.source_product_id || '')) return;
+    await saveStockVariantSelection(select, lineItemId, product);
+  }
+
+  async function saveStockVariantSelection(select, lineItemId, product) {
+    if (!select || !Number.isFinite(lineItemId) || !product?.source_product_id) return;
+    const savingKey = String(lineItemId);
+    if (state.stockVariantSavingIds.has(savingKey)) return;
+
+    state.stockVariantSavingIds.add(savingKey);
+    select.disabled = true;
+    select.classList.remove('db-line-item-error');
+
+    let shouldRender = false;
+    try {
+      const data = await fetchJson(
+        `/api/database/jobs/${encodeURIComponent(state.selectedJob.source_order_id)}/line-items/${encodeURIComponent(lineItemId)}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source_product_id: product.source_product_id }),
+        }
+      );
+
+      state.selectedLineItems = data.lineItems || state.selectedLineItems;
+      syncSelectedJobLineSummary();
+      renderOutstandingOrders();
+      shouldRender = true;
+    } catch (err) {
+      select.classList.add('db-line-item-error');
+      console.error('Stock variant update failed', err);
+      window.alert(`Failed to update ${select.dataset.stockVariantSelect || 'variant'}: ${err.message || 'Unknown error'}`);
+      shouldRender = true;
+    } finally {
+      state.stockVariantSavingIds.delete(savingKey);
+      if (select.isConnected) select.disabled = false;
+      if (shouldRender) renderItemsPanel();
+    }
+  }
+
+  function preloadStockItemVariants() {
+    const styleIds = unique((state.selectedLineItems || [])
+      .filter(isStockItem)
+      .map((item) => Number.parseInt(item.style_id, 10))
+      .filter(Number.isFinite));
+    const missing = styleIds.filter((styleId) => {
+      const key = styleVariantCacheKey(styleId);
+      return key && !state.productVariantCache.has(key) && !state.productVariantLoading.has(key);
+    });
+    if (!missing.length) return;
+
+    const sourceOrderId = state.selectedJob?.source_order_id;
+    Promise.all(missing.map((styleId) => loadStyleVariants(styleId))).then(() => {
+      if (sourceOrderId !== state.selectedJob?.source_order_id || state.activeOrderTab !== 'items') return;
+      renderItemsPanel();
+    }).catch((err) => {
+      console.warn('Stock variant preload failed', err);
+    });
+  }
+
+  async function loadStyleVariants(styleId) {
+    const key = styleVariantCacheKey(styleId);
+    if (!key) return [];
+    const cached = getCachedStyleVariants(styleId);
+    if (cached.length) return cached;
+    if (state.productVariantLoading.has(key)) return state.productVariantLoading.get(key);
+
+    const promise = fetchJson(`/api/database/products/styles/${encodeURIComponent(styleId)}/variants`)
+      .then((data) => {
+        const variants = Array.isArray(data.products) ? data.products : [];
+        state.productVariantCache.set(key, variants);
+        return variants;
+      })
+      .catch((err) => {
+        console.warn(`Product variant load failed for style ${styleId}`, err);
+        state.productVariantCache.set(key, []);
+        return [];
+      })
+      .finally(() => {
+        state.productVariantLoading.delete(key);
+      });
+    state.productVariantLoading.set(key, promise);
+    return promise;
+  }
+
+  function getCachedStyleVariants(styleId) {
+    return state.productVariantCache.get(styleVariantCacheKey(styleId)) || [];
+  }
+
+  function styleVariantCacheKey(styleId) {
+    const numeric = Number.parseInt(styleId, 10);
+    return Number.isFinite(numeric) ? String(numeric) : '';
+  }
+
   async function searchProducts(field, query) {
     const requestId = ++productSearchRequest;
     const params = new URLSearchParams({ field, q: query || '' });
@@ -5080,6 +5249,7 @@
       const data = await fetchJson(`/api/database/products/styles/${encodeURIComponent(draft.selectedStyleId)}/variants`);
       if (!state.lineDraft || state.lineDraft.selectedStyleId !== draft.selectedStyleId) return;
       draft.variants = Array.isArray(data.products) ? data.products : [];
+      state.productVariantCache.set(styleVariantCacheKey(draft.selectedStyleId), draft.variants);
       draft.loadingVariants = false;
       syncDraftVariantSelection();
       renderItemsPanel();
@@ -5145,6 +5315,86 @@
       !draft.colourValue || variantColourValue(product) === draft.colourValue
     ));
     return uniqueVariantOptions(products.length ? products : (draft?.variants || []), variantSizeValue, 'size');
+  }
+
+  function stockVariantOptionsForLine(item, variants, field) {
+    const products = Array.isArray(variants) ? variants : [];
+    const selectedValue = stockVariantSelectedValue(item, products, field);
+    const selectedProduct = findLineItemVariantProduct(item, products);
+    const selectedColourValue = selectedProduct
+      ? variantColourValue(selectedProduct)
+      : variantValueFromText(item?.colour);
+    const sourceProducts = field === 'size'
+      ? products.filter((product) => !selectedColourValue || variantColourValue(product) === selectedColourValue)
+      : products;
+    const options = uniqueVariantOptions(
+      sourceProducts.length ? sourceProducts : products,
+      field === 'colour' ? variantColourValue : variantSizeValue,
+      field
+    );
+
+    if (selectedValue && !options.some((option) => option.value === selectedValue)) {
+      options.unshift({ value: selectedValue, label: item?.[field] || '' });
+    }
+    return options;
+  }
+
+  function stockVariantSelectedValue(item, variants, field) {
+    const product = findLineItemVariantProduct(item, variants);
+    if (product) return field === 'colour' ? variantColourValue(product) : variantSizeValue(product);
+    return variantValueFromText(item?.[field]);
+  }
+
+  function findLineItemVariantProduct(item, variants) {
+    const products = Array.isArray(variants) ? variants : [];
+    if (!item || !products.length) return null;
+
+    const productId = item.source_product_id == null ? '' : String(item.source_product_id);
+    if (productId) {
+      const byId = products.find((product) => String(product.source_product_id) === productId);
+      if (byId) return byId;
+    }
+
+    const itemColour = normalizeVariantText(item.colour);
+    const itemSize = normalizeVariantText(item.size);
+    const exact = products.find((product) => (
+      normalizeVariantText(product.colour) === itemColour &&
+      normalizeVariantText(product.size) === itemSize
+    ));
+    if (exact) return exact;
+
+    return products.find((product) => normalizeVariantText(product.colour) === itemColour)
+      || products.find((product) => normalizeVariantText(product.size) === itemSize)
+      || null;
+  }
+
+  function selectLineItemVariantProduct(item, variants, field, selectedValue) {
+    const products = Array.isArray(variants) ? variants : [];
+    if (!products.length) return null;
+
+    const current = findLineItemVariantProduct(item, products);
+    const currentColourValue = current ? variantColourValue(current) : variantValueFromText(item?.colour);
+    const currentSizeValue = current ? variantSizeValue(current) : variantValueFromText(item?.size);
+    const nextColourValue = field === 'colour' ? selectedValue : currentColourValue;
+    const nextSizeValue = field === 'size' ? selectedValue : currentSizeValue;
+
+    return products.find((product) => (
+      variantColourValue(product) === nextColourValue &&
+      variantSizeValue(product) === nextSizeValue
+    )) || (
+      field === 'colour'
+        ? products.find((product) => variantColourValue(product) === nextColourValue)
+        : products.find((product) => variantSizeValue(product) === nextSizeValue)
+    ) || null;
+  }
+
+  function variantValueFromText(value) {
+    const clean = String(value || '').trim();
+    return clean ? `name:${clean}` : '';
+  }
+
+  function normalizeVariantText(value) {
+    return String(value || '').trim().toLowerCase();
   }
 
   function uniqueVariantOptions(products, valueFn, labelKey) {

@@ -1795,12 +1795,15 @@ router.put('/api/database/jobs/:id/line-items/:lineItemId', async (req, res) => 
     return res.status(400).json({ error: 'Invalid job or line item id' });
   }
 
-  const update = buildLineItemUpdate(req.body || {});
+  const payload = req.body || {};
+  const requestedProductId = hasOwn(payload, 'source_product_id') ? nullableInt(payload.source_product_id) : null;
+  if (hasOwn(payload, 'source_product_id') && !requestedProductId) {
+    return res.status(400).json({ error: 'Product is required' });
+  }
+
+  const update = buildLineItemUpdate(payload);
   if (update.error) {
     return res.status(400).json({ error: update.error });
-  }
-  if (!update.assignments.length) {
-    return res.status(400).json({ error: 'No editable line item fields supplied' });
   }
 
   const client = await pool.connect();
@@ -1825,7 +1828,7 @@ router.put('/api/database/jobs/:id/line-items/:lineItemId', async (req, res) => 
 
     const sourceOrderId = job.rows[0].source_order_id;
     const existing = await client.query(
-      `SELECT source_order_item_id
+      `SELECT source_order_item_id, style_id
        FROM database_job_line_items
        WHERE source_order_id = $1
          AND source_order_item_id = $2
@@ -1836,6 +1839,32 @@ router.put('/api/database/jobs/:id/line-items/:lineItemId', async (req, res) => 
     if (!existing.rowCount) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Line item not found for this order' });
+    }
+
+    if (requestedProductId) {
+      const product = await client.query(
+        `SELECT *
+         FROM database_products
+         WHERE source_product_id = $1
+         LIMIT 1`,
+        [requestedProductId]
+      );
+      if (!product.rowCount) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Product not found in referenced product table' });
+      }
+      const existingStyleId = nullableInt(existing.rows[0].style_id);
+      const productStyleId = nullableInt(product.rows[0].style_id);
+      if (existingStyleId && productStyleId && existingStyleId !== productStyleId) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Selected product is not a variant of this line item style' });
+      }
+      appendLineItemProductUpdate(update, product.rows[0]);
+    }
+
+    if (!update.assignments.length) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'No editable line item fields supplied' });
     }
 
     const sourceOrderIndex = update.values.length + 1;
@@ -2165,6 +2194,27 @@ function buildLineItemUpdate(payload) {
   }
 
   return { assignments, values };
+}
+
+function addLineItemUpdateField(update, column, value) {
+  update.values.push(value);
+  update.assignments.push(`${column} = $${update.values.length}`);
+}
+
+function appendLineItemProductUpdate(update, productRow) {
+  addLineItemUpdateField(update, 'source_product_id', productRow.source_product_id);
+  addLineItemUpdateField(update, 'line_description', productRow.style_name);
+  addLineItemUpdateField(update, 'unit_cost', productRow.unit_cost);
+  addLineItemUpdateField(update, 'supplier_name', productRow.supplier_name);
+  addLineItemUpdateField(update, 'style_id', productRow.style_id);
+  addLineItemUpdateField(update, 'style_code', productRow.style_code);
+  addLineItemUpdateField(update, 'alt_style_code', productRow.alt_style_code);
+  addLineItemUpdateField(update, 'style_name', productRow.style_name);
+  addLineItemUpdateField(update, 'colour', productRow.colour);
+  addLineItemUpdateField(update, 'size', productRow.size);
+  addLineItemUpdateField(update, 'product_type', productRow.product_type);
+  addLineItemUpdateField(update, 'stock', productRow.stock);
+  addLineItemUpdateField(update, 'is_product_active', productRow.is_product_active);
 }
 
 function hasOwn(value, key) {

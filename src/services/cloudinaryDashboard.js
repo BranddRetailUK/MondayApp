@@ -61,7 +61,7 @@ function publicIdForUpload({ filename, source = 'upload' } = {}) {
   return `${prefix}-${Date.now()}-${safeName}`;
 }
 
-function signUpload({ folder, publicId }) {
+function signUpload({ folder, publicId, format = '' }) {
   requireCloudinaryConfig();
   const timestamp = Math.floor(Date.now() / 1000);
   const params = {
@@ -69,6 +69,7 @@ function signUpload({ folder, publicId }) {
     public_id: publicId,
     timestamp,
   };
+  if (format) params.format = format;
   const signature = cloudinary.utils.api_sign_request(params, API_SECRET);
   return {
     ...cloudinaryPublicConfig(),
@@ -76,6 +77,7 @@ function signUpload({ folder, publicId }) {
     timestamp,
     folder,
     publicId,
+    format: format || '',
     uploadUrl: `https://api.cloudinary.com/v1_1/${encodeURIComponent(CLOUD_NAME)}/auto/upload`,
   };
 }

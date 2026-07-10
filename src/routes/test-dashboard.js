@@ -27,6 +27,7 @@ const publicRouter = express.Router();
 const protectedRouter = express.Router();
 
 const EDITABLE_STATUS_TITLES = new Set(['STATUS', 'PRIORITY']);
+const EDITABLE_TEXT_TITLES = new Set(['NOTES']);
 const DEFAULT_OFFICE_GROUP_ID = TEST_DASHBOARD_GROUP_IDS.OFFICE;
 const DESIGN_POSITION_LOCK_KEY = 71060217;
 const STITCH_REFERENCE_LABEL = String.raw`(?:STITCH[\s._/-]*COUNT|STITCHES?|S[\s._/-]*T(?:[\s._/-]*(?:S|C))?)`;
@@ -176,6 +177,59 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (r
   }
 });
 
+protectedRouter.put('/api/test-dashboard/items/:jobId/text-column', async (req, res) => {
+  const sourceOrderId = Number.parseInt(req.params.jobId, 10);
+  if (!Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
+
+  const columnId = clean(req.body?.columnId);
+  const hasValue = Object.prototype.hasOwnProperty.call(req.body || {}, 'value');
+  const value = clean(req.body?.value).slice(0, 2000);
+  if (!columnId) return res.status(400).json({ error: 'columnId is required' });
+  if (!hasValue) return res.status(400).json({ error: 'Text value is required' });
+
+  try {
+    await ensureTestDashboardDefaults(pool);
+    const [job, columns] = await Promise.all([
+      fetchDashboardJob(sourceOrderId),
+      fetchDashboardColumns(false),
+    ]);
+    if (!job) return res.status(404).json({ error: 'Database job not found' });
+
+    const column = columns.find(col => col.id === columnId);
+    if (!column || !['text', 'long_text'].includes(column.type)) {
+      return res.status(400).json({ error: 'Column is not a test dashboard text column' });
+    }
+    if (!EDITABLE_TEXT_TITLES.has(normalizeColumnTitle(column.title))) {
+      return res.status(400).json({ error: 'Only the test dashboard NOTES column can be updated' });
+    }
+
+    const state = await fetchJobState(job.source_order_id);
+    const columnValues = { ...(state?.column_values || {}) };
+    columnValues[column.id] = textValue(column, value);
+
+    const nextState = {
+      group_id: state?.group_id || resolveDashboardGroupId(job, state, null),
+      item_name: state?.item_name || formatJobName(job),
+      column_values: columnValues,
+      archived: Boolean(state?.archived),
+    };
+    const saved = await upsertJobState(job.source_order_id, nextState);
+
+    res.json({
+      ok: true,
+      itemId: String(job.source_order_id),
+      columnId: column.id,
+      columnTitle: column.title,
+      value,
+      groupId: saved.group_id,
+      archived: saved.archived,
+    });
+  } catch (err) {
+    console.error('PUT /api/test-dashboard/items/:jobId/text-column', err);
+    res.status(500).json({ error: 'Failed to update test dashboard text column' });
+  }
+});
+
 protectedRouter.put('/api/test-dashboard/items/:jobId/design-column', async (req, res) => {
   const sourceOrderId = Number.parseInt(req.params.jobId, 10);
   if (!Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
@@ -257,7 +311,8 @@ protectedRouter.post('/api/test-dashboard/uploads/signature', async (req, res) =
 
     const folder = folderForColumn(column, job.order_no || sourceOrderId);
     const publicId = publicIdForUpload({ filename, source: `job-${job.order_no || sourceOrderId}` });
-    res.json(signUpload({ folder, publicId }));
+    const format = /\.pdf$/i.test(filename) ? 'pdf' : '';
+    res.json(signUpload({ folder, publicId, format }));
   } catch (err) {
     console.error('POST /api/test-dashboard/uploads/signature', err);
     res.status(500).json({ error: err.message || 'Failed to sign Cloudinary upload' });
@@ -1465,8 +1520,8 @@ function dbFileToApi(row) {
 
 function mimeFromCloudinary(row) {
   const format = clean(row.format).toLowerCase();
+  if (format === 'pdf' || /\.pdf$/i.test(row.original_filename || '')) return 'application/pdf';
   if (!format) return '';
-  if (format === 'pdf') return 'application/pdf';
   if (row.resource_type === 'image') return `image/${format === 'jpg' ? 'jpeg' : format}`;
   return '';
 }

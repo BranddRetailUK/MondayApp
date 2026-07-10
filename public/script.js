@@ -9,6 +9,7 @@ const ENDPOINTS = {
   testData: '/api/test-dashboard/board',
   testStatusColumn: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/status-column`,
   testCheckboxColumn: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/checkbox-column`,
+  testTextColumn: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/text-column`,
   testDesignColumn: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/design-column`,
   testScanUrl: (itemId) => `/api/test-dashboard/scan-url?jobId=${encodeURIComponent(itemId)}`,
   testUploadSignature: '/api/test-dashboard/uploads/signature',
@@ -77,6 +78,7 @@ const __testFileUploadingCells = new Set();
 const __testCheckboxOptimisticValues = new Map();
 let __testCheckboxOptimisticSeq = 0;
 let __testDesignEditInFlight = 0;
+let __testTextEditInFlight = 0;
 let __boardSortState = null;
 let __priorityHighlightsEnabled = localStorage.getItem(PRIORITY_HIGHLIGHT_STORAGE_KEY) !== '0';
 let __dashboardZoom = 1;
@@ -655,7 +657,7 @@ async function loadTestBoard(options = {}) {
     const payload = await response.json();
     window.__latestTestBoardPayload = payload;
     pruneSyncedTestCheckboxOptimisticValues(payload);
-    if (!allowDuringDesignEdit && isTestDesignEditActive()) return;
+    if (!allowDuringDesignEdit && isTestDashboardTextEditActive()) return;
     renderBoard(payload, { context: BOARD_CONTEXT_TEST, boardDiv });
   } catch (err) {
     console.warn('Test dashboard load failed', err);
@@ -691,7 +693,7 @@ function startTestBoardAutoRefresh() {
     if (document.hidden) return;
     const dashboard = document.getElementById('tab-test-dashboard');
     if (dashboard && !dashboard.classList.contains('active')) return;
-    if (isStatusDropdownOpen() || __statusUpdateInFlight > 0 || __testFileUploadsInFlight > 0 || isTestDesignEditActive()) return;
+    if (isStatusDropdownOpen() || __statusUpdateInFlight > 0 || __testFileUploadsInFlight > 0 || isTestDashboardTextEditActive()) return;
     loadTestBoard({ forceRefresh: true });
   }, BOARD_AUTO_REFRESH_MS);
 }
@@ -791,7 +793,9 @@ function renderBoard(payload, options = {}) {
 
     for (const item of sortedItems) {
       const itemId = String(item.id);
-      const subitems = Array.isArray(item.subitems) ? item.subitems : [];
+      const sourceSubitems = Array.isArray(item.subitems) ? item.subitems : [];
+      const subitems = buildDashboardSubitemsWithTotal(sourceSubitems, subitemColumns, itemId);
+      const rowItem = subitems === sourceSubitems ? item : { ...item, subitems };
 
       const row = document.createElement('div');
       row.dataset.itemId = itemId;
@@ -802,7 +806,7 @@ function renderBoard(payload, options = {}) {
       const subitemsOpen = uiState.openSubitems.has(itemId);
 
       for (const spec of groupGridSpec.columns) {
-        row.appendChild(buildItemCell(item, spec, { subitemsOpen, context }));
+        row.appendChild(buildItemCell(rowItem, spec, { subitemsOpen, context }));
       }
       grid.appendChild(row);
 
@@ -834,6 +838,7 @@ function renderBoard(payload, options = {}) {
         for (const sub of subitems) {
           const subRow = document.createElement('div');
           subRow.className = 'subitem-row sub-row';
+          if (isDashboardTotalSubitem(sub)) subRow.classList.add('subitem-total-row');
           subRow.dataset.parent = itemId;
           for (const spec of subitemGridSpec.columns) {
             subRow.appendChild(buildSubitemCell(sub, spec, { context }));
@@ -1450,6 +1455,62 @@ function buildSubitemColumnWidthOverrides(columns, subitems) {
   return overrides;
 }
 
+function buildDashboardSubitemsWithTotal(subitems, subitemColumns, parentId = '') {
+  const sourceSubitems = Array.isArray(subitems) ? subitems : [];
+  if (!sourceSubitems.length) return sourceSubitems;
+
+  const qtyColumn = findSubitemQuantityColumn(subitemColumns);
+  if (!qtyColumn?.id) return sourceSubitems;
+
+  const lineSubitems = sourceSubitems.filter(subitem => !isDashboardTotalSubitem(subitem));
+  if (!lineSubitems.length) return sourceSubitems;
+
+  const total = lineSubitems.reduce((sum, subitem) => {
+    const value = findColumnValue(subitem, qtyColumn.id);
+    return sum + parseDashboardQuantity(value?.text);
+  }, 0);
+
+  const totalSubitem = {
+    id: `dashboard-total-${parentId || 'item'}`,
+    name: 'TOTAL',
+    __dashboardTotal: true,
+    column_values: [{
+      id: qtyColumn.id,
+      type: qtyColumn.type || 'text',
+      text: formatDashboardQuantity(total),
+      value: JSON.stringify({ text: formatDashboardQuantity(total) })
+    }]
+  };
+
+  return [...lineSubitems, totalSubitem];
+}
+
+function findSubitemQuantityColumn(columns) {
+  return (Array.isArray(columns) ? columns : []).find(column => {
+    const title = normalizeColumnTitle(column?.title || '').replace(/[^A-Z0-9]/g, '');
+    return title === 'QTY' || title === 'QUANTITY';
+  }) || null;
+}
+
+function isDashboardTotalSubitem(subitem) {
+  if (subitem?.__dashboardTotal) return true;
+  return normalizeCellText(subitem?.name || '').toUpperCase() === 'TOTAL';
+}
+
+function parseDashboardQuantity(value) {
+  const text = normalizeCellText(value || '').replace(/,/g, '');
+  if (!text) return 0;
+  const numeric = Number.parseFloat(text);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function formatDashboardQuantity(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '0';
+  if (Number.isInteger(numeric)) return String(numeric);
+  return numeric.toFixed(2).replace(/\.?0+$/, '');
+}
+
 function isPerJobSubitemWidthColumn(title) {
   const normalized = normalizeColumnTitle(title);
   return normalized === 'SIZE' ||
@@ -1632,12 +1693,18 @@ function buildNameCell(item, initiallyOpen = false, { context = BOARD_CONTEXT_MO
   if (subitems.length > 0) {
     const badge = document.createElement('span');
     badge.className = 'subitem-count-badge';
-    badge.textContent = String(subitems.length);
+    badge.textContent = String(getDashboardSubitemBadgeCount(subitems));
     titleWrap.appendChild(badge);
   }
 
   cell.appendChild(titleWrap);
   return cell;
+}
+
+function getDashboardSubitemBadgeCount(subitems) {
+  const sourceSubitems = Array.isArray(subitems) ? subitems : [];
+  const lineCount = sourceSubitems.filter(subitem => !isDashboardTotalSubitem(subitem)).length;
+  return lineCount || sourceSubitems.length;
 }
 
 function renderTestDashboardJobTitle(container, item) {
@@ -1745,6 +1812,8 @@ function buildColumnValueCell(entity, column, { subitem = false, context = BOARD
   } else if (column.type === 'text' || column.type === 'long_text') {
     if (context === BOARD_CONTEXT_TEST && !subitem && entity?.id && isTestDesignColumn(column)) {
       renderTestDesignInputValue(cell, text, entity, column);
+    } else if (context === BOARD_CONTEXT_TEST && !subitem && entity?.id && isTestEditableTextColumn(column)) {
+      renderTestTextInputValue(cell, text, entity, column);
     } else {
       renderTextInputValue(cell, text);
     }
@@ -2157,15 +2226,61 @@ async function saveTestDesignInput(input, entity, column) {
   }
 }
 
+async function saveTestTextInput(input, entity, column) {
+  if (!input || !entity?.id || !column?.id) return;
+  const previousValue = String(input.dataset.originalValue || '').trim();
+  const nextValue = String(input.value || '').trim();
+  if (nextValue === previousValue) return;
+
+  input.disabled = true;
+  input.classList.add('saving');
+  __testTextEditInFlight += 1;
+  try {
+    const response = await fetch(ENDPOINTS.testTextColumn(entity.id), {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        columnId: column.id,
+        value: nextValue,
+      }),
+    });
+    if (!response.ok) throw new Error(await readApiError(response));
+    await loadTestBoard({ forceRefresh: true, allowDuringDesignEdit: true });
+  } catch (err) {
+    console.warn('Text column update failed', err);
+    input.value = previousValue;
+    alert(`Failed to update ${column?.title || 'text'}: ${err.message || 'Unknown error'}`);
+  } finally {
+    __testTextEditInFlight = Math.max(0, __testTextEditInFlight - 1);
+    input.disabled = false;
+    input.classList.remove('saving');
+  }
+}
+
 function isTestDesignColumn(column) {
   if (column?.type !== 'text') return false;
   const compact = normalizeColumnTitle(column?.title || '').replace(/[^A-Z0-9]/g, '');
   return compact === 'DESPSG' || compact === 'DESNOPSG';
 }
 
+function isTestEditableTextColumn(column) {
+  if (!['text', 'long_text'].includes(column?.type)) return false;
+  return normalizeColumnTitle(column?.title || '') === 'NOTES';
+}
+
 function isTestDesignEditActive() {
   return __testDesignEditInFlight > 0 ||
     Boolean(document.activeElement?.classList?.contains('test-design-input'));
+}
+
+function isTestTextEditActive() {
+  return __testTextEditInFlight > 0 ||
+    Boolean(document.activeElement?.classList?.contains('test-text-input'));
+}
+
+function isTestDashboardTextEditActive() {
+  return isTestDesignEditActive() || isTestTextEditActive();
 }
 
 async function updateTestDashboardCheckbox(itemId, column, checked) {
@@ -2569,6 +2684,7 @@ async function uploadTestDashboardFile(itemId, column, file) {
   form.append('signature', signature.signature);
   form.append('folder', signature.folder);
   form.append('public_id', signature.publicId);
+  if (signature.format) form.append('format', signature.format);
 
   const uploadResponse = await fetch(signature.uploadUrl, {
     method: 'POST',
@@ -2580,6 +2696,21 @@ async function uploadTestDashboardFile(itemId, column, file) {
     throw new Error(formatCloudinaryUploadError(uploadJson?.error?.message, uploadResponse.status));
   }
 
+  const originalFilename = file.name || uploadJson.original_filename || uploadJson.public_id || 'file';
+  const normalizedUploadFile = normalizeMondayFile({
+    name: originalFilename,
+    url: uploadJson.secure_url,
+    public_url: uploadJson.secure_url,
+    mime: inferMimeTypeFromName(originalFilename),
+    format: uploadJson.format,
+    resourceType: uploadJson.resource_type,
+    resource_type: uploadJson.resource_type,
+  });
+  const secureUrl = isPdfFile(originalFilename, normalizedUploadFile?.mime)
+    ? buildAssetSrc(normalizedUploadFile)
+    : uploadJson.secure_url;
+  const savedFormat = /\.pdf$/i.test(originalFilename) ? 'pdf' : uploadJson.format;
+
   const saveResponse = await fetch(ENDPOINTS.testFiles(itemId), {
     method: 'POST',
     credentials: 'include',
@@ -2587,10 +2718,10 @@ async function uploadTestDashboardFile(itemId, column, file) {
     body: JSON.stringify({
       columnId: column.id,
       publicId: uploadJson.public_id,
-      secureUrl: uploadJson.secure_url,
+      secureUrl,
       resourceType: uploadJson.resource_type,
-      format: uploadJson.format,
-      originalFilename: file.name || uploadJson.original_filename || uploadJson.public_id,
+      format: savedFormat,
+      originalFilename,
       bytes: uploadJson.bytes || file.size || null,
       width: uploadJson.width || null,
       height: uploadJson.height || null,
@@ -3208,6 +3339,39 @@ function renderTestDesignInputValue(cell, text, entity, column) {
 
   cell.classList.add('test-design-cell');
   if (text) cell.appendChild(display);
+  cell.appendChild(input);
+}
+
+function renderTestTextInputValue(cell, text, entity, column) {
+  const input = document.createElement('input');
+  input.className = 'test-text-input';
+  input.type = 'text';
+  input.value = text || '';
+  input.dataset.originalValue = text || '';
+  input.setAttribute('aria-label', `Set ${column?.title || 'text'}`);
+  input.autocomplete = 'off';
+  input.spellcheck = true;
+
+  input.addEventListener('pointerdown', (event) => event.stopPropagation());
+  input.addEventListener('click', (event) => event.stopPropagation());
+  input.addEventListener('focus', () => {
+    input.dataset.originalValue = String(input.value || '').trim();
+  });
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      input.blur();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      input.value = input.dataset.originalValue || '';
+      input.blur();
+    }
+  });
+  input.addEventListener('blur', () => {
+    saveTestTextInput(input, entity, column);
+  });
+
+  cell.classList.add('test-text-cell');
   cell.appendChild(input);
 }
 
@@ -3883,6 +4047,33 @@ function isPdfFile(name, mime) {
   return /\.pdf(\?|$)/i.test(name || '');
 }
 
+function isCloudinaryDeliveryUrl(url) {
+  return /^https?:\/\/res\.cloudinary\.com\//i.test(String(url || ''));
+}
+
+function buildCloudinaryPdfDeliveryUrl(url) {
+  const source = String(url || '');
+  if (!source) return '';
+
+  const hashIndex = source.indexOf('#');
+  const withoutHash = hashIndex >= 0 ? source.slice(0, hashIndex) : source;
+  const hash = hashIndex >= 0 ? source.slice(hashIndex) : '';
+  const queryIndex = withoutHash.indexOf('?');
+  const path = queryIndex >= 0 ? withoutHash.slice(0, queryIndex) : withoutHash;
+  const query = queryIndex >= 0 ? withoutHash.slice(queryIndex) : '';
+  const pdfPath = /\.[a-z0-9]{2,6}$/i.test(path)
+    ? path.replace(/\.[a-z0-9]{2,6}$/i, '.pdf')
+    : `${path}.pdf`;
+  return `${pdfPath}${query}${hash}`;
+}
+
+function normalizePdfDeliveryUrl(file, url) {
+  if (!url || !isPdfFile(file?.name, file?.mime)) return url || '';
+  if (!isCloudinaryDeliveryUrl(url)) return url;
+  if (/\.pdf(?:[?#]|$)/i.test(url)) return url;
+  return buildCloudinaryPdfDeliveryUrl(url);
+}
+
 function buildAssetSrc(file, { stripPdfUi = false } = {}) {
   if (!file) return '';
   if (file.assetId) {
@@ -3890,7 +4081,7 @@ function buildAssetSrc(file, { stripPdfUi = false } = {}) {
     const base = `/api/assets/${encodeURIComponent(file.assetId)}/inline?name=${name}`;
     return stripPdfUi ? `${base}#toolbar=0&navpanes=0&scrollbar=0&view=FitH` : base;
   }
-  const url = file.url || '';
+  const url = normalizePdfDeliveryUrl(file, file.url || file.secure_url || file.public_url || '');
   if (stripPdfUi && url) return `${url}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`;
   return url;
 }
