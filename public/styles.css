@@ -3673,6 +3673,23 @@ body.modal-open{overflow:hidden}
   font:13px Arial, Helvetica, sans-serif;
   cursor:pointer;
 }
+.db-order-approved-mark{
+  position:absolute;
+  left:130px;
+  top:300px;
+  width:150px;
+  height:72px;
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+  pointer-events:none;
+}
+.db-order-approved-mark img{
+  display:block;
+  max-width:100%;
+  max-height:100%;
+  object-fit:contain;
+}
 .db-close-order-button:hover,
 .db-close-order-button:focus{
   background:#fff;
@@ -4781,6 +4798,12 @@ input.db-custom-line-input{
   }
   .db-close-order-row{
     margin-right:0;
+  }
+  .db-order-approved-mark{
+    position:static;
+    width:150px;
+    height:72px;
+    margin:2px 0 0 86px;
   }
   .db-form-control{
     flex-wrap:wrap;

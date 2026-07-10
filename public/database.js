@@ -17,6 +17,7 @@
   const ORDER_ACK_LOGO_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781699668/ultimate_logo_imyxvr.png';
   const ORDER_ACK_FOOTER_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781779546/LETTERHEAD_INFO_pxmlak.png';
   const ORDER_ACK_NO_BANK_FOOTER_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781869078/LETTERHEAD_INFO_del_note_wcjsjt.png';
+  const ORDER_APPROVED_ICON_URL = 'https://res.cloudinary.com/brandduk/image/upload/v1783668662/approved_tcqr9k.png';
   const ULTIMATE_VAT_NUMBER = '984 5655 65';
   const ORDER_ACK_PAGE_CONTENT_MAX_MM = 96;
   const ORDER_ACK_TABLE_TOP_MM = 6;
@@ -2414,9 +2415,8 @@
           ${detailRow('Delivery:', `${inputBox(formatDate(job.delivery_date, 'short'), 'db-delivery-date-field')}<label class="db-inline-check">${renderCheck(job.customer_date_required)} Customer date</label>`)}
           ${detailRow('Invoice date:', manualInvoiceDateControl(job))}
           ${detailRow('Completion', inputBox(formatDate(job.complete_date, 'short'), 'db-completion-date-field'))}
-          ${detailRow('Job status:', inputBox(job.dashboard_status))}
-          ${detailRow('Approved:', inputBox(approvalLabel(job.proof_approved)))}
         </div>
+        ${renderOrderApprovedMark(job)}
 
         <div class="db-detail-box db-address-box">
           ${detailRow('Invoice to:', selectBox(job.invoice_address || job.customer_name))}
@@ -2434,6 +2434,15 @@
             <button class="db-close-order-button" type="button" data-db-close-order="true"${truthy(job.is_complete) ? ' disabled' : ''}>Close Order</button>
           </div>
         </div>
+      </div>
+    `;
+  }
+
+  function renderOrderApprovedMark(job) {
+    if (!truthy(job.proof_approved)) return '';
+    return `
+      <div class="db-order-approved-mark" aria-label="Job approved">
+        <img src="${escapeAttr(ORDER_APPROVED_ICON_URL)}" alt="Approved">
       </div>
     `;
   }
@@ -5856,12 +5865,6 @@
 
   function renderCheck(value) {
     return `<input class="db-tiny-check" type="checkbox" disabled ${truthy(value) ? 'checked' : ''}>`;
-  }
-
-  function approvalLabel(value) {
-    if (value === true || value === 'true' || value === 1 || value === '1') return 'Approved';
-    if (value === false || value === 'false' || value === 0 || value === '0') return 'Not approved';
-    return '';
   }
 
   function categoryForJob(job) {

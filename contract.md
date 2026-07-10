@@ -1,6 +1,6 @@
 # MondayApp Service Contract
 
-Last reviewed: 2026-07-02
+Last reviewed: 2026-07-10
 
 ## Purpose
 
@@ -410,7 +410,7 @@ UI rules:
 - The Users home button opens a DATABASE Users page backed by `/api/database/users`. It lists every registered Hub user with name, email, registration date, and a Remove button. Remove opens the shared are-you-sure modal; Confirm deletes that `hub_users` row through `DELETE /api/database/users/:id`, which also deletes that user's stored Hub sessions through the session table cascade.
 - Clickable DATABASE order-number links use a pointer cursor on hover.
 - The order view has three top tabs: Order details, Order Items, and Design. These tabs switch in place without navigating away from the dashboard. The order header reserves spacing above the tabs so document buttons and the metadata panel do not touch or overlap the tab strip. Clicking the customer control in Order details opens the customer page for that order's customer.
-- In the order view, the details panel shows read-only Test Dashboard status and proof approval fields from `database_jobs.dashboard_status` and `proof_approved`, so board approval/status changes are visible in DATABASE.
+- In the order view, the details panel does not visually show the raw Test Dashboard `dashboard_status` or `proof_approved` text fields. When the Test Dashboard `JOB ✔` checkbox has set `database_jobs.proof_approved = true`, the DATABASE order details panel shows the approved image badge in the lower-left approval area.
 - In the order view, the `Order Ack.` document button opens an A4 order acknowledgement preview in a modal. The acknowledgement is rendered from the loaded DATABASE job, customer/address fields, line items, and VAT/cost totals; it lists stock items first, then non-stock items, then non-deliverable items after a small visual gap, then internal items. The acknowledgement does not show the order Design/Design Numbers section. It renders explicit fixed-height A4 page blocks, repeats the logo/customer/order header on every page, centers the main 153mm data blocks on the A4 page centerline, and paginates line items, totals, and comments before the 96mm footer-safe content clamp. The final Sub total, VAT, and Total summary prints as a standalone block slightly below all item groups, with unboxed labels and only the monetary amounts inside bordered value boxes. It includes the Ultimate logo at 60.5mm wide in the top-right of each page, anchored at its top-right corner, and a centered 146mm-wide Ultimate letterhead footer image without bank details offset 5mm above the bottom of every generated PDF page. The modal closes on outside-backdrop click or Escape and provides print/save-as-PDF controls through the browser print dialog; while printing, the document title is set to `<order no> - Order Acknowlegement` so Chrome uses that as the default PDF filename.
 - In the order view, the `Invoice` and `Delivery Note` document buttons use the same A4 modal/print shell and Ultimate logo as the order acknowledgement. Clicking Invoice first persists the job as invoiced/closed through `PUT /api/database/jobs/:id` with `mark_invoiced = true`, then renders the preview from the updated row. Invoice documents keep the existing bank-detail letterhead footer, use the invoice address, set `Invoice No.` from `database_jobs.invoice_no`, omit the old ULT ref field, set `Cust ref` from `database_jobs.client_order_no`, set invoice date to `database_jobs.invoice_date` with legacy completion-date fallback for older rows, and list stock, non-stock, and non-deliverable line items while excluding internal line items from invoice totals and tax analysis. The first invoice generation stores that invoice date; repeat clicks preserve it instead of moving the invoice date to the current day. Delivery notes use the same no-bank footer as order acknowledgements, use the delivery address, relabel ULT ref as `Invoice No` using `database_jobs.invoice_no`, use the order date from the job order/created date, set delivery date to the preview generation date, set order taken by from the job owner, list stock and non-stock line items while excluding non-deliverable and internal line items, and include blank Signed by, Print Name, and Date lines for the recipient. If `invoice_required = false`, `invoice_no` remains null, the Invoice action is disabled, and delivery notes leave `Invoice No` blank.
 - The order title is editable by default in the header and autosaves through `PUT /api/database/jobs/:id` using the same debounced/flush-before-navigation pattern as other DATABASE autosaves. Typing in the title also updates the cached Outstanding Orders row and order selectors immediately, so returning to the list shows the edited title without a page reload. The old Edit button next to the title is removed. The top-right metadata box no longer contains the Job/Order dropdowns; `By:` prefers `order_owner_name` and falls back to `order_taken_by`/legacy staff id.
@@ -447,12 +447,19 @@ Latest full-history Railway import from root `PS_XP_tab uptodate.mdb` on 2026-06
 - Outstanding open orders after import: 49.
 - Manual test cleanup after import removed the single preserved `database_customer_profiles` row named `test customer` / code `test`; no manual profiles, manual jobs, or manual contacts remain.
 
-Latest insert-only Railway catch-up import from root `PS_XP_tabUP TO DATE.mdb` on 2026-07-01:
+Previous insert-only Railway catch-up import from root `PS_XP_tabUP TO DATE.mdb` on 2026-07-01:
 
 - Inserted rows recorded by `database_import_runs.id = 7`: 36 jobs, 214 line items, 62 positions, 2 customer addresses, 1 source-backed contact, and 21 products.
 - Current DATABASE table counts after cleanup: 43,177 jobs, 189,466 line items, 63,429 positions, 5,199 customer addresses, 7,506 customer contacts, and 113,230 products.
 - Latest `database_import_runs.status`: `complete`, `source_years`: `all`, message: `Snapshot insert-only complete`.
 - Post-import cleanup deleted 5 `database_job_line_items` rows for source order item ids `207117`, `207118`, `207119`, `207120`, and `207179` after verifying those ids are absent from `PS_XP_tabUP TO DATE.mdb`.
+
+Latest insert-only Railway catch-up import from root `PS_XP_tab JULY.mdb` on 2026-07-10:
+
+- Inserted rows recorded by `database_import_runs.id = 8`: 17 jobs, 61 line items, 29 positions, 0 customer addresses, 0 source-backed contacts, and 6 products.
+- Current DATABASE table counts now match the July MDB snapshot: 43,194 jobs, 189,529 line items, 63,474 positions, 5,199 customer addresses, 7,506 customer contacts, and 113,236 products.
+- Latest `database_import_runs.status`: `complete`, `source_years`: `all`, message: `Snapshot insert-only complete`.
+- Newly imported job/order range: source order ids `50390` through `50406`, order numbers `51143` through `51159`.
 
 ### Files And Visual QA
 
