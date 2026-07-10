@@ -294,7 +294,9 @@
     els.itemsPanel.addEventListener('change', handleLineDraftChange);
     els.itemsPanel.addEventListener('mousedown', handleLineDraftMouseDown);
     els.itemsPanel.addEventListener('pointerdown', handleLineDragPointerDown);
+    els.detailsPanel.addEventListener('input', handleDetailsPanelInput);
     els.detailsPanel.addEventListener('change', handleDetailsPanelChange);
+    els.detailsPanel.addEventListener('focusout', handleDetailsPanelFocusOut);
     els.designPanel.addEventListener('input', handleDesignInput);
     els.designPanel.addEventListener('focusout', handleDesignFocusOut);
     els.designPanel.addEventListener('pointerdown', handleLineDragPointerDown);
@@ -2428,7 +2430,7 @@
           ${detailRow('Client ref:', inputBox(job.client_order_no || job.contact_name || ''))}
           <div class="db-form-row db-comments-row">
             <label>Comments:</label>
-            <textarea readonly>${escapeHtml(job.comments || '')}</textarea>
+            <textarea data-db-job-field="comments">${escapeHtml(job.comments || '')}</textarea>
           </div>
         </div>
       </div>
@@ -2453,6 +2455,19 @@
     syncManualInvoiceDateInput(event.target.checked);
   }
 
+  function handleDetailsPanelInput(event) {
+    if (!event.target?.matches?.('[data-db-job-field="comments"]')) return;
+    if (!state.selectedJob?.source_order_id) return;
+    state.selectedJob.comments = event.target.value;
+    state.jobDirty = true;
+    scheduleJobAutosave();
+  }
+
+  function handleDetailsPanelFocusOut(event) {
+    if (!event.target?.matches?.('[data-db-job-field]')) return;
+    flushJobAutosave();
+  }
+
   function syncManualInvoiceDateInput(isManual) {
     const input = els.detailsPanel?.querySelector('.db-manual-invoice-date-field');
     if (!input) return;
@@ -2474,6 +2489,8 @@
 
   function renderItemsPanel() {
     const items = state.selectedLineItems || [];
+    const showNonStockSupplier = isBusinessGiftOrder(state.selectedJob);
+    const nonStockColspan = showNonStockSupplier ? 8 : 7;
     const stockItems = items.filter(isStockItem);
     const nonStockItems = items.filter(isNonStockItem);
     const nonDeliverableItems = items.filter((item) => truthy(item.is_non_deliverable));
@@ -2515,12 +2532,13 @@
           <div class="db-edit-spine">E<br>D<br>I<br>T</div>
           <div class="db-nonstock-box">
             <div class="db-custom-table-scroll" data-db-item-scroll>
-              <table class="db-legacy-table db-nonstock-table">
+              <table class="db-legacy-table db-nonstock-table ${showNonStockSupplier ? 'has-supplier' : ''}">
                 <thead>
                   <tr>
                     <th class="db-row-selector"></th>
                     <th class="db-row-selector"></th>
                     <th>Non-stock item:</th>
+                    ${showNonStockSupplier ? '<th>Supplier:</th>' : ''}
                     <th>Cost:</th>
                     <th>Price:</th>
                     <th>Qty:</th>
@@ -2528,11 +2546,11 @@
                   </tr>
                 </thead>
                 <tbody>
-                  ${renderCustomSectionRows(nonStockItems, 'nonstock', 7, renderNonStockRow)}
+                  ${renderCustomSectionRows(nonStockItems, 'nonstock', nonStockColspan, (item, index) => renderNonStockRow(item, index, { showSupplier: showNonStockSupplier }))}
                 </tbody>
               </table>
             </div>
-            <div class="db-supplier-row"><span>Supplier:</span><input readonly value="${escapeAttr(suppliers)}"></div>
+            ${showNonStockSupplier ? '' : `<div class="db-supplier-row"><span>Supplier:</span><input readonly value="${escapeAttr(suppliers)}"></div>`}
           </div>
         </div>
         <div class="db-product-results" role="listbox"></div>
@@ -3626,6 +3644,7 @@
       metaRows: [
         { label: 'Invoice No.', value: invoiceDocumentNo(job) },
         { label: 'Cust ref:', value: job.client_order_no || '' },
+        { label: 'ULT Ref:', value: job.order_no || job.source_order_id || '' },
         { label: 'VAT No.:', value: ULTIMATE_VAT_NUMBER },
         { label: 'Invoice date:', value: formatDate(generatedAt, 'full') },
         { label: 'Payment terms:', value: job.payment_terms || '' },
@@ -4911,7 +4930,7 @@
     if (field === 'vatPercent') return { vat_rate: lineVatRate(value) };
     if (field === 'quantity') return { quantity: lineInteger(value, 1) };
     if (field === 'unit_cost' || field === 'unit_price') return { [field]: lineNumber(value) };
-    if (['style_code', 'alt_style_code', 'style_name', 'colour', 'size', 'line_description'].includes(field)) {
+    if (['style_code', 'alt_style_code', 'style_name', 'colour', 'size', 'line_description', 'supplier_name'].includes(field)) {
       return { [field]: String(value || '').trim() };
     }
     return null;
@@ -5150,8 +5169,10 @@
   }
 
   async function saveJobFields(options = {}) {
+    const commentsInput = els.detailsPanel?.querySelector('[data-db-job-field="comments"]');
     const payload = {
       job_title: els.orderTitle.value.trim(),
+      comments: commentsInput ? commentsInput.value : (state.selectedJob?.comments || ''),
     };
     const signature = jobSignature(payload);
 
@@ -5216,6 +5237,7 @@
   function jobSignature(job) {
     return JSON.stringify({
       job_title: job?.job_title || '',
+      comments: job?.comments || '',
     });
   }
 
@@ -5318,7 +5340,7 @@
     )));
   }
 
-  function renderNonStockRow(item, index) {
+  function renderNonStockRow(item, index, options = {}) {
     const lineId = item.source_order_item_id || '';
     return `
       <tr class="db-line-row db-custom-line-row" data-line-id="${escapeAttr(lineId)}">
@@ -5327,6 +5349,7 @@
           <button class="db-line-drag-handle" type="button" data-db-line-drag="true" aria-label="Reorder line item">&#9654;</button>
         </td>
         <td>${renderLineItemInput(item, 'line_description')}</td>
+        ${options.showSupplier ? `<td>${renderLineItemInput(item, 'supplier_name')}</td>` : ''}
         <td>${renderLineItemInput(item, 'unit_cost', 'db-line-money')}</td>
         <td>${renderLineItemInput(item, 'unit_price', 'db-line-money')}</td>
         <td>${renderLineItemInput(item, 'quantity', 'db-line-qty')}</td>
@@ -5366,12 +5389,14 @@
   function renderCustomLineDraftRow(type, colspan) {
     const draft = state.customLineDraft || createCustomLineDraft(type);
     const status = draft.error || '';
+    const showSupplier = customLineShowsSupplier(type);
 
     return `
       <tr class="db-custom-line-edit-row" data-custom-line-type="${escapeAttr(type)}">
         <td class="db-row-selector db-line-delete-cell"></td>
         <td class="db-row-selector"></td>
         <td><input class="db-custom-line-input" data-custom-line-field="line_description" value="${escapeAttr(draft.line_description)}"></td>
+        ${showSupplier ? `<td><input class="db-custom-line-input" data-custom-line-field="supplier_name" value="${escapeAttr(draft.supplier_name)}"></td>` : ''}
         <td><input class="db-custom-line-input db-line-money" data-custom-line-field="unit_cost" value="${escapeAttr(draft.unit_cost)}"></td>
         <td><input class="db-custom-line-input db-line-money" data-custom-line-field="unit_price" value="${escapeAttr(draft.unit_price)}"></td>
         <td><input class="db-custom-line-input db-line-qty" data-custom-line-field="quantity" inputmode="numeric" value="${escapeAttr(draft.quantity)}"></td>
@@ -5406,6 +5431,7 @@
     return {
       type: normalizeCustomLineType(type) || 'nonstock',
       line_description: '',
+      supplier_name: '',
       unit_cost: '',
       unit_price: '',
       quantity: '1',
@@ -5457,6 +5483,7 @@
   function isBlankCustomLineDraft(draft) {
     if (!draft) return true;
     return !String(draft.line_description || '').trim()
+      && !String(draft.supplier_name || '').trim()
       && !String(draft.unit_cost || '').trim()
       && !String(draft.unit_price || '').trim()
       && isDefaultDraftValue(draft.quantity, '1')
@@ -5484,6 +5511,7 @@
         body: JSON.stringify({
           line_type: draft.type,
           line_description: draft.line_description,
+          supplier_name: draft.supplier_name,
           unit_cost: lineNumber(draft.unit_cost),
           unit_price: lineNumber(draft.unit_price),
           quantity: lineInteger(draft.quantity, 1),
@@ -5862,6 +5890,14 @@
 
   function renderCheck(value) {
     return `<input class="db-tiny-check" type="checkbox" disabled ${truthy(value) ? 'checked' : ''}>`;
+  }
+
+  function isBusinessGiftOrder(job) {
+    return categoryForJob(job || {}) === 'gifts';
+  }
+
+  function customLineShowsSupplier(type) {
+    return normalizeCustomLineType(type) === 'nonstock' && isBusinessGiftOrder(state.selectedJob);
   }
 
   function categoryForJob(job) {

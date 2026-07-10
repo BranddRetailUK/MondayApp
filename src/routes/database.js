@@ -1019,17 +1019,12 @@ router.post('/api/database/jobs', async (req, res) => {
     const next = await client.query(`
       SELECT
         (COALESCE(MAX(source_order_id), 0) + 1)::int AS source_order_id,
-        (GREATEST(COALESCE(MAX(order_no), 50000), 50000) + 1)::int AS order_no,
-        CASE
-          WHEN $1::boolean THEN (GREATEST(COALESCE(MAX(invoice_no), 50000), 50000) + 1)::int
-          ELSE NULL::int
-        END AS invoice_no
+        (GREATEST(COALESCE(MAX(order_no), 50000), 50000) + 1)::int AS order_no
       FROM database_jobs
-    `, [invoiceRequired]);
+    `);
 
     const sourceOrderId = next.rows[0].source_order_id;
     const orderNo = next.rows[0].order_no;
-    const invoiceNo = next.rows[0].invoice_no;
     const orderTypeAbbr = orderTypeAbbreviation(orderType);
 
     const inserted = await client.query(
@@ -1101,7 +1096,7 @@ router.post('/api/database/jobs', async (req, res) => {
         orderDate.iso,
         deliveryDate.iso,
         toBoolean(payload.customer_date_required),
-        invoiceNo,
+        null,
         invoiceRequired,
       ]
     );
@@ -1125,11 +1120,12 @@ router.put('/api/database/jobs/:id', async (req, res) => {
 
   const payload = req.body || {};
   const hasJobTitle = Object.prototype.hasOwnProperty.call(payload, 'job_title');
+  const hasComments = Object.prototype.hasOwnProperty.call(payload, 'comments');
   const hasIsComplete = Object.prototype.hasOwnProperty.call(payload, 'is_complete');
   const hasMarkInvoiced = payload.mark_invoiced === true || payload.mark_invoiced === 'true';
   const hasManualInvoiceDate = payload.manual_invoice_date === true || payload.manual_invoice_date === 'true';
 
-  if (!hasJobTitle && !hasIsComplete && !hasMarkInvoiced) {
+  if (!hasJobTitle && !hasComments && !hasIsComplete && !hasMarkInvoiced) {
     return res.status(400).json({ error: 'No supported job fields supplied' });
   }
 
@@ -1156,6 +1152,10 @@ router.put('/api/database/jobs/:id', async (req, res) => {
       if (hasJobTitle) {
         values.push(cleanNullable(payload.job_title));
         updates.push(`job_title = $${values.length}`);
+      }
+      if (hasComments) {
+        values.push(cleanNullable(payload.comments));
+        updates.push(`comments = $${values.length}`);
       }
       values.push(manualInvoiceDate);
       const invoiceDateParam = `$${values.length}`;
@@ -1213,6 +1213,10 @@ router.put('/api/database/jobs/:id', async (req, res) => {
   if (hasJobTitle) {
     values.push(cleanNullable(payload.job_title));
     updates.push(`job_title = $${values.length}`);
+  }
+  if (hasComments) {
+    values.push(cleanNullable(payload.comments));
+    updates.push(`comments = $${values.length}`);
   }
   if (hasIsComplete) {
     values.push(toBoolean(payload.is_complete));
@@ -2098,7 +2102,7 @@ function buildLineItemUpdate(payload) {
     if (!hasOwn(payload, 'line_description')) addField('line_description', styleName);
   }
 
-  const textFields = ['style_code', 'alt_style_code', 'colour', 'size', 'line_description'];
+  const textFields = ['style_code', 'alt_style_code', 'colour', 'size', 'line_description', 'supplier_name'];
   for (const field of textFields) {
     if (hasOwn(payload, field)) addField(field, cleanNullable(payload[field]));
   }

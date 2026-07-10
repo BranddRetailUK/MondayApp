@@ -3729,6 +3729,21 @@ body.modal-open{overflow:hidden}
 .db-small-item-box tbody tr:not(.db-gray-fill) td{
   background:#fff;
 }
+.db-custom-line-row,
+.db-add-line-edit-row,
+.db-custom-line-edit-row{
+  height:19px;
+}
+.db-custom-line-row td,
+.db-add-line-edit-row td,
+.db-custom-line-edit-row td{
+  height:19px;
+  max-height:19px;
+  padding-top:0;
+  padding-bottom:0;
+  overflow:hidden;
+  white-space:nowrap;
+}
 .db-add-line-button-row td{
   position:sticky;
   bottom:0;
@@ -4049,7 +4064,7 @@ input.db-custom-line-input{
   background:#858585;
 }
 .db-custom-table-scroll .db-legacy-table{height:auto}
-.db-custom-table-scroll:not(:has(.db-custom-line-edit-row)) .db-legacy-table{min-height:100%}
+.db-custom-table-scroll:not(:has(.db-line-row)):not(:has(.db-custom-line-edit-row)) .db-legacy-table{min-height:100%}
 .db-small-item-box th:nth-child(1),
 .db-small-item-box th:nth-child(2){width:19px}
 .db-small-item-box th:nth-child(3){width:auto}
@@ -4079,6 +4094,18 @@ input.db-custom-line-input{
 .db-nonstock-table th:nth-child(3){width:auto}
 .db-nonstock-table th:nth-child(n+4){width:68px}
 .db-nonstock-table td:nth-child(n+4){
+  text-align:right;
+}
+.db-nonstock-table.has-supplier th:nth-child(4){
+  width:96px;
+}
+.db-nonstock-table.has-supplier th:nth-child(n+5){
+  width:68px;
+}
+.db-nonstock-table.has-supplier td:nth-child(4){
+  text-align:left;
+}
+.db-nonstock-table.has-supplier td:nth-child(n+5){
   text-align:right;
 }
 .db-gray-fill td{

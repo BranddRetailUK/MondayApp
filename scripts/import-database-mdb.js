@@ -116,6 +116,18 @@ const JOB_COLUMNS = [
   'pf_invoice_date',
 ];
 
+const INSERT_ONLY_JOB_REFRESH_COLUMNS = [
+  'invoice_no',
+  'invoice_required',
+  'invoice_printed',
+  'pf_invoice_printed',
+  'pf_invoice_date',
+  'complete_date',
+  'is_complete',
+  'delivery_note_date',
+  'updated_at_source',
+];
+
 const DASHBOARD_JOB_FIELD_COLUMNS = [
   'dashboard_status',
   'dashboard_priority',
@@ -996,6 +1008,11 @@ async function importSnapshot(snapshot, options) {
       snapshot.jobs,
       { conflictAction }
     );
+    let jobRefresh = { affected: 0 };
+    if (options.insertOnly) {
+      console.log(`[database-import] Refreshing invoice fields for ${snapshot.jobs.length} existing jobs`);
+      jobRefresh = await refreshExistingJobInvoiceFields(client, snapshot.jobs);
+    }
     if (preservedDashboardJobFields.length) {
       console.log(`[database-import] Restoring ${preservedDashboardJobFields.length} dashboard job status rows`);
       await restoreDashboardJobFieldSnapshot(client, preservedDashboardJobFields);
@@ -1043,7 +1060,7 @@ async function importSnapshot(snapshot, options) {
         options.insertOnly ? contactWrite.affected : snapshot.contacts.length,
         options.insertOnly ? productWrite.affected : snapshot.products.length,
         options.insertOnly
-          ? 'Snapshot insert-only complete'
+          ? `Snapshot insert-only complete; refreshed invoice fields for ${jobRefresh.affected} jobs`
           : options.replaceExisting
             ? 'Snapshot replaced'
             : 'Snapshot appended/upserted',
@@ -1318,6 +1335,59 @@ async function restoreDashboardJobFieldSnapshot(client, rows) {
       values
     );
   }
+}
+
+async function refreshExistingJobInvoiceFields(client, rows) {
+  if (!rows.length) return { affected: 0 };
+
+  const columns = ['source_order_id', ...INSERT_ONLY_JOB_REFRESH_COLUMNS];
+  const casts = {
+    source_order_id: '::int',
+    invoice_no: '::int',
+    invoice_required: '::boolean',
+    invoice_printed: '::boolean',
+    pf_invoice_printed: '::boolean',
+    pf_invoice_date: '::timestamp',
+    complete_date: '::timestamp',
+    is_complete: '::boolean',
+    delivery_note_date: '::timestamp',
+    updated_at_source: '::timestamp',
+  };
+  const setSql = INSERT_ONLY_JOB_REFRESH_COLUMNS
+    .map((column) => `${column} = updates.${column}`)
+    .join(', ');
+
+  let affected = 0;
+
+  for (let start = 0; start < rows.length; start += INSERT_BATCH_SIZE) {
+    const batch = rows.slice(start, start + INSERT_BATCH_SIZE);
+    const values = [];
+    const rowPlaceholders = batch.map((row, rowIndex) => {
+      const fields = columns.map((column, columnIndex) => {
+        values.push(row[column]);
+        return `$${(rowIndex * columns.length) + columnIndex + 1}${casts[column] || ''}`;
+      });
+      return `(${fields.join(', ')})`;
+    });
+
+    const result = await client.query(
+      `UPDATE database_jobs AS jobs
+       SET ${setSql},
+           imported_at = NOW()
+       FROM (VALUES ${rowPlaceholders.join(', ')})
+         AS updates(${columns.join(', ')})
+       WHERE jobs.source_order_id = updates.source_order_id
+         AND jobs.is_manual_entry IS NOT TRUE`,
+      values
+    );
+
+    affected += result.rowCount;
+
+    const count = Math.min(start + batch.length, rows.length);
+    console.log(`[database-import] database_jobs invoice fields: ${count}/${rows.length}`);
+  }
+
+  return { affected };
 }
 
 async function updateJobAddressRows(client, rows) {
