@@ -2430,9 +2430,6 @@
             <label>Comments:</label>
             <textarea readonly>${escapeHtml(job.comments || '')}</textarea>
           </div>
-          <div class="db-close-order-row">
-            <button class="db-close-order-button" type="button" data-db-close-order="true"${truthy(job.is_complete) ? ' disabled' : ''}>Close Order</button>
-          </div>
         </div>
       </div>
     `;
