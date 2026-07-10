@@ -452,7 +452,7 @@ function shouldRenderDashboardJob(job, state, scan) {
   const statusText = normalizeColumnTitle(
     job.dashboard_status || getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]) || scan?.status || ''
   );
-  if (statusText === 'COMPLETED' || statusText === 'INVOICED') return false;
+  if (statusText === 'INVOICED') return false;
   return hasDashboardIdentity(job, state, scan);
 }
 
@@ -605,7 +605,7 @@ async function fetchOpenDashboardJobs() {
     WHERE is_complete IS NOT TRUE
       AND invoice_printed IS NOT TRUE
       AND pf_invoice_printed IS NOT TRUE
-      AND COALESCE(UPPER(TRIM(dashboard_status)), '') NOT IN ('INVOICED', 'COMPLETED')
+      AND COALESCE(UPPER(TRIM(dashboard_status)), '') <> 'INVOICED'
     ORDER BY COALESCE(order_date, created_at_source, updated_at_source) DESC NULLS LAST,
              order_no DESC
   `);
