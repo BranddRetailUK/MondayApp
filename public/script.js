@@ -11,6 +11,10 @@ const ENDPOINTS = {
   testCheckboxColumn: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/checkbox-column`,
   testTextColumn: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/text-column`,
   testDesignColumn: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/design-column`,
+  testItemName: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/name`,
+  testItemGroup: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/group`,
+  testDateColumn: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/date-column`,
+  testPrivateJobs: '/api/test-dashboard/private-jobs',
   testScanUrl: (itemId) => `/api/test-dashboard/scan-url?jobId=${encodeURIComponent(itemId)}`,
   testUploadSignature: '/api/test-dashboard/uploads/signature',
   testFiles: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/files`
@@ -28,6 +32,8 @@ const BOARD_CONTEXT_MONDAY = 'monday';
 const BOARD_CONTEXT_TEST = 'test-dashboard';
 const TEST_DASHBOARD_CLIENT_COLUMN_IDS = Object.freeze({
   JOB: 'checkbox1__1',
+  PRIORITY: 'priority_mkn8p46c',
+  DATE: 'date_mksx422k',
   DESIGN: 'text_mkmesygk',
   PROOF: 'file_mky43tg9'
 });
@@ -93,6 +99,11 @@ let __dashboardPinchState = null;
 let __statusDropdownState = null;
 let __statusUpdateInFlight = 0;
 let __testCompleteConfirmResolve = null;
+let __testRowMenuState = null;
+let __testDatePopoverState = null;
+let __testPrivateNameEditInFlight = 0;
+let __pendingPrivateJobFocusId = '';
+const __testGroupKeysToOpen = new Set();
 let __proofModalState = {
   files: [],
   fileIndex: 0,
@@ -700,7 +711,7 @@ function startTestBoardAutoRefresh() {
     if (document.hidden) return;
     const dashboard = document.getElementById('tab-test-dashboard');
     if (dashboard && !dashboard.classList.contains('active')) return;
-    if (isStatusDropdownOpen() || __statusUpdateInFlight > 0 || __testFileUploadsInFlight > 0 || isTestDashboardTextEditActive()) return;
+    if (isStatusDropdownOpen() || isTestRowMenuOpen() || isTestDatePopoverOpen() || __statusUpdateInFlight > 0 || __testFileUploadsInFlight > 0 || isTestDashboardTextEditActive()) return;
     loadTestBoard({ forceRefresh: true });
   }, BOARD_AUTO_REFRESH_MS);
 }
@@ -742,11 +753,16 @@ function renderBoard(payload, options = {}) {
     const groupGridSpec = buildDashboardGridSpec(boardColumns, {
       subitem: false,
       widthOverrides: groupColumnWidths,
-      nameWidth: globalJobNameWidth
+      nameWidth: globalJobNameWidth,
+      printWidth: context === BOARD_CONTEXT_TEST ? 116 : 82
     });
     const groupKey = slugify(collectionName);
-    const isCollapsed = uiState.collapsedGroups.has(groupKey) ||
-      (!uiState.hasRenderedGroups && isDefaultCollapsedGroup(collectionName, context));
+    const forceOpenGroup = context === BOARD_CONTEXT_TEST && __testGroupKeysToOpen.has(groupKey);
+    if (forceOpenGroup) __testGroupKeysToOpen.delete(groupKey);
+    const isCollapsed = !forceOpenGroup && (
+      uiState.collapsedGroups.has(groupKey) ||
+      (!uiState.hasRenderedGroups && isDefaultCollapsedGroup(collectionName, context))
+    );
 
     const groupWrap = document.createElement('section');
     groupWrap.className = 'group';
@@ -756,6 +772,13 @@ function renderBoard(payload, options = {}) {
       groupWrap.classList.add('mobile-print-embroidery-hidden-columns');
     }
     if (group.color) groupWrap.style.setProperty('--group-accent', group.color);
+
+    const isTestOfficeGroup = context === BOARD_CONTEXT_TEST && normalizeColumnTitle(collectionName) === 'OFFICE';
+    const sectionTitleRow = document.createElement('div');
+    sectionTitleRow.className = 'group-title-row';
+    if (isTestOfficeGroup) {
+      sectionTitleRow.appendChild(buildTestDashboardAddJobButton(group));
+    }
 
     const sectionTitle = document.createElement('button');
     sectionTitle.className = 'group-title';
@@ -771,14 +794,21 @@ function renderBoard(payload, options = {}) {
       groupSummary.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
     };
     sectionTitle.addEventListener('click', toggleGroup);
-    groupWrap.appendChild(sectionTitle);
+    sectionTitleRow.appendChild(sectionTitle);
+    groupWrap.appendChild(sectionTitleRow);
 
     const groupSummary = buildGroupSummary(collectionName, sortedItems, groupGridSpec, groupSummaryTitleWidth, {
       simple: context === BOARD_CONTEXT_TEST
     });
     groupSummary.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
     groupSummary.addEventListener('click', toggleGroup);
-    groupWrap.appendChild(groupSummary);
+    const groupSummaryRow = document.createElement('div');
+    groupSummaryRow.className = 'group-summary-row';
+    if (isTestOfficeGroup) {
+      groupSummaryRow.appendChild(buildTestDashboardAddJobButton(group));
+    }
+    groupSummaryRow.appendChild(groupSummary);
+    groupWrap.appendChild(groupSummaryRow);
 
     const tableWrap = document.createElement('div');
     tableWrap.className = 'group-content';
@@ -950,6 +980,45 @@ function formatGroupJobCount(count) {
   return `${total} ${total === 1 ? 'Job' : 'Jobs'}`;
 }
 
+function buildTestDashboardAddJobButton(group) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'test-dashboard-add-job-button';
+  button.textContent = '+';
+  button.title = 'Add private job';
+  button.setAttribute('aria-label', 'Add private job');
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    createTestDashboardPrivateJob(group);
+  });
+  return button;
+}
+
+async function createTestDashboardPrivateJob(group) {
+  const groupId = group?.id || '';
+  __statusUpdateInFlight += 1;
+  try {
+    const response = await fetch(ENDPOINTS.testPrivateJobs, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupId })
+    });
+    if (!response.ok) throw new Error(await readApiError(response));
+    const json = await response.json();
+    const itemId = json?.item?.id || '';
+    if (itemId) __pendingPrivateJobFocusId = String(itemId);
+    __testGroupKeysToOpen.add(slugify(group?.title || 'OFFICE'));
+    await loadTestBoard({ forceRefresh: true, allowDuringDesignEdit: true });
+  } catch (err) {
+    console.warn('Private job create failed', err);
+    alert(`Failed to create private job: ${err.message || 'Unknown error'}`);
+  } finally {
+    __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);
+  }
+}
+
 function isToSampleGroup(groupName) {
   return String(groupName || '').trim().toUpperCase() === 'TO SAMPLE';
 }
@@ -1065,9 +1134,9 @@ function normalizeColumns(columns) {
     .filter(column => column.id);
 }
 
-function buildDashboardGridSpec(mondayColumns, { subitem = false, widthOverrides = new Map(), nameWidth = null } = {}) {
+function buildDashboardGridSpec(mondayColumns, { subitem = false, widthOverrides = new Map(), nameWidth = null, printWidth = 82 } = {}) {
   const columns = [
-    subitem ? null : { kind: 'print', title: 'LABEL', width: 82 },
+    subitem ? null : { kind: 'print', title: 'LABEL', width: printWidth },
     { kind: 'name', title: subitem ? 'Subitem' : 'JOB', width: nameWidth || (subitem ? 520 : 560) },
     ...mondayColumns.map(column => ({
       kind: 'column',
@@ -1252,6 +1321,13 @@ function getLocalDayDiff(fromDate, toDate) {
 
 function startOfLocalDay(date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function localDateIso(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function sortItemsForBoard(items, sortPlan) {
@@ -1644,6 +1720,23 @@ function buildPrintCell(item, context = BOARD_CONTEXT_MONDAY) {
   const cell = document.createElement('div');
   cell.className = 'grid-cell print-cell';
   const jobTitle = item.name || '';
+
+  if (context === BOARD_CONTEXT_TEST) {
+    const menuBtn = document.createElement('button');
+    menuBtn.type = 'button';
+    menuBtn.className = 'test-row-menu-button';
+    menuBtn.title = 'Job actions';
+    menuBtn.setAttribute('aria-label', 'Job actions');
+    menuBtn.setAttribute('aria-haspopup', 'menu');
+    menuBtn.innerHTML = '<span></span><span></span><span></span>';
+    menuBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openTestRowMenu(menuBtn, item);
+    });
+    cell.appendChild(menuBtn);
+  }
+
   const printBtn = document.createElement('button');
   printBtn.textContent = 'Print';
   printBtn.className = 'job-action primary';
@@ -1692,7 +1785,9 @@ function buildNameCell(item, initiallyOpen = false, { context = BOARD_CONTEXT_MO
 
   const titleSpan = document.createElement('span');
   titleSpan.className = 'job-title';
-  if (context === BOARD_CONTEXT_TEST) {
+  if (context === BOARD_CONTEXT_TEST && item?.dashboard_private_job) {
+    renderTestPrivateJobNameInput(titleSpan, item);
+  } else if (context === BOARD_CONTEXT_TEST) {
     renderTestDashboardJobTitle(titleSpan, item);
   } else {
     titleSpan.textContent = item.name || '';
@@ -1736,6 +1831,75 @@ function renderTestDashboardJobTitle(container, item) {
   });
   container.appendChild(button);
   container.appendChild(document.createTextNode(parts.rest));
+}
+
+function renderTestPrivateJobNameInput(container, item) {
+  const input = document.createElement('input');
+  input.className = 'test-private-job-name-input';
+  input.type = 'text';
+  input.value = item?.name || '';
+  input.placeholder = 'Private job';
+  input.dataset.originalValue = item?.name || '';
+  input.autocomplete = 'off';
+  input.spellcheck = true;
+  input.setAttribute('aria-label', 'Private job title');
+  input.addEventListener('pointerdown', (event) => event.stopPropagation());
+  input.addEventListener('click', (event) => event.stopPropagation());
+  input.addEventListener('focus', () => {
+    input.dataset.originalValue = input.value || '';
+  });
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      input.blur();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      input.value = input.dataset.originalValue || '';
+      input.blur();
+    }
+  });
+  input.addEventListener('blur', () => {
+    saveTestPrivateJobName(input, item);
+  });
+  container.appendChild(input);
+
+  if (__pendingPrivateJobFocusId && String(item?.id) === __pendingPrivateJobFocusId) {
+    __pendingPrivateJobFocusId = '';
+    window.requestAnimationFrame(() => {
+      input.focus();
+      input.select();
+    });
+  }
+}
+
+async function saveTestPrivateJobName(input, item) {
+  if (!input || !item?.id) return;
+  const previousValue = String(input.dataset.originalValue || '').trim();
+  const nextValue = String(input.value || '').trim();
+  if (nextValue === previousValue) return;
+
+  input.disabled = true;
+  input.classList.add('saving');
+  __testPrivateNameEditInFlight += 1;
+  try {
+    const response = await fetch(ENDPOINTS.testItemName(item.id), {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: nextValue })
+    });
+    if (!response.ok) throw new Error(await readApiError(response));
+    updateCachedPrivateJobName(item.id, nextValue);
+    input.dataset.originalValue = nextValue;
+  } catch (err) {
+    console.warn('Private job rename failed', err);
+    input.value = previousValue;
+    alert(`Failed to rename private job: ${err.message || 'Unknown error'}`);
+  } finally {
+    __testPrivateNameEditInFlight = Math.max(0, __testPrivateNameEditInFlight - 1);
+    input.disabled = false;
+    input.classList.remove('saving');
+  }
 }
 
 function splitLeadingTestDashboardJobNumber(title, item) {
@@ -1815,7 +1979,11 @@ function buildColumnValueCell(entity, column, { subitem = false, context = BOARD
   } else if (column.type === 'people') {
     renderPeopleValue(cell, text);
   } else if (column.type === 'date') {
-    renderPlainTextValue(cell, formatDateText(text));
+    if (context === BOARD_CONTEXT_TEST && !subitem && entity?.id) {
+      renderTestDateValue(cell, value, text, entity, column);
+    } else {
+      renderPlainTextValue(cell, formatDateText(text));
+    }
   } else if (column.type === 'timeline') {
     renderPlainTextValue(cell, text);
   } else if (column.type === 'text' || column.type === 'long_text') {
@@ -1969,6 +2137,8 @@ function openStatusDropdown({ anchor, item, column, currentText, context = BOARD
     closeStatusDropdown();
     return;
   }
+  closeTestRowMenu();
+  closeTestDatePopover();
 
   const options = getStatusOptions(column);
   if (!options.length) return;
@@ -2049,6 +2219,295 @@ function closeStatusDropdown() {
   const dropdown = document.getElementById('monday-status-popover');
   if (dropdown) dropdown.classList.add('hidden');
   __statusDropdownState = null;
+}
+
+function ensureTestRowMenu() {
+  let menu = document.getElementById('test-row-action-menu');
+  if (menu) return menu;
+
+  menu = document.createElement('div');
+  menu.id = 'test-row-action-menu';
+  menu.className = 'test-row-action-menu hidden';
+  menu.setAttribute('role', 'menu');
+  menu.innerHTML = `
+    <div class="test-row-action-item has-submenu" role="none">
+      <button class="test-row-action-button" type="button" role="menuitem" data-test-row-move-root="true">
+        <span>Move To</span>
+        <span class="test-row-action-arrow" aria-hidden="true">›</span>
+      </button>
+      <div class="test-row-action-submenu" role="menu" aria-label="Move job to group">
+        <button type="button" role="menuitem" data-test-row-move-group="HOLD">Hold</button>
+        <button type="button" role="menuitem" data-test-row-move-group="OFFICE">Office</button>
+        <button type="button" role="menuitem" data-test-row-move-group="PRE-PRODUCTION">Pre-Production</button>
+      </div>
+    </div>
+  `;
+  menu.addEventListener('click', handleTestRowMenuClick);
+  document.body.appendChild(menu);
+  document.addEventListener('pointerdown', handleTestRowMenuDocumentPointerDown, true);
+  document.addEventListener('keydown', handleTestRowMenuKeydown);
+  window.addEventListener('resize', closeTestRowMenu);
+  window.addEventListener('scroll', closeTestRowMenu, true);
+  return menu;
+}
+
+function openTestRowMenu(anchor, item) {
+  if (!anchor || !item?.id) return;
+  if (__testRowMenuState?.anchor === anchor && isTestRowMenuOpen()) {
+    closeTestRowMenu();
+    return;
+  }
+  closeStatusDropdown();
+  closeTestDatePopover();
+  const menu = ensureTestRowMenu();
+  __testRowMenuState = {
+    anchor,
+    itemId: String(item.id),
+    itemName: normalizeCellText(item.name || ''),
+  };
+  menu.classList.remove('hidden');
+  menu.style.visibility = 'hidden';
+  positionTestRowMenu(anchor, menu);
+  menu.style.visibility = '';
+}
+
+function positionTestRowMenu(anchor, menu) {
+  const rect = anchor.getBoundingClientRect();
+  const margin = 8;
+  const gap = 8;
+  const width = menu.offsetWidth;
+  const height = menu.offsetHeight;
+  const left = Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin));
+  let top = rect.bottom + gap;
+  if (top + height > window.innerHeight - margin) {
+    top = Math.max(margin, rect.top - height - gap);
+  }
+  menu.style.left = `${Math.round(left)}px`;
+  menu.style.top = `${Math.round(top)}px`;
+}
+
+function isTestRowMenuOpen() {
+  const menu = document.getElementById('test-row-action-menu');
+  return Boolean(menu && !menu.classList.contains('hidden'));
+}
+
+function closeTestRowMenu() {
+  const menu = document.getElementById('test-row-action-menu');
+  if (menu) menu.classList.add('hidden');
+  __testRowMenuState = null;
+}
+
+function handleTestRowMenuClick(event) {
+  const button = event.target.closest('[data-test-row-move-group]');
+  if (!button) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const group = button.dataset.testRowMoveGroup || '';
+  const itemId = __testRowMenuState?.itemId || '';
+  closeTestRowMenu();
+  if (itemId && group) moveTestDashboardItemToGroup(itemId, group);
+}
+
+function handleTestRowMenuDocumentPointerDown(event) {
+  if (!isTestRowMenuOpen()) return;
+  const menu = document.getElementById('test-row-action-menu');
+  if (menu?.contains(event.target)) return;
+  if (__testRowMenuState?.anchor?.contains?.(event.target)) return;
+  closeTestRowMenu();
+}
+
+function handleTestRowMenuKeydown(event) {
+  if (!isTestRowMenuOpen()) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeTestRowMenu();
+  }
+}
+
+async function moveTestDashboardItemToGroup(itemId, group) {
+  __statusUpdateInFlight += 1;
+  try {
+    const response = await fetch(ENDPOINTS.testItemGroup(itemId), {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ group })
+    });
+    if (!response.ok) throw new Error(await readApiError(response));
+    __testGroupKeysToOpen.add(slugify(group));
+    await loadTestBoard({ forceRefresh: true });
+  } catch (err) {
+    console.warn('Test dashboard move failed', err);
+    alert(`Failed to move job: ${err.message || 'Unknown error'}`);
+    await loadTestBoard({ forceRefresh: true });
+  } finally {
+    __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);
+  }
+}
+
+function renderTestDateValue(cell, value, text, entity, column) {
+  const locked = isTestDashboardDateLocked(entity);
+  const iso = getDateIsoFromValue(value, text);
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'test-date-button';
+  if (locked) button.classList.add('locked');
+  button.textContent = iso ? formatDateText(iso) : '';
+  button.title = locked ? 'Customer date is set in DATABASE' : (iso ? 'Change date' : 'Set date');
+  button.setAttribute('aria-label', button.title);
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (locked) return;
+    openTestDatePopover(button, entity, column, iso);
+  });
+  cell.classList.add('test-date-cell');
+  cell.appendChild(button);
+}
+
+function ensureTestDatePopover() {
+  let popover = document.getElementById('test-date-popover');
+  if (popover) return popover;
+
+  popover = document.createElement('div');
+  popover.id = 'test-date-popover';
+  popover.className = 'test-date-popover hidden';
+  popover.setAttribute('role', 'dialog');
+  popover.setAttribute('aria-label', 'Set dashboard date');
+  popover.innerHTML = `
+    <input class="test-date-popover-input" type="date" aria-label="Dashboard date">
+    <div class="test-date-popover-actions">
+      <button class="test-date-popover-button clear" type="button" data-test-date-clear="true">Clear</button>
+      <button class="test-date-popover-button save" type="button" data-test-date-save="true">Save</button>
+    </div>
+  `;
+  popover.addEventListener('click', handleTestDatePopoverClick);
+  popover.addEventListener('keydown', handleTestDatePopoverKeydown);
+  document.body.appendChild(popover);
+  document.addEventListener('pointerdown', handleTestDatePopoverDocumentPointerDown, true);
+  window.addEventListener('resize', closeTestDatePopover);
+  window.addEventListener('scroll', closeTestDatePopover, true);
+  return popover;
+}
+
+function openTestDatePopover(anchor, item, column, iso) {
+  if (!anchor || !item?.id || !column?.id) return;
+  closeStatusDropdown();
+  closeTestRowMenu();
+  const popover = ensureTestDatePopover();
+  const input = popover.querySelector('.test-date-popover-input');
+  if (input) input.value = iso || '';
+  __testDatePopoverState = {
+    anchor,
+    itemId: String(item.id),
+    columnId: String(column.id),
+    columnTitle: column.title || column.id,
+    originalDate: iso || '',
+  };
+  popover.classList.remove('hidden');
+  popover.style.visibility = 'hidden';
+  positionTestDatePopover(anchor, popover);
+  popover.style.visibility = '';
+  window.requestAnimationFrame(() => input?.focus());
+}
+
+function positionTestDatePopover(anchor, popover) {
+  const rect = anchor.getBoundingClientRect();
+  const margin = 8;
+  const gap = 8;
+  const width = popover.offsetWidth;
+  const height = popover.offsetHeight;
+  const preferredLeft = rect.left + rect.width / 2 - width / 2;
+  const left = Math.max(margin, Math.min(preferredLeft, window.innerWidth - width - margin));
+  let top = rect.bottom + gap;
+  if (top + height > window.innerHeight - margin) {
+    top = Math.max(margin, rect.top - height - gap);
+  }
+  popover.style.left = `${Math.round(left)}px`;
+  popover.style.top = `${Math.round(top)}px`;
+}
+
+function isTestDatePopoverOpen() {
+  const popover = document.getElementById('test-date-popover');
+  return Boolean(popover && !popover.classList.contains('hidden'));
+}
+
+function closeTestDatePopover() {
+  const popover = document.getElementById('test-date-popover');
+  if (popover) popover.classList.add('hidden');
+  __testDatePopoverState = null;
+}
+
+function handleTestDatePopoverClick(event) {
+  const popover = document.getElementById('test-date-popover');
+  if (!popover || popover.classList.contains('hidden')) return;
+  if (event.target.closest('[data-test-date-save]')) {
+    event.preventDefault();
+    const input = popover.querySelector('.test-date-popover-input');
+    saveTestDashboardDate(input?.value || '');
+  } else if (event.target.closest('[data-test-date-clear]')) {
+    event.preventDefault();
+    saveTestDashboardDate('');
+  }
+}
+
+function handleTestDatePopoverKeydown(event) {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeTestDatePopover();
+  } else if (event.key === 'Enter') {
+    event.preventDefault();
+    const input = document.getElementById('test-date-popover')?.querySelector('.test-date-popover-input');
+    saveTestDashboardDate(input?.value || '');
+  }
+}
+
+function handleTestDatePopoverDocumentPointerDown(event) {
+  if (!isTestDatePopoverOpen()) return;
+  const popover = document.getElementById('test-date-popover');
+  if (popover?.contains(event.target)) return;
+  if (__testDatePopoverState?.anchor?.contains?.(event.target)) return;
+  closeTestDatePopover();
+}
+
+async function saveTestDashboardDate(date) {
+  const state = __testDatePopoverState;
+  if (!state?.itemId || !state?.columnId) return;
+  closeTestDatePopover();
+  __statusUpdateInFlight += 1;
+  updateCachedBoardDateValue(state.itemId, state.columnId, date, BOARD_CONTEXT_TEST);
+  rerenderBoardContext(BOARD_CONTEXT_TEST);
+  try {
+    const response = await fetch(ENDPOINTS.testDateColumn(state.itemId), {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        columnId: state.columnId,
+        date,
+      })
+    });
+    if (!response.ok) throw new Error(await readApiError(response));
+    await loadTestBoard({ forceRefresh: true });
+  } catch (err) {
+    console.warn('Date update failed', err);
+    alert(`Failed to update date: ${err.message || 'Unknown error'}`);
+    await loadTestBoard({ forceRefresh: true });
+  } finally {
+    __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);
+  }
+}
+
+function isTestDashboardDateLocked(item) {
+  return item?.database_job?.customer_date_required === true ||
+    item?.database_job?.customer_date_required === 'true';
+}
+
+function getDateIsoFromValue(value, text) {
+  const parsed = parseJsonMaybe(value?.value);
+  const candidate = parsed?.date || text || value?.text || '';
+  const date = parseLocalDate(candidate);
+  return date ? localDateIso(date) : '';
 }
 
 function handleStatusDropdownDocumentPointerDown(event) {
@@ -2349,7 +2808,8 @@ function isTestTextEditActive() {
 }
 
 function isTestDashboardTextEditActive() {
-  return isTestDesignEditActive() || isTestTextEditActive();
+  return isTestDesignEditActive() || isTestTextEditActive() || __testPrivateNameEditInFlight > 0 ||
+    Boolean(document.activeElement?.classList?.contains('test-private-job-name-input'));
 }
 
 async function updateTestDashboardCheckbox(itemId, column, checked) {
@@ -2472,6 +2932,61 @@ function updateCachedBoardCheckboxValue(itemId, columnId, checked) {
   value.text = checked ? 'v' : '';
   value.type = 'checkbox';
   value.value = checked ? JSON.stringify({ checked: 'true' }) : JSON.stringify({});
+}
+
+function updateCachedBoardDateValue(itemId, columnId, date, context = BOARD_CONTEXT_TEST) {
+  const payload = context === BOARD_CONTEXT_TEST ? window.__latestTestBoardPayload : window.__latestBoardPayload;
+  const item = findBoardPayloadItem(payload, itemId);
+  if (!item) return;
+
+  let value = findColumnValue(item, columnId);
+  if (!value) {
+    value = { id: columnId, type: 'date', text: '', value: '' };
+    if (!Array.isArray(item.column_values)) item.column_values = [];
+    item.column_values.push(value);
+  }
+  value.text = date || '';
+  value.type = 'date';
+  value.value = date ? JSON.stringify({ date }) : JSON.stringify({});
+
+  if (context === BOARD_CONTEXT_TEST) {
+    updateCachedTestPriorityFromDate(item, date);
+  }
+}
+
+function updateCachedTestPriorityFromDate(item, date) {
+  const board = unwrapFirstBoard(window.__latestTestBoardPayload);
+  const priorityColumn = findBoardColumnByIdOrCompactTitle(board, TEST_DASHBOARD_CLIENT_COLUMN_IDS.PRIORITY, 'PRIORITY');
+  if (!priorityColumn?.id) return;
+  const option = date
+    ? getStatusOptions(priorityColumn).find(entry => normalizeStatusLabel(entry.label) === normalizeStatusLabel(priorityLabelForIsoDate(date)))
+    : { clear: true, label: '', index: '' };
+  if (!option) return;
+
+  let value = findColumnValue(item, priorityColumn.id);
+  if (!value) {
+    value = { id: priorityColumn.id, type: 'status', text: '', value: '' };
+    if (!Array.isArray(item.column_values)) item.column_values = [];
+    item.column_values.push(value);
+  }
+  value.text = option.clear ? '' : option.label;
+  value.type = 'status';
+  value.value = option.clear ? JSON.stringify({}) : JSON.stringify({ index: normalizeStatusOptionIndex(option.index) });
+}
+
+function updateCachedPrivateJobName(itemId, name) {
+  const item = findBoardPayloadItem(window.__latestTestBoardPayload, itemId);
+  if (item) item.name = name || '';
+}
+
+function priorityLabelForIsoDate(isoDate) {
+  const date = parseLocalDate(isoDate);
+  if (!date) return 'Low';
+  const days = getLocalDayDiff(new Date(), date);
+  if (days <= 1) return 'Critical';
+  if (days <= 3) return 'High';
+  if (days <= 7) return 'Medium';
+  return 'Low';
 }
 
 function testCheckboxOptimisticKey(itemId, columnId) {
@@ -3697,6 +4212,10 @@ function parseTitle(raw) {
   return { orderNumber: '', customerName: '', jobTitle: t.replace(/[-–—]/g, ' ') };
 }
 
+function isTestPrivateItemId(value) {
+  return /^private_[0-9a-f-]{36}$/i.test(String(value || '').trim());
+}
+
 // --------------------------- PRINT LABEL ---------------------------
 
 async function printLabel(itemId, rawTitle, context = BOARD_CONTEXT_MONDAY) {
@@ -3706,10 +4225,12 @@ async function printLabel(itemId, rawTitle, context = BOARD_CONTEXT_MONDAY) {
     const url = context === BOARD_CONTEXT_TEST
       ? ENDPOINTS.testScanUrl(itemId)
       : `/api/scan-url?itemId=${encodeURIComponent(itemId)}`;
-    const r = await fetch(url, { credentials: 'include' });
-    if (r.ok) {
-      const j = await r.json();
-      scanUrl = j.url || '';
+    if (!(context === BOARD_CONTEXT_TEST && isTestPrivateItemId(itemId))) {
+      const r = await fetch(url, { credentials: 'include' });
+      if (r.ok) {
+        const j = await r.json();
+        scanUrl = j.url || '';
+      }
     }
   } catch {}
   const qrImg = scanUrl ? `<img class="qr" src="/api/qr?data=${encodeURIComponent(scanUrl)}" alt="QR">` : '';

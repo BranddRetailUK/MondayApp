@@ -564,6 +564,12 @@
   }
 
   async function handleOutstandingRowClick(event) {
+    const invoiceButton = event.target.closest('[data-db-invoice-job]');
+    if (invoiceButton) {
+      await openInvoiceFromOrderList(invoiceButton.dataset.dbInvoiceJob);
+      return;
+    }
+
     const row = event.target.closest('tr[data-job-id]');
     if (!row) return;
     await flushOrderAutosaves();
@@ -572,10 +578,24 @@
 
   async function handleOutstandingRowKeydown(event) {
     if (event.key !== 'Enter') return;
+    if (event.target.closest('[data-db-invoice-job]')) return;
     const row = event.target.closest('tr[data-job-id]');
     if (!row) return;
     await flushOrderAutosaves();
     openOrder(row.dataset.jobId, 'details');
+  }
+
+  async function openInvoiceFromOrderList(jobId) {
+    const sourceOrderId = Number.parseInt(jobId, 10);
+    if (!Number.isFinite(sourceOrderId)) return;
+    await flushOrderAutosaves();
+    try {
+      const job = await loadOrderForDocument(sourceOrderId);
+      if (Number(job?.source_order_id) !== sourceOrderId || !job?.invoice_no) return;
+      await openDatabaseDocument('invoice', { skipInvoiceMark: true });
+    } catch (err) {
+      alert(err.message || 'Failed to load invoice');
+    }
   }
 
   async function handleToInvoiceRowClick(event) {
@@ -2522,8 +2542,8 @@
     const context = outstandingTitleMeasureCanvas.getContext('2d');
     if (!context) return OUTSTANDING_TITLE_COLUMN_MIN_WIDTH;
 
-    const sourceCell = table.querySelector('tbody td:nth-child(5)')
-      || table.querySelector('thead th:nth-child(5)')
+    const sourceCell = table.querySelector('tbody td:nth-child(6)')
+      || table.querySelector('thead th:nth-child(6)')
       || table;
     const style = window.getComputedStyle(sourceCell);
     context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
@@ -2585,19 +2605,30 @@
       <tr class="db-outstanding-row ${selected ? 'selected' : ''}" data-job-id="${escapeAttr(job.source_order_id)}" tabindex="0">
         <td class="db-row-selector">${selected ? '&#9654;' : ''}</td>
         <td class="db-order-link">${escapeHtml(job.order_no || '')}</td>
+        <td class="db-invoice-number-cell">${renderInvoiceNumberCell(job)}</td>
         <td class="db-customer-link">${escapeHtml(job.customer_name || '')}</td>
         <td class="db-type-cell db-type-${categoryForJob(job)}">${escapeHtml(typeAbbr(job))}</td>
         <td>${escapeHtml(job.job_title || '')}</td>
         <td>${escapeHtml(staffShort(job.order_taken_by || job.trace_staff_id))}</td>
         <td>${escapeHtml(formatDate(job.order_date, 'long'))}</td>
         <td>${escapeHtml(outstandingDeliveryLabel(job))}</td>
-        <td class="db-invoice-number-cell">${escapeHtml(job.invoice_no || '')}</td>
       </tr>
     `;
   }
 
   function outstandingDeliveryLabel(job) {
     return `${formatDate(job?.delivery_date, 'long')}${truthy(job?.customer_date_required) ? ' *' : ''}`;
+  }
+
+  function renderInvoiceNumberCell(job) {
+    if (!job?.invoice_no) return '';
+    return `
+      <button
+        class="db-invoice-number-button"
+        type="button"
+        data-db-invoice-job="${escapeAttr(job.source_order_id)}"
+      >${escapeHtml(job.invoice_no)}</button>
+    `;
   }
 
   async function openSelectedOrder(value) {
@@ -2646,6 +2677,25 @@
     } catch (err) {
       renderOrderError(err.message);
     }
+  }
+
+  async function loadOrderForDocument(id) {
+    const data = await fetchJson(`/api/database/jobs/${encodeURIComponent(id)}`);
+    state.selectedJob = data.job || {};
+    state.selectedLineItems = data.lineItems || [];
+    state.selectedPositions = data.positions || [];
+    state.selectedProofFiles = normalizeDatabaseProofFiles(data.proofFiles || []);
+    state.orderCustomerDetail = await loadOrderCustomerDetail(state.selectedJob);
+    resetDatabaseProofViewerState();
+    resetLineDraftState();
+    resetCustomLineDraftState();
+    resetLineOrderAutosaveState();
+    resetJobAutosaveState();
+    state.jobLastSavedSignature = jobSignature(state.selectedJob);
+    renderOutstandingOrders();
+    hydrateOrderSelectors();
+    syncOrderDocumentButtons(state.selectedJob);
+    return state.selectedJob;
   }
 
   function setOrderLoading() {
@@ -3279,14 +3329,21 @@
     openDatabaseDocument('order-ack');
   }
 
-  async function openDatabaseDocument(type) {
+  async function openDatabaseDocument(type, options = {}) {
     if (!state.selectedJob?.source_order_id && !state.selectedJob?.order_no) return;
 
     const documentType = databaseDocumentType(type);
-    if (documentType === 'invoice' && invoiceNotRequired(state.selectedJob)) return;
+    const existingInvoicePreview = documentType === 'invoice' && options.skipInvoiceMark && state.selectedJob?.invoice_no;
+    if (documentType === 'invoice' && invoiceNotRequired(state.selectedJob) && !existingInvoicePreview) return;
 
     let generatedAt = new Date();
-    if (documentType === 'invoice') {
+    if (documentType === 'invoice' && options.skipInvoiceMark) {
+      generatedAt = validDateOrNow(
+        state.selectedJob?.invoice_date
+        || state.selectedJob?.complete_date
+        || state.selectedJob?.dashboard_status_updated_at
+      );
+    } else if (documentType === 'invoice') {
       try {
         const invoicedJob = await markSelectedJobInvoiced();
         generatedAt = validDateOrNow(invoicedJob?.invoice_date || invoicedJob?.complete_date || invoicedJob?.dashboard_status_updated_at);

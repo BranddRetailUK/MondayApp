@@ -481,6 +481,20 @@ async function ensureTestDashboardTables(db) {
   `);
 
   await db.query(`
+    CREATE TABLE IF NOT EXISTS test_dashboard_private_jobs (
+      id TEXT PRIMARY KEY,
+      group_id TEXT REFERENCES test_dashboard_groups(id) ON DELETE SET NULL,
+      item_name TEXT NOT NULL DEFAULT '',
+      column_values JSONB NOT NULL DEFAULT '{}'::jsonb,
+      archived BOOLEAN NOT NULL DEFAULT FALSE,
+      created_by_user_id INTEGER,
+      created_by_name TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await db.query(`
     CREATE TABLE IF NOT EXISTS test_dashboard_seed_runs (
       id SERIAL PRIMARY KEY,
       started_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -521,12 +535,21 @@ async function ensureTestDashboardTables(db) {
   await db.query('ALTER TABLE test_dashboard_files ADD COLUMN IF NOT EXISTS created_by_name TEXT;');
   await db.query('ALTER TABLE test_dashboard_files ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW();');
   await db.query('ALTER TABLE test_dashboard_files ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT NOW();');
+  await db.query('ALTER TABLE test_dashboard_private_jobs ADD COLUMN IF NOT EXISTS group_id TEXT REFERENCES test_dashboard_groups(id) ON DELETE SET NULL;');
+  await db.query("ALTER TABLE test_dashboard_private_jobs ADD COLUMN IF NOT EXISTS item_name TEXT NOT NULL DEFAULT '';");
+  await db.query("ALTER TABLE test_dashboard_private_jobs ADD COLUMN IF NOT EXISTS column_values JSONB NOT NULL DEFAULT '{}'::jsonb;");
+  await db.query('ALTER TABLE test_dashboard_private_jobs ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE;');
+  await db.query('ALTER TABLE test_dashboard_private_jobs ADD COLUMN IF NOT EXISTS created_by_user_id INTEGER;');
+  await db.query('ALTER TABLE test_dashboard_private_jobs ADD COLUMN IF NOT EXISTS created_by_name TEXT;');
+  await db.query('ALTER TABLE test_dashboard_private_jobs ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW();');
+  await db.query('ALTER TABLE test_dashboard_private_jobs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT NOW();');
 
   await db.query('CREATE INDEX IF NOT EXISTS test_dashboard_columns_position_idx ON test_dashboard_columns(is_subitem, position);');
   await db.query('CREATE INDEX IF NOT EXISTS test_dashboard_job_state_group_idx ON test_dashboard_job_state(group_id);');
   await db.query('CREATE INDEX IF NOT EXISTS test_dashboard_job_state_monday_item_idx ON test_dashboard_job_state(monday_item_id);');
   await db.query('CREATE INDEX IF NOT EXISTS test_dashboard_files_job_column_idx ON test_dashboard_files(source_order_id, column_id);');
   await db.query('CREATE UNIQUE INDEX IF NOT EXISTS test_dashboard_files_public_id_idx ON test_dashboard_files(public_id);');
+  await db.query('CREATE INDEX IF NOT EXISTS test_dashboard_private_jobs_group_idx ON test_dashboard_private_jobs(group_id);');
 }
 
 module.exports = { ensureDatabaseTables, ensureTestDashboardTables };

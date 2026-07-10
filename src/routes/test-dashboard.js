@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const pool = require('../db/pool');
 const { fullName } = require('../services/hubAuth');
 const { signPayload, advanceScan } = require('../services/scanner');
@@ -32,6 +33,9 @@ const DEFAULT_OFFICE_GROUP_ID = TEST_DASHBOARD_GROUP_IDS.OFFICE;
 const AWAITING_APPROVAL_LABEL = 'AWAITING APPROVAL';
 const WAITING_APPROVAL_LABEL = 'WAITING APPROVAL';
 const NO_STOCK_LABEL = 'NO STOCK';
+const HOLD_LABEL = 'HOLD';
+const PRE_PRODUCTION_LABEL = 'PRE-PRODUCTION';
+const COMPLETED_LABEL = 'COMPLETED';
 const APPROVAL_REQUIREMENTS_MESSAGE = 'Please add design number and/or Visual Proof.';
 const DESIGN_POSITION_LOCK_KEY = 71060217;
 const STITCH_REFERENCE_LABEL = String.raw`(?:STITCH[\s._/-]*COUNT|STITCHES?|S[\s._/-]*T(?:[\s._/-]*(?:S|C))?)`;
@@ -56,10 +60,178 @@ protectedRouter.get('/api/test-dashboard/board', async (_req, res) => {
   }
 });
 
-protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req, res) => {
-  const sourceOrderId = Number.parseInt(req.params.jobId, 10);
-  if (!Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
+protectedRouter.post('/api/test-dashboard/private-jobs', async (req, res) => {
+  try {
+    await ensureTestDashboardDefaults(pool);
+    const columns = await fetchDashboardColumns(false);
+    const job = await createPrivateDashboardJob({
+      groupId: normalizeMoveTargetGroupId(req.body?.groupId) || TEST_DASHBOARD_GROUP_IDS.OFFICE,
+      title: clean(req.body?.title),
+      columns,
+      user: req.hubUser,
+    });
+    res.status(201).json({ ok: true, item: buildPrivateBoardItem(job, columns) });
+  } catch (err) {
+    console.error('POST /api/test-dashboard/private-jobs', err);
+    res.status(500).json({ error: 'Failed to create private dashboard job' });
+  }
+});
 
+protectedRouter.put('/api/test-dashboard/items/:jobId/name', async (req, res) => {
+  const jobId = clean(req.params.jobId);
+  if (!isPrivateDashboardJobId(jobId)) return res.status(400).json({ error: 'Only private dashboard jobs can be renamed here' });
+  const title = clean(req.body?.name || req.body?.title).slice(0, 300);
+
+  try {
+    await ensureTestDashboardDefaults(pool);
+    const job = await fetchPrivateDashboardJob(jobId);
+    if (!job) return res.status(404).json({ error: 'Private dashboard job not found' });
+    const saved = await updatePrivateDashboardJob(job.id, {
+      group_id: job.group_id || TEST_DASHBOARD_GROUP_IDS.OFFICE,
+      item_name: title,
+      column_values: job.column_values || {},
+      archived: Boolean(job.archived),
+    });
+    res.json({ ok: true, itemId: saved.id, name: saved.item_name });
+  } catch (err) {
+    console.error('PUT /api/test-dashboard/items/:jobId/name', err);
+    res.status(500).json({ error: 'Failed to rename private dashboard job' });
+  }
+});
+
+protectedRouter.put('/api/test-dashboard/items/:jobId/group', async (req, res) => {
+  const jobId = clean(req.params.jobId);
+  const privateJob = isPrivateDashboardJobId(jobId);
+  const sourceOrderId = Number.parseInt(jobId, 10);
+  if (!privateJob && !Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
+
+  const groupId = normalizeMoveTargetGroupId(req.body?.groupId || req.body?.group);
+  if (!groupId) return res.status(400).json({ error: 'Unsupported test dashboard group' });
+
+  try {
+    await ensureTestDashboardDefaults(pool);
+    const [job, columns] = await Promise.all([
+      privateJob ? fetchPrivateDashboardJob(jobId) : fetchDashboardJob(sourceOrderId),
+      fetchDashboardColumns(false),
+    ]);
+    if (!job) return res.status(404).json({ error: privateJob ? 'Private dashboard job not found' : 'Database job not found' });
+
+    const statusLabel = statusLabelForMoveGroup(groupId);
+    const state = privateJob ? job : await fetchJobState(job.source_order_id);
+    const columnValues = { ...(state?.column_values || {}) };
+    const statusColumn = columnById(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS);
+    if (statusColumn && statusLabel) {
+      const status = statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, statusLabel);
+      if (status) columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS] = status;
+    }
+    if (groupId === TEST_DASHBOARD_GROUP_IDS.OFFICE) {
+      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.PRIORITY];
+      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.DATE];
+    }
+
+    const nextState = {
+      group_id: groupId,
+      item_name: privateJob ? job.item_name || '' : (state?.item_name || formatJobName(job)),
+      column_values: columnValues,
+      archived: false,
+    };
+    const saved = privateJob
+      ? await updatePrivateDashboardJob(job.id, nextState)
+      : await upsertJobState(job.source_order_id, nextState);
+
+    if (!privateJob) {
+      const labels = {
+        status: statusLabel,
+      };
+      if (groupId === TEST_DASHBOARD_GROUP_IDS.OFFICE) labels.priority = '';
+      await updateDatabaseJobDashboardFields(pool, job.source_order_id, labels);
+    }
+
+    res.json({
+      ok: true,
+      itemId: privateJob ? job.id : String(job.source_order_id),
+      groupId: saved.group_id,
+      status: statusLabel,
+    });
+  } catch (err) {
+    console.error('PUT /api/test-dashboard/items/:jobId/group', err);
+    res.status(500).json({ error: 'Failed to move test dashboard job' });
+  }
+});
+
+protectedRouter.put('/api/test-dashboard/items/:jobId/date-column', async (req, res) => {
+  const jobId = clean(req.params.jobId);
+  const privateJob = isPrivateDashboardJobId(jobId);
+  const sourceOrderId = Number.parseInt(jobId, 10);
+  if (!privateJob && !Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
+
+  const columnId = clean(req.body?.columnId);
+  const rawDate = clean(req.body?.date);
+  if (!columnId) return res.status(400).json({ error: 'columnId is required' });
+  const parsedDate = rawDate ? parseDashboardDateInput(rawDate) : null;
+  if (rawDate && !parsedDate) return res.status(400).json({ error: 'Invalid date' });
+
+  try {
+    await ensureTestDashboardDefaults(pool);
+    const [job, columns] = await Promise.all([
+      privateJob ? fetchPrivateDashboardJob(jobId) : fetchDashboardJob(sourceOrderId),
+      fetchDashboardColumns(false),
+    ]);
+    if (!job) return res.status(404).json({ error: privateJob ? 'Private dashboard job not found' : 'Database job not found' });
+    if (!privateJob && isTruthyDatabaseValue(job.customer_date_required)) {
+      return res.status(409).json({ error: 'This job uses a customer date from DATABASE' });
+    }
+
+    const column = columns.find(col => col.id === columnId);
+    if (!column || column.type !== 'date') return res.status(400).json({ error: 'Column is not a test dashboard date column' });
+
+    const state = privateJob ? job : await fetchJobState(job.source_order_id);
+    const columnValues = { ...(state?.column_values || {}) };
+    if (parsedDate) {
+      columnValues[column.id] = dateValue(column, parsedDate);
+      const priorityLabel = priorityLabelForDate(parsedDate);
+      columnValues[TEST_DASHBOARD_COLUMN_IDS.PRIORITY] = statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.PRIORITY, priorityLabel);
+    } else {
+      delete columnValues[column.id];
+      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.PRIORITY];
+    }
+
+    const nextState = {
+      group_id: state?.group_id || (privateJob ? TEST_DASHBOARD_GROUP_IDS.OFFICE : resolveDashboardGroupId(job, state, null)),
+      item_name: privateJob ? state?.item_name || '' : state?.item_name || formatJobName(job),
+      column_values: columnValues,
+      archived: Boolean(state?.archived),
+    };
+    const saved = privateJob
+      ? await updatePrivateDashboardJob(job.id, nextState)
+      : await upsertJobState(job.source_order_id, nextState);
+
+    const priorityLabel = getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.PRIORITY]);
+    if (!privateJob) {
+      await updateDatabaseJobDashboardFields(pool, job.source_order_id, {
+        priority: priorityLabel,
+      });
+    }
+
+    res.json({
+      ok: true,
+      itemId: privateJob ? job.id : String(job.source_order_id),
+      columnId: column.id,
+      date: parsedDate || '',
+      priority: priorityLabel,
+      groupId: saved.group_id,
+    });
+  } catch (err) {
+    console.error('PUT /api/test-dashboard/items/:jobId/date-column', err);
+    res.status(500).json({ error: 'Failed to update test dashboard date' });
+  }
+});
+
+protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req, res) => {
+  const jobId = clean(req.params.jobId);
+  const privateJob = isPrivateDashboardJobId(jobId);
+  const sourceOrderId = Number.parseInt(jobId, 10);
+  if (!privateJob && !Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
   const columnId = clean(req.body?.columnId);
   const requestedLabel = clean(req.body?.label);
   const clearRequested = req.body?.clear === true;
@@ -68,10 +240,10 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
   try {
     await ensureTestDashboardDefaults(pool);
     const [job, columns] = await Promise.all([
-      fetchDashboardJob(sourceOrderId),
+      privateJob ? fetchPrivateDashboardJob(jobId) : fetchDashboardJob(sourceOrderId),
       fetchDashboardColumns(false),
     ]);
-    if (!job) return res.status(404).json({ error: 'Database job not found' });
+    if (!job) return res.status(404).json({ error: privateJob ? 'Private dashboard job not found' : 'Database job not found' });
 
     const column = columns.find(col => col.id === columnId);
     if (!column || column.type !== 'status') {
@@ -81,7 +253,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
       return res.status(400).json({ error: 'Only test dashboard STATUS and PRIORITY columns can be updated' });
     }
 
-    const state = await fetchJobState(sourceOrderId);
+    const state = privateJob ? job : await fetchJobState(sourceOrderId);
     const columnValues = { ...(state?.column_values || {}) };
 
     if (clearRequested) {
@@ -97,24 +269,36 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
       columnValues[columnId] = statusValue(column, option.label, option.index);
     }
 
-    const nextState = applyDashboardAutomations({
-      job,
-      currentState: state,
-      column,
-      columnValues,
-      changedLabel: clearRequested ? '' : requestedLabel,
-      clearRequested,
-    });
+    const nextState = privateJob
+      ? applyPrivateDashboardAutomations({
+        currentJob: job,
+        column,
+        columnValues,
+        changedLabel: clearRequested ? '' : requestedLabel,
+        clearRequested,
+      })
+      : applyDashboardAutomations({
+        job,
+        currentState: state,
+        column,
+        columnValues,
+        changedLabel: clearRequested ? '' : requestedLabel,
+        clearRequested,
+      });
 
-    const saved = await upsertJobState(sourceOrderId, nextState);
-    await updateDatabaseJobDashboardFields(
-      pool,
-      job.source_order_id,
-      dashboardLabelsForChangedColumn(column, clearRequested ? '' : requestedLabel)
-    );
+    const saved = privateJob
+      ? await updatePrivateDashboardJob(job.id, nextState)
+      : await upsertJobState(sourceOrderId, nextState);
+    if (!privateJob) {
+      await updateDatabaseJobDashboardFields(
+        pool,
+        job.source_order_id,
+        dashboardLabelsForChangedColumn(column, clearRequested ? '' : requestedLabel)
+      );
+    }
     res.json({
       ok: true,
-      itemId: String(sourceOrderId),
+      itemId: privateJob ? job.id : String(sourceOrderId),
       columnId,
       columnTitle: column.title,
       label: clearRequested ? '' : requestedLabel,
@@ -129,9 +313,10 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
 });
 
 protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (req, res) => {
-  const sourceOrderId = Number.parseInt(req.params.jobId, 10);
-  if (!Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
-
+  const jobId = clean(req.params.jobId);
+  const privateJob = isPrivateDashboardJobId(jobId);
+  const sourceOrderId = Number.parseInt(jobId, 10);
+  if (!privateJob && !Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
   const columnId = clean(req.body?.columnId);
   if (!columnId) return res.status(400).json({ error: 'columnId is required' });
   const checked = req.body?.checked === true || req.body?.checked === 'true' || req.body?.checked === 1 || req.body?.checked === '1';
@@ -139,17 +324,17 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (r
   try {
     await ensureTestDashboardDefaults(pool);
     const [job, columns] = await Promise.all([
-      fetchDashboardJob(sourceOrderId),
+      privateJob ? fetchPrivateDashboardJob(jobId) : fetchDashboardJob(sourceOrderId),
       fetchDashboardColumns(false),
     ]);
-    if (!job) return res.status(404).json({ error: 'Database job not found' });
+    if (!job) return res.status(404).json({ error: privateJob ? 'Private dashboard job not found' : 'Database job not found' });
 
     const column = columns.find(col => col.id === columnId);
     if (!column || column.type !== 'checkbox') {
       return res.status(400).json({ error: 'Column is not a test dashboard checkbox column' });
     }
 
-    const state = await fetchJobState(job.source_order_id);
+    const state = privateJob ? job : await fetchJobState(job.source_order_id);
     const columnValues = { ...(state?.column_values || {}) };
     const isApprovalCheckbox = isProofApprovalCheckbox(column);
     let nextState = null;
@@ -157,7 +342,9 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (r
 
     if (isApprovalCheckbox) {
       if (checked) {
-        const requirements = await getApprovalRequirements(job, columnValues);
+        const requirements = privateJob
+          ? getPrivateApprovalRequirements(columnValues)
+          : await getApprovalRequirements(job, columnValues);
         if (!requirements.ok) {
           return res.status(400).json({
             error: APPROVAL_REQUIREMENTS_MESSAGE,
@@ -169,45 +356,55 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (r
         applyApprovedDashboardColumnValues(columns, columnValues);
         nextState = {
           group_id: TEST_DASHBOARD_GROUP_IDS.PRE_PRODUCTION,
-          item_name: state?.item_name || formatJobName(job),
+          item_name: privateJob ? state?.item_name || '' : state?.item_name || formatJobName(job),
           column_values: columnValues,
           archived: false,
         };
-        databaseJob = await updateDatabaseJobDashboardFields(pool, job.source_order_id, {
-          status: NO_STOCK_LABEL,
-          priority: '',
-          jobApproved: true,
-        });
+        if (!privateJob) {
+          databaseJob = await updateDatabaseJobDashboardFields(pool, job.source_order_id, {
+            status: NO_STOCK_LABEL,
+            priority: '',
+            jobApproved: true,
+          });
+        }
       } else {
         columnValues[column.id] = checkboxValue(column, false);
-        applyAwaitingApprovalColumnValues(job, columns, columnValues);
+        if (privateJob) {
+          applyPrivateAwaitingApprovalColumnValues(columns, columnValues);
+        } else {
+          applyAwaitingApprovalColumnValues(job, columns, columnValues);
+        }
         nextState = {
           group_id: TEST_DASHBOARD_GROUP_IDS.OFFICE,
-          item_name: state?.item_name || formatJobName(job),
+          item_name: privateJob ? state?.item_name || '' : state?.item_name || formatJobName(job),
           column_values: columnValues,
           archived: false,
         };
-        databaseJob = await updateDatabaseJobDashboardFields(pool, job.source_order_id, {
-          status: AWAITING_APPROVAL_LABEL,
-          priority: '',
-          jobApproved: false,
-        });
+        if (!privateJob) {
+          databaseJob = await updateDatabaseJobDashboardFields(pool, job.source_order_id, {
+            status: AWAITING_APPROVAL_LABEL,
+            priority: '',
+            jobApproved: false,
+          });
+        }
       }
     } else {
       columnValues[column.id] = checkboxValue(column, checked);
       nextState = {
-        group_id: state?.group_id || resolveDashboardGroupId(job, state, null),
-        item_name: state?.item_name || formatJobName(job),
+        group_id: state?.group_id || (privateJob ? TEST_DASHBOARD_GROUP_IDS.OFFICE : resolveDashboardGroupId(job, state, null)),
+        item_name: privateJob ? state?.item_name || '' : state?.item_name || formatJobName(job),
         column_values: columnValues,
         archived: Boolean(state?.archived),
       };
     }
 
-    const saved = await upsertJobState(job.source_order_id, nextState);
+    const saved = privateJob
+      ? await updatePrivateDashboardJob(job.id, nextState)
+      : await upsertJobState(job.source_order_id, nextState);
 
     res.json({
       ok: true,
-      itemId: String(job.source_order_id),
+      itemId: privateJob ? job.id : String(job.source_order_id),
       columnId: column.id,
       columnTitle: column.title,
       checked,
@@ -222,9 +419,10 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (r
 });
 
 protectedRouter.put('/api/test-dashboard/items/:jobId/text-column', async (req, res) => {
-  const sourceOrderId = Number.parseInt(req.params.jobId, 10);
-  if (!Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
-
+  const jobId = clean(req.params.jobId);
+  const privateJob = isPrivateDashboardJobId(jobId);
+  const sourceOrderId = Number.parseInt(jobId, 10);
+  if (!privateJob && !Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
   const columnId = clean(req.body?.columnId);
   const hasValue = Object.prototype.hasOwnProperty.call(req.body || {}, 'value');
   const value = clean(req.body?.value).slice(0, 2000);
@@ -234,34 +432,36 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/text-column', async (req, 
   try {
     await ensureTestDashboardDefaults(pool);
     const [job, columns] = await Promise.all([
-      fetchDashboardJob(sourceOrderId),
+      privateJob ? fetchPrivateDashboardJob(jobId) : fetchDashboardJob(sourceOrderId),
       fetchDashboardColumns(false),
     ]);
-    if (!job) return res.status(404).json({ error: 'Database job not found' });
+    if (!job) return res.status(404).json({ error: privateJob ? 'Private dashboard job not found' : 'Database job not found' });
 
     const column = columns.find(col => col.id === columnId);
     if (!column || !['text', 'long_text'].includes(column.type)) {
       return res.status(400).json({ error: 'Column is not a test dashboard text column' });
     }
-    if (!EDITABLE_TEXT_TITLES.has(normalizeColumnTitle(column.title))) {
+    if (!privateJob && !EDITABLE_TEXT_TITLES.has(normalizeColumnTitle(column.title))) {
       return res.status(400).json({ error: 'Only the test dashboard NOTES column can be updated' });
     }
 
-    const state = await fetchJobState(job.source_order_id);
+    const state = privateJob ? job : await fetchJobState(job.source_order_id);
     const columnValues = { ...(state?.column_values || {}) };
     columnValues[column.id] = textValue(column, value);
 
     const nextState = {
-      group_id: state?.group_id || resolveDashboardGroupId(job, state, null),
-      item_name: state?.item_name || formatJobName(job),
+      group_id: state?.group_id || (privateJob ? TEST_DASHBOARD_GROUP_IDS.OFFICE : resolveDashboardGroupId(job, state, null)),
+      item_name: privateJob ? state?.item_name || '' : state?.item_name || formatJobName(job),
       column_values: columnValues,
       archived: Boolean(state?.archived),
     };
-    const saved = await upsertJobState(job.source_order_id, nextState);
+    const saved = privateJob
+      ? await updatePrivateDashboardJob(job.id, nextState)
+      : await upsertJobState(job.source_order_id, nextState);
 
     res.json({
       ok: true,
-      itemId: String(job.source_order_id),
+      itemId: privateJob ? job.id : String(job.source_order_id),
       columnId: column.id,
       columnTitle: column.title,
       value,
@@ -275,9 +475,10 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/text-column', async (req, 
 });
 
 protectedRouter.put('/api/test-dashboard/items/:jobId/design-column', async (req, res) => {
-  const sourceOrderId = Number.parseInt(req.params.jobId, 10);
-  if (!Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
-
+  const jobId = clean(req.params.jobId);
+  const privateJob = isPrivateDashboardJobId(jobId);
+  const sourceOrderId = Number.parseInt(jobId, 10);
+  if (!privateJob && !Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
   const columnId = clean(req.body?.columnId);
   const hasValue = Object.prototype.hasOwnProperty.call(req.body || {}, 'value');
   const rawValue = cleanDesignColumnText(req.body?.value);
@@ -285,6 +486,36 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/design-column', async (req
 
   try {
     await ensureTestDashboardDefaults(pool);
+    if (privateJob) {
+      const [job, column] = await Promise.all([
+        fetchPrivateDashboardJob(jobId),
+        columnId ? fetchDashboardColumn(columnId) : Promise.resolve(columnById(TEST_DASHBOARD_COLUMNS, TEST_DASHBOARD_COLUMN_IDS.DESIGN)),
+      ]);
+      if (!job) return res.status(404).json({ error: 'Private dashboard job not found' });
+      if (!isDesignDashboardColumn(column)) {
+        return res.status(400).json({ error: 'Column is not the test dashboard DES/PSG column' });
+      }
+      const columnValues = { ...(job.column_values || {}) };
+      columnValues[column.id] = textValue(column, rawValue);
+      const saved = await updatePrivateDashboardJob(job.id, {
+        group_id: job.group_id || TEST_DASHBOARD_GROUP_IDS.OFFICE,
+        item_name: job.item_name || '',
+        column_values: columnValues,
+        archived: Boolean(job.archived),
+      });
+      return res.json({
+        ok: true,
+        itemId: job.id,
+        columnId: column.id,
+        inserted: false,
+        insertedCount: 0,
+        updatedCount: 1,
+        removedCount: rawValue ? 0 : 1,
+        designText: getColumnText(saved.column_values?.[column.id]),
+        positions: [],
+      });
+    }
+
     const [job, column] = await Promise.all([
       fetchDashboardJob(sourceOrderId),
       columnId ? fetchDashboardColumn(columnId) : Promise.resolve(columnById(TEST_DASHBOARD_COLUMNS, TEST_DASHBOARD_COLUMN_IDS.DESIGN)),
@@ -337,24 +568,26 @@ protectedRouter.post('/api/test-dashboard/scanner', async (req, res) => {
 });
 
 protectedRouter.post('/api/test-dashboard/uploads/signature', async (req, res) => {
-  const sourceOrderId = Number.parseInt(req.body?.jobId, 10);
+  const jobId = clean(req.body?.jobId);
+  const privateJob = isPrivateDashboardJobId(jobId);
+  const sourceOrderId = Number.parseInt(jobId, 10);
   const columnId = clean(req.body?.columnId);
   const filename = clean(req.body?.filename) || 'file';
-  if (!Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
+  if (!privateJob && !Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
   if (!columnId) return res.status(400).json({ error: 'columnId is required' });
 
   try {
     requireCloudinaryConfig();
     await ensureTestDashboardDefaults(pool);
     const [job, column] = await Promise.all([
-      fetchDashboardJob(sourceOrderId),
+      privateJob ? fetchPrivateDashboardJob(jobId) : fetchDashboardJob(sourceOrderId),
       fetchDashboardColumn(columnId),
     ]);
-    if (!job) return res.status(404).json({ error: 'Database job not found' });
+    if (!job) return res.status(404).json({ error: privateJob ? 'Private dashboard job not found' : 'Database job not found' });
     if (!column || column.type !== 'file') return res.status(400).json({ error: 'Column is not a file/image column' });
 
-    const folder = folderForColumn(column, job.order_no || sourceOrderId);
-    const publicId = publicIdForUpload({ filename, source: `job-${job.order_no || sourceOrderId}` });
+    const folder = folderForColumn(column, privateJob ? `private-${job.id}` : (job.order_no || sourceOrderId));
+    const publicId = publicIdForUpload({ filename, source: privateJob ? `private-${job.id}` : `job-${job.order_no || sourceOrderId}` });
     const format = /\.pdf$/i.test(filename) ? 'pdf' : '';
     res.json(signUpload({ folder, publicId, format }));
   } catch (err) {
@@ -364,8 +597,10 @@ protectedRouter.post('/api/test-dashboard/uploads/signature', async (req, res) =
 });
 
 protectedRouter.post('/api/test-dashboard/items/:jobId/files', async (req, res) => {
-  const sourceOrderId = Number.parseInt(req.params.jobId, 10);
-  if (!Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
+  const jobId = clean(req.params.jobId);
+  const privateJob = isPrivateDashboardJobId(jobId);
+  const sourceOrderId = Number.parseInt(jobId, 10);
+  if (!privateJob && !Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
 
   const columnId = clean(req.body?.columnId);
   const publicId = clean(req.body?.publicId || req.body?.public_id);
@@ -377,11 +612,29 @@ protectedRouter.post('/api/test-dashboard/items/:jobId/files', async (req, res) 
   try {
     await ensureTestDashboardDefaults(pool);
     const [job, column] = await Promise.all([
-      fetchDashboardJob(sourceOrderId),
+      privateJob ? fetchPrivateDashboardJob(jobId) : fetchDashboardJob(sourceOrderId),
       fetchDashboardColumn(columnId),
     ]);
-    if (!job) return res.status(404).json({ error: 'Database job not found' });
+    if (!job) return res.status(404).json({ error: privateJob ? 'Private dashboard job not found' : 'Database job not found' });
     if (!column || column.type !== 'file') return res.status(400).json({ error: 'Column is not a file/image column' });
+
+    if (privateJob) {
+      const file = privateUploadFileFromBody(req.body, column, {
+        publicId,
+        secureUrl,
+        createdByName: req.hubUser ? fullName(req.hubUser) : '',
+      });
+      const columnValues = { ...(job.column_values || {}) };
+      const currentFiles = privateFilesFromColumnValue(columnValues[column.id]);
+      columnValues[column.id] = fileColumnPayloadFromFiles(column, [...currentFiles, file]);
+      await updatePrivateDashboardJob(job.id, {
+        group_id: job.group_id || TEST_DASHBOARD_GROUP_IDS.OFFICE,
+        item_name: job.item_name || '',
+        column_values: columnValues,
+        archived: Boolean(job.archived),
+      });
+      return res.status(201).json({ file: privateFileToApi(file, column.id) });
+    }
 
     const inserted = await pool.query(
       `INSERT INTO test_dashboard_files (
@@ -488,11 +741,12 @@ publicRouter.get('/test-scan', async (req, res) => {
 });
 
 async function buildTestDashboardBoardPayload() {
-  const [columns, subitemColumns, groups, jobs] = await Promise.all([
+  const [columns, subitemColumns, groups, jobs, privateJobs] = await Promise.all([
     fetchDashboardColumns(false),
     fetchDashboardColumns(true),
     fetchDashboardGroups(),
     fetchOpenDashboardJobs(),
+    fetchPrivateDashboardJobs(),
   ]);
   const candidateJobs = jobs.filter(job => deriveJobCategory(job) !== 'gifts');
   const sourceOrderIds = candidateJobs.map(job => job.source_order_id);
@@ -524,6 +778,13 @@ async function buildTestDashboardBoardPayload() {
       scan,
     });
     const groupId = resolveDashboardGroupId(job, state, scan);
+    if (!grouped.has(groupId)) grouped.set(groupId, []);
+    grouped.get(groupId).push(item);
+  }
+  for (const privateJob of privateJobs) {
+    if (privateJob.archived) continue;
+    const item = buildPrivateBoardItem(privateJob, columns);
+    const groupId = resolvePrivateDashboardGroupId(privateJob);
     if (!grouped.has(groupId)) grouped.set(groupId, []);
     grouped.get(groupId).push(item);
   }
@@ -584,16 +845,16 @@ function buildBoardItem({ job, state, columns, subitemColumns, lineItems, positi
   const fallbackDesignText = getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.DESIGN]);
   const jobApproved = resolveJobApproved(job, stateValues);
 
-  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.PRIORITY, jobApproved ? statusValueFromJobOrState(columns, TEST_DASHBOARD_COLUMN_IDS.PRIORITY, job.dashboard_priority, stateValues) : null);
+  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.PRIORITY, jobApproved
+    ? statusValueFromJobOrState(columns, TEST_DASHBOARD_COLUMN_IDS.PRIORITY, job.dashboard_priority, stateValues)
+    : stateValues[TEST_DASHBOARD_COLUMN_IDS.PRIORITY] || null);
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JOB, checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JOB), jobApproved));
-  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.DATE, jobApproved
-    ? (stateValues[TEST_DASHBOARD_COLUMN_IDS.DATE] || customerDateValue(job, columns))
-    : customerDateValue(job, columns));
+  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.DATE, customerDateValue(job, columns) || stateValues[TEST_DASHBOARD_COLUMN_IDS.DATE] || null);
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.TRANS, stateValues[TEST_DASHBOARD_COLUMN_IDS.TRANS] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.TRANS), false));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JAQ, stateValues[TEST_DASHBOARD_COLUMN_IDS.JAQ] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JAQ), Boolean(job.has_screens || job.screen_numbers)));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, jobApproved
     ? (statusValueFromJobOrState(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, job.dashboard_status, stateValues) || statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, scan?.status || ''))
-    : awaitingApprovalStatusValue(columns));
+    : unapprovedStatusValue(columns, job, stateValues));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.TYPE, statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.TYPE, typeLabel) || stateValues[TEST_DASHBOARD_COLUMN_IDS.TYPE] || statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.TYPE, job.dashboard_type));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.DESIGN, textValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.DESIGN), designText || fallbackDesignText));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.NOTES, stateValues[TEST_DASHBOARD_COLUMN_IDS.NOTES] || textValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.NOTES), job.comments || ''));
@@ -619,11 +880,50 @@ function buildBoardItem({ job, state, columns, subitemColumns, lineItems, positi
     database_job: {
       source_order_id: job.source_order_id,
       order_no: job.order_no,
+      customer_date_required: Boolean(job.customer_date_required),
     },
     column_values: Array.from(values.values()).filter(Boolean),
     subitems: lineItems
       .filter(isDashboardVisibleLineItem)
       .map(line => buildSubitem(line, subitemColumns)),
+  };
+}
+
+function buildPrivateBoardItem(job, columns) {
+  const stateValues = job?.column_values || {};
+  const values = new Map();
+  const jobApproved = jobApprovedFromColumnValues(stateValues) === true;
+
+  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.PRIORITY, stateValues[TEST_DASHBOARD_COLUMN_IDS.PRIORITY] || null);
+  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JOB, stateValues[TEST_DASHBOARD_COLUMN_IDS.JOB] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JOB), jobApproved));
+  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.DATE, stateValues[TEST_DASHBOARD_COLUMN_IDS.DATE] || null);
+  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.TRANS, stateValues[TEST_DASHBOARD_COLUMN_IDS.TRANS] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.TRANS), false));
+  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JAQ, stateValues[TEST_DASHBOARD_COLUMN_IDS.JAQ] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JAQ), false));
+  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS] || awaitingApprovalStatusValue(columns));
+  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.TYPE, stateValues[TEST_DASHBOARD_COLUMN_IDS.TYPE] || null);
+  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.DESIGN, stateValues[TEST_DASHBOARD_COLUMN_IDS.DESIGN] || textValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.DESIGN), ''));
+  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.NOTES, stateValues[TEST_DASHBOARD_COLUMN_IDS.NOTES] || textValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.NOTES), ''));
+  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN, stateValues[TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN), false));
+  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JOB_OWNER, stateValues[TEST_DASHBOARD_COLUMN_IDS.JOB_OWNER] || textValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JOB_OWNER), job.created_by_name || ''));
+
+  for (const column of columns) {
+    if (stateValues[column.id] && !values.has(column.id)) {
+      values.set(column.id, stateValues[column.id]);
+    }
+  }
+
+  return {
+    id: job.id,
+    name: job.item_name || '',
+    group: {
+      id: resolvePrivateDashboardGroupId(job),
+      title: '',
+      color: null,
+    },
+    database_job: null,
+    dashboard_private_job: true,
+    column_values: Array.from(values.values()).filter(Boolean),
+    subitems: [],
   };
 }
 
@@ -669,6 +969,21 @@ function awaitingApprovalStatusValue(columns) {
   return statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, AWAITING_APPROVAL_LABEL);
 }
 
+function unapprovedStatusValue(columns, job, stateValues = {}) {
+  const label = clean(job?.dashboard_status) || getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]);
+  if (isAllowedUnapprovedManualStatus(label)) {
+    return statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, label);
+  }
+  return awaitingApprovalStatusValue(columns);
+}
+
+function isAllowedUnapprovedManualStatus(label) {
+  const normalized = normalizeColumnTitle(label);
+  return normalized === HOLD_LABEL ||
+    normalized === NO_STOCK_LABEL ||
+    normalized === PRE_PRODUCTION_LABEL;
+}
+
 function applyAwaitingApprovalColumnValues(job, columns, columnValues) {
   delete columnValues[TEST_DASHBOARD_COLUMN_IDS.PRIORITY];
 
@@ -678,6 +993,14 @@ function applyAwaitingApprovalColumnValues(job, columns, columnValues) {
   } else {
     delete columnValues[TEST_DASHBOARD_COLUMN_IDS.DATE];
   }
+
+  const status = awaitingApprovalStatusValue(columns);
+  if (status) columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS] = status;
+}
+
+function applyPrivateAwaitingApprovalColumnValues(columns, columnValues) {
+  delete columnValues[TEST_DASHBOARD_COLUMN_IDS.PRIORITY];
+  delete columnValues[TEST_DASHBOARD_COLUMN_IDS.DATE];
 
   const status = awaitingApprovalStatusValue(columns);
   if (status) columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS] = status;
@@ -703,6 +1026,19 @@ async function getApprovalRequirements(job, stateValues = {}) {
   const missing = [];
   if (!designText) missing.push('design');
   if (!hasProof) missing.push('proof');
+  return {
+    ok: missing.length === 0,
+    missing,
+  };
+}
+
+function getPrivateApprovalRequirements(stateValues = {}) {
+  const designText = cleanDesignColumnText(getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.DESIGN]));
+  const proofFiles = privateFilesFromColumnValue(stateValues[TEST_DASHBOARD_COLUMN_IDS.PROOF]);
+  const proofText = getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.PROOF]);
+  const missing = [];
+  if (!designText) missing.push('design');
+  if (!proofFiles.length && !proofText) missing.push('proof');
   return {
     ok: missing.length === 0,
     missing,
@@ -835,6 +1171,76 @@ async function fetchDashboardJob(sourceOrderId) {
     [sourceOrderId]
   );
   return result.rows[0] || null;
+}
+
+async function fetchPrivateDashboardJobs() {
+  const result = await pool.query(
+    `SELECT *
+     FROM test_dashboard_private_jobs
+     WHERE archived IS NOT TRUE
+     ORDER BY created_at ASC, id ASC`
+  );
+  return result.rows;
+}
+
+async function fetchPrivateDashboardJob(jobId) {
+  const result = await pool.query(
+    `SELECT *
+     FROM test_dashboard_private_jobs
+     WHERE id = $1
+     LIMIT 1`,
+    [jobId]
+  );
+  return result.rows[0] || null;
+}
+
+async function createPrivateDashboardJob({ groupId, title, columns, user }) {
+  const id = `private_${crypto.randomUUID()}`;
+  const columnValues = {};
+  applyPrivateAwaitingApprovalColumnValues(columns, columnValues);
+  const result = await pool.query(
+    `INSERT INTO test_dashboard_private_jobs (
+       id,
+       group_id,
+       item_name,
+       column_values,
+       archived,
+       created_by_user_id,
+       created_by_name,
+       updated_at
+     ) VALUES ($1,$2,$3,$4,FALSE,$5,$6,NOW())
+     RETURNING *`,
+    [
+      id,
+      groupId || TEST_DASHBOARD_GROUP_IDS.OFFICE,
+      title || '',
+      columnValues,
+      user?.id || null,
+      user ? fullName(user) : null,
+    ]
+  );
+  return result.rows[0];
+}
+
+async function updatePrivateDashboardJob(jobId, state) {
+  const result = await pool.query(
+    `UPDATE test_dashboard_private_jobs
+     SET group_id = $2,
+         item_name = $3,
+         column_values = $4,
+         archived = $5,
+         updated_at = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [
+      jobId,
+      state.group_id || TEST_DASHBOARD_GROUP_IDS.OFFICE,
+      state.item_name || '',
+      state.column_values || {},
+      Boolean(state.archived),
+    ]
+  );
+  return result.rows[0];
 }
 
 async function fetchJobState(sourceOrderId) {
@@ -993,6 +1399,46 @@ function applyDashboardAutomations({ job, currentState, column, columnValues, ch
   };
 }
 
+function applyPrivateDashboardAutomations({ currentJob, column, columnValues, changedLabel, clearRequested }) {
+  let groupId = currentJob?.group_id || TEST_DASHBOARD_GROUP_IDS.OFFICE;
+  let archived = Boolean(currentJob?.archived);
+  const title = normalizeColumnTitle(column?.title || '');
+  const statusText = normalizeColumnTitle(changedLabel || getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]));
+  const typeText = normalizeColumnTitle(getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.TYPE]));
+  const jobApproved = jobApprovedFromColumnValues(columnValues) === true;
+
+  if (!jobApproved && !statusText) {
+    applyPrivateAwaitingApprovalColumnValues(TEST_DASHBOARD_COLUMNS, columnValues);
+    return {
+      group_id: TEST_DASHBOARD_GROUP_IDS.OFFICE,
+      item_name: currentJob?.item_name || '',
+      column_values: columnValues,
+      archived: false,
+    };
+  }
+
+  if (title === 'STATUS' && !clearRequested) {
+    archived = statusText === 'INVOICED';
+    const automatedGroupId = groupIdForStatusAndType(statusText, typeText);
+    if (statusText === COMPLETED_LABEL) {
+      groupId = automatedGroupId || TEST_DASHBOARD_GROUP_IDS.COMPLETED;
+      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.PRIORITY];
+      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.DATE];
+      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.TRANS];
+      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.JAQ];
+    } else if (automatedGroupId) {
+      groupId = automatedGroupId;
+    }
+  }
+
+  return {
+    group_id: groupId,
+    item_name: currentJob?.item_name || '',
+    column_values: columnValues,
+    archived,
+  };
+}
+
 async function recordTestDashboardScan(jobId) {
   const sourceOrderId = Number.parseInt(jobId, 10);
   if (!Number.isFinite(sourceOrderId)) throw new Error('Invalid test dashboard job id');
@@ -1061,16 +1507,27 @@ function formatJobName(job) {
 
 function resolveDashboardGroupId(job, state, scan) {
   const stateValues = state?.column_values || {};
-  if (!resolveJobApproved(job, stateValues)) return TEST_DASHBOARD_GROUP_IDS.OFFICE;
   const statusText = normalizeColumnTitle(
     job.dashboard_status || getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]) || scan?.status || ''
   );
   const typeText = normalizeColumnTitle(
     deriveTypeLabel(job) || getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.TYPE]) || job.dashboard_type
   );
+  if (!resolveJobApproved(job, stateValues) && !isAllowedUnapprovedManualStatus(statusText)) {
+    return TEST_DASHBOARD_GROUP_IDS.OFFICE;
+  }
   const automatedGroupId = groupIdForStatusAndType(statusText, typeText);
   if (automatedGroupId) return automatedGroupId;
   return state?.group_id || deriveDefaultGroupId(job);
+}
+
+function resolvePrivateDashboardGroupId(job) {
+  const stateValues = job?.column_values || {};
+  const statusText = normalizeColumnTitle(getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]));
+  const typeText = normalizeColumnTitle(getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.TYPE]));
+  const automatedGroupId = groupIdForStatusAndType(statusText, typeText);
+  if (automatedGroupId) return automatedGroupId;
+  return job?.group_id || TEST_DASHBOARD_GROUP_IDS.OFFICE;
 }
 
 function groupIdForStatusAndType(statusText, typeText) {
@@ -1533,6 +1990,126 @@ function isDesignDashboardColumn(column) {
   if (column.id === TEST_DASHBOARD_COLUMN_IDS.DESIGN) return true;
   const compactTitle = normalizeColumnTitle(column.title).replace(/[^A-Z0-9]/g, '');
   return compactTitle === 'DESPSG' || compactTitle === 'DESNOPSG';
+}
+
+function isPrivateDashboardJobId(value) {
+  return /^private_[0-9a-f-]{36}$/i.test(clean(value));
+}
+
+function normalizeMoveTargetGroupId(value) {
+  const raw = clean(value);
+  const normalized = normalizeColumnTitle(raw).replace(/[^A-Z0-9]/g, '');
+  if (raw === TEST_DASHBOARD_GROUP_IDS.HOLD || normalized === 'HOLD') return TEST_DASHBOARD_GROUP_IDS.HOLD;
+  if (raw === TEST_DASHBOARD_GROUP_IDS.OFFICE || normalized === 'OFFICE') return TEST_DASHBOARD_GROUP_IDS.OFFICE;
+  if (raw === TEST_DASHBOARD_GROUP_IDS.PRE_PRODUCTION || normalized === 'PREPRODUCTION') return TEST_DASHBOARD_GROUP_IDS.PRE_PRODUCTION;
+  return '';
+}
+
+function statusLabelForMoveGroup(groupId) {
+  if (groupId === TEST_DASHBOARD_GROUP_IDS.HOLD) return HOLD_LABEL;
+  if (groupId === TEST_DASHBOARD_GROUP_IDS.OFFICE) return AWAITING_APPROVAL_LABEL;
+  if (groupId === TEST_DASHBOARD_GROUP_IDS.PRE_PRODUCTION) return NO_STOCK_LABEL;
+  return '';
+}
+
+function parseDashboardDateInput(value) {
+  const raw = clean(value);
+  if (!raw) return '';
+  let match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) return validLocalDateIso(Number(match[1]), Number(match[2]), Number(match[3]));
+  match = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2}|\d{4})$/);
+  if (!match) return '';
+  const year = match[3].length === 2 ? 2000 + Number(match[3]) : Number(match[3]);
+  return validLocalDateIso(year, Number(match[2]), Number(match[1]));
+}
+
+function validLocalDateIso(year, month, day) {
+  if (![year, month, day].every(Number.isFinite)) return '';
+  const date = new Date(year, month - 1, day);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return '';
+  }
+  return localDateIso(date);
+}
+
+function priorityLabelForDate(isoDate) {
+  const date = parseDate(isoDate);
+  if (!date) return 'Low';
+  const due = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const days = Math.round((due - today) / 86400000);
+  if (days <= 1) return 'Critical';
+  if (days <= 3) return 'High';
+  if (days <= 7) return 'Medium';
+  return 'Low';
+}
+
+function privateFilesFromColumnValue(value) {
+  const parsed = parseJsonMaybe(value?.value);
+  return Array.isArray(parsed?.files) ? parsed.files : [];
+}
+
+function privateUploadFileFromBody(body, column, { publicId, secureUrl, createdByName }) {
+  const originalFilename = clean(body?.originalFilename || body?.original_filename) || publicId || 'File';
+  return {
+    dashboardPrivateFileId: crypto.randomUUID(),
+    publicId,
+    public_id: publicId,
+    name: originalFilename,
+    url: secureUrl,
+    public_url: secureUrl,
+    secure_url: secureUrl,
+    mime: mimeFromPrivateUpload(body, originalFilename),
+    resourceType: clean(body?.resourceType || body?.resource_type),
+    resource_type: clean(body?.resourceType || body?.resource_type),
+    format: clean(body?.format),
+    bytes: nullableInt(body?.bytes),
+    width: nullableInt(body?.width),
+    height: nullableInt(body?.height),
+    columnId: column?.id || '',
+    columnTitle: column?.title || '',
+    createdByName: createdByName || '',
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function mimeFromPrivateUpload(body, filename) {
+  const format = clean(body?.format).toLowerCase();
+  if (format === 'pdf' || /\.pdf$/i.test(filename || '')) return 'application/pdf';
+  const resourceType = clean(body?.resourceType || body?.resource_type).toLowerCase();
+  if (resourceType === 'image' && format) return `image/${format === 'jpg' ? 'jpeg' : format}`;
+  return '';
+}
+
+function fileColumnPayloadFromFiles(column, files) {
+  const normalized = Array.isArray(files) ? files : [];
+  return {
+    id: column.id,
+    text: normalized.map(file => file.name || file.publicId || file.public_id).filter(Boolean).join(', '),
+    type: 'file',
+    value: JSON.stringify({ files: normalized }),
+  };
+}
+
+function privateFileToApi(file, columnId) {
+  return {
+    id: file.dashboardPrivateFileId,
+    private: true,
+    column_id: columnId,
+    public_id: file.publicId || file.public_id,
+    secure_url: file.secure_url || file.url,
+    resource_type: file.resourceType || file.resource_type,
+    format: file.format,
+    original_filename: file.name,
+    bytes: file.bytes,
+    width: file.width,
+    height: file.height,
+  };
 }
 
 function parseDate(value) {
