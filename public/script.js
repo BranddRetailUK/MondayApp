@@ -18,6 +18,7 @@ const ENDPOINTS = {
   testPrivateJob: (itemId) => `/api/test-dashboard/private-jobs/${encodeURIComponent(itemId)}`,
   testProofFiles: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/proof-files`,
   testScanUrl: (itemId) => `/api/test-dashboard/scan-url?jobId=${encodeURIComponent(itemId)}`,
+  testLabelPrinted: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/label-printed`,
   testUploadSignature: '/api/test-dashboard/uploads/signature',
   testFiles: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/files`
 };
@@ -1793,7 +1794,15 @@ function buildPrintCell(item, context = BOARD_CONTEXT_MONDAY) {
   const printBtn = document.createElement('button');
   printBtn.textContent = 'Print';
   printBtn.className = 'job-action primary';
-  printBtn.addEventListener('click', () => printLabel(item.id, jobTitle, context));
+  printBtn.addEventListener('click', async () => {
+    if (printBtn.disabled) return;
+    printBtn.disabled = true;
+    try {
+      await printLabel(item.id, jobTitle, context);
+    } finally {
+      if (printBtn.isConnected) printBtn.disabled = false;
+    }
+  });
   cell.appendChild(printBtn);
 
   if (context === BOARD_CONTEXT_TEST) return cell;
@@ -4342,18 +4351,35 @@ function isTestPrivateItemId(value) {
 async function printLabel(itemId, rawTitle, context = BOARD_CONTEXT_MONDAY) {
   const { orderNumber, customerName, jobTitle } = parseTitle(rawTitle);
   let scanUrl = '';
-  try {
-    const url = context === BOARD_CONTEXT_TEST
-      ? ENDPOINTS.testScanUrl(itemId)
-      : `/api/scan-url?itemId=${encodeURIComponent(itemId)}`;
-    if (!(context === BOARD_CONTEXT_TEST && isTestPrivateItemId(itemId))) {
+  if (context === BOARD_CONTEXT_TEST) {
+    __statusUpdateInFlight += 1;
+    try {
+      const response = await fetch(ENDPOINTS.testLabelPrinted(itemId), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}'
+      });
+      if (!response.ok) throw new Error(await readApiError(response));
+      const result = await response.json();
+      scanUrl = result.scanUrl || '';
+      loadTestBoard({ forceRefresh: true });
+    } catch (err) {
+      alert(`Label could not be printed: ${err.message || 'Failed to prepare the label'}`);
+      return;
+    } finally {
+      __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);
+    }
+  } else {
+    try {
+      const url = `/api/scan-url?itemId=${encodeURIComponent(itemId)}`;
       const r = await fetch(url, { credentials: 'include' });
       if (r.ok) {
         const j = await r.json();
         scanUrl = j.url || '';
       }
-    }
-  } catch {}
+    } catch {}
+  }
   const qrImg = scanUrl ? `<img class="qr" src="/api/qr?data=${encodeURIComponent(scanUrl)}" alt="QR">` : '';
   const blocks = [
     { head: 'JOB NUMBER', value: orderNumber, ratio: 0.62, maxSize: 96 },
@@ -4418,7 +4444,10 @@ async function printLabel(itemId, rawTitle, context = BOARD_CONTEXT_MONDAY) {
           function closeAfterPrint(){
             if (closeTimer) return;
             closeTimer = setTimeout(function(){
-              try { window.close(); } catch (e) {}
+              try {
+                if (window.frameElement) window.frameElement.remove();
+                else window.close();
+              } catch (e) {}
             }, 250);
           }
           function startPrint(){
@@ -4432,7 +4461,13 @@ async function printLabel(itemId, rawTitle, context = BOARD_CONTEXT_MONDAY) {
           }
           const qr = document.querySelector('.qr');
           if (qr) {
-            qr.addEventListener('load', () => { setTimeout(startPrint, 150); });
+            if (qr.complete) {
+              setTimeout(startPrint, 150);
+            } else {
+              qr.addEventListener('load', () => { setTimeout(startPrint, 150); }, { once: true });
+              qr.addEventListener('error', () => { setTimeout(startPrint, 150); }, { once: true });
+              setTimeout(startPrint, 3000);
+            }
           } else {
             setTimeout(startPrint, 150);
           }
@@ -4441,6 +4476,17 @@ async function printLabel(itemId, rawTitle, context = BOARD_CONTEXT_MONDAY) {
     </body>
     </html>
   `;
+
+  if (context === BOARD_CONTEXT_TEST) {
+    const frame = document.createElement('iframe');
+    frame.title = `Print label ${orderNumber || itemId}`;
+    frame.setAttribute('aria-hidden', 'true');
+    frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:4in;height:6in;border:0;pointer-events:none;';
+    frame.srcdoc = body;
+    document.body.appendChild(frame);
+    setTimeout(() => frame.remove(), 5 * 60 * 1000);
+    return;
+  }
 
   let win = null;
   try { win = window.open('', '', 'width=480,height=760'); } catch {}

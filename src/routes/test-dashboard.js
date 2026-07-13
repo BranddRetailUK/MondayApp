@@ -36,6 +36,8 @@ const NO_STOCK_LABEL = 'NO STOCK';
 const STOCK_ORDERED_LABEL = 'STOCK ORDERED';
 const HOLD_LABEL = 'HOLD';
 const PRE_PRODUCTION_LABEL = 'PRE-PRODUCTION';
+const READY_TO_PRINT_LABEL = 'READY TO PRINT';
+const CHECKED_IN_LABEL = 'CHECKED IN';
 const COMPLETED_LABEL = 'COMPLETED';
 const APPROVAL_REQUIREMENTS_MESSAGE = 'Please add design number and/or Visual Proof.';
 const DESIGN_POSITION_LOCK_KEY = 71060217;
@@ -581,14 +583,76 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/design-column', async (req
   }
 });
 
+protectedRouter.post('/api/test-dashboard/items/:jobId/label-printed', async (req, res) => {
+  const jobId = clean(req.params.jobId);
+  const privateJob = isPrivateDashboardJobId(jobId);
+  const sourceOrderId = Number.parseInt(jobId, 10);
+  if (!privateJob && !Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
+
+  try {
+    await ensureTestDashboardDefaults(pool);
+    const [job, columns] = await Promise.all([
+      privateJob ? fetchPrivateDashboardJob(jobId) : fetchDashboardJob(sourceOrderId),
+      fetchDashboardColumns(false),
+    ]);
+    if (!job) return res.status(404).json({ error: privateJob ? 'Private dashboard job not found' : 'Database job not found' });
+
+    const state = privateJob ? job : await fetchJobState(job.source_order_id);
+    const columnValues = { ...(state?.column_values || {}) };
+    const statusColumn = columnById(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS);
+    if (!statusColumn) return res.status(500).json({ error: 'Test dashboard STATUS column is not configured' });
+
+    const previousStatus = normalizeColumnTitle(
+      privateJob
+        ? getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS])
+        : (job.dashboard_status || getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]))
+    );
+    const currentGroupId = privateJob
+      ? resolvePrivateDashboardGroupId(job)
+      : resolveDashboardGroupId(job, state, null);
+    const statusPreserved = shouldPreserveStatusAfterLabelPrint(previousStatus, currentGroupId);
+    let saved = state;
+
+    if (!statusPreserved) {
+      const option = findStatusOption(statusColumn, CHECKED_IN_LABEL);
+      if (!option) return res.status(500).json({ error: 'CHECKED IN is not configured on the test dashboard STATUS column' });
+      columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS] = statusValue(statusColumn, option.label, option.index);
+
+      const nextState = {
+        group_id: currentGroupId,
+        item_name: privateJob ? (state?.item_name || '') : (state?.item_name || formatJobName(job)),
+        column_values: columnValues,
+        archived: Boolean(state?.archived),
+      };
+      saved = privateJob
+        ? await updatePrivateDashboardJob(job.id, nextState)
+        : await upsertJobState(job.source_order_id, nextState);
+
+      if (!privateJob) {
+        await updateDatabaseJobDashboardFields(pool, job.source_order_id, { status: CHECKED_IN_LABEL });
+      }
+    }
+
+    res.json({
+      ok: true,
+      itemId: privateJob ? job.id : String(job.source_order_id),
+      scanUrl: privateJob ? '' : buildTestDashboardScanUrl(req, job.source_order_id),
+      previousStatus,
+      status: statusPreserved ? previousStatus : CHECKED_IN_LABEL,
+      statusUpdated: !statusPreserved,
+      statusPreserved,
+      groupId: saved?.group_id || currentGroupId,
+    });
+  } catch (err) {
+    console.error('POST /api/test-dashboard/items/:jobId/label-printed', err);
+    res.status(500).json({ error: 'Failed to prepare the label and update test dashboard status' });
+  }
+});
+
 protectedRouter.get('/api/test-dashboard/scan-url', (req, res) => {
   const jobId = clean(req.query.jobId || req.query.itemId);
   if (!jobId) return res.status(400).json({ error: 'jobId required' });
-  const ts = Date.now().toString();
-  const sig = signPayload(jobId, ts);
-  const base = `${req.protocol}://${req.get('host')}`;
-  const url = `${base}/test-scan?j=${encodeURIComponent(jobId)}&ts=${ts}&sig=${sig}`;
-  res.json({ url });
+  res.json({ url: buildTestDashboardScanUrl(req, jobId) });
 });
 
 protectedRouter.post('/api/test-dashboard/scanner', async (req, res) => {
@@ -1069,6 +1133,7 @@ function isAllowedUnapprovedManualStatus(label) {
   const normalized = normalizeColumnTitle(label);
   return normalized === HOLD_LABEL ||
     isStockOrderedStatus(normalized) ||
+    normalized === CHECKED_IN_LABEL ||
     normalized === COMPLETED_LABEL ||
     normalized === 'TO SAMPLE' ||
     normalized === 'SAMPLED';
@@ -1660,6 +1725,21 @@ function parseTestScan(raw) {
   } catch {
     return { jobId: '' };
   }
+}
+
+function buildTestDashboardScanUrl(req, jobId) {
+  const normalizedJobId = clean(jobId);
+  const ts = Date.now().toString();
+  const sig = signPayload(normalizedJobId, ts);
+  const base = `${req.protocol}://${req.get('host')}`;
+  return `${base}/test-scan?j=${encodeURIComponent(normalizedJobId)}&ts=${ts}&sig=${sig}`;
+}
+
+function shouldPreserveStatusAfterLabelPrint(statusText, groupId) {
+  const normalizedStatus = normalizeColumnTitle(statusText);
+  if (normalizedStatus === COMPLETED_LABEL) return true;
+  return normalizedStatus === READY_TO_PRINT_LABEL &&
+    groupId !== TEST_DASHBOARD_GROUP_IDS.PRE_PRODUCTION;
 }
 
 function sendScanError(res, wantsJson, status, message) {
@@ -2549,4 +2629,5 @@ module.exports = {
   protectedRouter,
   ensureTestDashboardDefaults,
   buildTestDashboardBoardPayload,
+  shouldPreserveStatusAfterLabelPrint,
 };

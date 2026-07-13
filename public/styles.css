@@ -1065,6 +1065,7 @@ body{
 }
 .job-action.primary{background:var(--accent);border-color:transparent;color:#fff}
 .job-action.success{background:var(--ok);border-color:transparent;color:#04130e}
+.job-action:disabled{cursor:wait;opacity:.65}
 .camera-btn{display:none}
 .monday-value-cell{
   justify-content:center;
