@@ -146,7 +146,7 @@
 
             <div class="db-main-tabs" role="tablist" aria-label="Database sections">
               <button class="db-main-tab active" type="button" data-db-go="home">Home</button>
-              <button class="db-main-tab" type="button" data-db-go="outstanding">Outstanding Orders</button>
+              <button class="db-main-tab" type="button" data-db-go="outstanding">Open Orders</button>
             </div>
 
             <section id="db-home-view" class="db-view db-home-view active" aria-label="Database home">
@@ -156,7 +156,7 @@
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="all-orders">All Orders</button>
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="customers">Customers</button>
                 <button class="db-raised-button" type="button" data-db-action="placeholder">Styles</button>
-                <button class="db-raised-button" type="button" data-db-action="placeholder">Suppliers</button>
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="stock-ordering">Stock Ordering</button>
               </div>
 
               <div class="db-outstanding-actions">
@@ -619,6 +619,34 @@
                     <tr><td colspan="7" class="db-empty-cell">Loading jobs to invoice</td></tr>
                   </tbody>
                 </table>
+              </div>
+            </section>
+
+            <section id="db-stock-ordering-view" class="db-view db-stock-ordering-view" aria-label="Stock ordering">
+              <div class="db-table-frame db-stock-ordering-table-frame">
+                <table id="db-stock-ordering-table" class="db-legacy-table">
+                  <thead>
+                    <tr>
+                      <th class="db-row-selector"></th>
+                      <th class="db-row-selector"></th>
+                      <th>Order no:</th>
+                      <th>Customer:</th>
+                      <th>Type</th>
+                      <th>Job title:</th>
+                      <th>Status:</th>
+                      <th>Delivery:</th>
+                      <th>Items:</th>
+                      <th>Qty:</th>
+                    </tr>
+                  </thead>
+                  <tbody id="db-stock-ordering-body">
+                    <tr><td colspan="10" class="db-empty-cell">Loading stock ordering jobs</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="db-stock-ordering-actions">
+                <span id="db-stock-ordering-summary">0 selected</span>
+                <button class="db-toolbar-button" type="button" data-db-action="create-stock-ordering" disabled>Create List</button>
               </div>
             </section>
 

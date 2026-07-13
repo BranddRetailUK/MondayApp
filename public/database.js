@@ -15,6 +15,7 @@
   const TO_INVOICE_TABLE_COLUMN_COUNT = 7;
   const OUTSTANDING_STATUS_COLUMN_WIDTH = 128;
   const OUTSTANDING_TABLE_FIXED_WIDTH = 19 + 68 + 198 + 36 + 65 + 88 + 82 + OUTSTANDING_STATUS_COLUMN_WIDTH;
+  const STOCK_ORDERING_TABLE_COLUMN_COUNT = 10;
   const OUTSTANDING_TITLE_COLUMN_MIN_WIDTH = 170;
   const OUTSTANDING_TITLE_CELL_EXTRA_WIDTH = 12;
   const ORDER_ACK_LOGO_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781699668/ultimate_logo_imyxvr.png';
@@ -52,6 +53,10 @@
   const OUTSTANDING_REPORT_ROW_EXTRA_LINE_MM = 3.4;
   const OUTSTANDING_REPORT_TITLE_CHARS_PER_LINE = 36;
   const OUTSTANDING_REPORT_CUSTOMER_CHARS_PER_LINE = 31;
+  const STOCK_ORDERING_REPORT_JOB_MM = 7.2;
+  const STOCK_ORDERING_REPORT_ROW_BASE_MM = 5.8;
+  const STOCK_ORDERING_REPORT_ROW_EXTRA_LINE_MM = 2.8;
+  const STOCK_ORDERING_REPORT_DESCRIPTION_CHARS_PER_LINE = 54;
   const CHILD_PRODUCT_TITLE_PATTERN = /\b(kids?|children'?s?|childrens?|child|youth|junior|juniors?|boys?|girls?)\b/i;
   const CHILD_YOUTH_SIZE_PATTERN = /\bY(?:XS|S|M|L|XL|XXL)\b/i;
   const CHILD_AGE_RANGE_SIZE_PATTERN = /\b(?:[1-9]|1[0-8])\s*[-\u2010-\u2015]\s*(?:[1-9]|1[0-8])\b/;
@@ -77,6 +82,11 @@
       ariaLabel: 'Outstanding orders PDF preview',
       filenameTitle: 'Outstanding Orders',
     },
+    'stock-ordering': {
+      toolbarTitle: 'Stock ordering',
+      ariaLabel: 'Stock ordering PDF preview',
+      filenameTitle: 'Stock Ordering',
+    },
   };
 
   const state = {
@@ -89,6 +99,12 @@
     toInvoiceJobs: [],
     toInvoiceLoaded: false,
     toInvoiceLoading: false,
+    stockOrderingJobs: [],
+    stockOrderingLoaded: false,
+    stockOrderingLoading: false,
+    stockOrderingSelectedIds: new Set(),
+    stockOrderingExpandedIds: new Set(),
+    stockOrderingSnapshot: null,
     orderLoadToken: 0,
     orderLoadComplete: false,
     orderSearchQuery: '',
@@ -226,6 +242,10 @@
       outstandingBody: document.getElementById('db-outstanding-body'),
       toInvoiceTable: document.getElementById('db-to-invoice-table'),
       toInvoiceBody: document.getElementById('db-to-invoice-body'),
+      stockOrderingTable: document.getElementById('db-stock-ordering-table'),
+      stockOrderingBody: document.getElementById('db-stock-ordering-body'),
+      stockOrderingSummary: document.getElementById('db-stock-ordering-summary'),
+      stockOrderingCreate: document.querySelector('[data-db-action="create-stock-ordering"]'),
       usersTable: document.getElementById('db-users-table'),
       usersBody: document.getElementById('db-users-body'),
       orderSearch: document.getElementById('db-order-search'),
@@ -272,6 +292,7 @@
     els.outstandingBody.addEventListener('keydown', handleOutstandingRowKeydown);
     els.toInvoiceBody?.addEventListener('click', handleToInvoiceRowClick);
     els.toInvoiceBody?.addEventListener('keydown', handleToInvoiceRowKeydown);
+    els.stockOrderingBody?.addEventListener('change', handleStockOrderingSelectChange);
     els.outstandingFrame?.addEventListener('scroll', handleOutstandingScroll);
     window.addEventListener('resize', scheduleOutstandingTableLayout);
     els.customersBody.addEventListener('click', handleDatabaseCustomerRowClick);
@@ -419,6 +440,12 @@
       return;
     }
 
+    const stockToggleId = button.dataset.dbStockToggle;
+    if (stockToggleId) {
+      toggleStockOrderingDetails(stockToggleId);
+      return;
+    }
+
     if (button.dataset.dbCloseOrder) {
       await flushOrderAutosaves();
       openCloseOrderConfirmation();
@@ -520,6 +547,16 @@
     if (action === 'users') {
       await flushOrderAutosaves();
       showUsers();
+      return;
+    }
+    if (action === 'stock-ordering') {
+      await flushOrderAutosaves();
+      showStockOrdering();
+      return;
+    }
+    if (action === 'create-stock-ordering') {
+      await flushOrderAutosaves();
+      openStockOrderingDocument();
       return;
     }
     if (action === 'to-invoice') {
@@ -712,6 +749,12 @@
     showView('to-invoice');
     setFooterTitle('To Invoice');
     loadToInvoiceJobs({ force: true });
+  }
+
+  function showStockOrdering() {
+    showView('stock-ordering');
+    setFooterTitle('Stock Ordering');
+    loadStockOrderingJobs({ force: true });
   }
 
   function showUsers() {
@@ -2368,6 +2411,193 @@
     `;
   }
 
+  async function loadStockOrderingJobs(options = {}) {
+    if (state.stockOrderingLoading && !options.force) {
+      renderStockOrderingJobs();
+      return;
+    }
+    if (state.stockOrderingLoaded && !options.force) {
+      renderStockOrderingJobs();
+      return;
+    }
+
+    state.stockOrderingLoading = true;
+    state.stockOrderingLoaded = false;
+    state.stockOrderingJobs = [];
+    state.stockOrderingSelectedIds.clear();
+    state.stockOrderingExpandedIds.clear();
+    if (els.stockOrderingBody) {
+      els.stockOrderingBody.innerHTML = renderStatusRow('Loading stock ordering jobs', STOCK_ORDERING_TABLE_COLUMN_COUNT);
+    }
+    updateStockOrderingControls();
+
+    try {
+      const data = await fetchJson('/api/database/stock-ordering');
+      state.stockOrderingJobs = data.jobs || [];
+      state.stockOrderingLoaded = true;
+      renderStockOrderingJobs();
+    } catch (err) {
+      state.stockOrderingLoaded = false;
+      if (els.stockOrderingBody) {
+        els.stockOrderingBody.innerHTML = renderStatusRow(err.message, STOCK_ORDERING_TABLE_COLUMN_COUNT);
+      }
+      updateStockOrderingControls();
+    } finally {
+      state.stockOrderingLoading = false;
+    }
+  }
+
+  function renderStockOrderingJobs() {
+    if (!els.stockOrderingBody) return;
+    const jobs = state.stockOrderingJobs || [];
+    if (!jobs.length) {
+      els.stockOrderingBody.innerHTML = renderStatusRow('No jobs require stock ordering', STOCK_ORDERING_TABLE_COLUMN_COUNT);
+      updateStockOrderingControls();
+      return;
+    }
+
+    els.stockOrderingBody.innerHTML = jobs.map((job) => {
+      const sourceOrderId = String(job.source_order_id || '');
+      const expanded = state.stockOrderingExpandedIds.has(sourceOrderId);
+      return `${renderStockOrderingParentRow(job, expanded)}${expanded ? renderStockOrderingDetailRow(job) : ''}`;
+    }).join('');
+    updateStockOrderingControls();
+  }
+
+  function renderStockOrderingParentRow(job, expanded) {
+    const sourceOrderId = String(job.source_order_id || '');
+    const checked = state.stockOrderingSelectedIds.has(sourceOrderId);
+    const lineItems = stockOrderingLineItems(job);
+    const statusLabel = String(job.dashboard_status || 'AWAITING APPROVAL').trim();
+    return `
+      <tr class="db-stock-ordering-row" data-stock-order-id="${escapeAttr(sourceOrderId)}" tabindex="0">
+        <td class="db-row-selector">
+          <input
+            class="db-stock-ordering-check"
+            type="checkbox"
+            data-db-stock-select="${escapeAttr(sourceOrderId)}"
+            ${checked ? 'checked' : ''}
+            aria-label="Select order ${escapeAttr(job.order_no || sourceOrderId)}"
+          >
+        </td>
+        <td class="db-row-selector">
+          <button
+            class="db-stock-toggle"
+            type="button"
+            data-db-stock-toggle="${escapeAttr(sourceOrderId)}"
+            aria-label="${expanded ? 'Hide' : 'Show'} line items for order ${escapeAttr(job.order_no || sourceOrderId)}"
+          >${expanded ? '&#9662;' : '&#9656;'}</button>
+        </td>
+        <td class="db-order-link">${escapeHtml(job.order_no || '')}</td>
+        <td class="db-customer-link">${escapeHtml(job.customer_name || '')}</td>
+        <td class="db-type-cell db-type-${categoryForJob(job)}">${escapeHtml(typeAbbr(job))}</td>
+        <td>${escapeHtml(job.job_title || '')}</td>
+        <td>${escapeHtml(statusLabel)}</td>
+        <td>${escapeHtml(outstandingDeliveryLabel(job))}</td>
+        <td>${escapeHtml(formatNumber(lineItems.length))}</td>
+        <td>${escapeHtml(formatNumber(stockOrderingQuantity(job)))}</td>
+      </tr>
+    `;
+  }
+
+  function renderStockOrderingDetailRow(job) {
+    return `
+      <tr class="db-stock-ordering-detail-row">
+        <td colspan="${STOCK_ORDERING_TABLE_COLUMN_COUNT}">
+          <div class="db-stock-ordering-detail">
+            ${renderStockOrderingLineTable(stockOrderingLineItems(job), { compact: true })}
+          </div>
+        </td>
+      </tr>
+    `;
+  }
+
+  function renderStockOrderingLineTable(lineItems, options = {}) {
+    const compactClass = options.compact ? ' db-stock-ordering-lines-compact' : '';
+    return `
+      <table class="db-stock-ordering-lines${compactClass}">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Code</th>
+            <th>Description</th>
+            <th>Colour</th>
+            <th>Size</th>
+            <th>Qty</th>
+            <th>Supplier</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${lineItems.length
+            ? lineItems.map(renderStockOrderingLineRow).join('')
+            : '<tr><td colspan="7">No stock ordering line items</td></tr>'}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function renderStockOrderingLineRow(item) {
+    return `
+      <tr>
+        <td>${escapeHtml(isStockItem(item) ? 'Stock' : 'Non-stock')}</td>
+        <td>${escapeHtml(orderDocumentItemCode(item))}</td>
+        <td>${escapeHtml(orderDocumentItemDescription(item))}</td>
+        <td>${escapeHtml(item.colour || '')}</td>
+        <td>${escapeHtml(item.size || '')}</td>
+        <td>${escapeHtml(formatNumber(orderAckQuantity(item)))}</td>
+        <td>${escapeHtml(item.supplier_name || '')}</td>
+      </tr>
+    `;
+  }
+
+  function handleStockOrderingSelectChange(event) {
+    const input = event.target.closest('[data-db-stock-select]');
+    if (!input) return;
+    const sourceOrderId = String(input.dataset.dbStockSelect || '');
+    if (!sourceOrderId) return;
+    if (input.checked) {
+      state.stockOrderingSelectedIds.add(sourceOrderId);
+    } else {
+      state.stockOrderingSelectedIds.delete(sourceOrderId);
+    }
+    updateStockOrderingControls();
+  }
+
+  function toggleStockOrderingDetails(sourceOrderId) {
+    const id = String(sourceOrderId || '');
+    if (!id) return;
+    if (state.stockOrderingExpandedIds.has(id)) {
+      state.stockOrderingExpandedIds.delete(id);
+    } else {
+      state.stockOrderingExpandedIds.add(id);
+    }
+    renderStockOrderingJobs();
+  }
+
+  function updateStockOrderingControls() {
+    const selectedCount = state.stockOrderingSelectedIds.size;
+    if (els.stockOrderingSummary) {
+      els.stockOrderingSummary.textContent = `${formatNumber(selectedCount)} selected`;
+    }
+    if (els.stockOrderingCreate) {
+      els.stockOrderingCreate.disabled = selectedCount < 1;
+    }
+  }
+
+  function selectedStockOrderingJobs() {
+    return (state.stockOrderingJobs || []).filter((job) => (
+      state.stockOrderingSelectedIds.has(String(job.source_order_id || ''))
+    ));
+  }
+
+  function stockOrderingLineItems(job) {
+    return (job?.lineItems || []).filter((item) => !truthy(item.is_non_deliverable) && !truthy(item.is_internal));
+  }
+
+  function stockOrderingQuantity(job) {
+    return stockOrderingLineItems(job).reduce((sum, item) => sum + orderAckQuantity(item), 0);
+  }
+
   async function loadOutstandingOrders(options = {}) {
     const mode = state.orderMode;
     if (state.loadingOrders && state.loadedOrderMode === mode && !options.force) {
@@ -3457,6 +3687,35 @@
     });
   }
 
+  function openStockOrderingDocument() {
+    const snapshot = buildStockOrderingSnapshot();
+    if (!snapshot.jobs.length) {
+      alert('Select at least one job for stock ordering');
+      return;
+    }
+
+    state.activeDocumentType = 'stock-ordering';
+    state.documentGeneratedAt = snapshot.generatedAt;
+    state.stockOrderingSnapshot = snapshot;
+
+    const modal = ensureOrderAckModal();
+    const shell = modal.querySelector('.db-order-ack-shell');
+    const title = modal.querySelector('.db-order-ack-toolbar-title');
+    const pages = modal.querySelector('.db-order-ack-pages');
+    if (shell) shell.setAttribute('aria-label', DATABASE_DOCUMENTS['stock-ordering'].ariaLabel);
+    if (title) title.textContent = snapshot.toolbarTitle;
+    modal.dataset.dbDocumentType = 'stock-ordering';
+    pages.innerHTML = renderStockOrderingDocument();
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open', 'db-order-ack-open');
+
+    window.requestAnimationFrame(() => {
+      const printButton = modal.querySelector('[data-db-ack-print]');
+      if (printButton) printButton.focus();
+    });
+  }
+
   function buildOutstandingReportSnapshot() {
     const groups = groupedOutstandingRows(ordersForCurrentRender()).map((group) => ({
       key: group.key,
@@ -3482,12 +3741,147 @@
     };
   }
 
+  function buildStockOrderingSnapshot() {
+    const jobs = selectedStockOrderingJobs().map((job) => ({
+      ...job,
+      lineItems: stockOrderingLineItems(job),
+    })).filter((job) => job.lineItems.length);
+
+    return {
+      title: 'Stock Ordering',
+      toolbarTitle: 'Stock Ordering PDF',
+      filenameTitle: 'Stock Ordering',
+      generatedAt: new Date(),
+      jobs,
+    };
+  }
+
   function renderOutstandingReportDocument() {
     const snapshot = state.outstandingReportSnapshot || buildOutstandingReportSnapshot();
     const pages = buildOutstandingReportPages(snapshot.groups);
     return pages.map((page, index) => (
       renderOutstandingReportPage(snapshot, page, index)
     )).join('');
+  }
+
+  function renderStockOrderingDocument() {
+    const snapshot = state.stockOrderingSnapshot || buildStockOrderingSnapshot();
+    const pages = buildStockOrderingPages(snapshot.jobs);
+    return pages.map((page, index) => renderStockOrderingPage(snapshot, page, index)).join('');
+  }
+
+  function buildStockOrderingPages(jobs) {
+    const pages = [];
+    let page = emptyStockOrderingPage();
+    let usedMm = 0;
+
+    const pushPage = () => {
+      if (page.entries.length) pages.push(page);
+      page = emptyStockOrderingPage();
+      usedMm = 0;
+    };
+
+    for (const job of jobs || []) {
+      const lines = stockOrderingLineItems(job);
+      if (!lines.length) continue;
+      const firstLineHeight = stockOrderingReportLineHeight(lines[0]);
+      if (usedMm > 0 && usedMm + STOCK_ORDERING_REPORT_JOB_MM + firstLineHeight > OUTSTANDING_REPORT_PAGE_CONTENT_MAX_MM) {
+        pushPage();
+      }
+
+      page.entries.push({ type: 'job', job, continued: false });
+      usedMm += STOCK_ORDERING_REPORT_JOB_MM;
+
+      for (const line of lines) {
+        const rowHeight = stockOrderingReportLineHeight(line);
+        if (usedMm > STOCK_ORDERING_REPORT_JOB_MM && usedMm + rowHeight > OUTSTANDING_REPORT_PAGE_CONTENT_MAX_MM) {
+          pushPage();
+          page.entries.push({ type: 'job', job, continued: true });
+          usedMm += STOCK_ORDERING_REPORT_JOB_MM;
+        }
+        page.entries.push({ type: 'line', job, item: line });
+        usedMm += rowHeight;
+      }
+    }
+
+    if (page.entries.length) pages.push(page);
+    return pages.length ? pages : [emptyStockOrderingPage()];
+  }
+
+  function emptyStockOrderingPage() {
+    return { entries: [] };
+  }
+
+  function stockOrderingReportLineHeight(item) {
+    const description = orderDocumentItemDescription(item);
+    const lines = Math.max(1, Math.ceil(description.length / STOCK_ORDERING_REPORT_DESCRIPTION_CHARS_PER_LINE));
+    return STOCK_ORDERING_REPORT_ROW_BASE_MM + ((lines - 1) * STOCK_ORDERING_REPORT_ROW_EXTRA_LINE_MM);
+  }
+
+  function renderStockOrderingPage(snapshot, page, pageIndex) {
+    return `
+      <section class="db-order-ack-page db-outstanding-report-page db-stock-ordering-report-page" aria-label="${escapeAttr(snapshot.title)} page ${pageIndex + 1}">
+        <header class="db-outstanding-report-header">
+          <h1>${escapeHtml(snapshot.title.toUpperCase())}</h1>
+          <img class="db-order-ack-logo" src="${escapeAttr(ORDER_ACK_LOGO_URL)}" alt="Ultimate logo" crossorigin="anonymous">
+        </header>
+        <section class="db-outstanding-report-content db-stock-ordering-report-content">
+          ${renderStockOrderingReportTable(page.entries)}
+        </section>
+        <img class="db-order-ack-footer" src="${escapeAttr(orderDocumentFooterUrl('delivery-note'))}" alt="Ultimate letterhead footer" crossorigin="anonymous">
+      </section>
+    `;
+  }
+
+  function renderStockOrderingReportTable(entries) {
+    return `
+      <table class="db-stock-ordering-report-table">
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Description</th>
+            <th>Colour</th>
+            <th>Size</th>
+            <th>Qty</th>
+            <th>Supplier</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${entries.length ? entries.map(renderStockOrderingReportEntry).join('') : '<tr><td colspan="6">No stock ordering line items</td></tr>'}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function renderStockOrderingReportEntry(entry) {
+    if (entry.type === 'job') return renderStockOrderingReportJobRow(entry.job, entry.continued);
+    return renderStockOrderingReportLineRow(entry.item);
+  }
+
+  function renderStockOrderingReportJobRow(job, continued = false) {
+    const title = [
+      job.order_no || job.source_order_id || '',
+      job.customer_name || '',
+      job.job_title || '',
+    ].filter(Boolean).join(' - ');
+    return `
+      <tr class="db-stock-ordering-report-job-row">
+        <td colspan="6">${escapeHtml(title)}${continued ? ' continued' : ''}</td>
+      </tr>
+    `;
+  }
+
+  function renderStockOrderingReportLineRow(item) {
+    return `
+      <tr>
+        <td>${escapeHtml(orderDocumentItemCode(item))}</td>
+        <td>${escapeHtml(orderDocumentItemDescription(item))}</td>
+        <td>${escapeHtml(item.colour || '')}</td>
+        <td>${escapeHtml(item.size || '')}</td>
+        <td>${escapeHtml(formatNumber(orderAckQuantity(item)))}</td>
+        <td>${escapeHtml(item.supplier_name || '')}</td>
+      </tr>
+    `;
   }
 
   function buildOutstandingReportPages(groups) {
@@ -4266,6 +4660,7 @@
     const job = state.selectedJob || {};
     const documentType = databaseDocumentType(type);
     if (documentType === 'outstanding-orders') return outstandingReportPdfFilename();
+    if (documentType === 'stock-ordering') return stockOrderingPdfFilename();
     const documentNo = documentType === 'invoice' ? invoiceDocumentNo(job) : job.order_no;
     const orderNo = String(documentNo || job.source_order_id || '').trim();
     const config = databaseDocumentConfig(type);
@@ -4275,6 +4670,11 @@
   function outstandingReportPdfFilename() {
     return state.outstandingReportSnapshot?.filenameTitle
       || DATABASE_DOCUMENTS['outstanding-orders'].filenameTitle;
+  }
+
+  function stockOrderingPdfFilename() {
+    return state.stockOrderingSnapshot?.filenameTitle
+      || DATABASE_DOCUMENTS['stock-ordering'].filenameTitle;
   }
 
   function syncOrderDocumentButtons(job = state.selectedJob) {
@@ -4313,6 +4713,7 @@
   function renderDatabaseDocument(type) {
     const documentType = databaseDocumentType(type);
     if (documentType === 'outstanding-orders') return renderOutstandingReportDocument();
+    if (documentType === 'stock-ordering') return renderStockOrderingDocument();
     if (documentType === 'invoice') return renderInvoiceDocument();
     if (documentType === 'delivery-note') return renderDeliveryNoteDocument();
     return renderOrderAcknowledgementPage();
@@ -6930,7 +7331,7 @@
     }
 
     els.mainTabs.forEach((tab) => {
-      const active = (name === 'home' || name === 'new-order' || name === 'new-customer' || name === 'new-contact' || name === 'customers' || name === 'customer' || name === 'to-invoice' || name === 'users')
+      const active = (name === 'home' || name === 'new-order' || name === 'new-customer' || name === 'new-contact' || name === 'customers' || name === 'customer' || name === 'to-invoice' || name === 'stock-ordering' || name === 'users')
         ? tab.dataset.dbGo === 'home'
         : tab.dataset.dbGo === 'outstanding';
       tab.classList.toggle('active', active);
@@ -6962,6 +7363,7 @@
     if (name === 'customer') return 'Customer';
     if (name === 'users') return 'Users';
     if (name === 'to-invoice') return 'To Invoice';
+    if (name === 'stock-ordering') return 'Stock Ordering';
     if (name === 'outstanding') return state.orderMode === 'all' ? 'All Orders' : 'Open Orders';
     if (name === 'order') return 'Open Orders';
     return 'Main Menu';

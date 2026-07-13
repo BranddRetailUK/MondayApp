@@ -5,6 +5,7 @@ const { fullName } = require('../services/hubAuth');
 const { jobApprovedFromColumnValues } = require('../services/testDashboardDbFields');
 const {
   TEST_DASHBOARD_COLUMN_IDS,
+  TEST_DASHBOARD_GROUP_IDS,
   STATUS_SETTINGS,
   normalizeColumnTitle,
 } = require('../services/testDashboardDefaults');
@@ -218,6 +219,124 @@ router.get('/api/database/outstanding-counts', async (_req, res) => {
   } catch (err) {
     console.error('GET /api/database/outstanding-counts', err);
     res.status(500).json({ error: 'Failed to fetch outstanding action counts' });
+  }
+});
+
+router.get('/api/database/stock-ordering', async (_req, res) => {
+  try {
+    const jobs = await pool.query(
+      `WITH candidate_jobs AS (
+         SELECT j.source_order_id,
+                j.order_no,
+                j.order_type,
+                j.order_type_abbr,
+                j.customer_name,
+                j.job_title,
+                j.order_taken_by,
+                j.order_owner_name,
+                j.trace_staff_id,
+                j.order_date,
+                j.delivery_date,
+                j.customer_date_required,
+                COALESCE(
+                  j.dashboard_status,
+                  s.column_values -> '${TEST_DASHBOARD_COLUMN_IDS.STATUS}' ->> 'text'
+                ) AS dashboard_status,
+                j.dashboard_status_updated_at,
+                s.group_id,
+                CASE
+                  WHEN LOWER(COALESCE(j.order_type, '') || ' ' || COALESCE(j.order_type_abbr, '')) LIKE '%gift%'
+                    OR LOWER(COALESCE(j.order_type_abbr, '')) = 'g'
+                    THEN 'gifts'
+                  WHEN LOWER(COALESCE(j.order_type, '') || ' ' || COALESCE(j.order_type_abbr, '')) LIKE '%embro%'
+                    OR LOWER(COALESCE(j.order_type_abbr, '')) = 'e'
+                    THEN 'embroidery'
+                  WHEN LOWER(COALESCE(j.order_type, '') || ' ' || COALESCE(j.order_type_abbr, '')) LIKE '%print%'
+                    OR LOWER(COALESCE(j.order_type_abbr, '')) IN ('p', 'pe', 'ep')
+                    THEN 'print'
+                  ELSE 'other'
+                END AS job_category,
+                UPPER(TRIM(COALESCE(
+                  j.dashboard_status,
+                  s.column_values -> '${TEST_DASHBOARD_COLUMN_IDS.STATUS}' ->> 'text',
+                  ''
+                ))) AS normalized_status
+         FROM database_jobs j
+         LEFT JOIN test_dashboard_job_state s ON s.source_order_id = j.source_order_id
+         WHERE j.is_complete IS NOT TRUE
+           AND j.invoice_printed IS NOT TRUE
+           AND j.pf_invoice_printed IS NOT TRUE
+           AND s.archived IS NOT TRUE
+       ),
+       filtered_jobs AS (
+         SELECT *
+         FROM candidate_jobs
+         WHERE job_category <> 'gifts'
+           AND normalized_status NOT IN (
+             'READY TO PRINT',
+             'TRANSFER PRINTING',
+             'IN PRODUCTION',
+             'COMPLETED',
+             'INVOICED'
+           )
+           AND COALESCE(group_id, '') <> ALL($1::text[])
+       ),
+       ordering_lines AS (
+         SELECT li.*
+         FROM database_job_line_items li
+         JOIN filtered_jobs fj ON fj.source_order_id = li.source_order_id
+         WHERE li.is_non_deliverable IS NOT TRUE
+           AND li.is_internal IS NOT TRUE
+       ),
+       line_summary AS (
+         SELECT source_order_id,
+                COUNT(*)::int AS stock_ordering_line_count,
+                COALESCE(SUM(quantity), 0)::int AS stock_ordering_quantity
+         FROM ordering_lines
+         GROUP BY source_order_id
+       )
+       SELECT fj.*,
+              COALESCE(ls.stock_ordering_line_count, 0)::int AS stock_ordering_line_count,
+              COALESCE(ls.stock_ordering_quantity, 0)::int AS stock_ordering_quantity
+       FROM filtered_jobs fj
+       JOIN line_summary ls ON ls.source_order_id = fj.source_order_id
+       ORDER BY COALESCE(fj.delivery_date, fj.order_date) ASC NULLS LAST,
+                fj.order_no DESC`,
+      [[
+        TEST_DASHBOARD_GROUP_IDS.PRINT,
+        TEST_DASHBOARD_GROUP_IDS.EMBROIDERY,
+        TEST_DASHBOARD_GROUP_IDS.COMPLETED,
+      ]]
+    );
+
+    const sourceOrderIds = jobs.rows.map((job) => job.source_order_id);
+    const lines = sourceOrderIds.length
+      ? await pool.query(
+        `SELECT *
+         FROM database_job_line_items
+         WHERE source_order_id = ANY($1::int[])
+           AND is_non_deliverable IS NOT TRUE
+           AND is_internal IS NOT TRUE
+         ORDER BY source_order_id, COALESCE(line_sort_order, source_order_item_id), source_order_item_id`,
+        [sourceOrderIds]
+      )
+      : { rows: [] };
+
+    const linesByJob = new Map();
+    for (const line of lines.rows) {
+      if (!linesByJob.has(line.source_order_id)) linesByJob.set(line.source_order_id, []);
+      linesByJob.get(line.source_order_id).push(line);
+    }
+
+    res.json({
+      jobs: jobs.rows.map((job) => ({
+        ...job,
+        lineItems: linesByJob.get(job.source_order_id) || [],
+      })),
+    });
+  } catch (err) {
+    console.error('GET /api/database/stock-ordering', err);
+    res.status(500).json({ error: 'Failed to fetch stock ordering jobs' });
   }
 });
 
