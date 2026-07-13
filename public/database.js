@@ -2516,6 +2516,7 @@
     const compactClass = options.compact ? ' db-stock-ordering-lines-compact' : '';
     return `
       <table class="db-stock-ordering-lines${compactClass}">
+        ${renderStockOrderingLineColgroup(lineItems)}
         <thead>
           <tr>
             <th>Type</th>
@@ -2534,6 +2535,28 @@
         </tbody>
       </table>
     `;
+  }
+
+  function renderStockOrderingLineColgroup(lineItems) {
+    const headers = ['Type', 'Code', 'Description', 'Colour', 'Size', 'Qty', 'Supplier'];
+    const minChars = [6, 6, 12, 8, 6, 4, 8];
+    const rows = (lineItems || []).map((item) => [
+      isStockItem(item) ? 'Stock' : 'Non-stock',
+      orderDocumentItemCode(item),
+      orderDocumentItemDescription(item),
+      item.colour || '',
+      item.size || '',
+      formatNumber(orderAckQuantity(item)),
+      item.supplier_name || '',
+    ]);
+    const widths = headers.map((header, columnIndex) => {
+      const maxChars = rows.reduce(
+        (max, row) => Math.max(max, String(row[columnIndex] || '').length),
+        header.length
+      );
+      return Math.max(minChars[columnIndex], maxChars + 2);
+    });
+    return `<colgroup>${widths.map((width) => `<col style="width:${width}ch">`).join('')}</colgroup>`;
   }
 
   function renderStockOrderingLineRow(item) {

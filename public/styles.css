@@ -2855,11 +2855,13 @@ body.modal-open{overflow:hidden}
   border:1px solid #777;
   background:#efefef;
   padding:4px;
+  overflow:auto;
 }
 .db-stock-ordering-lines{
-  width:100%;
+  width:auto;
+  max-width:none;
   border-collapse:collapse;
-  table-layout:fixed;
+  table-layout:auto;
   background:#fff;
   font:11px Arial, Helvetica, sans-serif;
 }
@@ -2877,13 +2879,8 @@ body.modal-open{overflow:hidden}
   background:#e9e9e9;
   font-weight:700;
 }
-.db-stock-ordering-lines th:nth-child(1){width:68px}
-.db-stock-ordering-lines th:nth-child(2){width:74px}
-.db-stock-ordering-lines th:nth-child(4){width:98px}
-.db-stock-ordering-lines th:nth-child(5){width:58px}
-.db-stock-ordering-lines th:nth-child(6){width:44px;text-align:center}
+.db-stock-ordering-lines th:nth-child(6){text-align:center}
 .db-stock-ordering-lines td:nth-child(6){text-align:center}
-.db-stock-ordering-lines th:nth-child(7){width:128px}
 .db-stock-ordering-actions{
   height:38px;
   display:flex;
