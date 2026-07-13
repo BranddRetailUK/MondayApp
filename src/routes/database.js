@@ -277,7 +277,9 @@ router.get('/api/database/stock-ordering', async (_req, res) => {
              'TRANSFER PRINTING',
              'IN PRODUCTION',
              'COMPLETED',
-             'INVOICED'
+             'INVOICED',
+             'STOCK ORDERED',
+             'ORDERED'
            )
            AND COALESCE(group_id, '') <> ALL($1::text[])
        ),

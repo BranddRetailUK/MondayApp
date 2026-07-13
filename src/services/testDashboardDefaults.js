@@ -32,7 +32,7 @@ const STATUS_SETTINGS = {
     7: 'SAMPLED',
     8: 'READY TO PRINT',
     9: 'TRANSFER PRINTING',
-    10: 'ORDERED',
+    10: 'STOCK ORDERED',
     11: 'PART-STOCK',
     12: 'COMPLETED',
     13: 'CHECKED IN',

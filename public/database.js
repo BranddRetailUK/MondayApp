@@ -16,6 +16,8 @@
   const OUTSTANDING_STATUS_COLUMN_WIDTH = 128;
   const OUTSTANDING_TABLE_FIXED_WIDTH = 19 + 68 + 198 + 36 + 65 + 88 + 82 + OUTSTANDING_STATUS_COLUMN_WIDTH;
   const STOCK_ORDERING_TABLE_COLUMN_COUNT = 10;
+  const TEST_DASHBOARD_STATUS_COLUMN_ID = 'label__1';
+  const STOCK_ORDERED_STATUS_LABEL = 'STOCK ORDERED';
   const OUTSTANDING_TITLE_COLUMN_MIN_WIDTH = 170;
   const OUTSTANDING_TITLE_CELL_EXTRA_WIDTH = 12;
   const ORDER_ACK_LOGO_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781699668/ultimate_logo_imyxvr.png';
@@ -105,6 +107,8 @@
     stockOrderingSelectedIds: new Set(),
     stockOrderingExpandedIds: new Set(),
     stockOrderingSnapshot: null,
+    stockOrderingStatusSaving: false,
+    stockOrderingStatusAppliedIds: new Set(),
     orderLoadToken: 0,
     orderLoadComplete: false,
     orderSearchQuery: '',
@@ -2433,7 +2437,7 @@
 
     try {
       const data = await fetchJson('/api/database/stock-ordering');
-      state.stockOrderingJobs = data.jobs || [];
+      state.stockOrderingJobs = (data.jobs || []).filter((job) => !isStockOrderedDashboardStatus(job.dashboard_status));
       state.stockOrderingLoaded = true;
       renderStockOrderingJobs();
     } catch (err) {
@@ -2449,7 +2453,17 @@
 
   function renderStockOrderingJobs() {
     if (!els.stockOrderingBody) return;
-    const jobs = state.stockOrderingJobs || [];
+    const jobs = (state.stockOrderingJobs || []).filter((job) => !isStockOrderedDashboardStatus(job.dashboard_status));
+    if (jobs.length !== (state.stockOrderingJobs || []).length) {
+      const visibleIds = new Set(jobs.map((job) => String(job.source_order_id || '')).filter(Boolean));
+      state.stockOrderingJobs = jobs;
+      for (const selectedId of Array.from(state.stockOrderingSelectedIds)) {
+        if (!visibleIds.has(selectedId)) state.stockOrderingSelectedIds.delete(selectedId);
+      }
+      for (const expandedId of Array.from(state.stockOrderingExpandedIds)) {
+        if (!visibleIds.has(expandedId)) state.stockOrderingExpandedIds.delete(expandedId);
+      }
+    }
     if (!jobs.length) {
       els.stockOrderingBody.innerHTML = renderStatusRow('No jobs require stock ordering', STOCK_ORDERING_TABLE_COLUMN_COUNT);
       updateStockOrderingControls();
@@ -2619,6 +2633,77 @@
 
   function stockOrderingQuantity(job) {
     return stockOrderingLineItems(job).reduce((sum, item) => sum + orderAckQuantity(item), 0);
+  }
+
+  function isStockOrderedDashboardStatus(status) {
+    const normalized = String(status || '').trim().toLowerCase();
+    return normalized === 'stock ordered' || normalized === 'ordered';
+  }
+
+  async function markStockOrderingSnapshotOrdered() {
+    if (state.activeDocumentType !== 'stock-ordering') return true;
+    if (state.stockOrderingStatusSaving) return false;
+
+    const jobs = (state.stockOrderingSnapshot?.jobs || [])
+      .filter((job) => job?.source_order_id)
+      .filter((job) => !state.stockOrderingStatusAppliedIds.has(String(job.source_order_id)));
+    if (!jobs.length) return true;
+
+    state.stockOrderingStatusSaving = true;
+    setOrderAckActionSaving(true);
+    try {
+      for (const job of jobs) {
+        const sourceOrderId = String(job.source_order_id);
+        await fetchJson(`/api/test-dashboard/items/${encodeURIComponent(sourceOrderId)}/status-column`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            columnId: TEST_DASHBOARD_STATUS_COLUMN_ID,
+            label: STOCK_ORDERED_STATUS_LABEL,
+          }),
+        });
+        state.stockOrderingStatusAppliedIds.add(sourceOrderId);
+      }
+      removeStockOrderedJobsFromStockOrderingList(jobs);
+      updateCachedDashboardStatusForJobs(jobs, STOCK_ORDERED_STATUS_LABEL);
+      return true;
+    } catch (err) {
+      console.error('Failed to mark stock ordering jobs as ordered', err);
+      alert(err.message || 'Failed to update dashboard status to Stock Ordered');
+      return false;
+    } finally {
+      state.stockOrderingStatusSaving = false;
+      setOrderAckActionSaving(false);
+    }
+  }
+
+  function removeStockOrderedJobsFromStockOrderingList(jobs) {
+    const orderedIds = new Set((jobs || []).map((job) => String(job.source_order_id || '')).filter(Boolean));
+    if (!orderedIds.size) return;
+    state.stockOrderingJobs = (state.stockOrderingJobs || []).filter((job) => (
+      !orderedIds.has(String(job.source_order_id || ''))
+    ));
+    orderedIds.forEach((id) => {
+      state.stockOrderingSelectedIds.delete(id);
+      state.stockOrderingExpandedIds.delete(id);
+    });
+    if (state.activeView === 'stock-ordering') renderStockOrderingJobs();
+  }
+
+  function updateCachedDashboardStatusForJobs(jobs, statusLabel) {
+    const statusUpdatedAt = new Date().toISOString();
+    for (const job of jobs || []) {
+      if (!job?.source_order_id) continue;
+      const patch = {
+        source_order_id: job.source_order_id,
+        dashboard_status: statusLabel,
+        dashboard_status_updated_at: statusUpdatedAt,
+      };
+      updateOutstandingJob(patch);
+      if (state.selectedJob && Number(state.selectedJob.source_order_id) === Number(job.source_order_id)) {
+        state.selectedJob = { ...state.selectedJob, ...patch };
+      }
+    }
   }
 
   async function loadOutstandingOrders(options = {}) {
@@ -3720,6 +3805,7 @@
     state.activeDocumentType = 'stock-ordering';
     state.documentGeneratedAt = snapshot.generatedAt;
     state.stockOrderingSnapshot = snapshot;
+    state.stockOrderingStatusAppliedIds.clear();
 
     const modal = ensureOrderAckModal();
     const shell = modal.querySelector('.db-order-ack-shell');
@@ -4148,7 +4234,7 @@
     return modal;
   }
 
-  function handleOrderAckModalClick(event) {
+  async function handleOrderAckModalClick(event) {
     const modal = document.getElementById('db-order-ack-modal');
     if (!modal || modal.hidden) return;
 
@@ -4159,6 +4245,7 @@
 
     const button = event.target.closest('button');
     if (!button || !modal.contains(button)) return;
+    if (button.disabled) return;
 
     if (button.dataset.dbAckClose) {
       closeOrderAcknowledgement();
@@ -4166,7 +4253,7 @@
     }
 
     if (button.dataset.dbAckPrint || button.dataset.dbAckDownload) {
-      printDatabaseDocument();
+      await printDatabaseDocument();
     }
   }
 
@@ -4649,13 +4736,17 @@
     }
   }
 
-  function printOrderAcknowledgement() {
-    printDatabaseDocument();
+  async function printOrderAcknowledgement() {
+    await printDatabaseDocument();
   }
 
-  function printDatabaseDocument() {
+  async function printDatabaseDocument() {
     const modal = document.getElementById('db-order-ack-modal');
     if (!modal || modal.hidden) return;
+    if (state.activeDocumentType === 'stock-ordering') {
+      const updated = await markStockOrderingSnapshotOrdered();
+      if (!updated) return;
+    }
 
     const previousTitle = document.title;
     document.title = databaseDocumentPdfFilename();
@@ -4673,6 +4764,14 @@
       window.print();
       window.setTimeout(cleanup, 1500);
     }, 50);
+  }
+
+  function setOrderAckActionSaving(saving) {
+    const modal = document.getElementById('db-order-ack-modal');
+    if (!modal) return;
+    modal.querySelectorAll('[data-db-ack-print], [data-db-ack-download]').forEach((button) => {
+      button.disabled = Boolean(saving);
+    });
   }
 
   function orderAckPdfFilename() {

@@ -76,6 +76,7 @@ const STATUS_LABEL_FALLBACK_COLORS = {
   'pre-production': '#6840b3',
   'no stock': '#ff7f50',
   'ordered': '#2b7de9',
+  'stock ordered': '#2b7de9',
   'critical': '#bb3354',
   'urgent': '#e2445c',
   'high': '#ff642e',

@@ -3183,6 +3183,11 @@ body.modal-open{overflow:hidden}
   font:12px Arial, Helvetica, sans-serif;
   cursor:pointer;
 }
+.db-order-ack-action:disabled,
+.db-order-ack-close:disabled{
+  opacity:.55;
+  cursor:not-allowed;
+}
 .db-order-ack-close{
   min-width:62px;
   background:#303747;

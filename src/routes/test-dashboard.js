@@ -33,6 +33,7 @@ const DEFAULT_OFFICE_GROUP_ID = TEST_DASHBOARD_GROUP_IDS.OFFICE;
 const AWAITING_APPROVAL_LABEL = 'AWAITING APPROVAL';
 const WAITING_APPROVAL_LABEL = 'WAITING APPROVAL';
 const NO_STOCK_LABEL = 'NO STOCK';
+const STOCK_ORDERED_LABEL = 'STOCK ORDERED';
 const HOLD_LABEL = 'HOLD';
 const PRE_PRODUCTION_LABEL = 'PRE-PRODUCTION';
 const COMPLETED_LABEL = 'COMPLETED';
@@ -383,7 +384,8 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (r
           });
         }
         columnValues[column.id] = checkboxValue(column, true);
-        applyApprovedDashboardColumnValues(columns, columnValues);
+        applyApprovedDashboardColumnValues(columns, columnValues, job);
+        const approvedStatusLabel = approvedDashboardStatusLabel(job, columnValues);
         nextState = {
           group_id: TEST_DASHBOARD_GROUP_IDS.PRE_PRODUCTION,
           item_name: privateJob ? state?.item_name || '' : state?.item_name || formatJobName(job),
@@ -392,7 +394,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (r
         };
         if (!privateJob) {
           databaseJob = await updateDatabaseJobDashboardFields(pool, job.source_order_id, {
-            status: NO_STOCK_LABEL,
+            status: approvedStatusLabel,
             priority: '',
             jobApproved: true,
           });
@@ -1061,6 +1063,7 @@ function isAllowedUnapprovedManualStatus(label) {
   const normalized = normalizeColumnTitle(label);
   return normalized === HOLD_LABEL ||
     normalized === NO_STOCK_LABEL ||
+    isStockOrderedStatus(normalized) ||
     normalized === PRE_PRODUCTION_LABEL ||
     normalized === COMPLETED_LABEL ||
     normalized === 'TO SAMPLE' ||
@@ -1089,14 +1092,25 @@ function applyPrivateAwaitingApprovalColumnValues(columns, columnValues) {
   if (status) columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS] = status;
 }
 
-function applyApprovedDashboardColumnValues(columns, columnValues) {
+function applyApprovedDashboardColumnValues(columns, columnValues, job = {}) {
   delete columnValues[TEST_DASHBOARD_COLUMN_IDS.PRIORITY];
 
   const dueDate = dateValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.DATE), addDaysFromTodayIso(14));
   if (dueDate) columnValues[TEST_DASHBOARD_COLUMN_IDS.DATE] = dueDate;
 
-  const status = statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, NO_STOCK_LABEL);
+  const currentStatus = normalizeColumnTitle(
+    job?.dashboard_status || getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS])
+  );
+  const nextStatusLabel = isStockOrderedStatus(currentStatus) ? STOCK_ORDERED_LABEL : NO_STOCK_LABEL;
+  const status = statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, nextStatusLabel);
   if (status) columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS] = status;
+}
+
+function approvedDashboardStatusLabel(job = {}, columnValues = {}) {
+  const statusText = normalizeColumnTitle(
+    job?.dashboard_status || getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS])
+  );
+  return isStockOrderedStatus(statusText) ? STOCK_ORDERED_LABEL : NO_STOCK_LABEL;
 }
 
 async function getApprovalRequirements(job, stateValues = {}) {
@@ -1172,6 +1186,7 @@ async function ensureTestDashboardDefaults(db) {
   for (const column of TEST_DASHBOARD_SUBITEM_COLUMNS) {
     await upsertColumnDefault(db, column, true);
   }
+  await migrateStockOrderedStatusLabel(db);
 }
 
 async function upsertColumnDefault(db, column, isSubitem) {
@@ -1185,6 +1200,19 @@ async function upsertColumnDefault(db, column, isSubitem) {
        position = COALESCE(test_dashboard_columns.position, EXCLUDED.position),
        updated_at = NOW()`,
     [column.id, column.title, column.type, column.settings_str || '', isSubitem, column.position || null]
+  );
+}
+
+async function migrateStockOrderedStatusLabel(db) {
+  await db.query(
+    `UPDATE test_dashboard_columns
+     SET settings_str = jsonb_set(settings_str::jsonb, '{labels,10}', to_jsonb($3::text), true)::text,
+         updated_at = NOW()
+     WHERE id = $1
+       AND is_subitem = $2
+       AND COALESCE(settings_str, '') <> ''
+       AND settings_str::jsonb #>> '{labels,10}' = 'ORDERED'`,
+    [TEST_DASHBOARD_COLUMN_IDS.STATUS, false, STOCK_ORDERED_LABEL]
   );
 }
 
@@ -1500,6 +1528,7 @@ function applyDashboardAutomations({ job, currentState, column, columnValues, ch
 
 function isManualStatusAutomationOverride(statusText) {
   return statusText === COMPLETED_LABEL ||
+    isStockOrderedStatus(statusText) ||
     statusText === 'TO SAMPLE' ||
     statusText === 'SAMPLED';
 }
@@ -1641,7 +1670,7 @@ function groupIdForStatusAndType(statusText, typeText) {
   if (statusText === 'HOLD') return TEST_DASHBOARD_GROUP_IDS.HOLD;
   if (statusText === 'TO SAMPLE') return TEST_DASHBOARD_GROUP_IDS.TO_SAMPLE;
   if (statusText === 'SAMPLED') return TEST_DASHBOARD_GROUP_IDS.OFFICE;
-  if (statusText === 'PRE-PRODUCTION' || statusText === 'NO STOCK') {
+  if (statusText === 'PRE-PRODUCTION' || statusText === 'NO STOCK' || isStockOrderedStatus(statusText)) {
     return TEST_DASHBOARD_GROUP_IDS.PRE_PRODUCTION;
   }
   if (statusText === 'READY TO PRINT') {
@@ -2395,7 +2424,13 @@ function findStatusOption(column, requestedLabel) {
 function normalizeStatusLookupLabel(value) {
   const normalized = normalizeColumnTitle(value);
   if (normalized === AWAITING_APPROVAL_LABEL || normalized === WAITING_APPROVAL_LABEL) return WAITING_APPROVAL_LABEL;
+  if (isStockOrderedStatus(normalized)) return STOCK_ORDERED_LABEL;
   return normalized;
+}
+
+function isStockOrderedStatus(value) {
+  const normalized = normalizeColumnTitle(value);
+  return normalized === STOCK_ORDERED_LABEL || normalized === 'ORDERED';
 }
 
 function dashboardLabelsForChangedColumn(column, label) {
