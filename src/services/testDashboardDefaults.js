@@ -1,4 +1,5 @@
 const TEST_DASHBOARD_BOARD_ID = 'test-dashboard';
+const AWAITING_APPROVAL_STATUS_COLOR = '#2b2b2c';
 
 const TEST_DASHBOARD_GROUPS = [
   { id: 'group_mkv26kq5', title: 'HOLD', color: '#bb3354', position: 16224, sort_order: 1 },
@@ -26,7 +27,6 @@ const STATUS_SETTINGS = {
     1: 'HOLD',
     2: 'IN PRODUCTION',
     3: 'INVOICED',
-    4: 'PRE-PRODUCTION',
     5: 'AWAITING APPROVAL',
     6: 'TO SAMPLE',
     7: 'SAMPLED',
@@ -44,8 +44,7 @@ const STATUS_SETTINGS = {
     1: { color: '#bb3354', border: '#a42d4a', var_name: 'dark-red' },
     2: { color: '#cab641', border: '#c0ab31', var_name: 'mustered' },
     3: { color: '#ff007f', border: '#e01279', var_name: 'dark-pink' },
-    4: { color: '#401694', border: '#401694', var_name: 'dark_indigo' },
-    5: { color: '#c4c4c4', border: '#b0b0b0', var_name: 'grey' },
+    5: { color: AWAITING_APPROVAL_STATUS_COLOR, border: AWAITING_APPROVAL_STATUS_COLOR, var_name: 'board-background' },
     6: { color: '#9cd326', border: '#89b921', var_name: 'lime-green' },
     7: { color: '#579bfc', border: '#4387e8', var_name: 'bright-blue' },
     8: { color: '#037f4c', border: '#006b38', var_name: 'grass-green' },
@@ -161,6 +160,7 @@ module.exports = {
   TEST_DASHBOARD_COLUMNS,
   TEST_DASHBOARD_SUBITEM_COLUMNS,
   TEST_DASHBOARD_COLUMN_IDS,
+  AWAITING_APPROVAL_STATUS_COLOR,
   STATUS_SETTINGS,
   PRIORITY_SETTINGS,
   TYPE_SETTINGS,

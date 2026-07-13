@@ -10,6 +10,7 @@ const {
   TEST_DASHBOARD_COLUMNS,
   TEST_DASHBOARD_SUBITEM_COLUMNS,
   TEST_DASHBOARD_COLUMN_IDS,
+  AWAITING_APPROVAL_STATUS_COLOR,
   normalizeColumnTitle,
 } = require('../services/testDashboardDefaults');
 const {
@@ -1256,6 +1257,8 @@ async function ensureTestDashboardDefaults(db) {
     await upsertColumnDefault(db, column, true);
   }
   await migrateStockOrderedStatusLabel(db);
+  await removePreProductionStatusOption(db);
+  await migrateAwaitingApprovalStatusColor(db);
 }
 
 async function upsertColumnDefault(db, column, isSubitem) {
@@ -1282,6 +1285,38 @@ async function migrateStockOrderedStatusLabel(db) {
        AND COALESCE(settings_str, '') <> ''
        AND settings_str::jsonb #>> '{labels,10}' = 'ORDERED'`,
     [TEST_DASHBOARD_COLUMN_IDS.STATUS, false, STOCK_ORDERED_LABEL]
+  );
+}
+
+async function removePreProductionStatusOption(db) {
+  await db.query(
+    `UPDATE test_dashboard_columns
+     SET settings_str = ((settings_str::jsonb #- '{labels,4}') #- '{labels_colors,4}')::text,
+         updated_at = NOW()
+     WHERE id = $1
+       AND is_subitem = $2
+       AND COALESCE(settings_str, '') <> ''
+       AND settings_str::jsonb #>> '{labels,4}' = $3`,
+    [TEST_DASHBOARD_COLUMN_IDS.STATUS, false, PRE_PRODUCTION_LABEL]
+  );
+}
+
+async function migrateAwaitingApprovalStatusColor(db) {
+  await db.query(
+    `UPDATE test_dashboard_columns
+     SET settings_str = jsonb_set(
+           settings_str::jsonb,
+           '{labels_colors,5}',
+           jsonb_build_object('color', $3::text, 'border', $3::text, 'var_name', 'board-background'),
+           true
+         )::text,
+         updated_at = NOW()
+     WHERE id = $1
+       AND is_subitem = $2
+       AND COALESCE(settings_str, '') <> ''
+       AND UPPER(TRIM(settings_str::jsonb #>> '{labels,5}')) IN ('AWAITING APPROVAL', 'WAITING APPROVAL')
+       AND COALESCE(settings_str::jsonb #>> '{labels_colors,5,color}', '') <> $3`,
+    [TEST_DASHBOARD_COLUMN_IDS.STATUS, false, AWAITING_APPROVAL_STATUS_COLOR]
   );
 }
 
