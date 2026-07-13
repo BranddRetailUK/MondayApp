@@ -2639,6 +2639,7 @@
   }
 
   function outstandingDashboardStatusLabel(job) {
+    if (categoryForJob(job || {}) === 'gifts') return '';
     const explicit = String(job?.dashboard_status || '').trim();
     if (explicit) return explicit;
     if (state.orderMode === 'open' && !truthy(job?.is_complete)) return 'AWAITING APPROVAL';

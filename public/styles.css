@@ -2780,11 +2780,11 @@ body.modal-open{overflow:hidden}
   background:#e6f1ff;
 }
 .db-outstanding-row.db-dashboard-status-completed td{
-  background:#e8f7ee;
+  background:#c8f0d6;
 }
 .db-outstanding-row.db-dashboard-status-completed:hover td,
 .db-outstanding-row.db-dashboard-status-completed.selected td{
-  background:#d8f0e2;
+  background:#aee5c2;
 }
 .db-customer-row{
   cursor:pointer;
