@@ -33,6 +33,7 @@ const DASHBOARD_TAB_NAMES = ['dashboard', 'database', 'visuals', 'test-dashboard
 const BOARD_AUTO_REFRESH_MS = 1000;
 const BOARD_CONTEXT_MONDAY = 'monday';
 const BOARD_CONTEXT_TEST = 'test-dashboard';
+const ULTIMATE_PACKING_USER_NAME = 'ultimate packing';
 const TEST_DASHBOARD_CLIENT_COLUMN_IDS = Object.freeze({
   JOB: 'checkbox1__1',
   PRIORITY: 'priority_mkn8p46c',
@@ -146,6 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadBoard({ forceRefresh: true });
   startBoardAutoRefresh();
   startTestBoardAutoRefresh();
+  window.ultimateHubUserPromise?.then(() => refreshPackingControlVisibility());
 });
 window.loadBoard = loadBoard;
 window.loadTestBoard = loadTestBoard;
@@ -745,7 +747,9 @@ function renderBoard(payload, options = {}) {
   const boardSortPlan = getBoardSortPlan(boardColumns);
   const dueDateColumn = getDueDateColumn(boardColumns);
   const allBoardItems = getAllBoardItems(board.groups || []);
-  const globalJobNameWidth = buildJobNameColumnWidth(allBoardItems);
+  const globalJobNameWidth = buildJobNameColumnWidth(allBoardItems) + (
+    context === BOARD_CONTEXT_TEST && !isUltimatePackingUser() ? 37 : 0
+  );
   const parentTotalColumn = context === BOARD_CONTEXT_TEST
     ? buildParentTotalColumnSpec(allBoardItems, subitemColumns)
     : null;
@@ -945,7 +949,8 @@ function buildGroupSummary(groupName, items, gridSpec, titleWidth, options = {})
   if (simpleSummary) summary.classList.add('simple-closed-summary');
   if (isToSampleGroup(groupName) && itemCount > 0) summary.classList.add('to-sample-has-jobs');
   summary.style.setProperty('--board-cols', gridSpec.template);
-  const summaryColumns = gridSpec.columns.slice(2);
+  const nameColumnIndex = gridSpec.columns.findIndex((spec) => spec.kind === 'name');
+  const summaryColumns = gridSpec.columns.slice(nameColumnIndex + 1);
   const summaryTitleWidth = titleWidth || 180;
   const summaryMinWidth = summaryTitleWidth + summaryColumns.reduce((sum, spec) => sum + spec.width, 0);
   summary.style.setProperty(
@@ -1142,7 +1147,9 @@ function normalizeColumns(columns) {
 
 function buildDashboardGridSpec(mondayColumns, { subitem = false, widthOverrides = new Map(), nameWidth = null, printWidth = 82, parentTotalColumn = null } = {}) {
   const columns = [
-    subitem ? null : { kind: 'print', title: 'LABEL', width: printWidth },
+    subitem || !isUltimatePackingUser()
+      ? null
+      : { kind: 'print', title: 'LABEL', width: printWidth },
     { kind: 'name', title: subitem ? 'Subitem' : 'JOB', width: nameWidth || (subitem ? 520 : 560) },
     !subitem && parentTotalColumn ? {
       kind: 'jobTotal',
@@ -1776,19 +1783,7 @@ function buildPrintCell(item, context = BOARD_CONTEXT_MONDAY) {
   const jobTitle = item.name || '';
 
   if (context === BOARD_CONTEXT_TEST) {
-    const menuBtn = document.createElement('button');
-    menuBtn.type = 'button';
-    menuBtn.className = 'test-row-menu-button';
-    menuBtn.title = 'Job actions';
-    menuBtn.setAttribute('aria-label', 'Job actions');
-    menuBtn.setAttribute('aria-haspopup', 'menu');
-    menuBtn.innerHTML = '<span></span><span></span><span></span>';
-    menuBtn.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      openTestRowMenu(menuBtn, item);
-    });
-    cell.appendChild(menuBtn);
+    cell.appendChild(buildTestRowMenuButton(item));
   }
 
   const printBtn = document.createElement('button');
@@ -1816,6 +1811,10 @@ function buildNameCell(item, initiallyOpen = false, { context = BOARD_CONTEXT_MO
   cell.className = 'grid-cell job-cell title-cell';
   const titleWrap = document.createElement('div');
   titleWrap.className = 'title-wrap';
+
+  if (context === BOARD_CONTEXT_TEST && !isUltimatePackingUser()) {
+    titleWrap.appendChild(buildTestRowMenuButton(item));
+  }
 
   if (subitems.length > 0) {
     const rowToggle = document.createElement('button');
@@ -1857,6 +1856,22 @@ function buildNameCell(item, initiallyOpen = false, { context = BOARD_CONTEXT_MO
 
   cell.appendChild(titleWrap);
   return cell;
+}
+
+function buildTestRowMenuButton(item) {
+  const menuBtn = document.createElement('button');
+  menuBtn.type = 'button';
+  menuBtn.className = 'test-row-menu-button';
+  menuBtn.title = 'Job actions';
+  menuBtn.setAttribute('aria-label', 'Job actions');
+  menuBtn.setAttribute('aria-haspopup', 'menu');
+  menuBtn.innerHTML = '<span></span><span></span><span></span>';
+  menuBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openTestRowMenu(menuBtn, item);
+  });
+  return menuBtn;
 }
 
 function getDashboardSubitemBadgeCount(subitems) {
@@ -4473,19 +4488,37 @@ async function printLabel(itemId, rawTitle, context = BOARD_CONTEXT_MONDAY) {
 
 function addSerialScannerUI() {
   const bar = document.getElementById('sidebarDashboardControls') || document.getElementById('labels-toolbar');
+  let btn = document.getElementById('connectScannerBtn');
 
   // Connect Scanner button
-  if (!document.getElementById('connectScannerBtn')) {
-    const btn = document.createElement('button');
+  if (!isUltimatePackingUser()) {
+    btn?.remove();
+  } else if (!btn) {
+    btn = document.createElement('button');
     btn.id = 'connectScannerBtn';
     btn.textContent = 'Connect Scanner';
     btn.className = 'btn success';
     btn.onclick = connectSerialScanner;
     if (bar) bar.appendChild(btn);
+  } else if (bar && btn.parentElement !== bar) {
+    bar.appendChild(btn);
   }
 
   addPriorityHighlightUI();
   document.getElementById('scanPill')?.remove();
+}
+
+function isUltimatePackingUser(user = window.ultimateHubUser) {
+  const fullName = String(
+    user?.full_name || [user?.first_name, user?.last_name].filter(Boolean).join(' ')
+  ).trim().replace(/\s+/g, ' ').toLowerCase();
+  return fullName === ULTIMATE_PACKING_USER_NAME;
+}
+
+function refreshPackingControlVisibility() {
+  addSerialScannerUI();
+  rerenderBoardContext(BOARD_CONTEXT_MONDAY);
+  rerenderBoardContext(BOARD_CONTEXT_TEST);
 }
 
 function ensureTestDashboardUI() {
