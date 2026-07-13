@@ -1794,15 +1794,7 @@ function buildPrintCell(item, context = BOARD_CONTEXT_MONDAY) {
   const printBtn = document.createElement('button');
   printBtn.textContent = 'Print';
   printBtn.className = 'job-action primary';
-  printBtn.addEventListener('click', async () => {
-    if (printBtn.disabled) return;
-    printBtn.disabled = true;
-    try {
-      await printLabel(item.id, jobTitle, context);
-    } finally {
-      if (printBtn.isConnected) printBtn.disabled = false;
-    }
-  });
+  printBtn.addEventListener('click', () => printLabel(item.id, jobTitle, context));
   cell.appendChild(printBtn);
 
   if (context === BOARD_CONTEXT_TEST) return cell;
@@ -4444,10 +4436,7 @@ async function printLabel(itemId, rawTitle, context = BOARD_CONTEXT_MONDAY) {
           function closeAfterPrint(){
             if (closeTimer) return;
             closeTimer = setTimeout(function(){
-              try {
-                if (window.frameElement) window.frameElement.remove();
-                else window.close();
-              } catch (e) {}
+              try { window.close(); } catch (e) {}
             }, 250);
           }
           function startPrint(){
@@ -4461,13 +4450,7 @@ async function printLabel(itemId, rawTitle, context = BOARD_CONTEXT_MONDAY) {
           }
           const qr = document.querySelector('.qr');
           if (qr) {
-            if (qr.complete) {
-              setTimeout(startPrint, 150);
-            } else {
-              qr.addEventListener('load', () => { setTimeout(startPrint, 150); }, { once: true });
-              qr.addEventListener('error', () => { setTimeout(startPrint, 150); }, { once: true });
-              setTimeout(startPrint, 3000);
-            }
+            qr.addEventListener('load', () => { setTimeout(startPrint, 150); });
           } else {
             setTimeout(startPrint, 150);
           }
@@ -4476,17 +4459,6 @@ async function printLabel(itemId, rawTitle, context = BOARD_CONTEXT_MONDAY) {
     </body>
     </html>
   `;
-
-  if (context === BOARD_CONTEXT_TEST) {
-    const frame = document.createElement('iframe');
-    frame.title = `Print label ${orderNumber || itemId}`;
-    frame.setAttribute('aria-hidden', 'true');
-    frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:4in;height:6in;border:0;pointer-events:none;';
-    frame.srcdoc = body;
-    document.body.appendChild(frame);
-    setTimeout(() => frame.remove(), 5 * 60 * 1000);
-    return;
-  }
 
   let win = null;
   try { win = window.open('', '', 'width=480,height=760'); } catch {}
