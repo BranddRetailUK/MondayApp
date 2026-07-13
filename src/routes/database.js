@@ -3,7 +3,24 @@ const router = express.Router();
 const pool = require('../db/pool');
 const { fullName } = require('../services/hubAuth');
 const { jobApprovedFromColumnValues } = require('../services/testDashboardDbFields');
-const { TEST_DASHBOARD_COLUMN_IDS } = require('../services/testDashboardDefaults');
+const {
+  TEST_DASHBOARD_COLUMN_IDS,
+  STATUS_SETTINGS,
+  normalizeColumnTitle,
+} = require('../services/testDashboardDefaults');
+
+const DASHBOARD_STATUS_COLORS = buildDashboardStatusColors(STATUS_SETTINGS);
+
+function buildDashboardStatusColors(settings) {
+  const labels = settings?.labels || {};
+  const colors = settings?.labels_colors || {};
+  return Object.freeze(Object.entries(labels).reduce((map, [index, label]) => {
+    const normalized = normalizeColumnTitle(label);
+    const color = colors?.[index]?.color;
+    if (normalized && color) map[normalized] = color;
+    return map;
+  }, {}));
+}
 
 function resolveJobApproved(job, dashboardState) {
   if (!job) return job?.proof_approved;
@@ -157,6 +174,7 @@ router.get('/api/database/jobs', async (req, res) => {
       total: includeTotal ? count.rows[0].total : null,
       limit,
       offset,
+      dashboardStatusColors: DASHBOARD_STATUS_COLORS,
     });
   } catch (err) {
     console.error('GET /api/database/jobs', err);

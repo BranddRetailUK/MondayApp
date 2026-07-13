@@ -2686,10 +2686,10 @@ body.modal-open{overflow:hidden}
 }
 #db-outstanding-table{
   width:var(--db-outstanding-table-width, 100%);
-  min-width:726px;
+  min-width:854px;
 }
 #db-outstanding-table.db-all-orders-mode{
-  min-width:824px;
+  min-width:952px;
 }
 #db-outstanding-table th:nth-child(2){width:68px}
 #db-outstanding-table th:nth-child(3),
@@ -2708,6 +2708,32 @@ body.modal-open{overflow:hidden}
 #db-outstanding-table th:nth-child(7){width:65px}
 #db-outstanding-table th:nth-child(8){width:88px}
 #db-outstanding-table th:nth-child(9){width:82px}
+#db-outstanding-table th:nth-child(10){
+  width:128px;
+  text-align:center;
+}
+#db-outstanding-table td.db-dashboard-status-cell{
+  padding:0;
+  color:#fff;
+  text-align:center;
+  font-weight:700;
+  text-transform:uppercase;
+}
+#db-outstanding-table td.db-dashboard-status-empty{
+  color:#000;
+}
+.db-dashboard-status-label{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  min-height:18px;
+  width:100%;
+  padding:1px 3px;
+  box-sizing:border-box;
+  overflow:hidden;
+  white-space:nowrap;
+  text-overflow:clip;
+}
 #db-to-invoice-table{
   min-width:760px;
 }
@@ -2752,6 +2778,13 @@ body.modal-open{overflow:hidden}
 .db-outstanding-row:hover td,
 .db-outstanding-row.selected td{
   background:#e6f1ff;
+}
+.db-outstanding-row.db-dashboard-status-completed td{
+  background:#e8f7ee;
+}
+.db-outstanding-row.db-dashboard-status-completed:hover td,
+.db-outstanding-row.db-dashboard-status-completed.selected td{
+  background:#d8f0e2;
 }
 .db-customer-row{
   cursor:pointer;
@@ -5109,10 +5142,10 @@ input.db-custom-line-input{
     height:min(62dvh, 520px);
   }
   #db-outstanding-table{
-    min-width:726px;
+    min-width:854px;
   }
   #db-outstanding-table.db-all-orders-mode{
-    min-width:824px;
+    min-width:952px;
   }
   #db-customers-table{
     min-width:860px;

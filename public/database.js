@@ -9,11 +9,12 @@
   const JOB_AUTOSAVE_MS = DESIGN_AUTOSAVE_MS;
   const CONTACT_AUTOSAVE_MS = DESIGN_AUTOSAVE_MS;
   const LINE_ORDER_AUTOSAVE_MS = 3500;
-  const OUTSTANDING_TABLE_COLUMN_COUNT = 8;
-  const OUTSTANDING_ALL_TABLE_COLUMN_COUNT = 9;
+  const OUTSTANDING_TABLE_COLUMN_COUNT = 9;
+  const OUTSTANDING_ALL_TABLE_COLUMN_COUNT = 10;
   const OUTSTANDING_INVOICE_COLUMN_WIDTH = 98;
   const TO_INVOICE_TABLE_COLUMN_COUNT = 7;
-  const OUTSTANDING_TABLE_FIXED_WIDTH = 19 + 68 + 198 + 36 + 65 + 88 + 82;
+  const OUTSTANDING_STATUS_COLUMN_WIDTH = 128;
+  const OUTSTANDING_TABLE_FIXED_WIDTH = 19 + 68 + 198 + 36 + 65 + 88 + 82 + OUTSTANDING_STATUS_COLUMN_WIDTH;
   const OUTSTANDING_TITLE_COLUMN_MIN_WIDTH = 170;
   const OUTSTANDING_TITLE_CELL_EXTRA_WIDTH = 12;
   const ORDER_ACK_LOGO_URL = 'https://res.cloudinary.com/dhlqooyuk/image/upload/v1781699668/ultimate_logo_imyxvr.png';
@@ -171,6 +172,7 @@
     activeDocumentType: 'order-ack',
     documentGeneratedAt: null,
     outstandingReportSnapshot: null,
+    dashboardStatusColors: {},
   };
 
   let els = {};
@@ -2448,6 +2450,7 @@
     if (mode === 'all' && state.orderSearchQuery) params.set('q', state.orderSearchQuery);
 
     const data = await fetchJson(`/api/database/jobs?${params.toString()}`);
+    storeDashboardStatusColors(data.dashboardStatusColors);
     const jobs = data.jobs || [];
     const limit = data.limit || PAGE_LIMIT;
     const nextOffset = offset + limit;
@@ -2601,8 +2604,10 @@
 
   function renderOutstandingRow(job) {
     const selected = state.selectedJob && Number(state.selectedJob.source_order_id) === Number(job.source_order_id);
+    const statusLabel = outstandingDashboardStatusLabel(job);
+    const statusCompleted = normalizeDashboardStatusLabel(statusLabel) === 'COMPLETED';
     return `
-      <tr class="db-outstanding-row ${selected ? 'selected' : ''}" data-job-id="${escapeAttr(job.source_order_id)}" tabindex="0">
+      <tr class="db-outstanding-row ${selected ? 'selected' : ''} ${statusCompleted ? 'db-dashboard-status-completed' : ''}" data-job-id="${escapeAttr(job.source_order_id)}" tabindex="0">
         <td class="db-row-selector">${selected ? '&#9654;' : ''}</td>
         <td class="db-order-link">${escapeHtml(job.order_no || '')}</td>
         <td class="db-invoice-number-cell">${renderInvoiceNumberCell(job)}</td>
@@ -2612,12 +2617,57 @@
         <td>${escapeHtml(staffShort(job.order_taken_by || job.trace_staff_id))}</td>
         <td>${escapeHtml(formatDate(job.order_date, 'long'))}</td>
         <td>${escapeHtml(outstandingDeliveryLabel(job))}</td>
+        ${renderOutstandingStatusCell(statusLabel)}
       </tr>
     `;
   }
 
   function outstandingDeliveryLabel(job) {
     return `${formatDate(job?.delivery_date, 'long')}${truthy(job?.customer_date_required) ? ' *' : ''}`;
+  }
+
+  function renderOutstandingStatusCell(statusLabel) {
+    const label = String(statusLabel || '').trim();
+    if (!label) return '<td class="db-dashboard-status-cell db-dashboard-status-empty"></td>';
+    return `
+      <td
+        class="db-dashboard-status-cell"
+        style="background-color:${escapeAttr(dashboardStatusColor(label))}"
+        title="${escapeAttr(label)}"
+      ><span class="db-dashboard-status-label">${escapeHtml(label)}</span></td>
+    `;
+  }
+
+  function outstandingDashboardStatusLabel(job) {
+    const explicit = String(job?.dashboard_status || '').trim();
+    if (explicit) return explicit;
+    if (state.orderMode === 'open' && !truthy(job?.is_complete)) return 'AWAITING APPROVAL';
+    return '';
+  }
+
+  function storeDashboardStatusColors(colors) {
+    if (!colors || typeof colors !== 'object') return;
+    state.dashboardStatusColors = Object.entries(colors).reduce((map, [label, color]) => {
+      const normalized = normalizeDashboardStatusLabel(label);
+      const safeColor = safeDashboardStatusColor(color, '');
+      if (normalized && safeColor) map[normalized] = safeColor;
+      return map;
+    }, {});
+  }
+
+  function dashboardStatusColor(label) {
+    return state.dashboardStatusColors[normalizeDashboardStatusLabel(label)] || '#c4c4c4';
+  }
+
+  function normalizeDashboardStatusLabel(label) {
+    const normalized = String(label || '').trim().replace(/\s+/g, ' ').toUpperCase();
+    if (normalized === 'WAITING APPROVAL') return 'AWAITING APPROVAL';
+    return normalized;
+  }
+
+  function safeDashboardStatusColor(color, fallback = '#c4c4c4') {
+    const value = String(color || '').trim();
+    return /^#[0-9a-f]{3,8}$/i.test(value) ? value : fallback;
   }
 
   function renderInvoiceNumberCell(job) {
