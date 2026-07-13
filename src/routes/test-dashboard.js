@@ -150,6 +150,12 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/group', async (req, res) =
     const statusLabel = statusLabelForMoveGroup(groupId);
     const state = privateJob ? job : await fetchJobState(job.source_order_id);
     const columnValues = { ...(state?.column_values || {}) };
+    const jobApproved = privateJob
+      ? jobApprovedFromColumnValues(columnValues) === true
+      : resolveJobApproved(job, columnValues);
+    if (groupId === TEST_DASHBOARD_GROUP_IDS.PRE_PRODUCTION && !jobApproved) {
+      return res.status(400).json({ error: 'Job approval is required before moving to Pre-Production' });
+    }
     const statusColumn = columnById(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS);
     if (statusColumn && statusLabel) {
       const status = statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, statusLabel);
@@ -1062,9 +1068,7 @@ function unapprovedStatusValue(columns, job, stateValues = {}) {
 function isAllowedUnapprovedManualStatus(label) {
   const normalized = normalizeColumnTitle(label);
   return normalized === HOLD_LABEL ||
-    normalized === NO_STOCK_LABEL ||
     isStockOrderedStatus(normalized) ||
-    normalized === PRE_PRODUCTION_LABEL ||
     normalized === COMPLETED_LABEL ||
     normalized === 'TO SAMPLE' ||
     normalized === 'SAMPLED';
@@ -1474,6 +1478,15 @@ function applyDashboardAutomations({ job, currentState, column, columnValues, ch
   const typeText = normalizeColumnTitle(deriveTypeLabel(job) || getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.TYPE]) || job.dashboard_type);
   const jobApproved = resolveJobApproved(job, columnValues);
 
+  if (title === 'STATUS' && !clearRequested && isStockOrderedStatus(statusText)) {
+    return {
+      group_id: currentDashboardGroupIdForStatusOnlyUpdate(job, currentState, typeText, jobApproved),
+      item_name: currentState?.item_name || formatJobName(job),
+      column_values: columnValues,
+      archived: false,
+    };
+  }
+
   if (title === 'STATUS' && !clearRequested && isManualStatusAutomationOverride(statusText)) {
     const automatedGroupId = groupIdForStatusAndType(statusText, typeText);
     if (statusText === COMPLETED_LABEL) {
@@ -1528,9 +1541,32 @@ function applyDashboardAutomations({ job, currentState, column, columnValues, ch
 
 function isManualStatusAutomationOverride(statusText) {
   return statusText === COMPLETED_LABEL ||
-    isStockOrderedStatus(statusText) ||
     statusText === 'TO SAMPLE' ||
     statusText === 'SAMPLED';
+}
+
+function currentDashboardGroupIdForStatusOnlyUpdate(job, currentState, typeText, jobApproved) {
+  const stateValues = currentState?.column_values || {};
+  const currentStatusText = normalizeColumnTitle(
+    job?.dashboard_status || getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS])
+  );
+  const currentGroupId = currentState?.group_id ||
+    groupIdForStatusAndType(currentStatusText, typeText) ||
+    deriveDefaultGroupId(job);
+  return sanitizeUnapprovedDashboardGroupId(currentGroupId, jobApproved);
+}
+
+function sanitizeUnapprovedDashboardGroupId(groupId, jobApproved) {
+  const fallback = groupId || TEST_DASHBOARD_GROUP_IDS.OFFICE;
+  if (jobApproved) return fallback;
+  if (
+    fallback === TEST_DASHBOARD_GROUP_IDS.PRE_PRODUCTION ||
+    fallback === TEST_DASHBOARD_GROUP_IDS.PRINT ||
+    fallback === TEST_DASHBOARD_GROUP_IDS.EMBROIDERY
+  ) {
+    return TEST_DASHBOARD_GROUP_IDS.OFFICE;
+  }
+  return fallback;
 }
 
 function applyPrivateDashboardAutomations({ currentJob, column, columnValues, changedLabel, clearRequested }) {
@@ -1647,7 +1683,15 @@ function resolveDashboardGroupId(job, state, scan) {
   const typeText = normalizeColumnTitle(
     deriveTypeLabel(job) || getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.TYPE]) || job.dashboard_type
   );
-  if (!resolveJobApproved(job, stateValues) && !isAllowedUnapprovedManualStatus(statusText)) {
+  const jobApproved = resolveJobApproved(job, stateValues);
+  if (!jobApproved) {
+    if (isStockOrderedStatus(statusText)) {
+      return sanitizeUnapprovedDashboardGroupId(state?.group_id || deriveDefaultGroupId(job), false);
+    }
+    if (isAllowedUnapprovedManualStatus(statusText)) {
+      const manualGroupId = groupIdForStatusAndType(statusText, typeText);
+      return sanitizeUnapprovedDashboardGroupId(manualGroupId || state?.group_id || deriveDefaultGroupId(job), false);
+    }
     return TEST_DASHBOARD_GROUP_IDS.OFFICE;
   }
   const automatedGroupId = groupIdForStatusAndType(statusText, typeText);
@@ -1670,7 +1714,7 @@ function groupIdForStatusAndType(statusText, typeText) {
   if (statusText === 'HOLD') return TEST_DASHBOARD_GROUP_IDS.HOLD;
   if (statusText === 'TO SAMPLE') return TEST_DASHBOARD_GROUP_IDS.TO_SAMPLE;
   if (statusText === 'SAMPLED') return TEST_DASHBOARD_GROUP_IDS.OFFICE;
-  if (statusText === 'PRE-PRODUCTION' || statusText === 'NO STOCK' || isStockOrderedStatus(statusText)) {
+  if (statusText === 'PRE-PRODUCTION' || statusText === 'NO STOCK') {
     return TEST_DASHBOARD_GROUP_IDS.PRE_PRODUCTION;
   }
   if (statusText === 'READY TO PRINT') {
