@@ -21,6 +21,7 @@ const ALL_YEARS_LABEL = 'all';
 const INSERT_BATCH_SIZE = 250;
 const MDB_EXPORT_BIN = resolveMdbExportBin();
 const ADDRESS_SOURCE_TABLES = ['tblOrder', 'tblCustomer', 'tblAddress', 'tblContact'];
+const TAKEN_BY_SOURCE_TABLES = ['tblOrder', 'tblStaff'];
 const PRODUCT_SOURCE_TABLES = [
   'tblProduct',
   'tblStyle',
@@ -131,7 +132,6 @@ const INSERT_ONLY_JOB_REFRESH_COLUMNS = [
   'complete_date',
   'is_complete',
   'delivery_note_date',
-  'order_taken_by',
   'updated_at_source',
 ];
 
@@ -203,6 +203,7 @@ async function main() {
   const addressesOnly = args.includes('--addresses-only');
   const productsOnly = args.includes('--products-only');
   const productsFromExistingOrders = args.includes('--products-from-existing-orders');
+  const takenByOnly = args.includes('--taken-by-only');
   const yearFilter = parseYearFilter(args);
   const sourceYearsLabel = formatYearFilter(yearFilter);
   const fileArg = args.find((arg) => !arg.startsWith('--')) || 'PS_XP_tab.mdb';
@@ -210,6 +211,12 @@ async function main() {
 
   if (addressesOnly && (productsOnly || productsFromExistingOrders)) {
     throw new Error('--addresses-only cannot be used with product-only import modes');
+  }
+  if (takenByOnly && (addressesOnly || productsOnly || productsFromExistingOrders)) {
+    throw new Error('--taken-by-only cannot be combined with address or product import modes');
+  }
+  if (takenByOnly && (append || insertOnly)) {
+    throw new Error('--taken-by-only is its own update mode and cannot be combined with --append or --insert-only');
   }
   if (productsOnly && productsFromExistingOrders) {
     throw new Error('--products-only and --products-from-existing-orders cannot be used together');
@@ -228,10 +235,24 @@ async function main() {
   console.log(`[database-import] Reading ${mdbPath}`);
   const sourceTables = addressesOnly
     ? ADDRESS_SOURCE_TABLES
+    : takenByOnly
+      ? TAKEN_BY_SOURCE_TABLES
     : (productsOnly || productsFromExistingOrders)
       ? PRODUCT_SOURCE_TABLES
       : Object.keys(TABLE_COLUMNS);
   const data = readSourceData(mdbPath, sourceTables);
+
+  if (takenByOnly) {
+    const rows = buildTakenByBackfillRows(data, yearFilter);
+    console.log(`[database-import] Taken-by backfill rows prepared: ${rows.length}`);
+    console.log(`[database-import] Years: ${sourceYearsLabel}`);
+    if (dryRun) {
+      printTakenByDryRun(rows);
+      return;
+    }
+    await importTakenByBackfillRows(rows);
+    return;
+  }
 
   if (productsOnly) {
     const productRows = buildAllProductRows(data);
@@ -289,6 +310,7 @@ async function main() {
 
 function printHelp() {
   console.log(`Usage: node scripts/import-database-mdb.js [PS_XP_tab.mdb] [--dry-run] [--append] [--insert-only] [--years=2025,2026]
+       node scripts/import-database-mdb.js [PS_XP_tab.mdb] --taken-by-only [--dry-run] [--years=2025,2026]
 
 Imports Access jobs into Railway/Postgres tables:
   database_jobs
@@ -303,6 +325,7 @@ Options:
   --append                       Skip deletes and upsert source rows into existing rows.
   --insert-only                  Skip deletes and insert only source rows that do not already exist.
   --addresses-only               Import only customer addresses and job address fields.
+  --taken-by-only                Backfill legacy order taken-by names from tblOrder.TakenByStaffID -> tblStaff without touching new-system/manual orders.
   --products-only                Import only the full product catalogue.
   --products-from-existing-orders Import only products referenced by existing database_job_line_items.
 
@@ -638,6 +661,29 @@ function buildProductRows(data, selectedProductIds) {
     .sort((a, b) => a.source_product_id - b.source_product_id);
 }
 
+function buildTakenByBackfillRows(data, yearFilter = null) {
+  const staff = mapByInt(data.tblStaff, 'staffid');
+  return (data.tblOrder || [])
+    .map((order) => {
+      const sourceYear = sourceYearForOrder(order);
+      if (yearFilter && !yearFilter.has(sourceYear)) return null;
+
+      const sourceOrderId = toInt(order.orderid);
+      if (!sourceOrderId) return null;
+
+      const takenByStaff = staff.get(toInt(order.takenbystaffid)) || {};
+      const orderTakenBy = staffDisplayName(takenByStaff);
+      if (!orderTakenBy) return null;
+
+      return {
+        source_order_id: sourceOrderId,
+        order_taken_by: orderTakenBy,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.source_order_id - b.source_order_id);
+}
+
 function buildAddressSnapshot(data, yearFilter = null) {
   const customers = mapByInt(data.tblCustomer, 'customerid');
   const addresses = mapByInt(data.tblAddress, 'addressid');
@@ -916,6 +962,72 @@ function printDryRun(snapshot) {
   });
 }
 
+function printTakenByDryRun(rows) {
+  console.log('[database-import] Dry run only. No taken-by rows updated.');
+  console.log('[database-import] Sample taken-by rows:');
+  rows.slice(0, 10).forEach((row) => {
+    console.log(`  - ${row.source_order_id} | ${row.order_taken_by}`);
+  });
+}
+
+async function importTakenByBackfillRows(rows) {
+  const pool = require('../src/db/pool');
+  const client = await pool.connect();
+
+  try {
+    await ensureDatabaseTables(client);
+    const result = await updateTakenByBackfillRows(client, rows);
+    console.log(`[database-import] Taken-by legacy backfill complete: ${result.affected}/${rows.length} rows updated`);
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+async function updateTakenByBackfillRows(client, rows) {
+  if (!rows.length) return { affected: 0 };
+
+  const columns = ['source_order_id', 'order_taken_by'];
+  let affected = 0;
+
+  for (let start = 0; start < rows.length; start += INSERT_BATCH_SIZE) {
+    const batch = rows.slice(start, start + INSERT_BATCH_SIZE);
+    const values = [];
+    const rowPlaceholders = batch.map((row, rowIndex) => {
+      const fields = columns.map((column, columnIndex) => {
+        values.push(row[column]);
+        return `$${(rowIndex * columns.length) + columnIndex + 1}${column === 'source_order_id' ? '::int' : '::text'}`;
+      });
+      return `(${fields.join(', ')})`;
+    });
+
+    const result = await client.query(
+      `UPDATE database_jobs AS jobs
+       SET order_taken_by = updates.order_taken_by,
+           imported_at = NOW()
+       FROM (VALUES ${rowPlaceholders.join(', ')})
+         AS updates(${columns.join(', ')})
+       WHERE jobs.source_order_id = updates.source_order_id
+         AND jobs.is_manual_entry IS NOT TRUE
+         AND NULLIF(TRIM(updates.order_taken_by), '') IS NOT NULL
+         AND jobs.order_owner_user_id IS NULL
+         AND NULLIF(TRIM(COALESCE(jobs.order_owner_name, '')), '') IS NULL
+         AND (
+           NULLIF(TRIM(COALESCE(jobs.order_taken_by, '')), '') IS NULL
+           OR TRIM(jobs.order_taken_by) ~ '^[0-9]+$'
+           OR LOWER(TRIM(jobs.order_taken_by)) = LOWER(TRIM(updates.order_taken_by))
+         )`,
+      values
+    );
+
+    affected += result.rowCount;
+    const count = Math.min(start + batch.length, rows.length);
+    console.log(`[database-import] database_jobs taken-by backfill: ${count}/${rows.length}`);
+  }
+
+  return { affected };
+}
+
 async function importSnapshot(snapshot, options) {
   const pool = require('../src/db/pool');
   const client = await pool.connect();
@@ -1030,7 +1142,7 @@ async function importSnapshot(snapshot, options) {
     );
     let jobRefresh = { affected: 0 };
     if (options.insertOnly) {
-      console.log(`[database-import] Refreshing invoice/taken-by fields for ${snapshot.jobs.length} existing jobs`);
+      console.log(`[database-import] Refreshing invoice fields for ${snapshot.jobs.length} existing jobs`);
       jobRefresh = await refreshExistingJobInvoiceFields(client, snapshot.jobs);
     }
     if (preservedDashboardJobFields.length) {

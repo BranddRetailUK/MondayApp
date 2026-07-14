@@ -14,8 +14,9 @@
   const OUTSTANDING_INVOICE_COLUMN_WIDTH = 98;
   const TO_INVOICE_TABLE_COLUMN_COUNT = 7;
   const OUTSTANDING_STATUS_COLUMN_WIDTH = 128;
-  const OUTSTANDING_TAKEN_BY_COLUMN_WIDTH = 82;
-  const OUTSTANDING_TABLE_FIXED_WIDTH = 19 + 68 + 198 + 36 + OUTSTANDING_TAKEN_BY_COLUMN_WIDTH + 88 + 82 + OUTSTANDING_STATUS_COLUMN_WIDTH;
+  const OUTSTANDING_TAKEN_BY_COLUMN_MIN_WIDTH = 54;
+  const OUTSTANDING_TAKEN_BY_CELL_EXTRA_WIDTH = 12;
+  const OUTSTANDING_TABLE_FIXED_BASE_WIDTH = 19 + 68 + 198 + 36 + 88 + 82 + OUTSTANDING_STATUS_COLUMN_WIDTH;
   const STOCK_ORDERING_TABLE_COLUMN_COUNT = 8;
   const TEST_DASHBOARD_STATUS_COLUMN_ID = 'label__1';
   const STOCK_ORDERED_STATUS_LABEL = 'STOCK ORDERED';
@@ -2916,18 +2917,24 @@
     if (!table) return;
 
     const frameWidth = els.outstandingFrame?.clientWidth || 0;
+    const measuredTakenByWidth = measureOutstandingTakenByWidth(table, jobs);
+    const takenByWidth = Math.ceil(Math.max(
+      OUTSTANDING_TAKEN_BY_COLUMN_MIN_WIDTH,
+      measuredTakenByWidth + OUTSTANDING_TAKEN_BY_CELL_EXTRA_WIDTH
+    ));
     const measuredTitleWidth = measureOutstandingTitleWidth(table, jobs);
     const desiredTitleWidth = Math.ceil(Math.max(
       OUTSTANDING_TITLE_COLUMN_MIN_WIDTH,
       measuredTitleWidth + OUTSTANDING_TITLE_CELL_EXTRA_WIDTH
     ));
-    const fixedWidth = outstandingTableFixedWidth();
+    const fixedWidth = outstandingTableFixedWidth(takenByWidth);
     const maxTitleWidth = frameWidth > fixedWidth
       ? Math.max(OUTSTANDING_TITLE_COLUMN_MIN_WIDTH, frameWidth - fixedWidth - 2)
       : desiredTitleWidth;
     const titleWidth = Math.min(desiredTitleWidth, maxTitleWidth);
     const tableWidth = fixedWidth + titleWidth;
 
+    table.style.setProperty('--db-outstanding-taken-by-width', `${takenByWidth}px`);
     table.style.setProperty('--db-outstanding-title-width', `${titleWidth}px`);
     table.style.setProperty('--db-outstanding-table-width', `${tableWidth}px`);
   }
@@ -2940,8 +2947,10 @@
     return state.orderMode === 'all' ? OUTSTANDING_ALL_TABLE_COLUMN_COUNT : OUTSTANDING_TABLE_COLUMN_COUNT;
   }
 
-  function outstandingTableFixedWidth() {
-    return OUTSTANDING_TABLE_FIXED_WIDTH + (state.orderMode === 'all' ? OUTSTANDING_INVOICE_COLUMN_WIDTH : 0);
+  function outstandingTableFixedWidth(takenByWidth = OUTSTANDING_TAKEN_BY_COLUMN_MIN_WIDTH) {
+    return OUTSTANDING_TABLE_FIXED_BASE_WIDTH
+      + takenByWidth
+      + (state.orderMode === 'all' ? OUTSTANDING_INVOICE_COLUMN_WIDTH : 0);
   }
 
   function measureOutstandingTitleWidth(table, jobs = []) {
@@ -2960,6 +2969,26 @@
     let width = context.measureText('Job title:').width;
     for (const job of jobs) {
       width = Math.max(width, context.measureText(String(job?.job_title || '')).width);
+    }
+    return width;
+  }
+
+  function measureOutstandingTakenByWidth(table, jobs = []) {
+    if (!outstandingTitleMeasureCanvas) {
+      outstandingTitleMeasureCanvas = document.createElement('canvas');
+    }
+    const context = outstandingTitleMeasureCanvas.getContext('2d');
+    if (!context) return OUTSTANDING_TAKEN_BY_COLUMN_MIN_WIDTH;
+
+    const sourceCell = table.querySelector('tbody td:nth-child(7)')
+      || table.querySelector('thead th:nth-child(7)')
+      || table;
+    const style = window.getComputedStyle(sourceCell);
+    context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+
+    let width = context.measureText('Taken by:').width;
+    for (const job of jobs) {
+      width = Math.max(width, context.measureText(outstandingTakenByFirstName(job)).width);
     }
     return width;
   }
