@@ -1,11 +1,7 @@
-// --- Monday Dashboard Frontend (Monday-style grid + collapsible groups/subitems) ---
+// --- Tuesday Dashboard Frontend (DB-backed grid + collapsible groups/subitems) ---
 
 const PROD_ORIGIN = window.location.origin;
 const ENDPOINTS = {
-  data: '/api/board',
-  auth: '/auth',
-  scans: '/api/scan-states',
-  statusColumn: (itemId) => `/api/board/items/${encodeURIComponent(itemId)}/status-column`,
   testData: '/api/test-dashboard/board',
   testStatusColumn: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/status-column`,
   testCheckboxColumn: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/checkbox-column`,
@@ -18,6 +14,7 @@ const ENDPOINTS = {
   testPrivateJob: (itemId) => `/api/test-dashboard/private-jobs/${encodeURIComponent(itemId)}`,
   testProofFiles: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/proof-files`,
   testScanUrl: (itemId) => `/api/test-dashboard/scan-url?jobId=${encodeURIComponent(itemId)}`,
+  testQr: (data) => `/api/test-dashboard/qr?data=${encodeURIComponent(data)}`,
   testLabelPrinted: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/label-printed`,
   testUploadSignature: '/api/test-dashboard/uploads/signature',
   testFiles: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/files`
@@ -29,9 +26,8 @@ const PROOF_PDF_ZOOM_MIN = 0.5;
 const PROOF_PDF_ZOOM_MAX = 3;
 const PROOF_PDF_ZOOM_STEP = 0.25;
 const PRIORITY_HIGHLIGHT_STORAGE_KEY = 'ultimateHub.priorityHighlights';
-const DASHBOARD_TAB_NAMES = ['dashboard', 'database', 'visuals', 'test-dashboard'];
+const DASHBOARD_TAB_NAMES = ['database', 'test-dashboard'];
 const BOARD_AUTO_REFRESH_MS = 1000;
-const BOARD_CONTEXT_MONDAY = 'monday';
 const BOARD_CONTEXT_TEST = 'test-dashboard';
 const ULTIMATE_PACKING_USER_NAME = 'ultimate packing';
 const TEST_DASHBOARD_CLIENT_COLUMN_IDS = Object.freeze({
@@ -85,8 +81,6 @@ const STATUS_LABEL_FALLBACK_COLORS = {
   'medium': '#fdab3d',
   'low': '#579bfc'
 };
-let __boardRefreshTimer = null;
-let __boardLoading = false;
 let __testBoardRefreshTimer = null;
 let __testBoardLoading = false;
 let __testFileUploadInput = null;
@@ -122,10 +116,6 @@ let __proofModalState = {
   renderToken: 0
 };
 
-// --- Camera globals ---
-let __cameraStream = null;
-let __captureDataUrl = null;
-
 // --- Serial globals ---
 let __serialPort = null;
 let __serialReader = null;
@@ -138,58 +128,14 @@ const __BUFFER_HARD_LIMIT = 8192;
 
 document.addEventListener('DOMContentLoaded', () => {
   ensureSidebarToggle();
-  ensureAuthUI();
-  addCameraUI();
   addSerialScannerUI();
-  ensureTestDashboardUI();
   attachSerialEvents();
   initDashboardPinchZoom();
-  loadBoard({ forceRefresh: true });
-  startBoardAutoRefresh();
+  loadTestBoard({ forceRefresh: true });
   startTestBoardAutoRefresh();
   window.ultimateHubUserPromise?.then(() => refreshPackingControlVisibility());
 });
-window.loadBoard = loadBoard;
 window.loadTestBoard = loadTestBoard;
-
-// --------------------------- AUTH / LOADING ---------------------------
-
-function ensureAuthUI() {
-  const board = document.getElementById('board') || document.body;
-
-  // Create toolbar container once
-  let bar = document.getElementById('labels-toolbar');
-  if (!bar) {
-    bar = document.createElement('div');
-    bar.id = 'labels-toolbar';
-    board.parentElement.insertBefore(bar, board); // toolbar sits above the board area
-  }
-
-  document.getElementById('authStatus')?.remove();
-
-  // Update button (give it proper styling + move into toolbar)
-  const loadBtn = document.getElementById('loadBtn');
-  if (loadBtn) {
-    loadBtn.textContent = 'Update board info';
-    loadBtn.onclick = () => loadBoard({ forceRefresh: true });
-    loadBtn.className = 'btn outline';
-    if (loadBtn.parentElement !== bar) bar.appendChild(loadBtn);
-  }
-
-  // Connect to Monday (only shown if needed)
-  let connectBtn = document.getElementById('connectBtn');
-  if (!connectBtn) {
-    connectBtn = document.createElement('button');
-    connectBtn.id = 'connectBtn';
-    connectBtn.textContent = 'Connect to Monday';
-    connectBtn.className = 'btn primary';
-    connectBtn.addEventListener('click', () => (window.location.href = '/auth'));
-  }
-  connectBtn.style.display = 'none';
-  if (connectBtn.parentElement !== bar) bar.appendChild(connectBtn);
-
-  // Scanner connect button will be inserted by addSerialScannerUI(); keep space updated
-}
 
 function ensureSidebarToggle() {
   const app = document.querySelector('.app-container');
@@ -300,10 +246,7 @@ function isMobileNavLayout() {
 }
 
 function initDashboardPinchZoom() {
-  const boards = [
-    document.getElementById('board'),
-    document.getElementById('test-board')
-  ].filter(Boolean);
+  const boards = [document.getElementById('test-board')].filter(Boolean);
   const databaseTab = document.getElementById('tab-database');
   if (boards.length) {
     applyDashboardZoom(__dashboardZoom);
@@ -353,12 +296,8 @@ function preventDatabasePinch(event) {
 }
 
 function canUseDashboardPinchZoom() {
-  const dashboard = document.getElementById('tab-dashboard');
   const testDashboard = document.getElementById('tab-test-dashboard');
-  return isMobileNavLayout() && (
-    dashboard?.classList.contains('active') ||
-    testDashboard?.classList.contains('active')
-  );
+  return isMobileNavLayout() && testDashboard?.classList.contains('active');
 }
 
 function getTouchDistance(touches) {
@@ -370,291 +309,12 @@ function getTouchDistance(touches) {
 
 function applyDashboardZoom(zoom) {
   __dashboardZoom = clampDashboardZoom(zoom);
-  document.getElementById('board')?.style.setProperty('--dashboard-board-zoom', String(__dashboardZoom));
   document.getElementById('test-board')?.style.setProperty('--dashboard-board-zoom', String(__dashboardZoom));
 }
 
 function clampDashboardZoom(zoom) {
   const numericZoom = Number.isFinite(zoom) ? zoom : 1;
   return Math.min(DASHBOARD_ZOOM_MAX, Math.max(DASHBOARD_ZOOM_MIN, numericZoom));
-}
-
-// --------------------------- CAMERA UI ---------------------------
-
-function addCameraUI() {
-  const bar = document.getElementById('labels-toolbar');
-  if (!bar) return;
-
-  ensureCaptureModal();
-  document.getElementById('connectCameraBtn')?.remove();
-}
-
-function ensureCaptureModal() {
-  if (document.getElementById('cameraModal')) return;
-  const modal = document.createElement('div');
-  modal.id = 'cameraModal';
-  modal.className = 'modal hidden';
-  modal.innerHTML = `
-    <div class="modal-inner">
-      <div class="modal-head">
-        <h3>Take Image</h3>
-        <button class="modal-close" aria-label="Close" type="button">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div class="cam-live" id="camLiveWrap">
-          <video id="camVideo" autoplay playsinline muted></video>
-          <div class="cam-overlay" id="camConnectHint">Allow camera access to start.</div>
-        </div>
-        <div class="cam-preview hidden" id="camPreviewBox">
-          <img id="camPreviewImg" alt="Captured preview" />
-        </div>
-      </div>
-      <div class="modal-foot">
-        <div class="modal-actions">
-          <button id="camCancel" class="btn outline" type="button">Close</button>
-          <button id="camReject" class="btn outline hidden" type="button">Reject</button>
-          <button id="camCapture" class="btn success" type="button">Capture</button>
-          <button id="camApprove" class="btn primary hidden" type="button">Approve & Upload</button>
-        </div>
-        <div class="small muted" id="camStatus">Ready when the camera is connected.</div>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(modal);
-
-  modal.querySelector('#camCancel').addEventListener('click', closeCaptureModal);
-  modal.querySelector('.modal-close').addEventListener('click', closeCaptureModal);
-  modal.querySelector('#camCapture').addEventListener('click', captureSnapshot);
-  modal.querySelector('#camReject').addEventListener('click', rejectSnapshot);
-  modal.querySelector('#camApprove').addEventListener('click', approveSnapshot);
-}
-
-async function connectCamera() {
-  const btn = document.getElementById('connectCameraBtn');
-  if (!navigator.mediaDevices?.getUserMedia) {
-    alert('Camera not supported in this browser. Please use Chrome or Edge.');
-    return null;
-  }
-  if (__cameraStream) {
-    if (btn) btn.textContent = 'Camera Ready';
-    attachStreamToVideo(__cameraStream);
-    return __cameraStream;
-  }
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-    __cameraStream = stream;
-    if (btn) btn.textContent = 'Camera Ready';
-    attachStreamToVideo(stream);
-    setCaptureStatus('Camera connected. You can capture an image.');
-    return stream;
-  } catch (err) {
-    console.error('Camera connect failed', err);
-    if (btn) btn.textContent = 'Connect Camera';
-    alert('Could not access the camera. Check permissions and try again.');
-    setCaptureStatus('Camera access denied. Please allow permissions.');
-    return null;
-  }
-}
-
-function attachStreamToVideo(stream) {
-  const video = document.getElementById('camVideo');
-  const hint = document.getElementById('camConnectHint');
-  if (video) {
-    video.srcObject = stream;
-    video.play().catch(() => {});
-  }
-  if (hint) hint.classList.add('hidden');
-}
-
-function openCaptureModal(itemId, jobTitle) {
-  const modal = document.getElementById('cameraModal');
-  if (!modal) return;
-  __captureDataUrl = null;
-  modal.dataset.itemId = itemId;
-  modal.classList.remove('hidden');
-  document.body.classList.add('modal-open');
-  showLiveView();
-  setCaptureStatus(jobTitle ? `Capturing for: ${jobTitle}` : 'Camera ready.');
-  connectCamera();
-}
-
-function closeCaptureModal() {
-  const modal = document.getElementById('cameraModal');
-  if (modal) {
-    modal.classList.add('hidden');
-    modal.dataset.itemId = '';
-  }
-  document.body.classList.remove('modal-open');
-  showLiveView();
-  setCaptureStatus('Ready when the camera is connected.');
-}
-
-function showLiveView() {
-  const live = document.getElementById('camLiveWrap');
-  const preview = document.getElementById('camPreviewBox');
-  const capBtn = document.getElementById('camCapture');
-  const approveBtn = document.getElementById('camApprove');
-  const rejectBtn = document.getElementById('camReject');
-  if (live) live.classList.remove('hidden');
-  if (preview) preview.classList.add('hidden');
-  if (capBtn) capBtn.classList.remove('hidden');
-  if (approveBtn) approveBtn.classList.add('hidden');
-  if (rejectBtn) rejectBtn.classList.add('hidden');
-}
-
-function showPreview() {
-  const live = document.getElementById('camLiveWrap');
-  const preview = document.getElementById('camPreviewBox');
-  const capBtn = document.getElementById('camCapture');
-  const approveBtn = document.getElementById('camApprove');
-  const rejectBtn = document.getElementById('camReject');
-  if (live) live.classList.add('hidden');
-  if (preview) preview.classList.remove('hidden');
-  if (capBtn) capBtn.classList.add('hidden');
-  if (approveBtn) approveBtn.classList.remove('hidden');
-  if (rejectBtn) rejectBtn.classList.remove('hidden');
-}
-
-function setCaptureStatus(msg) {
-  const el = document.getElementById('camStatus');
-  if (el) el.textContent = msg || '';
-}
-
-function captureSnapshot() {
-  const video = document.getElementById('camVideo');
-  if (!video || !__cameraStream) {
-    setCaptureStatus('Camera not connected. Please connect and try again.');
-    connectCamera();
-    return;
-  }
-  const width = video.videoWidth || 1280;
-  const height = video.videoHeight || 720;
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, width, height);
-  __captureDataUrl = canvas.toDataURL('image/jpeg', 0.92);
-  const img = document.getElementById('camPreviewImg');
-  if (img) img.src = __captureDataUrl;
-  showPreview();
-  setCaptureStatus('Review the preview. Approve to upload or reject to retake.');
-}
-
-function rejectSnapshot() {
-  __captureDataUrl = null;
-  showLiveView();
-  setCaptureStatus('Image rejected. Capture again.');
-}
-
-async function approveSnapshot() {
-  if (!__captureDataUrl) {
-    setCaptureStatus('No image captured yet.');
-    return;
-  }
-  const modal = document.getElementById('cameraModal');
-  const itemId = modal?.dataset?.itemId;
-  if (!itemId) {
-    setCaptureStatus('Missing item reference.');
-    return;
-  }
-
-  try {
-    const blob = dataUrlToBlob(__captureDataUrl);
-    const formData = new FormData();
-    formData.append('file', blob, `capture-${Date.now()}.jpg`);
-    setCaptureStatus('Uploading image to Monday…');
-
-    const res = await fetch(`/api/items/${encodeURIComponent(itemId)}/file`, {
-      method: 'POST',
-      body: formData,
-      credentials: 'include'
-    });
-    if (!res.ok) {
-      const errText = await res.text();
-      setCaptureStatus(`Upload failed (${res.status}): ${errText || 'unknown error'}`);
-      return;
-    }
-    const json = await res.json();
-    if (!json?.ok) {
-      setCaptureStatus(json.error || 'Upload failed.');
-      return;
-    }
-    setCaptureStatus('Uploaded and attached to Monday.');
-    setTimeout(closeCaptureModal, 600);
-  } catch (err) {
-    console.error('Upload failed', err);
-    setCaptureStatus('Upload failed. Please try again.');
-  }
-}
-
-function dataUrlToBlob(dataUrl) {
-  const [meta, base64] = dataUrl.split(',');
-  const contentType = (meta.match(/data:(.*);base64/) || [])[1] || 'image/jpeg';
-  const byteChars = atob(base64);
-  const byteNumbers = new Array(byteChars.length);
-  for (let i = 0; i < byteChars.length; i++) {
-    byteNumbers[i] = byteChars.charCodeAt(i);
-  }
-  const byteArray = new Uint8Array(byteNumbers);
-  return new Blob([byteArray], { type: contentType });
-}
-
-function stopCameraStream() {
-  if (__cameraStream) {
-    try {
-      __cameraStream.getTracks().forEach(t => t.stop());
-    } catch {}
-  }
-  __cameraStream = null;
-}
-
-
-async function loadBoard(options = {}) {
-  if (__boardLoading) return;
-  const boardDiv = document.getElementById('board') || document.body;
-  const statusEl = document.getElementById('authStatus');
-  const forceRefresh = options === true || options?.forceRefresh === true;
-  const boardUrl = forceRefresh ? `${ENDPOINTS.data}?fresh=1` : ENDPOINTS.data;
-  const showInitialLoading = !boardDiv.querySelector('.group, .board-loading');
-  try {
-    __boardLoading = true;
-    if (showInitialLoading) renderBoardLoadingState(boardDiv);
-    const resBoard = await fetch(boardUrl, {
-      cache: 'no-store',
-      credentials: 'include',
-      headers: forceRefresh ? { 'Cache-Control': 'no-cache' } : {}
-    });
-
-    if (!resBoard.ok) {
-      let msg = `Failed to load board (HTTP ${resBoard.status})`;
-      try {
-        const errJson = await resBoard.json();
-        if (errJson && errJson.error) msg = `Failed to load board: ${errJson.error}`;
-        else if (errJson && errJson.errors) msg = `Failed to load board: ${JSON.stringify(errJson.errors)}`;
-      } catch {}
-      boardDiv.textContent = msg;
-      if (resBoard.status === 401 || resBoard.status === 403) {
-        if (statusEl) statusEl.textContent = 'Not connected to Monday.';
-        const connectBtn = document.getElementById('connectBtn');
-        if (connectBtn) connectBtn.style.display = 'inline-block';
-      }
-      return;
-    }
-
-    const payload = await resBoard.json();
-    window.__latestBoardPayload = payload;
-    renderBoard(payload, { context: BOARD_CONTEXT_MONDAY, boardDiv });
-    refreshVisualItemSelect(payload);
-    const connectBtn = document.getElementById('connectBtn');
-    if (connectBtn) connectBtn.style.display = 'none';
-    document.getElementById('authStatus')?.remove();
-  } catch (err) {
-    console.warn('Board load failed', err);
-    boardDiv.textContent = 'Failed to load board: fetch error';
-  } finally {
-    __boardLoading = false;
-  }
 }
 
 async function loadTestBoard(options = {}) {
@@ -667,7 +327,7 @@ async function loadTestBoard(options = {}) {
   const showInitialLoading = !boardDiv.querySelector('.group, .board-loading');
   try {
     __testBoardLoading = true;
-    if (showInitialLoading) renderBoardLoadingState(boardDiv, 'Loading test dashboard...');
+    if (showInitialLoading) renderBoardLoadingState(boardDiv, 'Loading Tuesday Dashboard...');
     const response = await fetch(boardUrl, {
       cache: 'no-store',
       credentials: 'include',
@@ -675,7 +335,7 @@ async function loadTestBoard(options = {}) {
     });
     if (!response.ok) {
       const error = await readApiError(response);
-      boardDiv.textContent = `Failed to load test dashboard: ${error}`;
+      boardDiv.textContent = `Failed to load Tuesday Dashboard: ${error}`;
       return;
     }
     const payload = await response.json();
@@ -684,31 +344,20 @@ async function loadTestBoard(options = {}) {
     if (!allowDuringDesignEdit && isTestDashboardTextEditActive()) return;
     renderBoard(payload, { context: BOARD_CONTEXT_TEST, boardDiv });
   } catch (err) {
-    console.warn('Test dashboard load failed', err);
-    boardDiv.textContent = 'Failed to load test dashboard: fetch error';
+    console.warn('Tuesday Dashboard load failed', err);
+    boardDiv.textContent = 'Failed to load Tuesday Dashboard: fetch error';
   } finally {
     __testBoardLoading = false;
   }
 }
 
-function renderBoardLoadingState(boardDiv, message = 'Loading Monday board...') {
+function renderBoardLoadingState(boardDiv, message = 'Loading Tuesday Dashboard...') {
   boardDiv.innerHTML = `
     <div class="board-loading" role="status" aria-live="polite">
       <span class="board-loading-spinner" aria-hidden="true"></span>
       <span class="board-loading-text">${escapeHtml(message)}</span>
     </div>
   `;
-}
-
-function startBoardAutoRefresh() {
-  if (__boardRefreshTimer) return;
-  __boardRefreshTimer = setInterval(() => {
-    if (document.hidden) return;
-    const dashboard = document.getElementById('tab-dashboard');
-    if (dashboard && !dashboard.classList.contains('active')) return;
-    if (isStatusDropdownOpen() || __statusUpdateInFlight > 0) return;
-    loadBoard({ forceRefresh: true });
-  }, BOARD_AUTO_REFRESH_MS);
 }
 
 function startTestBoardAutoRefresh() {
@@ -725,14 +374,14 @@ function startTestBoardAutoRefresh() {
 // --------------------------- RENDER BOARD ---------------------------
 
 function renderBoard(payload, options = {}) {
-  const context = options.context || BOARD_CONTEXT_MONDAY;
-  const boardDiv = options.boardDiv || document.getElementById(context === BOARD_CONTEXT_TEST ? 'test-board' : 'board') || document.body;
+  const context = BOARD_CONTEXT_TEST;
+  const boardDiv = options.boardDiv || document.getElementById('test-board') || document.body;
   const uiState = collectBoardUiState(boardDiv);
   boardDiv.innerHTML = '';
   const board = unwrapFirstBoard(payload);
   if (!board) {
     if (payload && payload.errors && payload.errors.length) {
-      boardDiv.textContent = `GraphQL error: ${payload.errors.map(e => e.message || e).join('; ')}`;
+      boardDiv.textContent = `Dashboard error: ${payload.errors.map(e => e.message || e).join('; ')}`;
     } else {
       boardDiv.textContent = 'No board data.';
     }
@@ -750,9 +399,7 @@ function renderBoard(payload, options = {}) {
   const globalJobNameWidth = buildJobNameColumnWidth(allBoardItems) + (
     context === BOARD_CONTEXT_TEST && !isUltimatePackingUser() ? 37 : 0
   );
-  const parentTotalColumn = context === BOARD_CONTEXT_TEST
-    ? buildParentTotalColumnSpec(allBoardItems, subitemColumns)
-    : null;
+  const parentTotalColumn = buildParentTotalColumnSpec(allBoardItems, subitemColumns);
   const zoomLayer = document.createElement('div');
   zoomLayer.className = 'dashboard-zoom-layer';
   boardDiv.appendChild(zoomLayer);
@@ -925,7 +572,7 @@ function collectBoardUiState(boardDiv) {
   return { collapsedGroups, openSubitems, hasRenderedGroups };
 }
 
-function isDefaultCollapsedGroup(groupName, context = BOARD_CONTEXT_MONDAY) {
+function isDefaultCollapsedGroup(groupName, context = BOARD_CONTEXT_TEST) {
   if (context === BOARD_CONTEXT_TEST) return true;
   if (isMobileNavLayout()) return true;
   const normalized = String(groupName || '').trim().toUpperCase();
@@ -1145,7 +792,7 @@ function normalizeColumns(columns) {
     .filter(column => column.id);
 }
 
-function buildDashboardGridSpec(mondayColumns, { subitem = false, widthOverrides = new Map(), nameWidth = null, printWidth = 82, parentTotalColumn = null } = {}) {
+function buildDashboardGridSpec(dashboardColumns, { subitem = false, widthOverrides = new Map(), nameWidth = null, printWidth = 82, parentTotalColumn = null } = {}) {
   const columns = [
     subitem || !isUltimatePackingUser()
       ? null
@@ -1157,7 +804,7 @@ function buildDashboardGridSpec(mondayColumns, { subitem = false, widthOverrides
       width: parentTotalColumn.width,
       qtyColumn: parentTotalColumn.qtyColumn
     } : null,
-    ...mondayColumns.map(column => ({
+    ...dashboardColumns.map(column => ({
       kind: 'column',
       title: column.title,
       width: widthOverrides.get(column.id) || getColumnWidth(column),
@@ -1681,7 +1328,7 @@ function measureBoardTextWidth(text, font = "14px Manrope, 'Segoe UI', system-ui
   return String(text || '').length * 7.5;
 }
 
-function buildHeaderCell(spec, { sortable = false, context = BOARD_CONTEXT_MONDAY } = {}) {
+function buildHeaderCell(spec, { sortable = false, context = BOARD_CONTEXT_TEST } = {}) {
   const cell = document.createElement('div');
   cell.className = `grid-cell head ${spec.kind}-head`;
   applyPrintEmbroideryMobileHiddenCellClass(cell, spec);
@@ -1718,7 +1365,7 @@ function getColumnSortButtonTitle(column) {
     : `Sort ${column.title || 'column'} high to low`;
 }
 
-function toggleBoardColumnSort(column, context = BOARD_CONTEXT_MONDAY) {
+function toggleBoardColumnSort(column, context = BOARD_CONTEXT_TEST) {
   const currentDirection = __boardSortState?.columnId === column.id ? __boardSortState.direction : '';
   __boardSortState = {
     columnId: column.id,
@@ -1727,25 +1374,16 @@ function toggleBoardColumnSort(column, context = BOARD_CONTEXT_MONDAY) {
   rerenderBoardContext(context);
 }
 
-function rerenderBoardContext(context = BOARD_CONTEXT_MONDAY) {
-  if (context === BOARD_CONTEXT_TEST) {
-    if (window.__latestTestBoardPayload) {
-      renderBoard(window.__latestTestBoardPayload, {
-        context,
-        boardDiv: document.getElementById('test-board')
-      });
-    }
-    return;
-  }
-  if (window.__latestBoardPayload) {
-    renderBoard(window.__latestBoardPayload, {
-      context: BOARD_CONTEXT_MONDAY,
-      boardDiv: document.getElementById('board')
+function rerenderBoardContext(context = BOARD_CONTEXT_TEST) {
+  if (window.__latestTestBoardPayload) {
+    renderBoard(window.__latestTestBoardPayload, {
+      context,
+      boardDiv: document.getElementById('test-board')
     });
   }
 }
 
-function buildItemCell(item, spec, { subitemsOpen = false, context = BOARD_CONTEXT_MONDAY } = {}) {
+function buildItemCell(item, spec, { subitemsOpen = false, context = BOARD_CONTEXT_TEST } = {}) {
   let cell;
   if (spec.kind === 'print') {
     cell = buildPrintCell(item, context);
@@ -1760,7 +1398,7 @@ function buildItemCell(item, spec, { subitemsOpen = false, context = BOARD_CONTE
   return cell;
 }
 
-function buildSubitemCell(subitem, spec, { context = BOARD_CONTEXT_MONDAY } = {}) {
+function buildSubitemCell(subitem, spec, { context = BOARD_CONTEXT_TEST } = {}) {
   if (spec.kind === 'print') return buildBlankCell('print-cell');
   if (spec.kind === 'name') return buildSubitemNameCell(subitem);
   return buildColumnValueCell(subitem, spec.column, { subitem: true, context });
@@ -1768,7 +1406,7 @@ function buildSubitemCell(subitem, spec, { context = BOARD_CONTEXT_MONDAY } = {}
 
 function buildParentTotalCell(item, spec) {
   const cell = document.createElement('div');
-  cell.className = 'grid-cell monday-value-cell job-total-cell';
+  cell.className = 'grid-cell dashboard-value-cell job-total-cell';
   const text = getDashboardParentTotalText(item, spec?.qtyColumn);
   if (text) {
     cell.title = text;
@@ -1777,34 +1415,23 @@ function buildParentTotalCell(item, spec) {
   return cell;
 }
 
-function buildPrintCell(item, context = BOARD_CONTEXT_MONDAY) {
+function buildPrintCell(item, context = BOARD_CONTEXT_TEST) {
   const cell = document.createElement('div');
   cell.className = 'grid-cell print-cell';
   const jobTitle = item.name || '';
 
-  if (context === BOARD_CONTEXT_TEST) {
-    cell.appendChild(buildTestRowMenuButton(item));
-  }
+  cell.appendChild(buildTestRowMenuButton(item));
 
   const printBtn = document.createElement('button');
   printBtn.textContent = 'Print';
   printBtn.className = 'job-action primary';
-  printBtn.addEventListener('click', () => printLabel(item.id, jobTitle, context));
+  printBtn.addEventListener('click', () => printLabel(item.id, jobTitle));
   cell.appendChild(printBtn);
 
-  if (context === BOARD_CONTEXT_TEST) return cell;
-
-  const photoBtn = document.createElement('button');
-  photoBtn.type = 'button';
-  photoBtn.className = 'job-action success camera-btn';
-  photoBtn.title = 'Capture image';
-  photoBtn.textContent = 'Camera';
-  photoBtn.addEventListener('click', () => openCaptureModal(item.id, jobTitle));
-  cell.appendChild(photoBtn);
   return cell;
 }
 
-function buildNameCell(item, initiallyOpen = false, { context = BOARD_CONTEXT_MONDAY } = {}) {
+function buildNameCell(item, initiallyOpen = false, { context = BOARD_CONTEXT_TEST } = {}) {
   const itemId = String(item.id);
   const subitems = Array.isArray(item.subitems) ? item.subitems : [];
   const cell = document.createElement('div');
@@ -2027,9 +1654,9 @@ function buildBlankCell(extraClass = '') {
   return cell;
 }
 
-function buildColumnValueCell(entity, column, { subitem = false, context = BOARD_CONTEXT_MONDAY } = {}) {
+function buildColumnValueCell(entity, column, { subitem = false, context = BOARD_CONTEXT_TEST } = {}) {
   const cell = document.createElement('div');
-  cell.className = `grid-cell monday-value-cell ${subitem ? 'subitem-value-cell' : ''} column-${column.type}`;
+  cell.className = `grid-cell dashboard-value-cell ${subitem ? 'subitem-value-cell' : ''} column-${column.type}`;
   cell.dataset.columnId = column.id;
   if (entity?.id) cell.dataset.itemId = String(entity.id);
   const value = findColumnValue(entity, column.id);
@@ -2083,13 +1710,13 @@ function normalizeCellText(text) {
   return String(text || '').replace(/\s+/g, ' ').trim();
 }
 
-function renderStatusValue(cell, value, column, text, { entity = null, subitem = false, context = BOARD_CONTEXT_MONDAY } = {}) {
+function renderStatusValue(cell, value, column, text, { entity = null, subitem = false, context = BOARD_CONTEXT_TEST } = {}) {
   const editable = !subitem && entity?.id && isEditableDashboardStatusColumn(column) && getStatusOptions(column).length > 0;
   const badge = document.createElement(editable ? 'button' : 'span');
-  badge.className = 'monday-status-badge';
+  badge.className = 'dashboard-status-badge';
   if (editable) {
     badge.type = 'button';
-    badge.classList.add('monday-status-button');
+    badge.classList.add('dashboard-status-button');
     badge.setAttribute('aria-haspopup', 'menu');
     badge.setAttribute('aria-label', text ? `Change job status from ${text}` : 'Set job status');
     badge.addEventListener('click', (event) => {
@@ -2184,12 +1811,12 @@ function compareStatusOptions(a, b) {
 }
 
 function ensureStatusDropdown() {
-  let dropdown = document.getElementById('monday-status-popover');
+  let dropdown = document.getElementById('dashboard-status-popover');
   if (dropdown) return dropdown;
 
   dropdown = document.createElement('div');
-  dropdown.id = 'monday-status-popover';
-  dropdown.className = 'monday-status-popover hidden';
+  dropdown.id = 'dashboard-status-popover';
+  dropdown.className = 'dashboard-status-popover hidden';
   dropdown.setAttribute('role', 'menu');
   document.body.appendChild(dropdown);
 
@@ -2200,7 +1827,7 @@ function ensureStatusDropdown() {
   return dropdown;
 }
 
-function openStatusDropdown({ anchor, item, column, currentText, context = BOARD_CONTEXT_MONDAY }) {
+function openStatusDropdown({ anchor, item, column, currentText, context = BOARD_CONTEXT_TEST }) {
   if (!anchor || !item?.id || !column?.id) return;
   if (__statusDropdownState?.anchor === anchor && isStatusDropdownOpen()) {
     closeStatusDropdown();
@@ -2222,7 +1849,7 @@ function openStatusDropdown({ anchor, item, column, currentText, context = BOARD
     const optionText = option.displayLabel || option.label;
     const active = option.clear ? !currentLabel : normalizeStatusLabel(option.label) === currentLabel;
     button.type = 'button';
-    button.className = 'monday-status-option';
+    button.className = 'dashboard-status-option';
     if (active) button.classList.add('active');
     button.textContent = optionText;
     button.title = optionText;
@@ -2280,12 +1907,12 @@ function positionStatusDropdown(anchor, dropdown) {
 }
 
 function isStatusDropdownOpen() {
-  const dropdown = document.getElementById('monday-status-popover');
+  const dropdown = document.getElementById('dashboard-status-popover');
   return Boolean(dropdown && !dropdown.classList.contains('hidden'));
 }
 
 function closeStatusDropdown() {
-  const dropdown = document.getElementById('monday-status-popover');
+  const dropdown = document.getElementById('dashboard-status-popover');
   if (dropdown) dropdown.classList.add('hidden');
   __statusDropdownState = null;
 }
@@ -2649,7 +2276,7 @@ function getDateIsoFromValue(value, text) {
 
 function handleStatusDropdownDocumentPointerDown(event) {
   if (!isStatusDropdownOpen()) return;
-  const dropdown = document.getElementById('monday-status-popover');
+  const dropdown = document.getElementById('dashboard-status-popover');
   if (dropdown?.contains(event.target)) return;
   if (__statusDropdownState?.anchor?.contains?.(event.target)) return;
   closeStatusDropdown();
@@ -2666,7 +2293,7 @@ function handleStatusDropdownKeydown(event) {
 async function selectStatusOption(option) {
   const state = __statusDropdownState;
   if (!state?.itemId || !state?.columnId || (!option?.label && !option?.clear)) return;
-  const context = state.context || BOARD_CONTEXT_MONDAY;
+  const context = state.context || BOARD_CONTEXT_TEST;
   closeStatusDropdown();
 
   if (shouldConfirmTestDashboardCompletedStatus(state, option)) {
@@ -2680,7 +2307,7 @@ async function selectStatusOption(option) {
   rerenderBoardContext(context);
 
   try {
-    const response = await fetch(getStatusColumnEndpoint(context, state.itemId), {
+    const response = await fetch(getStatusColumnEndpoint(state.itemId), {
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -2853,10 +2480,8 @@ function closeTestDashboardApprovalWarning() {
   document.body.classList.remove('modal-open', 'test-dashboard-approval-warning-open');
 }
 
-function getStatusColumnEndpoint(context, itemId) {
-  return context === BOARD_CONTEXT_TEST
-    ? ENDPOINTS.testStatusColumn(itemId)
-    : ENDPOINTS.statusColumn(itemId);
+function getStatusColumnEndpoint(itemId) {
+  return ENDPOINTS.testStatusColumn(itemId);
 }
 
 async function saveTestDesignInput(input, entity, column) {
@@ -3030,15 +2655,11 @@ function isTestApprovalRequirementsMessage(message) {
 }
 
 async function loadBoardForContext(context, options = {}) {
-  if (context === BOARD_CONTEXT_TEST) return loadTestBoard(options);
-  return loadBoard(options);
+  return loadTestBoard(options);
 }
 
-function updateCachedBoardStatusValue(itemId, columnId, option, context = BOARD_CONTEXT_MONDAY) {
-  const item = findBoardPayloadItem(
-    context === BOARD_CONTEXT_TEST ? window.__latestTestBoardPayload : window.__latestBoardPayload,
-    itemId
-  );
+function updateCachedBoardStatusValue(itemId, columnId, option, context = BOARD_CONTEXT_TEST) {
+  const item = findBoardPayloadItem(window.__latestTestBoardPayload, itemId);
   if (!item) return;
 
   let value = findColumnValue(item, columnId);
@@ -3072,8 +2693,7 @@ function updateCachedBoardCheckboxValue(itemId, columnId, checked) {
 }
 
 function updateCachedBoardDateValue(itemId, columnId, date, context = BOARD_CONTEXT_TEST) {
-  const payload = context === BOARD_CONTEXT_TEST ? window.__latestTestBoardPayload : window.__latestBoardPayload;
-  const item = findBoardPayloadItem(payload, itemId);
+  const item = findBoardPayloadItem(window.__latestTestBoardPayload, itemId);
   if (!item) return;
 
   let value = findColumnValue(item, columnId);
@@ -3086,9 +2706,7 @@ function updateCachedBoardDateValue(itemId, columnId, date, context = BOARD_CONT
   value.type = 'date';
   value.value = date ? JSON.stringify({ date }) : JSON.stringify({});
 
-  if (context === BOARD_CONTEXT_TEST) {
-    updateCachedTestPriorityFromDate(item, date);
-  }
+  updateCachedTestPriorityFromDate(item, date);
 }
 
 function updateCachedTestPriorityFromDate(item, date) {
@@ -3184,20 +2802,20 @@ async function readApiError(response) {
   return `Request failed (${response.status})`;
 }
 
-function renderCheckboxValue(cell, value, column, { entity = null, subitem = false, context = BOARD_CONTEXT_MONDAY } = {}) {
+function renderCheckboxValue(cell, value, column, { entity = null, subitem = false, context = BOARD_CONTEXT_TEST } = {}) {
   const optimisticChecked = context === BOARD_CONTEXT_TEST && !subitem && entity?.id
     ? getTestCheckboxOptimisticValue(entity.id, column.id)
     : null;
   const checked = optimisticChecked === null ? isCheckedValue(value) : optimisticChecked;
   const editable = context === BOARD_CONTEXT_TEST && !subitem && entity?.id;
   const mark = document.createElement(editable ? 'button' : 'span');
-  mark.className = 'monday-check-tick';
+  mark.className = 'dashboard-check-tick';
   mark.style.color = getCheckboxTickColor(column);
   mark.textContent = checked ? '✓' : '';
 
   if (editable) {
     mark.type = 'button';
-    mark.classList.add('monday-check-button');
+    mark.classList.add('dashboard-check-button');
     mark.setAttribute('aria-label', `${checked ? 'Clear' : 'Set'} ${column.title || 'checkbox'}`);
     mark.addEventListener('click', (event) => {
       event.preventDefault();
@@ -3225,7 +2843,7 @@ function getCheckboxTickColor(column) {
 }
 
 function renderFileValue(cell, value, text, column) {
-  const files = getFileList(value).map(normalizeMondayFile).filter(Boolean);
+  const files = getFileList(value).map(normalizeDashboardFile).filter(Boolean);
   if (!files.length && text) {
     files.push({
       name: text || 'File',
@@ -3234,7 +2852,7 @@ function renderFileValue(cell, value, text, column) {
     });
   }
   if (!files.length) return 0;
-  cell.classList.add('monday-file-cell');
+  cell.classList.add('dashboard-file-cell');
   files.forEach((file, index) => {
     if (isPreviewModalFileColumn(column)) {
       renderPreviewFileButton(cell, files, index, text, column);
@@ -3261,7 +2879,7 @@ function isLikelyFileUrl(value) {
 
 function renderFileIconLink(cell, file, text) {
   const link = document.createElement(file.url ? 'a' : 'span');
-  link.className = 'monday-file-link';
+  link.className = 'dashboard-file-link';
   link.title = file.name || text || 'Attached file';
   if (file.url) {
     link.href = file.url;
@@ -3276,7 +2894,7 @@ function renderPreviewFileButton(cell, files, index, text, column) {
   const file = files[index];
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'monday-file-link monday-proof-trigger';
+  button.className = 'dashboard-file-link dashboard-proof-trigger';
   const label = getPreviewModalLabel(column);
   button.title = file.name || text || `Open ${label.toLowerCase()}`;
   button.setAttribute('aria-label', button.title);
@@ -3297,15 +2915,15 @@ function decorateTestFileDropCell(cell, entity, column, { hasFiles = false } = {
   cell.classList.add('test-file-drop-target');
   cell.classList.toggle('uploading', uploading);
   cell.title = cell.title || `${hasFiles ? 'Drop another' : 'Drop or click to upload'} ${column.title || 'file'}`;
-  if (!hasFiles || uploading) renderTestFileUploadAffordance(cell, entity, column, { uploading });
+  renderTestFileUploadAffordance(cell, entity, column, { uploading, hasFiles });
   cell.addEventListener('dragenter', handleTestFileDragEnter);
   cell.addEventListener('dragover', handleTestFileDragOver);
   cell.addEventListener('dragleave', handleTestFileDragLeave);
   cell.addEventListener('drop', (event) => handleTestFileDrop(event, entity, column, cell));
 }
 
-function renderTestFileUploadAffordance(cell, entity, column, { uploading = false } = {}) {
-  cell.classList.add('monday-file-cell');
+function renderTestFileUploadAffordance(cell, entity, column, { uploading = false, hasFiles = false } = {}) {
+  cell.classList.add('dashboard-file-cell');
 
   if (uploading) {
     const spinner = document.createElement('span');
@@ -3318,7 +2936,7 @@ function renderTestFileUploadAffordance(cell, entity, column, { uploading = fals
 
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'test-file-upload-empty-button';
+  button.className = `test-file-upload-empty-button${hasFiles ? ' test-file-upload-add-button' : ''}`;
   button.textContent = '+';
   button.title = `Upload ${column.title || 'file'}`;
   button.setAttribute('aria-label', button.title);
@@ -3419,8 +3037,10 @@ function setTestFileCellUploading(cell, uploading, target = {}) {
     spinner.setAttribute('aria-label', 'Uploading file');
     spinner.setAttribute('role', 'status');
     cell.appendChild(spinner);
-  } else if (!cell.querySelector('.monday-file-link') && target?.column?.id) {
-    renderTestFileUploadAffordance(cell, { id: target.itemId }, target.column);
+  } else if (target?.column?.id) {
+    renderTestFileUploadAffordance(cell, { id: target.itemId }, target.column, {
+      hasFiles: Boolean(cell.querySelector('.dashboard-file-link')),
+    });
   }
 }
 
@@ -3470,7 +3090,7 @@ async function uploadTestDashboardFile(itemId, column, file) {
   }
 
   const originalFilename = file.name || uploadJson.original_filename || uploadJson.public_id || 'file';
-  const normalizedUploadFile = normalizeMondayFile({
+  const normalizedUploadFile = normalizeDashboardFile({
     name: originalFilename,
     url: uploadJson.secure_url,
     public_url: uploadJson.secure_url,
@@ -3525,7 +3145,7 @@ function getPreviewModalLabel(column) {
 
 function buildFileIcon(file) {
   const icon = document.createElement('span');
-  const classes = ['monday-file-icon'];
+  const classes = ['dashboard-file-icon'];
   if (isPdfFile(file.name, file.mime)) classes.push('pdf');
   if (isImageFile(file)) classes.push('image');
   icon.className = classes.join(' ');
@@ -3604,7 +3224,7 @@ function ensureProofModal() {
 
 function openProofModal(files, startIndex = 0, options = {}) {
   const normalized = (Array.isArray(files) ? files : [])
-    .map(file => normalizeMondayFile(file) || file)
+    .map(file => normalizeDashboardFile(file) || file)
     .filter(file => file && (file.url || file.assetId || file.name));
   if (!normalized.length) return;
   const safeStartIndex = Math.min(Math.max(Number.parseInt(startIndex, 10) || 0, 0), normalized.length - 1);
@@ -3635,7 +3255,7 @@ function closeProofModal() {
   __proofModalState.pdfDrag = null;
   __proofModalState.renderToken += 1;
   resetProofPdfBodyState();
-  const anotherModalOpen = document.querySelector('.modal:not(.hidden), .va-lightbox:not(.hidden)');
+  const anotherModalOpen = document.querySelector('.modal:not(.hidden)');
   if (!anotherModalOpen) document.body.classList.remove('modal-open');
 }
 
@@ -4045,7 +3665,7 @@ function updateProofPageControls(loading = false) {
 function renderPeopleValue(cell, text) {
   if (!text) return;
   const pill = document.createElement('span');
-  pill.className = 'monday-person-pill';
+  pill.className = 'dashboard-person-pill';
   pill.textContent = text;
   cell.appendChild(pill);
 }
@@ -4053,7 +3673,7 @@ function renderPeopleValue(cell, text) {
 function renderTextInputValue(cell, text) {
   if (!text) return;
   const span = document.createElement('span');
-  span.className = 'monday-text-input';
+  span.className = 'dashboard-text-input';
   span.textContent = text;
   cell.appendChild(span);
 }
@@ -4196,7 +3816,7 @@ function isPsgDisplayReference(value) {
 function renderPlainTextValue(cell, text) {
   if (!text) return;
   const span = document.createElement('span');
-  span.className = 'monday-plain-text';
+  span.className = 'dashboard-plain-text';
   span.textContent = text;
   cell.appendChild(span);
 }
@@ -4213,16 +3833,12 @@ function getFileList(value) {
   return Array.isArray(parsed?.files) ? parsed.files : [];
 }
 
-function normalizeMondayFile(file) {
+function normalizeDashboardFile(file) {
   if (!file) return null;
-  const assetId = file.assetId || file.asset_id || file.id || '';
   const name = file.name || file.fileName || 'File';
-  const url = assetId
-    ? `/api/assets/${encodeURIComponent(assetId)}/inline?name=${encodeURIComponent(name)}`
-    : (file.url || file.public_url || file.publicUrl || '');
+  const url = file.secure_url || file.url || file.public_url || file.publicUrl || '';
   return {
     ...file,
-    assetId,
     name,
     url,
     mime: file.mime || inferMimeTypeFromName(name)
@@ -4355,39 +3971,28 @@ function isTestPrivateItemId(value) {
 
 // --------------------------- PRINT LABEL ---------------------------
 
-async function printLabel(itemId, rawTitle, context = BOARD_CONTEXT_MONDAY) {
+async function printLabel(itemId, rawTitle) {
   const { orderNumber, customerName, jobTitle } = parseTitle(rawTitle);
   let scanUrl = '';
-  if (context === BOARD_CONTEXT_TEST) {
-    __statusUpdateInFlight += 1;
-    try {
-      const response = await fetch(ENDPOINTS.testLabelPrinted(itemId), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}'
-      });
-      if (!response.ok) throw new Error(await readApiError(response));
-      const result = await response.json();
-      scanUrl = result.scanUrl || '';
-      loadTestBoard({ forceRefresh: true });
-    } catch (err) {
-      alert(`Label could not be printed: ${err.message || 'Failed to prepare the label'}`);
-      return;
-    } finally {
-      __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);
-    }
-  } else {
-    try {
-      const url = `/api/scan-url?itemId=${encodeURIComponent(itemId)}`;
-      const r = await fetch(url, { credentials: 'include' });
-      if (r.ok) {
-        const j = await r.json();
-        scanUrl = j.url || '';
-      }
-    } catch {}
+  __statusUpdateInFlight += 1;
+  try {
+    const response = await fetch(ENDPOINTS.testLabelPrinted(itemId), {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}'
+    });
+    if (!response.ok) throw new Error(await readApiError(response));
+    const result = await response.json();
+    scanUrl = result.scanUrl || '';
+    loadTestBoard({ forceRefresh: true });
+  } catch (err) {
+    alert(`Label could not be printed: ${err.message || 'Failed to prepare the label'}`);
+    return;
+  } finally {
+    __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);
   }
-  const qrImg = scanUrl ? `<img class="qr" src="/api/qr?data=${encodeURIComponent(scanUrl)}" alt="QR">` : '';
+  const qrImg = scanUrl ? `<img class="qr" src="${ENDPOINTS.testQr(scanUrl)}" alt="QR">` : '';
   const blocks = [
     { head: 'JOB NUMBER', value: orderNumber, ratio: 0.62, maxSize: 96 },
     { head: 'CUSTOMER', value: customerName, ratio: 0.46, maxSize: 54 },
@@ -4517,12 +4122,7 @@ function isUltimatePackingUser(user = window.ultimateHubUser) {
 
 function refreshPackingControlVisibility() {
   addSerialScannerUI();
-  rerenderBoardContext(BOARD_CONTEXT_MONDAY);
   rerenderBoardContext(BOARD_CONTEXT_TEST);
-}
-
-function ensureTestDashboardUI() {
-  addSerialScannerUI();
 }
 
 function addPriorityHighlightUI() {
@@ -4553,7 +4153,6 @@ function setPriorityHighlightsEnabled(enabled) {
   __priorityHighlightsEnabled = Boolean(enabled);
   localStorage.setItem(PRIORITY_HIGHLIGHT_STORAGE_KEY, __priorityHighlightsEnabled ? '1' : '0');
   updatePriorityHighlightButton();
-  rerenderBoardContext(BOARD_CONTEXT_MONDAY);
   rerenderBoardContext(BOARD_CONTEXT_TEST);
 }
 
@@ -4668,18 +4267,10 @@ function startSerialReadLoop(port) {
 }
 
 async function handleSerialScan(text) {
-  const testScan = normalizeTestScanUrl(text);
-  if (testScan) {
-    await postScannerResult('/api/test-dashboard/scanner', text, 'test-dashboard');
-    return;
-  }
-
-  let scanUrl = normalizeScanUrl(text);
+  let scanUrl = normalizeTestScanUrl(text);
   if (!scanUrl && /^\d+$/.test(text)) {
     try {
-      const activeTestDashboard = document.getElementById('tab-test-dashboard')?.classList.contains('active');
-      const url = activeTestDashboard ? ENDPOINTS.testScanUrl(text) : `/api/scan-url?itemId=${encodeURIComponent(text)}`;
-      const r = await fetch(url, { cache: 'no-store', credentials: 'include' });
+      const r = await fetch(ENDPOINTS.testScanUrl(text), { cache: 'no-store', credentials: 'include' });
       if (r.ok) {
         const j = await r.json();
         if (j && j.url) scanUrl = j.url;
@@ -4687,16 +4278,11 @@ async function handleSerialScan(text) {
     } catch {}
   }
   if (!scanUrl) { updateScanPill('unrecognized code'); return; }
-
-  if (normalizeTestScanUrl(scanUrl)) {
-    await postScannerResult('/api/test-dashboard/scanner', scanUrl, 'test-dashboard');
-    return;
-  }
-
-  await postScannerResult('/api/scanner', scanUrl || text, 'monday');
+  await postScannerResult(scanUrl);
 }
 
-async function postScannerResult(endpoint, scanText, context) {
+async function postScannerResult(scanText) {
+  const endpoint = '/api/test-dashboard/scanner';
   try {
     const r2 = await fetch(endpoint, {
       method: 'POST',
@@ -4705,22 +4291,11 @@ async function postScannerResult(endpoint, scanText, context) {
       body: JSON.stringify({ scan: scanText })
     });
     updateScanPill(r2.ok ? 'status: ok' : 'status: error');
-    if (r2.ok) {
-      if (context === 'test-dashboard') loadTestBoard({ forceRefresh: true });
-      else loadBoard({ forceRefresh: true });
-    }
+    if (r2.ok) loadTestBoard({ forceRefresh: true });
   } catch (e) {
     console.warn(`POST ${endpoint} failed:`, e);
     updateScanPill('status: error');
   }
-}
-
-function normalizeScanUrl(input) {
-  if (/^https?:\/\/.+\/scan\?.*i=\d+.*ts=\d+.*sig=[a-f0-9]+/i.test(input)) return input;
-  if (/(^|[?&])i=\d+/.test(input) && /ts=\d+/.test(input) && /sig=/.test(input)) {
-    return `${PROD_ORIGIN}/scan?${String(input).replace(/^[^?]*\?/, '')}`;
-  }
-  return null;
 }
 
 function normalizeTestScanUrl(input) {
@@ -4743,7 +4318,7 @@ window.addEventListener('beforeunload', async () => {
 
 document.addEventListener("DOMContentLoaded", () => {
   const tabs = document.querySelectorAll(".nav-tabs li");
-  const initialTab = getExplicitDashboardTab() || getStoredDashboardTab() || 'dashboard';
+  const initialTab = getExplicitDashboardTab() || getStoredDashboardTab() || 'test-dashboard';
 
   activateDashboardTab(initialTab);
 
@@ -4755,8 +4330,8 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function activateDashboardTab(target) {
-  const requestedTab = isValidDashboardTab(target) ? target : 'dashboard';
-  const activeTab = document.getElementById(`tab-${requestedTab}`) ? requestedTab : 'dashboard';
+  const requestedTab = isValidDashboardTab(target) ? target : 'test-dashboard';
+  const activeTab = document.getElementById(`tab-${requestedTab}`) ? requestedTab : 'test-dashboard';
   const tabs = document.querySelectorAll(".nav-tabs li");
   const contents = document.querySelectorAll(".tab-content");
 
@@ -4804,66 +4379,6 @@ function isValidDashboardTab(tabName) {
   return DASHBOARD_TAB_NAMES.includes(tabName);
 }
 
-// ================== VISUAL APPROVALS TAB ==================
-const __vaState = { items: [], loaded: false, overlayTimer: null, overlayPct: 0 };
-
-document.addEventListener('DOMContentLoaded', initVisualTab);
-
-function initVisualTab() {
-  const refreshBtn = document.getElementById('va-refresh');
-  const analyzeBtn = document.getElementById('va-analyze');
-  const approveBtn = document.getElementById('va-approve');
-  const rejectBtn = document.getElementById('va-reject');
-  const itemSel = document.getElementById('va-item');
-
-  if (refreshBtn) refreshBtn.addEventListener('click', () => refreshVisualItemSelect());
-  if (analyzeBtn) analyzeBtn.addEventListener('click', () => loadVisualAssets(true));
-  if (approveBtn) approveBtn.addEventListener('click', () => handleVAApprove());
-  if (rejectBtn) rejectBtn.addEventListener('click', () => handleVAReject());
-  if (itemSel) itemSel.addEventListener('change', () => loadVisualAssets(false));
-
-  bindLightboxClicks();
-  refreshVABadgeCount();
-}
-
-function refreshVisualItemSelect(payload) {
-  const sel = document.getElementById('va-item');
-  if (!sel) return;
-
-  let items = [];
-  const board = unwrapFirstBoard(payload || window.__latestBoardPayload);
-  if (board?.groups) {
-    for (const g of board.groups) {
-      const its = (g.items_page && g.items_page.items) || [];
-      items.push(...its);
-    }
-  }
-  __vaState.items = items;
-
-  const current = sel.value;
-  sel.innerHTML = '';
-  if (!items.length) {
-    const opt = document.createElement('option');
-    opt.value = '';
-    opt.textContent = 'No jobs loaded';
-    sel.appendChild(opt);
-    return;
-  }
-  const placeholder = document.createElement('option');
-  placeholder.value = '';
-  placeholder.textContent = 'Select a job';
-  sel.appendChild(placeholder);
-  for (const it of items) {
-    const opt = document.createElement('option');
-    opt.value = it.id;
-    opt.textContent = it.name || `Item ${it.id}`;
-    sel.appendChild(opt);
-  }
-  if (current) sel.value = current;
-  window.__latestBoardPayload = payload || window.__latestBoardPayload;
-  refreshVABadgeCount();
-}
-
 function isPdfFile(name, mime) {
   const lowerMime = (mime || '').toLowerCase();
   if (lowerMime.includes('pdf')) return true;
@@ -4899,11 +4414,6 @@ function normalizePdfDeliveryUrl(file, url) {
 
 function buildAssetSrc(file, { stripPdfUi = false } = {}) {
   if (!file) return '';
-  if (file.assetId) {
-    const name = encodeURIComponent(file.name || 'file');
-    const base = `/api/assets/${encodeURIComponent(file.assetId)}/inline?name=${name}`;
-    return stripPdfUi ? `${base}#toolbar=0&navpanes=0&scrollbar=0&view=FitH` : base;
-  }
   const url = normalizePdfDeliveryUrl(file, file.url || file.secure_url || file.public_url || '');
   if (stripPdfUi && url) return `${url}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`;
   return url;
@@ -4930,434 +4440,4 @@ async function ensurePdfJs() {
     document.head.appendChild(script);
   });
   return __pdfJsPromise;
-}
-
-async function renderPdfImage(src, altText = 'PDF') {
-  const pdfjs = await ensurePdfJs();
-  // Fetch buffer first to avoid worker cross-origin fetch issues
-  const resp = await fetch(src, { credentials: 'include', cache: 'no-store' });
-  if (!resp.ok) throw new Error(`PDF fetch failed (${resp.status})`);
-  const buffer = await resp.arrayBuffer();
-
-  const loadingTask = pdfjs.getDocument({
-    data: buffer,
-    useWorkerFetch: true,
-    isEvalSupported: true,
-    disableAutoFetch: false,
-  });
-
-  const pdf = await loadingTask.promise;
-  const page = await pdf.getPage(1);
-  const viewport = page.getViewport({ scale: 1.3 });
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d', { alpha: false });
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
-  await page.render({ canvasContext: ctx, viewport }).promise;
-  const img = document.createElement('img');
-  img.src = canvas.toDataURL('image/png');
-  img.alt = altText;
-  img.className = 'va-pdf-img';
-  return img;
-}
-
-function renderProofGrid(proofs) {
-  const grid = document.getElementById('va-proof-grid');
-  const phProof = document.getElementById('va-proof-ph');
-  if (!grid) return;
-  grid.innerHTML = '';
-  const items = (Array.isArray(proofs) ? proofs : []).filter(f => f && (f.url || f.assetId));
-  if (!items.length) {
-    grid.classList.add('hidden');
-    if (phProof) phProof.classList.remove('hidden');
-    return;
-  }
-  for (const file of items.slice(0, 4)) {
-    const pdf = isPdfFile(file.name, file.mime);
-    const src = buildAssetSrc(file, { stripPdfUi: pdf });
-    if (!src) continue;
-    const cell = document.createElement('div');
-    cell.className = 'va-proof-cell';
-    if (pdf) {
-      const loader = document.createElement('div');
-      loader.className = 'va-pdf-loading';
-      loader.textContent = 'Rendering PDF…';
-      cell.appendChild(loader);
-      renderPdfImage(src, file.name || 'PDF')
-        .then(img => {
-          if (!cell.isConnected) return;
-          img.dataset.fullSrc = img.src;
-          img.dataset.caption = file.name || '';
-          cell.innerHTML = '';
-          cell.appendChild(img);
-        })
-        .catch((err) => {
-          console.error('PDF render failed (proof)', err);
-          if (!cell.isConnected) return;
-          // Fallback to native viewer if render fails
-          const obj = document.createElement('object');
-          obj.type = 'application/pdf';
-          obj.data = src;
-          obj.title = file.name || 'PDF preview';
-          obj.style.width = '100%';
-          obj.style.height = '100%';
-          obj.dataset.fullSrc = src;
-          obj.dataset.caption = file.name || '';
-          cell.innerHTML = '';
-          cell.appendChild(obj);
-        });
-    } else {
-      const node = document.createElement('img');
-      node.src = src;
-      node.alt = file.name || 'Finished visual';
-      node.loading = 'lazy';
-      node.dataset.fullSrc = src;
-      node.dataset.caption = file.name || '';
-      cell.appendChild(node);
-    }
-    grid.appendChild(cell);
-  }
-  grid.classList.toggle('single', items.length === 1);
-  grid.classList.remove('hidden');
-  if (phProof) phProof.classList.add('hidden');
-}
-
-function renderCapturedMedia(media) {
-  const grid = document.getElementById('va-captured-grid');
-  const phCap = document.getElementById('va-captured-ph');
-  if (!grid) return;
-  grid.innerHTML = '';
-  const items = Array.isArray(media) ? media : (media ? [media] : []);
-  if (!items.length) {
-    grid.classList.add('hidden');
-    if (phCap) phCap.classList.remove('hidden');
-    return;
-  }
-  for (const file of items.slice(0, 4)) {
-    const pdf = isPdfFile(file?.name, file?.mime);
-    const src = buildAssetSrc(file, { stripPdfUi: pdf });
-    if (!src) continue;
-    const cell = document.createElement('div');
-    cell.className = 'va-proof-cell';
-    if (pdf) {
-      const loader = document.createElement('div');
-      loader.className = 'va-pdf-loading';
-      loader.textContent = 'Rendering PDF…';
-      cell.appendChild(loader);
-      renderPdfImage(src, file?.name || 'PDF')
-        .then(img => {
-          if (!cell.isConnected) return;
-          img.dataset.fullSrc = img.src;
-          img.dataset.caption = file?.name || '';
-          cell.innerHTML = '';
-          cell.appendChild(img);
-        })
-        .catch((err) => {
-          console.error('PDF render failed (captured)', err);
-          if (!cell.isConnected) return;
-          const obj = document.createElement('object');
-          obj.type = 'application/pdf';
-          obj.data = src;
-          obj.title = file?.name || 'PDF preview';
-          obj.style.width = '100%';
-          obj.style.height = '100%';
-          obj.dataset.fullSrc = src;
-          obj.dataset.caption = file?.name || '';
-          cell.innerHTML = '';
-          cell.appendChild(obj);
-        });
-    } else {
-      const node = document.createElement('img');
-      node.src = src;
-      node.alt = file?.name || 'Captured image';
-      node.loading = 'lazy';
-      node.dataset.fullSrc = src;
-      node.dataset.caption = file?.name || '';
-      cell.appendChild(node);
-    }
-    grid.appendChild(cell);
-  }
-  grid.classList.toggle('single', items.length === 1);
-  grid.classList.remove('hidden');
-  if (phCap) phCap.classList.add('hidden');
-}
-
-async function loadVisualAssets(runAnalysis = false) {
-  const itemSel = document.getElementById('va-item');
-  if (!itemSel) return;
-  const itemId = itemSel.value;
-  const side = 'front';
-  if (!itemId) return;
-
-  setVAStatus('', 'info');
-  if (runAnalysis) showVAOverlay('Running analysis…', 10, false, true);
-  renderVAResult(null);
-
-  try {
-    const url = `/api/visual-approvals/${encodeURIComponent(itemId)}?side=${encodeURIComponent(side)}${runAnalysis ? '&analyze=1' : ''}`;
-    const res = await fetch(url, { cache: 'no-store', credentials: 'include' });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok || !json.ok) {
-      if (runAnalysis) hideVAOverlay();
-      return;
-    }
-    const proofName = document.getElementById('va-proof-name');
-    const capName = document.getElementById('va-captured-name');
-
-    const proofs = Array.isArray(json.proofs) ? json.proofs : (json.proof ? [json.proof] : []);
-
-    renderProofGrid(proofs);
-    renderCapturedMedia(json.capturedFiles && json.capturedFiles.length ? json.capturedFiles : json.captured);
-
-    if (proofName) proofName.textContent = proofs[0]?.name || json.proof?.name || '';
-    if (capName) capName.textContent = (json.capturedFiles && json.capturedFiles[0]?.name) || json.captured?.name || '';
-
-    renderVAResult(json.analysis);
-    if (runAnalysis) showVAOverlay('Analysis complete.', 100, true);
-    refreshVABadgeCount();
-  } catch (err) {
-    console.error('visual approvals fetch failed', err);
-    if (runAnalysis) showVAOverlay('Analysis failed.', 100, true);
-  }
-}
-
-function clearVisualPreview() {
-  const proofGrid = document.getElementById('va-proof-grid');
-  const capGrid = document.getElementById('va-captured-grid');
-  const proofName = document.getElementById('va-proof-name');
-  const capName = document.getElementById('va-captured-name');
-  const phProof = document.getElementById('va-proof-ph');
-  const phCap = document.getElementById('va-captured-ph');
-  if (proofGrid) { proofGrid.innerHTML = ''; proofGrid.classList.add('hidden'); }
-  if (capGrid) { capGrid.innerHTML = ''; capGrid.classList.add('hidden'); capGrid.dataset.type = ''; }
-  if (phProof) phProof.classList.remove('hidden');
-  if (phCap) phCap.classList.remove('hidden');
-  if (proofName) proofName.textContent = '';
-  if (capName) capName.textContent = '';
-  renderVAResult(null);
-}
-
-function renderVAResult(analysis) {
-  const wrap = document.getElementById('va-result-float');
-  if (!wrap) return;
-  const conf = wrap.querySelector('.va-confidence');
-  const findings = wrap.querySelector('.va-findings');
-  const proofGrid = document.getElementById('va-proof-grid');
-  const capFrame = document.getElementById('va-captured-grid');
-  const previewCard = document.getElementById('va-preview-card');
-  if (conf) {
-    if (!analysis) {
-      conf.textContent = '';
-    } else {
-      const pct = Math.round(analysis.confidence || 0);
-      const label = analysis.ok ? 'Match' : 'Differences found';
-      conf.innerHTML = `<span class="va-confidence-number">${pct}%</span> confidence — ${escapeHtml(label)}`;
-    }
-  }
-  if (findings) {
-    if (!analysis) {
-      findings.innerHTML = '';
-    } else if (analysis.findings && analysis.findings.length) {
-      findings.innerHTML = `<div>Findings:</div><ul>${analysis.findings.map(f => `<li>${escapeHtml(f)}</li>`).join('')}</ul>`;
-    } else {
-      findings.textContent = analysis.summary || 'No discrepancies reported.';
-    }
-  }
-  wrap.classList.toggle('hidden', !analysis);
-  if (analysis && proofGrid && capFrame) {
-    proofGrid.classList.add('va-img-dim');
-    capFrame.classList.add('va-img-dim');
-    if (previewCard) previewCard.classList.add('dim');
-  } else {
-    if (proofGrid) proofGrid.classList.remove('va-img-dim');
-    if (capFrame) capFrame.classList.remove('va-img-dim');
-    if (previewCard) previewCard.classList.remove('dim');
-  }
-}
-
-// Lightbox
-function bindLightboxClicks() {
-  const proofGrid = document.getElementById('va-proof-grid');
-  const capFrame = document.getElementById('va-captured-frame');
-  const lightbox = document.getElementById('va-lightbox');
-  const lbImg = document.getElementById('va-lightbox-img');
-  const lbCap = document.getElementById('va-lightbox-caption');
-  const lbClose = document.getElementById('va-lightbox-close');
-  if (!lightbox || !lbImg || !lbClose) return;
-
-  const open = (src, caption = '') => {
-    if (!src) return;
-    lbImg.src = src;
-    lbCap.textContent = caption || '';
-    lightbox.classList.remove('hidden');
-    document.body.classList.add('modal-open');
-  };
-  const close = () => {
-    lightbox.classList.add('hidden');
-    lbImg.src = '';
-    lbCap.textContent = '';
-    document.body.classList.remove('modal-open');
-  };
-
-  lightbox.addEventListener('click', (e) => {
-    if (e.target === lightbox || e.target.classList.contains('va-lightbox-backdrop') || e.target === lbClose) {
-      close();
-    }
-  });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') close();
-  });
-
-  const clickHandler = (e) => {
-    const target = e.target;
-    if (!target) return;
-    const full = target.dataset?.fullSrc;
-    if (full) {
-      e.stopPropagation();
-      open(full, target.dataset?.caption || '');
-    }
-  };
-
-  if (proofGrid) proofGrid.addEventListener('click', clickHandler);
-  if (capFrame) capFrame.addEventListener('click', clickHandler);
-}
-
-function showVAOverlay(label, pct, autoHide = false, animate = false) {
-  const overlay = document.getElementById('va-overlay');
-  const bar = document.getElementById('va-progress-bar');
-  const txt = document.getElementById('va-progress-label');
-  const previewCard = document.getElementById('va-preview-card');
-  if (!overlay || !bar || !txt) return;
-  overlay.classList.add('show');
-  bar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
-  txt.textContent = label || '';
-  if (animate) {
-    clearInterval(__vaState.overlayTimer);
-    __vaState.overlayPct = pct;
-    __vaState.overlayTimer = setInterval(() => {
-      __vaState.overlayPct = Math.min(90, __vaState.overlayPct + 2);
-      bar.style.width = `${__vaState.overlayPct}%`;
-    }, 300);
-  }
-  if (autoHide) {
-    clearInterval(__vaState.overlayTimer);
-    bar.style.width = '100%';
-    setTimeout(() => {
-      overlay.classList.remove('show');
-      bar.style.width = '0%';
-      if (previewCard) previewCard.classList.remove('dim');
-    }, 600);
-  } else if (previewCard) {
-    previewCard.classList.add('dim');
-  }
-}
-
-function hideVAOverlay() {
-  const overlay = document.getElementById('va-overlay');
-  const bar = document.getElementById('va-progress-bar');
-  const previewCard = document.getElementById('va-preview-card');
-  clearInterval(__vaState.overlayTimer);
-  if (overlay) overlay.classList.remove('show');
-  if (bar) bar.style.width = '0%';
-  if (previewCard) previewCard.classList.remove('dim');
-}
-
-function getVASelection() {
-  const itemSel = document.getElementById('va-item');
-  return {
-    itemId: itemSel?.value || '',
-    side: 'front'
-  };
-}
-
-function setVABusy(disabled) {
-  const ids = ['va-approve', 'va-reject', 'va-analyze', 'va-refresh'];
-  for (const id of ids) {
-    const btn = document.getElementById(id);
-    if (btn) btn.disabled = !!disabled;
-  }
-}
-
-function updateVABadge(count) {
-  const badge = document.getElementById('va-badge');
-  if (!badge) return;
-  const n = Number(count) || 0;
-  badge.textContent = n > 99 ? '99+' : String(n);
-  badge.classList.toggle('hidden', n <= 0);
-}
-
-async function refreshVABadgeCount() {
-  try {
-    const res = await fetch('/api/visual-approvals/notifications', { cache: 'no-store', credentials: 'include' });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok || !json.ok) return;
-    updateVABadge(json.count);
-  } catch (err) {
-    // ignore badge fetch errors
-  }
-}
-
-function setVAStatus(msg, tone = 'info') {
-  const el = document.getElementById('va-status');
-  if (!el) return;
-  el.textContent = msg || '';
-  el.dataset.tone = tone;
-}
-
-async function handleVAApprove() {
-  const { itemId, side } = getVASelection();
-  if (!itemId) {
-    setVAStatus('Select a job first.', 'error');
-    return;
-  }
-  setVAStatus('Approving…', 'info');
-  setVABusy(true);
-  try {
-    const res = await fetch(`/api/visual-approvals/${encodeURIComponent(itemId)}/approve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ side })
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok || !json.ok) throw new Error(json.error || 'Approval failed');
-    setVAStatus('Proof approved and checkbox updated.', 'success');
-    refreshVABadgeCount();
-  } catch (err) {
-    console.error('Approve failed', err);
-    setVAStatus(err.message || 'Approval failed.', 'error');
-  } finally {
-    setVABusy(false);
-  }
-}
-
-async function handleVAReject() {
-  const { itemId, side } = getVASelection();
-  if (!itemId) {
-    setVAStatus('Select a job first.', 'error');
-    return;
-  }
-  setVAStatus('Moving to Pre-Production…', 'info');
-  setVABusy(true);
-  try {
-    const res = await fetch(`/api/visual-approvals/${encodeURIComponent(itemId)}/reject`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ side })
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok || !json.ok) throw new Error(json.error || 'Reject failed');
-    if (json.failedSubitems?.length) {
-      setVAStatus(`Moved item; ${json.failedSubitems.length} subitems not moved.`, 'error');
-    } else {
-      setVAStatus('Moved to PRE-PRODUCTION.', 'success');
-    }
-    refreshVABadgeCount();
-  } catch (err) {
-    console.error('Reject failed', err);
-    setVAStatus(err.message || 'Failed to move item.', 'error');
-  } finally {
-    setVABusy(false);
-  }
 }

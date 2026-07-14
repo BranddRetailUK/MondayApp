@@ -28,115 +28,22 @@
       </div>
       <div class="nav-group">
         <ul class="nav-tabs">
-          <li data-tab="dashboard" class="active" aria-label="Dashboard"><span class="nav-tab-label nav-tab-label-dashboard">Dashboard</span></li>
           <li data-tab="database">DATABASE</li>
-          <li data-tab="visuals" aria-label="Visual Approvals"><span class="nav-tab-label nav-tab-label-visuals">Visual Approvals</span><span id="va-badge" class="nav-badge hidden">0</span></li>
-          <li data-tab="test-dashboard">Tuesday Dashboard</li>
+          <li data-tab="test-dashboard" class="active">Tuesday Dashboard</li>
         </ul>
       </div>
       <div id="sidebarDashboardControls" class="sidebar-dashboard-controls" aria-label="Dashboard controls"></div>
     </nav>
 
     <main class="main-content">
-      <!-- DASHBOARD (Labels replacement) -->
-      <section id="tab-dashboard" class="tab-content active">
-        <div class="board-shell-head dashboard-board-head">
-          <div id="labels-toolbar"></div>
-        </div>
-        <div id="board"></div>
-      </section>
 
-      <!-- TEST DASHBOARD (Railway/Postgres + Cloudinary files) -->
-      <section id="tab-test-dashboard" class="tab-content">
+      <!-- TUESDAY DASHBOARD (Railway/Postgres + Cloudinary files) -->
+      <section id="tab-test-dashboard" class="tab-content active">
         <div class="board-shell-head dashboard-board-head">
           <div id="test-labels-toolbar"></div>
         </div>
         <div id="test-board"></div>
       </section>
-
-      <!-- VISUAL APPROVALS -->
-      <section id="tab-visuals" class="tab-content">
-        <header class="page-header">
-          <div class="header-left">
-            <p class="eyebrow">Compare</p>
-            <h1>Visual Approvals</h1>
-            <p class="muted">Side-by-side proof vs captured image with confidence.</p>
-          </div>
-        </header>
-
-        <section class="card">
-          <div class="card-head">
-            <h2>Select Job</h2>
-            <div class="card-actions">
-              <button id="va-refresh" class="btn outline small">Refresh list</button>
-            </div>
-          </div>
-          <div class="card-body va-controls">
-            <div class="va-select-group">
-              <label class="va-label">Job</label>
-              <div class="va-select">
-                <select id="va-item"></select>
-                <span class="va-select-arrow">▾</span>
-              </div>
-            </div>
-            <div class="va-actions">
-              <button id="va-approve" class="btn success">Approve</button>
-              <button id="va-reject" class="btn danger">Reject</button>
-              <button id="va-analyze" class="btn secondary">Ask ChatGPT</button>
-            </div>
-            <div id="va-status" class="va-status muted"></div>
-          </div>
-        </section>
-
-        <section class="card va-preview-card" id="va-preview-card">
-          <div class="card-head">
-            <h2>Preview</h2>
-          </div>
-          <div class="card-body va-grid">
-            <div class="va-panel">
-              <div class="va-label">Approved Visual</div>
-              <div class="va-img-wrap">
-                <div class="va-placeholder" id="va-proof-ph">Load an approved visual to preview.</div>
-                <div id="va-proof-grid" class="va-proof-grid hidden"></div>
-              </div>
-              <div id="va-proof-name" class="small muted"></div>
-            </div>
-            <div class="va-panel">
-              <div class="va-label">Captured Image</div>
-              <div class="va-img-wrap">
-                <div class="va-placeholder" id="va-captured-ph">Load a captured image to preview.</div>
-                <div id="va-captured-grid" class="va-proof-grid hidden"></div>
-              </div>
-              <div id="va-captured-name" class="small muted"></div>
-            </div>
-          </div>
-          <div class="va-result-float" id="va-result-float">
-            <div class="va-confidence"></div>
-            <div class="va-findings"></div>
-          </div>
-        </section>
-      </section>
-
-      <div class="va-overlay" id="va-overlay">
-        <div class="va-overlay-box">
-          <div class="va-overlay-head">
-            <div class="va-label">Analyzing</div>
-            <div class="va-progress-label" id="va-progress-label">Starting…</div>
-          </div>
-          <div class="va-progress">
-            <div class="va-progress-bar" id="va-progress-bar"></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="va-lightbox hidden" id="va-lightbox" role="dialog" aria-modal="true">
-        <div class="va-lightbox-backdrop"></div>
-        <div class="va-lightbox-content">
-          <img id="va-lightbox-img" alt="Preview" />
-          <div class="va-lightbox-caption" id="va-lightbox-caption"></div>
-          <button class="va-lightbox-close" id="va-lightbox-close" aria-label="Close preview">×</button>
-        </div>
-      </div>
 
       <!-- DATABASE -->
       <section id="tab-database" class="tab-content db-legacy-tab">
@@ -682,7 +589,7 @@
                       <button class="db-doc-button" type="button" data-db-document="order-ack">Order<br>Ack.</button>
                       <button class="db-doc-button" type="button" data-db-document="delivery-note">Delivery<br>Note</button>
                       <button class="db-doc-button" type="button" data-db-document="invoice">Invoice</button>
-                      <button class="db-doc-button" type="button">Pro-<br>Forma</button>
+                      <button class="db-doc-button" type="button" data-db-document="pro-forma">Pro-<br>Forma</button>
                     </div>
                   </div>
                 </div>

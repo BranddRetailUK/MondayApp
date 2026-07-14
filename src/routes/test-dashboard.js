@@ -1,5 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
+const QRCode = require('qrcode');
 const pool = require('../db/pool');
 const { fullName } = require('../services/hubAuth');
 const { signPayload, advanceScan } = require('../services/scanner');
@@ -61,6 +62,26 @@ protectedRouter.get('/api/test-dashboard/board', async (_req, res) => {
   } catch (err) {
     console.error('GET /api/test-dashboard/board', err);
     res.status(500).json({ error: 'Failed to fetch test dashboard board' });
+  }
+});
+
+protectedRouter.get('/api/test-dashboard/qr', async (req, res) => {
+  try {
+    const data = clean(req.query.data);
+    if (!data) return res.status(400).send('Missing ?data= payload');
+    const size = Math.max(128, Math.min(1024, Number.parseInt(req.query.size || '384', 10) || 384));
+    const margin = Math.max(0, Math.min(4, Number.parseInt(req.query.margin || '0', 10) || 0));
+    const buffer = await QRCode.toBuffer(data, {
+      width: size,
+      margin,
+      errorCorrectionLevel: 'M',
+    });
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    return res.send(buffer);
+  } catch (err) {
+    console.error('GET /api/test-dashboard/qr', err);
+    return res.status(400).send('Invalid QR data');
   }
 });
 
@@ -945,7 +966,7 @@ async function buildTestDashboardBoardPayload() {
   return {
     boards: [{
       id: TEST_DASHBOARD_BOARD_ID,
-      name: 'Test Dashboard',
+      name: 'Tuesday Dashboard',
       columns,
       subitemColumns,
       groups: groups.map(group => ({
@@ -981,7 +1002,7 @@ function hasDashboardIdentity(job, state, scan) {
     clean(job.dashboard_status) ||
     clean(job.dashboard_priority) ||
     clean(scan?.status) ||
-    state?.monday_item_id ||
+    Boolean(state) ||
     clean(state?.group_id) ||
     clean(getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS])) ||
     clean(getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.PRIORITY]))
@@ -1109,8 +1130,8 @@ function buildSubitem(line, columns) {
 }
 
 function resolveJobApproved(job, stateValues = {}) {
-  const seededJobApproved = jobApprovedFromColumnValues(stateValues);
-  return seededJobApproved === null ? job?.proof_approved === true : seededJobApproved;
+  const savedJobApproved = jobApprovedFromColumnValues(stateValues);
+  return savedJobApproved === null ? job?.proof_approved === true : savedJobApproved;
 }
 
 function customerDateValue(job, columns) {

@@ -48,6 +48,7 @@
   const ORDER_DOC_ITEM_ROW_EXTRA_LINE_MM = 3;
   const ORDER_DOC_ITEM_CHARS_PER_LINE = 42;
   const INVOICE_SUMMARY_MM = 32;
+  const PRO_FORMA_SUMMARY_MM = 42;
   const OUTSTANDING_REPORT_PAGE_CONTENT_MAX_MM = 220;
   const OUTSTANDING_REPORT_GROUP_HEADER_MM = 7;
   const OUTSTANDING_REPORT_TABLE_HEADER_MM = 7;
@@ -73,6 +74,11 @@
       toolbarTitle: 'Invoice',
       ariaLabel: 'Invoice PDF preview',
       filenameTitle: 'Invoice',
+    },
+    'pro-forma': {
+      toolbarTitle: 'Pro-forma invoice',
+      ariaLabel: 'Pro-forma invoice PDF preview',
+      filenameTitle: 'Pro-Forma Invoice',
     },
     'delivery-note': {
       toolbarTitle: 'Delivery note',
@@ -3741,6 +3747,8 @@
         alert(err.message || 'Failed to mark order invoiced');
         return;
       }
+    } else if (documentType === 'pro-forma') {
+      generatedAt = validDateOrNow(state.selectedJob?.pf_invoice_date || new Date());
     }
 
     state.activeDocumentType = documentType;
@@ -4783,7 +4791,7 @@
     const documentType = databaseDocumentType(type);
     if (documentType === 'outstanding-orders') return outstandingReportPdfFilename();
     if (documentType === 'stock-ordering') return stockOrderingPdfFilename();
-    const documentNo = documentType === 'invoice' ? invoiceDocumentNo(job) : job.order_no;
+    const documentNo = databaseDocumentNumber(job, documentType);
     const orderNo = String(documentNo || job.source_order_id || '').trim();
     const config = databaseDocumentConfig(type);
     return `${orderNo ? `${orderNo} - ` : ''}${config.filenameTitle}`;
@@ -4824,6 +4832,21 @@
     return job?.invoice_no || '';
   }
 
+  function proFormaDocumentNo(job) {
+    const jobNumber = orderDocumentUltRef(job);
+    return jobNumber ? `PRO${jobNumber}` : '';
+  }
+
+  function orderDocumentUltRef(job) {
+    return job?.source_order_id || job?.order_no || '';
+  }
+
+  function databaseDocumentNumber(job, documentType) {
+    if (documentType === 'invoice') return invoiceDocumentNo(job);
+    if (documentType === 'pro-forma') return proFormaDocumentNo(job);
+    return job?.order_no || job?.source_order_id || '';
+  }
+
   function databaseDocumentType(type) {
     return Object.prototype.hasOwnProperty.call(DATABASE_DOCUMENTS, type) ? type : 'order-ack';
   }
@@ -4836,7 +4859,7 @@
     const documentType = databaseDocumentType(type);
     if (documentType === 'outstanding-orders') return renderOutstandingReportDocument();
     if (documentType === 'stock-ordering') return renderStockOrderingDocument();
-    if (documentType === 'invoice') return renderInvoiceDocument();
+    if (isInvoiceLikeDocumentType(documentType)) return renderInvoiceDocument(documentType);
     if (documentType === 'delivery-note') return renderDeliveryNoteDocument();
     return renderOrderAcknowledgementPage();
   }
@@ -4890,7 +4913,7 @@
         <img class="db-order-ack-logo" src="${escapeAttr(ORDER_ACK_LOGO_URL)}" alt="Ultimate logo" crossorigin="anonymous">
       </header>
       <section class="db-order-ack-address">
-        ${invoiceLines.map((line) => `<div>${escapeHtml(line)}</div>`).join('')}
+        <div>${escapeHtml(orderDocumentAddressText(invoiceLines))}</div>
       </section>
       <section class="db-order-ack-meta" aria-label="Order acknowledgement details">
         ${orderAckMetaRow('ULT ref:', job.order_no)}
@@ -4898,7 +4921,7 @@
         ${orderAckMetaRow('Order date:', formatDate(job.order_date, 'full'))}
         ${orderAckMetaRow('Order taken by:', takenByLabel(job))}
         ${orderAckMetaRow('Order value:', formatCurrency(totals.gross))}
-        ${orderAckMetaRow('Delivery address:', deliveryDisplay.map((line) => escapeHtml(line)).join('<br>'), { html: true })}
+        ${orderAckMetaRow('Delivery address:', orderDocumentAddressText(deliveryDisplay))}
       </section>
 
       <section class="db-order-ack-letter">
@@ -4923,9 +4946,10 @@
     `;
   }
 
-  function renderInvoiceDocument() {
+  function renderInvoiceDocument(documentType = 'invoice') {
     const job = state.selectedJob || {};
-    const items = orderDocumentLineItems('invoice');
+    const isProForma = documentType === 'pro-forma';
+    const items = orderDocumentLineItems(documentType);
     const totals = orderAckTotals(items);
     const generatedAt = currentDatabaseDocumentDate();
     const invoiceLines = orderAckAddressLines(job.invoice_address, job.customer_name);
@@ -4935,23 +4959,24 @@
     const deliverySameAsInvoice = !deliveryLines.length || sameOrderAckAddress(invoiceLines, deliveryLines);
     const deliveryDisplay = deliverySameAsInvoice ? ['(as above)'] : deliveryLines;
     const context = {
-      type: 'invoice',
-      title: 'INVOICE',
+      type: documentType,
+      title: isProForma ? 'PRO-FORMA INVOICE' : 'INVOICE',
+      showVatDisclaimer: isProForma,
       job,
       items,
       totals,
       addressLines: invoiceLines,
       metaRows: [
-        { label: 'Invoice No.', value: invoiceDocumentNo(job) },
+        { label: 'Invoice No.', value: isProForma ? proFormaDocumentNo(job) : invoiceDocumentNo(job) },
         { label: 'Cust ref:', value: job.client_order_no || '' },
-        { label: 'ULT Ref:', value: job.order_no || job.source_order_id || '' },
+        { label: 'ULT Ref:', value: orderDocumentUltRef(job) },
         { label: 'VAT No.:', value: ULTIMATE_VAT_NUMBER },
         { label: 'Invoice date:', value: formatDate(generatedAt, 'full') },
         { label: 'Payment terms:', value: job.payment_terms || '' },
-        { label: 'Delivery address:', value: deliveryDisplay.map((line) => escapeHtml(line)).join('<br>'), html: true },
+        { label: 'Delivery address:', value: orderDocumentAddressText(deliveryDisplay) },
       ],
     };
-    const pages = buildOrderDocumentPages({ items, summaryHeightMm: INVOICE_SUMMARY_MM });
+    const pages = buildOrderDocumentPages({ items, summaryHeightMm: isProForma ? PRO_FORMA_SUMMARY_MM : INVOICE_SUMMARY_MM });
     return pages.map((pageContent, index) => renderOrderDocumentPage(context, pageContent, index)).join('');
   }
 
@@ -4992,7 +5017,7 @@
   }
 
   function orderDocumentFooterUrl(type) {
-    return type === 'invoice' ? ORDER_ACK_FOOTER_URL : ORDER_ACK_NO_BANK_FOOTER_URL;
+    return isInvoiceLikeDocumentType(type) ? ORDER_ACK_FOOTER_URL : ORDER_ACK_NO_BANK_FOOTER_URL;
   }
 
   function renderOrderDocumentPageHeader(context) {
@@ -5002,7 +5027,7 @@
         <img class="db-order-ack-logo" src="${escapeAttr(ORDER_ACK_LOGO_URL)}" alt="Ultimate logo" crossorigin="anonymous">
       </header>
       <section class="db-order-doc-address">
-        ${(context.addressLines || []).map((line) => `<div>${escapeHtml(line)}</div>`).join('')}
+        <div>${escapeHtml(orderDocumentAddressText(context.addressLines || []))}</div>
       </section>
       <section class="db-order-doc-meta-wrap ${context.showSignature ? 'has-signature' : ''}" aria-label="${escapeAttr(context.title)} details">
         <section class="db-order-doc-meta">
@@ -5018,12 +5043,13 @@
   }
 
   function renderOrderDocumentPageContent(context, pageContent) {
-    if (context.type === 'invoice') {
+    if (isInvoiceLikeDocumentType(context.type)) {
       return `
         ${pageContent.itemEntries.length || pageContent.showEmptyItems
           ? renderInvoiceItemsTable(pageContent.itemEntries, { empty: pageContent.showEmptyItems })
           : ''}
         ${pageContent.showSummary ? renderInvoiceSummary(context.items, context.totals) : ''}
+        ${pageContent.showSummary && context.showVatDisclaimer ? renderProFormaVatDisclaimer() : ''}
       `;
     }
 
@@ -5172,6 +5198,10 @@
     `;
   }
 
+  function renderProFormaVatDisclaimer() {
+    return '<section class="db-pro-forma-vat-warning">THIS IS NOT A VAT INVOICE</section>';
+  }
+
   function invoiceTotalRow(label, value) {
     return `
       <div class="db-invoice-total-row">
@@ -5265,7 +5295,7 @@
 
   function orderDocumentLineItems(type) {
     const items = orderAckLineItems();
-    if (type === 'invoice') return items.filter((item) => !truthy(item.is_internal));
+    if (isInvoiceLikeDocumentType(type)) return items.filter((item) => !truthy(item.is_internal));
     if (type === 'delivery-note') {
       return items.filter((item) => (
         !truthy(item.is_internal)
@@ -5273,6 +5303,10 @@
       ));
     }
     return items;
+  }
+
+  function isInvoiceLikeDocumentType(type) {
+    return type === 'invoice' || type === 'pro-forma';
   }
 
   function orderDocumentItemCode(item) {
@@ -5639,6 +5673,13 @@
       return [customer, ...lines];
     }
     return lines;
+  }
+
+  function orderDocumentAddressText(lines) {
+    return (lines || [])
+      .map((line) => String(line || '').trim())
+      .filter(Boolean)
+      .join(', ');
   }
 
   function splitOrderAckAddress(value) {

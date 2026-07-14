@@ -1,228 +1,41 @@
-# MondayApp Service Contract
+# Ultimate Hub Service Contract
 
 Last reviewed: 2026-07-13
 
 ## Purpose
 
-MondayApp is a legacy Node/Express service that connects Monday.com, Dropbox CSV/XLSX files, Railway/Postgres database views, Cloudinary-backed dashboard files, a local dashboard, scanner/QR flows, and visual proof workflows.
+Ultimate Hub is a Node/Express service backed by Railway Postgres. Its production surfaces are the Tuesday Dashboard, the full DATABASE order/customer workflow, Hub authentication, signed scanner/QR flows, and Cloudinary-backed dashboard files.
 
-The most important production path is the Dropbox/Open Orders import:
+Production data boundaries:
 
-1. Legacy server writes job details to an open-orders CSV.
-2. Dropbox webhook calls this service.
-3. Service downloads the CSV and parses jobs/line items.
-4. Service creates or updates Monday parent items and Monday subitems.
-5. Local JSON state records job signatures so unchanged jobs are skipped.
+1. Tuesday Dashboard jobs, status, priority, approvals, dates, designs, line items, and scan state come from Railway Postgres.
+2. Dashboard file metadata is stored in Railway Postgres; file bytes are delivered by Cloudinary.
+3. Label printing reads the DB-backed Tuesday board payload, prepares status through the DB-backed label endpoint, and embeds a signed DB job scan URL.
+4. DATABASE is populated from MDB snapshots and manual DATABASE entries.
+5. The running service has no external work-management OAuth, API client, webhook, board-sync, asset-proxy, or status-write connection.
 
 ## Entry Points
 
 - Runtime entry: `server.js`, which loads `server.modular.js`.
 - App composition: `src/app.js`.
 - Static frontend: `public/`.
-- Hub auth: `/login` and `/signup` serve the app login/signup page. The dashboard entry points `/`, `/index.html`, `/database-job.html`, and `/launch.html` require a Hub session. Static assets remain public, but browser app APIs for the board, DATABASE, Test Dashboard, visual approvals, and file upload/proxy routes require a Hub session.
-- Ultimate Hub dashboard tabs: Dashboard, DATABASE, Visual Approvals, and Test Dashboard. The Dashboard sidebar nav item keeps its tab target and activation logic in the DOM but is visually removed from the nav layout; DATABASE remains above the Test Dashboard nav item, whose visible label is `Tuesday Dashboard`. The Visual Approvals sidebar nav item keeps its tab target and badge but hides the visible label text. The active top-level dashboard tab is stored in browser localStorage so a page refresh returns the user to the last selected tab, unless an explicit `?tab=` query or matching hash such as `#database` or `#test-dashboard` selects a valid tab. The old standalone `MERCH TRAFFIC`, Orders, Customers, Stock, Shipping, and PenCarrie tabs have been removed. DATABASE order/customer/stock workflows remain part of the DATABASE tab.
+- Hub auth: `/login` and `/signup` serve the app login/signup page. `/`, `/index.html`, and `/database-job.html` require a Hub session. Browser APIs for DATABASE and the Tuesday Dashboard require the same Hub session, except the signed public `/test-scan` label endpoint.
+- Ultimate Hub has two top-level tabs: DATABASE and Tuesday Dashboard. Tuesday Dashboard is the default tab. The active tab is stored in browser localStorage unless `?tab=database`, `?tab=test-dashboard`, or the matching hash explicitly selects one.
 - DB bootstrap: `src/db/migrate.js`.
-- Config: `src/config/env.js` and `src/config/mondayFields.js`.
+- Config: `src/config/env.js`.
 
 ## Key Files
 
-- `src/services/openOrdersSync.js`: imports `open_orders.csv` into Monday parent items and subitems.
-- `src/services/openOrdersParser.js`: parses the legacy open-orders CSV format.
-- `src/services/openOrdersState.js`: stores per-job state in `data/open-orders-state.json` by default.
-- `src/routes/dropbox-webhook.js`: Dropbox webhook handler that triggers open-orders sync.
-- `src/services/mondayClient.js`: token-based Monday GraphQL helper for item, subitem, status, file, and update mutations.
-- `src/services/monday.js`: older OAuth/session Monday helper used by dashboard/scanner file upload flows.
-- `src/routes/monday-events.js`: Monday webhook handler for visual status changes, file notifications, and create-item line-item imports.
-- `src/services/dropboxLineItemImporter.js`: imports per-job XLSX/CSV line-item files from Dropbox into an existing Monday item.
-- `src/routes/visual-jobs.js`: worker queue API for local visual generation.
-- `src/routes/test-dashboard.js`: DB-backed test dashboard API, scanner flow, status/priority state, and Cloudinary file metadata routes.
-- `src/services/testDashboardDefaults.js`: mirrored dashboard group/column/status defaults for the test dashboard.
-- `src/services/cloudinaryDashboard.js`: Cloudinary config, upload signing, seed upload, and asset deletion helpers for test dashboard file columns.
+- `src/routes/test-dashboard.js`: Railway/Postgres-backed Tuesday Dashboard API, scanner flow, status/priority automation, QR rendering, and Cloudinary file metadata routes.
+- `src/services/testDashboardDefaults.js`: local Tuesday Dashboard group, column, and status definitions.
+- `src/services/testDashboardDbFields.js`: synchronizes Tuesday Dashboard labels and approval state with `database_jobs`.
+- `src/services/cloudinaryDashboard.js`: Cloudinary config, upload signing, and asset deletion helpers for Tuesday Dashboard file columns.
+- `src/services/scanner.js`: HMAC signing plus Railway/Postgres scan-state progression.
+- `src/routes/database.js`: Railway/Postgres DATABASE APIs.
+- `src/db/databaseSchema.js`: idempotent DATABASE and Tuesday Dashboard table creation.
 - `src/routes/hub-auth.js`: Ultimate Hub signup/login/session endpoints.
 - `src/services/hubAuth.js`: scrypt password hashing, session-cookie creation, and current-user lookup.
 - `src/middleware/hubAuth.js`: attaches `req.hubUser` and protects page/API routes.
-- `visual-runner.js` and `visual generator/`: local visual generation runner/assets.
-
-## Webhooks
-
-### Dropbox Open Orders Webhook
-
-- Mounted path: `GET /api/dropbox/webhook`
-- Purpose: Dropbox challenge verification.
-- Query: `challenge`
-- Response: raw challenge string.
-- Auth: public machine-to-machine route mounted before Hub API auth.
-
-- Mounted path: `POST /api/dropbox/webhook`
-- Purpose: starts background sync from Dropbox `OPEN_ORDERS_DROPBOX_PATH` into Monday.
-- Response: immediately returns `{ ok: true }` before sync completes.
-- Auth: public machine-to-machine route mounted before Hub API auth.
-- Concurrency: route-local `syncInFlight` ignores duplicate webhook calls while one sync is running.
-- Main logic:
-  - `syncOpenOrdersFromDropbox()`
-  - downloads `OPEN_ORDERS_DROPBOX_PATH` to `OPEN_ORDERS_LOCAL_PATH`
-  - parses jobs using `parseOpenOrdersFile`
-  - indexes existing Monday items by job number
-  - creates new jobs or updates changed jobs
-
-### Monday Events Webhook
-
-- Mounted path: `POST /api/monday/events`
-- Purpose: handles several Monday event types.
-- Payload normalization accepts top-level fields or Monday `event` fields:
-  - `boardId`, `itemId`, `columnId`, `newLabel`
-  - `event.boardId`, `event.pulseId`, `event.itemId`, `event.columnId`, `event.type`, `event.value`
-- Logic:
-  - If `columnId === JOB_FILES_COLUMN_ID` and `boardId === BOARD_ID`, add a visual approval notification.
-  - If event type is `create_pulse` or `create_item`, run line-item import for matching Dropbox per-job file.
-  - Otherwise only visual-board status events are processed.
-  - For visual board events, only the configured visual status column is accepted.
-  - Status label must be `START`; then item fields are validated, status is set to in-progress, an update is posted, and `/api/visual-jobs/enqueue` is called.
-
-- Mounted path: `POST /api/monday/echo`
-- Purpose: debug echo for webhook payloads.
-
-## Open Orders CSV Sync Contract
-
-### Legacy Access CSV Exporter
-
-The VM-side Access exporter lives in `database2monday_script/uvm_terminal_nohtml_nopositions_ver2.py`.
-
-- Reads `uvm_settings.txt` from the executable folder, its parent folder, or the current working directory. This supports the packaged `dist/` executable while keeping settings beside the script folder.
-- Connects to `PS_XP_tab.mdb` with `PS_XP_sys.mdw` through the 32-bit Microsoft Access ODBC driver.
-- Reconnects after connection/export-loop failures instead of exiting silently.
-- Writes daily logs under `logs/` beside the executable/script and writes `last_export_status.json`; when the Dropbox output folder exists it also writes `open_orders_export_status.json` beside `open_orders.csv`.
-- Refreshes the customer lookup every export cycle so jobs for newly-created customers are not skipped by a stale startup cache.
-- Writes `open_orders.csv` via a temporary file and atomic replace so a failed export does not truncate the last good CSV.
-- Supports `--once` for a single diagnostic export pass.
-- `start_exporter.bat` starts the normal VM loop and `run_export_once.bat` runs one diagnostic export from the correct working directory.
-- `build_exe.bat` rebuilds the replacement Windows executable on the 32-bit Access VM using 32-bit Python and PyInstaller.
-
-### Source Format
-
-Parsed by `src/services/openOrdersParser.js`.
-
-Each job block:
-
-```text
-JOB_NUMBER
-JOB_TYPE
-CUSTOMER
-JOB_TITLE
-qty,size,colour,code,description
-qty,size,colour,code,description
-=====
-```
-
-Parsing details:
-
-- Empty lines are ignored.
-- `=====` finalizes the current job.
-- Leading empty CSV cells are trimmed.
-- Description preserves commas after the first four fields.
-- Numeric size ranges like `9-11` are changed to use a non-breaking hyphen to stop Monday/date conversion.
-
-### Monday Item Matching
-
-Implemented in `fetchExistingJobs()` and `extractJobNumberFromItem()`.
-
-- Prefer configured job-number column:
-  - `LINEITEM_JOB_NO_COLUMN_ID`
-  - fallback `mondayFields.COLS.JOB_NO`
-- Fallback extracts a 5-digit job number from item name.
-- `listBoardItems()` pages Monday board items.
-
-### Create Logic
-
-Implemented in `createJobOnMonday(job)`.
-
-- Creates a parent item on `LINEITEM_BOARD_ID` / `LINEITEM_GROUP_ID`.
-- Parent item name is:
-  - `jobNumber - customer - jobTitle`
-  - or `jobNumber - customer - jobType`
-- Parent columns set when configured:
-  - job number
-  - customer
-  - job title
-- Creates one Monday subitem per parsed line item.
-- Creates a final managed subitem named `TOTAL`; its quantity column is the sum of parsed line-item quantities.
-- Sets job type status when `JOB_TYPE_STATUS_COLUMN_ID` is configured.
-- Print status candidates: `PRINT`.
-- Embroidery status candidates: `EMB`, `EMBROIDERY`, `EMBRODIERY`.
-
-Important hardening:
-
-- Parent items must not be deleted as rollback after partial create failure.
-- If a subitem or status mutation fails after parent creation, preserve the parent item and retry later.
-- Local state can retain a pending job with an item id.
-- Job-type status failures are non-fatal for line-item sync.
-
-### Update Logic
-
-Implemented in `updateJobOnMonday(job, existingItem)`.
-
-- Fetches current item and subitems from Monday.
-- Tries to update parent job number/customer/title columns if they exist.
-- Job-type status update is non-fatal.
-- Syncs parsed line-item subitems by index, ignoring the managed `TOTAL` row while matching CSV rows.
-- Missing subitems are created.
-- Subitems with changed names are replaced by creating the replacement before deleting the old subitem.
-- Ensures exactly one managed `TOTAL` subitem is last, with blank code/size/colour columns and the summed quantity.
-- Duplicate or misplaced `TOTAL` subitems are treated as managed rows and removed independently of extra-subitem preservation.
-- Extra subitems are preserved by default.
-- Set `OPEN_ORDERS_DELETE_EXTRA_SUBITEMS=true` to allow deletion of extra subitems.
-
-### Signature/State Logic
-
-Implemented in `computeJobSignature()` and `openOrdersState.js`.
-
-- Signature includes:
-  - job number
-  - job type
-  - customer
-  - job title
-  - normalized line items
-- State path:
-  - `OPEN_ORDERS_STATE_PATH`
-  - default `data/open-orders-state.json`
-- State statuses:
-  - `pending`
-  - `created`
-  - `updated`
-- Unchanged signatures are skipped unless Monday subitems do not match the parsed line-item count plus `TOTAL`, or the managed `TOTAL` row is missing, duplicated, not last, or has the wrong quantity.
-
-### Assessment Of Deletion Loop
-
-The observed behavior where a job is created, line items are added, then the whole job disappears and sync starts again is a code-level issue, not expected Monday webhook behavior.
-
-The previous create path deleted the parent item in a catch block if any operation after parent creation failed. A likely failure point is job-type status update after all subitems are created, for example a missing `PRINT` or `EMBROIDERY` label on the configured status column. That made the UI look like Monday removed the job after all line items were added, then the next webhook recreated it.
-
-Current contract: never delete the parent item as cleanup for a sync failure. Preserve it and let the next sync update it.
-
-## Dropbox Per-Job Line-Item Import
-
-Implemented in `src/services/dropboxLineItemImporter.js`.
-
-- Source folder: `DROPBOX_IMPORT_FOLDER`, default `/MONDAY`.
-- Archive folder: `DROPBOX_ARCHIVE_FOLDER`, default `/MONDAY/archive`.
-- Error folder: `DROPBOX_ERROR_FOLDER`, default `/MONDAY/errors`.
-- Finds files by 5-digit job number in filename.
-- Parses first worksheet using `xlsx`.
-- Required normalized columns:
-  - `productid`
-  - `sstylecode`
-  - `sstyle`
-  - `scolour`
-  - `ssize`
-  - `lngqty`
-- Creates subitems on an existing Monday item.
-- Moves source file to archive on success or error folder on failure.
-- Has in-memory `activeJobs` set to avoid duplicate processing for the same job number.
-
-Triggered by:
-
-- Script: `npm run import:dropbox`
-- Monday create-item webhook: `POST /api/monday/events`
 
 ## API Endpoints
 
@@ -240,36 +53,29 @@ Security rules:
 - Passwords are stored only as Node `crypto.scrypt` hashes with per-user random salts.
 - Session cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` in production/HTTPS.
 - Database session rows store only a SHA-256 hash of the random browser session token.
-- Monday OAuth remains on `/auth` and `/callback`; do not reuse those paths for Hub login.
 
 ### Health And Status
 
 - `GET /health`: returns `{ ok: true }`.
-- `GET /api/status`: returns `{ ok: true, mondayAuthenticated: boolean, hubAuthenticated: boolean }`.
-
-### Monday Auth And Board
-
-- `GET /auth`: redirects to Monday OAuth authorize URL.
-- `GET /callback`: exchanges OAuth code and redirects to `/`.
-- `GET /api/board`: returns cached Monday board data for dashboard. Requires Monday token/auth. The response includes board id/name, ordered parent column metadata (`id`, `title`, `type`, `settings_str`), ordered group metadata (`id`, `title`, `color`, `position`), grouped items with each item's Monday column values, and `subitemColumns` metadata from the Monday subitem board when subitems are present. Dashboard refreshes may bypass the route cache with `?fresh=1`, `?refresh=1`, or a `Cache-Control: no-cache` request header.
-- `PUT /api/board/items/:itemId/status-column`: updates one parent item Monday status-type column from the dashboard. Requires Hub API auth and Monday auth. Body: `{ "columnId": "...", "label": "..." }`; for clearing dashboard priority, body may be `{ "columnId": "...", "clear": true }`. The route only accepts dashboard parent columns titled `STATUS` or `PRIORITY`, plus the configured `STATUS_COLUMN_ID` for compatibility, verifies submitted labels exist in that column's Monday `settings_str`, writes via `change_column_value`, and clears the `/api/board` cache. Only the dashboard `PRIORITY` column can be cleared to an empty/default-grey status. `/api/board/items/:itemId/job-status` is retained as an alias for the same handler.
+- `GET /api/status`: returns `{ ok: true, hubAuthenticated: boolean }`.
 
 ### Test Dashboard
 
-- `GET /api/test-dashboard/board`: returns a Monday-shaped board payload for the Test Dashboard tab without reading Monday runtime board data. It is built from Railway/Postgres `database_jobs`, `database_job_line_items`, `database_job_positions`, `job_scans`, and test-dashboard state/file tables. It emits the same group/column/subitem/value shape as `/api/board`, with file columns backed by Cloudinary `secure_url` values and no Monday asset ids.
-- `PUT /api/test-dashboard/items/:jobId/status-column`: updates DB-backed or private test dashboard `STATUS` / `PRIORITY` state. Body matches the Monday dashboard route: `{ "columnId": "...", "label": "..." }`, or `{ "columnId": "...", "clear": true }` for clearing `PRIORITY`. For DB-backed rows it stores board state in `test_dashboard_job_state` and writes labels to `database_jobs.dashboard_status` / `dashboard_priority`; for private rows it stores state only in `test_dashboard_private_jobs`. The route applies copied board automation logic for status-driven group moves, completed cleanup, invoiced archive, and priority clearing. `PRE-PRODUCTION` is not a selectable STATUS option; the PRE-PRODUCTION group remains available and is reached through job approval / `NO STOCK`. `AWAITING APPROVAL` uses the same `#2b2b2c` background as an ordinary dashboard job cell so its status box appears uncoloured while retaining white text. `STATUS = COMPLETED` always moves to COMPLETED and overrides the ordinary unapproved-job OFFICE rule; `STATUS = STOCK ORDERED` is status-only and preserves the current non-production group until `JOB ✔` approval moves the row to PRE-PRODUCTION; `STATUS = TO SAMPLE` moves to TO SAMPLE; `STATUS = SAMPLED` moves back to OFFICE. Ordinary unapproved DB-backed jobs still default to OFFICE / `AWAITING APPROVAL`, but explicit row-menu moves may put an unapproved row on HOLD by writing the matching dashboard status. `database_jobs.is_complete` is the imported legacy closed/invoiced flag and is not set by dashboard `STATUS = COMPLETED`; completed dashboard jobs instead become eligible for the DATABASE To Invoice page until the invoice action marks them invoiced/closed.
+- `GET /api/test-dashboard/board`: returns the Tuesday Dashboard payload from Railway/Postgres `database_jobs`, `database_job_line_items`, `database_job_positions`, `job_scans`, and test-dashboard state/file tables. File values contain Cloudinary `secure_url` metadata only.
+- `PUT /api/test-dashboard/items/:jobId/status-column`: updates DB-backed or private dashboard `STATUS` / `PRIORITY` state. Body is `{ "columnId": "...", "label": "..." }`, or `{ "columnId": "...", "clear": true }` for clearing `PRIORITY`. DB-backed rows write `test_dashboard_job_state` and `database_jobs.dashboard_status` / `dashboard_priority`; private rows write only `test_dashboard_private_jobs`. The route applies local status-driven group moves, completed cleanup, invoiced archive, and priority clearing. `PRE-PRODUCTION` is not selectable in STATUS; the group remains reachable through job approval / `NO STOCK`. `AWAITING APPROVAL` uses the ordinary `#2b2b2c` dashboard background with white text. `STATUS = COMPLETED` moves to COMPLETED; `STOCK ORDERED` preserves the current non-production group until approval; `TO SAMPLE` moves to TO SAMPLE; and `SAMPLED` moves to OFFICE. `database_jobs.is_complete` remains the imported closed/invoiced flag and is not set merely by dashboard `COMPLETED`.
 - `POST /api/test-dashboard/private-jobs`: creates a dashboard-only private job row in `test_dashboard_private_jobs`, usually in OFFICE. These rows are not `database_jobs`, do not allocate job/order/invoice numbers, and do not appear in DATABASE.
 - `DELETE /api/test-dashboard/private-jobs/:jobId`: permanently deletes a dashboard-only private job row and rejects normal DB-backed ids. Any Cloudinary proof/design assets referenced by the private row are queued for deletion best-effort.
 - `PUT /api/test-dashboard/items/:jobId/name`: renames dashboard-only private jobs. It rejects DB-backed job ids because real order titles stay owned by DATABASE.
 - `PUT /api/test-dashboard/items/:jobId/group`: moves a DB-backed or private Test Dashboard row to HOLD, OFFICE, or PRE-PRODUCTION from the row action menu. Moving to PRE-PRODUCTION requires `JOB ✔` approval; unapproved rows are rejected and continue to resolve to OFFICE unless explicitly moved to HOLD. It writes the matching dashboard status label (`HOLD`, `AWAITING APPROVAL`, or `NO STOCK`) and updates `database_jobs.dashboard_status` only for DB-backed jobs.
 - `PUT /api/test-dashboard/items/:jobId/date-column`: updates the dashboard `DATE` column for DB-backed or private Test Dashboard rows and recalculates `PRIORITY` from the due date (`Critical`, `High`, `Medium`, `Low`). DB-backed jobs with `database_jobs.customer_date_required` keep the DATABASE customer date and reject dashboard date edits.
-- `PUT /api/test-dashboard/items/:jobId/checkbox-column`: updates Test Dashboard parent checkbox columns for DB-backed rows in `test_dashboard_job_state.column_values` or private rows in `test_dashboard_private_jobs.column_values`. Body: `{ "columnId": "...", "checked": true|false }`. The route accepts only mirrored checkbox columns. The `JOB ✔` checkbox is the job-approved flag and is the main driver for whether a job is approved/readiness-approved; DB-backed approval is stored on `database_jobs.proof_approved` / `proof_approved_at`, while private approval stays dashboard-only. Checking `JOB ✔` requires at least one design/PSG reference and at least one file in the Test Dashboard `PROOF` column; otherwise the route returns `approval_requirements_missing`. Successful approval moves the job to PRE-PRODUCTION, sets `STATUS = NO STOCK` unless the job is already `STOCK ORDERED`, clears `PRIORITY`, and sets `DATE` to 14 calendar days from approval. Clearing `JOB ✔` returns the job to OFFICE / `AWAITING APPROVAL`, clears priority, and clears date unless a DB-backed customer date is required.
+- `PUT /api/test-dashboard/items/:jobId/checkbox-column`: updates Test Dashboard parent checkbox columns for DB-backed rows in `test_dashboard_job_state.column_values` or private rows in `test_dashboard_private_jobs.column_values`. Body: `{ "columnId": "...", "checked": true|false }`. The route accepts only configured checkbox columns. The `JOB ✔` checkbox is the job-approved flag and is the main driver for whether a job is approved/readiness-approved; DB-backed approval is stored on `database_jobs.proof_approved` / `proof_approved_at`, while private approval stays dashboard-only. Checking `JOB ✔` requires at least one design/PSG reference and at least one file in the Test Dashboard `PROOF` column; otherwise the route returns `approval_requirements_missing`. Successful approval moves the job to PRE-PRODUCTION, sets `STATUS = NO STOCK` unless the job is already `STOCK ORDERED`, clears `PRIORITY`, and sets `DATE` to 14 calendar days from approval. Clearing `JOB ✔` returns the job to OFFICE / `AWAITING APPROVAL`, clears priority, and clears date unless a DB-backed customer date is required.
 - `PUT /api/test-dashboard/items/:jobId/text-column`: updates the DB-backed Test Dashboard `NOTES` parent text column in `test_dashboard_job_state.column_values`. Body: `{ "columnId": "...", "value": "..." }`. The route accepts only the mirrored `NOTES` text/long-text column so DES/PSG remains on its design reconciliation route.
 - `PUT /api/test-dashboard/items/:jobId/design-column`: reconciles DES/PSG values edited from the Test Dashboard with the related DATABASE Design tab rows. Body: `{ "columnId": "...", "value": "..." }`. Submitted values are split on `/`; each represented design/PSG reference is matched against existing `database_job_positions.design_ref` values. Exact matches are kept, changed refs update an existing row of the same kind where possible, new refs insert rows, and removed refs delete dashboard-created empty rows or clear `design_ref` on rows that still have position/colour data. Exact represented design/PSG references are not inserted twice.
 - `GET /api/test-dashboard/scan-url?jobId=...`: returns a signed `/test-scan?j=...&ts=...&sig=...` URL for DB-backed label printing.
+- `GET /api/test-dashboard/qr?data=...&size=...&margin=...`: renders a QR PNG for a signed Tuesday scan URL. Requires Hub API authentication.
 - `POST /api/test-dashboard/items/:jobId/label-printed`: prepares a Tuesday Dashboard label-print event and returns its signed `scanUrl` for DB-backed rows. The event normally sets `STATUS = CHECKED IN` in test-dashboard state and `database_jobs.dashboard_status` while preserving the current group and job-approval state. Reprinting never regresses `COMPLETED`; it also preserves `READY TO PRINT` when the job's resolved group is no longer PRE-PRODUCTION. The label is still prepared and printed when either status is preserved. Private Tuesday Dashboard rows receive the same dashboard-only status automation but no scanner QR URL.
-- `GET /test-scan?j=...&ts=...&sig=...`: public signed scan endpoint for DB-backed labels. It records scanner state against the job source order id and updates the test-dashboard DB state only.
-- `POST /api/test-dashboard/scanner`: accepts scanner data for the Test Dashboard tab, including `/test-scan` URLs or bare numeric job ids, records scan state, and refreshes DB-backed status/check-in state without calling Monday.
+- `GET /test-scan?j=...&ts=...&sig=...`: public signed scan endpoint for DB-backed labels. It records Railway scanner state against the job source order id and updates `test_dashboard_job_state` plus `database_jobs.dashboard_status`.
+- `POST /api/test-dashboard/scanner`: accepts Tuesday scan URLs or bare numeric DB job ids, records scan state, and refreshes DB-backed status/check-in state.
 - `POST /api/test-dashboard/uploads/signature`: returns a short-lived signed Cloudinary browser-upload payload. It requires `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET`; the API secret never reaches the browser. The signed params are limited to Cloudinary upload params that Cloudinary includes in its signature check; PDF delivery handling is done after upload from the original filename and saved metadata.
 - `POST /api/test-dashboard/items/:jobId/files`: saves Cloudinary upload metadata for a DB job/file column in `test_dashboard_files`.
 - `DELETE /api/test-dashboard/items/:jobId/proof-files`: removes all files from the Test Dashboard `PROOF` column for a DB-backed or private row. DB-backed rows delete matching `test_dashboard_files` metadata; private rows clear the proof payload from `test_dashboard_private_jobs`; Cloudinary assets are destroyed best-effort.
@@ -277,48 +83,31 @@ Security rules:
 
 ### Scanner And QR
 
-- `GET /api/scan-states`: returns DB-backed scan state map.
-- `GET /api/scan-url?itemId=...`: returns signed scan URL.
-- `GET /scan?i=...&ts=...&sig=...`: records a scan and updates Monday columns.
-- `POST /api/scanner`: accepts raw scanner data, records scan, updates Monday columns.
-- `GET /api/qr?data=...&size=...&margin=...`: returns QR PNG.
+- Labels use `/api/test-dashboard/scan-url`, `/api/test-dashboard/qr`, and the public signed `/test-scan` endpoint.
+- The browser serial connection posts only to `/api/test-dashboard/scanner`.
+- `job_scans` and `job_scan_events` are the scan source of truth.
 
 Scanner progression:
 
-- scan 1: local status `STEP1_STATUS_LABEL`, tick `CHECKED_IN_COLUMN_ID`
-- scan 2: local status `STEP2_STATUS_LABEL`, set `STATUS_COLUMN_ID`
-- scan 3: local status `STEP3_STATUS_LABEL`, set `STATUS_COLUMN_ID`
-
-### Dashboard Board UI
-
-- The Dashboard tab renders the Monday workboard directly from `/api/board` metadata. It uses Monday group order and color values, a page-level horizontally scrollable dark grid mounted directly in the dashboard tab instead of inside a card/container, and parent columns in Monday order, excluding the raw `Subitems` column because subitems are represented by the job-row toggle and excluding `START/END`.
-- The dashboard sidebar shows the `Ultimate Hub` text/user name without the old `UH` placeholder icon or `HOME` heading. On desktop, the sidebar is sticky on both the vertical and horizontal axes so it stays pinned to the viewport while the direct page-level board grid scrolls sideways. A top-right sidebar arrow toggles the sidebar open/closed locally; when closed, the dashboard content expands into the freed space and the arrow remains available to reopen the nav. On mobile portrait and phone landscape widths, the sidebar starts closed as an off-canvas drawer opened by a fixed menu button and closed by the drawer close button, backdrop, Escape, orientation/page restore, or selecting a tab; phone landscape keeps the wide board grid available with compact top chrome and a taller scroll area.
-- Browser viewport zoom is locked for the app shell, but the Dashboard board supports a custom two-finger pinch zoom on mobile and phone-landscape layouts so the wide Monday grid can be zoomed out without scaling other tabs.
-- The dashboard no longer shows the hero copy (`Ultimate Promotions Job Board`, `Dashboard`, or `Live from Monday...`) or the local `Group colours` controls. Group titles sit above each grid and do not show a job-count line below the title.
-- Parent rows render the job name with a subitem-count badge when present, then live Monday columns; only `Ultimate Packing` also receives the leading `LABEL` column and retained `Print` action button with a pointer cursor. Dashboard parent and subitem title text uses fixed font size, line-height, and max-height so titles cannot render taller or visually larger than neighboring rows. The parent `JOB` column width is sized once from the longest loaded job title across all groups plus its subitem-count badge so following columns align between groups, while per-parent subitem title sizing remains per job. When rendered, the leading label column header is `LABEL` on desktop, and the label/print column is hidden on mobile and phone-landscape layouts so jobs start at the first visible column. Status columns render colored Monday-style full-cell fills using Monday status settings when available, with white label text and a wider `STATUS` column sized for `AWAITING APPROVAL`; parent `STATUS` and `PRIORITY` cells are clickable and open a Monday-style label picker using the column's configured labels, order, and colors, then write the selected label back to Monday. The `PRIORITY` picker includes a grey `No Priority` option that clears the Monday priority status back to the empty/default-grey state. Monday checkbox columns render blank when unchecked and standalone colored ticks when checked, with the `JOB` tick shown green. Date column text renders slightly larger and bolder than other plain text values. File columns render Monday attachments through the asset proxy where possible as icon-only cells with one icon per attached file and no inline filename. The `PROOF`, `FILES`, and `IMAGE` column icons open the dashboard preview modal at the clicked file; the modal previews PDFs/images without a footer filename, with file previous/next controls when multiple files are attached, centered desktop page previous/next controls for multi-page PDFs, a red close control, and mobile-specific close plus PDF page controls that remain visible inside the popup. In mobile views, preview modal PDF page controls are transparent so only the arrows and page number are visible while remaining tappable; phone landscape uses a full-screen modal with a shorter top bar and page controls overlaid on the document area. Text-style columns such as design number / `DES/PSG` and `NOTES` are centered in their grid cells and sized per group from the longest loaded text in that group, never narrower than the column title; DES/PSG sizing measures the bold editable text and input padding so trailing characters are not clipped, design refs render in the TRANS tick blue, PSG/ST references including their letters render in the JAQ tick gold only when the reference explicitly starts with PSG/ST, slash-separated numeric design refs remain blue on both sides, `/` and comma separators remain white, and empty `NOTES` groups shrink to the title width.
-- On desktop Dashboard preview modals, rendered PDF files include zoom controls with 100% as the default current fitted size, plus a 180-degree rotate toggle. When desktop PDF zoom is above 100%, click-hold dragging pans the scrollable PDF canvas. These zoom, drag-pan, and rotate controls are not exposed in mobile or phone-landscape modal layouts.
-- The Monday Dashboard `LABEL` print column is rendered only for the authenticated `Ultimate Packing` user. Its print action opens a 4in by 6in print window with job number, customer, job title, and a scanner QR code. Label values still shrink to fit horizontally, but the job number, customer, and job title start from capped maximum font sizes so short text cannot expand into the QR area. After the browser print dialog completes and focus returns, the label print popup closes itself.
-- Row camera capture/upload logic remains in the frontend, but the per-row camera button and top `Connect Camera` button are hidden from the dashboard grid. The camera modal and upload flow are otherwise unchanged.
-- Group and job/subitem toggles use Monday-style chevrons: right when collapsed and down when expanded. `HOLD`, `TO SAMPLE`, `OFFICE`, and `COMPLETED` start collapsed on first desktop dashboard render; all groups start collapsed on first mobile or phone-landscape dashboard render, while user-opened state is preserved across polling. Collapsed groups hide their item rows and show a slightly rounded Monday-style overview row with the group title, status distribution bars, and checkbox completion counts by column; closed group cards do not show job or subitem totals. On mobile and phone-landscape layouts, closed group cards hide all right-side overview columns, show only the group title, and share the same width as the `PRE-PRODUCTION` closed card. Open group accent rails start at the top of the first visible column header and run down the visible rows without a grey gap above the rail. On mobile and phone-landscape layouts, the open `PRINT` and `EMBROIDERY` group grids hide the `TRANS`, `JAQ`, `STATUS`, `TYPE`, `IMAGE`, and `CHECKED IN` columns while other groups keep their normal mobile columns. The collapsed group title block is measured from the widest loaded group title plus 20% title padding so the first metric column sits directly beside it instead of after the full `JOB` column width. The closed `TO SAMPLE` overview row is tinted green when it contains at least one parent job. Expanding a job inserts a subitem grid directly below the parent row using the live Monday subitem column order, excluding the subitem `CHECK IN` and `Text` columns; subitem grids have no leading blank label column and begin with the `Subitem` column while keeping their indented panel position relative to the parent job row. The shared board renderer displays Monday Dashboard subitems exactly as supplied by `/api/board`, without adding a client-computed total row in that context. Each job's subitem name, `SIZE`, `CODE`, and `COLOUR` columns are sized from that job's longest matching subitem value, not from a board-wide maximum. The subitem panel paints black behind the tight grid so rows end cleanly at the last visible subitem column, and a subtle Monday-style connector rail with curved row branches visually attaches subitem rows to their parent job. The subitem grid width stops at its final visible column instead of extending the grey row background across the whole parent grid.
-- Parent rows are dashboard-sorted by default inside each group by descending `PRIORITY`, then closest/earliest `DATE`. Parent column headers show a Monday-style blue sort control only while hovering/focusing the header; clicking it overrides the default with a dashboard-only sort using the selected pulled Monday column values, toggling high-to-low then low-to-high on repeat clicks. Header sorting treats earlier dates as the urgent/high side for date columns and does not write to or depend on Monday's item order. The active local sort is preserved across the 1-second polling renders.
-- The persistent left sidebar includes bottom-aligned dashboard controls on desktop. `Connect Scanner` is rendered only for the authenticated `Ultimate Packing` user, while `Priority highlights` remains available to every authenticated user; both controls are hidden on mobile and phone landscape dashboard layouts. When priority highlights are enabled, parent job rows with an overdue/today/tomorrow `DATE` are tinted red across the whole row, and rows due in 2-3 days are tinted orange; the toggle state is stored in browser localStorage and does not write to Monday.
-- The frontend shows a loading wheel on the initial Dashboard board load until `/api/board` has returned and the board UI renders. It polls `/api/board?fresh=1` every 1 second while the Dashboard tab is visible, so Monday-side column/status changes flow into the dashboard without waiting for the server cache timeout; polling pauses while the status/priority picker is open or a dashboard status write is in flight. The old board-top toolbar remains visually hidden and does not show `Connected to Monday`, `ready`, `Update board info`, `Connect Scanner`, `Priority highlights`, or `Connect Camera`; the `Connect to Monday` button is hidden during page load and only shown after a Monday auth failure. Manual refresh logic remains available through `loadBoard({ forceRefresh: true })`.
+- scan 1: `STEP1_STATUS_LABEL` (default `Checked In`)
+- scan 2: `STEP2_STATUS_LABEL` (default `In Production`)
+- scan 3: `STEP3_STATUS_LABEL` (default `Completed`)
 
 ### Test Dashboard UI
 
-- The Test Dashboard sidebar tab is visibly labeled `Tuesday Dashboard`, sits directly below DATABASE in the top-level nav list, and uses the same board renderer, group layout, subitem expansion, local sorting, priority highlights, preview modal, print-label layout, and mobile pinch-zoom behavior as the Monday Dashboard tab.
-- The Test Dashboard reads only `/api/test-dashboard/board` for board data and writes only test-dashboard API routes for status, priority, scanner, and file actions. It must not use `/api/board`, Monday item ids, Monday status writes, Monday asset proxy URLs, or Monday camera/upload routes for its board state.
+- The production dashboard sidebar tab is labeled `Tuesday Dashboard`, sits below DATABASE, and uses the DB-backed renderer for group layout, subitem expansion, local sorting, priority highlights, preview modal, print-label layout, and mobile pinch zoom.
+- Tuesday Dashboard reads only `/api/test-dashboard/board` and writes only `/api/test-dashboard` routes for status, priority, scanner, label, group, approval, design, text, date, and file actions. The removed legacy board, OAuth, scanner, asset-proxy, camera-upload, and visual routes are not mounted.
 - Test Dashboard parent rows show a grey three-dot action button immediately to the left of the Print label button for `Ultimate Packing`. For other users, the label column is omitted and the three-dot button moves into the `JOB` cell so its unrelated job actions remain available. Clicking it opens a small row menu whose first item is `Move To`; hovering that item opens a submenu for Hold, Office, and Pre-Production. Choosing a group writes dashboard-only move state through `/api/test-dashboard/items/:jobId/group`; Pre-Production moves are accepted only after `JOB ✔` approval. The same menu includes `Remove Proof`, which clears the row's Test Dashboard `PROOF` files through `/api/test-dashboard/items/:jobId/proof-files`.
 - The OFFICE group shows a `+` control to the left of the group title only while the group is open. Clicking it creates a dashboard-only private job row in OFFICE with an editable free-text title and no generated job number. Private rows can use the normal Test Dashboard proof upload, DES/PSG, NOTES, checkbox, status, date, priority, and automation controls, but they are stored only in `test_dashboard_private_jobs` and never appear in DATABASE or invoice flows.
 - Test Dashboard date cells are clickable unless the DB-backed job has `customer_date_required = true`, in which case the DATABASE customer date remains read-only. Editable dates open a small calendar/date popover; saving a date updates the dashboard date and recalculates PRIORITY so earlier dates move up the default sort and later dates move down.
 - Test Dashboard groups all start collapsed on first load. Test Dashboard collapsed group cards do not show the dashboard summary metrics for `PRIORITY`, `JOB ✔`, status bars, type, scanner, or other columns. They show the group name with a white `<count> Job(s)` line below it and a blank closed-card box spanning to the board's normal right-side inset, with matching rounded right-side corners and a right accent end cap matching the left accent strip.
 - On Test Dashboard parent rows only, the leading job/order number inside the job title is rendered as a blue clickable control matching the DES/PSG design-number blue. Clicking only that number switches to the DATABASE tab and opens the matching order info page by `database_jobs.source_order_id`; the rest of the job title remains normal non-clickable title text.
-- The Test Dashboard parent rows are keyed by `database_jobs.source_order_id`; subitems are populated from `database_job_line_items` but only stock and non-stock item rows are shown, excluding non-deliverable, internal, and delivery-charge rows from the dashboard subitem grid. DES/PSG text is derived from `database_job_positions.design_ref` plus the job screen-number field, with duplicate design refs collapsed and displayed as `design number(s) / PSG or stitch references` when both are present, or PSG/stitch references first when no design ref exists. Design refs always render before PSG/stitch references on the dashboard even when PSG rows sit above design rows in DATABASE. DATABASE is authoritative for DES/PSG updates/removals: older `test_dashboard_job_state` DES/PSG values are treated only as a one-time migration fallback when no DATABASE design or screen reference exists, then cleared from test-dashboard state after backfill; if DATABASE already has a reference, the stale state value is cleared without being reinserted. Test Dashboard candidates include legacy-open jobs plus jobs that already have DB dashboard identity from `database_jobs.dashboard_status` / `dashboard_priority`, scanner status, or a `test_dashboard_job_state` row seeded from Monday/manual board state. The legacy closed/invoiced flags `is_complete`, `invoice_printed`, and `pf_invoice_printed` do not suppress a non-completed job that has dashboard identity; `dashboard_status = INVOICED`, archived test-dashboard state, and resolved `STATUS = COMPLETED` jobs with closed/invoice flags remain dashboard removal states. Jobs with `dashboard_status = COMPLETED` remain visible in the Test Dashboard `COMPLETED` group only while they have not been invoiced/closed by the DATABASE invoice action. Stale imported DB-only jobs with no dashboard identity are not rendered. Unapproved jobs normally render in OFFICE with `STATUS = AWAITING APPROVAL`, no priority, and no date unless the DATABASE customer-date flag is set, but explicit Test Dashboard row-menu moves and dashboard date edits may store HOLD placement and date-derived priority before `JOB ✔` approval. Job `STATUS`, `PRIORITY`, and job approval are persisted on `database_jobs.dashboard_status`, `dashboard_priority`, and the existing `proof_approved` field; Test Dashboard TYPE is derived first from `database_jobs.order_type` / `order_type_abbr`, mapping Printing to `PRINT`, Embroidery to `EMB`, and Print + Emb to `EMB / PRINT`, before falling back to seeded state only when the DB order type cannot be categorized.
+- The Test Dashboard parent rows are keyed by `database_jobs.source_order_id`; subitems are populated from `database_job_line_items` but only stock and non-stock item rows are shown, excluding non-deliverable, internal, and delivery-charge rows from the dashboard subitem grid. DES/PSG text is derived from `database_job_positions.design_ref` plus the job screen-number field, with duplicate design refs collapsed and displayed as `design number(s) / PSG or stitch references` when both are present, or PSG/stitch references first when no design ref exists. Design refs always render before PSG/stitch references on the dashboard even when PSG rows sit above design rows in DATABASE. DATABASE is authoritative for DES/PSG updates/removals: older `test_dashboard_job_state` DES/PSG values are treated only as a one-time migration fallback when no DATABASE design or screen reference exists, then cleared from test-dashboard state after backfill; if DATABASE already has a reference, the stale state value is cleared without being reinserted. Dashboard candidates include legacy-open jobs plus jobs with DB identity from `database_jobs.dashboard_status` / `dashboard_priority`, scanner status, or any non-archived `test_dashboard_job_state` row. The legacy closed/invoiced flags `is_complete`, `invoice_printed`, and `pf_invoice_printed` do not suppress a non-completed job that has dashboard identity; `dashboard_status = INVOICED`, archived test-dashboard state, and resolved `STATUS = COMPLETED` jobs with closed/invoice flags remain dashboard removal states. Jobs with `dashboard_status = COMPLETED` remain visible in the `COMPLETED` group only while they have not been invoiced/closed by the DATABASE invoice action. Stale imported DB-only jobs with no dashboard identity are not rendered. Unapproved jobs normally render in OFFICE with `STATUS = AWAITING APPROVAL`, no priority, and no date unless the DATABASE customer-date flag is set, but explicit row-menu moves and dashboard date edits may store HOLD placement and date-derived priority before `JOB ✔` approval. Job `STATUS`, `PRIORITY`, and job approval are persisted on `database_jobs.dashboard_status`, `dashboard_priority`, and `proof_approved`; TYPE is derived first from `database_jobs.order_type` / `order_type_abbr`, mapping Printing to `PRINT`, Embroidery to `EMB`, and Print + Emb to `EMB / PRINT`, before falling back to stored dashboard state when the DB order type cannot be categorized.
 - Test Dashboard parent rows render a client-only `TOTAL` column immediately to the right of the `JOB` title column. It sums the visible non-`TOTAL` subitem `QTY`/`QUANTITY` values for that parent, uses the same bold sizing as date values, and sizes globally from the widest formatted total across all loaded Test Dashboard jobs. Test Dashboard subitem grids render a display-only computed `TOTAL` row at the bottom when a subitem `QTY`/`QUANTITY` column exists; the row sums the visible non-`TOTAL` subitem quantities and replaces any source-provided `TOTAL` row for display only.
 - Test Dashboard group placement follows the copied board automation rules from DB state on every render after approval: `STATUS = READY TO PRINT` routes by the DB-derived `TYPE` (`PRINT` to `PRINT`, `EMB` / `EMB / PRINT` to `EMBROIDERY`), `STATUS = COMPLETED` marks the dashboard status complete but does not set the legacy closed/invoiced flag, `HOLD` routes to `HOLD`, `TO SAMPLE` to `TO SAMPLE`, `SAMPLED` to `OFFICE`, and approved `NO STOCK` to `PRE-PRODUCTION`. Historical stored `PRE-PRODUCTION` values still resolve to the PRE-PRODUCTION group, but that label is removed from the STATUS picker and from persisted dashboard column settings. `STOCK ORDERED` updates the status only and preserves the current non-production group until `JOB ✔` approval. User, scanner, and Stock Ordering report status changes update both `test_dashboard_job_state` and the `database_jobs` dashboard fields, so DATABASE and Test Dashboard stay aligned. Status changes do not infer or overwrite job approval; `JOB ✔` is the approval driver and the only normal move out of OFFICE for new jobs. When a Test Dashboard user selects `COMPLETED` in the `STATUS` picker, the frontend shows an are-you-sure modal before sending the update.
-- Test Dashboard parent checkbox cells are clickable and persist their checked/unchecked state to the DB-backed board state without touching Monday. Checkbox clicks update the visible tick immediately and keep that optimistic state through board refreshes while the save is in flight; the UI reverts only if the API update fails. The `JOB ✔` checkbox is the approval tick; checking it stores job approval as `database_jobs.proof_approved = true`, and clearing it stores `proof_approved = false`. Before sending a `JOB ✔` approval, the frontend verifies DES/PSG and PROOF are present in the loaded board payload; if not, it shows an `Approval blocked` modal saying `Please add design number and/or Visual Proof.` with an Okay button.
+- Test Dashboard parent checkbox cells persist their checked/unchecked state to Railway/Postgres. Checkbox clicks update the visible tick immediately and keep that optimistic state through board refreshes while the save is in flight; the UI reverts only if the API update fails. The `JOB ✔` checkbox is the approval tick; checking it stores job approval as `database_jobs.proof_approved = true`, and clearing it stores `proof_approved = false`. Before sending a `JOB ✔` approval, the frontend verifies DES/PSG and PROOF are present in the loaded board payload; if not, it shows an `Approval blocked` modal saying `Please add design number and/or Visual Proof.` with an Okay button.
 - The Test Dashboard DES/PSG parent cell is editable. Pressing Enter or leaving the field saves the changed value through `/api/test-dashboard/items/:jobId/design-column`, which reconciles DATABASE Design rows for that order. A submitted `/` creates separate DATABASE design rows, so `12345 / PSG7543` stores `12345` and `PSG7543` separately while the dashboard still displays them in the normal design-first format. Editing an existing displayed ref updates its existing DATABASE row where possible; deleting a displayed ref removes dashboard-created empty rows or clears the `design_ref` from rows that still contain position/colour data. The Test Dashboard `NOTES` parent cell is an inline text input that saves on Enter/blur through `/api/test-dashboard/items/:jobId/text-column` into `test_dashboard_job_state`.
-- `PROOF`, `FILES`, `IMAGE`, and any future file/image columns render as icon-only cells using Cloudinary `secure_url` values from `test_dashboard_files`. Empty Test Dashboard file cells show a subtle grey `+` affordance; clicking it opens the browser file picker, and dragging files onto the same cell remains supported. While an upload is running, that cell shows a small spinner instead of the `+`; after refresh, the uploaded file appears using the normal file/PDF/image icon. The same dashboard preview modal opens images, PDFs, and other supported files directly from those Cloudinary URLs. When a Cloudinary upload is an Illustrator-compatible PDF but the delivery URL is classified as `.ai`, the frontend rewrites the Cloudinary delivery URL to `.pdf` before PDF.js or the native viewer loads it.
+- `PROOF`, `FILES`, `IMAGE`, and any future file/image columns render as icon-only cells using Cloudinary `secure_url` values from `test_dashboard_files`. Empty Test Dashboard file cells show a subtle grey `+` affordance; cells with existing files keep a compact `+` upload button to the right of the preview/file icons so additional files can still be picked without drag/drop. Clicking the `+` opens the browser file picker, and dragging files onto the same cell remains supported. While an upload is running, that cell shows a small spinner instead of the `+`; after refresh, the uploaded file appears using the normal file/PDF/image icon. The same dashboard preview modal opens images, PDFs, and other supported files directly from those Cloudinary URLs. When a Cloudinary upload is an Illustrator-compatible PDF but the delivery URL is classified as `.ai`, the frontend rewrites the Cloudinary delivery URL to `.pdf` before PDF.js or the native viewer loads it.
 - Clicking or dragging files onto a Test Dashboard file/image cell requests `/api/test-dashboard/uploads/signature`, uploads directly from the browser to Cloudinary, then stores metadata through `/api/test-dashboard/items/:jobId/files`. Column folders are `ultimate-hub/test-dashboard/<column-slug>/<order-no>/`, with built-in slugs `proof`, `files`, and `image`. PDF uploads are saved with a PDF delivery URL and `format = pdf` when the original filename ends in `.pdf`.
 - The Test Dashboard `LABEL` print column is rendered only for the authenticated `Ultimate Packing` user. Printing posts `/api/test-dashboard/items/:jobId/label-printed`, opens the normal 4in by 6in label print popup, and invokes the browser print dialog. The event returns and prints a `/test-scan` QR code for DB-backed rows and applies the label-printed status automation before the popup is built. After the browser print dialog completes and focus returns, the label popup closes itself. Scanner input while the Test Dashboard tab is active expands bare numeric job ids through the test scan-url route and posts scan results to `/api/test-dashboard/scanner`.
 - The Test Dashboard polls `/api/test-dashboard/board?fresh=1` every 1 second only while the Test Dashboard tab is visible. Polling pauses while the shared status/priority picker is open, a status/checkbox write is in flight, a Test Dashboard DES/PSG or NOTES edit is focused or saving, or a Test Dashboard file upload is running. If a poll response returns after a text edit has become active, the frontend keeps the fetched payload but skips rerendering so inputs are not replaced while the user is typing; the save-triggered refresh can rerender after the value is submitted.
@@ -358,7 +147,7 @@ Endpoints:
 - `GET /api/database/customers/search?q=`: searches distinct customer/contact values from `database_jobs` and `database_customer_profiles`, using the same imported/manual customer data that populates outstanding orders and order/customer details.
 - `POST /api/database/jobs`: creates a real manual `database_jobs` row from the legacy New Order form. Required fields are customer, order type, job title, order date, delivery date, and invoice required. The route accepts Business Gifts, Printing, Print + Emb, and Embroidery order types, deriving `order_type_abbr` as `G`, `P`, `PE`, or `E`. It allocates the next source order id and next job/order number from `MAX(source_order_id) + 1` and `GREATEST(MAX(order_no), 50000) + 1`. Manual order creation does not allocate or reserve an invoice number; `invoice_no` stays `NULL` until the Invoice action generates the invoice. The route stores selected customer/contact/address ids and address text when provided, marks the row `is_manual_entry = true`, and seeds `dashboard_status = AWAITING APPROVAL` so new DB-created jobs have Test Dashboard identity and land in OFFICE until approved.
 - `GET /api/database/jobs/:id`: returns one job plus contact fields, line items, and position rows. `:id` may be source order id or job number.
-- `GET /api/database/stock-ordering`: returns non-gift, non-completed/non-invoiced jobs that still need stock ordering, including only stock and non-stock line items. It excludes jobs whose Tuesday Dashboard status or seeded group has reached `STOCK ORDERED`, `READY TO PRINT`, PRINT, EMBROIDERY, COMPLETED, `IN PRODUCTION`, or `INVOICED`.
+- `GET /api/database/stock-ordering`: returns non-gift, non-completed/non-invoiced jobs that still need stock ordering, including only stock and non-stock line items. It excludes jobs whose Tuesday Dashboard status or stored group has reached `STOCK ORDERED`, `READY TO PRINT`, PRINT, EMBROIDERY, COMPLETED, `IN PRODUCTION`, or `INVOICED`.
 - `PUT /api/database/jobs/:id`: updates supported order-level fields. The current UI uses it for `job_title` and `comments` autosave, order-detail invoice/delivery address dropdown saves, and with `{ "mark_invoiced": true }` when the order-view Invoice action is clicked; the order info page no longer exposes a standalone Close Order button. The route also accepts selected contact fields and invoice/delivery address ids/text for manual order maintenance. The invoice action allocates an invoice number if missing, sets `invoice_required = true`, `invoice_printed = true`, `dashboard_status = INVOICED`, `dashboard_status_updated_at = NOW()`, and sets the legacy closed/invoiced flag `is_complete = true` with `complete_date` defaulting to now when blank. It also sets `database_jobs.invoice_date` once on first invoice generation using any supplied manual invoice date, otherwise the existing completion date or current timestamp; later invoice clicks preserve the stored invoice date unless a manual date is explicitly submitted.
 - `GET /api/database/products/search?field=style|code&q=`: searches full imported `database_products` rows grouped by `style_id`. Style searches match style names first, with style/alt code fallback. Code searches match style and alternate style codes.
 - `GET /api/database/products/styles/:styleId/variants`: returns all imported product variants for one style, ordered for colour/size dropdowns.
@@ -431,9 +220,9 @@ UI rules:
 - The Users home button opens a DATABASE Users page backed by `/api/database/users`. It lists every registered Hub user with name, email, registration date, and a Remove button. Remove opens the shared are-you-sure modal; Confirm deletes that `hub_users` row through `DELETE /api/database/users/:id`, which also deletes that user's stored Hub sessions through the session table cascade.
 - Clickable DATABASE order-number links use a pointer cursor on hover.
 - The order view has four top tabs: Order details, Order Items, Design, and Proof. These tabs switch in place without navigating away from the dashboard. The Proof tab shows files attached to the Test Dashboard `PROOF` column for the same `database_jobs.source_order_id`, using the DATABASE legacy panel styling with an embedded PDF/image/native viewer in a taller responsive proof panel. Multiple proof files can be stepped through with side arrows, and multi-page PDFs expose previous/next page controls inside the panel. If PDF.js rendering fails, the proof viewer falls back to the native browser PDF viewer without showing a preview-unavailable overlay. The redundant order-header quick buttons for Stock, Non Stock, Non Del, Internal, and Design are removed; the remaining document buttons stay above the tabs without touching or overlapping the tab strip. Clicking the customer control in Order details opens the customer page for that order's customer.
-- In the order view, the details panel does not visually show the raw Test Dashboard `dashboard_status` or the stored approval field. When the Test Dashboard `JOB ✔` checkbox has marked the job approved, the DATABASE order details panel shows the approved image badge in the lower-left approval area. During migration from Monday-seeded board state, `/api/database/jobs/:id` treats an explicit saved `JOB ✔` value in `test_dashboard_job_state.column_values` as the approval driver; if that saved tick state is absent, it falls back to the stored `database_jobs.proof_approved` value.
-- In the order view, the `Order Ack.` document button opens an A4 order acknowledgement preview in a modal. The acknowledgement is rendered from the loaded DATABASE job, customer/address fields, line items, and VAT/cost totals; it lists stock items first, then non-stock items, then non-deliverable items after a small visual gap, then internal items. The acknowledgement does not show the order Design/Design Numbers section. It renders explicit fixed-height A4 page blocks, shows the logo/customer/order header only at the top of the first page, centers the main 153mm data blocks on the A4 page centerline, and paginates line items, totals, and comments before the first page's 96mm footer-safe content clamp; continuation pages omit the customer/order header and use the freed page space for line items. The final Sub total, VAT, and Total summary prints as a standalone block slightly below all item groups, with unboxed labels and only the monetary amounts inside bordered value boxes. It includes a centered 146mm-wide Ultimate letterhead footer image without bank details offset 5mm above the bottom of every generated PDF page. The modal closes on outside-backdrop click or Escape and provides print/save-as-PDF controls through the browser print dialog; while printing, the document title is set to `<order no> - Order Acknowlegement` so Chrome uses that as the default PDF filename.
-- In the order view, the `Invoice` and `Delivery Note` document buttons use the same A4 modal/print shell and Ultimate logo as the order acknowledgement. Clicking Invoice first persists the job as invoiced/closed through `PUT /api/database/jobs/:id` with `mark_invoiced = true`, then renders the preview from the updated row. Invoice documents keep the existing bank-detail letterhead footer, use the invoice address, set `Invoice No.` from `database_jobs.invoice_no`, set `Cust ref` from `database_jobs.client_order_no`, add `ULT Ref` from the job/order number under the customer reference row, set invoice date to `database_jobs.invoice_date` with legacy completion-date fallback for older rows, and list stock, non-stock, and non-deliverable line items while excluding internal line items from invoice totals and tax analysis. The invoice totals value boxes sit under the line-item table `Total` column, with compact numeric cell padding and a narrower tax-analysis amount column so the sections do not collide. Childrens/youth clothing lines are treated as 0% VAT in invoice and order acknowledgement line display, VAT totals, and tax analysis when their size is an age range such as `3-4`/`9-11`, a youth code such as `YM`/`YL`/`YXL`, a toddler code, or their product/title text contains kids/children/youth/junior/boys/girls wording. The first invoice generation stores that invoice date; repeat clicks preserve it instead of moving the invoice date to the current day. Delivery notes use the same no-bank footer as order acknowledgements, use the delivery address, relabel ULT ref as `Invoice No` using `database_jobs.invoice_no`, use the order date from the job order/created date, set delivery date to the preview generation date, set order taken by from the job owner, list stock and non-stock line items while excluding non-deliverable and internal line items, and include blank Signed by, Print Name, and Date lines for the recipient. If `invoice_required = false`, `invoice_no` remains null, the Invoice action is disabled, and delivery notes leave `Invoice No` blank.
+- In the order view, the details panel does not visually show the raw Test Dashboard `dashboard_status` or the stored approval field. When the Test Dashboard `JOB ✔` checkbox has marked the job approved, the DATABASE order details panel shows the approved image badge in the lower-left approval area. `/api/database/jobs/:id` treats an explicit saved `JOB ✔` value in `test_dashboard_job_state.column_values` as the approval driver; if that saved tick state is absent, it falls back to `database_jobs.proof_approved`.
+- In the order view, the `Order Ack.` document button opens an A4 order acknowledgement preview in a modal. The acknowledgement is rendered from the loaded DATABASE job, customer/address fields, line items, and VAT/cost totals; customer and delivery addresses render as comma-separated single-line address text that can wrap naturally for long addresses. It lists stock items first, then non-stock items, then non-deliverable items after a small visual gap, then internal items. The acknowledgement does not show the order Design/Design Numbers section. It renders explicit fixed-height A4 page blocks, shows the logo/customer/order header only at the top of the first page, centers the main 153mm data blocks on the A4 page centerline, and paginates line items, totals, and comments before the first page's 96mm footer-safe content clamp; continuation pages omit the customer/order header and use the freed page space for line items. The final Sub total, VAT, and Total summary prints as a standalone block slightly below all item groups, with unboxed labels and only the monetary amounts inside bordered value boxes. It includes a centered 146mm-wide Ultimate letterhead footer image without bank details offset 5mm above the bottom of every generated PDF page. The modal closes on outside-backdrop click or Escape and provides print/save-as-PDF controls through the browser print dialog; while printing, the document title is set to `<order no> - Order Acknowlegement` so Chrome uses that as the default PDF filename.
+- In the order view, the `Invoice`, `Pro-Forma`, and `Delivery Note` document buttons use the same A4 modal/print shell and Ultimate logo as the order acknowledgement. Clicking Invoice first persists the job as invoiced/closed through `PUT /api/database/jobs/:id` with `mark_invoiced = true`, then renders the preview from the updated row. Invoice documents keep the existing bank-detail letterhead footer, use the invoice address, set `Invoice No.` from `database_jobs.invoice_no`, set `Cust ref` from `database_jobs.client_order_no`, add `ULT Ref` from the job/order number under the customer reference row, set invoice date to `database_jobs.invoice_date` with legacy completion-date fallback for older rows, and list stock, non-stock, and non-deliverable line items while excluding internal line items from invoice totals and tax analysis. Pro-forma documents reuse the invoice layout and bank-detail footer without marking the order invoiced, show `PRO-FORMA INVOICE` as the document title, set `Invoice No.` to `PRO<job number>`, and print `THIS IS NOT A VAT INVOICE` below the totals. Invoice/pro-forma customer and delivery addresses and delivery-note recipient addresses render as comma-separated single-line address text that can wrap naturally for long addresses. The invoice totals value boxes sit under the line-item table `Total` column, with compact numeric cell padding and a narrower tax-analysis amount column so the sections do not collide. Childrens/youth clothing lines are treated as 0% VAT in invoice, pro-forma, and order acknowledgement line display, VAT totals, and tax analysis when their size is an age range such as `3-4`/`9-11`, a youth code such as `YM`/`YL`/`YXL`, a toddler code, or their product/title text contains kids/children/youth/junior/boys/girls wording. The first invoice generation stores that invoice date; repeat clicks preserve it instead of moving the invoice date to the current day. Delivery notes use the same no-bank footer as order acknowledgements, use the delivery address, relabel ULT ref as `Invoice No` using `database_jobs.invoice_no`, use the order date from the job order/created date, set delivery date to the preview generation date, set order taken by from the job owner, list stock and non-stock line items while excluding non-deliverable and internal line items, and include blank Signed by, Print Name, and Date lines for the recipient. If `invoice_required = false`, `invoice_no` remains null, the Invoice action is disabled and greyed out, and delivery notes leave `Invoice No` blank.
 - The order title is editable by default in the header and autosaves through `PUT /api/database/jobs/:id` using the same debounced/flush-before-navigation pattern as other DATABASE autosaves. The Comments textarea in Order details is also typable and saves through the same job autosave path. Typing in the title also updates the cached Outstanding Orders row and order selectors immediately, so returning to the list shows the edited title without a page reload. The old Edit button next to the title is removed. The top-right metadata box no longer contains the Job/Order dropdowns; `By:` prefers `order_owner_name` and falls back to `order_taken_by`/legacy staff id.
 - Order Details, Order Items, and Design tab content uses the legacy blue/grey/off-white fills for panels, table headers, and empty space. White backgrounds are limited to field-like areas such as customer/order inputs, selects, textareas, line-item entry fields, line item value cells, design edit boxes, supplier/screen fields, and comments fields.
 - Order details surfaces the retained imported job fields that map to the reference screen, including customer/contact, type, dates, client reference, editable comments, address, and payment fields. The lower legacy document-number panel, invoice/pro-forma checkbox panel, job-flag checkbox panel, and standalone Close Order button are intentionally omitted from the current UI. Contact, order type, taken by, and delivery method render as read-only text inputs without dropdown arrows. `Invoice to:` and `Deliver to:` are real dropdowns populated from the selected customer's available addresses and save the chosen address/id back to the job. The Customer date checkbox remains beside Delivery for customer deadline dates. A separate Invoice date row shows the stored invoice date, has a Manual date checkbox, and includes a read-only invoice-number field to the right of that checkbox; when checked, the adjacent invoice-date field becomes editable and that date is submitted as the invoice date for the next Invoice action. The Completion row does not show the old placeholder completion tickbox. Generating an Invoice now persists the closed/invoiced state and updates the visible Invoice date and invoice-number field from the saved invoice timestamp/number; generating a Delivery Note still updates only the visible/in-memory Delivery date field to the delivery date shown on that generated document.
@@ -485,51 +274,6 @@ Latest insert-only Railway catch-up import from root `PS_XP_tab JULY.mdb` on 202
 - Verification after run id `9`: all 43,194 source-backed `database_jobs.invoice_no` values match `tblOrder.lngInvoiceNo` from `PS_XP_tab JULY.mdb`; source-backed max invoice is `51977`.
 - The manual Hertford Offset Limited job `source_order_id = 50407` / order `51160` was corrected from invoice `51964` to `51978`, making the overall DB max invoice `51978` with no duplicate invoice numbers.
 
-### Files And Visual QA
-
-- `POST /api/items/:itemId/file`: uploads an image to Monday `JOB_FILES_COLUMN_ID` and queues visual analysis.
-- `GET /api/assets/:assetId/inline`: proxies a Monday asset inline.
-- `GET /api/visual-approvals/notifications`: returns in-memory visual notification count/items.
-- `GET /api/visual-approvals/:itemId`: returns proof/captured visual URLs and optional analysis.
-- `POST /api/visual-approvals/:itemId/approve`: checks proof-approved column.
-- `POST /api/visual-approvals/:itemId/reject`: moves parent item and subitems to pre-production group.
-
-Note: `visual-approvals.js` contains a duplicate notifications route; the first one handles requests.
-
-### Visual Worker Queue
-
-Mounted at `/api/visual-jobs`.
-
-- `POST /api/visual-jobs/enqueue`: inserts or requeues a visual job.
-- `POST /api/visual-jobs/next`: worker claims next queued job. Requires `X-Worker-Key`.
-- `POST /api/visual-jobs/heartbeat`: extends worker lock. Requires `X-Worker-Key`.
-- `POST /api/visual-jobs/complete`: uploads finished visual to Monday and marks job done/failed. Requires `X-Worker-Key`.
-
-The route expects a `visual_jobs` table with at least:
-
-- `id`
-- `board_id`
-- `item_id`
-- `group_id`
-- `job_title`
-- `job_no`
-- `customer`
-- `front_pos`
-- `back_pos`
-- `garment_colour`
-- `front_art_url`
-- `back_art_url`
-- `metadata`
-- `priority`
-- `status`
-- `attempts`
-- `claimed_by`
-- `lock_until`
-- `output_url`
-- `notes`
-- `created_at`
-- `updated_at`
-
 ## Database Tables
 
 Created by `src/db/migrate.js`:
@@ -550,65 +294,19 @@ Created by `src/db/migrate.js`:
 - `test_dashboard_job_state`
 - `test_dashboard_files`
 - `test_dashboard_private_jobs`
-- `test_dashboard_seed_runs`
-
-The visual queue routes require `visual_jobs`, but the current migration file does not create it. Treat that as a known schema gap unless a deployment migration exists outside this repo.
 
 Test Dashboard schema:
 
-- `test_dashboard_groups`: mirrored group ids, titles, colors, positions, and sort order.
-- `test_dashboard_columns`: mirrored parent/subitem column metadata, including status settings JSON and file-column definitions.
-- `test_dashboard_job_state`: per-job dashboard state keyed by `database_jobs.source_order_id`, including mirrored Monday item id from one-time seed, group id, item name, JSONB column values, archive flag, and seed timestamps.
+- `test_dashboard_groups`: local group ids, titles, colors, positions, and sort order.
+- `test_dashboard_columns`: local parent/subitem column metadata, including status settings JSON and file-column definitions.
+- `test_dashboard_job_state`: per-job dashboard state keyed by `database_jobs.source_order_id`, including group id, item name, JSONB column values, archive flag, and timestamps.
 - `test_dashboard_files`: Cloudinary metadata for file/image cells. Stores source order id, column id/title, `public_id`, `secure_url`, resource type, format, original filename, bytes, dimensions, metadata, creator, and timestamps. It does not store file bytes.
 - `test_dashboard_private_jobs`: dashboard-only private job rows keyed by an opaque `private_<uuid>` id. Stores group id, free-text row title, JSONB dashboard column values, archive flag, creator metadata, and timestamps. Rows are not linked to `database_jobs`, do not allocate order/job/invoice numbers, and are omitted from DATABASE.
-- `test_dashboard_seed_runs`: one-time Monday seed audit rows with counts and status.
 - Dashboard status/job-approval DB fields on `database_jobs`: `dashboard_status`, `dashboard_priority`, `dashboard_type`, `proof_approved`, `proof_approved_at`, and `dashboard_status_updated_at`. `proof_approved` is the existing storage column for Test Dashboard `JOB ✔` job approval. Full DATABASE replace imports preserve and restore these fields by `source_order_id`.
 
+Existing production databases may retain unused legacy seed-audit columns/tables from earlier releases. Runtime dashboard selection and updates no longer read those external identifiers; non-archived `test_dashboard_job_state` rows themselves provide dashboard identity.
+
 ## Important Environment Variables
-
-### Monday
-
-- `MONDAY_API_TOKEN`
-- `MONDAY_CLIENT_ID`
-- `MONDAY_CLIENT_SECRET`
-- `MONDAY_REDIRECT_URI`
-- `MONDAY_SCOPES`
-- `BOARD_ID`
-- `BOARD_ID_MAIN`
-- `BOARD_ID_VISUAL`
-- `LINEITEM_BOARD_ID`
-- `LINEITEM_GROUP_ID`
-- `LINEITEM_JOB_NO_COLUMN_ID`
-- `JOB_TYPE_STATUS_COLUMN_ID`
-- `JOB_NO_COLUMN_ID`
-- `CUSTOMER_COLUMN_ID`
-- `JOB_TITLE_COLUMN_ID`
-- `SUBITEM_CODE_COLUMN_ID`
-- `SUBITEM_SIZE_COLUMN_ID`
-- `SUBITEM_COLOUR_COLUMN_ID`
-- `SUBITEM_QTY_COLUMN_ID`
-- `STATUS_COLUMN_ID`
-- `CHECKED_IN_COLUMN_ID`
-- `JOB_FILES_COLUMN_ID`
-- `FINISHED_VISUAL_COLUMN_ID`
-- `VISUAL_QA_STATUS_COLUMN_ID`
-- `VISUAL_QA_TEXT_COLUMN_ID`
-- `PROOF_APPROVED_COLUMN_ID`
-- `PRE_PRODUCTION_GROUP_ID`
-
-### Dropbox
-
-- `DROPBOX_APP_KEY`
-- `DROPBOX_APP_SECRET`
-- `DROPBOX_REFRESH_TOKEN`
-- `DROPBOX_ACCESS_TOKEN`
-- `DROPBOX_IMPORT_FOLDER`
-- `DROPBOX_ARCHIVE_FOLDER`
-- `DROPBOX_ERROR_FOLDER`
-- `OPEN_ORDERS_DROPBOX_PATH`
-- `OPEN_ORDERS_LOCAL_PATH`
-- `OPEN_ORDERS_STATE_PATH`
-- `OPEN_ORDERS_DELETE_EXTRA_SUBITEMS`
 
 ### App/DB
 
@@ -617,9 +315,9 @@ Test Dashboard schema:
 - `DATABASE_PUBLIC_URL`
 - `PGSSLMODE`
 - `SCAN_SECRET`
-- `BOARD_PAGE_LIMIT`
-- `BOARD_MAX_PAGES`
-- `BOARD_CACHE_MS`
+- `STEP1_STATUS_LABEL`
+- `STEP2_STATUS_LABEL`
+- `STEP3_STATUS_LABEL`
 - `VERBOSE_SQL`
 
 ### Cloudinary
@@ -629,34 +327,17 @@ Test Dashboard schema:
 - `CLOUDINARY_API_SECRET`
 - `CLOUDINARY_TEST_DASHBOARD_ROOT`: optional; defaults to `ultimate-hub/test-dashboard`.
 
-### Visual/OpenAI
-
-- `OPENAI_API_KEY`
-- `OPENAI_VISION_MODEL`
-- `VISUAL_WORKER_KEY`
-- `VISUAL_CLAIM_SECS`
-- `INTERNAL_ENQUEUE_URL`
+No external work-management token, OAuth, board, column, or webhook environment variable is read by the application.
 
 ## Scripts
 
 - `npm start`: starts `server.js`.
-- `npm run smoke:lineitems -- <file>`: parse a line-item XLSX/CSV file.
-- `npm run import:dropbox`: import all pending per-job Dropbox line-item files.
-- `npm run smoke:open-orders -- <file>`: parse an open-orders CSV file.
-- `npm run sync:open-orders -- [file] [--dry-run]`: sync open-orders CSV from file or Dropbox.
 - `npm run import:database-mdb -- [PS_XP_tab.mdb] [--dry-run] [--append] [--insert-only]`: import full-history MDB jobs, contacts, addresses, positions, and products into DATABASE tables. Add `--years=2025,2026` for a scoped diagnostic import, `--products-only` to import only the full product catalogue, or `--insert-only` to add only source rows that do not already exist.
 - `npm run verify:mdb-invoices -- [PS_XP_tab.mdb] [--max-mismatches=25]`: fail if source-backed `database_jobs.order_no` / `invoice_no` values differ from `tblOrder.lngOrderNo` / `lngInvoiceNo` in the supplied MDB, or if any DB invoice number is duplicated. `npm run verify:mdb-numbering` is an alias for the same critical numbering audit.
-- `npm run seed:test-dashboard -- [--dry-run] [--skip-files] [--limit-files-per-column=N]`: one-time Monday snapshot seed for Test Dashboard metadata. It copies groups, columns, item state, and current Monday file assets into Cloudinary folders and stores only Cloudinary metadata in Postgres. Use `--skip-files` for state-only diagnostics.
 
 ## Known Risks And Maintenance Notes
 
 - There is no automated test suite.
-- `node_modules` is tracked in git despite `.gitignore` ignoring it.
-- `.DS_Store` is tracked and currently dirty in the worktree.
-- Monday webhooks and Dropbox webhooks do not validate webhook signatures in this code.
-- `visual_jobs` table is required by routes but not created by `src/db/migrate.js`.
-- Board pagination limits can affect item matching if the board grows beyond configured limits.
-- `monday.js` and `mondayClient.js` are separate Monday clients with different auth/token handling.
-- Visual notifications are in-memory and reset on process restart.
-- Open-orders line-item subitem sync is index-based; reordering source lines can cause replacement behavior. The managed `TOTAL` subitem is synced separately and should remain last.
 - DATABASE imports use an MDB snapshot. Run a fresh import whenever the source MDB copy changes.
+- Cloudinary file bytes are external to Postgres; `test_dashboard_files` stores delivery metadata and best-effort asset cleanup can fail independently.
+- The public `/test-scan` endpoint is intentionally unauthenticated but requires a valid HMAC signature generated with `SCAN_SECRET`.
