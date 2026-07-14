@@ -15,7 +15,7 @@
   const TO_INVOICE_TABLE_COLUMN_COUNT = 7;
   const OUTSTANDING_STATUS_COLUMN_WIDTH = 128;
   const OUTSTANDING_TABLE_FIXED_WIDTH = 19 + 68 + 198 + 36 + 65 + 88 + 82 + OUTSTANDING_STATUS_COLUMN_WIDTH;
-  const STOCK_ORDERING_TABLE_COLUMN_COUNT = 9;
+  const STOCK_ORDERING_TABLE_COLUMN_COUNT = 8;
   const TEST_DASHBOARD_STATUS_COLUMN_ID = 'label__1';
   const STOCK_ORDERED_STATUS_LABEL = 'STOCK ORDERED';
   const OUTSTANDING_TITLE_COLUMN_MIN_WIDTH = 170;
@@ -2537,7 +2537,6 @@
             aria-label="${expanded ? 'Hide' : 'Show'} line items for order ${escapeAttr(job.order_no || sourceOrderId)}"
           >${expanded ? '&#9662;' : '&#9656;'}</button>
         </td>
-        <td>${escapeHtml(outstandingDeliveryLabel(job))}</td>
         <td class="db-order-link">
           <button class="db-control-link" type="button" data-db-stock-order-open="${escapeAttr(sourceOrderId)}">${escapeHtml(job.order_no || '')}</button>
         </td>
@@ -4978,7 +4977,7 @@
         <img class="db-order-ack-logo" src="${escapeAttr(ORDER_ACK_LOGO_URL)}" alt="Ultimate logo" crossorigin="anonymous">
       </header>
       <section class="db-order-ack-address">
-        <div>${escapeHtml(orderDocumentAddressText(invoiceLines))}</div>
+        ${renderOrderDocumentStackedAddress(invoiceLines)}
       </section>
       <section class="db-order-ack-meta" aria-label="Order acknowledgement details">
         ${orderAckMetaRow('ULT ref:', job.order_no)}
@@ -5031,6 +5030,7 @@
       items,
       totals,
       addressLines: invoiceLines,
+      stackedAddress: true,
       metaRows: [
         { label: 'Invoice No.', value: isProForma ? proFormaDocumentNo(job) : invoiceDocumentNo(job) },
         { label: 'Cust ref:', value: job.client_order_no || '' },
@@ -5092,7 +5092,9 @@
         <img class="db-order-ack-logo" src="${escapeAttr(ORDER_ACK_LOGO_URL)}" alt="Ultimate logo" crossorigin="anonymous">
       </header>
       <section class="db-order-doc-address">
-        <div>${escapeHtml(orderDocumentAddressText(context.addressLines || []))}</div>
+        ${context.stackedAddress
+          ? renderOrderDocumentStackedAddress(context.addressLines || [])
+          : `<div>${escapeHtml(orderDocumentAddressText(context.addressLines || []))}</div>`}
       </section>
       <section class="db-order-doc-meta-wrap ${context.showSignature ? 'has-signature' : ''}" aria-label="${escapeAttr(context.title)} details">
         <section class="db-order-doc-meta">
@@ -5766,6 +5768,14 @@
       .map((line) => String(line || '').trim())
       .filter(Boolean)
       .join(', ');
+  }
+
+  function renderOrderDocumentStackedAddress(lines) {
+    return (lines || [])
+      .map((line) => String(line || '').trim())
+      .filter(Boolean)
+      .map((line) => `<div>${escapeHtml(line)}</div>`)
+      .join('');
   }
 
   function splitOrderAckAddress(value) {

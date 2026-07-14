@@ -2721,23 +2721,22 @@ body.modal-open{overflow:hidden}
 #db-to-invoice-table th:nth-child(6){width:92px}
 #db-to-invoice-table th:nth-child(7){width:82px}
 #db-stock-ordering-table{
-  min-width:805px;
+  min-width:720px;
 }
 #db-stock-ordering-table th:nth-child(1),
 #db-stock-ordering-table th:nth-child(2){
   width:24px;
   text-align:center;
 }
-#db-stock-ordering-table th:nth-child(3){width:82px}
-#db-stock-ordering-table th:nth-child(4){width:68px}
-#db-stock-ordering-table th:nth-child(5){width:190px}
-#db-stock-ordering-table th:nth-child(6){width:36px;text-align:center}
-#db-stock-ordering-table td:nth-child(6){text-align:center}
-#db-stock-ordering-table th:nth-child(7){width:auto}
-#db-stock-ordering-table th:nth-child(8){width:46px;text-align:center}
-#db-stock-ordering-table th:nth-child(9){width:52px;text-align:center}
-#db-stock-ordering-table td:nth-child(8),
-#db-stock-ordering-table td:nth-child(9){
+#db-stock-ordering-table th:nth-child(3){width:68px}
+#db-stock-ordering-table th:nth-child(4){width:190px}
+#db-stock-ordering-table th:nth-child(5){width:36px;text-align:center}
+#db-stock-ordering-table td:nth-child(5){text-align:center}
+#db-stock-ordering-table th:nth-child(6){width:auto}
+#db-stock-ordering-table th:nth-child(7){width:46px;text-align:center}
+#db-stock-ordering-table th:nth-child(8){width:52px;text-align:center}
+#db-stock-ordering-table td:nth-child(7),
+#db-stock-ordering-table td:nth-child(8){
   text-align:center;
 }
 #db-stock-ordering-table .db-control-link{
