@@ -2681,7 +2681,7 @@ body.modal-open{overflow:hidden}
 #db-outstanding-table th:nth-child(5){width:36px;text-align:center}
 #db-outstanding-table td:nth-child(5){text-align:center}
 #db-outstanding-table th:nth-child(6){width:var(--db-outstanding-title-width, auto)}
-#db-outstanding-table th:nth-child(7){width:65px}
+#db-outstanding-table th:nth-child(7){width:82px}
 #db-outstanding-table th:nth-child(8){width:88px}
 #db-outstanding-table th:nth-child(9){width:82px}
 #db-outstanding-table th:nth-child(10){

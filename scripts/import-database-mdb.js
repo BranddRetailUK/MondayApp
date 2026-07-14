@@ -99,6 +99,12 @@ const TABLE_COLUMNS = {
     'saddress3', 'saddress4', 'saddress5', 'spostcode', 'stel', 'sfax',
     'smobile', 'tracestaffid', 'dtcreate', 'dtedit',
   ],
+  tblStaff: [
+    'staffid', 'susername', 'slastname', 'sfirstname', 'sinitials',
+    'sfirstlast', 'slastfirst', 'ynshowerror', 'ynhideuser', 'ynusers',
+    'ynprocessor', 'ynmanager', 'yndirector', 'ynadmin', 'tracestaffid',
+    'dtcreate', 'dtedit', 'referenceid',
+  ],
 };
 
 const JOB_COLUMNS = [
@@ -107,7 +113,7 @@ const JOB_COLUMNS = [
   'customer_code', 'contact_id', 'job_title', 'client_order_no',
   'contact_name', 'contact_phone', 'contact_mobile', 'contact_email',
   'invoice_address_id', 'delivery_address_id', 'invoice_address',
-  'delivery_address', 'order_date', 'customer_date_required',
+  'delivery_address', 'order_taken_by', 'order_date', 'customer_date_required',
   'complete_date', 'is_complete', 'delivery_date', 'is_reorder', 'is_bagged', 'is_automatic',
   'screen_numbers', 'comments', 'has_artwork', 'has_screens', 'has_shirts',
   'is_printed', 'customer_supplied', 'delivery_note_date', 'invoice_no',
@@ -125,6 +131,7 @@ const INSERT_ONLY_JOB_REFRESH_COLUMNS = [
   'complete_date',
   'is_complete',
   'delivery_note_date',
+  'order_taken_by',
   'updated_at_source',
 ];
 
@@ -399,6 +406,7 @@ function buildSnapshot(data, yearFilter = null) {
   const sizes = mapByInt(data.tblSize, 'sizeid');
   const productTypes = mapByInt(data.tblProductType, 'producttypeid');
   const suppliers = mapByInt(data.tblSupplier, 'supplierid');
+  const staff = mapByInt(data.tblStaff, 'staffid');
 
   const selectedOrderIds = new Set();
   const selectedCustomerIds = new Set();
@@ -419,6 +427,7 @@ function buildSnapshot(data, yearFilter = null) {
     const deliveryAddressId = toInt(order.deladdressid) || toInt(customer.deladdressid);
     const invoiceAddress = addresses.get(invoiceAddressId) || {};
     const deliveryAddress = addresses.get(deliveryAddressId) || {};
+    const takenByStaff = staff.get(toInt(order.takenbystaffid)) || {};
     const customerId = toInt(order.customerid);
 
     selectedOrderIds.add(sourceOrderId);
@@ -447,6 +456,7 @@ function buildSnapshot(data, yearFilter = null) {
       delivery_address_id: deliveryAddressId,
       invoice_address: formatAddress(invoiceAddress),
       delivery_address: formatAddress(deliveryAddress),
+      order_taken_by: staffDisplayName(takenByStaff),
       job_title: cleanText(order.sjobtitle),
       client_order_no: cleanText(order.sclientorderno),
       order_date: toTimestamp(order.dtorder),
@@ -715,6 +725,16 @@ function contactName(contact) {
     cleanText(contact.slastname),
   ].filter(Boolean);
   return parts.length ? parts.join(' ') : null;
+}
+
+function staffDisplayName(staff) {
+  return cleanText(staff.sfirstlast)
+    || [
+      cleanText(staff.sfirstname),
+      cleanText(staff.slastname),
+    ].filter(Boolean).join(' ')
+    || cleanText(staff.susername)
+    || null;
 }
 
 function buildCustomerContactRows(contactRows, customers, addresses, selectedCustomerIds) {
@@ -1010,7 +1030,7 @@ async function importSnapshot(snapshot, options) {
     );
     let jobRefresh = { affected: 0 };
     if (options.insertOnly) {
-      console.log(`[database-import] Refreshing invoice fields for ${snapshot.jobs.length} existing jobs`);
+      console.log(`[database-import] Refreshing invoice/taken-by fields for ${snapshot.jobs.length} existing jobs`);
       jobRefresh = await refreshExistingJobInvoiceFields(client, snapshot.jobs);
     }
     if (preservedDashboardJobFields.length) {

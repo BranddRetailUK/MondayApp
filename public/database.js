@@ -14,7 +14,8 @@
   const OUTSTANDING_INVOICE_COLUMN_WIDTH = 98;
   const TO_INVOICE_TABLE_COLUMN_COUNT = 7;
   const OUTSTANDING_STATUS_COLUMN_WIDTH = 128;
-  const OUTSTANDING_TABLE_FIXED_WIDTH = 19 + 68 + 198 + 36 + 65 + 88 + 82 + OUTSTANDING_STATUS_COLUMN_WIDTH;
+  const OUTSTANDING_TAKEN_BY_COLUMN_WIDTH = 82;
+  const OUTSTANDING_TABLE_FIXED_WIDTH = 19 + 68 + 198 + 36 + OUTSTANDING_TAKEN_BY_COLUMN_WIDTH + 88 + 82 + OUTSTANDING_STATUS_COLUMN_WIDTH;
   const STOCK_ORDERING_TABLE_COLUMN_COUNT = 8;
   const TEST_DASHBOARD_STATUS_COLUMN_ID = 'label__1';
   const STOCK_ORDERED_STATUS_LABEL = 'STOCK ORDERED';
@@ -2774,6 +2775,9 @@
       return;
     }
     if (state.outstandingJobs.length && state.loadedOrderMode === mode && !options.force) {
+      if (!state.loadedCustomerUsers) {
+        await ensureCustomerUsers();
+      }
       renderOutstandingOrders();
       return;
     }
@@ -2791,7 +2795,10 @@
     scheduleOutstandingTableLayout([]);
 
     try {
-      const result = await fetchJobsPage(mode, 0, { includeTotal: true });
+      const [result] = await Promise.all([
+        fetchJobsPage(mode, 0, { includeTotal: true }),
+        ensureCustomerUsers(),
+      ]);
       if (!isCurrentOrderLoad(token, mode)) return;
 
       state.outstandingJobs = result.jobs;
@@ -3013,7 +3020,7 @@
         <td class="db-customer-link">${escapeHtml(job.customer_name || '')}</td>
         <td class="db-type-cell db-type-${categoryForJob(job)}">${escapeHtml(typeAbbr(job))}</td>
         <td>${escapeHtml(job.job_title || '')}</td>
-        <td>${escapeHtml(staffShort(job.order_taken_by || job.trace_staff_id))}</td>
+        <td>${escapeHtml(outstandingTakenByFirstName(job))}</td>
         <td>${escapeHtml(formatDate(job.order_date, 'long'))}</td>
         <td>${escapeHtml(outstandingDeliveryLabel(job))}</td>
         ${renderOutstandingStatusCell(statusLabel)}
@@ -4179,7 +4186,7 @@
         <td>${escapeHtml(job.customer_name || '')}</td>
         <td>${escapeHtml(typeAbbr(job))}</td>
         <td>${escapeHtml(job.job_title || '')}</td>
-        <td>${escapeHtml(staffShort(job.order_taken_by || job.trace_staff_id))}</td>
+        <td>${escapeHtml(outstandingTakenByFirstName(job))}</td>
         <td>${escapeHtml(formatDate(job.order_date, 'long'))}</td>
         <td>${escapeHtml(outstandingDeliveryLabel(job))}</td>
       </tr>
@@ -7843,6 +7850,51 @@
     if (!value) return '';
     const clean = String(value).trim();
     return /^\d+$/.test(clean) ? `Staff ${clean}` : clean;
+  }
+
+  function outstandingTakenByFirstName(job) {
+    if (!job) return '';
+    return accountManagerFirstNameById(job.order_owner_user_id)
+      || accountManagerFirstNameFromText(job.order_owner_name)
+      || accountManagerFirstNameFromText(job.order_taken_by);
+  }
+
+  function accountManagerUsers() {
+    if (Array.isArray(state.customerUsers) && state.customerUsers.length) return state.customerUsers;
+    return Array.isArray(state.registeredUsers) ? state.registeredUsers : [];
+  }
+
+  function accountManagerFirstNameById(userId) {
+    const numericId = Number(userId);
+    if (!Number.isFinite(numericId)) return '';
+    const user = accountManagerUsers().find((item) => Number(item?.id) === numericId);
+    return accountManagerUserFirstName(user);
+  }
+
+  function accountManagerFirstNameFromText(value) {
+    const clean = String(value || '').trim();
+    if (!clean || /^\d+$/.test(clean)) return '';
+
+    const firstName = clean.split(/\s+/)[0] || '';
+    const normalizedFirstName = normalizeAccountManagerName(firstName);
+    if (!normalizedFirstName) return '';
+
+    const user = accountManagerUsers().find((item) => (
+      normalizeAccountManagerName(accountManagerUserFirstName(item)) === normalizedFirstName
+    ));
+    return accountManagerUserFirstName(user);
+  }
+
+  function accountManagerUserFirstName(user) {
+    const firstName = String(user?.first_name || '').trim();
+    if (firstName) return firstName.split(/\s+/)[0] || '';
+
+    const fullName = String(user?.full_name || '').trim();
+    return fullName ? (fullName.split(/\s+/)[0] || '') : '';
+  }
+
+  function normalizeAccountManagerName(value) {
+    return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
   }
 
   function takenByLabel(job) {
