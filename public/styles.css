@@ -2740,6 +2740,25 @@ body.modal-open{overflow:hidden}
 #db-stock-ordering-table td:nth-child(9){
   text-align:center;
 }
+#db-stock-ordering-table .db-control-link{
+  width:auto;
+  min-width:0;
+  height:auto;
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  color:#00e!important;
+  font:inherit;
+  text-align:inherit;
+  text-decoration:underline;
+  cursor:pointer;
+}
+#db-stock-ordering-table .db-control-link:disabled{
+  color:inherit!important;
+  text-decoration:none;
+  cursor:default;
+}
 #db-users-table th:nth-child(1){width:210px}
 #db-users-table th:nth-child(2){width:auto}
 #db-users-table th:nth-child(3){width:118px}
