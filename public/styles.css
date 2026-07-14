@@ -2721,24 +2721,23 @@ body.modal-open{overflow:hidden}
 #db-to-invoice-table th:nth-child(6){width:92px}
 #db-to-invoice-table th:nth-child(7){width:82px}
 #db-stock-ordering-table{
-  min-width:860px;
+  min-width:805px;
 }
 #db-stock-ordering-table th:nth-child(1),
 #db-stock-ordering-table th:nth-child(2){
   width:24px;
   text-align:center;
 }
-#db-stock-ordering-table th:nth-child(3){width:68px}
-#db-stock-ordering-table th:nth-child(4){width:190px}
-#db-stock-ordering-table th:nth-child(5){width:36px;text-align:center}
-#db-stock-ordering-table td:nth-child(5){text-align:center}
-#db-stock-ordering-table th:nth-child(6){width:auto}
-#db-stock-ordering-table th:nth-child(7){width:118px}
-#db-stock-ordering-table th:nth-child(8){width:82px}
-#db-stock-ordering-table th:nth-child(9){width:46px;text-align:center}
-#db-stock-ordering-table th:nth-child(10){width:52px;text-align:center}
-#db-stock-ordering-table td:nth-child(9),
-#db-stock-ordering-table td:nth-child(10){
+#db-stock-ordering-table th:nth-child(3){width:82px}
+#db-stock-ordering-table th:nth-child(4){width:68px}
+#db-stock-ordering-table th:nth-child(5){width:190px}
+#db-stock-ordering-table th:nth-child(6){width:36px;text-align:center}
+#db-stock-ordering-table td:nth-child(6){text-align:center}
+#db-stock-ordering-table th:nth-child(7){width:auto}
+#db-stock-ordering-table th:nth-child(8){width:46px;text-align:center}
+#db-stock-ordering-table th:nth-child(9){width:52px;text-align:center}
+#db-stock-ordering-table td:nth-child(8),
+#db-stock-ordering-table td:nth-child(9){
   text-align:center;
 }
 #db-users-table th:nth-child(1){width:210px}
@@ -3420,6 +3419,10 @@ body.modal-open{overflow:hidden}
   line-height:1.25;
   max-width:153mm;
 }
+.db-order-doc-page-invoice .db-order-doc-address,
+.db-order-doc-page-pro-forma .db-order-doc-address{
+  min-height:35mm;
+}
 .db-order-doc-meta-wrap{
   width:153mm;
   margin:0 0 0 7.5mm;
@@ -3494,6 +3497,17 @@ body.modal-open{overflow:hidden}
   padding-left:0.55mm;
   padding-right:0.55mm;
 }
+.db-invoice-items-business-gift th:nth-child(2){width:10mm}
+.db-invoice-items-business-gift th:nth-child(3){width:16mm}
+.db-invoice-items-business-gift th:nth-child(4){width:18mm}
+.db-invoice-items-business-gift th:nth-child(5){width:17mm}
+.db-invoice-items-business-gift th:nth-child(6){width:12mm}
+.db-invoice-items-business-gift td:nth-child(n+2),
+.db-invoice-items-business-gift th:nth-child(n+2){
+  text-align:right;
+  padding-left:0.55mm;
+  padding-right:0.55mm;
+}
 .db-delivery-note-items{
   font-size:10px;
 }
@@ -3503,6 +3517,11 @@ body.modal-open{overflow:hidden}
 .db-delivery-note-items th:nth-child(5){width:14mm}
 .db-delivery-note-items td:nth-child(5),
 .db-delivery-note-items th:nth-child(5){
+  text-align:right;
+}
+.db-delivery-note-items-business-gift th:nth-child(2),
+.db-delivery-note-items-business-gift td:nth-child(2){
+  width:14mm;
   text-align:right;
 }
 .db-invoice-summary{

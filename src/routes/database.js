@@ -230,6 +230,7 @@ router.get('/api/database/stock-ordering', async (_req, res) => {
                 j.order_no,
                 j.order_type,
                 j.order_type_abbr,
+                j.customer_id,
                 j.customer_name,
                 j.job_title,
                 j.order_taken_by,
@@ -264,8 +265,6 @@ router.get('/api/database/stock-ordering', async (_req, res) => {
          FROM database_jobs j
          LEFT JOIN test_dashboard_job_state s ON s.source_order_id = j.source_order_id
          WHERE j.is_complete IS NOT TRUE
-           AND j.invoice_printed IS NOT TRUE
-           AND j.pf_invoice_printed IS NOT TRUE
            AND s.archived IS NOT TRUE
        ),
        filtered_jobs AS (
@@ -293,6 +292,11 @@ router.get('/api/database/stock-ordering', async (_req, res) => {
        line_summary AS (
          SELECT source_order_id,
                 COUNT(*)::int AS stock_ordering_line_count,
+                COUNT(*) FILTER (
+                  WHERE source_product_id IS NOT NULL
+                     OR NULLIF(TRIM(COALESCE(style_code, '')), '') IS NOT NULL
+                     OR NULLIF(TRIM(COALESCE(style_name, '')), '') IS NOT NULL
+                )::int AS stock_line_count,
                 COALESCE(SUM(quantity), 0)::int AS stock_ordering_quantity
          FROM ordering_lines
          GROUP BY source_order_id
@@ -302,6 +306,7 @@ router.get('/api/database/stock-ordering', async (_req, res) => {
               COALESCE(ls.stock_ordering_quantity, 0)::int AS stock_ordering_quantity
        FROM filtered_jobs fj
        JOIN line_summary ls ON ls.source_order_id = fj.source_order_id
+       WHERE ls.stock_line_count > 0
        ORDER BY COALESCE(fj.delivery_date, fj.order_date) ASC NULLS LAST,
                 fj.order_no DESC`,
       [[
@@ -1135,15 +1140,36 @@ router.post('/api/database/jobs', async (req, res) => {
   const contactId = nullableInt(payload.contact_id);
   const orderType = cleanNullable(payload.order_type);
   const jobTitle = cleanNullable(payload.job_title);
+  const deliveryMethod = cleanNullable(payload.delivery_method);
+  const paymentTerms = cleanNullable(payload.payment_terms);
+  const deliveryAddress = cleanNullable(payload.delivery_address);
+  const invoiceAddress = cleanNullable(payload.invoice_address);
   const orderDate = parseDatabaseDate(payload.order_date, 'Order date');
   const deliveryDate = parseDatabaseDate(payload.delivery_date, 'Delivery date');
   const orderOwnerName = req.hubUser ? fullName(req.hubUser) : cleanNullable(payload.order_taken_by);
   const orderTakenBy = orderOwnerName || cleanNullable(payload.order_taken_by);
   const invoiceRequired = invoiceRequiredValue(payload.invoice_required);
 
-  if (!customerName || !orderType || !jobTitle || !orderDate || !deliveryDate || invoiceRequired === null) {
+  const missingRequiredFields = [
+    ['Customer', customerName],
+    ['Contact', contactName],
+    ['Order type', orderType],
+    ['Job title', jobTitle],
+    ['Order date', orderDate],
+    ['Delivery date', deliveryDate],
+    ['Delivery method', deliveryMethod],
+    ['Payment terms', paymentTerms],
+    ['Order taken by', orderTakenBy],
+    ['Delivery adds', deliveryAddress],
+    ['Invoice adds', invoiceAddress],
+    ['Invoice required', invoiceRequired !== null],
+  ]
+    .filter(([, value]) => !value)
+    .map(([label]) => label);
+
+  if (missingRequiredFields.length) {
     return res.status(400).json({
-      error: 'Customer, order type, job title, order date, delivery date, and invoice required are required',
+      error: `Missing required fields: ${missingRequiredFields.join(', ')}`,
     });
   }
 
@@ -1228,15 +1254,15 @@ router.post('/api/database/jobs', async (req, res) => {
         cleanNullable(payload.contact_email),
         jobTitle,
         cleanNullable(payload.client_order_no),
-        cleanNullable(payload.delivery_method),
-        cleanNullable(payload.payment_terms),
+        deliveryMethod,
+        paymentTerms,
         orderTakenBy,
         req.hubUser?.id || null,
         orderOwnerName,
         nullableInt(payload.invoice_address_id),
         nullableInt(payload.delivery_address_id),
-        cleanNullable(payload.delivery_address),
-        cleanNullable(payload.invoice_address),
+        deliveryAddress,
+        invoiceAddress,
         orderDate.iso,
         deliveryDate.iso,
         toBoolean(payload.customer_date_required),
@@ -1315,16 +1341,6 @@ router.put('/api/database/jobs/:id', async (req, res) => {
                WHEN ${invoiceDateParam}::timestamp IS NOT NULL THEN ${invoiceDateParam}::timestamp
                ELSE COALESCE(j.invoice_date, j.complete_date, NOW())
              END,
-             is_complete = TRUE,
-             complete_date = COALESCE(
-               j.complete_date,
-               CASE
-                 WHEN ${invoiceDateParam}::timestamp IS NOT NULL THEN ${invoiceDateParam}::timestamp
-                 ELSE NOW()
-               END
-             ),
-             dashboard_status = 'INVOICED',
-             dashboard_status_updated_at = NOW(),
              updated_at_source = NOW(),
              imported_at = NOW()
          FROM next_invoice
@@ -2195,6 +2211,10 @@ function buildJobFilters(query) {
                          j.order_no DESC`;
   if (status === 'open') {
     where.push('j.is_complete IS NOT TRUE');
+    where.push(`NOT (
+      COALESCE(UPPER(TRIM(j.dashboard_status)), '') = 'COMPLETED'
+      AND (j.invoice_printed IS TRUE OR j.pf_invoice_printed IS TRUE)
+    )`);
   } else if (status === 'complete' || status === 'completed') {
     where.push('j.is_complete IS TRUE');
   } else if (status === 'to-invoice') {

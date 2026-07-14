@@ -987,13 +987,20 @@ function shouldRenderDashboardJob(job, state, scan) {
   const statusText = normalizeColumnTitle(
     job.dashboard_status || getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]) || scan?.status || ''
   );
-  if (statusText === 'INVOICED') return false;
-  if (statusText === 'COMPLETED' && isDashboardJobInvoiced(job)) return false;
+  if ((statusText === 'INVOICED' || statusText === 'COMPLETED')
+    && isDashboardJobCompleted(job, statusText)
+    && isDashboardJobInvoiced(job)) {
+    return false;
+  }
   return hasDashboardIdentity(job, state, scan);
 }
 
 function isDashboardJobInvoiced(job) {
-  return Boolean(job?.is_complete || job?.invoice_printed || job?.pf_invoice_printed);
+  return Boolean(job?.invoice_printed || job?.pf_invoice_printed);
+}
+
+function isDashboardJobCompleted(job, statusText = '') {
+  return Boolean(job?.is_complete || normalizeColumnTitle(statusText) === 'COMPLETED');
 }
 
 function hasDashboardIdentity(job, state, scan) {
@@ -1379,8 +1386,7 @@ async function fetchOpenDashboardJobs() {
     FROM database_jobs j
     LEFT JOIN test_dashboard_job_state td_state ON td_state.source_order_id = j.source_order_id
     LEFT JOIN job_scans scan ON scan.item_id = j.source_order_id::text
-    WHERE COALESCE(UPPER(TRIM(j.dashboard_status)), '') <> 'INVOICED'
-      AND (
+    WHERE (
         (
           j.is_complete IS NOT TRUE
           AND j.invoice_printed IS NOT TRUE

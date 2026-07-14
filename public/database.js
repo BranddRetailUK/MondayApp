@@ -15,7 +15,7 @@
   const TO_INVOICE_TABLE_COLUMN_COUNT = 7;
   const OUTSTANDING_STATUS_COLUMN_WIDTH = 128;
   const OUTSTANDING_TABLE_FIXED_WIDTH = 19 + 68 + 198 + 36 + 65 + 88 + 82 + OUTSTANDING_STATUS_COLUMN_WIDTH;
-  const STOCK_ORDERING_TABLE_COLUMN_COUNT = 10;
+  const STOCK_ORDERING_TABLE_COLUMN_COUNT = 9;
   const TEST_DASHBOARD_STATUS_COLUMN_ID = 'label__1';
   const STOCK_ORDERED_STATUS_LABEL = 'STOCK ORDERED';
   const OUTSTANDING_TITLE_COLUMN_MIN_WIDTH = 170;
@@ -60,6 +60,20 @@
   const STOCK_ORDERING_REPORT_ROW_BASE_MM = 5.8;
   const STOCK_ORDERING_REPORT_ROW_EXTRA_LINE_MM = 2.8;
   const STOCK_ORDERING_REPORT_DESCRIPTION_CHARS_PER_LINE = 54;
+  const NEW_ORDER_REQUIRED_FIELDS = [
+    { name: 'customer_name', label: 'Customer' },
+    { name: 'contact_name', label: 'Contact' },
+    { name: 'order_type', label: 'Order type' },
+    { name: 'job_title', label: 'Job title' },
+    { name: 'order_date', label: 'Order date' },
+    { name: 'delivery_date', label: 'Delivery date' },
+    { name: 'delivery_method', label: 'Delivery method' },
+    { name: 'payment_terms', label: 'Payment terms' },
+    { name: 'order_taken_by', label: 'Order taken by' },
+    { name: 'delivery_address', label: 'Delivery adds' },
+    { name: 'invoice_address', label: 'Invoice adds' },
+    { name: 'invoice_required', label: 'Invoice required' },
+  ];
   const CHILD_PRODUCT_TITLE_PATTERN = /\b(kids?|children'?s?|childrens?|child|youth|junior|juniors?|boys?|girls?)\b/i;
   const CHILD_YOUTH_SIZE_PATTERN = /\bY(?:XS|S|M|L|XL|XXL)\b/i;
   const CHILD_AGE_RANGE_SIZE_PATTERN = /\b(?:[1-9]|1[0-8])\s*[-\u2010-\u2015]\s*(?:[1-9]|1[0-8])\b/;
@@ -302,6 +316,8 @@
     els.outstandingBody.addEventListener('keydown', handleOutstandingRowKeydown);
     els.toInvoiceBody?.addEventListener('click', handleToInvoiceRowClick);
     els.toInvoiceBody?.addEventListener('keydown', handleToInvoiceRowKeydown);
+    els.stockOrderingBody?.addEventListener('click', handleStockOrderingRowClick);
+    els.stockOrderingBody?.addEventListener('keydown', handleStockOrderingRowKeydown);
     els.stockOrderingBody?.addEventListener('change', handleStockOrderingSelectChange);
     els.outstandingFrame?.addEventListener('scroll', handleOutstandingScroll);
     window.addEventListener('resize', scheduleOutstandingTableLayout);
@@ -813,17 +829,15 @@
   }
 
   function validateNewOrderForm() {
-    const form = els.newOrderForm;
-    const fields = form.elements;
-    const valid = Boolean(
-      fields.customer_name.value.trim()
-      && fields.order_type.value.trim()
-      && fields.job_title.value.trim()
-      && fields.order_date.value.trim()
-      && fields.delivery_date.value.trim()
-      && fields.invoice_required.value.trim()
-    );
-    els.newOrderAccept.disabled = !valid || state.newOrderSubmitting;
+    els.newOrderAccept.disabled = state.newOrderSubmitting;
+    if (
+      els.newOrderStatus?.dataset.tone === 'error'
+      && String(els.newOrderStatus.textContent || '').startsWith('Missing required fields:')
+      && !missingNewOrderFields().length
+    ) {
+      els.newOrderStatus.textContent = '';
+      els.newOrderStatus.dataset.tone = '';
+    }
   }
 
   function resetNewCustomerForm() {
@@ -1323,7 +1337,12 @@
     event.preventDefault();
     if (state.newOrderSubmitting) return;
     validateNewOrderForm();
-    if (els.newOrderAccept.disabled) return;
+    const missingFields = missingNewOrderFields();
+    if (missingFields.length) {
+      els.newOrderStatus.textContent = `Missing required fields: ${missingFields.join(', ')}`;
+      els.newOrderStatus.dataset.tone = 'error';
+      return;
+    }
 
     state.newOrderSubmitting = true;
     validateNewOrderForm();
@@ -1360,6 +1379,13 @@
       state.newOrderSubmitting = false;
       validateNewOrderForm();
     }
+  }
+
+  function missingNewOrderFields() {
+    const fields = els.newOrderForm.elements;
+    return NEW_ORDER_REQUIRED_FIELDS
+      .filter((field) => !String(fields[field.name]?.value || '').trim())
+      .map((field) => field.label);
   }
 
   async function submitNewCustomer(event) {
@@ -2488,7 +2514,10 @@
     const sourceOrderId = String(job.source_order_id || '');
     const checked = state.stockOrderingSelectedIds.has(sourceOrderId);
     const lineItems = stockOrderingLineItems(job);
-    const statusLabel = String(job.dashboard_status || 'AWAITING APPROVAL').trim();
+    const customerKey = customerKeyForRecord({
+      customer_id: job.customer_id,
+      business_name: job.customer_name,
+    });
     return `
       <tr class="db-stock-ordering-row" data-stock-order-id="${escapeAttr(sourceOrderId)}" tabindex="0">
         <td class="db-row-selector">
@@ -2508,16 +2537,43 @@
             aria-label="${expanded ? 'Hide' : 'Show'} line items for order ${escapeAttr(job.order_no || sourceOrderId)}"
           >${expanded ? '&#9662;' : '&#9656;'}</button>
         </td>
-        <td class="db-order-link">${escapeHtml(job.order_no || '')}</td>
-        <td class="db-customer-link">${escapeHtml(job.customer_name || '')}</td>
+        <td>${escapeHtml(outstandingDeliveryLabel(job))}</td>
+        <td class="db-order-link">
+          <button class="db-control-link" type="button" data-db-stock-order-open="${escapeAttr(sourceOrderId)}">${escapeHtml(job.order_no || '')}</button>
+        </td>
+        <td class="db-customer-link">
+          <button class="db-control-link" type="button" data-db-stock-customer-open="${escapeAttr(customerKey)}" ${customerKey ? '' : 'disabled'}>${escapeHtml(job.customer_name || '')}</button>
+        </td>
         <td class="db-type-cell db-type-${categoryForJob(job)}">${escapeHtml(typeAbbr(job))}</td>
         <td>${escapeHtml(job.job_title || '')}</td>
-        <td>${escapeHtml(statusLabel)}</td>
-        <td>${escapeHtml(outstandingDeliveryLabel(job))}</td>
         <td>${escapeHtml(formatNumber(lineItems.length))}</td>
         <td>${escapeHtml(formatNumber(stockOrderingQuantity(job)))}</td>
       </tr>
     `;
+  }
+
+  async function handleStockOrderingRowClick(event) {
+    const orderButton = event.target.closest('[data-db-stock-order-open]');
+    if (orderButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      await flushOrderAutosaves();
+      openOrder(orderButton.dataset.dbStockOrderOpen, 'details');
+      return;
+    }
+
+    const customerButton = event.target.closest('[data-db-stock-customer-open]');
+    if (customerButton && !customerButton.disabled) {
+      event.preventDefault();
+      event.stopPropagation();
+      await flushOrderAutosaves();
+      openCustomer(customerButton.dataset.dbStockCustomerOpen, 'orders');
+    }
+  }
+
+  async function handleStockOrderingRowKeydown(event) {
+    if (event.key !== 'Enter') return;
+    await handleStockOrderingRowClick(event);
   }
 
   function renderStockOrderingDetailRow(job) {
@@ -4183,10 +4239,12 @@
 
     if (state.orderMode === 'all') {
       updateOutstandingJob(state.selectedJob);
-    } else {
+    } else if (shouldRemoveFromOpenOrders(state.selectedJob)) {
       state.outstandingJobs = state.outstandingJobs.filter((job) => (
         Number(job.source_order_id) !== sourceOrderId
       ));
+    } else {
+      updateOutstandingJob(state.selectedJob);
     }
     state.toInvoiceJobs = state.toInvoiceJobs.filter((job) => (
       Number(job.source_order_id) !== sourceOrderId
@@ -4201,6 +4259,13 @@
     syncOrderDocumentButtons(state.selectedJob);
     loadHomeMetrics();
     return state.selectedJob;
+  }
+
+  function shouldRemoveFromOpenOrders(job) {
+    if (!job) return false;
+    if (truthy(job.is_complete)) return true;
+    const status = normalizeDashboardStatusLabel(job.dashboard_status);
+    return status === 'COMPLETED' && Boolean(job.invoice_printed || job.pf_invoice_printed);
   }
 
   function selectedManualInvoiceDate() {
@@ -5044,17 +5109,19 @@
 
   function renderOrderDocumentPageContent(context, pageContent) {
     if (isInvoiceLikeDocumentType(context.type)) {
+      const businessGift = isBusinessGiftOrder(context.job);
       return `
         ${pageContent.itemEntries.length || pageContent.showEmptyItems
-          ? renderInvoiceItemsTable(pageContent.itemEntries, { empty: pageContent.showEmptyItems })
+          ? renderInvoiceItemsTable(pageContent.itemEntries, { empty: pageContent.showEmptyItems, businessGift })
           : ''}
         ${pageContent.showSummary ? renderInvoiceSummary(context.items, context.totals) : ''}
         ${pageContent.showSummary && context.showVatDisclaimer ? renderProFormaVatDisclaimer() : ''}
       `;
     }
 
+    const businessGift = isBusinessGiftOrder(context.job);
     return pageContent.itemEntries.length || pageContent.showEmptyItems
-      ? renderDeliveryNoteItemsTable(pageContent.itemEntries, { empty: pageContent.showEmptyItems })
+      ? renderDeliveryNoteItemsTable(pageContent.itemEntries, { empty: pageContent.showEmptyItems, businessGift })
       : '';
   }
 
@@ -5088,80 +5155,99 @@
   }
 
   function renderInvoiceItemsTable(entries, options = {}) {
+    const businessGift = Boolean(options.businessGift);
+    const columns = businessGift
+      ? ['Description', 'Qty', 'Price', 'Total', 'VAT', 'Rate']
+      : ['Stock item #', 'Description', 'Size', 'Colour', 'Qty', 'Price', 'Total', 'VAT', 'Rate'];
+    const tableClass = `db-order-doc-items db-invoice-items${businessGift ? ' db-invoice-items-business-gift' : ''}`;
     return `
-      <table class="db-order-doc-items db-invoice-items">
+      <table class="${tableClass}">
         <thead>
           <tr>
-            <th>Stock item #</th>
-            <th>Description</th>
-            <th>Size</th>
-            <th>Colour</th>
-            <th>Qty</th>
-            <th>Price</th>
-            <th>Total</th>
-            <th>VAT</th>
-            <th>Rate</th>
+            ${columns.map((column) => `<th>${escapeHtml(column)}</th>`).join('')}
           </tr>
         </thead>
         <tbody>
-          ${options.empty ? '<tr><td colspan="9" class="db-order-ack-empty">No invoice line items</td></tr>' : ''}
-          ${entries.map(renderInvoiceItemEntry).join('')}
+          ${options.empty ? `<tr><td colspan="${columns.length}" class="db-order-ack-empty">No invoice line items</td></tr>` : ''}
+          ${entries.map((entry) => renderInvoiceItemEntry(entry, { businessGift })).join('')}
         </tbody>
       </table>
     `;
   }
 
-  function renderInvoiceItemEntry(entry) {
-    if (entry.type === 'gap') return '<tr class="db-order-ack-item-gap"><td colspan="9"></td></tr>';
-    return renderInvoiceItemRow(entry.item);
+  function renderInvoiceItemEntry(entry, options = {}) {
+    const colspan = options.businessGift ? 6 : 9;
+    if (entry.type === 'gap') return `<tr class="db-order-ack-item-gap"><td colspan="${colspan}"></td></tr>`;
+    return renderInvoiceItemRow(entry.item, options);
   }
 
-  function renderInvoiceItemRow(item) {
+  function renderInvoiceItemRow(item, options = {}) {
     const quantity = orderAckQuantity(item);
     const price = orderAckNumber(item.unit_price);
     const net = orderAckLineNet(item);
     const vat = orderAckLineVat(item);
+    const moneyCells = `
+        <td>${escapeHtml(formatNumber(quantity))}</td>
+        <td>${Number.isFinite(price) ? escapeHtml(formatCurrency(price)) : ''}</td>
+        <td>${Number.isFinite(price) ? escapeHtml(formatCurrency(net)) : ''}</td>
+        <td>${Number.isFinite(price) ? escapeHtml(formatCurrency(vat)) : ''}</td>
+        <td>${escapeHtml(formatVat(effectiveLineVatRate(item)))}</td>
+    `;
+    if (options.businessGift) {
+      return `
+        <tr class="db-order-ack-item-row">
+          <td>${escapeHtml(orderDocumentItemDescription(item))}</td>
+          ${moneyCells}
+        </tr>
+      `;
+    }
     return `
       <tr class="db-order-ack-item-row">
         <td>${escapeHtml(orderDocumentItemCode(item))}</td>
         <td>${escapeHtml(orderDocumentItemDescription(item))}</td>
         <td>${escapeHtml(item.size || '')}</td>
         <td>${escapeHtml(item.colour || '')}</td>
-        <td>${escapeHtml(formatNumber(quantity))}</td>
-        <td>${Number.isFinite(price) ? escapeHtml(formatCurrency(price)) : ''}</td>
-        <td>${Number.isFinite(price) ? escapeHtml(formatCurrency(net)) : ''}</td>
-        <td>${Number.isFinite(price) ? escapeHtml(formatCurrency(vat)) : ''}</td>
-        <td>${escapeHtml(formatVat(effectiveLineVatRate(item)))}</td>
+        ${moneyCells}
       </tr>
     `;
   }
 
   function renderDeliveryNoteItemsTable(entries, options = {}) {
+    const businessGift = Boolean(options.businessGift);
+    const columns = businessGift
+      ? ['Description', 'Qty']
+      : ['Stock item #', 'Description', 'Size', 'Colour', 'Qty'];
+    const tableClass = `db-order-doc-items db-delivery-note-items${businessGift ? ' db-delivery-note-items-business-gift' : ''}`;
     return `
-      <table class="db-order-doc-items db-delivery-note-items">
+      <table class="${tableClass}">
         <thead>
           <tr>
-            <th>Stock item #</th>
-            <th>Description</th>
-            <th>Size</th>
-            <th>Colour</th>
-            <th>Qty</th>
+            ${columns.map((column) => `<th>${escapeHtml(column)}</th>`).join('')}
           </tr>
         </thead>
         <tbody>
-          ${options.empty ? '<tr><td colspan="5" class="db-order-ack-empty">No delivery note line items</td></tr>' : ''}
-          ${entries.map(renderDeliveryNoteItemEntry).join('')}
+          ${options.empty ? `<tr><td colspan="${columns.length}" class="db-order-ack-empty">No delivery note line items</td></tr>` : ''}
+          ${entries.map((entry) => renderDeliveryNoteItemEntry(entry, { businessGift })).join('')}
         </tbody>
       </table>
     `;
   }
 
-  function renderDeliveryNoteItemEntry(entry) {
-    if (entry.type === 'gap') return '<tr class="db-order-ack-item-gap"><td colspan="5"></td></tr>';
-    return renderDeliveryNoteItemRow(entry.item);
+  function renderDeliveryNoteItemEntry(entry, options = {}) {
+    const colspan = options.businessGift ? 2 : 5;
+    if (entry.type === 'gap') return `<tr class="db-order-ack-item-gap"><td colspan="${colspan}"></td></tr>`;
+    return renderDeliveryNoteItemRow(entry.item, options);
   }
 
-  function renderDeliveryNoteItemRow(item) {
+  function renderDeliveryNoteItemRow(item, options = {}) {
+    if (options.businessGift) {
+      return `
+        <tr class="db-order-ack-item-row">
+          <td>${escapeHtml(orderDocumentItemDescription(item))}</td>
+          <td>${escapeHtml(formatNumber(orderAckQuantity(item)))}</td>
+        </tr>
+      `;
+    }
     return `
       <tr class="db-order-ack-item-row">
         <td>${escapeHtml(orderDocumentItemCode(item))}</td>
