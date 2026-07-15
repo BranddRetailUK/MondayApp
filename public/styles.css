@@ -3588,8 +3588,8 @@ body.modal-open{overflow:hidden}
   padding:1px 4px;
 }
 #db-order-job-title{
-  flex-basis:550px;
-  width:550px;
+  flex-basis:500px;
+  width:500px;
 }
 .db-edit-button{
   flex:0 0 60px;
@@ -4357,16 +4357,13 @@ body.modal-open{overflow:hidden}
   display:block;
   pointer-events:none;
 }
-.db-order-meta-panel{
+.db-order-header-stats{
   position:absolute;
   right:0;
-  top:14px;
-  width:306px;
-  min-height:52px;
-  padding:8px 10px;
-  background:#7f7f7f;
-  border:2px inset #666;
-  color:#fff;
+  top:12px;
+  width:360px;
+  height:94px;
+  color:#000;
 }
 .db-customer-header-stats{
   position:absolute;
@@ -4382,17 +4379,23 @@ body.modal-open{overflow:hidden}
   gap:5px;
   height:100%;
 }
+.db-order-header-stats .db-customer-header-stats-grid{
+  height:100%;
+}
+.db-order-header-stats .db-customer-overview-card span,
 .db-customer-header-stats .db-customer-overview-card span{
   height:16px;
   padding:2px 4px 1px;
   font-size:9px;
   line-height:12px;
 }
+.db-order-header-stats .db-customer-overview-card strong,
 .db-customer-header-stats .db-customer-overview-card strong{
   margin-top:4px;
   padding:0 5px;
-  font-size:10px;
-  line-height:13px;
+  font-size:12px;
+  font-weight:700;
+  line-height:15px;
 }
 .db-meta-grid{
   display:grid;
@@ -4400,9 +4403,6 @@ body.modal-open{overflow:hidden}
   gap:1px 8px;
   margin-bottom:15px;
   font-size:11px;
-}
-.db-order-meta-panel .db-meta-grid{
-  margin-bottom:0;
 }
 .db-meta-grid a{
   color:#00e;
@@ -4412,13 +4412,6 @@ body.modal-open{overflow:hidden}
   padding:1px 2px;
   min-height:17px;
 }
-.db-order-meta-panel label{
-  display:grid;
-  grid-template-columns:60px 1fr;
-  align-items:center;
-  margin-bottom:5px;
-}
-.db-order-meta-panel select,
 .db-select-order-label select,
 .db-legacy-app select,
 .db-legacy-input,
@@ -4430,10 +4423,6 @@ body.modal-open{overflow:hidden}
   font:12px Arial, Helvetica, sans-serif;
   height:21px;
   padding:1px 2px;
-}
-.db-order-meta-panel select{
-  width:100%;
-  min-width:0;
 }
 .db-legacy-app .db-customer-manager-select{
   width:178px;
@@ -4838,20 +4827,6 @@ body.modal-open{overflow:hidden}
   right:24px;
   height:156px;
 }
-.db-customer-overview-box{
-  left:472px;
-  top:274px;
-  right:24px;
-  height:150px;
-  padding:8px;
-  overflow:hidden;
-}
-.db-customer-overview-grid{
-  display:grid;
-  grid-template-columns:repeat(3, minmax(0, 1fr));
-  gap:6px;
-  height:100%;
-}
 .db-customer-overview-card{
   min-width:0;
   min-height:0;
@@ -4880,8 +4855,9 @@ body.modal-open{overflow:hidden}
 .db-customer-overview-card strong{
   margin-top:5px;
   padding:0 6px;
-  font-size:11px;
-  line-height:14px;
+  font-size:13px;
+  font-weight:700;
+  line-height:16px;
   color:#000;
 }
 .db-print-box{
@@ -6223,7 +6199,7 @@ input.db-custom-line-input{
     min-width:0;
     font-size:15px;
   }
-  .db-order-meta-panel,
+  .db-order-header-stats,
   .db-customer-header-stats{
     position:static;
     width:100%;
@@ -6285,16 +6261,11 @@ input.db-custom-line-input{
   .db-customer-box,
   .db-address-box,
   .db-payment-box,
-  .db-customer-overview-box,
   .db-print-box,
   .db-invoice-checks,
   .db-flags-box{
     position:static;
     width:auto;
-    height:auto;
-  }
-  .db-customer-overview-grid{
-    grid-template-columns:repeat(2, minmax(0, 1fr));
     height:auto;
   }
   .db-flags-box{

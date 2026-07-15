@@ -364,9 +364,7 @@
       footerTitle: document.getElementById('db-footer-title'),
       orderTitle: document.getElementById('db-order-job-title'),
       orderNumber: document.getElementById('db-order-number'),
-      createdAt: document.getElementById('db-created-at'),
-      updatedAt: document.getElementById('db-updated-at'),
-      updatedBy: document.getElementById('db-updated-by'),
+      orderHeaderStats: document.getElementById('db-order-header-stats'),
       headerJobSelect: document.getElementById('db-header-job-select'),
       headerOrderSelect: document.getElementById('db-header-order-select'),
       orderTabs: Array.from(document.querySelectorAll('.db-order-tab')),
@@ -4433,9 +4431,7 @@
     syncOrderDocumentButtons(null);
     els.orderTitle.value = 'Loading...';
     els.orderNumber.value = '';
-    els.createdAt.textContent = '-';
-    els.updatedAt.textContent = '-';
-    els.updatedBy.textContent = '-';
+    renderOrderHeaderStats();
     els.detailsPanel.innerHTML = '<div class="db-panel-message">Loading order details</div>';
     els.itemsPanel.innerHTML = '';
     els.designPanel.innerHTML = '';
@@ -4459,9 +4455,7 @@
     const job = state.selectedJob || {};
     els.orderTitle.value = job.job_title || '';
     els.orderNumber.value = job.order_no || '';
-    els.createdAt.textContent = formatDateTime(job.created_at_source);
-    els.updatedAt.textContent = formatDateTime(job.updated_at_source);
-    els.updatedBy.textContent = orderByLabel(job);
+    renderOrderHeaderStats();
 
     hydrateOrderSelectors();
     renderDetailsPanel();
@@ -4545,7 +4539,6 @@
             <textarea data-db-job-field="comments">${escapeHtml(job.comments || '')}</textarea>
           </div>
         </div>
-        ${renderCustomerOverviewBox()}
       </div>
     `;
   }
@@ -4584,29 +4577,22 @@
     return `<select class="db-payment-terms-select" disabled>${options.join('')}</select>`;
   }
 
-  function renderCustomerOverviewBox() {
+  function renderOrderHeaderStats() {
+    if (!els.orderHeaderStats) return;
     const metrics = customerOverviewCardMetrics(state.selectedCustomerOverview);
-
-    return `
-      <div class="db-detail-box db-customer-overview-box" aria-label="Customer overview">
-        <div class="db-customer-overview-grid">
-          ${metrics.map((metric) => `
-            <section class="db-customer-overview-card" title="${escapeAttr(`${metric.label}: ${metric.value}`)}">
-              <span>${escapeHtml(metric.label)}</span>
-              <strong>${escapeHtml(metric.value)}</strong>
-            </section>
-          `).join('')}
-        </div>
-      </div>
-    `;
+    els.orderHeaderStats.innerHTML = renderCustomerOverviewCards(metrics);
   }
 
   function renderCustomerHeaderStats() {
     if (!els.customerHeaderStats) return;
     const metrics = customerOverviewCardMetrics(state.selectedCustomerPageOverview);
-    els.customerHeaderStats.innerHTML = `
+    els.customerHeaderStats.innerHTML = renderCustomerOverviewCards(metrics);
+  }
+
+  function renderCustomerOverviewCards(metrics) {
+    return `
       <div class="db-customer-header-stats-grid">
-        ${metrics.map((metric) => `
+        ${(metrics || []).map((metric) => `
           <section class="db-customer-overview-card" title="${escapeAttr(`${metric.label}: ${metric.value}`)}">
             <span>${escapeHtml(metric.label)}</span>
             <strong>${escapeHtml(metric.value)}</strong>
@@ -5784,8 +5770,7 @@
       Number(job.source_order_id) !== sourceOrderId
     ));
 
-    els.updatedAt.textContent = formatDateTime(state.selectedJob.updated_at_source);
-    els.updatedBy.textContent = orderByLabel(state.selectedJob);
+    renderOrderHeaderStats();
     renderDetailsPanel();
     renderOutstandingOrders();
     renderToInvoiceJobs();
@@ -8764,8 +8749,7 @@
       state.selectedJob = { ...state.selectedJob, ...data.job };
       state.jobDirty = false;
       state.jobLastSavedSignature = jobSignature(state.selectedJob);
-      els.updatedAt.textContent = formatDateTime(state.selectedJob.updated_at_source);
-      els.updatedBy.textContent = orderByLabel(state.selectedJob);
+      renderOrderHeaderStats();
       updateOutstandingJob(state.selectedJob);
       renderOutstandingOrders();
       hydrateOrderSelectors();
