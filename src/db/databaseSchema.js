@@ -105,6 +105,8 @@ async function ensureDatabaseTables(db) {
       invoice_address_line4 TEXT,
       invoice_address_line5 TEXT,
       invoice_postcode TEXT,
+      invoice_phone TEXT,
+      invoice_fax TEXT,
       delivery_address TEXT,
       delivery_address_line1 TEXT,
       delivery_address_line2 TEXT,
@@ -112,6 +114,8 @@ async function ensureDatabaseTables(db) {
       delivery_address_line4 TEXT,
       delivery_address_line5 TEXT,
       delivery_postcode TEXT,
+      delivery_phone TEXT,
+      delivery_fax TEXT,
       account_manager_user_id INTEGER,
       account_manager_name TEXT,
       created_by_user_id INTEGER,
@@ -139,6 +143,8 @@ async function ensureDatabaseTables(db) {
   await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS invoice_address_line4 TEXT;');
   await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS invoice_address_line5 TEXT;');
   await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS invoice_postcode TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS invoice_phone TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS invoice_fax TEXT;');
   await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS delivery_address TEXT;');
   await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS delivery_address_line1 TEXT;');
   await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS delivery_address_line2 TEXT;');
@@ -146,6 +152,8 @@ async function ensureDatabaseTables(db) {
   await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS delivery_address_line4 TEXT;');
   await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS delivery_address_line5 TEXT;');
   await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS delivery_postcode TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS delivery_phone TEXT;');
+  await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS delivery_fax TEXT;');
   await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS account_manager_user_id INTEGER;');
   await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS account_manager_name TEXT;');
   await db.query('ALTER TABLE database_customer_profiles ADD COLUMN IF NOT EXISTS created_by_user_id INTEGER;');

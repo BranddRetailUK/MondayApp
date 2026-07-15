@@ -206,6 +206,10 @@
     contactLastSavedSignatures: {},
     contactDeleteTarget: null,
     contactDeleteSaving: false,
+    customerAddressDirty: false,
+    customerAddressSaving: false,
+    customerAddressSaveQueued: false,
+    customerAddressLastSavedSignature: '{}',
     customLineDraft: null,
     lineDeleteTarget: null,
     lineDeleteSaving: false,
@@ -230,6 +234,7 @@
   let designAutosaveTimer = 0;
   let jobAutosaveTimer = 0;
   let contactAutosaveTimer = 0;
+  let customerAddressAutosaveTimer = 0;
   let lineOrderAutosaveTimer = 0;
   let orderSearchTimer = 0;
   let outstandingScrollFrame = 0;
@@ -334,6 +339,8 @@
     els.customerDesignNumbersBody?.addEventListener('keydown', handleCustomerOrderRowKeydown);
     els.customerContactsBody.addEventListener('input', handleCustomerContactInput);
     els.customerContactsBody.addEventListener('focusout', handleCustomerContactFocusOut);
+    els.customerAddressesBody.addEventListener('input', handleCustomerAddressInput);
+    els.customerAddressesBody.addEventListener('focusout', handleCustomerAddressFocusOut);
     els.customersSearch.addEventListener('input', handleDatabaseCustomerSearchInput);
     els.customerAccountManager?.addEventListener('change', handleCustomerAccountManagerChange);
     els.orderSearch?.addEventListener('input', handleOrderSearchInput);
@@ -1658,6 +1665,7 @@
 
   function setCustomerLoading() {
     resetContactAutosaveState();
+    resetCustomerAddressAutosaveState();
     state.selectedCustomerDetail = null;
     state.selectedCustomerOrders = [];
     state.selectedCustomerContacts = [];
@@ -1677,6 +1685,7 @@
 
   function renderCustomerError(message) {
     resetContactAutosaveState();
+    resetCustomerAddressAutosaveState();
     els.customerName.value = 'Customer unavailable';
     els.customerCode.value = '';
     setCustomerAccountManagerOptions(null, true);
@@ -2244,10 +2253,11 @@
 
     els.customerAddressesBody.innerHTML = `
       <div class="db-customer-address-columns">
-        ${renderCustomerAddressBox('Invoice address (default):', invoiceAddress)}
-        ${renderCustomerAddressBox('Delivery address (default):', deliveryAddress)}
+        ${renderCustomerAddressBox('Invoice address (default):', invoiceAddress, 'invoice')}
+        ${renderCustomerAddressBox('Delivery address (default):', deliveryAddress, 'delivery')}
       </div>
     `;
+    hydrateCustomerAddressAutosaveSignature();
   }
 
   function defaultCustomerAddress(addresses, role) {
@@ -2281,37 +2291,37 @@
     };
   }
 
-  function renderCustomerAddressBox(title, address) {
+  function renderCustomerAddressBox(title, address, role) {
     const fields = customerAddressFields(address || blankCustomerAddress(''));
     return `
-      <section class="db-customer-address-box">
+      <section class="db-customer-address-box" data-customer-address-role="${escapeAttr(role)}">
         <h3>${escapeHtml(title)}</h3>
         <div class="db-customer-address-inner">
-          ${customerAddressInputRow('Address 1:', fields.address_line1)}
-          ${customerAddressInputRow('Address 2:', fields.address_line2)}
-          ${customerAddressInputRow('Address 3:', fields.address_line3)}
-          ${customerAddressInputRow('Address 4:', fields.address_line4)}
-          ${customerAddressInputRow('Address 5:', fields.address_line5)}
-          ${customerAddressInputRow('Postcode:', fields.postcode, 'postcode')}
-          ${customerAddressInputRow('Tel:', fields.phone, 'tel')}
-          ${customerAddressInputRow('Fax:', fields.fax, 'tel')}
+          ${customerAddressInputRow('Address 1:', fields.address_line1, 'address_line1')}
+          ${customerAddressInputRow('Address 2:', fields.address_line2, 'address_line2')}
+          ${customerAddressInputRow('Address 3:', fields.address_line3, 'address_line3')}
+          ${customerAddressInputRow('Address 4:', fields.address_line4, 'address_line4')}
+          ${customerAddressInputRow('Address 5:', fields.address_line5, 'address_line5')}
+          ${customerAddressInputRow('Postcode:', fields.postcode, 'postcode', 'postcode')}
+          ${customerAddressInputRow('Tel:', fields.phone, 'phone', 'tel')}
+          ${customerAddressInputRow('Fax:', fields.fax, 'fax', 'tel')}
         </div>
       </section>
     `;
   }
 
-  function customerAddressInputRow(label, value, size = '') {
+  function customerAddressInputRow(label, value, field, size = '') {
     return `
       <label class="db-customer-address-row ${size ? `db-customer-address-row-${escapeAttr(size)}` : ''}">
         <span>${escapeHtml(label)}</span>
-        <input readonly value="${escapeAttr(value || '')}">
+        <input data-customer-address-field="${escapeAttr(field)}" value="${escapeAttr(value || '')}" autocomplete="off">
       </label>
     `;
   }
 
   function customerAddressFields(address) {
     const fallback = splitCustomerAddress(address?.address || '');
-    return {
+    return normalizeCustomerAddressFields({
       address_line1: address?.address_line1 || fallback[0] || '',
       address_line2: address?.address_line2 || fallback[1] || '',
       address_line3: address?.address_line3 || fallback[2] || '',
@@ -2323,7 +2333,225 @@
       created_at_source: address?.created_at_source || address?.first_seen_at || null,
       updated_at_source: address?.updated_at_source || address?.last_seen_at || null,
       updated_by: address?.updated_by || null,
+    });
+  }
+
+  function hydrateCustomerAddressAutosaveSignature() {
+    clearTimeout(customerAddressAutosaveTimer);
+    state.customerAddressDirty = false;
+    state.customerAddressSaving = false;
+    state.customerAddressSaveQueued = false;
+    state.customerAddressLastSavedSignature = customerAddressSignature(collectCustomerAddressPayloadFromDom());
+    els.customerAddressesBody?.classList.remove('db-customer-addresses-dirty', 'db-customer-addresses-saving', 'db-customer-addresses-error');
+  }
+
+  function resetCustomerAddressAutosaveState() {
+    clearTimeout(customerAddressAutosaveTimer);
+    state.customerAddressDirty = false;
+    state.customerAddressSaving = false;
+    state.customerAddressSaveQueued = false;
+    state.customerAddressLastSavedSignature = '{}';
+  }
+
+  function handleCustomerAddressInput(event) {
+    const input = event.target.closest('[data-customer-address-field]');
+    if (!input) return;
+
+    normalizeCustomerAddressPanel(input.closest('[data-customer-address-role]'));
+    state.customerAddressDirty = true;
+    els.customerAddressesBody?.classList.add('db-customer-addresses-dirty');
+    els.customerAddressesBody?.classList.remove('db-customer-addresses-error');
+    scheduleCustomerAddressAutosave();
+  }
+
+  function handleCustomerAddressFocusOut(event) {
+    const input = event.target.closest('[data-customer-address-field]');
+    if (!input) return;
+    const panel = input.closest('[data-customer-address-role]');
+    if (!panel) return;
+
+    const nextTarget = event.relatedTarget;
+    if (nextTarget && panel.contains(nextTarget)) return;
+
+    window.setTimeout(() => {
+      if (!panel.isConnected || panel.matches(':focus-within')) return;
+      normalizeCustomerAddressPanel(panel);
+      flushCustomerAddressAutosave();
+    }, 0);
+  }
+
+  function scheduleCustomerAddressAutosave() {
+    clearTimeout(customerAddressAutosaveTimer);
+    customerAddressAutosaveTimer = window.setTimeout(() => {
+      flushCustomerAddressAutosave();
+    }, CONTACT_AUTOSAVE_MS);
+  }
+
+  async function flushCustomerAddressAutosave(options = {}) {
+    clearTimeout(customerAddressAutosaveTimer);
+    if (!state.customerAddressDirty) return true;
+
+    normalizeCustomerAddressPanels();
+    const payload = collectCustomerAddressPayloadFromDom();
+    const signature = customerAddressSignature(payload);
+    if (signature === state.customerAddressLastSavedSignature) {
+      state.customerAddressDirty = false;
+      els.customerAddressesBody?.classList.remove('db-customer-addresses-dirty', 'db-customer-addresses-error');
+      return true;
+    }
+
+    if (state.customerAddressSaving) {
+      state.customerAddressSaveQueued = true;
+      return false;
+    }
+
+    const customerKey = state.selectedCustomerDetail?.customer_key;
+    if (!customerKey) return false;
+
+    state.customerAddressSaving = true;
+    els.customerAddressesBody?.classList.add('db-customer-addresses-saving');
+
+    try {
+      const data = await fetchJson(`/api/database/customers/${encodeURIComponent(customerKey)}/addresses`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        keepalive: Boolean(options.keepalive),
+      });
+      state.selectedCustomerDetail = { ...state.selectedCustomerDetail, ...(data.customer || {}) };
+      if (Array.isArray(data.addresses)) state.selectedCustomerAddresses = data.addresses;
+      state.customerAddressLastSavedSignature = customerAddressSignature(collectCustomerAddressPayloadFromDom());
+      state.customerAddressDirty = false;
+      updateCustomerHeaderFields();
+      els.customerAddressesBody?.classList.remove('db-customer-addresses-dirty', 'db-customer-addresses-error');
+      return true;
+    } catch (err) {
+      state.customerAddressDirty = true;
+      els.customerAddressesBody?.classList.add('db-customer-addresses-error');
+      console.error('Customer address autosave failed', err);
+      return false;
+    } finally {
+      state.customerAddressSaving = false;
+      els.customerAddressesBody?.classList.remove('db-customer-addresses-saving');
+      if (state.customerAddressSaveQueued) {
+        state.customerAddressSaveQueued = false;
+        scheduleCustomerAddressAutosave();
+      }
+    }
+  }
+
+  function updateCustomerHeaderFields() {
+    const customer = state.selectedCustomerDetail || {};
+    els.customerName.value = customer.business_name || '';
+    els.customerCode.value = customer.customer_code || '';
+    els.customerCreatedAt.textContent = formatDateTime(customer.created_at_source);
+    els.customerUpdatedAt.textContent = formatDateTime(customer.updated_at_source);
+    els.customerUpdatedBy.textContent = staffLabel(customer.updated_by) || '-';
+  }
+
+  function collectCustomerAddressPayloadFromDom() {
+    return ['invoice', 'delivery'].reduce((payload, role) => {
+      const panel = els.customerAddressesBody?.querySelector(`[data-customer-address-role="${role}"]`);
+      const fields = customerAddressPanelFields(panel);
+      payload[`${role}_address_line1`] = fields.address_line1;
+      payload[`${role}_address_line2`] = fields.address_line2;
+      payload[`${role}_address_line3`] = fields.address_line3;
+      payload[`${role}_address_line4`] = fields.address_line4;
+      payload[`${role}_address_line5`] = fields.address_line5;
+      payload[`${role}_postcode`] = fields.postcode;
+      payload[`${role}_phone`] = fields.phone;
+      payload[`${role}_fax`] = fields.fax;
+      return payload;
+    }, {});
+  }
+
+  function customerAddressPanelFields(panel) {
+    return normalizeCustomerAddressFields({
+      address_line1: customerAddressFieldValue(panel, 'address_line1'),
+      address_line2: customerAddressFieldValue(panel, 'address_line2'),
+      address_line3: customerAddressFieldValue(panel, 'address_line3'),
+      address_line4: customerAddressFieldValue(panel, 'address_line4'),
+      address_line5: customerAddressFieldValue(panel, 'address_line5'),
+      postcode: customerAddressFieldValue(panel, 'postcode'),
+      phone: customerAddressFieldValue(panel, 'phone'),
+      fax: customerAddressFieldValue(panel, 'fax'),
+    });
+  }
+
+  function customerAddressFieldValue(panel, field) {
+    return panel?.querySelector(`[data-customer-address-field="${field}"]`)?.value.trim() || '';
+  }
+
+  function customerAddressSignature(payload) {
+    return JSON.stringify(payload || {});
+  }
+
+  function normalizeCustomerAddressPanels() {
+    els.customerAddressesBody?.querySelectorAll('[data-customer-address-role]').forEach(normalizeCustomerAddressPanel);
+  }
+
+  function normalizeCustomerAddressPanel(panel) {
+    if (!panel) return;
+    const fields = customerAddressPanelFields(panel);
+    Object.entries(fields).forEach(([field, value]) => {
+      const input = panel.querySelector(`[data-customer-address-field="${field}"]`);
+      if (input && input.value !== value) input.value = value;
+    });
+  }
+
+  function normalizeCustomerAddressFields(fields) {
+    const normalized = {
+      address_line1: String(fields?.address_line1 || '').trim(),
+      address_line2: String(fields?.address_line2 || '').trim(),
+      address_line3: String(fields?.address_line3 || '').trim(),
+      address_line4: String(fields?.address_line4 || '').trim(),
+      address_line5: String(fields?.address_line5 || '').trim(),
+      postcode: formatUkPostcode(fields?.postcode) || String(fields?.postcode || '').trim(),
+      phone: String(fields?.phone || '').trim(),
+      fax: String(fields?.fax || '').trim(),
+      created_at_source: fields?.created_at_source || null,
+      updated_at_source: fields?.updated_at_source || null,
+      updated_by: fields?.updated_by || null,
     };
+
+    for (const field of ['address_line5', 'address_line4', 'address_line3', 'address_line2', 'address_line1']) {
+      const extracted = extractUkPostcodeFromAddressLine(normalized[field]);
+      if (!extracted) continue;
+      normalized[field] = extracted.remaining;
+      if (!normalized.postcode || normalizePostcodeCompact(normalized.postcode) === normalizePostcodeCompact(extracted.postcode)) {
+        normalized.postcode = extracted.postcode;
+      }
+    }
+
+    return normalized;
+  }
+
+  function extractUkPostcodeFromAddressLine(value) {
+    const clean = String(value || '').trim();
+    if (!clean) return null;
+    const exact = formatUkPostcode(clean);
+    if (exact) return { postcode: exact, remaining: '' };
+
+    const match = clean.match(/\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b/i);
+    if (!match) return null;
+    const postcode = formatUkPostcode(match[1]);
+    if (!postcode) return null;
+    const remaining = clean
+      .replace(match[0], '')
+      .replace(/\s*,\s*/g, ', ')
+      .replace(/^[,\s]+|[,\s]+$/g, '')
+      .trim();
+    return { postcode, remaining };
+  }
+
+  function formatUkPostcode(value) {
+    const compact = normalizePostcodeCompact(value);
+    const match = compact.match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d[A-Z]{2})$/);
+    return match ? `${match[1]} ${match[2]}` : '';
+  }
+
+  function normalizePostcodeCompact(value) {
+    return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   }
 
   function splitCustomerAddress(value) {
@@ -4938,7 +5166,7 @@
   }
 
   function orderDocumentUltRef(job) {
-    return job?.source_order_id || job?.order_no || '';
+    return job?.order_no || job?.source_order_id || '';
   }
 
   function databaseDocumentNumber(job, documentType) {
@@ -5021,7 +5249,7 @@
         ${orderAckMetaRow('Order date:', formatDate(job.order_date, 'full'))}
         ${orderAckMetaRow('Order taken by:', takenByLabel(job))}
         ${orderAckMetaRow('Order value:', formatCurrency(totals.gross))}
-        ${orderAckMetaRow('Delivery address:', orderDocumentAddressText(deliveryDisplay))}
+        ${orderAckMetaRow('Delivery address:', renderOrderDocumentStackedAddressValue(deliveryDisplay), { html: true, stacked: true })}
       </section>
 
       <section class="db-order-ack-letter">
@@ -5075,7 +5303,7 @@
         { label: 'VAT No.:', value: ULTIMATE_VAT_NUMBER },
         { label: 'Invoice date:', value: formatDate(generatedAt, 'full') },
         { label: 'Payment terms:', value: job.payment_terms || '' },
-        { label: 'Delivery address:', value: orderDocumentAddressText(deliveryDisplay) },
+        { label: 'Delivery address:', value: renderOrderDocumentStackedAddressValue(deliveryDisplay), html: true, stacked: true },
       ],
     };
     const pages = buildOrderDocumentPages({
@@ -5098,6 +5326,7 @@
       job,
       items,
       addressLines,
+      stackedAddress: true,
       showSignature: true,
       metaRows: [
         { label: 'Invoice No', value: invoiceDocumentNo(job) },
@@ -5176,7 +5405,7 @@
   function orderDocumentMetaRow(row) {
     const content = row.html ? (row.value || '') : escapeHtml(row.value || row.value === 0 ? row.value : '');
     return `
-      <div class="db-order-ack-meta-row">
+      <div class="db-order-ack-meta-row ${row.stacked ? 'has-stacked-address' : ''}">
         <span>${escapeHtml(row.label)}</span>
         <strong>${content}</strong>
       </div>
@@ -5628,7 +5857,7 @@
   function orderAckMetaRow(label, value, options = {}) {
     const content = options.html ? (value || '') : escapeHtml(value || value === 0 ? value : '');
     return `
-      <div class="db-order-ack-meta-row">
+      <div class="db-order-ack-meta-row ${options.stacked ? 'has-stacked-address' : ''}">
         <span>${escapeHtml(label)}</span>
         <strong>${content}</strong>
       </div>
@@ -6016,6 +6245,14 @@
       .filter(Boolean)
       .map((line) => `<div>${escapeHtml(line)}</div>`)
       .join('');
+  }
+
+  function renderOrderDocumentStackedAddressValue(lines) {
+    return (lines || [])
+      .map((line) => String(line || '').trim())
+      .filter(Boolean)
+      .map(escapeHtml)
+      .join('<br>');
   }
 
   function splitOrderAckAddress(value) {
@@ -7297,6 +7534,7 @@
       flushDesignAutosave(options),
       flushLineOrderAutosave(options),
       flushContactAutosaves(options),
+      flushCustomerAddressAutosave(options),
     ]);
   }
 

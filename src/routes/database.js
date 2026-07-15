@@ -834,6 +834,8 @@ router.get('/api/database/customers/:key', async (req, res) => {
         params = [profile.customer_id, profile.customer_name];
         where = '(j.customer_id = $1 OR LOWER(j.customer_name) = LOWER($2))';
       }
+    } else {
+      profile = await findCustomerProfileForKey(customerKey);
     }
 
     const result = await pool.query(
@@ -976,6 +978,183 @@ router.put('/api/database/customers/:key/account-manager', async (req, res) => {
   }
 });
 
+router.put('/api/database/customers/:key/addresses', async (req, res) => {
+  const customerKey = parseCustomerKey(req.params.key);
+  if (!customerKey) {
+    return res.status(400).json({ error: 'Invalid customer key' });
+  }
+
+  const invoiceAddress = normalizedCustomerAddress(req.body || {}, 'invoice');
+  const deliveryAddress = normalizedCustomerAddress(req.body || {}, 'delivery');
+
+  try {
+    let profile = customerKey.type === 'profile'
+      ? await findCustomerProfileById(customerKey.value)
+      : await findCustomerProfileForKey(customerKey);
+    const latestOrder = await latestCustomerOrderForKey(customerKey, profile);
+    const actorName = req.hubUser ? fullName(req.hubUser) : null;
+
+    if (!profile && !latestOrder && customerKey.type !== 'name') {
+      return res.status(404).json({ error: 'Database customer not found' });
+    }
+
+    if (profile) {
+      const updated = await pool.query(
+        `UPDATE database_customer_profiles
+         SET invoice_address = $2,
+             invoice_address_line1 = $3,
+             invoice_address_line2 = $4,
+             invoice_address_line3 = $5,
+             invoice_address_line4 = $6,
+             invoice_address_line5 = $7,
+             invoice_postcode = $8,
+             invoice_phone = $9,
+             invoice_fax = $10,
+             delivery_address = $11,
+             delivery_address_line1 = $12,
+             delivery_address_line2 = $13,
+             delivery_address_line3 = $14,
+             delivery_address_line4 = $15,
+             delivery_address_line5 = $16,
+             delivery_postcode = $17,
+             delivery_phone = $18,
+             delivery_fax = $19,
+             updated_by_user_id = $20,
+             updated_by_name = $21,
+             updated_at_source = NOW(),
+             imported_at = NOW()
+         WHERE id = $1
+         RETURNING *`,
+        [
+          profile.id,
+          invoiceAddress.address,
+          invoiceAddress.line1,
+          invoiceAddress.line2,
+          invoiceAddress.line3,
+          invoiceAddress.line4,
+          invoiceAddress.line5,
+          invoiceAddress.postcode,
+          invoiceAddress.phone,
+          invoiceAddress.fax,
+          deliveryAddress.address,
+          deliveryAddress.line1,
+          deliveryAddress.line2,
+          deliveryAddress.line3,
+          deliveryAddress.line4,
+          deliveryAddress.line5,
+          deliveryAddress.postcode,
+          deliveryAddress.phone,
+          deliveryAddress.fax,
+          req.hubUser?.id || null,
+          actorName,
+        ]
+      );
+      profile = updated.rows[0];
+    } else {
+      const resolvedManager = await resolveAccountManager(
+        latestOrder?.order_owner_user_id || req.hubUser?.id,
+        latestOrder?.order_owner_name || latestOrder?.order_taken_by || actorName
+      );
+      if (resolvedManager.error) {
+        resolvedManager.userId = null;
+        resolvedManager.name = latestOrder?.order_owner_name || latestOrder?.order_taken_by || actorName;
+      }
+      const customerName = cleanNullable(latestOrder?.customer_name) || (customerKey.type === 'name' ? customerKey.value : null);
+      if (!customerName) {
+        return res.status(404).json({ error: 'Database customer not found' });
+      }
+
+      const inserted = await pool.query(
+        `INSERT INTO database_customer_profiles (
+           customer_id,
+           customer_name,
+           customer_code,
+           contact_name,
+           contact_phone,
+           contact_mobile,
+           contact_email,
+           marketing_opt_in,
+           invoice_address,
+           invoice_address_line1,
+           invoice_address_line2,
+           invoice_address_line3,
+           invoice_address_line4,
+           invoice_address_line5,
+           invoice_postcode,
+           invoice_phone,
+           invoice_fax,
+           delivery_address,
+           delivery_address_line1,
+           delivery_address_line2,
+           delivery_address_line3,
+           delivery_address_line4,
+           delivery_address_line5,
+           delivery_postcode,
+           delivery_phone,
+           delivery_fax,
+           account_manager_user_id,
+           account_manager_name,
+           created_by_user_id,
+           created_by_name,
+           updated_by_user_id,
+           updated_by_name,
+           created_at_source,
+           updated_at_source,
+           imported_at
+         ) VALUES (
+           $1, $2, $3, $4, $5, $6, $7, FALSE,
+           $8, $9, $10, $11, $12, $13, $14, $15, $16,
+           $17, $18, $19, $20, $21, $22, $23, $24, $25,
+           $26, $27, $28, $29, $30, $31, NOW(), NOW(), NOW()
+         )
+         RETURNING *`,
+        [
+          latestOrder?.customer_id || (customerKey.type === 'id' ? customerKey.value : null),
+          customerName,
+          cleanNullable(latestOrder?.customer_code),
+          cleanNullable(latestOrder?.contact_name),
+          cleanNullable(latestOrder?.contact_phone),
+          cleanNullable(latestOrder?.contact_mobile),
+          cleanNullable(latestOrder?.contact_email),
+          invoiceAddress.address,
+          invoiceAddress.line1,
+          invoiceAddress.line2,
+          invoiceAddress.line3,
+          invoiceAddress.line4,
+          invoiceAddress.line5,
+          invoiceAddress.postcode,
+          invoiceAddress.phone,
+          invoiceAddress.fax,
+          deliveryAddress.address,
+          deliveryAddress.line1,
+          deliveryAddress.line2,
+          deliveryAddress.line3,
+          deliveryAddress.line4,
+          deliveryAddress.line5,
+          deliveryAddress.postcode,
+          deliveryAddress.phone,
+          deliveryAddress.fax,
+          resolvedManager.userId,
+          resolvedManager.name,
+          req.hubUser?.id || null,
+          actorName,
+          req.hubUser?.id || null,
+          actorName,
+        ]
+      );
+      profile = inserted.rows[0];
+    }
+
+    res.json({
+      customer: customerProfileToCustomer(profile),
+      addresses: groupedAddresses([], [], profile),
+    });
+  } catch (err) {
+    console.error('PUT /api/database/customers/:key/addresses', err);
+    res.status(500).json({ error: 'Failed to update database customer addresses' });
+  }
+});
+
 router.post('/api/database/customers', async (req, res) => {
   const payload = req.body || {};
   const customerName = cleanNullable(payload.customer_name);
@@ -1011,6 +1190,8 @@ router.post('/api/database/customers', async (req, res) => {
          invoice_address_line4,
          invoice_address_line5,
          invoice_postcode,
+         invoice_phone,
+         invoice_fax,
          delivery_address,
          delivery_address_line1,
          delivery_address_line2,
@@ -1018,6 +1199,8 @@ router.post('/api/database/customers', async (req, res) => {
          delivery_address_line4,
          delivery_address_line5,
          delivery_postcode,
+         delivery_phone,
+         delivery_fax,
          account_manager_user_id,
          account_manager_name,
          created_by_user_id,
@@ -1030,8 +1213,9 @@ router.post('/api/database/customers', async (req, res) => {
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8,
          $9, $10, $11, $12, $13, $14, $15,
-         $16, $17, $18, $19, $20, $21, $22,
-         $23, $24, $25, $26, $27, NOW(), NOW(), NOW()
+         $16, $17, $18, $19, $20, $21, $22, $23,
+         $24, $25, $26, $27, $28, $29, $30, $31,
+         NOW(), NOW(), NOW()
        )
        RETURNING *`,
       [
@@ -1049,6 +1233,8 @@ router.post('/api/database/customers', async (req, res) => {
         invoiceAddress.line4,
         invoiceAddress.line5,
         invoiceAddress.postcode,
+        invoiceAddress.phone,
+        invoiceAddress.fax,
         deliveryAddress.address,
         deliveryAddress.line1,
         deliveryAddress.line2,
@@ -1056,6 +1242,8 @@ router.post('/api/database/customers', async (req, res) => {
         deliveryAddress.line4,
         deliveryAddress.line5,
         deliveryAddress.postcode,
+        deliveryAddress.phone,
+        deliveryAddress.fax,
         resolvedManager.userId,
         resolvedManager.name,
         req.hubUser?.id || null,
@@ -2662,6 +2850,78 @@ function parseCustomerKey(value) {
   return { type: 'name', value: clean };
 }
 
+async function findCustomerProfileById(profileId) {
+  const id = Number.parseInt(profileId, 10);
+  if (!Number.isFinite(id)) return null;
+
+  const result = await pool.query(
+    `SELECT *
+     FROM database_customer_profiles
+     WHERE id = $1
+     LIMIT 1`,
+    [id]
+  );
+  return result.rows[0] || null;
+}
+
+async function findCustomerProfileForKey(customerKey) {
+  if (!customerKey) return null;
+  if (customerKey.type === 'profile') return findCustomerProfileById(customerKey.value);
+
+  const where = customerKey.type === 'id'
+    ? 'customer_id = $1'
+    : 'LOWER(customer_name) = LOWER($1)';
+  const result = await pool.query(
+    `SELECT *
+     FROM database_customer_profiles
+     WHERE ${where}
+     ORDER BY updated_at_source DESC NULLS LAST, id DESC
+     LIMIT 1`,
+    [customerKey.value]
+  );
+  return result.rows[0] || null;
+}
+
+async function latestCustomerOrderForKey(customerKey, profile = null) {
+  if (!customerKey && !profile) return null;
+
+  let where = '';
+  let params = [];
+  if (profile) {
+    if (isFiniteDatabaseValue(profile.customer_id) && cleanNullable(profile.customer_name)) {
+      where = '(customer_id = $1 OR LOWER(customer_name) = LOWER($2))';
+      params = [profile.customer_id, profile.customer_name];
+    } else if (isFiniteDatabaseValue(profile.customer_id)) {
+      where = 'customer_id = $1';
+      params = [profile.customer_id];
+    } else if (cleanNullable(profile.customer_name)) {
+      where = 'LOWER(customer_name) = LOWER($1)';
+      params = [profile.customer_name];
+    }
+  } else if (customerKey.type === 'id') {
+    where = 'customer_id = $1';
+    params = [customerKey.value];
+  } else if (customerKey.type === 'name') {
+    where = 'LOWER(customer_name) = LOWER($1)';
+    params = [customerKey.value];
+  }
+
+  if (!where) return null;
+
+  const result = await pool.query(
+    `SELECT *
+     FROM database_jobs
+     WHERE ${where}
+       AND customer_name IS NOT NULL
+       AND customer_name <> ''
+     ORDER BY COALESCE(order_date, updated_at_source, created_at_source) DESC NULLS LAST,
+              order_no DESC NULLS LAST
+     LIMIT 1`,
+    params
+  );
+  return result.rows[0] || null;
+}
+
 function buildCustomerDetail(customerKey, orders, addressRows = [], profile = null, manualContactRows = [], designNumberRows = []) {
   const latest = orders[0] || {};
   const businessName = cleanNullable(profile?.customer_name) || firstNonEmpty(orders, 'customer_name');
@@ -3253,8 +3513,8 @@ function addProfileAddress(addresses, profile, role) {
     address_line4: fields.line4,
     address_line5: fields.line5,
     postcode: fields.postcode,
-    phone: profile.contact_phone || null,
-    fax: null,
+    phone: fields.phone || null,
+    fax: fields.fax || null,
     mobile: profile.contact_mobile || null,
     created_at_source: profile.created_at_source || null,
     updated_at_source: profile.updated_at_source || null,
@@ -3273,7 +3533,8 @@ function addProfileAddress(addresses, profile, role) {
   existing.address_line4 = existing.address_line4 || fields.line4 || null;
   existing.address_line5 = existing.address_line5 || fields.line5 || null;
   existing.postcode = existing.postcode || fields.postcode || null;
-  existing.phone = existing.phone || profile.contact_phone || null;
+  existing.phone = existing.phone || fields.phone || null;
+  existing.fax = existing.fax || fields.fax || null;
   existing.mobile = existing.mobile || profile.contact_mobile || null;
   existing.updated_by = existing.updated_by || profile.updated_by_name || null;
 
@@ -3420,18 +3681,74 @@ function normalizedCustomerAddress(payload, prefix) {
     cleanNullable(payload?.[`${fieldPrefix}_address_line${index}`])
   ));
   const postcode = cleanNullable(payload?.[`${fieldPrefix}_postcode`]);
+  const phone = cleanNullable(payload?.[`${fieldPrefix}_phone`]);
+  const fax = cleanNullable(payload?.[`${fieldPrefix}_fax`]);
   const suppliedAddress = cleanNullable(payload?.[`${fieldPrefix}_address`]);
-  const address = suppliedAddress || [...lines, postcode].filter(Boolean).join(', ') || null;
+  const normalized = normalizedUkPostcodeAddressParts(lines, postcode);
+  const address = suppliedAddress || [...normalized.lines, normalized.postcode].filter(Boolean).join(', ') || null;
 
   return {
     address,
-    line1: lines[0],
-    line2: lines[1],
-    line3: lines[2],
-    line4: lines[3],
-    line5: lines[4],
-    postcode,
+    line1: normalized.lines[0],
+    line2: normalized.lines[1],
+    line3: normalized.lines[2],
+    line4: normalized.lines[3],
+    line5: normalized.lines[4],
+    postcode: normalized.postcode,
+    phone,
+    fax,
   };
+}
+
+function normalizedUkPostcodeAddressParts(lines, postcode) {
+  const normalizedLines = (lines || []).map((line) => cleanNullable(line));
+  let normalizedPostcode = formatUkPostcode(postcode) || cleanNullable(postcode);
+
+  for (let index = normalizedLines.length - 1; index >= 0; index -= 1) {
+    const extracted = extractUkPostcodeFromAddressLine(normalizedLines[index]);
+    if (!extracted) continue;
+    normalizedLines[index] = extracted.remaining || null;
+    if (
+      !normalizedPostcode
+      || compactPostcode(normalizedPostcode) === compactPostcode(extracted.postcode)
+    ) {
+      normalizedPostcode = extracted.postcode;
+    }
+  }
+
+  while (normalizedLines.length < 5) normalizedLines.push(null);
+  return {
+    lines: normalizedLines.slice(0, 5),
+    postcode: normalizedPostcode || null,
+  };
+}
+
+function extractUkPostcodeFromAddressLine(value) {
+  const clean = cleanNullable(value);
+  if (!clean) return null;
+  const exact = formatUkPostcode(clean);
+  if (exact) return { postcode: exact, remaining: null };
+
+  const match = clean.match(/\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b/i);
+  if (!match) return null;
+  const postcode = formatUkPostcode(match[1]);
+  if (!postcode) return null;
+  const remaining = clean
+    .replace(match[0], '')
+    .replace(/\s*,\s*/g, ', ')
+    .replace(/^[,\s]+|[,\s]+$/g, '')
+    .trim();
+  return { postcode, remaining: remaining || null };
+}
+
+function formatUkPostcode(value) {
+  const compact = compactPostcode(value);
+  const match = compact.match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d[A-Z]{2})$/);
+  return match ? `${match[1]} ${match[2]}` : null;
+}
+
+function compactPostcode(value) {
+  return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
 function customerProfileAddressFields(profile, role) {
@@ -3440,16 +3757,21 @@ function customerProfileAddressFields(profile, role) {
     cleanNullable(profile?.[`${prefix}_address_line${index}`])
   ));
   const postcode = cleanNullable(profile?.[`${prefix}_postcode`]);
-  const address = cleanNullable(profile?.[`${prefix}_address`]) || [...lines, postcode].filter(Boolean).join(', ') || null;
+  const phone = cleanNullable(profile?.[`${prefix}_phone`]);
+  const fax = cleanNullable(profile?.[`${prefix}_fax`]);
+  const normalized = normalizedUkPostcodeAddressParts(lines, postcode);
+  const address = cleanNullable(profile?.[`${prefix}_address`]) || [...normalized.lines, normalized.postcode].filter(Boolean).join(', ') || null;
 
   return {
     address,
-    line1: lines[0],
-    line2: lines[1],
-    line3: lines[2],
-    line4: lines[3],
-    line5: lines[4],
-    postcode,
+    line1: normalized.lines[0],
+    line2: normalized.lines[1],
+    line3: normalized.lines[2],
+    line4: normalized.lines[3],
+    line5: normalized.lines[4],
+    postcode: normalized.postcode,
+    phone,
+    fax,
   };
 }
 

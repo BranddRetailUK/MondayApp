@@ -3269,6 +3269,9 @@ body.modal-open{overflow:hidden}
   font-weight:400;
   overflow-wrap:anywhere;
 }
+.db-order-ack-meta-row.has-stacked-address strong{
+  line-height:1.22;
+}
 .db-order-ack-letter{
   margin:7mm 0 0 13.5mm;
   max-width:160mm;
@@ -4166,6 +4169,13 @@ body.modal-open{overflow:hidden}
   color:#000;
   font:12px Arial, Helvetica, sans-serif;
   padding:1px 3px;
+}
+.db-customer-addresses-saving input{
+  background:#f6f6f6;
+}
+.db-customer-addresses-error input{
+  outline:1px solid #d00000;
+  outline-offset:-1px;
 }
 .db-customer-address-row-postcode input{
   width:118px;
