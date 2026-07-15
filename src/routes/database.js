@@ -20,6 +20,56 @@ const {
 
 const DASHBOARD_STATUS_COLORS = buildDashboardStatusColors(STATUS_SETTINGS);
 const MAX_STOCK_ORDERING_MARK_IDS = 500;
+const DATABASE_REPORT_PERIODS = Object.freeze({
+  daily: Object.freeze({
+    label: 'Daily',
+    description: 'Today',
+    grain: 'hour',
+    stepSql: "INTERVAL '1 hour'",
+    startSql: "DATE_TRUNC('day', CURRENT_TIMESTAMP AT TIME ZONE 'Europe/London')",
+    endSql: "DATE_TRUNC('day', CURRENT_TIMESTAMP AT TIME ZONE 'Europe/London') + INTERVAL '1 day'",
+  }),
+  weekly: Object.freeze({
+    label: 'Weekly',
+    description: 'Last 7 days',
+    grain: 'day',
+    stepSql: "INTERVAL '1 day'",
+    startSql: "DATE_TRUNC('day', CURRENT_TIMESTAMP AT TIME ZONE 'Europe/London') - INTERVAL '6 days'",
+    endSql: "DATE_TRUNC('day', CURRENT_TIMESTAMP AT TIME ZONE 'Europe/London') + INTERVAL '1 day'",
+  }),
+  monthly: Object.freeze({
+    label: 'Monthly',
+    description: 'Last 30 days',
+    grain: 'day',
+    stepSql: "INTERVAL '1 day'",
+    startSql: "DATE_TRUNC('day', CURRENT_TIMESTAMP AT TIME ZONE 'Europe/London') - INTERVAL '29 days'",
+    endSql: "DATE_TRUNC('day', CURRENT_TIMESTAMP AT TIME ZONE 'Europe/London') + INTERVAL '1 day'",
+  }),
+  mtd: Object.freeze({
+    label: 'Month to date',
+    description: 'Month to date',
+    grain: 'day',
+    stepSql: "INTERVAL '1 day'",
+    startSql: "DATE_TRUNC('month', CURRENT_TIMESTAMP AT TIME ZONE 'Europe/London')",
+    endSql: "DATE_TRUNC('day', CURRENT_TIMESTAMP AT TIME ZONE 'Europe/London') + INTERVAL '1 day'",
+  }),
+  ytd: Object.freeze({
+    label: 'Year to date',
+    description: 'Year to date',
+    grain: 'month',
+    stepSql: "INTERVAL '1 month'",
+    startSql: "DATE_TRUNC('year', CURRENT_TIMESTAMP AT TIME ZONE 'Europe/London')",
+    endSql: "DATE_TRUNC('day', CURRENT_TIMESTAMP AT TIME ZONE 'Europe/London') + INTERVAL '1 day'",
+  }),
+  last12: Object.freeze({
+    label: 'Last 12 months',
+    description: 'Rolling 12 months',
+    grain: 'month',
+    stepSql: "INTERVAL '1 month'",
+    startSql: "DATE_TRUNC('month', CURRENT_TIMESTAMP AT TIME ZONE 'Europe/London') - INTERVAL '11 months'",
+    endSql: "DATE_TRUNC('day', CURRENT_TIMESTAMP AT TIME ZONE 'Europe/London') + INTERVAL '1 day'",
+  }),
+});
 
 function buildDashboardStatusColors(settings) {
   const labels = settings?.labels || {};
@@ -85,6 +135,215 @@ router.get('/api/database/summary', async (_req, res) => {
   } catch (err) {
     console.error('GET /api/database/summary', err);
     res.status(500).json({ error: 'Failed to fetch database summary' });
+  }
+});
+
+router.get('/api/database/reports', async (req, res) => {
+  const rangeKey = normalizeDatabaseReportPeriod(req.query.range);
+  const period = DATABASE_REPORT_PERIODS[rangeKey];
+
+  try {
+    const report = await pool.query(
+      `WITH bounds AS (
+         SELECT (${period.startSql})::timestamp AS start_at,
+                (${period.endSql})::timestamp AS end_at
+       ),
+       period_jobs AS (
+         SELECT j.source_order_id,
+                j.order_no,
+                j.customer_name,
+                j.order_type,
+                j.order_type_abbr,
+                COALESCE(j.order_date, j.created_at_source) AS sales_at
+         FROM database_jobs j
+         CROSS JOIN bounds b
+         WHERE COALESCE(j.order_date, j.created_at_source) >= b.start_at
+           AND COALESCE(j.order_date, j.created_at_source) < b.end_at
+       ),
+       line_values AS (
+         SELECT pj.source_order_id,
+                pj.sales_at,
+                COALESCE(li.quantity, 0)::numeric AS quantity,
+                COALESCE(li.quantity, 0)::numeric * COALESCE(li.unit_price, 0)::numeric AS net_sales,
+                COALESCE(li.quantity, 0)::numeric * COALESCE(li.unit_cost, 0)::numeric AS cost_of_goods,
+                CASE
+                  WHEN TRANSLATE(COALESCE(li.size, ''), '‐‑‒–—―', '------')
+                         ~* '(^|[^A-Z0-9])([1-9]|1[0-8])[[:space:]]*-[[:space:]]*([1-9]|1[0-8])([^A-Z0-9]|$)'
+                    OR COALESCE(li.size, '') ~* '(^|[^A-Z0-9])Y(XS|S|M|L|XL|XXL)([^A-Z0-9]|$)'
+                    OR COALESCE(li.size, '') ~* '(^|[^A-Z0-9])[2-5]T([^A-Z0-9]|$)'
+                    OR CONCAT_WS(' ', li.line_description, li.style_name, li.product_type, li.style_code, li.alt_style_code)
+                         ~* '(^|[^A-Z0-9])(KID|KIDS|CHILD|CHILDREN|CHILDRENS|YOUTH|JUNIOR|JUNIORS|BOY|BOYS|GIRL|GIRLS)([^A-Z0-9]|$)'
+                    THEN 0::numeric
+                  WHEN COALESCE(li.vat_rate, 0) > 0 AND COALESCE(li.vat_rate, 0) <= 1
+                    THEN COALESCE(li.vat_rate, 0)::numeric * 100
+                  ELSE COALESCE(li.vat_rate, 0)::numeric
+                END AS vat_percent,
+                li.unit_price IS NULL AS price_missing,
+                li.unit_cost IS NULL AS cost_missing
+         FROM period_jobs pj
+         JOIN database_job_line_items li ON li.source_order_id = pj.source_order_id
+         WHERE li.is_internal IS NOT TRUE
+       ),
+       financial_lines AS (
+         SELECT source_order_id,
+                sales_at,
+                quantity,
+                net_sales,
+                cost_of_goods,
+                net_sales * (vat_percent / 100) AS vat,
+                price_missing,
+                cost_missing
+         FROM line_values
+       ),
+       job_financials AS (
+         SELECT pj.source_order_id,
+                pj.order_no,
+                pj.customer_name,
+                COALESCE(NULLIF(TRIM(pj.order_type), ''), NULLIF(TRIM(pj.order_type_abbr), ''), 'Other') AS order_type,
+                pj.sales_at,
+                COALESCE(SUM(fl.net_sales), 0)::numeric AS net_sales,
+                COALESCE(SUM(fl.vat), 0)::numeric AS vat,
+                COALESCE(SUM(fl.cost_of_goods), 0)::numeric AS cost_of_goods
+         FROM period_jobs pj
+         LEFT JOIN financial_lines fl ON fl.source_order_id = pj.source_order_id
+         GROUP BY pj.source_order_id, pj.order_no, pj.customer_name, pj.order_type, pj.order_type_abbr, pj.sales_at
+       ),
+       series_buckets AS (
+         SELECT GENERATE_SERIES(
+                  DATE_TRUNC('${period.grain}', b.start_at),
+                  DATE_TRUNC('${period.grain}', b.end_at - INTERVAL '1 second'),
+                  ${period.stepSql}
+                ) AS bucket_start
+         FROM bounds b
+       ),
+       series_rows AS (
+         SELECT sb.bucket_start,
+                COALESCE(SUM(jf.net_sales + jf.vat), 0)::numeric AS gross_sales,
+                COALESCE(SUM(jf.net_sales), 0)::numeric AS net_sales,
+                COALESCE(SUM(jf.cost_of_goods), 0)::numeric AS cost_of_goods,
+                COALESCE(SUM(jf.net_sales - jf.cost_of_goods), 0)::numeric AS gross_profit,
+                COUNT(jf.source_order_id)::int AS order_count
+         FROM series_buckets sb
+         LEFT JOIN job_financials jf
+           ON jf.sales_at >= sb.bucket_start
+          AND jf.sales_at < sb.bucket_start + ${period.stepSql}
+         GROUP BY sb.bucket_start
+         ORDER BY sb.bucket_start
+       ),
+       summary_row AS (
+         SELECT COUNT(*)::int AS order_count,
+                COALESCE(SUM(net_sales), 0)::numeric AS net_sales,
+                COALESCE(SUM(vat), 0)::numeric AS vat,
+                COALESCE(SUM(net_sales + vat), 0)::numeric AS gross_sales,
+                COALESCE(SUM(cost_of_goods), 0)::numeric AS cost_of_goods,
+                COALESCE(SUM(net_sales - cost_of_goods), 0)::numeric AS gross_profit
+         FROM job_financials
+       ),
+       customer_rows AS (
+         SELECT COALESCE(NULLIF(TRIM(customer_name), ''), 'Unknown customer') AS customer_name,
+                COUNT(*)::int AS order_count,
+                SUM(net_sales + vat)::numeric AS gross_sales,
+                SUM(net_sales - cost_of_goods)::numeric AS gross_profit
+         FROM job_financials
+         GROUP BY COALESCE(NULLIF(TRIM(customer_name), ''), 'Unknown customer')
+         HAVING SUM(net_sales + vat) <> 0
+         ORDER BY gross_sales DESC, customer_name
+         LIMIT 5
+       ),
+       type_rows AS (
+         SELECT order_type,
+                COUNT(*)::int AS order_count,
+                SUM(net_sales + vat)::numeric AS gross_sales
+         FROM job_financials
+         GROUP BY order_type
+         ORDER BY gross_sales DESC, order_type
+         LIMIT 8
+       ),
+       top_order_row AS (
+         SELECT source_order_id,
+                order_no,
+                COALESCE(NULLIF(TRIM(customer_name), ''), 'Unknown customer') AS customer_name,
+                (net_sales + vat)::numeric AS gross_sales
+         FROM job_financials
+         ORDER BY gross_sales DESC, order_no DESC
+         LIMIT 1
+       ),
+       coverage_row AS (
+         SELECT COUNT(*)::int AS financial_line_count,
+                COUNT(*) FILTER (WHERE price_missing)::int AS missing_price_lines,
+                COUNT(*) FILTER (WHERE cost_missing)::int AS missing_cost_lines,
+                COALESCE(SUM(quantity), 0)::numeric AS units_sold
+         FROM financial_lines
+       )
+       SELECT JSON_BUILD_OBJECT(
+                'orderCount', sr.order_count,
+                'netSales', sr.net_sales,
+                'vat', sr.vat,
+                'grossSales', sr.gross_sales,
+                'costOfGoods', sr.cost_of_goods,
+                'grossProfit', sr.gross_profit,
+                'grossMarginPercent', CASE WHEN sr.net_sales = 0 THEN 0 ELSE (sr.gross_profit / sr.net_sales) * 100 END,
+                'averageOrderValue', CASE WHEN sr.order_count = 0 THEN 0 ELSE sr.gross_sales / sr.order_count END,
+                'financialLineCount', cr.financial_line_count,
+                'missingPriceLines', cr.missing_price_lines,
+                'missingCostLines', cr.missing_cost_lines,
+                'unitsSold', cr.units_sold
+              ) AS summary,
+              COALESCE((
+                SELECT JSON_AGG(JSON_BUILD_OBJECT(
+                         'bucketStart', TO_CHAR(bucket_start, 'YYYY-MM-DD"T"HH24:MI:SS'),
+                         'grossSales', gross_sales,
+                         'netSales', net_sales,
+                         'costOfGoods', cost_of_goods,
+                         'grossProfit', gross_profit,
+                         'orderCount', order_count
+                       ) ORDER BY bucket_start)
+                FROM series_rows
+              ), '[]'::json) AS series,
+              COALESCE((
+                SELECT JSON_AGG(JSON_BUILD_OBJECT(
+                         'customerName', customer_name,
+                         'orderCount', order_count,
+                         'grossSales', gross_sales,
+                         'grossProfit', gross_profit
+                       ) ORDER BY gross_sales DESC, customer_name)
+                FROM customer_rows
+              ), '[]'::json) AS top_customers,
+              COALESCE((
+                SELECT JSON_AGG(JSON_BUILD_OBJECT(
+                         'orderType', order_type,
+                         'orderCount', order_count,
+                         'grossSales', gross_sales
+                       ) ORDER BY gross_sales DESC, order_type)
+                FROM type_rows
+              ), '[]'::json) AS order_types,
+              (SELECT ROW_TO_JSON(top_order_row) FROM top_order_row) AS top_order,
+              TO_CHAR(b.start_at, 'YYYY-MM-DD') AS period_start,
+              TO_CHAR(b.end_at - INTERVAL '1 second', 'YYYY-MM-DD') AS period_end
+       FROM summary_row sr
+       CROSS JOIN coverage_row cr
+       CROSS JOIN bounds b`,
+      []
+    );
+
+    const row = report.rows[0] || {};
+    res.json({
+      range: rangeKey,
+      rangeLabel: period.label,
+      rangeDescription: period.description,
+      grain: period.grain,
+      periodStart: row.period_start || null,
+      periodEnd: row.period_end || null,
+      summary: row.summary || emptyDatabaseReportSummary(),
+      series: row.series || [],
+      topCustomers: row.top_customers || [],
+      orderTypes: row.order_types || [],
+      topOrder: row.top_order || null,
+      basis: 'Order date; invoiceable lines only; internal lines excluded',
+    });
+  } catch (err) {
+    console.error('GET /api/database/reports', err);
+    res.status(500).json({ error: 'Failed to fetch database reports' });
   }
 });
 
@@ -1976,6 +2235,101 @@ router.get('/api/database/products/search', async (req, res) => {
   }
 });
 
+router.get('/api/database/products/styles', async (_req, res) => {
+  try {
+    const result = await pool.query(
+      `WITH product_rows AS (
+         SELECT *
+         FROM database_products
+         WHERE style_id IS NOT NULL
+       ),
+       style_costs AS (
+         SELECT style_id,
+                JSON_AGG(unit_cost ORDER BY unit_cost) AS unit_costs
+         FROM (
+           SELECT DISTINCT style_id, unit_cost
+           FROM product_rows
+           WHERE unit_cost IS NOT NULL
+         ) costs
+         GROUP BY style_id
+       ),
+       style_sizes AS (
+         SELECT style_id,
+                JSON_AGG(
+                  JSON_BUILD_OBJECT(
+                    'label', size,
+                    'variant_count', variant_count
+                  )
+                  ORDER BY size_order ASC NULLS LAST, LOWER(size), size
+                ) AS sizes
+         FROM (
+           SELECT style_id,
+                  NULLIF(BTRIM(size), '') AS size,
+                  MIN(size_id) AS size_order,
+                  COUNT(*)::int AS variant_count
+           FROM product_rows
+           WHERE NULLIF(BTRIM(size), '') IS NOT NULL
+           GROUP BY style_id, NULLIF(BTRIM(size), '')
+         ) size_rows
+         GROUP BY style_id
+       ),
+       style_colours AS (
+         SELECT style_id,
+                JSON_AGG(
+                  JSON_BUILD_OBJECT(
+                    'label', colour,
+                    'variant_count', variant_count
+                  )
+                  ORDER BY colour_order ASC NULLS LAST, LOWER(colour), colour
+                ) AS colours
+         FROM (
+           SELECT style_id,
+                  NULLIF(BTRIM(colour), '') AS colour,
+                  MIN(colour_id) AS colour_order,
+                  COUNT(*)::int AS variant_count
+           FROM product_rows
+           WHERE NULLIF(BTRIM(colour), '') IS NOT NULL
+           GROUP BY style_id, NULLIF(BTRIM(colour), '')
+         ) colour_rows
+         GROUP BY style_id
+       ),
+       style_summaries AS (
+         SELECT style_id,
+                MIN(source_product_id)::int AS sample_product_id,
+                MIN(NULLIF(BTRIM(style_code), '')) AS style_code,
+                MIN(NULLIF(BTRIM(alt_style_code), '')) AS alt_style_code,
+                MIN(NULLIF(BTRIM(style_name), '')) AS style_name,
+                MIN(NULLIF(BTRIM(product_type), '')) AS product_type,
+                MIN(NULLIF(BTRIM(supplier_name), '')) AS supplier_name,
+                MIN(unit_cost) AS min_unit_cost,
+                MAX(unit_cost) AS max_unit_cost,
+                COUNT(*)::int AS variant_count,
+                COUNT(*) FILTER (WHERE is_product_active IS TRUE)::int AS active_variant_count,
+                COUNT(DISTINCT NULLIF(BTRIM(colour), ''))::int AS colour_count,
+                COUNT(DISTINCT NULLIF(BTRIM(size), ''))::int AS size_count
+         FROM product_rows
+         GROUP BY style_id
+       )
+       SELECT ss.*,
+              COALESCE(sc.unit_costs, '[]'::json) AS unit_costs,
+              COALESCE(sz.sizes, '[]'::json) AS sizes,
+              COALESCE(co.colours, '[]'::json) AS colours
+       FROM style_summaries ss
+       LEFT JOIN style_costs sc ON sc.style_id = ss.style_id
+       LEFT JOIN style_sizes sz ON sz.style_id = ss.style_id
+       LEFT JOIN style_colours co ON co.style_id = ss.style_id
+       ORDER BY LOWER(COALESCE(ss.style_name, '')) ASC,
+                LOWER(COALESCE(ss.style_code, '')) ASC,
+                ss.style_id ASC`
+    );
+
+    res.json({ styles: result.rows });
+  } catch (err) {
+    console.error('GET /api/database/products/styles', err);
+    res.status(500).json({ error: 'Failed to fetch product styles' });
+  }
+});
+
 router.get('/api/database/products/styles/:styleId/variants', async (req, res) => {
   const styleId = Number.parseInt(req.params.styleId, 10);
   if (!Number.isFinite(styleId)) {
@@ -2455,8 +2809,9 @@ router.get('/api/database/jobs/:id', async (req, res) => {
 
     if (!job.rowCount) return res.status(404).json({ error: 'Database job not found' });
 
-    const sourceOrderId = job.rows[0].source_order_id;
-    const [lineItems, positions, dashboardState, proofFiles] = await Promise.all([
+    const selectedJob = job.rows[0];
+    const sourceOrderId = selectedJob.source_order_id;
+    const [lineItems, positions, dashboardState, proofFiles, customerOverview] = await Promise.all([
       fetchLineItems(pool, sourceOrderId),
       pool.query(
         `SELECT *
@@ -2480,10 +2835,11 @@ router.get('/api/database/jobs/:id', async (req, res) => {
          ORDER BY created_at, id`,
         [sourceOrderId, TEST_DASHBOARD_COLUMN_IDS.PROOF]
       ),
+      fetchCustomerOverview(pool, selectedJob),
     ]);
     const resolvedJob = {
-      ...job.rows[0],
-      proof_approved: resolveJobApproved(job.rows[0], dashboardState.rows[0]),
+      ...selectedJob,
+      proof_approved: resolveJobApproved(selectedJob, dashboardState.rows[0]),
     };
 
     res.json({
@@ -2491,6 +2847,7 @@ router.get('/api/database/jobs/:id', async (req, res) => {
       lineItems,
       positions: positions.rows,
       proofFiles: proofFiles.rows.map(databaseProofFileToApi),
+      customerOverview,
     });
   } catch (err) {
     console.error('GET /api/database/jobs/:id', err);
@@ -2508,10 +2865,17 @@ function buildJobFilters(query) {
     const ref = `$${params.length}`;
     where.push(`(
       j.customer_name ILIKE ${ref}
+      OR j.customer_code ILIKE ${ref}
       OR j.job_title ILIKE ${ref}
       OR j.contact_name ILIKE ${ref}
       OR j.contact_email ILIKE ${ref}
       OR j.client_order_no ILIKE ${ref}
+      OR j.delivery_address ILIKE ${ref}
+      OR j.invoice_address ILIKE ${ref}
+      OR j.delivery_method ILIKE ${ref}
+      OR j.screen_numbers ILIKE ${ref}
+      OR j.comments ILIKE ${ref}
+      OR CAST(j.source_order_id AS TEXT) ILIKE ${ref}
       OR CAST(j.order_no AS TEXT) ILIKE ${ref}
       OR CAST(j.invoice_no AS TEXT) ILIKE ${ref}
       OR EXISTS (
@@ -2523,8 +2887,72 @@ function buildJobFilters(query) {
             OR li_search.style_code ILIKE ${ref}
             OR li_search.alt_style_code ILIKE ${ref}
             OR li_search.style_name ILIKE ${ref}
+            OR li_search.product_type ILIKE ${ref}
+            OR li_search.supplier_name ILIKE ${ref}
             OR li_search.colour ILIKE ${ref}
             OR li_search.size ILIKE ${ref}
+          )
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM database_job_positions p_search
+        WHERE p_search.source_order_id = j.source_order_id
+          AND (
+            p_search.position_name ILIKE ${ref}
+            OR p_search.colour_notes ILIKE ${ref}
+            OR p_search.design_ref ILIKE ${ref}
+          )
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM database_customer_addresses a_search
+        WHERE (
+            (j.customer_id IS NOT NULL AND a_search.customer_id = j.customer_id)
+            OR a_search.source_address_id = j.invoice_address_id
+            OR a_search.source_address_id = j.delivery_address_id
+          )
+          AND (
+            a_search.address ILIKE ${ref}
+            OR a_search.address_line1 ILIKE ${ref}
+            OR a_search.address_line2 ILIKE ${ref}
+            OR a_search.address_line3 ILIKE ${ref}
+            OR a_search.address_line4 ILIKE ${ref}
+            OR a_search.address_line5 ILIKE ${ref}
+            OR a_search.postcode ILIKE ${ref}
+          )
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM database_customer_contacts c_search
+        WHERE (
+            (j.customer_id IS NOT NULL AND c_search.customer_id = j.customer_id)
+            OR LOWER(c_search.customer_name) = LOWER(j.customer_name)
+          )
+          AND (
+            c_search.contact_name ILIKE ${ref}
+            OR c_search.contact_first_name ILIKE ${ref}
+            OR c_search.contact_last_name ILIKE ${ref}
+            OR c_search.contact_email ILIKE ${ref}
+            OR c_search.contact_phone ILIKE ${ref}
+            OR c_search.contact_mobile ILIKE ${ref}
+          )
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM database_customer_profiles cp_search
+        WHERE (
+            (j.customer_id IS NOT NULL AND cp_search.customer_id = j.customer_id)
+            OR LOWER(cp_search.customer_name) = LOWER(j.customer_name)
+          )
+          AND (
+            cp_search.customer_name ILIKE ${ref}
+            OR cp_search.customer_code ILIKE ${ref}
+            OR cp_search.contact_name ILIKE ${ref}
+            OR cp_search.contact_email ILIKE ${ref}
+            OR cp_search.invoice_address ILIKE ${ref}
+            OR cp_search.delivery_address ILIKE ${ref}
+            OR cp_search.invoice_postcode ILIKE ${ref}
+            OR cp_search.delivery_postcode ILIKE ${ref}
           )
       )
     )`);
@@ -2576,6 +3004,136 @@ function buildJobFilters(query) {
   };
 }
 
+async function fetchCustomerOverview(db, job) {
+  const match = customerJobMatch(job);
+  if (!match) return null;
+
+  const result = await db.query(
+    `WITH customer_jobs AS (
+       SELECT j.*
+       FROM database_jobs j
+       WHERE ${match.whereSql}
+     ),
+     order_totals AS (
+       SELECT cj.source_order_id,
+              COALESCE(SUM(
+                CASE
+                  WHEN li.is_internal IS TRUE THEN 0
+                  ELSE COALESCE(li.quantity, 0)::numeric * COALESCE(li.unit_price, 0)::numeric
+                END
+              ), 0)::numeric AS net_total
+       FROM customer_jobs cj
+       LEFT JOIN database_job_line_items li ON li.source_order_id = cj.source_order_id
+       GROUP BY cj.source_order_id
+     ),
+     summary AS (
+       SELECT MAX(COALESCE(cj.order_date, cj.created_at_source, cj.updated_at_source)) AS last_order_date,
+              COUNT(*)::int AS order_count,
+              COUNT(*) FILTER (
+                WHERE COALESCE(cj.order_date, cj.created_at_source, cj.updated_at_source) >= CURRENT_DATE - INTERVAL '3 months'
+              )::int AS activity_3_months,
+              COALESCE(SUM(ot.net_total) FILTER (
+                WHERE COALESCE(cj.order_date, cj.created_at_source, cj.updated_at_source) >= CURRENT_DATE - INTERVAL '12 months'
+              ), 0)::numeric AS spend_12_months,
+              COALESCE(AVG(ot.net_total), 0)::numeric AS average_order_value,
+              COUNT(*) FILTER (
+                WHERE cj.is_complete IS NOT TRUE
+                  AND NOT (
+                    COALESCE(UPPER(TRIM(cj.dashboard_status)), '') = 'COMPLETED'
+                    AND (cj.invoice_printed IS TRUE OR cj.pf_invoice_printed IS TRUE)
+                  )
+              )::int AS open_jobs,
+              COUNT(*) FILTER (
+                WHERE cj.invoice_required IS NOT FALSE
+                  AND cj.invoice_printed IS NOT TRUE
+                  AND cj.pf_invoice_printed IS NOT TRUE
+              )::int AS unpaid_uninvoiced_jobs
+       FROM customer_jobs cj
+       LEFT JOIN order_totals ot ON ot.source_order_id = cj.source_order_id
+     ),
+     top_order_types AS (
+       SELECT COALESCE(JSON_AGG(row_to_json(type_rows)), '[]'::json) AS rows
+       FROM (
+         SELECT COALESCE(NULLIF(TRIM(order_type), ''), 'Unknown') AS label,
+                COUNT(*)::int AS count
+         FROM customer_jobs
+         GROUP BY COALESCE(NULLIF(TRIM(order_type), ''), 'Unknown')
+         ORDER BY COUNT(*) DESC, COALESCE(NULLIF(TRIM(order_type), ''), 'Unknown')
+         LIMIT 3
+       ) type_rows
+     ),
+     top_products AS (
+       SELECT COALESCE(JSON_AGG(row_to_json(product_rows)), '[]'::json) AS rows
+       FROM (
+         SELECT COALESCE(
+                  NULLIF(TRIM(li.style_name), ''),
+                  NULLIF(TRIM(li.line_description), ''),
+                  NULLIF(TRIM(li.style_code), ''),
+                  NULLIF(TRIM(li.alt_style_code), ''),
+                  NULLIF(TRIM(li.product_type), ''),
+                  'Unknown'
+                ) AS label,
+                COALESCE(SUM(li.quantity), 0)::int AS quantity,
+                COUNT(*)::int AS count
+         FROM customer_jobs cj
+         JOIN database_job_line_items li ON li.source_order_id = cj.source_order_id
+         WHERE li.is_internal IS NOT TRUE
+         GROUP BY COALESCE(
+                  NULLIF(TRIM(li.style_name), ''),
+                  NULLIF(TRIM(li.line_description), ''),
+                  NULLIF(TRIM(li.style_code), ''),
+                  NULLIF(TRIM(li.alt_style_code), ''),
+                  NULLIF(TRIM(li.product_type), ''),
+                  'Unknown'
+                )
+         ORDER BY COALESCE(SUM(li.quantity), 0) DESC, COUNT(*) DESC, label
+         LIMIT 3
+       ) product_rows
+     )
+     SELECT summary.*,
+            top_order_types.rows AS top_order_types,
+            top_products.rows AS top_products
+     FROM summary, top_order_types, top_products`,
+    match.params
+  );
+
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    last_order_date: row.last_order_date || null,
+    order_count: Number(row.order_count || 0),
+    activity_3_months: Number(row.activity_3_months || 0),
+    spend_12_months: Number(row.spend_12_months || 0),
+    average_order_value: Number(row.average_order_value || 0),
+    top_order_types: Array.isArray(row.top_order_types) ? row.top_order_types : [],
+    top_products: Array.isArray(row.top_products) ? row.top_products : [],
+    open_jobs: Number(row.open_jobs || 0),
+    unpaid_uninvoiced_jobs: Number(row.unpaid_uninvoiced_jobs || 0),
+  };
+}
+
+function customerJobMatch(job) {
+  const clauses = [];
+  const params = [];
+
+  if (isFiniteDatabaseValue(job?.customer_id)) {
+    params.push(Number(job.customer_id));
+    clauses.push(`j.customer_id = $${params.length}`);
+  }
+
+  const customerName = cleanNullable(job?.customer_name);
+  if (customerName) {
+    params.push(customerName);
+    clauses.push(`LOWER(j.customer_name) = LOWER($${params.length})`);
+  }
+
+  if (!clauses.length) return null;
+  return {
+    whereSql: clauses.map((clause) => `(${clause})`).join(' OR '),
+    params,
+  };
+}
+
 function databaseProofFileToApi(row) {
   const name = row.original_filename || row.public_id || 'Proof file';
   return {
@@ -2609,6 +3167,28 @@ function mimeFromDatabaseProofFile(row, name) {
 
 function cleanQuery(value) {
   return String(value || '').trim();
+}
+
+function normalizeDatabaseReportPeriod(value) {
+  const period = cleanQuery(value).toLowerCase();
+  return Object.prototype.hasOwnProperty.call(DATABASE_REPORT_PERIODS, period) ? period : 'ytd';
+}
+
+function emptyDatabaseReportSummary() {
+  return {
+    orderCount: 0,
+    netSales: 0,
+    vat: 0,
+    grossSales: 0,
+    costOfGoods: 0,
+    grossProfit: 0,
+    grossMarginPercent: 0,
+    averageOrderValue: 0,
+    financialLineCount: 0,
+    missingPriceLines: 0,
+    missingCostLines: 0,
+    unitsSold: 0,
+  };
 }
 
 function normalizeCustomerListSort(value) {

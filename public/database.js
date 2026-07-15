@@ -11,12 +11,15 @@
   const LINE_ORDER_AUTOSAVE_MS = 3500;
   const DATABASE_ROUTE_STORAGE_KEY = 'ultimateHub.databaseRoute.v1';
   const DATABASE_CUSTOMER_SORTS = new Set(['recent', 'active', 'az', 'za']);
+  const DATABASE_REPORT_RANGES = new Set(['daily', 'weekly', 'monthly', 'mtd', 'ytd', 'last12']);
   const DATABASE_RESTORABLE_VIEWS = new Set([
     'home',
+    'reports',
     'outstanding',
     'customers',
     'customer',
     'order',
+    'styles',
     'to-invoice',
     'stock-ordering',
     'users',
@@ -29,6 +32,7 @@
   const OUTSTANDING_ALL_TABLE_COLUMN_COUNT = 10;
   const OUTSTANDING_INVOICE_COLUMN_WIDTH = 98;
   const TO_INVOICE_TABLE_COLUMN_COUNT = 7;
+  const STYLE_TABLE_COLUMN_COUNT = 5;
   const OUTSTANDING_STATUS_COLUMN_WIDTH = 128;
   const OUTSTANDING_TAKEN_BY_COLUMN_MIN_WIDTH = 54;
   const OUTSTANDING_TAKEN_BY_CELL_EXTRA_WIDTH = 12;
@@ -82,6 +86,7 @@
   const STOCK_ORDERING_REPORT_ROW_EXTRA_LINE_MM = 2.8;
   const STOCK_ORDERING_REPORT_DESCRIPTION_CHARS_PER_LINE = 54;
   const ORDER_TYPE_OPTIONS = ['Business Gifts', 'Printing', 'Print + Emb', 'Embroidery'];
+  const PAYMENT_TERM_OPTIONS = ['Account', 'COD', 'Pro Forma'];
   const NEW_ORDER_REQUIRED_FIELDS = [
     { name: 'customer_name', label: 'Customer' },
     { name: 'contact_name', label: 'Contact' },
@@ -151,6 +156,10 @@
     stockOrderingSnapshot: null,
     stockOrderingStatusSaving: false,
     stockOrderingStatusAppliedIds: new Set(),
+    productStyles: [],
+    productStylesLoaded: false,
+    productStylesLoading: false,
+    selectedStyleId: '',
     orderLoadToken: 0,
     orderLoadComplete: false,
     orderSearchQuery: '',
@@ -176,6 +185,7 @@
     customerResults: [],
     selectedCustomerDetail: null,
     orderCustomerDetail: null,
+    selectedCustomerOverview: null,
     selectedCustomerOrders: [],
     selectedCustomerContacts: [],
     selectedCustomerAddresses: [],
@@ -242,6 +252,10 @@
     documentGeneratedAt: null,
     outstandingReportSnapshot: null,
     dashboardStatusColors: {},
+    reportsRange: 'ytd',
+    reportsData: null,
+    reportsLoading: false,
+    reportsRequest: 0,
   };
 
   let els = {};
@@ -279,6 +293,19 @@
       homeCountPrinting: document.getElementById('db-count-printing'),
       homeCountEmbroidery: document.getElementById('db-count-embroidery'),
       homeCountGifts: document.getElementById('db-count-gifts'),
+      reportsPeriod: document.getElementById('db-reports-period'),
+      reportsRangeButtons: Array.from(document.querySelectorAll('[data-db-report-range]')),
+      reportsChart: document.getElementById('db-reports-chart'),
+      reportsChartState: document.getElementById('db-reports-chart-state'),
+      reportsChartTotal: document.getElementById('db-reports-chart-total'),
+      reportsKpis: document.getElementById('db-reports-kpis'),
+      reportsTopCustomer: document.getElementById('db-report-top-customer'),
+      reportsCostProfit: document.getElementById('db-report-cost-profit'),
+      reportsCustomersBody: document.getElementById('db-report-customers-body'),
+      reportsTypesBody: document.getElementById('db-report-types-body'),
+      reportsBasis: document.getElementById('db-reports-basis'),
+      reportsCoverage: document.getElementById('db-reports-coverage'),
+      reportsStatus: document.getElementById('db-reports-status'),
       customersSearch: document.getElementById('db-customers-search'),
       customersSort: document.getElementById('db-customers-sort'),
       customersBody: document.getElementById('db-customers-body'),
@@ -303,6 +330,12 @@
       stockOrderingBody: document.getElementById('db-stock-ordering-body'),
       stockOrderingSummary: document.getElementById('db-stock-ordering-summary'),
       stockOrderingCreate: document.querySelector('[data-db-action="create-stock-ordering"]'),
+      stylesBody: document.getElementById('db-styles-body'),
+      stylesSelectedTitle: document.getElementById('db-styles-selected-title'),
+      stylesSelectedMeta: document.getElementById('db-styles-selected-meta'),
+      stylesSelectedCost: document.getElementById('db-styles-selected-cost'),
+      stylesSizes: document.getElementById('db-styles-sizes'),
+      stylesColours: document.getElementById('db-styles-colours'),
       usersTable: document.getElementById('db-users-table'),
       usersBody: document.getElementById('db-users-body'),
       orderSearch: document.getElementById('db-order-search'),
@@ -352,6 +385,8 @@
     els.stockOrderingBody?.addEventListener('click', handleStockOrderingRowClick);
     els.stockOrderingBody?.addEventListener('keydown', handleStockOrderingRowKeydown);
     els.stockOrderingBody?.addEventListener('change', handleStockOrderingSelectChange);
+    els.stylesBody?.addEventListener('click', handleProductStyleRowClick);
+    els.stylesBody?.addEventListener('keydown', handleProductStyleRowKeydown);
     els.outstandingFrame?.addEventListener('scroll', handleOutstandingScroll);
     window.addEventListener('resize', scheduleOutstandingTableLayout);
     els.customersBody.addEventListener('click', handleDatabaseCustomerRowClick);
@@ -511,6 +546,15 @@
       return;
     }
 
+    const reportRange = button.dataset.dbReportRange;
+    if (reportRange && DATABASE_REPORT_RANGES.has(reportRange)) {
+      state.reportsRange = reportRange;
+      syncReportRangeButtons();
+      persistDatabaseRoute();
+      await loadDatabaseReports();
+      return;
+    }
+
     if (button.dataset.dbCloseOrder) {
       await flushOrderAutosaves();
       openCloseOrderConfirmation();
@@ -607,6 +651,16 @@
     if (action === 'customers') {
       await flushOrderAutosaves();
       showCustomers();
+      return;
+    }
+    if (action === 'styles') {
+      await flushOrderAutosaves();
+      showStyles();
+      return;
+    }
+    if (action === 'reports') {
+      await flushOrderAutosaves();
+      showReports();
       return;
     }
     if (action === 'users') {
@@ -818,12 +872,24 @@
       return;
     }
 
+    if (route.view === 'reports') {
+      state.reportsRange = normalizeDatabaseReportRange(route.reportsRange);
+      showReports({ skipHistory: true, skipPersistence: true });
+      return;
+    }
+
     if (route.view === 'customers') {
       state.databaseCustomerQuery = String(route.customerQuery || '').trim();
       state.databaseCustomerSort = normalizeDatabaseCustomerSort(route.customerSort);
       if (els.customersSearch) els.customersSearch.value = state.databaseCustomerQuery;
       if (els.customersSort) els.customersSort.value = state.databaseCustomerSort;
       showCustomers({ skipHistory: true, skipPersistence: true });
+      return;
+    }
+
+    if (route.view === 'styles') {
+      state.selectedStyleId = String(route.styleId || '');
+      showStyles({ skipHistory: true, skipPersistence: true });
       return;
     }
 
@@ -908,6 +974,16 @@
       return route;
     }
 
+    if (view === 'reports') {
+      route.reportsRange = normalizeDatabaseReportRange(state.reportsRange);
+      return route;
+    }
+
+    if (view === 'styles') {
+      route.styleId = String(state.selectedStyleId || '');
+      return route;
+    }
+
     return route;
   }
 
@@ -921,6 +997,10 @@
 
   function normalizeDatabaseCustomerSort(sort) {
     return DATABASE_CUSTOMER_SORTS.has(sort) ? sort : 'recent';
+  }
+
+  function normalizeDatabaseReportRange(range) {
+    return DATABASE_REPORT_RANGES.has(range) ? range : 'ytd';
   }
 
   function normalizeOutstandingGroup(group) {
@@ -984,6 +1064,12 @@
     loadDatabaseCustomers({ force: false });
   }
 
+  function showStyles(options = {}) {
+    showView('styles', options);
+    setFooterTitle('Styles');
+    loadProductStyles({ force: false });
+  }
+
   function showToInvoice(options = {}) {
     showView('to-invoice', options);
     setFooterTitle('To Invoice');
@@ -1000,6 +1086,338 @@
     showView('users', options);
     setFooterTitle('Users');
     loadRegisteredUsers({ force: true });
+  }
+
+  function showReports(options = {}) {
+    state.reportsRange = normalizeDatabaseReportRange(state.reportsRange);
+    showView('reports', options);
+    setFooterTitle('Analytics & Reports');
+    syncReportRangeButtons();
+    loadDatabaseReports();
+  }
+
+  function syncReportRangeButtons() {
+    els.reportsRangeButtons?.forEach((button) => {
+      const active = button.dataset.dbReportRange === state.reportsRange;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+
+  async function loadDatabaseReports() {
+    const range = normalizeDatabaseReportRange(state.reportsRange);
+    const request = ++state.reportsRequest;
+    state.reportsLoading = true;
+    renderDatabaseReportsLoading();
+
+    try {
+      const data = await fetchJson(`/api/database/reports?range=${encodeURIComponent(range)}`);
+      if (request !== state.reportsRequest) return;
+      state.reportsData = data;
+      renderDatabaseReports(data);
+    } catch (err) {
+      if (request !== state.reportsRequest) return;
+      renderDatabaseReportsError(err);
+    } finally {
+      if (request === state.reportsRequest) state.reportsLoading = false;
+    }
+  }
+
+  function renderDatabaseReportsLoading() {
+    if (els.reportsStatus) els.reportsStatus.textContent = 'Loading financial report…';
+    if (els.reportsChart) els.reportsChart.replaceChildren();
+    if (els.reportsChartTotal) els.reportsChartTotal.textContent = '£0.00';
+    if (els.reportsCoverage) els.reportsCoverage.textContent = '';
+    if (els.reportsChartState) {
+      els.reportsChartState.hidden = false;
+      els.reportsChartState.textContent = 'Loading financial report';
+    }
+    if (els.reportsKpis) {
+      els.reportsKpis.innerHTML = Array.from({ length: 6 }, () => `
+        <div class="db-report-kpi db-report-loading-block"><span>&nbsp;</span><strong>&nbsp;</strong></div>
+      `).join('');
+    }
+    if (els.reportsTopCustomer) els.reportsTopCustomer.innerHTML = '<div class="db-report-card-title">Highest grossing customer</div><div class="db-report-card-empty">Loading…</div>';
+    if (els.reportsCostProfit) els.reportsCostProfit.innerHTML = '<div class="db-report-card-title">Cost of goods against profit</div><div class="db-report-card-empty">Loading…</div>';
+    if (els.reportsCustomersBody) els.reportsCustomersBody.innerHTML = '<tr><td colspan="3">Loading…</td></tr>';
+    if (els.reportsTypesBody) els.reportsTypesBody.innerHTML = '<tr><td colspan="3">Loading…</td></tr>';
+  }
+
+  function renderDatabaseReportsError(err) {
+    const message = err?.message || 'Failed to load financial report';
+    if (els.reportsStatus) els.reportsStatus.textContent = message;
+    if (els.reportsChartState) {
+      els.reportsChartState.hidden = false;
+      els.reportsChartState.textContent = 'Financial report unavailable';
+    }
+    if (els.reportsKpis) els.reportsKpis.innerHTML = '<div class="db-report-error">Financial totals could not be loaded.</div>';
+    if (els.reportsTopCustomer) els.reportsTopCustomer.innerHTML = `<div class="db-report-card-title">Highest grossing customer</div><div class="db-report-card-empty">${escapeHtml(message)}</div>`;
+    if (els.reportsCostProfit) els.reportsCostProfit.innerHTML = '<div class="db-report-card-title">Cost of goods against profit</div><div class="db-report-card-empty">Unavailable</div>';
+    if (els.reportsCustomersBody) els.reportsCustomersBody.innerHTML = '<tr><td colspan="3">Unavailable</td></tr>';
+    if (els.reportsTypesBody) els.reportsTypesBody.innerHTML = '<tr><td colspan="3">Unavailable</td></tr>';
+  }
+
+  function renderDatabaseReports(data) {
+    const summary = data?.summary || {};
+    const periodDates = reportPeriodDates(data?.periodStart, data?.periodEnd);
+    if (els.reportsPeriod) {
+      els.reportsPeriod.textContent = [data?.rangeDescription || data?.rangeLabel, periodDates]
+        .filter(Boolean)
+        .join(' · ');
+    }
+    if (els.reportsStatus) els.reportsStatus.textContent = '';
+    if (els.reportsChartTotal) els.reportsChartTotal.textContent = formatCurrency(reportNumber(summary.grossSales));
+    if (els.reportsBasis) els.reportsBasis.textContent = 'Based on order date and invoiceable line items; internal lines excluded.';
+
+    const metrics = [
+      { label: 'Gross sales', value: formatCurrency(reportNumber(summary.grossSales)), note: 'Net plus VAT', primary: true },
+      { label: 'Net sales', value: formatCurrency(reportNumber(summary.netSales)), note: 'Before VAT' },
+      { label: 'VAT', value: formatCurrency(reportNumber(summary.vat)), note: 'Invoice VAT' },
+      { label: 'Cost of goods', value: formatCurrency(reportNumber(summary.costOfGoods)), note: 'Unit cost × quantity' },
+      { label: 'Gross profit', value: formatCurrency(reportNumber(summary.grossProfit)), note: `${formatReportPercent(summary.grossMarginPercent)} margin`, profit: reportNumber(summary.grossProfit) },
+      { label: 'Orders', value: formatNumber(summary.orderCount || 0), note: `${formatCurrency(reportNumber(summary.averageOrderValue))} average` },
+    ];
+    if (els.reportsKpis) {
+      els.reportsKpis.innerHTML = metrics.map((metric) => `
+        <div class="db-report-kpi ${metric.primary ? 'is-primary' : ''} ${metric.profit < 0 ? 'is-negative' : ''}">
+          <span>${escapeHtml(metric.label)}</span>
+          <strong>${escapeHtml(metric.value)}</strong>
+          <small>${escapeHtml(metric.note)}</small>
+        </div>
+      `).join('');
+    }
+
+    renderDatabaseReportsChart(data?.series || [], data?.grain, data?.rangeLabel);
+    renderDatabaseReportsTopCustomer(data?.topCustomers || [], data?.topOrder, summary);
+    renderDatabaseReportsCostProfit(summary);
+    renderDatabaseReportsTable(els.reportsCustomersBody, data?.topCustomers || [], (customer) => [
+      customer.customerName || 'Unknown customer',
+      formatNumber(customer.orderCount || 0),
+      formatCurrency(reportNumber(customer.grossSales)),
+    ]);
+    renderDatabaseReportsTable(els.reportsTypesBody, data?.orderTypes || [], (type) => [
+      type.orderType || 'Other',
+      formatNumber(type.orderCount || 0),
+      formatCurrency(reportNumber(type.grossSales)),
+    ]);
+
+    const financialLines = Number(summary.financialLineCount || 0);
+    const missingPrices = Number(summary.missingPriceLines || 0);
+    const missingCosts = Number(summary.missingCostLines || 0);
+    if (els.reportsCoverage) {
+      els.reportsCoverage.textContent = financialLines
+        ? `${formatNumber(financialLines)} lines · ${formatNumber(missingPrices)} missing price · ${formatNumber(missingCosts)} missing cost`
+        : 'No financial lines in this period';
+    }
+  }
+
+  function renderDatabaseReportsTopCustomer(customers, topOrder, summary) {
+    if (!els.reportsTopCustomer) return;
+    const customer = customers[0];
+    if (!customer) {
+      els.reportsTopCustomer.innerHTML = '<div class="db-report-card-title">Highest grossing customer</div><div class="db-report-card-empty">No customer sales in this period</div>';
+      return;
+    }
+    const totalGross = reportNumber(summary?.grossSales);
+    const customerGross = reportNumber(customer.grossSales);
+    const share = totalGross ? (customerGross / totalGross) * 100 : 0;
+    const orderNumber = topOrder?.order_no || topOrder?.orderNo;
+    const orderGross = topOrder?.gross_sales ?? topOrder?.grossSales;
+    els.reportsTopCustomer.innerHTML = `
+      <div class="db-report-card-title">Highest grossing customer</div>
+      <div class="db-report-highlight-name" title="${escapeAttr(customer.customerName || '')}">${escapeHtml(customer.customerName || 'Unknown customer')}</div>
+      <div class="db-report-highlight-value">${escapeHtml(formatCurrency(customerGross))}</div>
+      <div class="db-report-detail-row"><span>Orders</span><strong>${escapeHtml(formatNumber(customer.orderCount || 0))}</strong></div>
+      <div class="db-report-detail-row"><span>Share of gross sales</span><strong>${escapeHtml(formatReportPercent(share))}</strong></div>
+      <div class="db-report-detail-row"><span>Highest order${orderNumber ? ` #${escapeHtml(orderNumber)}` : ''}</span><strong>${escapeHtml(formatCurrency(reportNumber(orderGross)))}</strong></div>
+    `;
+  }
+
+  function renderDatabaseReportsCostProfit(summary) {
+    if (!els.reportsCostProfit) return;
+    const cost = reportNumber(summary?.costOfGoods);
+    const profit = reportNumber(summary?.grossProfit);
+    const maximum = Math.max(Math.abs(cost), Math.abs(profit), 1);
+    const costWidth = Math.min(100, (Math.abs(cost) / maximum) * 100);
+    const profitWidth = Math.min(100, (Math.abs(profit) / maximum) * 100);
+    els.reportsCostProfit.innerHTML = `
+      <div class="db-report-card-title">Cost of goods against profit</div>
+      <div class="db-report-bar-row">
+        <div><span>COGS</span><strong>${escapeHtml(formatCurrency(cost))}</strong></div>
+        <div class="db-report-bar-track"><span class="db-report-bar is-cost" style="width:${costWidth.toFixed(2)}%"></span></div>
+      </div>
+      <div class="db-report-bar-row">
+        <div><span>Gross profit</span><strong>${escapeHtml(formatCurrency(profit))}</strong></div>
+        <div class="db-report-bar-track"><span class="db-report-bar is-profit ${profit < 0 ? 'is-negative' : ''}" style="width:${profitWidth.toFixed(2)}%"></span></div>
+      </div>
+      <div class="db-report-card-summary">
+        <span>Gross margin</span>
+        <strong>${escapeHtml(formatReportPercent(summary?.grossMarginPercent))}</strong>
+        <span>Units</span>
+        <strong>${escapeHtml(formatNumber(summary?.unitsSold || 0))}</strong>
+      </div>
+    `;
+  }
+
+  function renderDatabaseReportsTable(body, rows, cellsForRow) {
+    if (!body) return;
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="3">No sales in this period</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map((row) => {
+      const cells = cellsForRow(row);
+      return `<tr>${cells.map((cell, index) => `<td${index === 0 ? ` title="${escapeAttr(cell)}"` : ''}>${escapeHtml(cell)}</td>`).join('')}</tr>`;
+    }).join('');
+  }
+
+  function renderDatabaseReportsChart(series, grain, rangeLabel) {
+    if (!els.reportsChart) return;
+    if (!series.length) {
+      els.reportsChart.replaceChildren();
+      if (els.reportsChartState) {
+        els.reportsChartState.hidden = false;
+        els.reportsChartState.textContent = 'No chart data for this period';
+      }
+      return;
+    }
+
+    const width = 900;
+    const height = 236;
+    const margin = { top: 14, right: 22, bottom: 42, left: 68 };
+    const plotWidth = width - margin.left - margin.right;
+    const plotHeight = height - margin.top - margin.bottom;
+    const values = series.map((point) => reportNumber(point.grossSales));
+    const bounds = reportAxisBounds(values, 4);
+    const xFor = (index) => series.length === 1
+      ? margin.left + (plotWidth / 2)
+      : margin.left + (index / (series.length - 1)) * plotWidth;
+    const yFor = (value) => margin.top + ((bounds.max - value) / (bounds.max - bounds.min)) * plotHeight;
+    const zeroY = yFor(0);
+    const points = values.map((value, index) => ({ x: xFor(index), y: yFor(value), value, index }));
+    const path = points.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ');
+    const area = `M ${points[0].x.toFixed(2)} ${zeroY.toFixed(2)} ${points.map((point) => `L ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ')} L ${points[points.length - 1].x.toFixed(2)} ${zeroY.toFixed(2)} Z`;
+    const labelIndexes = reportChartLabelIndexes(series.length, 9);
+    const tickMarkup = Array.from({ length: 5 }, (_, index) => {
+      const value = bounds.min + ((bounds.max - bounds.min) * index / 4);
+      const y = yFor(value);
+      return `
+        <line class="db-report-chart-grid" x1="${margin.left}" y1="${y.toFixed(2)}" x2="${width - margin.right}" y2="${y.toFixed(2)}"></line>
+        <text class="db-report-chart-y-label" x="${margin.left - 8}" y="${(y + 3.5).toFixed(2)}">${escapeHtml(formatReportAxisCurrency(value))}</text>
+      `;
+    }).join('');
+    const xMarkup = Array.from(labelIndexes).sort((a, b) => a - b).map((index) => {
+      const x = xFor(index);
+      return `
+        <line class="db-report-chart-tick" x1="${x.toFixed(2)}" y1="${height - margin.bottom}" x2="${x.toFixed(2)}" y2="${height - margin.bottom + 4}"></line>
+        <text class="db-report-chart-x-label" x="${x.toFixed(2)}" y="${height - 17}">${escapeHtml(formatReportBucketLabel(series[index]?.bucketStart, grain))}</text>
+      `;
+    }).join('');
+    const pointMarkup = points.map((point) => {
+      const label = formatReportBucketLabel(series[point.index]?.bucketStart, grain, true);
+      const orderCount = Number(series[point.index]?.orderCount || 0);
+      return `
+        <circle class="db-report-chart-point" cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="3.2">
+          <title>${escapeHtml(`${label}: ${formatCurrency(point.value)} · ${formatNumber(orderCount)} order${orderCount === 1 ? '' : 's'}`)}</title>
+        </circle>
+      `;
+    }).join('');
+    const total = values.reduce((sum, value) => sum + value, 0);
+
+    els.reportsChart.setAttribute('aria-label', `Gross sales for ${rangeLabel || 'selected period'}: ${formatCurrency(total)}`);
+    els.reportsChart.innerHTML = `
+      <desc>Gross sales plotted by ${escapeHtml(grain || 'period')}, with exact values available on each point.</desc>
+      ${tickMarkup}
+      <line class="db-report-chart-axis" x1="${margin.left}" y1="${zeroY.toFixed(2)}" x2="${width - margin.right}" y2="${zeroY.toFixed(2)}"></line>
+      <path class="db-report-chart-area" d="${area}"></path>
+      <path class="db-report-chart-line" d="${path}"></path>
+      ${pointMarkup}
+      ${xMarkup}
+    `;
+    if (els.reportsChartState) els.reportsChartState.hidden = true;
+  }
+
+  function reportAxisBounds(values, tickCount) {
+    let minimum = Math.min(0, ...values);
+    let maximum = Math.max(0, ...values);
+    if (minimum === maximum) maximum = minimum + 1;
+    const roughStep = (maximum - minimum) / tickCount;
+    const magnitude = 10 ** Math.floor(Math.log10(Math.max(roughStep, Number.EPSILON)));
+    const normalized = roughStep / magnitude;
+    const multiplier = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 2.5 ? 2.5 : normalized <= 5 ? 5 : 10;
+    const step = multiplier * magnitude;
+    minimum = Math.floor(minimum / step) * step;
+    maximum = Math.ceil(maximum / step) * step;
+    if (minimum === maximum) maximum = minimum + step;
+    return { min: minimum, max: maximum };
+  }
+
+  function reportChartLabelIndexes(length, maximumLabels) {
+    const indexes = new Set();
+    if (!length) return indexes;
+    if (length <= maximumLabels) {
+      for (let index = 0; index < length; index += 1) indexes.add(index);
+      return indexes;
+    }
+    for (let index = 0; index < maximumLabels; index += 1) {
+      indexes.add(Math.round(index * (length - 1) / (maximumLabels - 1)));
+    }
+    return indexes;
+  }
+
+  function formatReportBucketLabel(value, grain, verbose = false) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value || '');
+    if (grain === 'hour') {
+      return new Intl.DateTimeFormat('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        ...(verbose ? { day: '2-digit', month: 'short' } : {}),
+      }).format(date);
+    }
+    if (grain === 'month') {
+      return new Intl.DateTimeFormat('en-GB', { month: 'short', year: verbose ? 'numeric' : '2-digit' }).format(date);
+    }
+    return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', ...(verbose ? { year: 'numeric' } : {}) }).format(date);
+  }
+
+  function formatReportAxisCurrency(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return '£0';
+    const absolute = Math.abs(number);
+    const sign = number < 0 ? '-' : '';
+    if (absolute >= 1000000) return `${sign}£${trimReportDecimal(absolute / 1000000)}m`;
+    if (absolute >= 1000) return `${sign}£${trimReportDecimal(absolute / 1000)}k`;
+    return `${sign}£${trimReportDecimal(absolute)}`;
+  }
+
+  function trimReportDecimal(value) {
+    if (!value) return '0';
+    return Number(value.toPrecision(3)).toString();
+  }
+
+  function reportPeriodDates(start, end) {
+    const startLabel = formatReportIsoDate(start);
+    const endLabel = formatReportIsoDate(end);
+    if (!startLabel) return endLabel;
+    if (!endLabel || start === end) return startLabel;
+    return `${startLabel} – ${endLabel}`;
+  }
+
+  function formatReportIsoDate(value) {
+    const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return match ? `${match[3]}/${match[2]}/${match[1]}` : '';
+  }
+
+  function formatReportPercent(value) {
+    const number = Number(value);
+    return `${Number.isFinite(number) ? number.toFixed(1) : '0.0'}%`;
+  }
+
+  function reportNumber(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : 0;
   }
 
   function setCurrentUser(user) {
@@ -3158,6 +3576,200 @@
     return normalized === 'stock ordered' || normalized === 'ordered';
   }
 
+  async function loadProductStyles(options = {}) {
+    if (state.productStylesLoading && !options.force) {
+      if (els.stylesBody) els.stylesBody.innerHTML = renderStatusRow('Loading styles', STYLE_TABLE_COLUMN_COUNT);
+      renderProductStyleDetails(null, 'Loading style details');
+      return;
+    }
+    if (state.productStylesLoaded && !options.force) {
+      renderProductStyles();
+      return;
+    }
+
+    state.productStylesLoading = true;
+    state.productStylesLoaded = false;
+    if (els.stylesBody) els.stylesBody.innerHTML = renderStatusRow('Loading styles', STYLE_TABLE_COLUMN_COUNT);
+    renderProductStyleDetails(null, 'Loading style details');
+
+    try {
+      const data = await fetchJson('/api/database/products/styles');
+      state.productStyles = Array.isArray(data.styles) ? data.styles : [];
+      state.productStylesLoaded = true;
+      if (!styleIdExists(state.selectedStyleId)) {
+        state.selectedStyleId = productStyleKey(state.productStyles[0]);
+      }
+      renderProductStyles();
+    } catch (err) {
+      state.productStylesLoaded = false;
+      if (els.stylesBody) {
+        els.stylesBody.innerHTML = renderStatusRow(err.message || 'Failed to load styles', STYLE_TABLE_COLUMN_COUNT);
+      }
+      renderProductStyleDetails(null, err.message || 'Failed to load style details');
+    } finally {
+      state.productStylesLoading = false;
+    }
+  }
+
+  function renderProductStyles() {
+    if (!els.stylesBody) return;
+    const styles = state.productStyles || [];
+    if (!styles.length) {
+      els.stylesBody.innerHTML = renderStatusRow('No product styles found', STYLE_TABLE_COLUMN_COUNT);
+      renderProductStyleDetails(null, 'No product styles found');
+      return;
+    }
+
+    if (!styleIdExists(state.selectedStyleId)) {
+      state.selectedStyleId = productStyleKey(styles[0]);
+    }
+    els.stylesBody.innerHTML = styles.map(renderProductStyleRow).join('');
+    renderProductStyleDetails(selectedProductStyle());
+  }
+
+  function renderProductStyleRow(style, index) {
+    const styleId = productStyleKey(style);
+    const selected = styleId && styleId === String(state.selectedStyleId || '');
+    return `
+      <tr class="db-style-row ${selected ? 'selected' : ''}" data-style-id="${escapeAttr(styleId)}" tabindex="0">
+        <td class="db-row-selector">${selected || (!state.selectedStyleId && index === 0) ? '&#9654;' : ''}</td>
+        <td class="db-style-sku-cell">${escapeHtml(productStyleSku(style))}</td>
+        <td>${escapeHtml(productStyleTitle(style))}</td>
+        <td>${escapeHtml(formatProductStyleCost(style))}</td>
+        <td>${escapeHtml(formatNumber(style?.variant_count || 0))}</td>
+      </tr>
+    `;
+  }
+
+  function handleProductStyleRowClick(event) {
+    const row = event.target.closest('tr[data-style-id]');
+    if (!row) return;
+    selectProductStyle(row.dataset.styleId);
+  }
+
+  function handleProductStyleRowKeydown(event) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const row = event.target.closest('tr[data-style-id]');
+    if (!row) return;
+    event.preventDefault();
+    selectProductStyle(row.dataset.styleId);
+  }
+
+  function selectProductStyle(styleId) {
+    const nextId = String(styleId || '');
+    if (!nextId || nextId === String(state.selectedStyleId || '')) return;
+    state.selectedStyleId = nextId;
+    renderProductStyles();
+    persistDatabaseRoute();
+  }
+
+  function renderProductStyleDetails(style, message = '') {
+    if (!els.stylesSelectedTitle || !els.stylesSelectedMeta || !els.stylesSelectedCost || !els.stylesSizes || !els.stylesColours) return;
+    if (!style) {
+      els.stylesSelectedTitle.textContent = message || 'Select a parent product';
+      els.stylesSelectedMeta.textContent = '';
+      els.stylesSelectedCost.textContent = '';
+      els.stylesSizes.innerHTML = `<div class="db-panel-message">${escapeHtml(message || 'No size options')}</div>`;
+      els.stylesColours.innerHTML = `<div class="db-panel-message">${escapeHtml(message || 'No colours')}</div>`;
+      return;
+    }
+
+    const sizes = productStyleOptionArray(style.sizes);
+    const colours = productStyleOptionArray(style.colours);
+    const sku = productStyleSku(style);
+    const type = String(style.product_type || '').trim();
+    const supplier = String(style.supplier_name || '').trim();
+    const meta = [
+      sku ? `SKU ${sku}` : '',
+      type,
+      supplier,
+      `${formatNumber(style.variant_count || 0)} variants`,
+      `${formatNumber(style.size_count || sizes.length)} sizes`,
+      `${formatNumber(style.colour_count || colours.length)} colours`,
+    ].filter(Boolean).join(' | ');
+
+    els.stylesSelectedTitle.textContent = productStyleTitle(style);
+    els.stylesSelectedMeta.textContent = meta;
+    els.stylesSelectedCost.textContent = formatProductStyleCost(style);
+    els.stylesSizes.innerHTML = renderProductStyleChips(sizes, 'No size options');
+    els.stylesColours.innerHTML = renderProductStyleChips(colours, 'No colours');
+  }
+
+  function renderProductStyleChips(items, emptyLabel) {
+    const options = productStyleOptionArray(items);
+    if (!options.length) {
+      return `<div class="db-panel-message">${escapeHtml(emptyLabel)}</div>`;
+    }
+    return options.map((item) => {
+      const label = typeof item === 'string' ? item : item?.label;
+      const count = Number.parseInt(item?.variant_count, 10);
+      return `
+        <span class="db-styles-chip" title="${escapeAttr(label || '')}">
+          <span>${escapeHtml(label || '-')}</span>
+          ${Number.isFinite(count) && count > 0 ? `<small>${escapeHtml(formatNumber(count))}</small>` : ''}
+        </span>
+      `;
+    }).join('');
+  }
+
+  function selectedProductStyle() {
+    const selectedId = String(state.selectedStyleId || '');
+    return (state.productStyles || []).find((style) => productStyleKey(style) === selectedId) || null;
+  }
+
+  function styleIdExists(styleId) {
+    const key = String(styleId || '');
+    return Boolean(key && (state.productStyles || []).some((style) => productStyleKey(style) === key));
+  }
+
+  function productStyleKey(style) {
+    if (!style) return '';
+    return String(style.style_id ?? '');
+  }
+
+  function productStyleTitle(style) {
+    return style?.style_name || 'Untitled style';
+  }
+
+  function productStyleSku(style) {
+    return style?.style_code || style?.alt_style_code || '';
+  }
+
+  function productStyleOptionArray(value) {
+    if (Array.isArray(value)) return value.filter(Boolean);
+    if (typeof value === 'string' && value.trim()) {
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }
+
+  function productStyleCosts(style) {
+    const rawCosts = productStyleOptionArray(style?.unit_costs);
+    const costs = rawCosts
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value));
+    const min = Number(style?.min_unit_cost);
+    const max = Number(style?.max_unit_cost);
+    if (Number.isFinite(min)) costs.push(min);
+    if (Number.isFinite(max)) costs.push(max);
+    return Array.from(new Set(costs.map((value) => value.toFixed(2))))
+      .map((value) => Number(value))
+      .sort((a, b) => a - b);
+  }
+
+  function formatProductStyleCost(style) {
+    const costs = productStyleCosts(style);
+    if (!costs.length) return '-';
+    if (costs.length === 1) return formatCurrency(costs[0]);
+    if (costs.length <= 3) return costs.map(formatCurrency).join(', ');
+    return `${formatCurrency(costs[0])} - ${formatCurrency(costs[costs.length - 1])}`;
+  }
+
   async function markStockOrderingSnapshotOrdered() {
     if (state.activeDocumentType !== 'stock-ordering') return true;
     if (state.stockOrderingStatusSaving) return false;
@@ -3602,6 +4214,7 @@
       state.selectedLineItems = data.lineItems || [];
       state.selectedPositions = data.positions || [];
       state.selectedProofFiles = normalizeDatabaseProofFiles(data.proofFiles || []);
+      state.selectedCustomerOverview = data.customerOverview || null;
       state.orderCustomerDetail = await loadOrderCustomerDetail(state.selectedJob);
       resetDatabaseProofViewerState();
       resetLineDraftState();
@@ -3624,6 +4237,7 @@
     state.selectedLineItems = data.lineItems || [];
     state.selectedPositions = data.positions || [];
     state.selectedProofFiles = normalizeDatabaseProofFiles(data.proofFiles || []);
+    state.selectedCustomerOverview = data.customerOverview || null;
     state.orderCustomerDetail = await loadOrderCustomerDetail(state.selectedJob);
     resetDatabaseProofViewerState();
     resetLineDraftState();
@@ -3641,6 +4255,7 @@
     resetDesignAutosaveState();
     resetJobAutosaveState();
     state.orderCustomerDetail = null;
+    state.selectedCustomerOverview = null;
     syncOrderDocumentButtons(null);
     els.orderTitle.value = 'Loading...';
     els.orderNumber.value = '';
@@ -3656,6 +4271,7 @@
   function renderOrderError(message) {
     resetDesignAutosaveState();
     resetJobAutosaveState();
+    state.selectedCustomerOverview = null;
     syncOrderDocumentButtons(null);
     els.orderTitle.value = 'Order unavailable';
     els.orderNumber.value = '';
@@ -3748,13 +4364,14 @@
         </div>
 
         <div class="db-detail-box db-payment-box">
-          ${detailRow('Payment:', selectBox(job.payment_terms))}
+          ${detailRow('Payment:', paymentTermsSelect(job))}
           ${detailRow('Client ref:', inputBox(job.client_order_no || job.contact_name || ''))}
           <div class="db-form-row db-comments-row">
             <label>Comments:</label>
             <textarea data-db-job-field="comments">${escapeHtml(job.comments || '')}</textarea>
           </div>
         </div>
+        ${renderCustomerOverviewBox()}
       </div>
     `;
   }
@@ -3779,6 +4396,59 @@
       <option value="${escapeAttr(orderType)}" ${orderType === current ? 'selected' : ''}>${escapeHtml(orderType)}</option>
     `));
     return `<select class="db-order-type-select" data-db-job-field="order_type">${options.join('')}</select>`;
+  }
+
+  function paymentTermsSelect(job) {
+    const current = String(job?.payment_terms || '').trim();
+    const options = ['<option value=""></option>'];
+    PAYMENT_TERM_OPTIONS.forEach((term) => {
+      options.push(`<option value="${escapeAttr(term)}" ${term === current ? 'selected' : ''}>${escapeHtml(term)}</option>`);
+    });
+    if (current && !PAYMENT_TERM_OPTIONS.includes(current)) {
+      options.push(`<option value="${escapeAttr(current)}" selected>${escapeHtml(current)}</option>`);
+    }
+    return `<select class="db-payment-terms-select" disabled>${options.join('')}</select>`;
+  }
+
+  function renderCustomerOverviewBox() {
+    const overview = state.selectedCustomerOverview || {};
+    const metrics = [
+      ['Last order', formatDate(overview.last_order_date, 'short') || '-'],
+      ['Orders', formatNumber(overview.order_count || 0)],
+      ['3 mo activity', formatNumber(overview.activity_3_months || 0)],
+      ['12 mo spend', formatCurrency(overview.spend_12_months || 0)],
+      ['Avg value', formatCurrency(overview.average_order_value || 0)],
+      ['Open jobs', formatNumber(overview.open_jobs || 0)],
+      ['Unpaid/uninvoiced', formatNumber(overview.unpaid_uninvoiced_jobs || 0)],
+      ['Top types', customerOverviewList(overview.top_order_types, 'count')],
+      ['Top products', customerOverviewList(overview.top_products, 'quantity')],
+    ];
+
+    return `
+      <div class="db-detail-box db-customer-overview-box" aria-label="Customer overview">
+        <div class="db-customer-overview-grid">
+          ${metrics.map(([label, value]) => `
+            <section class="db-customer-overview-card" title="${escapeAttr(`${label}: ${value}`)}">
+              <span>${escapeHtml(label)}</span>
+              <strong>${escapeHtml(value)}</strong>
+            </section>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  function customerOverviewList(rows, valueKey) {
+    const values = Array.isArray(rows) ? rows : [];
+    if (!values.length) return '-';
+    return values
+      .slice(0, 3)
+      .map((row) => {
+        const label = String(row?.label || '').trim() || 'Unknown';
+        const value = Number(row?.[valueKey] || row?.count || 0);
+        return value ? `${label} (${formatNumber(value)})` : label;
+      })
+      .join(', ');
   }
 
   function handleDetailsPanelChange(event) {
@@ -8342,7 +9012,9 @@
     });
     els.stage?.classList.toggle('db-view-home', name === 'home');
     els.stage?.classList.toggle('db-view-order', name === 'order');
+    els.stage?.classList.toggle('db-reports-active', name === 'reports');
     els.stage?.classList.toggle('db-new-customer-active', name === 'new-customer');
+    els.root?.classList.toggle('db-reports-expanded', name === 'reports');
     els.root?.classList.toggle('db-new-customer-expanded', name === 'new-customer');
     if (name !== 'order') {
       els.stage?.classList.remove('db-order-items-active');
@@ -8350,7 +9022,7 @@
     }
 
     els.mainTabs.forEach((tab) => {
-      const active = (name === 'home' || name === 'new-order' || name === 'new-customer' || name === 'new-contact' || name === 'customers' || name === 'customer' || name === 'to-invoice' || name === 'stock-ordering' || name === 'users')
+      const active = (name === 'home' || name === 'new-order' || name === 'new-customer' || name === 'new-contact' || name === 'customers' || name === 'customer' || name === 'styles' || name === 'to-invoice' || name === 'stock-ordering' || name === 'users' || name === 'reports')
         ? tab.dataset.dbGo === 'home'
         : tab.dataset.dbGo === 'outstanding';
       tab.classList.toggle('active', active);
@@ -8381,7 +9053,9 @@
     if (name === 'new-contact') return 'Add Contact';
     if (name === 'customers') return 'Customers';
     if (name === 'customer') return 'Customer';
+    if (name === 'styles') return 'Styles';
     if (name === 'users') return 'Users';
+    if (name === 'reports') return 'Analytics & Reports';
     if (name === 'to-invoice') return 'To Invoice';
     if (name === 'stock-ordering') return 'Stock Ordering';
     if (name === 'outstanding') return state.orderMode === 'all' ? 'All Orders' : 'Open Orders';
