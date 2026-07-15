@@ -9,6 +9,21 @@
   const JOB_AUTOSAVE_MS = DESIGN_AUTOSAVE_MS;
   const CONTACT_AUTOSAVE_MS = DESIGN_AUTOSAVE_MS;
   const LINE_ORDER_AUTOSAVE_MS = 3500;
+  const DATABASE_ROUTE_STORAGE_KEY = 'ultimateHub.databaseRoute.v1';
+  const DATABASE_RESTORABLE_VIEWS = new Set([
+    'home',
+    'outstanding',
+    'customers',
+    'customer',
+    'order',
+    'to-invoice',
+    'stock-ordering',
+    'users',
+    'new-order',
+    'new-customer',
+  ]);
+  const DATABASE_ORDER_TABS = new Set(['details', 'items', 'design', 'proof']);
+  const DATABASE_CUSTOMER_TABS = new Set(['orders', 'contacts', 'addresses', 'quotations', 'design-numbers']);
   const OUTSTANDING_TABLE_COLUMN_COUNT = 9;
   const OUTSTANDING_ALL_TABLE_COLUMN_COUNT = 10;
   const OUTSTANDING_INVOICE_COLUMN_WIDTH = 98;
@@ -242,6 +257,8 @@
   let outstandingTitleMeasureCanvas = null;
   let lineItemMeasureCanvas = null;
   let lineDrag = null;
+  let databaseRouteRestored = false;
+  let restoringDatabaseRoute = false;
   const lineTextScrollAnimations = new WeakMap();
 
   document.addEventListener('DOMContentLoaded', initDatabaseHub);
@@ -412,6 +429,7 @@
     if (els.sideTab) {
       els.sideTab.addEventListener('click', () => {
         if (!state.loadedHome) loadHomeMetrics();
+        restoreDatabaseRouteOnce();
       });
     }
     window.ultimateHubOpenDatabaseOrder = openDatabaseOrderFromDashboard;
@@ -422,10 +440,12 @@
     });
 
     const params = new URLSearchParams(window.location.search);
-    if (params.get('tab') === 'database' || window.location.hash === '#database') {
+    if ((params.get('tab') === 'database' || window.location.hash === '#database') && !isDatabaseTopLevelActive()) {
       els.sideTab?.click();
-    } else if (document.getElementById('tab-database')?.classList.contains('active')) {
-      loadHomeMetrics();
+    }
+    if (isDatabaseTopLevelActive()) {
+      if (!state.loadedHome) loadHomeMetrics();
+      restoreDatabaseRouteOnce();
     }
   }
 
@@ -624,10 +644,12 @@
         state.orderMode = 'open';
         setFooterTitle('Open Orders');
         syncOrderSearchVisibility();
+        persistDatabaseRoute();
         loadOutstandingOrders({ force: false });
         return;
       }
       renderOutstandingOrders();
+      persistDatabaseRoute();
       return;
     }
 
@@ -726,6 +748,171 @@
     });
   }
 
+  function isDatabaseTopLevelActive() {
+    return document.getElementById('tab-database')?.classList.contains('active') === true;
+  }
+
+  function restoreDatabaseRouteOnce() {
+    if (databaseRouteRestored) return;
+    databaseRouteRestored = true;
+    restoreDatabaseRoute();
+  }
+
+  async function restoreDatabaseRoute() {
+    const route = readStoredDatabaseRoute();
+    if (!route?.view || !DATABASE_RESTORABLE_VIEWS.has(route.view)) {
+      persistDatabaseRoute({ force: true });
+      return;
+    }
+
+    restoringDatabaseRoute = true;
+    try {
+      await applyStoredDatabaseRoute(route);
+    } catch (err) {
+      console.warn('Failed to restore DATABASE route', err);
+      showHome({ skipHistory: true, skipPersistence: true });
+    } finally {
+      restoringDatabaseRoute = false;
+      persistDatabaseRoute({ force: true });
+    }
+  }
+
+  async function applyStoredDatabaseRoute(route) {
+    state.viewHistory = [];
+
+    if (route.view === 'order') {
+      if (!route.orderId) {
+        showHome({ skipHistory: true, skipPersistence: true });
+        return;
+      }
+      await openOrder(route.orderId, normalizeDatabaseOrderTab(route.orderTab), { skipHistory: true, throwOnError: true });
+      return;
+    }
+
+    if (route.view === 'customer') {
+      if (!route.customerKey) {
+        showCustomers({ skipHistory: true, skipPersistence: true });
+        return;
+      }
+      await openCustomer(route.customerKey, normalizeDatabaseCustomerTab(route.customerTab), { skipHistory: true, throwOnError: true });
+      return;
+    }
+
+    if (route.view === 'outstanding') {
+      state.orderMode = route.orderMode === 'all' ? 'all' : 'open';
+      state.activeGroup = normalizeOutstandingGroup(route.activeGroup);
+      state.orderSearchQuery = String(route.orderSearchQuery || '').trim();
+      if (els.orderSearch) els.orderSearch.value = state.orderSearchQuery;
+      showView('outstanding', { skipHistory: true, skipPersistence: true });
+      setFooterTitle(state.orderMode === 'all' ? 'All Orders' : 'Open Orders');
+      syncOutstandingFilterButtons();
+      syncOrderSearchVisibility();
+      loadOutstandingOrders({ force: false });
+      return;
+    }
+
+    if (route.view === 'customers') {
+      state.databaseCustomerQuery = String(route.customerQuery || '').trim();
+      if (els.customersSearch) els.customersSearch.value = state.databaseCustomerQuery;
+      showCustomers({ skipHistory: true, skipPersistence: true });
+      return;
+    }
+
+    if (route.view === 'to-invoice') {
+      showToInvoice({ skipHistory: true, skipPersistence: true });
+      return;
+    }
+
+    if (route.view === 'stock-ordering') {
+      showStockOrdering({ skipHistory: true, skipPersistence: true });
+      return;
+    }
+
+    if (route.view === 'users') {
+      showUsers({ skipHistory: true, skipPersistence: true });
+      return;
+    }
+
+    if (route.view === 'new-order') {
+      showNewOrder({ skipHistory: true, skipPersistence: true });
+      return;
+    }
+
+    if (route.view === 'new-customer') {
+      showNewCustomer({ skipHistory: true, skipPersistence: true });
+      return;
+    }
+
+    showHome({ skipHistory: true, skipPersistence: true });
+  }
+
+  function persistDatabaseRoute(options = {}) {
+    if (restoringDatabaseRoute && !options.force) return;
+    const route = buildDatabaseRouteSnapshot();
+    if (!route) return;
+    try {
+      window.localStorage.setItem(DATABASE_ROUTE_STORAGE_KEY, JSON.stringify(route));
+    } catch {}
+  }
+
+  function readStoredDatabaseRoute() {
+    try {
+      const raw = window.localStorage.getItem(DATABASE_ROUTE_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function buildDatabaseRouteSnapshot() {
+    const view = DATABASE_RESTORABLE_VIEWS.has(state.activeView) ? state.activeView : 'home';
+    const route = { view, savedAt: Date.now() };
+
+    if (view === 'order') {
+      const orderId = Number(state.selectedJob?.source_order_id);
+      if (!Number.isFinite(orderId)) return null;
+      route.orderId = orderId;
+      route.orderTab = normalizeDatabaseOrderTab(state.activeOrderTab);
+      return route;
+    }
+
+    if (view === 'customer') {
+      const customerKey = state.selectedCustomerDetail?.customer_key;
+      if (!customerKey) return null;
+      route.customerKey = customerKey;
+      route.customerTab = normalizeDatabaseCustomerTab(state.activeCustomerTab);
+      return route;
+    }
+
+    if (view === 'outstanding') {
+      route.orderMode = state.orderMode === 'all' ? 'all' : 'open';
+      route.activeGroup = normalizeOutstandingGroup(state.activeGroup);
+      route.orderSearchQuery = String(state.orderSearchQuery || '').trim();
+      return route;
+    }
+
+    if (view === 'customers') {
+      route.customerQuery = String(state.databaseCustomerQuery || els.customersSearch?.value || '').trim();
+      return route;
+    }
+
+    return route;
+  }
+
+  function normalizeDatabaseOrderTab(tab) {
+    return DATABASE_ORDER_TABS.has(tab) ? tab : 'details';
+  }
+
+  function normalizeDatabaseCustomerTab(tab) {
+    return DATABASE_CUSTOMER_TABS.has(tab) ? tab : 'orders';
+  }
+
+  function normalizeOutstandingGroup(group) {
+    return String(group || 'all').trim() || 'all';
+  }
+
   async function loadHomeMetrics() {
     state.loadedHome = true;
     try {
@@ -748,14 +935,14 @@
     setFooterTitle('Main Menu');
   }
 
-  function showNewOrder() {
-    showView('new-order');
+  function showNewOrder(options = {}) {
+    showView('new-order', options);
     setFooterTitle('New Order');
     resetNewOrderForm();
   }
 
-  function showNewCustomer() {
-    showView('new-customer');
+  function showNewCustomer(options = {}) {
+    showView('new-customer', options);
     setFooterTitle('New Customer');
     resetNewCustomerForm();
     ensureCustomerUsers().then(() => {
@@ -777,26 +964,26 @@
     showCustomerTab('contacts');
   }
 
-  function showCustomers() {
-    showView('customers');
+  function showCustomers(options = {}) {
+    showView('customers', options);
     setFooterTitle('Customers');
     loadDatabaseCustomers({ force: false });
   }
 
-  function showToInvoice() {
-    showView('to-invoice');
+  function showToInvoice(options = {}) {
+    showView('to-invoice', options);
     setFooterTitle('To Invoice');
     loadToInvoiceJobs({ force: true });
   }
 
-  function showStockOrdering() {
-    showView('stock-ordering');
+  function showStockOrdering(options = {}) {
+    showView('stock-ordering', options);
     setFooterTitle('Stock Ordering');
     loadStockOrderingJobs({ force: true });
   }
 
-  function showUsers() {
-    showView('users');
+  function showUsers(options = {}) {
+    showView('users', options);
     setFooterTitle('Users');
     loadRegisteredUsers({ force: true });
   }
@@ -1546,6 +1733,7 @@
 
   function handleDatabaseCustomerSearchInput() {
     state.databaseCustomerQuery = els.customersSearch.value.trim();
+    persistDatabaseRoute();
     clearTimeout(databaseCustomerSearchTimer);
     databaseCustomerSearchTimer = window.setTimeout(() => {
       loadDatabaseCustomers({ force: true });
@@ -1645,13 +1833,13 @@
     `;
   }
 
-  async function openCustomer(customerKey, tab) {
+  async function openCustomer(customerKey, tab, options = {}) {
     if (!customerKey) return;
-    state.activeCustomerTab = tab || 'orders';
-    showView('customer');
+    state.activeCustomerTab = normalizeDatabaseCustomerTab(tab);
+    showView('customer', { skipHistory: options.skipHistory, skipPersistence: true });
     setFooterTitle('Customer');
     setCustomerLoading();
-    showCustomerTab(state.activeCustomerTab);
+    showCustomerTab(state.activeCustomerTab, { skipPersistence: true });
 
     try {
       const [data] = await Promise.all([
@@ -1667,6 +1855,7 @@
       showCustomerTab(state.activeCustomerTab);
     } catch (err) {
       renderCustomerError(err.message);
+      if (options.throwOnError) throw err;
     }
   }
 
@@ -2565,14 +2754,15 @@
       .slice(0, 6);
   }
 
-  function showCustomerTab(tab) {
-    state.activeCustomerTab = tab || 'orders';
+  function showCustomerTab(tab, options = {}) {
+    state.activeCustomerTab = normalizeDatabaseCustomerTab(tab);
     els.customerTabs.forEach((button) => {
       button.classList.toggle('active', button.dataset.dbCustomerTab === state.activeCustomerTab);
     });
     els.customerPanels.forEach((panel) => {
       panel.classList.toggle('active', panel.id === `db-customer-${state.activeCustomerTab}-panel`);
     });
+    if (!options.skipPersistence) persistDatabaseRoute();
   }
 
   function openOutstandingOrders(mode) {
@@ -2586,6 +2776,7 @@
   function handleOrderSearchInput() {
     state.orderSearchQuery = els.orderSearch?.value.trim() || '';
     if (state.orderMode !== 'all') return;
+    persistDatabaseRoute();
 
     clearTimeout(orderSearchTimer);
     orderSearchTimer = window.setTimeout(() => {
@@ -3368,10 +3559,10 @@
     await openOrder(sourceOrderId, tab || 'details');
   }
 
-  async function openOrder(id, tab) {
-    state.activeOrderTab = tab || 'details';
+  async function openOrder(id, tab, options = {}) {
+    state.activeOrderTab = normalizeDatabaseOrderTab(tab);
     const sourceView = state.activeView;
-    showView('order');
+    showView('order', { skipHistory: options.skipHistory, skipPersistence: true });
     setFooterTitle(sourceView === 'to-invoice' ? 'To Invoice' : 'Open Orders');
     setOrderLoading();
 
@@ -3393,6 +3584,7 @@
       showOrderTab(state.activeOrderTab);
     } catch (err) {
       renderOrderError(err.message);
+      if (options.throwOnError) throw err;
     }
   }
 
@@ -3485,10 +3677,10 @@
     return jobs.sort((a, b) => Number(b.order_no || 0) - Number(a.order_no || 0));
   }
 
-  function showOrderTab(tab) {
-    state.activeOrderTab = tab;
+  function showOrderTab(tab, options = {}) {
+    state.activeOrderTab = normalizeDatabaseOrderTab(tab);
     els.orderTabs.forEach((button) => {
-      button.classList.toggle('active', button.dataset.dbOrderTab === tab);
+      button.classList.toggle('active', button.dataset.dbOrderTab === state.activeOrderTab);
     });
     [
       ['details', els.detailsPanel],
@@ -3496,10 +3688,11 @@
       ['design', els.designPanel],
       ['proof', els.proofPanel],
     ].forEach(([key, panel]) => {
-      panel?.classList.toggle('active', key === tab);
+      panel?.classList.toggle('active', key === state.activeOrderTab);
     });
     syncOrderItemsExpansion();
-    if (tab === 'proof') queueRenderDatabaseProofFile();
+    if (state.activeOrderTab === 'proof') queueRenderDatabaseProofFile();
+    if (!options.skipPersistence) persistDatabaseRoute();
   }
 
   function renderDetailsPanel() {
@@ -8077,6 +8270,7 @@
       tab.classList.toggle('active', active);
     });
     syncOrderItemsExpansion();
+    if (!options.skipPersistence) persistDatabaseRoute();
   }
 
   function goBackDatabaseView() {
