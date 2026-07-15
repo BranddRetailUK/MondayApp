@@ -1154,12 +1154,21 @@ router.get('/api/database/customers/:key', async (req, res) => {
       addressRows = addresses.rows;
     }
 
-    const [manualContactRows, designNumberRows] = await Promise.all([
+    const overviewCustomerName = cleanNullable(profile?.customer_name)
+      || firstNonEmpty(orders, 'customer_name')
+      || (customerKey.type === 'name' ? customerKey.value : null);
+    const overviewCustomer = {
+      customer_id: isFiniteDatabaseValue(customerId) ? Number(customerId) : null,
+      customer_name: overviewCustomerName,
+    };
+
+    const [manualContactRows, designNumberRows, customerOverview] = await Promise.all([
       fetchManualCustomerContacts(customerKey, profile, orders),
       fetchCustomerDesignNumbers(orders),
+      fetchCustomerOverview(pool, overviewCustomer),
     ]);
 
-    res.json(buildCustomerDetail(customerKey, orders, addressRows, profile, manualContactRows, designNumberRows));
+    res.json(buildCustomerDetail(customerKey, orders, addressRows, profile, manualContactRows, designNumberRows, customerOverview));
   } catch (err) {
     console.error('GET /api/database/customers/:key', err);
     res.status(500).json({ error: 'Failed to fetch database customer detail' });
@@ -3598,7 +3607,7 @@ async function latestCustomerOrderForKey(customerKey, profile = null) {
   return result.rows[0] || null;
 }
 
-function buildCustomerDetail(customerKey, orders, addressRows = [], profile = null, manualContactRows = [], designNumberRows = []) {
+function buildCustomerDetail(customerKey, orders, addressRows = [], profile = null, manualContactRows = [], designNumberRows = [], customerOverview = null) {
   const latest = orders[0] || {};
   const businessName = cleanNullable(profile?.customer_name) || firstNonEmpty(orders, 'customer_name');
   const customerId = isFiniteDatabaseValue(profile?.customer_id) ? Number(profile.customer_id) : firstFinite(orders, 'customer_id');
@@ -3629,6 +3638,7 @@ function buildCustomerDetail(customerKey, orders, addressRows = [], profile = nu
     contacts: groupedContacts(orders, profile, manualContactRows),
     addresses: groupedAddresses(orders, addressRows, profile),
     designNumbers: designNumberRows,
+    customerOverview,
   };
 }
 

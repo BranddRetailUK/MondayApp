@@ -203,6 +203,7 @@
     selectedCustomerDetail: null,
     orderCustomerDetail: null,
     selectedCustomerOverview: null,
+    selectedCustomerPageOverview: null,
     selectedCustomerOrders: [],
     selectedCustomerContacts: [],
     selectedCustomerAddresses: [],
@@ -331,9 +332,7 @@
       customerName: document.getElementById('db-customer-name'),
       customerCode: document.getElementById('db-customer-code'),
       customerAccountManager: document.getElementById('db-customer-account-manager'),
-      customerCreatedAt: document.getElementById('db-customer-created-at'),
-      customerUpdatedAt: document.getElementById('db-customer-updated-at'),
-      customerUpdatedBy: document.getElementById('db-customer-updated-by'),
+      customerHeaderStats: document.getElementById('db-customer-header-stats'),
       customerTabs: Array.from(document.querySelectorAll('.db-customer-tab')),
       customerPanels: Array.from(document.querySelectorAll('.db-customer-panel')),
       customerOrdersBody: document.getElementById('db-customer-orders-body'),
@@ -2347,6 +2346,7 @@
         ensureCustomerUsers(),
       ]);
       state.selectedCustomerDetail = data.customer || {};
+      state.selectedCustomerPageOverview = data.customerOverview || null;
       state.selectedCustomerOrders = data.orders || [];
       state.selectedCustomerContacts = data.contacts || [];
       state.selectedCustomerAddresses = data.addresses || [];
@@ -2363,6 +2363,7 @@
     resetContactAutosaveState();
     resetCustomerAddressAutosaveState();
     state.selectedCustomerDetail = null;
+    state.selectedCustomerPageOverview = null;
     state.selectedCustomerOrders = [];
     state.selectedCustomerContacts = [];
     state.selectedCustomerAddresses = [];
@@ -2370,9 +2371,7 @@
     els.customerName.value = 'Loading...';
     els.customerCode.value = '';
     setCustomerAccountManagerOptions(null, true);
-    els.customerCreatedAt.textContent = '-';
-    els.customerUpdatedAt.textContent = '-';
-    els.customerUpdatedBy.textContent = '-';
+    renderCustomerHeaderStats();
     els.customerOrdersBody.innerHTML = renderStatusRow('Loading customer orders', 10);
     els.customerContactsBody.innerHTML = '<div class="db-panel-message">Loading contacts</div>';
     els.customerAddressesBody.innerHTML = '<div class="db-panel-message">Loading addresses</div>';
@@ -2384,10 +2383,9 @@
     resetCustomerAddressAutosaveState();
     els.customerName.value = 'Customer unavailable';
     els.customerCode.value = '';
+    state.selectedCustomerPageOverview = null;
     setCustomerAccountManagerOptions(null, true);
-    els.customerCreatedAt.textContent = '-';
-    els.customerUpdatedAt.textContent = '-';
-    els.customerUpdatedBy.textContent = '-';
+    renderCustomerHeaderStats();
     els.customerOrdersBody.innerHTML = renderStatusRow(message, 10);
     els.customerContactsBody.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
     els.customerAddressesBody.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
@@ -2399,9 +2397,7 @@
     els.customerName.value = customer.business_name || '';
     els.customerCode.value = customer.customer_code || '';
     setCustomerAccountManagerOptions(customer, false);
-    els.customerCreatedAt.textContent = formatDateTime(customer.created_at_source);
-    els.customerUpdatedAt.textContent = formatDateTime(customer.updated_at_source);
-    els.customerUpdatedBy.textContent = staffLabel(customer.updated_by) || '-';
+    renderCustomerHeaderStats();
     renderCustomerOrders();
     renderCustomerContacts();
     renderCustomerAddresses();
@@ -3136,9 +3132,7 @@
     const customer = state.selectedCustomerDetail || {};
     els.customerName.value = customer.business_name || '';
     els.customerCode.value = customer.customer_code || '';
-    els.customerCreatedAt.textContent = formatDateTime(customer.created_at_source);
-    els.customerUpdatedAt.textContent = formatDateTime(customer.updated_at_source);
-    els.customerUpdatedBy.textContent = staffLabel(customer.updated_by) || '-';
+    renderCustomerHeaderStats();
   }
 
   function collectCustomerAddressPayloadFromDom() {
@@ -3915,9 +3909,11 @@
     const max = Number(style?.max_unit_cost);
     if (Number.isFinite(min)) costs.push(min);
     if (Number.isFinite(max)) costs.push(max);
-    return Array.from(new Set(costs.map((value) => value.toFixed(2))))
+    const uniqueCosts = Array.from(new Set(costs.map((value) => value.toFixed(2))))
       .map((value) => Number(value))
       .sort((a, b) => a - b);
+    const positiveCosts = uniqueCosts.filter((value) => value > 0);
+    return positiveCosts.length ? positiveCosts : uniqueCosts;
   }
 
   function productStyleMinCost(style) {
@@ -4589,24 +4585,13 @@
   }
 
   function renderCustomerOverviewBox() {
-    const overview = state.selectedCustomerOverview || {};
-    const unpaidUninvoicedCount = Number(overview.unpaid_uninvoiced_jobs || 0);
-    const metrics = [
-      { label: 'Last order', value: formatDate(overview.last_order_date, 'short') || '-' },
-      { label: 'Orders', value: formatNumber(overview.order_count || 0) },
-      { label: '3 mo activity', value: formatNumber(overview.activity_3_months || 0) },
-      { label: '12 mo spend', value: formatCurrency(overview.spend_12_months || 0) },
-      { label: 'Avg value', value: formatCurrency(overview.average_order_value || 0) },
-      { label: 'Open jobs', value: formatNumber(overview.open_jobs || 0) },
-      { label: 'Unpaid/uninvoiced', value: formatNumber(unpaidUninvoicedCount), alert: unpaidUninvoicedCount > 0 },
-      { label: 'Top types', value: customerOverviewTopLabel(overview.top_order_types) },
-    ];
+    const metrics = customerOverviewCardMetrics(state.selectedCustomerOverview);
 
     return `
       <div class="db-detail-box db-customer-overview-box" aria-label="Customer overview">
         <div class="db-customer-overview-grid">
           ${metrics.map((metric) => `
-            <section class="db-customer-overview-card ${metric.alert ? 'is-alert' : ''}" title="${escapeAttr(`${metric.label}: ${metric.value}`)}">
+            <section class="db-customer-overview-card" title="${escapeAttr(`${metric.label}: ${metric.value}`)}">
               <span>${escapeHtml(metric.label)}</span>
               <strong>${escapeHtml(metric.value)}</strong>
             </section>
@@ -4616,17 +4601,31 @@
     `;
   }
 
-  function customerOverviewList(rows, valueKey) {
-    const values = Array.isArray(rows) ? rows : [];
-    if (!values.length) return '-';
-    return values
-      .slice(0, 3)
-      .map((row) => {
-        const label = String(row?.label || '').trim() || 'Unknown';
-        const value = Number(row?.[valueKey] || row?.count || 0);
-        return value ? `${label} (${formatNumber(value)})` : label;
-      })
-      .join(', ');
+  function renderCustomerHeaderStats() {
+    if (!els.customerHeaderStats) return;
+    const metrics = customerOverviewCardMetrics(state.selectedCustomerPageOverview);
+    els.customerHeaderStats.innerHTML = `
+      <div class="db-customer-header-stats-grid">
+        ${metrics.map((metric) => `
+          <section class="db-customer-overview-card" title="${escapeAttr(`${metric.label}: ${metric.value}`)}">
+            <span>${escapeHtml(metric.label)}</span>
+            <strong>${escapeHtml(metric.value)}</strong>
+          </section>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  function customerOverviewCardMetrics(overview = {}) {
+    const data = overview || {};
+    return [
+      { label: 'Last order', value: formatDate(data.last_order_date, 'short') || '-' },
+      { label: 'Orders', value: formatNumber(data.order_count || 0) },
+      { label: '3 mo activity', value: formatNumber(data.activity_3_months || 0) },
+      { label: '12 mo spend', value: formatCurrency(data.spend_12_months || 0) },
+      { label: 'Avg value', value: formatCurrency(data.average_order_value || 0) },
+      { label: 'Top types', value: customerOverviewTopLabel(data.top_order_types) },
+    ];
   }
 
   function customerOverviewTopLabel(rows) {
