@@ -7,6 +7,7 @@ const {
   STOCK_ORDERED_LABEL,
   awaitingApprovalStatusValue,
   formatDashboardJobName,
+  resolveJobApproved,
   stockOrderedGroupIdForJob,
   stockOrderedStatusValue,
 } = require('../services/dashboardAutomation');
