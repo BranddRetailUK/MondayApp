@@ -194,6 +194,7 @@
     viewHistory: [],
     activeOrderTab: 'details',
     activeCustomerTab: 'orders',
+    orderStatsCollapsed: false,
     newOrderSubmitting: false,
     newCustomerSubmitting: false,
     newContactSubmitting: false,
@@ -364,6 +365,8 @@
       footerTitle: document.getElementById('db-footer-title'),
       orderTitle: document.getElementById('db-order-job-title'),
       orderNumber: document.getElementById('db-order-number'),
+      orderStatsDrawer: document.getElementById('db-order-stats-drawer'),
+      orderStatsToggle: document.getElementById('db-order-stats-toggle'),
       orderHeaderStats: document.getElementById('db-order-header-stats'),
       headerJobSelect: document.getElementById('db-header-job-select'),
       headerOrderSelect: document.getElementById('db-header-order-select'),
@@ -564,6 +567,11 @@
     const stockToggleId = button.dataset.dbStockToggle;
     if (stockToggleId) {
       toggleStockOrderingDetails(stockToggleId);
+      return;
+    }
+
+    if (button.dataset.dbOrderStatsToggle !== undefined) {
+      toggleOrderStatsDrawer();
       return;
     }
 
@@ -4581,6 +4589,23 @@
     if (!els.orderHeaderStats) return;
     const metrics = customerOverviewCardMetrics(state.selectedCustomerOverview);
     els.orderHeaderStats.innerHTML = renderCustomerOverviewCards(metrics);
+    syncOrderStatsDrawer();
+  }
+
+  function toggleOrderStatsDrawer() {
+    state.orderStatsCollapsed = !state.orderStatsCollapsed;
+    syncOrderStatsDrawer();
+  }
+
+  function syncOrderStatsDrawer() {
+    const collapsed = Boolean(state.orderStatsCollapsed);
+    els.orderStatsDrawer?.classList.toggle('is-collapsed', collapsed);
+    if (els.orderStatsToggle) {
+      els.orderStatsToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      els.orderStatsToggle.setAttribute('aria-label', collapsed ? 'Show customer overview' : 'Hide customer overview');
+      const icon = els.orderStatsToggle.querySelector('span');
+      if (icon) icon.textContent = collapsed ? '\u2039' : '\u203a';
+    }
   }
 
   function renderCustomerHeaderStats() {
