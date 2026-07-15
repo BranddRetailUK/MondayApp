@@ -1,4 +1,7 @@
 (function () {
+  const logoutButton = document.getElementById('logoutButton');
+  logoutButton?.addEventListener('click', logout);
+
   window.ultimateHubUser = null;
   window.ultimateHubUserPromise = fetch('/api/auth/me', {
     cache: 'no-store',
@@ -27,5 +30,27 @@
       .filter(Boolean)
       .join(' ');
     if (sub) sub.textContent = fullName || user?.email || 'User';
+  }
+
+  async function logout() {
+    if (!logoutButton || logoutButton.disabled) return;
+
+    logoutButton.disabled = true;
+    logoutButton.textContent = 'Logging out...';
+
+    try {
+      const response = await fetch('/api/auth/logout', {
+        method: 'POST',
+        cache: 'no-store',
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error(`Logout failed: ${response.status}`);
+      window.location.replace('/login');
+    } catch (err) {
+      console.error('POST /api/auth/logout', err);
+      logoutButton.disabled = false;
+      logoutButton.textContent = 'Log out';
+      window.alert('Could not log out. Please try again.');
+    }
   }
 })();

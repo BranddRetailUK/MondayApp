@@ -4171,6 +4171,11 @@ function addPriorityHighlightUI() {
   } else if (btn.parentElement !== bar) {
     bar.appendChild(btn);
   }
+
+  const logoutBtn = document.getElementById('logoutButton');
+  if (logoutBtn?.parentElement === bar && logoutBtn.previousElementSibling !== btn) {
+    btn.insertAdjacentElement('afterend', logoutBtn);
+  }
   updatePriorityHighlightButton(btn);
 }
 

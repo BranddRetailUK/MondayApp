@@ -331,6 +331,7 @@
       homeCountEmbroidery: document.getElementById('db-count-embroidery'),
       homeCountGifts: document.getElementById('db-count-gifts'),
       reportsPeriod: document.getElementById('db-reports-period'),
+      reportsHomeButton: document.querySelector('[data-db-action="reports"]'),
       reportsRangeButtons: Array.from(document.querySelectorAll('[data-db-report-range]')),
       reportsPeriodControl: document.getElementById('db-report-period-control'),
       reportsPeriodControlLabel: document.getElementById('db-report-period-control-label'),
@@ -1235,6 +1236,10 @@
   }
 
   function showReports(options = {}) {
+    if (isDatabaseAnalyticsRestrictedUser()) {
+      syncDatabaseAnalyticsAccess();
+      return;
+    }
     state.reportsRange = normalizeDatabaseReportRange(state.reportsRange);
     state.reportsMetric = normalizeDatabaseReportMetric(state.reportsMetric);
     state.reportsCompareMode = normalizeDatabaseReportCompareMode(state.reportsCompareMode);
@@ -1977,8 +1982,30 @@
 
   function setCurrentUser(user) {
     state.currentUser = user || null;
+    syncDatabaseAnalyticsAccess();
     updateNewOrderTakenBy();
     populateNewCustomerAccountManagers();
+  }
+
+  function isDatabaseAnalyticsRestrictedUser(user = state.currentUser || window.ultimateHubUser) {
+    const fullName = String(
+      user?.full_name || [user?.first_name, user?.last_name].filter(Boolean).join(' ')
+    ).trim().replace(/\s+/g, ' ').toLowerCase();
+    return fullName === 'ultimate packing';
+  }
+
+  function syncDatabaseAnalyticsAccess() {
+    const restricted = isDatabaseAnalyticsRestrictedUser();
+    if (els.reportsHomeButton) {
+      els.reportsHomeButton.disabled = restricted;
+      els.reportsHomeButton.setAttribute('aria-disabled', restricted ? 'true' : 'false');
+      els.reportsHomeButton.title = restricted ? 'Analytics is unavailable for Ultimate Packing' : '';
+    }
+    if (restricted && state.activeView === 'reports') {
+      state.reportsRequest += 1;
+      state.reportsLoading = false;
+      showHome();
+    }
   }
 
   function currentUserFullName() {
@@ -3801,6 +3828,7 @@
       return;
     }
     if (state.toInvoiceLoaded && !options.force) {
+      if (!state.loadedCustomerUsers) await ensureCustomerUsers();
       renderToInvoiceJobs();
       return;
     }
@@ -3808,6 +3836,7 @@
     state.toInvoiceLoading = true;
     state.toInvoiceLoaded = false;
     state.toInvoiceJobs = [];
+    const usersPromise = ensureCustomerUsers();
     if (els.toInvoiceBody) {
       els.toInvoiceBody.innerHTML = renderStatusRow('Loading jobs to invoice', TO_INVOICE_TABLE_COLUMN_COUNT);
     }
@@ -3834,6 +3863,7 @@
         if (!pageJobs.length) break;
       } while (offset < total);
 
+      await usersPromise;
       state.toInvoiceJobs = jobs;
       state.toInvoiceLoaded = true;
       renderToInvoiceJobs();
@@ -3867,7 +3897,7 @@
         <td class="db-type-cell db-type-${categoryForJob(job)}">${escapeHtml(typeAbbr(job))}</td>
         <td>${escapeHtml(job.job_title || '')}</td>
         <td>${escapeHtml(formatDate(job.dashboard_status_updated_at || job.complete_date || job.updated_at_source, 'long'))}</td>
-        <td>${escapeHtml(job.invoice_no || '')}</td>
+        <td>${escapeHtml(outstandingTakenByFirstName(job))}</td>
       </tr>
     `;
   }

@@ -145,6 +145,20 @@ body{
   min-width:0;
   font-size:13px;
 }
+.sidebar-dashboard-controls .btn.sidebar-logout-button{
+  background:#c62828;
+  border-color:#ef5350;
+  color:#fff;
+}
+.sidebar-dashboard-controls .btn.sidebar-logout-button:hover,
+.sidebar-dashboard-controls .btn.sidebar-logout-button:focus-visible{
+  background:#e53935;
+  outline:none;
+}
+.sidebar-dashboard-controls .btn.sidebar-logout-button:disabled{
+  opacity:.7;
+  cursor:wait;
+}
 .app-container.sidebar-collapsed .sidebar{
   width:0;
   flex-basis:0;
@@ -2181,6 +2195,11 @@ body.modal-open{overflow:hidden}
 }
 .db-blue-link{
   color:#00e;
+}
+.db-raised-button.db-blue-link:disabled{
+  background:#cfcfcf;
+  color:#777;
+  cursor:not-allowed;
 }
 .db-outstanding-actions{
   position:absolute;

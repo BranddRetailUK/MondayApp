@@ -32,7 +32,9 @@
           <li data-tab="test-dashboard" class="active">Tuesday Dashboard</li>
         </ul>
       </div>
-      <div id="sidebarDashboardControls" class="sidebar-dashboard-controls" aria-label="Dashboard controls"></div>
+      <div id="sidebarDashboardControls" class="sidebar-dashboard-controls" aria-label="Dashboard controls">
+        <button id="logoutButton" class="btn sidebar-logout-button" type="button">Log out</button>
+      </div>
     </nav>
 
     <main class="main-content">
@@ -89,7 +91,7 @@
                 <button class="db-raised-button" type="button" data-db-action="placeholder">Passwords</button>
                 <button class="db-raised-button" type="button" data-db-action="placeholder">Configuration</button>
                 <button class="db-raised-button" type="button" data-db-action="placeholder">Error log</button>
-                <button class="db-raised-button db-blue-link" type="button" data-db-action="reports">Reports</button>
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="reports" disabled>Reports</button>
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="to-invoice">To Invoice</button>
               </div>
             </section>
@@ -604,7 +606,7 @@
                       <th>Type</th>
                       <th>Job title:</th>
                       <th>Completed:</th>
-                      <th>Invoice no:</th>
+                      <th>Taken by:</th>
                     </tr>
                   </thead>
                   <tbody id="db-to-invoice-body">
