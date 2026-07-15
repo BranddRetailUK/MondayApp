@@ -123,12 +123,20 @@
                   <button class="db-toolbar-button" type="button" data-db-report-compare-mode="year">Years</button>
                 </div>
                 <div id="db-report-compare-months" class="db-report-compare-periods" hidden>
-                  <label><span>Period A</span><input id="db-report-compare-month-a" type="month" aria-label="First comparison month"></label>
-                  <label><span>Period B</span><input id="db-report-compare-month-b" type="month" aria-label="Second comparison month"></label>
+                  <div class="db-report-compare-month-box">
+                    <select id="db-report-compare-month-name-a" aria-label="First comparison month"></select>
+                    <select id="db-report-compare-month-year-a" aria-label="First comparison month year"></select>
+                  </div>
+                  <span class="db-report-compare-arrow" aria-hidden="true">→</span>
+                  <div class="db-report-compare-month-box">
+                    <select id="db-report-compare-month-name-b" aria-label="Second comparison month"></select>
+                    <select id="db-report-compare-month-year-b" aria-label="Second comparison month year"></select>
+                  </div>
                 </div>
                 <div id="db-report-compare-years" class="db-report-compare-periods" hidden>
-                  <label><span>Period A</span><select id="db-report-compare-year-a" aria-label="First comparison year"></select></label>
-                  <label><span>Period B</span><select id="db-report-compare-year-b" aria-label="Second comparison year"></select></label>
+                  <select id="db-report-compare-year-a" aria-label="First comparison year"></select>
+                  <span class="db-report-compare-arrow" aria-hidden="true">→</span>
+                  <select id="db-report-compare-year-b" aria-label="Second comparison year"></select>
                 </div>
                 <button id="db-report-compare-clear" class="db-toolbar-button db-report-compare-clear" type="button" data-db-action="clear-report-comparison" hidden>Clear</button>
               </div>

@@ -96,6 +96,11 @@
   const STOCK_ORDERING_REPORT_ROW_BASE_MM = 5.8;
   const STOCK_ORDERING_REPORT_ROW_EXTRA_LINE_MM = 2.8;
   const STOCK_ORDERING_REPORT_DESCRIPTION_CHARS_PER_LINE = 54;
+  const FINANCIAL_REPORT_ORDER_PAGE_CONTENT_MM = 185;
+  const FINANCIAL_REPORT_ORDER_ROW_BASE_MM = 6;
+  const FINANCIAL_REPORT_ORDER_ROW_EXTRA_LINE_MM = 3.1;
+  const FINANCIAL_REPORT_ORDER_CUSTOMER_CHARS_PER_LINE = 24;
+  const FINANCIAL_REPORT_ORDER_TITLE_CHARS_PER_LINE = 34;
   const ORDER_TYPE_OPTIONS = ['Business Gifts', 'Printing', 'Print + Emb', 'Embroidery'];
   const PAYMENT_TERM_OPTIONS = ['Account', 'COD', 'Pro Forma'];
   const NEW_ORDER_REQUIRED_FIELDS = [
@@ -329,8 +334,10 @@
       reportsYear: document.getElementById('db-report-year-select'),
       reportsCompareMonthWrap: document.getElementById('db-report-compare-months'),
       reportsCompareYearWrap: document.getElementById('db-report-compare-years'),
-      reportsCompareMonthA: document.getElementById('db-report-compare-month-a'),
-      reportsCompareMonthB: document.getElementById('db-report-compare-month-b'),
+      reportsCompareMonthNameA: document.getElementById('db-report-compare-month-name-a'),
+      reportsCompareMonthYearA: document.getElementById('db-report-compare-month-year-a'),
+      reportsCompareMonthNameB: document.getElementById('db-report-compare-month-name-b'),
+      reportsCompareMonthYearB: document.getElementById('db-report-compare-month-year-b'),
       reportsCompareYearA: document.getElementById('db-report-compare-year-a'),
       reportsCompareYearB: document.getElementById('db-report-compare-year-b'),
       reportsCompareClear: document.getElementById('db-report-compare-clear'),
@@ -430,8 +437,10 @@
     els.stylesSearch?.addEventListener('input', handleProductStyleSearchInput);
     els.stylesSort?.addEventListener('change', handleProductStyleSortChange);
     els.reportsYear?.addEventListener('change', handleReportYearChange);
-    els.reportsCompareMonthA?.addEventListener('change', handleReportComparisonInputChange);
-    els.reportsCompareMonthB?.addEventListener('change', handleReportComparisonInputChange);
+    els.reportsCompareMonthNameA?.addEventListener('change', handleReportComparisonInputChange);
+    els.reportsCompareMonthYearA?.addEventListener('change', handleReportComparisonInputChange);
+    els.reportsCompareMonthNameB?.addEventListener('change', handleReportComparisonInputChange);
+    els.reportsCompareMonthYearB?.addEventListener('change', handleReportComparisonInputChange);
     els.reportsCompareYearA?.addEventListener('change', handleReportComparisonInputChange);
     els.reportsCompareYearB?.addEventListener('change', handleReportComparisonInputChange);
     els.outstandingFrame?.addEventListener('scroll', handleOutstandingScroll);
@@ -1253,6 +1262,8 @@
       state.reportsYear,
       state.reportsCompareYearA,
       state.reportsCompareYearB,
+      databaseReportMonthYear(state.reportsCompareMonthA),
+      databaseReportMonthYear(state.reportsCompareMonthB),
       ...Array.from({ length: 10 }, (_, index) => currentYear - index),
     ]);
   }
@@ -1292,6 +1303,8 @@
     populateDatabaseReportYearSelect(els.reportsYear, state.reportsYear);
     populateDatabaseReportYearSelect(els.reportsCompareYearA, state.reportsCompareYearA);
     populateDatabaseReportYearSelect(els.reportsCompareYearB, state.reportsCompareYearB);
+    populateDatabaseReportYearSelect(els.reportsCompareMonthYearA, databaseReportMonthYear(state.reportsCompareMonthA));
+    populateDatabaseReportYearSelect(els.reportsCompareMonthYearB, databaseReportMonthYear(state.reportsCompareMonthB));
   }
 
   function populateDatabaseReportYearSelect(select, selectedYear) {
@@ -1300,6 +1313,33 @@
     const years = Array.from(new Set([...(state.reportsAvailableYears || []), year])).sort((a, b) => b - a);
     select.innerHTML = years.map((value) => `<option value="${value}">${value}</option>`).join('');
     select.value = String(year);
+  }
+
+  function populateDatabaseReportMonthSelect(select, selectedMonth) {
+    if (!select) return;
+    const month = String(selectedMonth || '').padStart(2, '0');
+    select.innerHTML = Array.from({ length: 12 }, (_, index) => {
+      const value = String(index + 1).padStart(2, '0');
+      const label = new Intl.DateTimeFormat('en-GB', { month: 'long', timeZone: 'UTC' })
+        .format(new Date(Date.UTC(2020, index, 1)));
+      return `<option value="${value}">${escapeHtml(label)}</option>`;
+    }).join('');
+    select.value = month;
+  }
+
+  function databaseReportMonthYear(value) {
+    const month = normalizeDatabaseReportMonth(value);
+    return month ? Number.parseInt(month.slice(0, 4), 10) : null;
+  }
+
+  function syncDatabaseReportMonthBox(value, monthSelect, yearSelect) {
+    const month = normalizeDatabaseReportMonth(value) || currentDatabaseReportMonth();
+    populateDatabaseReportMonthSelect(monthSelect, month.slice(5, 7));
+    populateDatabaseReportYearSelect(yearSelect, Number.parseInt(month.slice(0, 4), 10));
+  }
+
+  function databaseReportMonthFromControls(monthSelect, yearSelect) {
+    return normalizeDatabaseReportMonth(`${yearSelect?.value || ''}-${monthSelect?.value || ''}`);
   }
 
   function syncReportComparisonControls() {
@@ -1312,8 +1352,8 @@
     if (els.reportsCompareMonthWrap) els.reportsCompareMonthWrap.hidden = mode !== 'month';
     if (els.reportsCompareYearWrap) els.reportsCompareYearWrap.hidden = mode !== 'year';
     if (els.reportsCompareClear) els.reportsCompareClear.hidden = mode === 'none';
-    if (els.reportsCompareMonthA) els.reportsCompareMonthA.value = state.reportsCompareMonthA;
-    if (els.reportsCompareMonthB) els.reportsCompareMonthB.value = state.reportsCompareMonthB;
+    syncDatabaseReportMonthBox(state.reportsCompareMonthA, els.reportsCompareMonthNameA, els.reportsCompareMonthYearA);
+    syncDatabaseReportMonthBox(state.reportsCompareMonthB, els.reportsCompareMonthNameB, els.reportsCompareMonthYearB);
     populateDatabaseReportYearSelect(els.reportsCompareYearA, state.reportsCompareYearA);
     populateDatabaseReportYearSelect(els.reportsCompareYearB, state.reportsCompareYearB);
     syncReportRangeButtons();
@@ -1331,8 +1371,12 @@
   }
 
   async function handleReportComparisonInputChange(event) {
-    if (event.target === els.reportsCompareMonthA) state.reportsCompareMonthA = normalizeDatabaseReportMonth(event.target.value);
-    if (event.target === els.reportsCompareMonthB) state.reportsCompareMonthB = normalizeDatabaseReportMonth(event.target.value);
+    if (event.target === els.reportsCompareMonthNameA || event.target === els.reportsCompareMonthYearA) {
+      state.reportsCompareMonthA = databaseReportMonthFromControls(els.reportsCompareMonthNameA, els.reportsCompareMonthYearA);
+    }
+    if (event.target === els.reportsCompareMonthNameB || event.target === els.reportsCompareMonthYearB) {
+      state.reportsCompareMonthB = databaseReportMonthFromControls(els.reportsCompareMonthNameB, els.reportsCompareMonthYearB);
+    }
     if (event.target === els.reportsCompareYearA) state.reportsCompareYearA = normalizeDatabaseReportYear(event.target.value);
     if (event.target === els.reportsCompareYearB) state.reportsCompareYearB = normalizeDatabaseReportYear(event.target.value);
     persistDatabaseRoute();
@@ -1629,7 +1673,8 @@
     const points = values.map((value, index) => ({ x: xFor(index), y: yFor(value), value, index }));
     const path = points.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ');
     const area = `M ${points[0].x.toFixed(2)} ${zeroY.toFixed(2)} ${points.map((point) => `L ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ')} L ${points[points.length - 1].x.toFixed(2)} ${zeroY.toFixed(2)} Z`;
-    const labelIndexes = reportChartLabelIndexes(series.length, 9);
+    const maximumLabels = grain === 'month' || grain === 'day' ? series.length : 9;
+    const labelIndexes = reportChartLabelIndexes(series.length, maximumLabels);
     const tickMarkup = Array.from({ length: 5 }, (_, index) => {
       const value = bounds.min + ((bounds.max - bounds.min) * index / 4);
       const y = yFor(value);
@@ -1642,7 +1687,7 @@
       const x = xFor(index);
       return `
         <line class="db-report-chart-tick" x1="${x.toFixed(2)}" y1="${height - margin.bottom}" x2="${x.toFixed(2)}" y2="${height - margin.bottom + 4}"></line>
-        <text class="db-report-chart-x-label" x="${x.toFixed(2)}" y="${height - 17}">${escapeHtml(formatReportBucketLabel(series[index]?.bucketStart, grain))}</text>
+        <text class="db-report-chart-x-label" x="${x.toFixed(2)}" y="${height - 17}">${escapeHtml(formatReportChartBucketLabel(series, index, grain))}</text>
       `;
     }).join('');
     const pointMarkup = points.map((point) => {
@@ -1723,7 +1768,8 @@
         <text class="db-report-chart-y-label" x="${margin.left - 8}" y="${(y + 3.5).toFixed(2)}">${escapeHtml(formatReportAxisValue(value, metric))}</text>
       `;
     }).join('');
-    const xMarkup = Array.from(reportChartLabelIndexes(pointCount, 9)).sort((a, b) => a - b).map((index) => {
+    const maximumLabels = comparison.mode === 'year' ? 12 : pointCount;
+    const xMarkup = Array.from(reportChartLabelIndexes(pointCount, maximumLabels)).sort((a, b) => a - b).map((index) => {
       const x = xFor(index);
       return `
         <line class="db-report-chart-tick" x1="${x.toFixed(2)}" y1="${height - margin.bottom}" x2="${x.toFixed(2)}" y2="${height - margin.bottom + 4}"></line>
@@ -1758,6 +1804,19 @@
     if (mode === 'month') return `day ${index + 1}`;
     return new Intl.DateTimeFormat('en-GB', { month: 'long', timeZone: 'UTC' })
       .format(new Date(Date.UTC(2020, index, 1)));
+  }
+
+  function formatReportChartBucketLabel(series, index, grain) {
+    const value = series[index]?.bucketStart;
+    if (grain !== 'day' || series.length <= 14) return formatReportBucketLabel(value, grain);
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value || '');
+    const day = new Intl.DateTimeFormat('en-GB', { day: '2-digit' }).format(date);
+    if (index === 0 || date.getDate() === 1) {
+      const month = new Intl.DateTimeFormat('en-GB', { month: 'short' }).format(date);
+      return `${day} ${month}`;
+    }
+    return day;
   }
 
   function reportAxisBounds(values, tickCount) {
@@ -5745,6 +5804,16 @@
         costOfGoods: reportNumber(row.costOfGoods),
         grossProfit: reportNumber(row.grossProfit),
       })) : [],
+      orders: Array.isArray(data.orders) ? data.orders.map((order) => ({
+        sourceOrderId: order.sourceOrderId || order.source_order_id || '',
+        orderNo: order.orderNo || order.order_no || '',
+        customerName: order.customerName || order.customer_name || 'Unknown customer',
+        jobTitle: order.jobTitle || order.job_title || '',
+        grossSales: reportNumber(order.grossSales ?? order.gross_sales),
+        netSales: reportNumber(order.netSales ?? order.net_sales),
+        costOfGoods: reportNumber(order.costOfGoods ?? order.cost_of_goods),
+        grossProfit: reportNumber(order.grossProfit ?? order.gross_profit),
+      })) : [],
     };
   }
 
@@ -5764,8 +5833,11 @@
 
   function renderFinancialReportDocument() {
     const snapshot = state.financialReportSnapshot || buildFinancialReportSnapshot();
-    const pages = buildFinancialReportPages(snapshot.series);
-    return pages.map((rows, index) => renderFinancialReportPage(snapshot, rows, index, pages.length)).join('');
+    const pages = [
+      ...buildFinancialReportPages(snapshot.series).map((rows) => ({ type: 'financials', rows })),
+      ...buildFinancialReportOrderPages(snapshot.orders).map((rows) => ({ type: 'orders', rows })),
+    ];
+    return pages.map((page, index) => renderFinancialReportPage(snapshot, page, index, pages.length)).join('');
   }
 
   function buildFinancialReportPages(series) {
@@ -5778,8 +5850,43 @@
     return pages;
   }
 
-  function renderFinancialReportPage(snapshot, rows, pageIndex, pageCount) {
+  function buildFinancialReportOrderPages(orders) {
+    const rows = Array.isArray(orders) ? orders : [];
+    if (!rows.length) return [[]];
+    const pages = [];
+    let page = [];
+    let usedMm = 0;
+
+    for (const order of rows) {
+      const rowHeight = financialReportOrderRowHeight(order);
+      if (page.length && usedMm + rowHeight > FINANCIAL_REPORT_ORDER_PAGE_CONTENT_MM) {
+        pages.push(page);
+        page = [];
+        usedMm = 0;
+      }
+      page.push(order);
+      usedMm += rowHeight;
+    }
+    if (page.length) pages.push(page);
+    return pages;
+  }
+
+  function financialReportOrderRowHeight(order) {
+    const customerLines = Math.max(
+      1,
+      Math.ceil(String(order?.customerName || '').length / FINANCIAL_REPORT_ORDER_CUSTOMER_CHARS_PER_LINE)
+    );
+    const titleLines = Math.max(
+      1,
+      Math.ceil(String(order?.jobTitle || '').length / FINANCIAL_REPORT_ORDER_TITLE_CHARS_PER_LINE)
+    );
+    const lines = Math.max(customerLines, titleLines);
+    return FINANCIAL_REPORT_ORDER_ROW_BASE_MM + ((lines - 1) * FINANCIAL_REPORT_ORDER_ROW_EXTRA_LINE_MM);
+  }
+
+  function renderFinancialReportPage(snapshot, page, pageIndex, pageCount) {
     const continued = pageIndex > 0;
+    const isOrderPage = page.type === 'orders';
     return `
       <section class="db-order-ack-page db-outstanding-report-page db-financial-report-page" aria-label="${escapeAttr(snapshot.title)} page ${pageIndex + 1}">
         <header class="db-outstanding-report-header db-financial-report-header">
@@ -5796,11 +5903,15 @@
             <div><strong>Generated:</strong> ${escapeHtml(formatDate(snapshot.generatedAt, 'full'))}</div>
             <div><strong>Page:</strong> ${escapeHtml(`${pageIndex + 1} of ${pageCount}`)}</div>
           </div>
-          ${continued ? '' : renderFinancialReportSummary(snapshot.summary)}
-          <section class="db-financial-report-breakdown">
-            <h2>Profit &amp; loss by ${escapeHtml(financialReportGrainLabel(snapshot.grain))}</h2>
-            ${renderFinancialReportTable(rows, snapshot.grain)}
-          </section>
+          ${pageIndex === 0 ? renderFinancialReportSummary(snapshot.summary) : ''}
+          ${isOrderPage
+            ? renderFinancialReportOrders(page.rows, snapshot.orders.length)
+            : `
+              <section class="db-financial-report-breakdown">
+                <h2>Profit &amp; loss by ${escapeHtml(financialReportGrainLabel(snapshot.grain))}</h2>
+                ${renderFinancialReportTable(page.rows, snapshot.grain)}
+              </section>
+            `}
         </section>
         <img class="db-order-ack-footer" src="${escapeAttr(orderDocumentFooterUrl('delivery-note'))}" alt="Ultimate letterhead footer" crossorigin="anonymous">
       </section>
@@ -5854,6 +5965,43 @@
           `).join('') : '<tr><td colspan="6">No financial activity in this period</td></tr>'}
         </tbody>
       </table>
+    `;
+  }
+
+  function renderFinancialReportOrders(orders, totalOrders) {
+    return `
+      <section class="db-financial-report-breakdown db-financial-report-orders">
+        <h2 class="db-financial-report-order-heading">
+          <span>Orders in selected period</span>
+          <strong>${escapeHtml(formatNumber(totalOrders))} orders</strong>
+        </h2>
+        <table class="db-financial-report-order-table">
+          <thead>
+            <tr>
+              <th>Order no.</th>
+              <th>Customer</th>
+              <th>Job title</th>
+              <th>Gross sales</th>
+              <th>Net sales</th>
+              <th>COGS</th>
+              <th>Gross profit</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${orders.length ? orders.map((order) => `
+              <tr>
+                <td>${escapeHtml(order.orderNo || order.sourceOrderId || '')}</td>
+                <td>${escapeHtml(order.customerName || 'Unknown customer')}</td>
+                <td>${escapeHtml(order.jobTitle || '')}</td>
+                <td>${escapeHtml(formatCurrency(order.grossSales))}</td>
+                <td>${escapeHtml(formatCurrency(order.netSales))}</td>
+                <td>${escapeHtml(formatCurrency(order.costOfGoods))}</td>
+                <td>${escapeHtml(formatCurrency(order.grossProfit))}</td>
+              </tr>
+            `).join('') : '<tr><td colspan="7">No orders in this period</td></tr>'}
+          </tbody>
+        </table>
+      </section>
     `;
   }
 

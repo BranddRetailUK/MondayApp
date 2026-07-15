@@ -2337,14 +2337,6 @@ body.modal-open{overflow:hidden}
   gap:7px;
 }
 .db-report-compare-periods[hidden]{display:none}
-.db-report-compare-periods label{
-  display:flex;
-  align-items:center;
-  gap:4px;
-  font-size:10px;
-  white-space:nowrap;
-}
-.db-report-compare-periods input,
 .db-report-compare-periods select{
   height:27px;
   border:2px inset #fff;
@@ -2353,8 +2345,19 @@ body.modal-open{overflow:hidden}
   color:#000;
   font:11px Arial, Helvetica, sans-serif;
 }
-.db-report-compare-periods input{width:116px;padding:1px 3px}
-.db-report-compare-periods select{width:72px}
+.db-report-compare-month-box{
+  display:flex;
+  align-items:center;
+  gap:3px;
+}
+.db-report-compare-month-box select:first-child{width:88px}
+.db-report-compare-month-box select:last-child,
+#db-report-compare-years > select{width:66px}
+.db-report-compare-arrow{
+  color:#fff;
+  font-size:16px;
+  line-height:1;
+}
 .db-report-compare-clear{margin-left:auto}
 .db-report-panel{
   min-width:0;
@@ -4476,6 +4479,47 @@ body.modal-open{overflow:hidden}
   width:28mm;
   text-align:left;
 }
+.db-financial-report-order-heading{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8mm;
+}
+.db-financial-report-order-heading strong{
+  font:400 9px Arial, Helvetica, sans-serif;
+}
+.db-financial-report-order-table{
+  width:100%;
+  border-collapse:collapse;
+  table-layout:fixed;
+  font:7.4px Arial, Helvetica, sans-serif;
+}
+.db-financial-report-order-table th,
+.db-financial-report-order-table td{
+  min-height:6mm;
+  box-sizing:border-box;
+  border:1px solid #333;
+  padding:1mm .7mm;
+  vertical-align:top;
+  line-height:1.18;
+  text-align:left;
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
+.db-financial-report-order-table th{
+  height:7mm;
+  background:#f3f3f3;
+  font-weight:700;
+}
+.db-financial-report-order-table th:nth-child(1){width:14mm}
+.db-financial-report-order-table th:nth-child(2){width:31mm}
+.db-financial-report-order-table th:nth-child(3){width:43mm}
+.db-financial-report-order-table th:nth-child(n+4){width:20mm;text-align:right}
+.db-financial-report-order-table td:nth-child(n+4){
+  text-align:right;
+  white-space:nowrap;
+  overflow-wrap:normal;
+}
 .db-order-ack-footer{
   position:absolute;
   left:50%;
@@ -6039,16 +6083,22 @@ input.db-custom-line-input{
   }
   .db-report-compare-periods{
     width:100%;
-    display:grid;
-    grid-template-columns:1fr 1fr;
+    display:flex;
+    align-items:center;
   }
-  .db-report-compare-periods label{
+  .db-report-compare-month-box{
+    min-width:0;
+    flex:1 1 0;
     display:grid;
-    grid-template-columns:52px minmax(0, 1fr);
+    grid-template-columns:minmax(0, 1fr) 72px;
   }
-  .db-report-compare-periods input,
-  .db-report-compare-periods select{
+  .db-report-compare-month-box select:first-child,
+  .db-report-compare-month-box select:last-child{
     width:100%;
+  }
+  #db-report-compare-years > select{
+    width:auto;
+    flex:1 1 0;
   }
   .db-report-compare-clear{
     margin-left:0;
@@ -6797,7 +6847,8 @@ input.db-custom-line-input{
     page-break-inside:avoid;
   }
   body.db-order-ack-printing .db-financial-report-summary-item,
-  body.db-order-ack-printing .db-financial-report-table tr{
+  body.db-order-ack-printing .db-financial-report-table tr,
+  body.db-order-ack-printing .db-financial-report-order-table tr{
     break-inside:avoid;
     page-break-inside:avoid;
   }

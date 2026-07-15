@@ -156,6 +156,7 @@ router.get('/api/database/reports', async (req, res) => {
          SELECT j.source_order_id,
                 j.order_no,
                 j.customer_name,
+                j.job_title,
                 j.order_type,
                 j.order_type_abbr,
                 COALESCE(j.order_date, j.created_at_source) AS sales_at
@@ -203,6 +204,7 @@ router.get('/api/database/reports', async (req, res) => {
          SELECT pj.source_order_id,
                 pj.order_no,
                 pj.customer_name,
+                pj.job_title,
                 COALESCE(NULLIF(TRIM(pj.order_type), ''), NULLIF(TRIM(pj.order_type_abbr), ''), 'Other') AS order_type,
                 pj.sales_at,
                 COALESCE(SUM(fl.net_sales), 0)::numeric AS net_sales,
@@ -210,7 +212,7 @@ router.get('/api/database/reports', async (req, res) => {
                 COALESCE(SUM(fl.cost_of_goods), 0)::numeric AS cost_of_goods
          FROM period_jobs pj
          LEFT JOIN financial_lines fl ON fl.source_order_id = pj.source_order_id
-         GROUP BY pj.source_order_id, pj.order_no, pj.customer_name, pj.order_type, pj.order_type_abbr, pj.sales_at
+         GROUP BY pj.source_order_id, pj.order_no, pj.customer_name, pj.job_title, pj.order_type, pj.order_type_abbr, pj.sales_at
        ),
        series_buckets AS (
          SELECT GENERATE_SERIES(
@@ -328,6 +330,19 @@ router.get('/api/database/reports', async (req, res) => {
                        ) ORDER BY gross_sales DESC, order_type)
                 FROM type_rows
               ), '[]'::json) AS order_types,
+              COALESCE((
+                SELECT JSON_AGG(JSON_BUILD_OBJECT(
+                         'sourceOrderId', source_order_id,
+                         'orderNo', order_no,
+                         'customerName', COALESCE(NULLIF(TRIM(customer_name), ''), 'Unknown customer'),
+                         'jobTitle', COALESCE(job_title, ''),
+                         'grossSales', net_sales + vat,
+                         'netSales', net_sales,
+                         'costOfGoods', cost_of_goods,
+                         'grossProfit', net_sales - cost_of_goods
+                       ) ORDER BY sales_at, order_no, source_order_id)
+                FROM job_financials
+              ), '[]'::json) AS orders,
               (SELECT ROW_TO_JSON(top_order_row) FROM top_order_row) AS top_order,
               COALESCE((
                 SELECT JSON_AGG(report_year ORDER BY report_year DESC)
@@ -354,6 +369,7 @@ router.get('/api/database/reports', async (req, res) => {
       series: row.series || [],
       topCustomers: row.top_customers || [],
       orderTypes: row.order_types || [],
+      orders: row.orders || [],
       topOrder: row.top_order || null,
       availableYears: row.available_years || [],
       basis: 'Order date; invoiceable lines only; internal lines excluded',
