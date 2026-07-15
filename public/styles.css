@@ -3589,8 +3589,8 @@ body.modal-open{overflow:hidden}
   padding:1px 4px;
 }
 #db-order-job-title{
-  flex-basis:500px;
-  width:500px;
+  flex-basis:455px;
+  width:455px;
 }
 .db-edit-button{
   flex:0 0 60px;
