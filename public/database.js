@@ -1568,6 +1568,12 @@
   }
 
   async function handleCustomerOrderRowClick(event) {
+    const invoiceButton = event.target.closest('[data-db-invoice-job]');
+    if (invoiceButton) {
+      await openInvoiceFromOrderList(invoiceButton.dataset.dbInvoiceJob);
+      return;
+    }
+
     const row = event.target.closest('tr[data-job-id]');
     if (!row) return;
     await flushOrderAutosaves();
@@ -1576,6 +1582,7 @@
 
   async function handleCustomerOrderRowKeydown(event) {
     if (event.key !== 'Enter') return;
+    if (event.target.closest('[data-db-invoice-job]')) return;
     const row = event.target.closest('tr[data-job-id]');
     if (!row) return;
     await flushOrderAutosaves();
@@ -1677,7 +1684,7 @@
     els.customerCreatedAt.textContent = '-';
     els.customerUpdatedAt.textContent = '-';
     els.customerUpdatedBy.textContent = '-';
-    els.customerOrdersBody.innerHTML = renderStatusRow('Loading customer orders', 14);
+    els.customerOrdersBody.innerHTML = renderStatusRow('Loading customer orders', 10);
     els.customerContactsBody.innerHTML = '<div class="db-panel-message">Loading contacts</div>';
     els.customerAddressesBody.innerHTML = '<div class="db-panel-message">Loading addresses</div>';
     if (els.customerDesignNumbersBody) els.customerDesignNumbersBody.innerHTML = renderStatusRow('Loading design numbers', 6);
@@ -1692,7 +1699,7 @@
     els.customerCreatedAt.textContent = '-';
     els.customerUpdatedAt.textContent = '-';
     els.customerUpdatedBy.textContent = '-';
-    els.customerOrdersBody.innerHTML = renderStatusRow(message, 14);
+    els.customerOrdersBody.innerHTML = renderStatusRow(message, 10);
     els.customerContactsBody.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
     els.customerAddressesBody.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
     if (els.customerDesignNumbersBody) els.customerDesignNumbersBody.innerHTML = renderStatusRow(message, 6);
@@ -1866,7 +1873,7 @@
   function renderCustomerOrders() {
     const orders = state.selectedCustomerOrders || [];
     if (!orders.length) {
-      els.customerOrdersBody.innerHTML = renderStatusRow('No orders recorded for this customer', 14);
+      els.customerOrdersBody.innerHTML = renderStatusRow('No orders recorded for this customer', 10);
       return;
     }
 
@@ -1878,18 +1885,14 @@
       <tr class="db-customer-order-row" data-job-id="${escapeAttr(order.source_order_id || '')}" tabindex="0">
         <td class="db-row-selector">${index === 0 ? '&#9654;' : ''}</td>
         <td class="db-order-link">${escapeHtml(order.order_no || '')}</td>
+        <td class="db-invoice-number-cell">${renderInvoiceNumberCell(order)}</td>
         <td>${escapeHtml(order.client_order_no || '')}</td>
         <td class="db-type-cell db-type-${categoryForJob(order)}">${escapeHtml(typeAbbr(order))}</td>
         <td>${escapeHtml(order.contact_name || '')}</td>
         <td>${escapeHtml(order.job_title || '')}</td>
-        <td>${escapeHtml(staffShort(order.order_taken_by || order.trace_staff_id))}</td>
+        <td>${escapeHtml(outstandingTakenByFirstName(order))}</td>
         <td>${escapeHtml(formatDate(order.order_date, 'long'))}</td>
         <td>${escapeHtml(formatDate(order.complete_date, 'long'))}</td>
-        <td>${renderCheck(order.has_artwork)}</td>
-        <td>${renderCheck(truthy(order.has_screens) || Boolean(order.screen_numbers))}</td>
-        <td>${renderCheck(order.has_shirts)}</td>
-        <td>${renderCheck(order.is_reorder)}</td>
-        <td>${renderCheck(order.customer_supplied)}</td>
       </tr>
     `;
   }
