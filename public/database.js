@@ -10,6 +10,7 @@
   const CONTACT_AUTOSAVE_MS = DESIGN_AUTOSAVE_MS;
   const LINE_ORDER_AUTOSAVE_MS = 3500;
   const DATABASE_ROUTE_STORAGE_KEY = 'ultimateHub.databaseRoute.v1';
+  const DATABASE_CUSTOMER_SORTS = new Set(['recent', 'active', 'az', 'za']);
   const DATABASE_RESTORABLE_VIEWS = new Set([
     'home',
     'outstanding',
@@ -155,8 +156,11 @@
     visibleOrderLimit: PAGE_LIMIT,
     loadingCustomers: false,
     loadedCustomers: false,
+    loadedCustomerQuery: '',
+    loadedCustomerSort: 'recent',
     databaseCustomers: [],
     databaseCustomerQuery: '',
+    databaseCustomerSort: 'recent',
     activeGroup: 'all',
     activeSort: 'order',
     activeView: 'home',
@@ -275,6 +279,7 @@
       homeCountEmbroidery: document.getElementById('db-count-embroidery'),
       homeCountGifts: document.getElementById('db-count-gifts'),
       customersSearch: document.getElementById('db-customers-search'),
+      customersSort: document.getElementById('db-customers-sort'),
       customersBody: document.getElementById('db-customers-body'),
       customerName: document.getElementById('db-customer-name'),
       customerCode: document.getElementById('db-customer-code'),
@@ -359,6 +364,7 @@
     els.customerAddressesBody.addEventListener('input', handleCustomerAddressInput);
     els.customerAddressesBody.addEventListener('focusout', handleCustomerAddressFocusOut);
     els.customersSearch.addEventListener('input', handleDatabaseCustomerSearchInput);
+    els.customersSort?.addEventListener('change', handleDatabaseCustomerSortChange);
     els.customerAccountManager?.addEventListener('change', handleCustomerAccountManagerChange);
     els.orderSearch?.addEventListener('input', handleOrderSearchInput);
     els.selectOrder?.addEventListener('change', () => openSelectedOrder(els.selectOrder.value));
@@ -813,7 +819,9 @@
 
     if (route.view === 'customers') {
       state.databaseCustomerQuery = String(route.customerQuery || '').trim();
+      state.databaseCustomerSort = normalizeDatabaseCustomerSort(route.customerSort);
       if (els.customersSearch) els.customersSearch.value = state.databaseCustomerQuery;
+      if (els.customersSort) els.customersSort.value = state.databaseCustomerSort;
       showCustomers({ skipHistory: true, skipPersistence: true });
       return;
     }
@@ -895,6 +903,7 @@
 
     if (view === 'customers') {
       route.customerQuery = String(state.databaseCustomerQuery || els.customersSearch?.value || '').trim();
+      route.customerSort = normalizeDatabaseCustomerSort(state.databaseCustomerSort || els.customersSort?.value);
       return route;
     }
 
@@ -907,6 +916,10 @@
 
   function normalizeDatabaseCustomerTab(tab) {
     return DATABASE_CUSTOMER_TABS.has(tab) ? tab : 'orders';
+  }
+
+  function normalizeDatabaseCustomerSort(sort) {
+    return DATABASE_CUSTOMER_SORTS.has(sort) ? sort : 'recent';
   }
 
   function normalizeOutstandingGroup(group) {
@@ -1740,6 +1753,15 @@
     }, CUSTOMER_SEARCH_DELAY);
   }
 
+  function handleDatabaseCustomerSortChange() {
+    state.databaseCustomerSort = normalizeDatabaseCustomerSort(els.customersSort?.value);
+    if (els.customersSort && els.customersSort.value !== state.databaseCustomerSort) {
+      els.customersSort.value = state.databaseCustomerSort;
+    }
+    persistDatabaseRoute();
+    loadDatabaseCustomers({ force: true });
+  }
+
   async function handleDatabaseCustomerRowClick(event) {
     const row = event.target.closest('tr[data-customer-key]');
     if (!row) return;
@@ -1779,9 +1801,13 @@
 
   async function loadDatabaseCustomers(options = {}) {
     const query = els.customersSearch.value.trim();
+    const sort = normalizeDatabaseCustomerSort(els.customersSort?.value || state.databaseCustomerSort);
     state.databaseCustomerQuery = query;
+    state.databaseCustomerSort = sort;
+    if (els.customersSort && els.customersSort.value !== sort) els.customersSort.value = sort;
 
-    if (state.loadedCustomers && !options.force && state.databaseCustomers.length) {
+    const cacheMatches = state.loadedCustomerQuery === query && state.loadedCustomerSort === sort;
+    if (state.loadedCustomers && cacheMatches && !options.force && state.databaseCustomers.length) {
       renderDatabaseCustomers();
       return;
     }
@@ -1793,11 +1819,14 @@
     try {
       const params = new URLSearchParams();
       if (query) params.set('q', query);
+      params.set('sort', sort);
       const suffix = params.toString() ? `?${params.toString()}` : '';
       const data = await fetchJson(`/api/database/customers${suffix}`);
       if (requestId !== databaseCustomerRequest) return;
       state.databaseCustomers = data.customers || [];
       state.loadedCustomers = true;
+      state.loadedCustomerQuery = query;
+      state.loadedCustomerSort = sort;
       renderDatabaseCustomers();
     } catch (err) {
       if (requestId !== databaseCustomerRequest) return;

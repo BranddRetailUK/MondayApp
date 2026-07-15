@@ -541,6 +541,7 @@ router.delete('/api/database/users/:id', async (req, res) => {
 
 router.get('/api/database/customers', async (req, res) => {
   const search = cleanQuery(req.query.q);
+  const sort = normalizeCustomerListSort(req.query.sort);
   const params = [];
   let searchSql = '';
 
@@ -565,6 +566,7 @@ router.get('/api/database/customers', async (req, res) => {
       OR contact_email ILIKE $1
     )`
     : '';
+  const orderSql = customerListOrderSql(sort);
 
   try {
     const result = await pool.query(
@@ -583,6 +585,9 @@ router.get('/api/database/customers', async (req, res) => {
            delivery_date,
            COALESCE(order_date, updated_at_source, created_at_source) AS last_seen_at,
            (COUNT(*) OVER (PARTITION BY COALESCE(customer_id::text, LOWER(customer_name))))::int AS order_count,
+           (COUNT(*) FILTER (
+             WHERE COALESCE(order_date, updated_at_source, created_at_source) >= NOW() - INTERVAL '3 months'
+           ) OVER (PARTITION BY COALESCE(customer_id::text, LOWER(customer_name))))::int AS recent_order_count,
            ROW_NUMBER() OVER (
              PARTITION BY COALESCE(customer_id::text, LOWER(customer_name))
              ORDER BY COALESCE(order_date, updated_at_source, created_at_source) DESC NULLS LAST,
@@ -611,7 +616,8 @@ router.get('/api/database/customers', async (req, res) => {
            order_date AS latest_order_date,
            delivery_date AS latest_delivery_date,
            last_seen_at,
-           order_count
+           order_count,
+           recent_order_count
          FROM customer_jobs
          WHERE customer_rank = 1
        ),
@@ -630,7 +636,8 @@ router.get('/api/database/customers', async (req, res) => {
            NULL::timestamp AS latest_order_date,
            NULL::timestamp AS latest_delivery_date,
            COALESCE(updated_at_source, created_at_source) AS last_seen_at,
-           0::int AS order_count
+           0::int AS order_count,
+           0::int AS recent_order_count
          FROM database_customer_profiles
          WHERE customer_name IS NOT NULL
            AND customer_name <> ''
@@ -655,7 +662,7 @@ router.get('/api/database/customers', async (req, res) => {
          UNION ALL
          SELECT * FROM profile_customers
        ) combined
-       ORDER BY LOWER(business_name) ASC, business_name ASC
+       ${orderSql}
        LIMIT 5000`,
       params
     );
@@ -2585,6 +2592,34 @@ function mimeFromDatabaseProofFile(row, name) {
 
 function cleanQuery(value) {
   return String(value || '').trim();
+}
+
+function normalizeCustomerListSort(value) {
+  const sort = cleanQuery(value).toLowerCase();
+  if (sort === 'recent' || sort === 'active' || sort === 'az' || sort === 'za') return sort;
+  return 'recent';
+}
+
+function customerListOrderSql(sort) {
+  if (sort === 'recent') {
+    return `ORDER BY COALESCE(latest_order_date, last_seen_at) DESC NULLS LAST,
+                    latest_order_no DESC NULLS LAST,
+                    LOWER(business_name) ASC,
+                    business_name ASC`;
+  }
+  if (sort === 'active') {
+    return `ORDER BY recent_order_count DESC,
+                    COALESCE(latest_order_date, last_seen_at) DESC NULLS LAST,
+                    latest_order_no DESC NULLS LAST,
+                    LOWER(business_name) ASC,
+                    business_name ASC`;
+  }
+  if (sort === 'za') {
+    return `ORDER BY LOWER(business_name) DESC,
+                    business_name DESC`;
+  }
+  return `ORDER BY LOWER(business_name) ASC,
+                  business_name ASC`;
 }
 
 function cleanNullable(value) {

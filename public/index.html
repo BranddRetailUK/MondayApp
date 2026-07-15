@@ -202,9 +202,19 @@
 
             <section id="db-customers-view" class="db-view db-customers-view" aria-label="Database customers">
               <div class="db-customers-toolbar">
-                <label>Search:
-                  <input id="db-customers-search" class="db-legacy-input" type="search" autocomplete="off">
-                </label>
+                <div class="db-customers-filter-group">
+                  <label>Search:
+                    <input id="db-customers-search" class="db-legacy-input" type="search" autocomplete="off">
+                  </label>
+                  <label>Sort by:
+                    <select id="db-customers-sort" class="db-legacy-input">
+                      <option value="recent" selected>Most Recent</option>
+                      <option value="active">Most Active</option>
+                      <option value="az">A-Z</option>
+                      <option value="za">Z-A</option>
+                    </select>
+                  </label>
+                </div>
                 <button id="db-add-customer-button" class="db-toolbar-button" type="button" data-db-action="new-customer">Add Customer</button>
               </div>
 
