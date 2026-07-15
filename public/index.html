@@ -114,7 +114,7 @@
                 <div class="db-report-panel-heading">
                   <div>
                     <strong id="db-reports-chart-title">Gross sales over time</strong>
-                    <span>Net sales plus VAT</span>
+                    <span id="db-reports-chart-subtitle">Net sales plus VAT</span>
                   </div>
                   <span id="db-reports-chart-total" class="db-report-chart-total">£0.00</span>
                 </div>
@@ -128,8 +128,7 @@
 
               <div class="db-report-insights">
                 <section id="db-report-top-customer" class="db-report-panel db-report-insight-card" aria-label="Highest grossing customer"></section>
-                <section id="db-report-cost-profit" class="db-report-panel db-report-insight-card" aria-label="Cost of goods against profit"></section>
-                <section class="db-report-panel db-report-table-card" aria-labelledby="db-report-customers-title">
+                <section class="db-report-panel db-report-table-card db-report-customers-card" aria-labelledby="db-report-customers-title">
                   <div class="db-report-card-title" id="db-report-customers-title">Top customers</div>
                   <div class="db-report-table-scroll">
                     <table class="db-report-mini-table">
@@ -149,9 +148,8 @@
                 </section>
               </div>
 
-              <div class="db-reports-footnote">
-                <span id="db-reports-basis">Based on order date and invoiceable line items; internal lines excluded.</span>
-                <span id="db-reports-coverage"></span>
+              <div class="db-reports-actions">
+                <button class="db-toolbar-button db-blue-link db-reports-download-button" type="button" data-db-action="download-financial-report">Download report</button>
               </div>
               <div id="db-reports-status" class="db-reports-status" role="status" aria-live="polite"></div>
             </section>
@@ -620,6 +618,23 @@
             </section>
 
             <section id="db-styles-view" class="db-view db-styles-view" aria-label="Styles">
+              <div class="db-styles-toolbar">
+                <label>
+                  <span>Search:</span>
+                  <input id="db-styles-search" type="search" autocomplete="off">
+                </label>
+                <label>
+                  <span>Sort by:</span>
+                  <select id="db-styles-sort">
+                    <option value="most-used">Most used</option>
+                    <option value="highest-price">Highest price</option>
+                    <option value="lowest-price">Lowest price</option>
+                    <option value="az">A-Z</option>
+                    <option value="za">Z-A</option>
+                  </select>
+                </label>
+                <div id="db-styles-summary" class="db-styles-summary" aria-live="polite"></div>
+              </div>
               <div class="db-styles-layout">
                 <div class="db-styles-panel db-styles-parent-panel">
                   <div class="db-styles-panel-title">Parent products</div>

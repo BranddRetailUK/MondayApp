@@ -220,6 +220,7 @@ router.get('/api/database/reports', async (req, res) => {
          SELECT sb.bucket_start,
                 COALESCE(SUM(jf.net_sales + jf.vat), 0)::numeric AS gross_sales,
                 COALESCE(SUM(jf.net_sales), 0)::numeric AS net_sales,
+                COALESCE(SUM(jf.vat), 0)::numeric AS vat,
                 COALESCE(SUM(jf.cost_of_goods), 0)::numeric AS cost_of_goods,
                 COALESCE(SUM(jf.net_sales - jf.cost_of_goods), 0)::numeric AS gross_profit,
                 COUNT(jf.source_order_id)::int AS order_count
@@ -294,6 +295,7 @@ router.get('/api/database/reports', async (req, res) => {
                          'bucketStart', TO_CHAR(bucket_start, 'YYYY-MM-DD"T"HH24:MI:SS'),
                          'grossSales', gross_sales,
                          'netSales', net_sales,
+                         'vat', vat,
                          'costOfGoods', cost_of_goods,
                          'grossProfit', gross_profit,
                          'orderCount', order_count
@@ -2293,6 +2295,15 @@ router.get('/api/database/products/styles', async (_req, res) => {
          ) colour_rows
          GROUP BY style_id
        ),
+       style_usage AS (
+         SELECT COALESCE(li.style_id, p.style_id) AS style_id,
+                COUNT(*)::int AS usage_count,
+                COALESCE(SUM(COALESCE(li.quantity, 0)), 0)::int AS usage_quantity
+         FROM database_job_line_items li
+         LEFT JOIN database_products p ON p.source_product_id = li.source_product_id
+         WHERE COALESCE(li.style_id, p.style_id) IS NOT NULL
+         GROUP BY COALESCE(li.style_id, p.style_id)
+       ),
        style_summaries AS (
          SELECT style_id,
                 MIN(source_product_id)::int AS sample_product_id,
@@ -2311,14 +2322,18 @@ router.get('/api/database/products/styles', async (_req, res) => {
          GROUP BY style_id
        )
        SELECT ss.*,
+              COALESCE(su.usage_count, 0)::int AS usage_count,
+              COALESCE(su.usage_quantity, 0)::int AS usage_quantity,
               COALESCE(sc.unit_costs, '[]'::json) AS unit_costs,
               COALESCE(sz.sizes, '[]'::json) AS sizes,
               COALESCE(co.colours, '[]'::json) AS colours
        FROM style_summaries ss
+       LEFT JOIN style_usage su ON su.style_id = ss.style_id
        LEFT JOIN style_costs sc ON sc.style_id = ss.style_id
        LEFT JOIN style_sizes sz ON sz.style_id = ss.style_id
        LEFT JOIN style_colours co ON co.style_id = ss.style_id
-       ORDER BY LOWER(COALESCE(ss.style_name, '')) ASC,
+       ORDER BY COALESCE(su.usage_count, 0) DESC,
+                LOWER(COALESCE(ss.style_name, '')) ASC,
                 LOWER(COALESCE(ss.style_code, '')) ASC,
                 ss.style_id ASC`
     );

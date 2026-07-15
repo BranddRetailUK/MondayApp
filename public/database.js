@@ -11,7 +11,17 @@
   const LINE_ORDER_AUTOSAVE_MS = 3500;
   const DATABASE_ROUTE_STORAGE_KEY = 'ultimateHub.databaseRoute.v1';
   const DATABASE_CUSTOMER_SORTS = new Set(['recent', 'active', 'az', 'za']);
+  const DATABASE_STYLE_SORTS = new Set(['most-used', 'highest-price', 'lowest-price', 'az', 'za']);
   const DATABASE_REPORT_RANGES = new Set(['daily', 'weekly', 'monthly', 'mtd', 'ytd', 'last12']);
+  const DATABASE_REPORT_METRICS = Object.freeze({
+    grossSales: Object.freeze({ label: 'Gross sales', subtitle: 'Net sales plus VAT', currency: true }),
+    netSales: Object.freeze({ label: 'Net sales', subtitle: 'Sales before VAT', currency: true }),
+    vat: Object.freeze({ label: 'VAT', subtitle: 'Invoice VAT', currency: true }),
+    costOfGoods: Object.freeze({ label: 'Cost of goods', subtitle: 'Unit cost multiplied by quantity', currency: true }),
+    grossProfit: Object.freeze({ label: 'Gross profit', subtitle: 'Net sales less cost of goods', currency: true }),
+    orderCount: Object.freeze({ label: 'Orders', subtitle: 'Orders created in each period', currency: false }),
+  });
+  const DATABASE_REPORT_METRIC_KEYS = new Set(Object.keys(DATABASE_REPORT_METRICS));
   const DATABASE_RESTORABLE_VIEWS = new Set([
     'home',
     'reports',
@@ -136,6 +146,11 @@
       ariaLabel: 'Stock ordering PDF preview',
       filenameTitle: 'Stock Ordering',
     },
+    'financial-report': {
+      toolbarTitle: 'Financial report',
+      ariaLabel: 'Financial report PDF preview',
+      filenameTitle: 'Financial Report',
+    },
   };
 
   const state = {
@@ -160,6 +175,8 @@
     productStylesLoaded: false,
     productStylesLoading: false,
     selectedStyleId: '',
+    productStyleQuery: '',
+    productStyleSort: 'most-used',
     orderLoadToken: 0,
     orderLoadComplete: false,
     orderSearchQuery: '',
@@ -251,8 +268,10 @@
     activeDocumentType: 'order-ack',
     documentGeneratedAt: null,
     outstandingReportSnapshot: null,
+    financialReportSnapshot: null,
     dashboardStatusColors: {},
     reportsRange: 'ytd',
+    reportsMetric: 'grossSales',
     reportsData: null,
     reportsLoading: false,
     reportsRequest: 0,
@@ -285,6 +304,7 @@
   function initDatabaseHub() {
     els = {
       root: document.getElementById('db-legacy-app'),
+      databaseTab: document.getElementById('tab-database'),
       stage: document.querySelector('#db-legacy-app .db-legacy-stage'),
       sideTab: document.querySelector('.nav-tabs li[data-tab="database"]'),
       homeButton: document.getElementById('db-home-button'),
@@ -297,14 +317,13 @@
       reportsRangeButtons: Array.from(document.querySelectorAll('[data-db-report-range]')),
       reportsChart: document.getElementById('db-reports-chart'),
       reportsChartState: document.getElementById('db-reports-chart-state'),
+      reportsChartTitle: document.getElementById('db-reports-chart-title'),
+      reportsChartSubtitle: document.getElementById('db-reports-chart-subtitle'),
       reportsChartTotal: document.getElementById('db-reports-chart-total'),
       reportsKpis: document.getElementById('db-reports-kpis'),
       reportsTopCustomer: document.getElementById('db-report-top-customer'),
-      reportsCostProfit: document.getElementById('db-report-cost-profit'),
       reportsCustomersBody: document.getElementById('db-report-customers-body'),
       reportsTypesBody: document.getElementById('db-report-types-body'),
-      reportsBasis: document.getElementById('db-reports-basis'),
-      reportsCoverage: document.getElementById('db-reports-coverage'),
       reportsStatus: document.getElementById('db-reports-status'),
       customersSearch: document.getElementById('db-customers-search'),
       customersSort: document.getElementById('db-customers-sort'),
@@ -330,6 +349,9 @@
       stockOrderingBody: document.getElementById('db-stock-ordering-body'),
       stockOrderingSummary: document.getElementById('db-stock-ordering-summary'),
       stockOrderingCreate: document.querySelector('[data-db-action="create-stock-ordering"]'),
+      stylesSearch: document.getElementById('db-styles-search'),
+      stylesSort: document.getElementById('db-styles-sort'),
+      stylesSummary: document.getElementById('db-styles-summary'),
       stylesBody: document.getElementById('db-styles-body'),
       stylesSelectedTitle: document.getElementById('db-styles-selected-title'),
       stylesSelectedMeta: document.getElementById('db-styles-selected-meta'),
@@ -387,6 +409,8 @@
     els.stockOrderingBody?.addEventListener('change', handleStockOrderingSelectChange);
     els.stylesBody?.addEventListener('click', handleProductStyleRowClick);
     els.stylesBody?.addEventListener('keydown', handleProductStyleRowKeydown);
+    els.stylesSearch?.addEventListener('input', handleProductStyleSearchInput);
+    els.stylesSort?.addEventListener('change', handleProductStyleSortChange);
     els.outstandingFrame?.addEventListener('scroll', handleOutstandingScroll);
     window.addEventListener('resize', scheduleOutstandingTableLayout);
     els.customersBody.addEventListener('click', handleDatabaseCustomerRowClick);
@@ -555,6 +579,14 @@
       return;
     }
 
+    const reportMetric = button.dataset.dbReportMetric;
+    if (reportMetric && DATABASE_REPORT_METRIC_KEYS.has(reportMetric)) {
+      state.reportsMetric = reportMetric;
+      persistDatabaseRoute();
+      if (state.reportsData) renderDatabaseReports(state.reportsData);
+      return;
+    }
+
     if (button.dataset.dbCloseOrder) {
       await flushOrderAutosaves();
       openCloseOrderConfirmation();
@@ -661,6 +693,11 @@
     if (action === 'reports') {
       await flushOrderAutosaves();
       showReports();
+      return;
+    }
+    if (action === 'download-financial-report') {
+      await flushOrderAutosaves();
+      await openFinancialReportDocument();
       return;
     }
     if (action === 'users') {
@@ -874,6 +911,7 @@
 
     if (route.view === 'reports') {
       state.reportsRange = normalizeDatabaseReportRange(route.reportsRange);
+      state.reportsMetric = normalizeDatabaseReportMetric(route.reportsMetric);
       showReports({ skipHistory: true, skipPersistence: true });
       return;
     }
@@ -889,6 +927,10 @@
 
     if (route.view === 'styles') {
       state.selectedStyleId = String(route.styleId || '');
+      state.productStyleQuery = String(route.styleQuery || '').trim();
+      state.productStyleSort = normalizeDatabaseStyleSort(route.styleSort);
+      if (els.stylesSearch) els.stylesSearch.value = state.productStyleQuery;
+      if (els.stylesSort) els.stylesSort.value = state.productStyleSort;
       showStyles({ skipHistory: true, skipPersistence: true });
       return;
     }
@@ -976,11 +1018,14 @@
 
     if (view === 'reports') {
       route.reportsRange = normalizeDatabaseReportRange(state.reportsRange);
+      route.reportsMetric = normalizeDatabaseReportMetric(state.reportsMetric);
       return route;
     }
 
     if (view === 'styles') {
       route.styleId = String(state.selectedStyleId || '');
+      route.styleQuery = String(state.productStyleQuery || els.stylesSearch?.value || '').trim();
+      route.styleSort = normalizeDatabaseStyleSort(state.productStyleSort || els.stylesSort?.value);
       return route;
     }
 
@@ -999,8 +1044,16 @@
     return DATABASE_CUSTOMER_SORTS.has(sort) ? sort : 'recent';
   }
 
+  function normalizeDatabaseStyleSort(sort) {
+    return DATABASE_STYLE_SORTS.has(sort) ? sort : 'most-used';
+  }
+
   function normalizeDatabaseReportRange(range) {
     return DATABASE_REPORT_RANGES.has(range) ? range : 'ytd';
+  }
+
+  function normalizeDatabaseReportMetric(metric) {
+    return DATABASE_REPORT_METRIC_KEYS.has(metric) ? metric : 'grossSales';
   }
 
   function normalizeOutstandingGroup(group) {
@@ -1065,6 +1118,9 @@
   }
 
   function showStyles(options = {}) {
+    state.productStyleSort = normalizeDatabaseStyleSort(state.productStyleSort);
+    if (els.stylesSearch) els.stylesSearch.value = state.productStyleQuery || '';
+    if (els.stylesSort) els.stylesSort.value = state.productStyleSort;
     showView('styles', options);
     setFooterTitle('Styles');
     loadProductStyles({ force: false });
@@ -1090,6 +1146,7 @@
 
   function showReports(options = {}) {
     state.reportsRange = normalizeDatabaseReportRange(state.reportsRange);
+    state.reportsMetric = normalizeDatabaseReportMetric(state.reportsMetric);
     showView('reports', options);
     setFooterTitle('Analytics & Reports');
     syncReportRangeButtons();
@@ -1115,9 +1172,11 @@
       if (request !== state.reportsRequest) return;
       state.reportsData = data;
       renderDatabaseReports(data);
+      return data;
     } catch (err) {
       if (request !== state.reportsRequest) return;
       renderDatabaseReportsError(err);
+      return null;
     } finally {
       if (request === state.reportsRequest) state.reportsLoading = false;
     }
@@ -1126,8 +1185,7 @@
   function renderDatabaseReportsLoading() {
     if (els.reportsStatus) els.reportsStatus.textContent = 'Loading financial report…';
     if (els.reportsChart) els.reportsChart.replaceChildren();
-    if (els.reportsChartTotal) els.reportsChartTotal.textContent = '£0.00';
-    if (els.reportsCoverage) els.reportsCoverage.textContent = '';
+    syncDatabaseReportChartHeading({});
     if (els.reportsChartState) {
       els.reportsChartState.hidden = false;
       els.reportsChartState.textContent = 'Loading financial report';
@@ -1138,7 +1196,6 @@
       `).join('');
     }
     if (els.reportsTopCustomer) els.reportsTopCustomer.innerHTML = '<div class="db-report-card-title">Highest grossing customer</div><div class="db-report-card-empty">Loading…</div>';
-    if (els.reportsCostProfit) els.reportsCostProfit.innerHTML = '<div class="db-report-card-title">Cost of goods against profit</div><div class="db-report-card-empty">Loading…</div>';
     if (els.reportsCustomersBody) els.reportsCustomersBody.innerHTML = '<tr><td colspan="3">Loading…</td></tr>';
     if (els.reportsTypesBody) els.reportsTypesBody.innerHTML = '<tr><td colspan="3">Loading…</td></tr>';
   }
@@ -1152,7 +1209,6 @@
     }
     if (els.reportsKpis) els.reportsKpis.innerHTML = '<div class="db-report-error">Financial totals could not be loaded.</div>';
     if (els.reportsTopCustomer) els.reportsTopCustomer.innerHTML = `<div class="db-report-card-title">Highest grossing customer</div><div class="db-report-card-empty">${escapeHtml(message)}</div>`;
-    if (els.reportsCostProfit) els.reportsCostProfit.innerHTML = '<div class="db-report-card-title">Cost of goods against profit</div><div class="db-report-card-empty">Unavailable</div>';
     if (els.reportsCustomersBody) els.reportsCustomersBody.innerHTML = '<tr><td colspan="3">Unavailable</td></tr>';
     if (els.reportsTypesBody) els.reportsTypesBody.innerHTML = '<tr><td colspan="3">Unavailable</td></tr>';
   }
@@ -1166,30 +1222,32 @@
         .join(' · ');
     }
     if (els.reportsStatus) els.reportsStatus.textContent = '';
-    if (els.reportsChartTotal) els.reportsChartTotal.textContent = formatCurrency(reportNumber(summary.grossSales));
-    if (els.reportsBasis) els.reportsBasis.textContent = 'Based on order date and invoiceable line items; internal lines excluded.';
+    syncDatabaseReportChartHeading(summary);
 
     const metrics = [
-      { label: 'Gross sales', value: formatCurrency(reportNumber(summary.grossSales)), note: 'Net plus VAT', primary: true },
-      { label: 'Net sales', value: formatCurrency(reportNumber(summary.netSales)), note: 'Before VAT' },
-      { label: 'VAT', value: formatCurrency(reportNumber(summary.vat)), note: 'Invoice VAT' },
-      { label: 'Cost of goods', value: formatCurrency(reportNumber(summary.costOfGoods)), note: 'Unit cost × quantity' },
-      { label: 'Gross profit', value: formatCurrency(reportNumber(summary.grossProfit)), note: `${formatReportPercent(summary.grossMarginPercent)} margin`, profit: reportNumber(summary.grossProfit) },
-      { label: 'Orders', value: formatNumber(summary.orderCount || 0), note: `${formatCurrency(reportNumber(summary.averageOrderValue))} average` },
+      { key: 'grossSales', note: 'Net plus VAT' },
+      { key: 'netSales', note: 'Before VAT' },
+      { key: 'vat', note: 'Invoice VAT' },
+      { key: 'costOfGoods', note: 'Unit cost × quantity' },
+      { key: 'grossProfit', note: `${formatReportPercent(summary.grossMarginPercent)} margin`, profit: reportNumber(summary.grossProfit) },
+      { key: 'orderCount', note: `${formatCurrency(reportNumber(summary.averageOrderValue))} average` },
     ];
     if (els.reportsKpis) {
-      els.reportsKpis.innerHTML = metrics.map((metric) => `
-        <div class="db-report-kpi ${metric.primary ? 'is-primary' : ''} ${metric.profit < 0 ? 'is-negative' : ''}">
-          <span>${escapeHtml(metric.label)}</span>
-          <strong>${escapeHtml(metric.value)}</strong>
+      els.reportsKpis.innerHTML = metrics.map((metric) => {
+        const definition = DATABASE_REPORT_METRICS[metric.key];
+        const selected = metric.key === state.reportsMetric;
+        return `
+        <button class="db-report-kpi ${selected ? 'is-primary' : ''} ${metric.profit < 0 ? 'is-negative' : ''}" type="button" data-db-report-metric="${escapeAttr(metric.key)}" aria-pressed="${selected ? 'true' : 'false'}">
+          <span>${escapeHtml(definition.label)}</span>
+          <strong>${escapeHtml(formatDatabaseReportMetricValue(summary[metric.key], definition))}</strong>
           <small>${escapeHtml(metric.note)}</small>
-        </div>
-      `).join('');
+        </button>
+      `;
+      }).join('');
     }
 
-    renderDatabaseReportsChart(data?.series || [], data?.grain, data?.rangeLabel);
+    renderDatabaseReportsChart(data?.series || [], data?.grain, data?.rangeLabel, state.reportsMetric);
     renderDatabaseReportsTopCustomer(data?.topCustomers || [], data?.topOrder, summary);
-    renderDatabaseReportsCostProfit(summary);
     renderDatabaseReportsTable(els.reportsCustomersBody, data?.topCustomers || [], (customer) => [
       customer.customerName || 'Unknown customer',
       formatNumber(customer.orderCount || 0),
@@ -1200,15 +1258,6 @@
       formatNumber(type.orderCount || 0),
       formatCurrency(reportNumber(type.grossSales)),
     ]);
-
-    const financialLines = Number(summary.financialLineCount || 0);
-    const missingPrices = Number(summary.missingPriceLines || 0);
-    const missingCosts = Number(summary.missingCostLines || 0);
-    if (els.reportsCoverage) {
-      els.reportsCoverage.textContent = financialLines
-        ? `${formatNumber(financialLines)} lines · ${formatNumber(missingPrices)} missing price · ${formatNumber(missingCosts)} missing cost`
-        : 'No financial lines in this period';
-    }
   }
 
   function renderDatabaseReportsTopCustomer(customers, topOrder, summary) {
@@ -1233,30 +1282,18 @@
     `;
   }
 
-  function renderDatabaseReportsCostProfit(summary) {
-    if (!els.reportsCostProfit) return;
-    const cost = reportNumber(summary?.costOfGoods);
-    const profit = reportNumber(summary?.grossProfit);
-    const maximum = Math.max(Math.abs(cost), Math.abs(profit), 1);
-    const costWidth = Math.min(100, (Math.abs(cost) / maximum) * 100);
-    const profitWidth = Math.min(100, (Math.abs(profit) / maximum) * 100);
-    els.reportsCostProfit.innerHTML = `
-      <div class="db-report-card-title">Cost of goods against profit</div>
-      <div class="db-report-bar-row">
-        <div><span>COGS</span><strong>${escapeHtml(formatCurrency(cost))}</strong></div>
-        <div class="db-report-bar-track"><span class="db-report-bar is-cost" style="width:${costWidth.toFixed(2)}%"></span></div>
-      </div>
-      <div class="db-report-bar-row">
-        <div><span>Gross profit</span><strong>${escapeHtml(formatCurrency(profit))}</strong></div>
-        <div class="db-report-bar-track"><span class="db-report-bar is-profit ${profit < 0 ? 'is-negative' : ''}" style="width:${profitWidth.toFixed(2)}%"></span></div>
-      </div>
-      <div class="db-report-card-summary">
-        <span>Gross margin</span>
-        <strong>${escapeHtml(formatReportPercent(summary?.grossMarginPercent))}</strong>
-        <span>Units</span>
-        <strong>${escapeHtml(formatNumber(summary?.unitsSold || 0))}</strong>
-      </div>
-    `;
+  function syncDatabaseReportChartHeading(summary) {
+    const metricKey = normalizeDatabaseReportMetric(state.reportsMetric);
+    const metric = DATABASE_REPORT_METRICS[metricKey];
+    if (els.reportsChartTitle) els.reportsChartTitle.textContent = `${metric.label} over time`;
+    if (els.reportsChartSubtitle) els.reportsChartSubtitle.textContent = metric.subtitle;
+    if (els.reportsChartTotal) {
+      els.reportsChartTotal.textContent = formatDatabaseReportMetricValue(summary?.[metricKey], metric);
+    }
+  }
+
+  function formatDatabaseReportMetricValue(value, metric) {
+    return metric?.currency ? formatCurrency(reportNumber(value)) : formatNumber(value || 0);
   }
 
   function renderDatabaseReportsTable(body, rows, cellsForRow) {
@@ -1271,7 +1308,7 @@
     }).join('');
   }
 
-  function renderDatabaseReportsChart(series, grain, rangeLabel) {
+  function renderDatabaseReportsChart(series, grain, rangeLabel, metricKey) {
     if (!els.reportsChart) return;
     if (!series.length) {
       els.reportsChart.replaceChildren();
@@ -1287,8 +1324,10 @@
     const margin = { top: 14, right: 22, bottom: 42, left: 68 };
     const plotWidth = width - margin.left - margin.right;
     const plotHeight = height - margin.top - margin.bottom;
-    const values = series.map((point) => reportNumber(point.grossSales));
-    const bounds = reportAxisBounds(values, 4);
+    const normalizedMetricKey = normalizeDatabaseReportMetric(metricKey);
+    const metric = DATABASE_REPORT_METRICS[normalizedMetricKey];
+    const values = series.map((point) => reportNumber(point[normalizedMetricKey]));
+    const bounds = metric.currency ? reportAxisBounds(values, 4) : reportCountAxisBounds(values, 4);
     const xFor = (index) => series.length === 1
       ? margin.left + (plotWidth / 2)
       : margin.left + (index / (series.length - 1)) * plotWidth;
@@ -1303,7 +1342,7 @@
       const y = yFor(value);
       return `
         <line class="db-report-chart-grid" x1="${margin.left}" y1="${y.toFixed(2)}" x2="${width - margin.right}" y2="${y.toFixed(2)}"></line>
-        <text class="db-report-chart-y-label" x="${margin.left - 8}" y="${(y + 3.5).toFixed(2)}">${escapeHtml(formatReportAxisCurrency(value))}</text>
+        <text class="db-report-chart-y-label" x="${margin.left - 8}" y="${(y + 3.5).toFixed(2)}">${escapeHtml(formatReportAxisValue(value, metric))}</text>
       `;
     }).join('');
     const xMarkup = Array.from(labelIndexes).sort((a, b) => a - b).map((index) => {
@@ -1316,17 +1355,21 @@
     const pointMarkup = points.map((point) => {
       const label = formatReportBucketLabel(series[point.index]?.bucketStart, grain, true);
       const orderCount = Number(series[point.index]?.orderCount || 0);
+      const metricValue = formatDatabaseReportMetricValue(point.value, metric);
+      const detail = normalizedMetricKey === 'orderCount'
+        ? `${metricValue} order${point.value === 1 ? '' : 's'}`
+        : `${metricValue} · ${formatNumber(orderCount)} order${orderCount === 1 ? '' : 's'}`;
       return `
         <circle class="db-report-chart-point" cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="3.2">
-          <title>${escapeHtml(`${label}: ${formatCurrency(point.value)} · ${formatNumber(orderCount)} order${orderCount === 1 ? '' : 's'}`)}</title>
+          <title>${escapeHtml(`${label}: ${detail}`)}</title>
         </circle>
       `;
     }).join('');
     const total = values.reduce((sum, value) => sum + value, 0);
 
-    els.reportsChart.setAttribute('aria-label', `Gross sales for ${rangeLabel || 'selected period'}: ${formatCurrency(total)}`);
+    els.reportsChart.setAttribute('aria-label', `${metric.label} for ${rangeLabel || 'selected period'}: ${formatDatabaseReportMetricValue(total, metric)}`);
     els.reportsChart.innerHTML = `
-      <desc>Gross sales plotted by ${escapeHtml(grain || 'period')}, with exact values available on each point.</desc>
+      <desc>${escapeHtml(metric.label)} plotted by ${escapeHtml(grain || 'period')}, with exact values available on each point.</desc>
       ${tickMarkup}
       <line class="db-report-chart-axis" x1="${margin.left}" y1="${zeroY.toFixed(2)}" x2="${width - margin.right}" y2="${zeroY.toFixed(2)}"></line>
       <path class="db-report-chart-area" d="${area}"></path>
@@ -1350,6 +1393,14 @@
     maximum = Math.ceil(maximum / step) * step;
     if (minimum === maximum) maximum = minimum + step;
     return { min: minimum, max: maximum };
+  }
+
+  function reportCountAxisBounds(values, tickCount) {
+    const maximum = Math.max(0, ...values);
+    return {
+      min: 0,
+      max: Math.max(tickCount, Math.ceil(maximum / tickCount) * tickCount),
+    };
   }
 
   function reportChartLabelIndexes(length, maximumLabels) {
@@ -1382,7 +1433,8 @@
     return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', ...(verbose ? { year: 'numeric' } : {}) }).format(date);
   }
 
-  function formatReportAxisCurrency(value) {
+  function formatReportAxisValue(value, metric) {
+    if (!metric?.currency) return formatNumber(Math.round(reportNumber(value)));
     const number = Number(value);
     if (!Number.isFinite(number)) return '£0';
     const absolute = Math.abs(number);
@@ -3613,14 +3665,23 @@
 
   function renderProductStyles() {
     if (!els.stylesBody) return;
-    const styles = state.productStyles || [];
-    if (!styles.length) {
+    const allStyles = state.productStyles || [];
+    if (!allStyles.length) {
       els.stylesBody.innerHTML = renderStatusRow('No product styles found', STYLE_TABLE_COLUMN_COUNT);
       renderProductStyleDetails(null, 'No product styles found');
+      updateProductStyleSummary(0, 0);
       return;
     }
 
-    if (!styleIdExists(state.selectedStyleId)) {
+    const styles = productStylesForRender();
+    updateProductStyleSummary(styles.length, allStyles.length);
+    if (!styles.length) {
+      els.stylesBody.innerHTML = renderStatusRow('No matching styles', STYLE_TABLE_COLUMN_COUNT);
+      renderProductStyleDetails(null, 'No matching styles');
+      return;
+    }
+
+    if (!styleIdExists(state.selectedStyleId, styles)) {
       state.selectedStyleId = productStyleKey(styles[0]);
     }
     els.stylesBody.innerHTML = styles.map(renderProductStyleRow).join('');
@@ -3653,6 +3714,21 @@
     if (!row) return;
     event.preventDefault();
     selectProductStyle(row.dataset.styleId);
+  }
+
+  function handleProductStyleSearchInput() {
+    state.productStyleQuery = String(els.stylesSearch?.value || '').trim();
+    renderProductStyles();
+    persistDatabaseRoute();
+  }
+
+  function handleProductStyleSortChange() {
+    state.productStyleSort = normalizeDatabaseStyleSort(els.stylesSort?.value);
+    if (els.stylesSort && els.stylesSort.value !== state.productStyleSort) {
+      els.stylesSort.value = state.productStyleSort;
+    }
+    renderProductStyles();
+    persistDatabaseRoute();
   }
 
   function selectProductStyle(styleId) {
@@ -3702,11 +3778,9 @@
     }
     return options.map((item) => {
       const label = typeof item === 'string' ? item : item?.label;
-      const count = Number.parseInt(item?.variant_count, 10);
       return `
         <span class="db-styles-chip" title="${escapeAttr(label || '')}">
           <span>${escapeHtml(label || '-')}</span>
-          ${Number.isFinite(count) && count > 0 ? `<small>${escapeHtml(formatNumber(count))}</small>` : ''}
         </span>
       `;
     }).join('');
@@ -3717,9 +3791,93 @@
     return (state.productStyles || []).find((style) => productStyleKey(style) === selectedId) || null;
   }
 
-  function styleIdExists(styleId) {
+  function styleIdExists(styleId, styles = state.productStyles) {
     const key = String(styleId || '');
-    return Boolean(key && (state.productStyles || []).some((style) => productStyleKey(style) === key));
+    return Boolean(key && (styles || []).some((style) => productStyleKey(style) === key));
+  }
+
+  function productStylesForRender() {
+    const query = String(state.productStyleQuery || '').trim().toLowerCase();
+    const sort = normalizeDatabaseStyleSort(state.productStyleSort);
+    return (state.productStyles || [])
+      .filter((style) => productStyleMatchesSearch(style, query))
+      .slice()
+      .sort((a, b) => compareProductStyles(a, b, sort));
+  }
+
+  function productStyleMatchesSearch(style, query) {
+    if (!query) return true;
+    return productStyleSearchText(style).includes(query);
+  }
+
+  function productStyleSearchText(style) {
+    const sizes = productStyleOptionArray(style?.sizes).map(productStyleOptionLabel);
+    const colours = productStyleOptionArray(style?.colours).map(productStyleOptionLabel);
+    return [
+      productStyleKey(style),
+      productStyleSku(style),
+      style?.alt_style_code,
+      productStyleTitle(style),
+      style?.product_type,
+      style?.supplier_name,
+      formatProductStyleCost(style),
+      ...sizes,
+      ...colours,
+    ].filter(Boolean).join(' ').toLowerCase();
+  }
+
+  function productStyleOptionLabel(item) {
+    return typeof item === 'string' ? item : item?.label;
+  }
+
+  function compareProductStyles(a, b, sort) {
+    if (sort === 'highest-price') {
+      return compareSortNumber(productStyleMaxCost(a), productStyleMaxCost(b), 'desc')
+        || compareProductStyleNames(a, b);
+    }
+    if (sort === 'lowest-price') {
+      return compareSortNumber(productStyleMinCost(a), productStyleMinCost(b), 'asc')
+        || compareProductStyleNames(a, b);
+    }
+    if (sort === 'za') {
+      return compareProductStyleNames(b, a);
+    }
+    if (sort === 'az') {
+      return compareProductStyleNames(a, b);
+    }
+    return compareSortNumber(productStyleUsageCount(a), productStyleUsageCount(b), 'desc', false)
+      || compareSortNumber(productStyleUsageQuantity(a), productStyleUsageQuantity(b), 'desc', false)
+      || compareProductStyleNames(a, b);
+  }
+
+  function compareProductStyleNames(a, b) {
+    return productStyleSortLabel(a).localeCompare(productStyleSortLabel(b), undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    }) || Number(productStyleKey(a) || 0) - Number(productStyleKey(b) || 0);
+  }
+
+  function productStyleSortLabel(style) {
+    return [productStyleTitle(style), productStyleSku(style), productStyleKey(style)]
+      .filter(Boolean)
+      .join(' ');
+  }
+
+  function compareSortNumber(left, right, direction = 'asc', emptyLast = true) {
+    const leftValid = Number.isFinite(left);
+    const rightValid = Number.isFinite(right);
+    if (!leftValid && !rightValid) return 0;
+    if (!leftValid) return emptyLast ? 1 : -1;
+    if (!rightValid) return emptyLast ? -1 : 1;
+    return direction === 'desc' ? right - left : left - right;
+  }
+
+  function updateProductStyleSummary(visibleCount, totalCount) {
+    if (!els.stylesSummary) return;
+    const query = String(state.productStyleQuery || '').trim();
+    els.stylesSummary.textContent = query
+      ? `${formatNumber(visibleCount)} of ${formatNumber(totalCount)} styles`
+      : `${formatNumber(totalCount)} styles`;
   }
 
   function productStyleKey(style) {
@@ -3760,6 +3918,26 @@
     return Array.from(new Set(costs.map((value) => value.toFixed(2))))
       .map((value) => Number(value))
       .sort((a, b) => a - b);
+  }
+
+  function productStyleMinCost(style) {
+    const costs = productStyleCosts(style);
+    return costs.length ? costs[0] : Number.NaN;
+  }
+
+  function productStyleMaxCost(style) {
+    const costs = productStyleCosts(style);
+    return costs.length ? costs[costs.length - 1] : Number.NaN;
+  }
+
+  function productStyleUsageCount(style) {
+    const count = Number(style?.usage_count);
+    return Number.isFinite(count) ? count : 0;
+  }
+
+  function productStyleUsageQuantity(style) {
+    const quantity = Number(style?.usage_quantity);
+    return Number.isFinite(quantity) ? quantity : 0;
   }
 
   function formatProductStyleCost(style) {
@@ -5043,6 +5221,38 @@
     });
   }
 
+  async function openFinancialReportDocument() {
+    const range = normalizeDatabaseReportRange(state.reportsRange);
+    let data = state.reportsData;
+    if (!data || data.range !== range) data = await loadDatabaseReports();
+    if (!data || data.range !== range) {
+      alert('Financial report data is not available');
+      return;
+    }
+
+    const snapshot = buildFinancialReportSnapshot(data);
+    state.activeDocumentType = 'financial-report';
+    state.documentGeneratedAt = snapshot.generatedAt;
+    state.financialReportSnapshot = snapshot;
+
+    const modal = ensureOrderAckModal();
+    const shell = modal.querySelector('.db-order-ack-shell');
+    const title = modal.querySelector('.db-order-ack-toolbar-title');
+    const pages = modal.querySelector('.db-order-ack-pages');
+    if (shell) shell.setAttribute('aria-label', DATABASE_DOCUMENTS['financial-report'].ariaLabel);
+    if (title) title.textContent = snapshot.toolbarTitle;
+    modal.dataset.dbDocumentType = 'financial-report';
+    pages.innerHTML = renderFinancialReportDocument();
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open', 'db-order-ack-open');
+
+    window.requestAnimationFrame(() => {
+      const printButton = modal.querySelector('[data-db-ack-print]');
+      if (printButton) printButton.focus();
+    });
+  }
+
   function openStockOrderingDocument() {
     const snapshot = buildStockOrderingSnapshot();
     if (!snapshot.jobs.length) {
@@ -5113,6 +5323,40 @@
     };
   }
 
+  function buildFinancialReportSnapshot(data = state.reportsData || {}) {
+    const summary = data.summary || {};
+    const periodDates = reportPeriodDates(data.periodStart, data.periodEnd);
+    const rangeLabel = data.rangeLabel || 'Selected period';
+    const generatedAt = new Date();
+    return {
+      title: 'Financial Report',
+      toolbarTitle: 'Financial Report PDF',
+      filenameTitle: ['Financial Report', rangeLabel, periodDates].filter(Boolean).join(' - '),
+      generatedAt,
+      range: data.range || normalizeDatabaseReportRange(state.reportsRange),
+      rangeLabel,
+      rangeDescription: data.rangeDescription || rangeLabel,
+      periodDates,
+      grain: data.grain || 'period',
+      summary: {
+        grossSales: reportNumber(summary.grossSales),
+        vat: reportNumber(summary.vat),
+        netSales: reportNumber(summary.netSales),
+        costOfGoods: reportNumber(summary.costOfGoods),
+        grossProfit: reportNumber(summary.grossProfit),
+        grossMarginPercent: reportNumber(summary.grossMarginPercent),
+      },
+      series: Array.isArray(data.series) ? data.series.map((row) => ({
+        bucketStart: row.bucketStart || '',
+        grossSales: reportNumber(row.grossSales),
+        vat: reportNumber(row.vat),
+        netSales: reportNumber(row.netSales),
+        costOfGoods: reportNumber(row.costOfGoods),
+        grossProfit: reportNumber(row.grossProfit),
+      })) : [],
+    };
+  }
+
   function renderOutstandingReportDocument() {
     const snapshot = state.outstandingReportSnapshot || buildOutstandingReportSnapshot();
     const pages = buildOutstandingReportPages(snapshot.groups);
@@ -5125,6 +5369,107 @@
     const snapshot = state.stockOrderingSnapshot || buildStockOrderingSnapshot();
     const pages = buildStockOrderingPages(snapshot.jobs);
     return pages.map((page, index) => renderStockOrderingPage(snapshot, page, index)).join('');
+  }
+
+  function renderFinancialReportDocument() {
+    const snapshot = state.financialReportSnapshot || buildFinancialReportSnapshot();
+    const pages = buildFinancialReportPages(snapshot.series);
+    return pages.map((rows, index) => renderFinancialReportPage(snapshot, rows, index, pages.length)).join('');
+  }
+
+  function buildFinancialReportPages(series) {
+    const rows = Array.isArray(series) ? series : [];
+    if (!rows.length) return [[]];
+    const pages = [rows.slice(0, 24)];
+    for (let index = 24; index < rows.length; index += 34) {
+      pages.push(rows.slice(index, index + 34));
+    }
+    return pages;
+  }
+
+  function renderFinancialReportPage(snapshot, rows, pageIndex, pageCount) {
+    const continued = pageIndex > 0;
+    return `
+      <section class="db-order-ack-page db-outstanding-report-page db-financial-report-page" aria-label="${escapeAttr(snapshot.title)} page ${pageIndex + 1}">
+        <header class="db-outstanding-report-header db-financial-report-header">
+          <div>
+            <h1>${escapeHtml(snapshot.title.toUpperCase())}</h1>
+            ${continued ? '<span>CONTINUED</span>' : ''}
+          </div>
+          <img class="db-order-ack-logo" src="${escapeAttr(ORDER_ACK_LOGO_URL)}" alt="Ultimate logo" crossorigin="anonymous">
+        </header>
+        <section class="db-outstanding-report-content db-financial-report-content">
+          <div class="db-financial-report-meta">
+            <div><strong>Period:</strong> ${escapeHtml(snapshot.rangeDescription)}</div>
+            <div><strong>Dates:</strong> ${escapeHtml(snapshot.periodDates || '-')}</div>
+            <div><strong>Generated:</strong> ${escapeHtml(formatDate(snapshot.generatedAt, 'full'))}</div>
+            <div><strong>Page:</strong> ${escapeHtml(`${pageIndex + 1} of ${pageCount}`)}</div>
+          </div>
+          ${continued ? '' : renderFinancialReportSummary(snapshot.summary)}
+          <section class="db-financial-report-breakdown">
+            <h2>Profit &amp; loss by ${escapeHtml(financialReportGrainLabel(snapshot.grain))}</h2>
+            ${renderFinancialReportTable(rows, snapshot.grain)}
+          </section>
+        </section>
+        <img class="db-order-ack-footer" src="${escapeAttr(orderDocumentFooterUrl('delivery-note'))}" alt="Ultimate letterhead footer" crossorigin="anonymous">
+      </section>
+    `;
+  }
+
+  function renderFinancialReportSummary(summary) {
+    const values = [
+      ['Gross sales', formatCurrency(summary.grossSales)],
+      ['VAT', formatCurrency(summary.vat)],
+      ['Net sales', formatCurrency(summary.netSales)],
+      ['Cost of goods', formatCurrency(summary.costOfGoods)],
+      ['Gross profit', formatCurrency(summary.grossProfit)],
+      ['Gross margin', formatReportPercent(summary.grossMarginPercent)],
+    ];
+    return `
+      <section class="db-financial-report-summary" aria-label="Profit and loss summary">
+        ${values.map(([label, value]) => `
+          <div class="db-financial-report-summary-item">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value)}</strong>
+          </div>
+        `).join('')}
+      </section>
+    `;
+  }
+
+  function renderFinancialReportTable(rows, grain) {
+    return `
+      <table class="db-financial-report-table">
+        <thead>
+          <tr>
+            <th>Period</th>
+            <th>Gross sales</th>
+            <th>VAT</th>
+            <th>Net sales</th>
+            <th>Cost of goods</th>
+            <th>Gross profit</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.length ? rows.map((row) => `
+            <tr>
+              <td>${escapeHtml(formatReportBucketLabel(row.bucketStart, grain, true))}</td>
+              <td>${escapeHtml(formatCurrency(row.grossSales))}</td>
+              <td>${escapeHtml(formatCurrency(row.vat))}</td>
+              <td>${escapeHtml(formatCurrency(row.netSales))}</td>
+              <td>${escapeHtml(formatCurrency(row.costOfGoods))}</td>
+              <td>${escapeHtml(formatCurrency(row.grossProfit))}</td>
+            </tr>
+          `).join('') : '<tr><td colspan="6">No financial activity in this period</td></tr>'}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function financialReportGrainLabel(grain) {
+    if (grain === 'hour') return 'hour';
+    if (grain === 'month') return 'month';
+    return 'day';
   }
 
   function buildStockOrderingPages(jobs) {
@@ -6040,6 +6385,7 @@
     const documentType = databaseDocumentType(type);
     if (documentType === 'outstanding-orders') return outstandingReportPdfFilename();
     if (documentType === 'stock-ordering') return stockOrderingPdfFilename();
+    if (documentType === 'financial-report') return financialReportPdfFilename();
     const documentNo = databaseDocumentNumber(job, documentType);
     const orderNo = String(documentNo || job.source_order_id || '').trim();
     const config = databaseDocumentConfig(type);
@@ -6054,6 +6400,11 @@
   function stockOrderingPdfFilename() {
     return state.stockOrderingSnapshot?.filenameTitle
       || DATABASE_DOCUMENTS['stock-ordering'].filenameTitle;
+  }
+
+  function financialReportPdfFilename() {
+    return state.financialReportSnapshot?.filenameTitle
+      || DATABASE_DOCUMENTS['financial-report'].filenameTitle;
   }
 
   function syncOrderDocumentButtons(job = state.selectedJob) {
@@ -6108,6 +6459,7 @@
     const documentType = databaseDocumentType(type);
     if (documentType === 'outstanding-orders') return renderOutstandingReportDocument();
     if (documentType === 'stock-ordering') return renderStockOrderingDocument();
+    if (documentType === 'financial-report') return renderFinancialReportDocument();
     if (isInvoiceLikeDocumentType(documentType)) return renderInvoiceDocument(documentType);
     if (documentType === 'delivery-note') return renderDeliveryNoteDocument();
     return renderOrderAcknowledgementPage();
@@ -9001,6 +9353,7 @@
   }
 
   function showView(name, options = {}) {
+    const previousView = state.activeView;
     if (!options.skipHistory && state.activeView && state.activeView !== name) {
       state.viewHistory.push(state.activeView);
       if (state.viewHistory.length > 20) state.viewHistory.shift();
@@ -9015,6 +9368,7 @@
     els.stage?.classList.toggle('db-reports-active', name === 'reports');
     els.stage?.classList.toggle('db-new-customer-active', name === 'new-customer');
     els.root?.classList.toggle('db-reports-expanded', name === 'reports');
+    els.databaseTab?.classList.toggle('db-tall-view-active', name === 'reports');
     els.root?.classList.toggle('db-new-customer-expanded', name === 'new-customer');
     if (name !== 'order') {
       els.stage?.classList.remove('db-order-items-active');
@@ -9028,6 +9382,9 @@
       tab.classList.toggle('active', active);
     });
     syncOrderItemsExpansion();
+    if (name === 'reports' && previousView !== name && els.databaseTab) {
+      els.databaseTab.scrollTop = 0;
+    }
     if (!options.skipPersistence) persistDatabaseRoute();
   }
 
