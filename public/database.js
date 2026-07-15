@@ -4590,25 +4590,25 @@
 
   function renderCustomerOverviewBox() {
     const overview = state.selectedCustomerOverview || {};
+    const unpaidUninvoicedCount = Number(overview.unpaid_uninvoiced_jobs || 0);
     const metrics = [
-      ['Last order', formatDate(overview.last_order_date, 'short') || '-'],
-      ['Orders', formatNumber(overview.order_count || 0)],
-      ['3 mo activity', formatNumber(overview.activity_3_months || 0)],
-      ['12 mo spend', formatCurrency(overview.spend_12_months || 0)],
-      ['Avg value', formatCurrency(overview.average_order_value || 0)],
-      ['Open jobs', formatNumber(overview.open_jobs || 0)],
-      ['Unpaid/uninvoiced', formatNumber(overview.unpaid_uninvoiced_jobs || 0)],
-      ['Top types', customerOverviewList(overview.top_order_types, 'count')],
-      ['Top products', customerOverviewList(overview.top_products, 'quantity')],
+      { label: 'Last order', value: formatDate(overview.last_order_date, 'short') || '-' },
+      { label: 'Orders', value: formatNumber(overview.order_count || 0) },
+      { label: '3 mo activity', value: formatNumber(overview.activity_3_months || 0) },
+      { label: '12 mo spend', value: formatCurrency(overview.spend_12_months || 0) },
+      { label: 'Avg value', value: formatCurrency(overview.average_order_value || 0) },
+      { label: 'Open jobs', value: formatNumber(overview.open_jobs || 0) },
+      { label: 'Unpaid/uninvoiced', value: formatNumber(unpaidUninvoicedCount), alert: unpaidUninvoicedCount > 0 },
+      { label: 'Top types', value: customerOverviewTopLabel(overview.top_order_types) },
     ];
 
     return `
       <div class="db-detail-box db-customer-overview-box" aria-label="Customer overview">
         <div class="db-customer-overview-grid">
-          ${metrics.map(([label, value]) => `
-            <section class="db-customer-overview-card" title="${escapeAttr(`${label}: ${value}`)}">
-              <span>${escapeHtml(label)}</span>
-              <strong>${escapeHtml(value)}</strong>
+          ${metrics.map((metric) => `
+            <section class="db-customer-overview-card ${metric.alert ? 'is-alert' : ''}" title="${escapeAttr(`${metric.label}: ${metric.value}`)}">
+              <span>${escapeHtml(metric.label)}</span>
+              <strong>${escapeHtml(metric.value)}</strong>
             </section>
           `).join('')}
         </div>
@@ -4627,6 +4627,12 @@
         return value ? `${label} (${formatNumber(value)})` : label;
       })
       .join(', ');
+  }
+
+  function customerOverviewTopLabel(rows) {
+    const values = Array.isArray(rows) ? rows : [];
+    const top = values[0];
+    return top ? (String(top.label || '').trim() || 'Unknown') : '-';
   }
 
   function handleDetailsPanelChange(event) {

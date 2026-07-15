@@ -4839,7 +4839,7 @@ body.modal-open{overflow:hidden}
   min-height:0;
   border:1px solid #fff;
   background:#fff;
-  padding:4px 6px;
+  padding:0;
   overflow:hidden;
 }
 .db-customer-overview-card span,
@@ -4851,15 +4851,23 @@ body.modal-open{overflow:hidden}
   text-overflow:ellipsis;
 }
 .db-customer-overview-card span{
+  height:18px;
+  padding:3px 5px 2px;
+  background:#d6e9f9;
+  border-bottom:1px solid #9bbbd0;
   font-size:10px;
-  line-height:12px;
-  color:#333;
+  line-height:13px;
+  color:#000;
 }
 .db-customer-overview-card strong{
-  margin-top:1px;
+  margin-top:5px;
+  padding:0 6px;
   font-size:11px;
   line-height:14px;
   color:#000;
+}
+.db-customer-overview-card.is-alert strong{
+  color:#c00000;
 }
 .db-print-box{
   left:24px;
