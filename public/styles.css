@@ -2062,8 +2062,8 @@ body.modal-open{overflow:hidden}
   min-height:820px;
 }
 .db-legacy-app.db-reports-expanded{
-  height:900px;
-  min-height:900px;
+  height:960px;
+  min-height:960px;
 }
 .db-legacy-stage{
   position:absolute;
@@ -2086,7 +2086,7 @@ body.modal-open{overflow:hidden}
   height:640px;
 }
 .db-legacy-stage.db-reports-active{
-  height:714px;
+  height:762px;
 }
 .db-home-button{
   position:absolute;
@@ -2236,7 +2236,7 @@ body.modal-open{overflow:hidden}
   font:12px Arial, Helvetica, sans-serif;
 }
 .db-reports-view{
-  height:712px;
+  height:760px;
   padding:10px 12px 8px;
   overflow:hidden;
 }
@@ -2246,6 +2246,11 @@ body.modal-open{overflow:hidden}
   align-items:flex-start;
   justify-content:space-between;
   gap:12px;
+}
+.db-reports-toolbar-controls{
+  display:flex;
+  align-items:flex-start;
+  gap:6px;
 }
 .db-reports-title{
   font-size:15px;
@@ -2277,6 +2282,80 @@ body.modal-open{overflow:hidden}
 .db-report-range-buttons .db-toolbar-button.active{
   color:#00e;
 }
+.db-report-year-control{
+  height:38px;
+  padding:2px 4px;
+  display:flex;
+  align-items:center;
+  gap:4px;
+  border:1px solid #fff;
+  background:#818181;
+  color:#fff;
+  font-size:10px;
+}
+.db-report-year-control select{
+  width:62px;
+  height:30px;
+  border:2px inset #fff;
+  border-radius:0;
+  background:#fff;
+  color:#000;
+  font:11px Arial, Helvetica, sans-serif;
+}
+.db-report-year-control select:disabled{
+  background:#d5d5d5;
+  color:#777;
+}
+.db-report-compare-toolbar{
+  height:42px;
+  margin-bottom:8px;
+  padding:4px 6px;
+  display:flex;
+  align-items:center;
+  gap:7px;
+  border:2px outset #d9eafa;
+  background:#818181;
+  color:#fff;
+}
+.db-report-compare-toolbar > strong{
+  font-size:11px;
+}
+.db-report-compare-modes{
+  display:flex;
+}
+.db-report-compare-toolbar .db-toolbar-button{
+  min-width:62px;
+  height:30px;
+  padding:0 7px;
+}
+.db-report-compare-toolbar .db-toolbar-button.active{
+  color:#00e;
+}
+.db-report-compare-periods{
+  display:flex;
+  align-items:center;
+  gap:7px;
+}
+.db-report-compare-periods[hidden]{display:none}
+.db-report-compare-periods label{
+  display:flex;
+  align-items:center;
+  gap:4px;
+  font-size:10px;
+  white-space:nowrap;
+}
+.db-report-compare-periods input,
+.db-report-compare-periods select{
+  height:27px;
+  border:2px inset #fff;
+  border-radius:0;
+  background:#fff;
+  color:#000;
+  font:11px Arial, Helvetica, sans-serif;
+}
+.db-report-compare-periods input{width:116px;padding:1px 3px}
+.db-report-compare-periods select{width:72px}
+.db-report-compare-clear{margin-left:auto}
 .db-report-panel{
   min-width:0;
   border:2px outset #d9eafa;
@@ -2314,6 +2393,43 @@ body.modal-open{overflow:hidden}
   font-size:16px;
   font-weight:700;
 }
+.db-report-panel-heading .db-report-chart-total.is-comparison{
+  font-size:12px;
+}
+.db-report-panel-heading-copy{
+  flex:0 1 auto;
+  min-width:150px;
+}
+.db-report-chart-legend{
+  min-width:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:12px;
+  color:#fff;
+  font-size:9px;
+}
+.db-report-chart-legend[hidden]{display:none}
+.db-report-panel-heading .db-report-chart-legend > span{
+  min-width:0;
+  margin:0;
+  display:flex;
+  align-items:center;
+  gap:4px;
+  color:#fff;
+  font-size:9px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.db-report-chart-legend i{
+  width:18px;
+  height:3px;
+  flex:0 0 18px;
+  display:block;
+  background:#003cc5;
+}
+.db-report-chart-legend i.is-secondary{background:#c03a23}
 .db-report-chart-wrap{
   position:relative;
   height:230px;
@@ -2356,11 +2472,17 @@ body.modal-open{overflow:hidden}
   stroke-linecap:round;
   vector-effect:non-scaling-stroke;
 }
+.db-report-chart-line.is-secondary{
+  stroke:#c03a23;
+}
 .db-report-chart-point{
   fill:#fff;
   stroke:#003cc5;
   stroke-width:2;
   vector-effect:non-scaling-stroke;
+}
+.db-report-chart-point.is-secondary{
+  stroke:#c03a23;
 }
 .db-report-chart-y-label,
 .db-report-chart-x-label{
@@ -2417,6 +2539,13 @@ body.modal-open{overflow:hidden}
   font-size:9px;
 }
 .db-report-kpi.is-primary > small{color:#eee}
+.db-report-kpi .db-report-kpi-comparison{
+  min-height:20px;
+  line-height:10px;
+  white-space:normal;
+  overflow:hidden;
+  text-overflow:clip;
+}
 .db-report-loading-block{animation:db-report-pulse 1.1s ease-in-out infinite alternate}
 @keyframes db-report-pulse{
   from{opacity:.5}
@@ -5874,6 +6003,10 @@ input.db-custom-line-input{
     min-height:94px;
     display:block;
   }
+  .db-reports-toolbar-controls{
+    margin-top:8px;
+    display:block;
+  }
   .db-reports-period{
     max-width:100%;
   }
@@ -5883,12 +6016,42 @@ input.db-custom-line-input{
     display:grid;
     grid-template-columns:repeat(3, minmax(0, 1fr));
   }
+  .db-report-year-control{
+    width:100%;
+    height:36px;
+    margin-top:6px;
+    justify-content:space-between;
+  }
+  .db-report-year-control select{
+    width:100px;
+  }
   .db-report-range-buttons .db-toolbar-button{
     min-width:0;
     width:100%;
     min-height:34px;
     padding:0 4px;
     white-space:normal;
+  }
+  .db-report-compare-toolbar{
+    height:auto;
+    min-height:42px;
+    flex-wrap:wrap;
+  }
+  .db-report-compare-periods{
+    width:100%;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+  }
+  .db-report-compare-periods label{
+    display:grid;
+    grid-template-columns:52px minmax(0, 1fr);
+  }
+  .db-report-compare-periods input,
+  .db-report-compare-periods select{
+    width:100%;
+  }
+  .db-report-compare-clear{
+    margin-left:0;
   }
   .db-report-chart-panel{
     height:267px;

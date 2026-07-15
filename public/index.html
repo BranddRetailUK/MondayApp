@@ -100,22 +100,46 @@
                   <div class="db-reports-title">Analytics &amp; Reports</div>
                   <div id="db-reports-period" class="db-reports-period">Year to date</div>
                 </div>
-                <div class="db-report-range-buttons" role="group" aria-label="Financial report time span">
-                  <button class="db-toolbar-button" type="button" data-db-report-range="daily">Daily</button>
-                  <button class="db-toolbar-button" type="button" data-db-report-range="weekly">Weekly</button>
-                  <button class="db-toolbar-button" type="button" data-db-report-range="monthly">Monthly</button>
-                  <button class="db-toolbar-button" type="button" data-db-report-range="mtd">Month to date</button>
-                  <button class="db-toolbar-button active" type="button" data-db-report-range="ytd">Year to date</button>
-                  <button class="db-toolbar-button" type="button" data-db-report-range="last12">Last 12 months</button>
+                <div class="db-reports-toolbar-controls">
+                  <div class="db-report-range-buttons" role="group" aria-label="Financial report time span">
+                    <button class="db-toolbar-button" type="button" data-db-report-range="daily">Daily</button>
+                    <button class="db-toolbar-button" type="button" data-db-report-range="weekly">Weekly</button>
+                    <button class="db-toolbar-button" type="button" data-db-report-range="monthly">Monthly</button>
+                    <button class="db-toolbar-button" type="button" data-db-report-range="mtd">Month to date</button>
+                    <button class="db-toolbar-button active" type="button" data-db-report-range="ytd">Year to date</button>
+                    <button class="db-toolbar-button" type="button" data-db-report-range="last12">Last 12 months</button>
+                  </div>
+                  <label class="db-report-year-control" for="db-report-year-select">
+                    <span>Year</span>
+                    <select id="db-report-year-select" aria-label="Report year"></select>
+                  </label>
                 </div>
+              </div>
+
+              <div class="db-report-compare-toolbar" aria-label="Compare financial periods">
+                <strong>Compare:</strong>
+                <div class="db-report-compare-modes" role="group" aria-label="Comparison type">
+                  <button class="db-toolbar-button" type="button" data-db-report-compare-mode="month">Months</button>
+                  <button class="db-toolbar-button" type="button" data-db-report-compare-mode="year">Years</button>
+                </div>
+                <div id="db-report-compare-months" class="db-report-compare-periods" hidden>
+                  <label><span>Period A</span><input id="db-report-compare-month-a" type="month" aria-label="First comparison month"></label>
+                  <label><span>Period B</span><input id="db-report-compare-month-b" type="month" aria-label="Second comparison month"></label>
+                </div>
+                <div id="db-report-compare-years" class="db-report-compare-periods" hidden>
+                  <label><span>Period A</span><select id="db-report-compare-year-a" aria-label="First comparison year"></select></label>
+                  <label><span>Period B</span><select id="db-report-compare-year-b" aria-label="Second comparison year"></select></label>
+                </div>
+                <button id="db-report-compare-clear" class="db-toolbar-button db-report-compare-clear" type="button" data-db-action="clear-report-comparison" hidden>Clear</button>
               </div>
 
               <section class="db-report-panel db-report-chart-panel" aria-labelledby="db-reports-chart-title">
                 <div class="db-report-panel-heading">
-                  <div>
+                  <div class="db-report-panel-heading-copy">
                     <strong id="db-reports-chart-title">Gross sales over time</strong>
                     <span id="db-reports-chart-subtitle">Net sales plus VAT</span>
                   </div>
+                  <div id="db-reports-chart-legend" class="db-report-chart-legend" aria-label="Comparison key" hidden></div>
                   <span id="db-reports-chart-total" class="db-report-chart-total">£0.00</span>
                 </div>
                 <div id="db-reports-chart-wrap" class="db-report-chart-wrap">

@@ -139,8 +139,12 @@ router.get('/api/database/summary', async (_req, res) => {
 });
 
 router.get('/api/database/reports', async (req, res) => {
-  const rangeKey = normalizeDatabaseReportPeriod(req.query.range);
-  const period = DATABASE_REPORT_PERIODS[rangeKey];
+  const period = resolveDatabaseReportPeriod(req.query.range, req.query.period, req.query.year);
+  if (!period) {
+    res.status(400).json({ error: 'Invalid financial report period' });
+    return;
+  }
+  const rangeKey = period.range;
 
   try {
     const report = await pool.query(
@@ -275,6 +279,11 @@ router.get('/api/database/reports', async (req, res) => {
                 COUNT(*) FILTER (WHERE cost_missing)::int AS missing_cost_lines,
                 COALESCE(SUM(quantity), 0)::numeric AS units_sold
          FROM financial_lines
+       ),
+       available_year_rows AS (
+         SELECT DISTINCT EXTRACT(YEAR FROM COALESCE(order_date, created_at_source))::int AS report_year
+         FROM database_jobs
+         WHERE COALESCE(order_date, created_at_source) IS NOT NULL
        )
        SELECT JSON_BUILD_OBJECT(
                 'orderCount', sr.order_count,
@@ -320,6 +329,10 @@ router.get('/api/database/reports', async (req, res) => {
                 FROM type_rows
               ), '[]'::json) AS order_types,
               (SELECT ROW_TO_JSON(top_order_row) FROM top_order_row) AS top_order,
+              COALESCE((
+                SELECT JSON_AGG(report_year ORDER BY report_year DESC)
+                FROM available_year_rows
+              ), '[]'::json) AS available_years,
               TO_CHAR(b.start_at, 'YYYY-MM-DD') AS period_start,
               TO_CHAR(b.end_at - INTERVAL '1 second', 'YYYY-MM-DD') AS period_end
        FROM summary_row sr
@@ -331,6 +344,7 @@ router.get('/api/database/reports', async (req, res) => {
     const row = report.rows[0] || {};
     res.json({
       range: rangeKey,
+      period: period.periodValue || null,
       rangeLabel: period.label,
       rangeDescription: period.description,
       grain: period.grain,
@@ -341,6 +355,7 @@ router.get('/api/database/reports', async (req, res) => {
       topCustomers: row.top_customers || [],
       orderTypes: row.order_types || [],
       topOrder: row.top_order || null,
+      availableYears: row.available_years || [],
       basis: 'Order date; invoiceable lines only; internal lines excluded',
     });
   } catch (err) {
@@ -3196,6 +3211,93 @@ function cleanQuery(value) {
 function normalizeDatabaseReportPeriod(value) {
   const period = cleanQuery(value).toLowerCase();
   return Object.prototype.hasOwnProperty.call(DATABASE_REPORT_PERIODS, period) ? period : 'ytd';
+}
+
+function resolveDatabaseReportPeriod(rangeValue, periodValue, yearValue) {
+  const requestedRange = cleanQuery(rangeValue).toLowerCase();
+  if (requestedRange === 'custom-month') return customDatabaseReportMonth(periodValue);
+  if (requestedRange === 'custom-year') return customDatabaseReportYear(periodValue);
+
+  const range = normalizeDatabaseReportPeriod(requestedRange);
+  if (range === 'ytd' && cleanQuery(yearValue)) {
+    return selectedDatabaseReportYear(yearValue);
+  }
+  return { ...DATABASE_REPORT_PERIODS[range], range };
+}
+
+function customDatabaseReportMonth(value) {
+  const match = cleanQuery(value).match(/^(\d{4})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number.parseInt(match[1], 10);
+  const month = Number.parseInt(match[2], 10);
+  if (year < 1900 || year > 2100 || month < 1 || month > 12) return null;
+
+  const start = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-01`;
+  const endDate = new Date(Date.UTC(year, month, 1));
+  const end = endDate.toISOString().slice(0, 10);
+  const label = new Intl.DateTimeFormat('en-GB', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(`${start}T00:00:00Z`));
+
+  return {
+    range: 'custom-month',
+    periodValue: `${match[1]}-${match[2]}`,
+    label,
+    description: label,
+    grain: 'day',
+    stepSql: "INTERVAL '1 day'",
+    startSql: `TIMESTAMP '${start}'`,
+    endSql: `TIMESTAMP '${end}'`,
+  };
+}
+
+function customDatabaseReportYear(value) {
+  const year = normalizeDatabaseReportYear(value);
+  if (!year) return null;
+  return fullDatabaseReportYear(year, 'custom-year');
+}
+
+function selectedDatabaseReportYear(value) {
+  const year = normalizeDatabaseReportYear(value);
+  if (!year) return null;
+  const currentYear = currentLondonYear();
+  if (year === currentYear) {
+    return {
+      ...DATABASE_REPORT_PERIODS.ytd,
+      range: 'ytd',
+      periodValue: String(year),
+      description: `Year to date ${year}`,
+    };
+  }
+  return fullDatabaseReportYear(year, 'ytd', `Year ${year}`);
+}
+
+function fullDatabaseReportYear(year, range, description = String(year)) {
+  return {
+    range,
+    periodValue: String(year),
+    label: String(year),
+    description,
+    grain: 'month',
+    stepSql: "INTERVAL '1 month'",
+    startSql: `TIMESTAMP '${year}-01-01'`,
+    endSql: `TIMESTAMP '${year + 1}-01-01'`,
+  };
+}
+
+function normalizeDatabaseReportYear(value) {
+  if (!/^\d{4}$/.test(cleanQuery(value))) return 0;
+  const year = Number.parseInt(value, 10);
+  return year >= 1900 && year <= 2100 ? year : 0;
+}
+
+function currentLondonYear() {
+  return Number(new Intl.DateTimeFormat('en-GB', {
+    year: 'numeric',
+    timeZone: 'Europe/London',
+  }).format(new Date()));
 }
 
 function emptyDatabaseReportSummary() {

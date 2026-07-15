@@ -13,6 +13,7 @@
   const DATABASE_CUSTOMER_SORTS = new Set(['recent', 'active', 'az', 'za']);
   const DATABASE_STYLE_SORTS = new Set(['most-used', 'highest-price', 'lowest-price', 'az', 'za']);
   const DATABASE_REPORT_RANGES = new Set(['daily', 'weekly', 'monthly', 'mtd', 'ytd', 'last12']);
+  const DATABASE_REPORT_COMPARE_MODES = new Set(['month', 'year']);
   const DATABASE_REPORT_METRICS = Object.freeze({
     grossSales: Object.freeze({ label: 'Gross sales', subtitle: 'Net sales plus VAT', currency: true }),
     netSales: Object.freeze({ label: 'Net sales', subtitle: 'Sales before VAT', currency: true }),
@@ -274,6 +275,14 @@
     dashboardStatusColors: {},
     reportsRange: 'ytd',
     reportsMetric: 'grossSales',
+    reportsYear: null,
+    reportsAvailableYears: [],
+    reportsCompareMode: 'none',
+    reportsCompareMonthA: '',
+    reportsCompareMonthB: '',
+    reportsCompareYearA: null,
+    reportsCompareYearB: null,
+    reportsComparisonData: null,
     reportsData: null,
     reportsLoading: false,
     reportsRequest: 0,
@@ -317,6 +326,15 @@
       homeCountGifts: document.getElementById('db-count-gifts'),
       reportsPeriod: document.getElementById('db-reports-period'),
       reportsRangeButtons: Array.from(document.querySelectorAll('[data-db-report-range]')),
+      reportsYear: document.getElementById('db-report-year-select'),
+      reportsCompareMonthWrap: document.getElementById('db-report-compare-months'),
+      reportsCompareYearWrap: document.getElementById('db-report-compare-years'),
+      reportsCompareMonthA: document.getElementById('db-report-compare-month-a'),
+      reportsCompareMonthB: document.getElementById('db-report-compare-month-b'),
+      reportsCompareYearA: document.getElementById('db-report-compare-year-a'),
+      reportsCompareYearB: document.getElementById('db-report-compare-year-b'),
+      reportsCompareClear: document.getElementById('db-report-compare-clear'),
+      reportsChartLegend: document.getElementById('db-reports-chart-legend'),
       reportsChart: document.getElementById('db-reports-chart'),
       reportsChartState: document.getElementById('db-reports-chart-state'),
       reportsChartTitle: document.getElementById('db-reports-chart-title'),
@@ -411,6 +429,11 @@
     els.stylesBody?.addEventListener('keydown', handleProductStyleRowKeydown);
     els.stylesSearch?.addEventListener('input', handleProductStyleSearchInput);
     els.stylesSort?.addEventListener('change', handleProductStyleSortChange);
+    els.reportsYear?.addEventListener('change', handleReportYearChange);
+    els.reportsCompareMonthA?.addEventListener('change', handleReportComparisonInputChange);
+    els.reportsCompareMonthB?.addEventListener('change', handleReportComparisonInputChange);
+    els.reportsCompareYearA?.addEventListener('change', handleReportComparisonInputChange);
+    els.reportsCompareYearB?.addEventListener('change', handleReportComparisonInputChange);
     els.outstandingFrame?.addEventListener('scroll', handleOutstandingScroll);
     window.addEventListener('resize', scheduleOutstandingTableLayout);
     els.customersBody.addEventListener('click', handleDatabaseCustomerRowClick);
@@ -578,9 +601,18 @@
     const reportRange = button.dataset.dbReportRange;
     if (reportRange && DATABASE_REPORT_RANGES.has(reportRange)) {
       state.reportsRange = reportRange;
+      state.reportsCompareMode = 'none';
+      state.reportsComparisonData = null;
       syncReportRangeButtons();
+      syncReportComparisonControls();
       persistDatabaseRoute();
       await loadDatabaseReports();
+      return;
+    }
+
+    const reportCompareMode = button.dataset.dbReportCompareMode;
+    if (reportCompareMode && DATABASE_REPORT_COMPARE_MODES.has(reportCompareMode)) {
+      await activateReportComparison(reportCompareMode);
       return;
     }
 
@@ -703,6 +735,10 @@
     if (action === 'download-financial-report') {
       await flushOrderAutosaves();
       await openFinancialReportDocument();
+      return;
+    }
+    if (action === 'clear-report-comparison') {
+      await clearReportComparison();
       return;
     }
     if (action === 'users') {
@@ -917,6 +953,12 @@
     if (route.view === 'reports') {
       state.reportsRange = normalizeDatabaseReportRange(route.reportsRange);
       state.reportsMetric = normalizeDatabaseReportMetric(route.reportsMetric);
+      state.reportsYear = normalizeDatabaseReportYear(route.reportsYear);
+      state.reportsCompareMode = normalizeDatabaseReportCompareMode(route.reportsCompareMode);
+      state.reportsCompareMonthA = normalizeDatabaseReportMonth(route.reportsCompareMonthA);
+      state.reportsCompareMonthB = normalizeDatabaseReportMonth(route.reportsCompareMonthB);
+      state.reportsCompareYearA = normalizeDatabaseReportYear(route.reportsCompareYearA);
+      state.reportsCompareYearB = normalizeDatabaseReportYear(route.reportsCompareYearB);
       showReports({ skipHistory: true, skipPersistence: true });
       return;
     }
@@ -1024,6 +1066,12 @@
     if (view === 'reports') {
       route.reportsRange = normalizeDatabaseReportRange(state.reportsRange);
       route.reportsMetric = normalizeDatabaseReportMetric(state.reportsMetric);
+      route.reportsYear = normalizeDatabaseReportYear(state.reportsYear);
+      route.reportsCompareMode = normalizeDatabaseReportCompareMode(state.reportsCompareMode);
+      route.reportsCompareMonthA = normalizeDatabaseReportMonth(state.reportsCompareMonthA);
+      route.reportsCompareMonthB = normalizeDatabaseReportMonth(state.reportsCompareMonthB);
+      route.reportsCompareYearA = normalizeDatabaseReportYear(state.reportsCompareYearA);
+      route.reportsCompareYearB = normalizeDatabaseReportYear(state.reportsCompareYearB);
       return route;
     }
 
@@ -1059,6 +1107,23 @@
 
   function normalizeDatabaseReportMetric(metric) {
     return DATABASE_REPORT_METRIC_KEYS.has(metric) ? metric : 'grossSales';
+  }
+
+  function normalizeDatabaseReportCompareMode(mode) {
+    return DATABASE_REPORT_COMPARE_MODES.has(mode) ? mode : 'none';
+  }
+
+  function normalizeDatabaseReportMonth(value) {
+    const clean = String(value || '').trim();
+    const match = clean.match(/^(\d{4})-(\d{2})$/);
+    const year = Number.parseInt(match?.[1], 10);
+    const month = Number.parseInt(match?.[2], 10);
+    return match && year >= 1900 && year <= 2100 && month >= 1 && month <= 12 ? clean : '';
+  }
+
+  function normalizeDatabaseReportYear(value) {
+    const year = Number.parseInt(value, 10);
+    return Number.isFinite(year) && year >= 1900 && year <= 2100 ? year : null;
   }
 
   function normalizeOutstandingGroup(group) {
@@ -1152,30 +1217,220 @@
   function showReports(options = {}) {
     state.reportsRange = normalizeDatabaseReportRange(state.reportsRange);
     state.reportsMetric = normalizeDatabaseReportMetric(state.reportsMetric);
+    state.reportsCompareMode = normalizeDatabaseReportCompareMode(state.reportsCompareMode);
+    ensureDatabaseReportSelectionDefaults();
     showView('reports', options);
     setFooterTitle('Analytics & Reports');
     syncReportRangeButtons();
-    loadDatabaseReports();
+    syncReportComparisonControls();
+    if (state.reportsCompareMode === 'none') {
+      loadDatabaseReports();
+    } else {
+      loadDatabaseReportComparison();
+    }
   }
 
   function syncReportRangeButtons() {
     els.reportsRangeButtons?.forEach((button) => {
-      const active = button.dataset.dbReportRange === state.reportsRange;
+      const active = state.reportsCompareMode === 'none' && button.dataset.dbReportRange === state.reportsRange;
       button.classList.toggle('active', active);
       button.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
+    if (els.reportsYear) {
+      els.reportsYear.disabled = state.reportsCompareMode !== 'none' || state.reportsRange !== 'ytd';
+    }
+  }
+
+  function ensureDatabaseReportSelectionDefaults() {
+    const currentYear = currentDatabaseReportYear();
+    state.reportsYear = normalizeDatabaseReportYear(state.reportsYear) || currentYear;
+    state.reportsCompareMonthB = normalizeDatabaseReportMonth(state.reportsCompareMonthB) || currentDatabaseReportMonth();
+    state.reportsCompareMonthA = normalizeDatabaseReportMonth(state.reportsCompareMonthA)
+      || shiftDatabaseReportMonth(state.reportsCompareMonthB, -1);
+    state.reportsCompareYearB = normalizeDatabaseReportYear(state.reportsCompareYearB) || currentYear;
+    state.reportsCompareYearA = normalizeDatabaseReportYear(state.reportsCompareYearA) || currentYear - 1;
+    mergeDatabaseReportYears([
+      state.reportsYear,
+      state.reportsCompareYearA,
+      state.reportsCompareYearB,
+      ...Array.from({ length: 10 }, (_, index) => currentYear - index),
+    ]);
+  }
+
+  function currentDatabaseReportYear() {
+    return Number(new Intl.DateTimeFormat('en-GB', {
+      year: 'numeric',
+      timeZone: 'Europe/London',
+    }).format(new Date()));
+  }
+
+  function currentDatabaseReportMonth() {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      year: 'numeric',
+      month: '2-digit',
+      timeZone: 'Europe/London',
+    }).formatToParts(new Date());
+    const year = parts.find((part) => part.type === 'year')?.value;
+    const month = parts.find((part) => part.type === 'month')?.value;
+    return `${year}-${month}`;
+  }
+
+  function shiftDatabaseReportMonth(value, delta) {
+    const clean = normalizeDatabaseReportMonth(value);
+    if (!clean) return '';
+    const [year, month] = clean.split('-').map(Number);
+    const date = new Date(Date.UTC(year, month - 1 + delta, 1));
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+  }
+
+  function mergeDatabaseReportYears(years) {
+    const values = [
+      ...(state.reportsAvailableYears || []),
+      ...(Array.isArray(years) ? years : []),
+    ].map(normalizeDatabaseReportYear).filter(Boolean);
+    state.reportsAvailableYears = Array.from(new Set(values)).sort((a, b) => b - a);
+    populateDatabaseReportYearSelect(els.reportsYear, state.reportsYear);
+    populateDatabaseReportYearSelect(els.reportsCompareYearA, state.reportsCompareYearA);
+    populateDatabaseReportYearSelect(els.reportsCompareYearB, state.reportsCompareYearB);
+  }
+
+  function populateDatabaseReportYearSelect(select, selectedYear) {
+    if (!select) return;
+    const year = normalizeDatabaseReportYear(selectedYear) || currentDatabaseReportYear();
+    const years = Array.from(new Set([...(state.reportsAvailableYears || []), year])).sort((a, b) => b - a);
+    select.innerHTML = years.map((value) => `<option value="${value}">${value}</option>`).join('');
+    select.value = String(year);
+  }
+
+  function syncReportComparisonControls() {
+    const mode = normalizeDatabaseReportCompareMode(state.reportsCompareMode);
+    document.querySelectorAll('[data-db-report-compare-mode]').forEach((button) => {
+      const active = button.dataset.dbReportCompareMode === mode;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    if (els.reportsCompareMonthWrap) els.reportsCompareMonthWrap.hidden = mode !== 'month';
+    if (els.reportsCompareYearWrap) els.reportsCompareYearWrap.hidden = mode !== 'year';
+    if (els.reportsCompareClear) els.reportsCompareClear.hidden = mode === 'none';
+    if (els.reportsCompareMonthA) els.reportsCompareMonthA.value = state.reportsCompareMonthA;
+    if (els.reportsCompareMonthB) els.reportsCompareMonthB.value = state.reportsCompareMonthB;
+    populateDatabaseReportYearSelect(els.reportsCompareYearA, state.reportsCompareYearA);
+    populateDatabaseReportYearSelect(els.reportsCompareYearB, state.reportsCompareYearB);
+    syncReportRangeButtons();
+  }
+
+  async function handleReportYearChange() {
+    state.reportsYear = normalizeDatabaseReportYear(els.reportsYear?.value) || currentDatabaseReportYear();
+    state.reportsRange = 'ytd';
+    state.reportsCompareMode = 'none';
+    state.reportsComparisonData = null;
+    syncReportRangeButtons();
+    syncReportComparisonControls();
+    persistDatabaseRoute();
+    await loadDatabaseReports();
+  }
+
+  async function handleReportComparisonInputChange(event) {
+    if (event.target === els.reportsCompareMonthA) state.reportsCompareMonthA = normalizeDatabaseReportMonth(event.target.value);
+    if (event.target === els.reportsCompareMonthB) state.reportsCompareMonthB = normalizeDatabaseReportMonth(event.target.value);
+    if (event.target === els.reportsCompareYearA) state.reportsCompareYearA = normalizeDatabaseReportYear(event.target.value);
+    if (event.target === els.reportsCompareYearB) state.reportsCompareYearB = normalizeDatabaseReportYear(event.target.value);
+    persistDatabaseRoute();
+    await loadDatabaseReportComparison();
+  }
+
+  async function activateReportComparison(mode) {
+    state.reportsCompareMode = normalizeDatabaseReportCompareMode(mode);
+    state.reportsComparisonData = null;
+    ensureDatabaseReportSelectionDefaults();
+    syncReportComparisonControls();
+    persistDatabaseRoute();
+    await loadDatabaseReportComparison();
+  }
+
+  async function clearReportComparison() {
+    state.reportsCompareMode = 'none';
+    state.reportsComparisonData = null;
+    syncReportComparisonControls();
+    persistDatabaseRoute();
+    await loadDatabaseReports();
+  }
+
+  function databaseReportComparisonPeriods() {
+    if (state.reportsCompareMode === 'month') {
+      return {
+        range: 'custom-month',
+        primary: normalizeDatabaseReportMonth(state.reportsCompareMonthA),
+        secondary: normalizeDatabaseReportMonth(state.reportsCompareMonthB),
+      };
+    }
+    if (state.reportsCompareMode === 'year') {
+      return {
+        range: 'custom-year',
+        primary: String(normalizeDatabaseReportYear(state.reportsCompareYearA) || ''),
+        secondary: String(normalizeDatabaseReportYear(state.reportsCompareYearB) || ''),
+      };
+    }
+    return null;
+  }
+
+  async function loadDatabaseReportComparison() {
+    const periods = databaseReportComparisonPeriods();
+    if (!periods?.primary || !periods?.secondary || periods.primary === periods.secondary) {
+      state.reportsComparisonData = null;
+      if (state.reportsData) renderDatabaseReports(state.reportsData);
+      if (els.reportsStatus) {
+        els.reportsStatus.textContent = periods?.primary === periods?.secondary
+          ? 'Choose two different periods to compare.'
+          : 'Choose both periods to compare.';
+      }
+      return;
+    }
+
+    const request = ++state.reportsRequest;
+    state.reportsLoading = true;
+    state.reportsComparisonData = null;
+    renderDatabaseReportsLoading();
+    const reportUrl = (period) => `/api/database/reports?range=${encodeURIComponent(periods.range)}&period=${encodeURIComponent(period)}`;
+
+    try {
+      const [primary, secondary] = await Promise.all([
+        fetchJson(reportUrl(periods.primary)),
+        fetchJson(reportUrl(periods.secondary)),
+      ]);
+      if (request !== state.reportsRequest) return null;
+      state.reportsData = primary;
+      state.reportsComparisonData = {
+        mode: state.reportsCompareMode,
+        primary,
+        secondary,
+      };
+      mergeDatabaseReportYears([...(primary.availableYears || []), ...(secondary.availableYears || [])]);
+      renderDatabaseReports(primary);
+      return state.reportsComparisonData;
+    } catch (err) {
+      if (request !== state.reportsRequest) return null;
+      renderDatabaseReportsError(err);
+      return null;
+    } finally {
+      if (request === state.reportsRequest) state.reportsLoading = false;
+    }
   }
 
   async function loadDatabaseReports() {
     const range = normalizeDatabaseReportRange(state.reportsRange);
     const request = ++state.reportsRequest;
     state.reportsLoading = true;
+    state.reportsComparisonData = null;
     renderDatabaseReportsLoading();
 
     try {
-      const data = await fetchJson(`/api/database/reports?range=${encodeURIComponent(range)}`);
+      const params = new URLSearchParams({ range });
+      if (range === 'ytd' && state.reportsYear) params.set('year', String(state.reportsYear));
+      const data = await fetchJson(`/api/database/reports?${params.toString()}`);
       if (request !== state.reportsRequest) return;
       state.reportsData = data;
+      mergeDatabaseReportYears(data.availableYears || []);
       renderDatabaseReports(data);
       return data;
     } catch (err) {
@@ -1190,6 +1445,7 @@
   function renderDatabaseReportsLoading() {
     if (els.reportsStatus) els.reportsStatus.textContent = 'Loading financial report…';
     if (els.reportsChart) els.reportsChart.replaceChildren();
+    if (els.reportsChartLegend) els.reportsChartLegend.hidden = true;
     syncDatabaseReportChartHeading({});
     if (els.reportsChartState) {
       els.reportsChartState.hidden = false;
@@ -1212,6 +1468,7 @@
       els.reportsChartState.hidden = false;
       els.reportsChartState.textContent = 'Financial report unavailable';
     }
+    if (els.reportsChartLegend) els.reportsChartLegend.hidden = true;
     if (els.reportsKpis) els.reportsKpis.innerHTML = '<div class="db-report-error">Financial totals could not be loaded.</div>';
     if (els.reportsTopCustomer) els.reportsTopCustomer.innerHTML = `<div class="db-report-card-title">Highest grossing customer</div><div class="db-report-card-empty">${escapeHtml(message)}</div>`;
     if (els.reportsCustomersBody) els.reportsCustomersBody.innerHTML = '<tr><td colspan="3">Unavailable</td></tr>';
@@ -1220,11 +1477,12 @@
 
   function renderDatabaseReports(data) {
     const summary = data?.summary || {};
+    const comparison = state.reportsComparisonData;
     const periodDates = reportPeriodDates(data?.periodStart, data?.periodEnd);
     if (els.reportsPeriod) {
-      els.reportsPeriod.textContent = [data?.rangeDescription || data?.rangeLabel, periodDates]
-        .filter(Boolean)
-        .join(' · ');
+      els.reportsPeriod.textContent = comparison
+        ? `${comparison.primary.rangeDescription || comparison.primary.rangeLabel} compared with ${comparison.secondary.rangeDescription || comparison.secondary.rangeLabel}`
+        : [data?.rangeDescription || data?.rangeLabel, periodDates].filter(Boolean).join(' · ');
     }
     if (els.reportsStatus) els.reportsStatus.textContent = '';
     syncDatabaseReportChartHeading(summary);
@@ -1241,11 +1499,17 @@
       els.reportsKpis.innerHTML = metrics.map((metric) => {
         const definition = DATABASE_REPORT_METRICS[metric.key];
         const selected = metric.key === state.reportsMetric;
+        const primaryLabel = comparison?.primary?.rangeLabel;
+        const secondaryLabel = comparison?.secondary?.rangeLabel;
+        const metricLabel = primaryLabel ? `${definition.label} · ${primaryLabel}` : definition.label;
+        const note = comparison
+          ? `Compared to ${secondaryLabel}: ${formatDatabaseReportMetricValue(comparison.secondary.summary?.[metric.key], definition)}`
+          : metric.note;
         return `
         <button class="db-report-kpi ${selected ? 'is-primary' : ''} ${metric.profit < 0 ? 'is-negative' : ''}" type="button" data-db-report-metric="${escapeAttr(metric.key)}" aria-pressed="${selected ? 'true' : 'false'}">
-          <span>${escapeHtml(definition.label)}</span>
+          <span title="${escapeAttr(metricLabel)}">${escapeHtml(metricLabel)}</span>
           <strong>${escapeHtml(formatDatabaseReportMetricValue(summary[metric.key], definition))}</strong>
-          <small>${escapeHtml(metric.note)}</small>
+          <small class="${comparison ? 'db-report-kpi-comparison' : ''}" title="${escapeAttr(note)}">${escapeHtml(note)}</small>
         </button>
       `;
       }).join('');
@@ -1290,10 +1554,30 @@
   function syncDatabaseReportChartHeading(summary) {
     const metricKey = normalizeDatabaseReportMetric(state.reportsMetric);
     const metric = DATABASE_REPORT_METRICS[metricKey];
-    if (els.reportsChartTitle) els.reportsChartTitle.textContent = `${metric.label} over time`;
-    if (els.reportsChartSubtitle) els.reportsChartSubtitle.textContent = metric.subtitle;
+    const comparison = state.reportsComparisonData;
+    if (els.reportsChartTitle) els.reportsChartTitle.textContent = `${metric.label} ${comparison ? 'comparison' : 'over time'}`;
+    if (els.reportsChartSubtitle) {
+      els.reportsChartSubtitle.textContent = comparison
+        ? `${comparison.primary.rangeLabel} against ${comparison.secondary.rangeLabel}`
+        : metric.subtitle;
+    }
     if (els.reportsChartTotal) {
-      els.reportsChartTotal.textContent = formatDatabaseReportMetricValue(summary?.[metricKey], metric);
+      els.reportsChartTotal.classList.toggle('is-comparison', Boolean(comparison));
+      els.reportsChartTotal.textContent = comparison
+        ? `${formatDatabaseReportMetricValue(comparison.primary.summary?.[metricKey], metric)} / ${formatDatabaseReportMetricValue(comparison.secondary.summary?.[metricKey], metric)}`
+        : formatDatabaseReportMetricValue(summary?.[metricKey], metric);
+    }
+    if (els.reportsChartLegend) {
+      if (!comparison) {
+        els.reportsChartLegend.hidden = true;
+        els.reportsChartLegend.replaceChildren();
+      } else {
+        els.reportsChartLegend.innerHTML = `
+          <span><i class="is-primary"></i>${escapeHtml(comparison.primary.rangeLabel)}</span>
+          <span><i class="is-secondary"></i>${escapeHtml(comparison.secondary.rangeLabel)}</span>
+        `;
+        els.reportsChartLegend.hidden = false;
+      }
     }
   }
 
@@ -1315,6 +1599,10 @@
 
   function renderDatabaseReportsChart(series, grain, rangeLabel, metricKey) {
     if (!els.reportsChart) return;
+    if (state.reportsComparisonData) {
+      renderDatabaseReportsComparisonChart(state.reportsComparisonData, metricKey);
+      return;
+    }
     if (!series.length) {
       els.reportsChart.replaceChildren();
       if (els.reportsChartState) {
@@ -1383,6 +1671,93 @@
       ${xMarkup}
     `;
     if (els.reportsChartState) els.reportsChartState.hidden = true;
+  }
+
+  function renderDatabaseReportsComparisonChart(comparison, metricKey) {
+    const primarySeries = comparison?.primary?.series || [];
+    const secondarySeries = comparison?.secondary?.series || [];
+    const pointCount = Math.max(primarySeries.length, secondarySeries.length);
+    if (!pointCount) {
+      els.reportsChart.replaceChildren();
+      if (els.reportsChartState) {
+        els.reportsChartState.hidden = false;
+        els.reportsChartState.textContent = 'No chart data for these periods';
+      }
+      return;
+    }
+
+    const width = 900;
+    const height = 236;
+    const margin = { top: 14, right: 22, bottom: 42, left: 68 };
+    const plotWidth = width - margin.left - margin.right;
+    const plotHeight = height - margin.top - margin.bottom;
+    const normalizedMetricKey = normalizeDatabaseReportMetric(metricKey);
+    const metric = DATABASE_REPORT_METRICS[normalizedMetricKey];
+    const primaryValues = primarySeries.map((point) => reportNumber(point[normalizedMetricKey]));
+    const secondaryValues = secondarySeries.map((point) => reportNumber(point[normalizedMetricKey]));
+    const allValues = [...primaryValues, ...secondaryValues];
+    const bounds = metric.currency ? reportAxisBounds(allValues, 4) : reportCountAxisBounds(allValues, 4);
+    const xFor = (index) => pointCount === 1
+      ? margin.left + (plotWidth / 2)
+      : margin.left + (index / (pointCount - 1)) * plotWidth;
+    const yFor = (value) => margin.top + ((bounds.max - value) / (bounds.max - bounds.min)) * plotHeight;
+    const zeroY = yFor(0);
+    const lineMarkup = (values, label, className) => {
+      if (!values.length) return '';
+      const points = values.map((value, index) => ({ x: xFor(index), y: yFor(value), value, index }));
+      const path = points.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ');
+      return `
+        <path class="db-report-chart-line ${className}" d="${path}"></path>
+        ${points.map((point) => `
+          <circle class="db-report-chart-point ${className}" cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="3.2">
+            <title>${escapeHtml(`${label}, ${databaseReportComparisonPointLabel(point.index, comparison.mode)}: ${formatDatabaseReportMetricValue(point.value, metric)}`)}</title>
+          </circle>
+        `).join('')}
+      `;
+    };
+    const tickMarkup = Array.from({ length: 5 }, (_, index) => {
+      const value = bounds.min + ((bounds.max - bounds.min) * index / 4);
+      const y = yFor(value);
+      return `
+        <line class="db-report-chart-grid" x1="${margin.left}" y1="${y.toFixed(2)}" x2="${width - margin.right}" y2="${y.toFixed(2)}"></line>
+        <text class="db-report-chart-y-label" x="${margin.left - 8}" y="${(y + 3.5).toFixed(2)}">${escapeHtml(formatReportAxisValue(value, metric))}</text>
+      `;
+    }).join('');
+    const xMarkup = Array.from(reportChartLabelIndexes(pointCount, 9)).sort((a, b) => a - b).map((index) => {
+      const x = xFor(index);
+      return `
+        <line class="db-report-chart-tick" x1="${x.toFixed(2)}" y1="${height - margin.bottom}" x2="${x.toFixed(2)}" y2="${height - margin.bottom + 4}"></line>
+        <text class="db-report-chart-x-label" x="${x.toFixed(2)}" y="${height - 17}">${escapeHtml(databaseReportComparisonAxisLabel(index, comparison.mode))}</text>
+      `;
+    }).join('');
+    const primaryTotal = primaryValues.reduce((sum, value) => sum + value, 0);
+    const secondaryTotal = secondaryValues.reduce((sum, value) => sum + value, 0);
+
+    els.reportsChart.setAttribute(
+      'aria-label',
+      `${metric.label}: ${comparison.primary.rangeLabel} ${formatDatabaseReportMetricValue(primaryTotal, metric)}, ${comparison.secondary.rangeLabel} ${formatDatabaseReportMetricValue(secondaryTotal, metric)}`
+    );
+    els.reportsChart.innerHTML = `
+      <desc>${escapeHtml(metric.label)} comparison with aligned ${comparison.mode === 'month' ? 'days of month' : 'months of year'} and exact values on every point.</desc>
+      ${tickMarkup}
+      <line class="db-report-chart-axis" x1="${margin.left}" y1="${zeroY.toFixed(2)}" x2="${width - margin.right}" y2="${zeroY.toFixed(2)}"></line>
+      ${lineMarkup(primaryValues, comparison.primary.rangeLabel, 'is-primary')}
+      ${lineMarkup(secondaryValues, comparison.secondary.rangeLabel, 'is-secondary')}
+      ${xMarkup}
+    `;
+    if (els.reportsChartState) els.reportsChartState.hidden = true;
+  }
+
+  function databaseReportComparisonAxisLabel(index, mode) {
+    if (mode === 'month') return String(index + 1);
+    return new Intl.DateTimeFormat('en-GB', { month: 'short', timeZone: 'UTC' })
+      .format(new Date(Date.UTC(2020, index, 1)));
+  }
+
+  function databaseReportComparisonPointLabel(index, mode) {
+    if (mode === 'month') return `day ${index + 1}`;
+    return new Intl.DateTimeFormat('en-GB', { month: 'long', timeZone: 'UTC' })
+      .format(new Date(Date.UTC(2020, index, 1)));
   }
 
   function reportAxisBounds(values, tickCount) {
@@ -5239,9 +5614,9 @@
 
   async function openFinancialReportDocument() {
     const range = normalizeDatabaseReportRange(state.reportsRange);
-    let data = state.reportsData;
-    if (!data || data.range !== range) data = await loadDatabaseReports();
-    if (!data || data.range !== range) {
+    let data = state.reportsComparisonData?.primary || state.reportsData;
+    if (!state.reportsComparisonData && (!data || data.range !== range)) data = await loadDatabaseReports();
+    if (!data || (!state.reportsComparisonData && data.range !== range)) {
       alert('Financial report data is not available');
       return;
     }
