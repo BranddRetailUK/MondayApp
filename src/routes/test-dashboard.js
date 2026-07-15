@@ -1284,6 +1284,7 @@ async function ensureTestDashboardDefaults(db) {
   await migrateStockOrderedStatusLabel(db);
   await removePreProductionStatusOption(db);
   await migrateAwaitingApprovalStatusColor(db);
+  await migratePreProductionGroupColor(db);
 }
 
 async function upsertColumnDefault(db, column, isSubitem) {
@@ -1342,6 +1343,17 @@ async function migrateAwaitingApprovalStatusColor(db) {
        AND UPPER(TRIM(settings_str::jsonb #>> '{labels,5}')) IN ('AWAITING APPROVAL', 'WAITING APPROVAL')
        AND COALESCE(settings_str::jsonb #>> '{labels_colors,5,color}', '') <> $3`,
     [TEST_DASHBOARD_COLUMN_IDS.STATUS, false, AWAITING_APPROVAL_STATUS_COLOR]
+  );
+}
+
+async function migratePreProductionGroupColor(db) {
+  await db.query(
+    `UPDATE test_dashboard_groups
+     SET color = $2,
+         updated_at = NOW()
+     WHERE id = $1
+       AND color IS DISTINCT FROM $2`,
+    [TEST_DASHBOARD_GROUP_IDS.PRE_PRODUCTION, '#0471f7']
   );
 }
 

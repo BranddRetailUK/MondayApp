@@ -41,8 +41,17 @@ const TEST_DASHBOARD_APPROVAL_REQUIREMENTS_MESSAGE = 'Please add design number a
 const DASHBOARD_ZOOM_MIN = 0.45;
 const DASHBOARD_ZOOM_MAX = 1;
 const HIDDEN_BOARD_COLUMN_TYPES = new Set(['subtasks']);
-const HIDDEN_BOARD_COLUMN_IDS = new Set(['subitems__1']);
-const HIDDEN_BOARD_COLUMN_TITLES = new Set(['START/END', 'START-END']);
+const HIDDEN_BOARD_COLUMN_IDS = new Set(['subitems__1', 'file_mky4xna4', 'checkbox__1', 'project_owner']);
+const HIDDEN_BOARD_COLUMN_TITLES = new Set([
+  'START/END',
+  'START-END',
+  'IMAGE',
+  'IMAGES',
+  'CHECKED IN',
+  'CHECKEDIN',
+  'JOB OWNER',
+  'JOBOWNER',
+]);
 const HIDDEN_SUBITEM_COLUMN_TITLES = new Set(['CHECK IN', 'TEXT']);
 const MOBILE_PRINT_EMBROIDERY_HIDDEN_COLUMN_TITLES = new Set([
   'TRANS',
@@ -797,7 +806,7 @@ function buildDashboardGridSpec(dashboardColumns, { subitem = false, widthOverri
     subitem || !isUltimatePackingUser()
       ? null
       : { kind: 'print', title: 'LABEL', width: printWidth },
-    { kind: 'name', title: subitem ? 'Subitem' : 'JOB', width: nameWidth || (subitem ? 520 : 560) },
+    { kind: 'name', title: subitem ? 'Subitem' : 'JOB TITLE', width: nameWidth || (subitem ? 520 : 560) },
     !subitem && parentTotalColumn ? {
       kind: 'jobTotal',
       title: 'TOTAL',
@@ -1962,14 +1971,28 @@ function openTestRowMenu(anchor, item) {
     anchor,
     itemId: String(item.id),
     itemName: normalizeCellText(item.name || ''),
-    privateJob: item?.dashboard_private_job === true,
+    privateJob: isTestDashboardPrivateItem(item),
   };
   const deleteButton = menu.querySelector('[data-test-row-delete-private]');
-  if (deleteButton) deleteButton.hidden = !__testRowMenuState.privateJob;
+  syncTestRowMenuDeleteAction(deleteButton, __testRowMenuState.privateJob);
   menu.classList.remove('hidden');
   menu.style.visibility = 'hidden';
   positionTestRowMenu(anchor, menu);
   menu.style.visibility = '';
+}
+
+function syncTestRowMenuDeleteAction(deleteButton, visible) {
+  if (!deleteButton) return;
+  deleteButton.hidden = !visible;
+  deleteButton.disabled = !visible;
+  deleteButton.style.display = visible ? '' : 'none';
+  deleteButton.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function isTestDashboardPrivateItem(item) {
+  return item?.dashboard_private_job === true
+    && !item?.database_job
+    && isTestPrivateItemId(item?.id);
 }
 
 function positionTestRowMenu(anchor, menu) {
@@ -2015,7 +2038,9 @@ function handleTestRowMenuClick(event) {
     event.stopPropagation();
     const state = __testRowMenuState;
     closeTestRowMenu();
-    if (state?.privateJob && state.itemId) deleteTestDashboardPrivateJob(state.itemId, state.itemName);
+    if (state?.privateJob && isTestPrivateItemId(state.itemId)) {
+      deleteTestDashboardPrivateJob(state.itemId, state.itemName);
+    }
     return;
   }
 

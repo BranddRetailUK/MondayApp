@@ -5,7 +5,7 @@ const TEST_DASHBOARD_GROUPS = [
   { id: 'group_mkv26kq5', title: 'HOLD', color: '#bb3354', position: 16224, sort_order: 1 },
   { id: 'group_mktt87mj', title: 'TO SAMPLE', color: '#9cd326', position: 24336, sort_order: 2 },
   { id: 'new_group_mkmdezbp', title: 'OFFICE', color: '#df2f4a', position: 39234.625, sort_order: 3 },
-  { id: 'new_group56764__1', title: 'PRE-PRODUCTION', color: '#00c875', position: 46021.25, sort_order: 4 },
+  { id: 'new_group56764__1', title: 'PRE-PRODUCTION', color: '#0471f7', position: 46021.25, sort_order: 4 },
   { id: 'new_group_mkn87dd6', title: 'PRINT', color: '#ffcb00', position: 59482.5, sort_order: 5 },
   { id: 'new_group_mkn8fssp', title: 'EMBROIDERY', color: '#ff642e', position: 104348, sort_order: 6 },
   { id: 'new_group43041', title: 'COMPLETED', color: '#00c875', position: 114592, sort_order: 7 },
