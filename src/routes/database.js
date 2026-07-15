@@ -2,7 +2,14 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db/pool');
 const { fullName } = require('../services/hubAuth');
-const { jobApprovedFromColumnValues } = require('../services/testDashboardDbFields');
+const {
+  AWAITING_APPROVAL_LABEL,
+  STOCK_ORDERED_LABEL,
+  awaitingApprovalStatusValue,
+  formatDashboardJobName,
+  stockOrderedGroupIdForJob,
+  stockOrderedStatusValue,
+} = require('../services/dashboardAutomation');
 const {
   TEST_DASHBOARD_COLUMN_IDS,
   TEST_DASHBOARD_GROUP_IDS,
@@ -11,6 +18,7 @@ const {
 } = require('../services/testDashboardDefaults');
 
 const DASHBOARD_STATUS_COLORS = buildDashboardStatusColors(STATUS_SETTINGS);
+const MAX_STOCK_ORDERING_MARK_IDS = 500;
 
 function buildDashboardStatusColors(settings) {
   const labels = settings?.labels || {};
@@ -23,11 +31,12 @@ function buildDashboardStatusColors(settings) {
   }, {}));
 }
 
-function resolveJobApproved(job, dashboardState) {
-  if (!job) return job?.proof_approved;
-  const stateApproved = jobApprovedFromColumnValues(dashboardState?.column_values || {});
-  if (stateApproved !== null) return stateApproved;
-  return job.proof_approved;
+function parseSourceOrderIds(value) {
+  if (!Array.isArray(value)) return [];
+  const ids = value
+    .map((raw) => Number.parseInt(String(raw), 10))
+    .filter((id) => Number.isFinite(id) && id > 0);
+  return Array.from(new Set(ids));
 }
 
 router.get('/api/database/summary', async (_req, res) => {
@@ -261,7 +270,12 @@ router.get('/api/database/stock-ordering', async (_req, res) => {
                   j.dashboard_status,
                   s.column_values -> '${TEST_DASHBOARD_COLUMN_IDS.STATUS}' ->> 'text',
                   ''
-                ))) AS normalized_status
+                ))) AS normalized_status,
+                UPPER(TRIM(COALESCE(j.dashboard_status, ''))) AS normalized_db_status,
+                UPPER(TRIM(COALESCE(
+                  s.column_values -> '${TEST_DASHBOARD_COLUMN_IDS.STATUS}' ->> 'text',
+                  ''
+                ))) AS normalized_state_status
          FROM database_jobs j
          LEFT JOIN test_dashboard_job_state s ON s.source_order_id = j.source_order_id
          WHERE j.is_complete IS NOT TRUE
@@ -275,6 +289,27 @@ router.get('/api/database/stock-ordering', async (_req, res) => {
              'READY TO PRINT',
              'TRANSFER PRINTING',
              'IN PRODUCTION',
+             'CHECKED IN',
+             'COMPLETED',
+             'INVOICED',
+             'STOCK ORDERED',
+             'ORDERED'
+           )
+           AND normalized_db_status NOT IN (
+             'READY TO PRINT',
+             'TRANSFER PRINTING',
+             'IN PRODUCTION',
+             'CHECKED IN',
+             'COMPLETED',
+             'INVOICED',
+             'STOCK ORDERED',
+             'ORDERED'
+           )
+           AND normalized_state_status NOT IN (
+             'READY TO PRINT',
+             'TRANSFER PRINTING',
+             'IN PRODUCTION',
+             'CHECKED IN',
              'COMPLETED',
              'INVOICED',
              'STOCK ORDERED',
@@ -344,6 +379,117 @@ router.get('/api/database/stock-ordering', async (_req, res) => {
   } catch (err) {
     console.error('GET /api/database/stock-ordering', err);
     res.status(500).json({ error: 'Failed to fetch stock ordering jobs' });
+  }
+});
+
+router.post('/api/database/stock-ordering/mark-ordered', async (req, res) => {
+  const sourceOrderIds = parseSourceOrderIds(req.body?.sourceOrderIds);
+  if (!sourceOrderIds.length) {
+    return res.status(400).json({ error: 'sourceOrderIds must include at least one job id' });
+  }
+  if (sourceOrderIds.length > MAX_STOCK_ORDERING_MARK_IDS) {
+    return res.status(400).json({ error: `Cannot mark more than ${MAX_STOCK_ORDERING_MARK_IDS} jobs at once` });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const result = await client.query(
+      `SELECT j.source_order_id,
+              j.order_no,
+              j.customer_name,
+              j.job_title,
+              j.order_type,
+              j.order_type_abbr,
+              j.dashboard_status,
+              j.dashboard_type,
+              j.proof_approved,
+              s.group_id,
+              s.item_name,
+              s.column_values,
+              s.archived
+       FROM database_jobs j
+       LEFT JOIN test_dashboard_job_state s ON s.source_order_id = j.source_order_id
+       WHERE j.source_order_id = ANY($1::int[])
+       FOR UPDATE OF j`,
+      [sourceOrderIds]
+    );
+
+    const foundIds = new Set(result.rows.map((row) => Number(row.source_order_id)));
+    const missingIds = sourceOrderIds.filter((id) => !foundIds.has(id));
+    if (missingIds.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        error: 'One or more stock ordering jobs were not found',
+        missingSourceOrderIds: missingIds,
+      });
+    }
+
+    const updatedJobs = [];
+    for (const row of result.rows) {
+      const columnValues = { ...(row.column_values || {}) };
+      columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS] = stockOrderedStatusValue();
+      const groupId = stockOrderedGroupIdForJob(row);
+      const itemName = row.item_name || formatDashboardJobName(row);
+
+      await client.query(
+        `INSERT INTO test_dashboard_job_state (
+           source_order_id,
+           group_id,
+           item_name,
+           column_values,
+           archived,
+           updated_at
+         ) VALUES ($1,$2,$3,$4,FALSE,NOW())
+         ON CONFLICT (source_order_id) DO UPDATE SET
+           group_id = EXCLUDED.group_id,
+           item_name = COALESCE(EXCLUDED.item_name, test_dashboard_job_state.item_name),
+           column_values = EXCLUDED.column_values,
+           archived = FALSE,
+           updated_at = NOW()`,
+        [
+          row.source_order_id,
+          groupId,
+          itemName || null,
+          columnValues,
+        ]
+      );
+
+      updatedJobs.push({
+        source_order_id: row.source_order_id,
+        dashboard_status: STOCK_ORDERED_LABEL,
+        group_id: groupId,
+      });
+    }
+
+    const updatedDbJobs = await client.query(
+      `UPDATE database_jobs
+       SET dashboard_status = $2,
+           dashboard_status_updated_at = NOW(),
+           updated_at_source = NOW(),
+           imported_at = NOW()
+       WHERE source_order_id = ANY($1::int[])
+       RETURNING source_order_id, dashboard_status, dashboard_status_updated_at`,
+      [sourceOrderIds, STOCK_ORDERED_LABEL]
+    );
+
+    await client.query('COMMIT');
+
+    const dbJobMap = new Map(updatedDbJobs.rows.map((row) => [Number(row.source_order_id), row]));
+    res.json({
+      ok: true,
+      updatedJobs: updatedJobs.map((job) => ({
+        ...job,
+        dashboard_status_updated_at: dbJobMap.get(Number(job.source_order_id))?.dashboard_status_updated_at || null,
+      })),
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('POST /api/database/stock-ordering/mark-ordered', err);
+    res.status(500).json({ error: 'Failed to mark stock ordering jobs as ordered' });
+  } finally {
+    client.release();
   }
 });
 
@@ -1271,8 +1417,34 @@ router.post('/api/database/jobs', async (req, res) => {
       ]
     );
 
+    const job = inserted.rows[0];
+    await client.query(
+      `INSERT INTO test_dashboard_job_state (
+         source_order_id,
+         group_id,
+         item_name,
+         column_values,
+         archived,
+         updated_at
+       ) VALUES ($1,$2,$3,$4,FALSE,NOW())
+       ON CONFLICT (source_order_id) DO UPDATE SET
+         group_id = EXCLUDED.group_id,
+         item_name = COALESCE(EXCLUDED.item_name, test_dashboard_job_state.item_name),
+         column_values = EXCLUDED.column_values || test_dashboard_job_state.column_values,
+         archived = FALSE,
+         updated_at = NOW()`,
+      [
+        job.source_order_id,
+        TEST_DASHBOARD_GROUP_IDS.OFFICE,
+        formatDashboardJobName(job) || null,
+        {
+          [TEST_DASHBOARD_COLUMN_IDS.STATUS]: awaitingApprovalStatusValue(),
+        },
+      ]
+    );
+
     await client.query('COMMIT');
-    res.status(201).json({ job: inserted.rows[0] });
+    res.status(201).json({ job });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     console.error('POST /api/database/jobs', err);

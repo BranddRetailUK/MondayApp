@@ -18,7 +18,6 @@
   const OUTSTANDING_TAKEN_BY_CELL_EXTRA_WIDTH = 12;
   const OUTSTANDING_TABLE_FIXED_BASE_WIDTH = 19 + 68 + 198 + 36 + 88 + 82 + OUTSTANDING_STATUS_COLUMN_WIDTH;
   const STOCK_ORDERING_TABLE_COLUMN_COUNT = 8;
-  const TEST_DASHBOARD_STATUS_COLUMN_ID = 'label__1';
   const STOCK_ORDERED_STATUS_LABEL = 'STOCK ORDERED';
   const OUTSTANDING_TITLE_COLUMN_MIN_WIDTH = 170;
   const OUTSTANDING_TITLE_CELL_EXTRA_WIDTH = 12;
@@ -2715,17 +2714,14 @@
     state.stockOrderingStatusSaving = true;
     setOrderAckActionSaving(true);
     try {
-      for (const job of jobs) {
-        const sourceOrderId = String(job.source_order_id);
-        await fetchJson(`/api/test-dashboard/items/${encodeURIComponent(sourceOrderId)}/status-column`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            columnId: TEST_DASHBOARD_STATUS_COLUMN_ID,
-            label: STOCK_ORDERED_STATUS_LABEL,
-          }),
-        });
-        state.stockOrderingStatusAppliedIds.add(sourceOrderId);
+      const sourceOrderIds = jobs.map((job) => job.source_order_id);
+      const data = await fetchJson('/api/database/stock-ordering/mark-ordered', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceOrderIds }),
+      });
+      for (const updatedJob of data.updatedJobs || []) {
+        state.stockOrderingStatusAppliedIds.add(String(updatedJob.source_order_id));
       }
       removeStockOrderedJobsFromStockOrderingList(jobs);
       updateCachedDashboardStatusForJobs(jobs, STOCK_ORDERED_STATUS_LABEL);
@@ -3544,7 +3540,7 @@
             <span class="db-proof-file-count">${escapeHtml(fileCount)}</span>
           </div>
           <div class="db-proof-viewer" data-db-proof-viewer>
-            <div class="db-panel-message">${files.length ? 'Loading proof file' : 'No proof PDFs attached in the Test Dashboard proof column'}</div>
+            <div class="db-panel-message">${files.length ? 'Loading proof file' : 'No proof PDFs attached in the Tuesday Dashboard proof column'}</div>
           </div>
           <div class="db-proof-page-controls" data-db-proof-page-controls hidden>
             <button class="db-small-button" type="button" data-db-proof-page="-1">‹</button>
@@ -3616,7 +3612,7 @@
     updateDatabaseProofControls(true);
 
     if (!file) {
-      setDatabaseProofViewerMessage('No proof PDFs attached in the Test Dashboard proof column');
+      setDatabaseProofViewerMessage('No proof PDFs attached in the Tuesday Dashboard proof column');
       updateDatabaseProofControls(false);
       return;
     }

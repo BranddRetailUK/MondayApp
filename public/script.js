@@ -2058,7 +2058,7 @@ async function moveTestDashboardItemToGroup(itemId, group) {
     __testGroupKeysToOpen.add(slugify(group));
     await loadTestBoard({ forceRefresh: true });
   } catch (err) {
-    console.warn('Test dashboard move failed', err);
+    console.warn('Tuesday Dashboard move failed', err);
     alert(`Failed to move job: ${err.message || 'Unknown error'}`);
     await loadTestBoard({ forceRefresh: true });
   } finally {
@@ -3017,7 +3017,7 @@ async function uploadTestDashboardFiles(itemId, column, files, cell) {
     }
     uploaded = true;
   } catch (err) {
-    console.warn('Test dashboard file upload failed', err);
+    console.warn('Tuesday Dashboard file upload failed', err);
     alert(`File upload failed: ${err.message || 'Unknown error'}`);
   } finally {
     __testFileUploadingCells.delete(uploadKey);

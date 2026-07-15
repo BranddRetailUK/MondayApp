@@ -25,6 +25,27 @@ const {
   jobApprovedFromColumnValues,
   updateDatabaseJobDashboardFields,
 } = require('../services/testDashboardDbFields');
+const {
+  AWAITING_APPROVAL_LABEL,
+  NO_STOCK_LABEL,
+  STOCK_ORDERED_LABEL,
+  PRE_PRODUCTION_LABEL,
+  READY_TO_PRINT_LABEL,
+  CHECKED_IN_LABEL,
+  COMPLETED_LABEL,
+  applyDashboardAutomations: applyDashboardAutomationsShared,
+  applyPrivateDashboardAutomations: applyPrivateDashboardAutomationsShared,
+  deriveJobCategory,
+  deriveTypeLabel,
+  getColumnText,
+  isAllowedUnapprovedManualStatus,
+  isStockOrderedStatus,
+  normalizeStatusLookupLabel,
+  resolveDashboardGroupId,
+  resolveJobApproved,
+  resolvePrivateDashboardGroupId,
+  statusLabelForMoveGroup,
+} = require('../services/dashboardAutomation');
 
 const publicRouter = express.Router();
 const protectedRouter = express.Router();
@@ -32,15 +53,6 @@ const protectedRouter = express.Router();
 const EDITABLE_STATUS_TITLES = new Set(['STATUS', 'PRIORITY']);
 const EDITABLE_TEXT_TITLES = new Set(['NOTES']);
 const DEFAULT_OFFICE_GROUP_ID = TEST_DASHBOARD_GROUP_IDS.OFFICE;
-const AWAITING_APPROVAL_LABEL = 'AWAITING APPROVAL';
-const WAITING_APPROVAL_LABEL = 'WAITING APPROVAL';
-const NO_STOCK_LABEL = 'NO STOCK';
-const STOCK_ORDERED_LABEL = 'STOCK ORDERED';
-const HOLD_LABEL = 'HOLD';
-const PRE_PRODUCTION_LABEL = 'PRE-PRODUCTION';
-const READY_TO_PRINT_LABEL = 'READY TO PRINT';
-const CHECKED_IN_LABEL = 'CHECKED IN';
-const COMPLETED_LABEL = 'COMPLETED';
 const APPROVAL_REQUIREMENTS_MESSAGE = 'Please add design number and/or Visual Proof.';
 const DESIGN_POSITION_LOCK_KEY = 71060217;
 const STITCH_REFERENCE_LABEL = String.raw`(?:STITCH[\s._/-]*COUNT|STITCHES?|S[\s._/-]*T(?:[\s._/-]*(?:S|C))?)`;
@@ -61,7 +73,7 @@ protectedRouter.get('/api/test-dashboard/board', async (_req, res) => {
     res.json(payload);
   } catch (err) {
     console.error('GET /api/test-dashboard/board', err);
-    res.status(500).json({ error: 'Failed to fetch test dashboard board' });
+    res.status(500).json({ error: 'Failed to fetch Tuesday Dashboard board' });
   }
 });
 
@@ -161,7 +173,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/group', async (req, res) =
   if (!privateJob && !Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
 
   const groupId = normalizeMoveTargetGroupId(req.body?.groupId || req.body?.group);
-  if (!groupId) return res.status(400).json({ error: 'Unsupported test dashboard group' });
+  if (!groupId) return res.status(400).json({ error: 'Unsupported Tuesday Dashboard group' });
 
   try {
     await ensureTestDashboardDefaults(pool);
@@ -216,7 +228,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/group', async (req, res) =
     });
   } catch (err) {
     console.error('PUT /api/test-dashboard/items/:jobId/group', err);
-    res.status(500).json({ error: 'Failed to move test dashboard job' });
+    res.status(500).json({ error: 'Failed to move Tuesday Dashboard job' });
   }
 });
 
@@ -244,7 +256,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/date-column', async (req, 
     }
 
     const column = columns.find(col => col.id === columnId);
-    if (!column || column.type !== 'date') return res.status(400).json({ error: 'Column is not a test dashboard date column' });
+    if (!column || column.type !== 'date') return res.status(400).json({ error: 'Column is not a Tuesday Dashboard date column' });
 
     const state = privateJob ? job : await fetchJobState(job.source_order_id);
     const columnValues = { ...(state?.column_values || {}) };
@@ -284,7 +296,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/date-column', async (req, 
     });
   } catch (err) {
     console.error('PUT /api/test-dashboard/items/:jobId/date-column', err);
-    res.status(500).json({ error: 'Failed to update test dashboard date' });
+    res.status(500).json({ error: 'Failed to update Tuesday Dashboard date' });
   }
 });
 
@@ -308,10 +320,10 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
 
     const column = columns.find(col => col.id === columnId);
     if (!column || column.type !== 'status') {
-      return res.status(400).json({ error: 'Column is not a test dashboard status column' });
+      return res.status(400).json({ error: 'Column is not a Tuesday Dashboard status column' });
     }
     if (!EDITABLE_STATUS_TITLES.has(normalizeColumnTitle(column.title))) {
-      return res.status(400).json({ error: 'Only test dashboard STATUS and PRIORITY columns can be updated' });
+      return res.status(400).json({ error: 'Only Tuesday Dashboard STATUS and PRIORITY columns can be updated' });
     }
 
     const state = privateJob ? job : await fetchJobState(sourceOrderId);
@@ -325,7 +337,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
     } else {
       const option = findStatusOption(column, requestedLabel);
       if (!option) {
-        return res.status(400).json({ error: 'Status label is not configured on that test dashboard column' });
+        return res.status(400).json({ error: 'Status label is not configured on that Tuesday Dashboard column' });
       }
       columnValues[columnId] = statusValue(column, option.label, option.index);
     }
@@ -369,7 +381,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
     });
   } catch (err) {
     console.error('PUT /api/test-dashboard/items/:jobId/status-column', err);
-    res.status(500).json({ error: 'Failed to update test dashboard status column' });
+    res.status(500).json({ error: 'Failed to update Tuesday Dashboard status column' });
   }
 });
 
@@ -392,7 +404,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (r
 
     const column = columns.find(col => col.id === columnId);
     if (!column || column.type !== 'checkbox') {
-      return res.status(400).json({ error: 'Column is not a test dashboard checkbox column' });
+      return res.status(400).json({ error: 'Column is not a Tuesday Dashboard checkbox column' });
     }
 
     const state = privateJob ? job : await fetchJobState(job.source_order_id);
@@ -476,7 +488,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (r
     });
   } catch (err) {
     console.error('PUT /api/test-dashboard/items/:jobId/checkbox-column', err);
-    res.status(500).json({ error: 'Failed to update test dashboard checkbox column' });
+    res.status(500).json({ error: 'Failed to update Tuesday Dashboard checkbox column' });
   }
 });
 
@@ -501,10 +513,10 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/text-column', async (req, 
 
     const column = columns.find(col => col.id === columnId);
     if (!column || !['text', 'long_text'].includes(column.type)) {
-      return res.status(400).json({ error: 'Column is not a test dashboard text column' });
+      return res.status(400).json({ error: 'Column is not a Tuesday Dashboard text column' });
     }
     if (!privateJob && !EDITABLE_TEXT_TITLES.has(normalizeColumnTitle(column.title))) {
-      return res.status(400).json({ error: 'Only the test dashboard NOTES column can be updated' });
+      return res.status(400).json({ error: 'Only the Tuesday Dashboard NOTES column can be updated' });
     }
 
     const state = privateJob ? job : await fetchJobState(job.source_order_id);
@@ -532,7 +544,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/text-column', async (req, 
     });
   } catch (err) {
     console.error('PUT /api/test-dashboard/items/:jobId/text-column', err);
-    res.status(500).json({ error: 'Failed to update test dashboard text column' });
+    res.status(500).json({ error: 'Failed to update Tuesday Dashboard text column' });
   }
 });
 
@@ -555,7 +567,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/design-column', async (req
       ]);
       if (!job) return res.status(404).json({ error: 'Private dashboard job not found' });
       if (!isDesignDashboardColumn(column)) {
-        return res.status(400).json({ error: 'Column is not the test dashboard DES/PSG column' });
+        return res.status(400).json({ error: 'Column is not the Tuesday Dashboard DES/PSG column' });
       }
       const columnValues = { ...(job.column_values || {}) };
       columnValues[column.id] = textValue(column, rawValue);
@@ -584,7 +596,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/design-column', async (req
     ]);
     if (!job) return res.status(404).json({ error: 'Database job not found' });
     if (!isDesignDashboardColumn(column)) {
-      return res.status(400).json({ error: 'Column is not the test dashboard DES/PSG column' });
+      return res.status(400).json({ error: 'Column is not the Tuesday Dashboard DES/PSG column' });
     }
 
     const result = await appendDashboardDesignPosition(job, rawValue);
@@ -601,7 +613,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/design-column', async (req
     });
   } catch (err) {
     console.error('PUT /api/test-dashboard/items/:jobId/design-column', err);
-    res.status(500).json({ error: 'Failed to save test dashboard design / PSG value' });
+    res.status(500).json({ error: 'Failed to save Tuesday Dashboard design / PSG value' });
   }
 });
 
@@ -622,7 +634,7 @@ protectedRouter.post('/api/test-dashboard/items/:jobId/label-printed', async (re
     const state = privateJob ? job : await fetchJobState(job.source_order_id);
     const columnValues = { ...(state?.column_values || {}) };
     const statusColumn = columnById(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS);
-    if (!statusColumn) return res.status(500).json({ error: 'Test dashboard STATUS column is not configured' });
+    if (!statusColumn) return res.status(500).json({ error: 'Tuesday Dashboard STATUS column is not configured' });
 
     const previousStatus = normalizeColumnTitle(
       privateJob
@@ -637,7 +649,7 @@ protectedRouter.post('/api/test-dashboard/items/:jobId/label-printed', async (re
 
     if (!statusPreserved) {
       const option = findStatusOption(statusColumn, CHECKED_IN_LABEL);
-      if (!option) return res.status(500).json({ error: 'CHECKED IN is not configured on the test dashboard STATUS column' });
+      if (!option) return res.status(500).json({ error: 'CHECKED IN is not configured on the Tuesday Dashboard STATUS column' });
       columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS] = statusValue(statusColumn, option.label, option.index);
 
       const nextState = {
@@ -667,7 +679,7 @@ protectedRouter.post('/api/test-dashboard/items/:jobId/label-printed', async (re
     });
   } catch (err) {
     console.error('POST /api/test-dashboard/items/:jobId/label-printed', err);
-    res.status(500).json({ error: 'Failed to prepare the label and update test dashboard status' });
+    res.status(500).json({ error: 'Failed to prepare the label and update Tuesday Dashboard status' });
   }
 });
 
@@ -682,12 +694,12 @@ protectedRouter.post('/api/test-dashboard/scanner', async (req, res) => {
     const { scan } = req.body || {};
     if (!scan || typeof scan !== 'string') return res.status(400).json({ error: 'No scan data' });
     const parsed = parseTestScan(scan);
-    if (!parsed.jobId) return res.status(400).json({ error: 'Invalid test dashboard scan string' });
+    if (!parsed.jobId) return res.status(400).json({ error: 'Invalid Tuesday Dashboard scan string' });
     const result = await recordTestDashboardScan(parsed.jobId);
     res.json({ ok: true, item: parsed.jobId, ...result });
   } catch (err) {
     console.error('POST /api/test-dashboard/scanner', err);
-    res.status(500).json({ error: 'Failed to process test dashboard scan' });
+    res.status(500).json({ error: 'Failed to process Tuesday Dashboard scan' });
   }
 });
 
@@ -809,7 +821,7 @@ protectedRouter.post('/api/test-dashboard/items/:jobId/files', async (req, res) 
     res.status(201).json({ file: dbFileToApi(inserted.rows[0]) });
   } catch (err) {
     console.error('POST /api/test-dashboard/items/:jobId/files', err);
-    res.status(500).json({ error: 'Failed to save test dashboard file metadata' });
+    res.status(500).json({ error: 'Failed to save Tuesday Dashboard file metadata' });
   }
 });
 
@@ -860,7 +872,7 @@ protectedRouter.delete('/api/test-dashboard/items/:jobId/proof-files', async (re
     res.json({ ok: true, itemId: String(sourceOrderId), removed: deleted.rowCount });
   } catch (err) {
     console.error('DELETE /api/test-dashboard/items/:jobId/proof-files', err);
-    res.status(500).json({ error: 'Failed to remove test dashboard proof' });
+    res.status(500).json({ error: 'Failed to remove Tuesday Dashboard proof' });
   }
 });
 
@@ -878,7 +890,7 @@ protectedRouter.delete('/api/test-dashboard/items/:jobId/files/:fileId', async (
        RETURNING *`,
       [fileId, sourceOrderId]
     );
-    if (!deleted.rowCount) return res.status(404).json({ error: 'Test dashboard file not found' });
+    if (!deleted.rowCount) return res.status(404).json({ error: 'Tuesday Dashboard file not found' });
 
     destroyAsset(deleted.rows[0].public_id, deleted.rows[0].resource_type).catch((err) => {
       console.warn('[test-dashboard] Cloudinary destroy failed:', err?.message || err);
@@ -886,7 +898,7 @@ protectedRouter.delete('/api/test-dashboard/items/:jobId/files/:fileId', async (
     res.json({ ok: true, fileId });
   } catch (err) {
     console.error('DELETE /api/test-dashboard/items/:jobId/files/:fileId', err);
-    res.status(500).json({ error: 'Failed to delete test dashboard file' });
+    res.status(500).json({ error: 'Failed to delete Tuesday Dashboard file' });
   }
 });
 
@@ -903,14 +915,14 @@ publicRouter.get('/test-scan', async (req, res) => {
     if (wantsJson) return res.json({ ok: true, ...result });
     return res.send(
       `<html><body style="font-family:Arial;padding:20px">
-        <div>Test dashboard scan recorded</div>
+        <div>Tuesday Dashboard scan recorded</div>
         <div>Count: ${result.scan_count} - Status: <b>${escapeHtml(result.status)}</b></div>
         <script>setTimeout(()=>{ try{window.close()}catch(e){} }, 1200)</script>
       </body></html>`
     );
   } catch (err) {
     console.error('GET /test-scan', err);
-    return sendScanError(res, wantsJson, 500, 'Failed to update test dashboard scan');
+    return sendScanError(res, wantsJson, 500, 'Failed to update Tuesday Dashboard scan');
   }
 });
 
@@ -1136,11 +1148,6 @@ function buildSubitem(line, columns) {
   };
 }
 
-function resolveJobApproved(job, stateValues = {}) {
-  const savedJobApproved = jobApprovedFromColumnValues(stateValues);
-  return savedJobApproved === null ? job?.proof_approved === true : savedJobApproved;
-}
-
 function customerDateValue(job, columns) {
   if (!isTruthyDatabaseValue(job?.customer_date_required)) return null;
   return dateValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.DATE), job?.delivery_date);
@@ -1156,16 +1163,6 @@ function unapprovedStatusValue(columns, job, stateValues = {}) {
     return statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, label);
   }
   return awaitingApprovalStatusValue(columns);
-}
-
-function isAllowedUnapprovedManualStatus(label) {
-  const normalized = normalizeColumnTitle(label);
-  return normalized === HOLD_LABEL ||
-    isStockOrderedStatus(normalized) ||
-    normalized === CHECKED_IN_LABEL ||
-    normalized === COMPLETED_LABEL ||
-    normalized === 'TO SAMPLE' ||
-    normalized === 'SAMPLED';
 }
 
 function applyAwaitingApprovalColumnValues(job, columns, columnValues) {
@@ -1597,148 +1594,29 @@ async function upsertJobState(sourceOrderId, state) {
   return result.rows[0];
 }
 
-function applyDashboardAutomations({ job, currentState, column, columnValues, changedLabel, clearRequested }) {
-  let groupId = currentState?.group_id || deriveDefaultGroupId(job);
-  let archived = Boolean(currentState?.archived);
-  const title = normalizeColumnTitle(column.title);
-  const statusText = normalizeColumnTitle(changedLabel || getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]));
-  const typeText = normalizeColumnTitle(deriveTypeLabel(job) || getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.TYPE]) || job.dashboard_type);
-  const jobApproved = resolveJobApproved(job, columnValues);
-
-  if (title === 'STATUS' && !clearRequested && isStockOrderedStatus(statusText)) {
-    return {
-      group_id: currentDashboardGroupIdForStatusOnlyUpdate(job, currentState, typeText, jobApproved),
-      item_name: currentState?.item_name || formatJobName(job),
-      column_values: columnValues,
-      archived: false,
-    };
-  }
-
-  if (title === 'STATUS' && !clearRequested && isManualStatusAutomationOverride(statusText)) {
-    const automatedGroupId = groupIdForStatusAndType(statusText, typeText);
-    if (statusText === COMPLETED_LABEL) {
-      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.PRIORITY];
-      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.DATE];
-      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.TRANS];
-      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.JAQ];
-    }
-    return {
-      group_id: automatedGroupId || groupId,
-      item_name: currentState?.item_name || formatJobName(job),
-      column_values: columnValues,
-      archived: false,
-    };
-  }
-
-  if (!jobApproved) {
-    applyAwaitingApprovalColumnValues(job, TEST_DASHBOARD_COLUMNS, columnValues);
-    return {
-      group_id: TEST_DASHBOARD_GROUP_IDS.OFFICE,
-      item_name: currentState?.item_name || formatJobName(job),
-      column_values: columnValues,
-      archived: false,
-    };
-  }
-
-  if (title === 'STATUS' && !clearRequested) {
-    if (statusText === 'INVOICED') {
-      archived = true;
-    } else {
-      archived = false;
-    }
-    const automatedGroupId = groupIdForStatusAndType(statusText, typeText);
-    if (statusText === 'COMPLETED') {
-      groupId = automatedGroupId || TEST_DASHBOARD_GROUP_IDS.COMPLETED;
-      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.PRIORITY];
-      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.DATE];
-      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.TRANS];
-      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.JAQ];
-    } else if (automatedGroupId) {
-      groupId = automatedGroupId;
-    }
-  }
-
-  return {
-    group_id: groupId,
-    item_name: currentState?.item_name || formatJobName(job),
-    column_values: columnValues,
-    archived,
-  };
+function applyDashboardAutomations(args) {
+  return applyDashboardAutomationsShared({
+    ...args,
+    applyAwaitingApprovalColumnValues: (job, columnValues) => {
+      applyAwaitingApprovalColumnValues(job, TEST_DASHBOARD_COLUMNS, columnValues);
+    },
+    formatJobName,
+    defaultGroupId: DEFAULT_OFFICE_GROUP_ID,
+  });
 }
 
-function isManualStatusAutomationOverride(statusText) {
-  return statusText === COMPLETED_LABEL ||
-    statusText === 'TO SAMPLE' ||
-    statusText === 'SAMPLED';
-}
-
-function currentDashboardGroupIdForStatusOnlyUpdate(job, currentState, typeText, jobApproved) {
-  const stateValues = currentState?.column_values || {};
-  const currentStatusText = normalizeColumnTitle(
-    job?.dashboard_status || getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS])
-  );
-  const currentGroupId = currentState?.group_id ||
-    groupIdForStatusAndType(currentStatusText, typeText) ||
-    deriveDefaultGroupId(job);
-  return sanitizeUnapprovedDashboardGroupId(currentGroupId, jobApproved);
-}
-
-function sanitizeUnapprovedDashboardGroupId(groupId, jobApproved) {
-  const fallback = groupId || TEST_DASHBOARD_GROUP_IDS.OFFICE;
-  if (jobApproved) return fallback;
-  if (
-    fallback === TEST_DASHBOARD_GROUP_IDS.PRE_PRODUCTION ||
-    fallback === TEST_DASHBOARD_GROUP_IDS.PRINT ||
-    fallback === TEST_DASHBOARD_GROUP_IDS.EMBROIDERY
-  ) {
-    return TEST_DASHBOARD_GROUP_IDS.OFFICE;
-  }
-  return fallback;
-}
-
-function applyPrivateDashboardAutomations({ currentJob, column, columnValues, changedLabel, clearRequested }) {
-  let groupId = currentJob?.group_id || TEST_DASHBOARD_GROUP_IDS.OFFICE;
-  let archived = Boolean(currentJob?.archived);
-  const title = normalizeColumnTitle(column?.title || '');
-  const statusText = normalizeColumnTitle(changedLabel || getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]));
-  const typeText = normalizeColumnTitle(getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.TYPE]));
-  const jobApproved = jobApprovedFromColumnValues(columnValues) === true;
-
-  if (!jobApproved && !statusText) {
-    applyPrivateAwaitingApprovalColumnValues(TEST_DASHBOARD_COLUMNS, columnValues);
-    return {
-      group_id: TEST_DASHBOARD_GROUP_IDS.OFFICE,
-      item_name: currentJob?.item_name || '',
-      column_values: columnValues,
-      archived: false,
-    };
-  }
-
-  if (title === 'STATUS' && !clearRequested) {
-    archived = statusText === 'INVOICED';
-    const automatedGroupId = groupIdForStatusAndType(statusText, typeText);
-    if (statusText === COMPLETED_LABEL) {
-      groupId = automatedGroupId || TEST_DASHBOARD_GROUP_IDS.COMPLETED;
-      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.PRIORITY];
-      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.DATE];
-      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.TRANS];
-      delete columnValues[TEST_DASHBOARD_COLUMN_IDS.JAQ];
-    } else if (automatedGroupId) {
-      groupId = automatedGroupId;
-    }
-  }
-
-  return {
-    group_id: groupId,
-    item_name: currentJob?.item_name || '',
-    column_values: columnValues,
-    archived,
-  };
+function applyPrivateDashboardAutomations(args) {
+  return applyPrivateDashboardAutomationsShared({
+    ...args,
+    applyAwaitingApprovalColumnValues: (columnValues) => {
+      applyPrivateAwaitingApprovalColumnValues(TEST_DASHBOARD_COLUMNS, columnValues);
+    },
+  });
 }
 
 async function recordTestDashboardScan(jobId) {
   const sourceOrderId = Number.parseInt(jobId, 10);
-  if (!Number.isFinite(sourceOrderId)) throw new Error('Invalid test dashboard job id');
+  if (!Number.isFinite(sourceOrderId)) throw new Error('Invalid Tuesday Dashboard job id');
   await ensureTestDashboardDefaults(pool);
   const job = await fetchDashboardJob(sourceOrderId);
   if (!job) throw new Error('Database job not found');
@@ -1815,79 +1693,6 @@ function formatJobName(job) {
     job.customer_name,
     job.job_title || job.order_type,
   ].filter(Boolean).join(' - ');
-}
-
-function resolveDashboardGroupId(job, state, scan) {
-  const stateValues = state?.column_values || {};
-  const statusText = normalizeColumnTitle(
-    job.dashboard_status || getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]) || scan?.status || ''
-  );
-  const typeText = normalizeColumnTitle(
-    deriveTypeLabel(job) || getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.TYPE]) || job.dashboard_type
-  );
-  const jobApproved = resolveJobApproved(job, stateValues);
-  if (!jobApproved) {
-    if (isStockOrderedStatus(statusText)) {
-      return sanitizeUnapprovedDashboardGroupId(state?.group_id || deriveDefaultGroupId(job), false);
-    }
-    if (isAllowedUnapprovedManualStatus(statusText)) {
-      const manualGroupId = groupIdForStatusAndType(statusText, typeText);
-      return sanitizeUnapprovedDashboardGroupId(manualGroupId || state?.group_id || deriveDefaultGroupId(job), false);
-    }
-    return TEST_DASHBOARD_GROUP_IDS.OFFICE;
-  }
-  const automatedGroupId = groupIdForStatusAndType(statusText, typeText);
-  if (automatedGroupId) return automatedGroupId;
-  return state?.group_id || deriveDefaultGroupId(job);
-}
-
-function resolvePrivateDashboardGroupId(job) {
-  const stateValues = job?.column_values || {};
-  const statusText = normalizeColumnTitle(getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]));
-  const typeText = normalizeColumnTitle(getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.TYPE]));
-  const automatedGroupId = groupIdForStatusAndType(statusText, typeText);
-  if (automatedGroupId) return automatedGroupId;
-  return job?.group_id || TEST_DASHBOARD_GROUP_IDS.OFFICE;
-}
-
-function groupIdForStatusAndType(statusText, typeText) {
-  if (statusText === 'AWAITING APPROVAL' || statusText === 'WAITING APPROVAL') return TEST_DASHBOARD_GROUP_IDS.OFFICE;
-  if (statusText === 'COMPLETED') return TEST_DASHBOARD_GROUP_IDS.COMPLETED;
-  if (statusText === 'HOLD') return TEST_DASHBOARD_GROUP_IDS.HOLD;
-  if (statusText === 'TO SAMPLE') return TEST_DASHBOARD_GROUP_IDS.TO_SAMPLE;
-  if (statusText === 'SAMPLED') return TEST_DASHBOARD_GROUP_IDS.OFFICE;
-  if (statusText === 'PRE-PRODUCTION' || statusText === 'NO STOCK') {
-    return TEST_DASHBOARD_GROUP_IDS.PRE_PRODUCTION;
-  }
-  if (statusText === 'READY TO PRINT') {
-    if (typeText.includes('EMB')) return TEST_DASHBOARD_GROUP_IDS.EMBROIDERY;
-    if (typeText.includes('PRINT')) return TEST_DASHBOARD_GROUP_IDS.PRINT;
-  }
-  return '';
-}
-
-function deriveDefaultGroupId(_job) {
-  return DEFAULT_OFFICE_GROUP_ID;
-}
-
-function deriveTypeLabel(job) {
-  const category = deriveJobCategory(job);
-  if (category === 'print_embroidery') return 'EMB / PRINT';
-  if (category === 'embroidery') return 'EMB';
-  if (category === 'print') return 'PRINT';
-  return '';
-}
-
-function deriveJobCategory(job) {
-  const raw = `${job.order_type || ''} ${job.order_type_abbr || ''}`.toLowerCase();
-  const abbr = clean(job.order_type_abbr).toLowerCase();
-  const isPrint = raw.includes('print') || abbr === 'p' || abbr === 'pe' || abbr === 'ep';
-  const isEmbroidery = raw.includes('embro') || /\bemb\b/.test(raw) || abbr === 'e' || abbr === 'pe' || abbr === 'ep';
-  if (raw.includes('gift') || abbr === 'g') return 'gifts';
-  if (isPrint && isEmbroidery) return 'print_embroidery';
-  if (isEmbroidery) return 'embroidery';
-  if (isPrint) return 'print';
-  return 'other';
 }
 
 function designTextFromPositions(positions, job) {
@@ -2325,13 +2130,6 @@ function normalizeMoveTargetGroupId(value) {
   return '';
 }
 
-function statusLabelForMoveGroup(groupId) {
-  if (groupId === TEST_DASHBOARD_GROUP_IDS.HOLD) return HOLD_LABEL;
-  if (groupId === TEST_DASHBOARD_GROUP_IDS.OFFICE) return AWAITING_APPROVAL_LABEL;
-  if (groupId === TEST_DASHBOARD_GROUP_IDS.PRE_PRODUCTION) return NO_STOCK_LABEL;
-  return '';
-}
-
 function parseDashboardDateInput(value) {
   const raw = clean(value);
   if (!raw) return '';
@@ -2607,18 +2405,6 @@ function findStatusOption(column, requestedLabel) {
   return null;
 }
 
-function normalizeStatusLookupLabel(value) {
-  const normalized = normalizeColumnTitle(value);
-  if (normalized === AWAITING_APPROVAL_LABEL || normalized === WAITING_APPROVAL_LABEL) return WAITING_APPROVAL_LABEL;
-  if (isStockOrderedStatus(normalized)) return STOCK_ORDERED_LABEL;
-  return normalized;
-}
-
-function isStockOrderedStatus(value) {
-  const normalized = normalizeColumnTitle(value);
-  return normalized === STOCK_ORDERED_LABEL || normalized === 'ORDERED';
-}
-
 function dashboardLabelsForChangedColumn(column, label) {
   const title = normalizeColumnTitle(column?.title || '');
   if (title === 'STATUS') {
@@ -2634,10 +2420,6 @@ function dashboardLabelsForChangedColumn(column, label) {
 function isProofApprovalCheckbox(column) {
   const title = normalizeColumnTitle(column?.title || '');
   return column?.id === TEST_DASHBOARD_COLUMN_IDS.JOB || title.includes('APPROVED') || title.includes('JOB');
-}
-
-function getColumnText(value) {
-  return clean(value?.text || '');
 }
 
 function normalizeStatusIndex(index) {
