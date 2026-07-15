@@ -1480,7 +1480,7 @@ router.post('/api/database/jobs', async (req, res) => {
   const contactName = cleanNullable(payload.contact_name);
   const customerId = nullableInt(payload.customer_id);
   const contactId = nullableInt(payload.contact_id);
-  const orderType = cleanNullable(payload.order_type);
+  const orderType = normalizeDatabaseOrderType(payload.order_type);
   const jobTitle = cleanNullable(payload.job_title);
   const deliveryMethod = cleanNullable(payload.delivery_method);
   const paymentTerms = cleanNullable(payload.payment_terms);
@@ -1658,6 +1658,7 @@ router.put('/api/database/jobs/:id', async (req, res) => {
 
   const payload = req.body || {};
   const hasJobTitle = Object.prototype.hasOwnProperty.call(payload, 'job_title');
+  const hasOrderType = Object.prototype.hasOwnProperty.call(payload, 'order_type');
   const hasComments = Object.prototype.hasOwnProperty.call(payload, 'comments');
   const hasIsComplete = Object.prototype.hasOwnProperty.call(payload, 'is_complete');
   const hasMarkInvoiced = payload.mark_invoiced === true || payload.mark_invoiced === 'true';
@@ -1667,7 +1668,15 @@ router.put('/api/database/jobs/:id', async (req, res) => {
   const hasAddressFields = ['invoice_address_id', 'invoice_address', 'delivery_address_id', 'delivery_address']
     .some((field) => Object.prototype.hasOwnProperty.call(payload, field));
 
-  if (!hasJobTitle && !hasComments && !hasIsComplete && !hasMarkInvoiced && !hasContactFields && !hasAddressFields) {
+  if (hasOrderType) {
+    const orderType = normalizeDatabaseOrderType(payload.order_type);
+    if (!orderType) {
+      return res.status(400).json({ error: 'Order type must be Business Gifts, Printing, Print + Emb, or Embroidery' });
+    }
+    payload.order_type = orderType;
+  }
+
+  if (!hasJobTitle && !hasOrderType && !hasComments && !hasIsComplete && !hasMarkInvoiced && !hasContactFields && !hasAddressFields) {
     return res.status(400).json({ error: 'No supported job fields supplied' });
   }
 
@@ -1728,6 +1737,10 @@ router.put('/api/database/jobs/:id', async (req, res) => {
         return res.status(404).json({ error: 'Database job not found' });
       }
 
+      if (hasOrderType) {
+        await clearDashboardTypeOverride(client, job.source_order_id);
+      }
+
       await client.query('COMMIT');
       return res.json({ job: result.rows[0] });
     } catch (err) {
@@ -1765,6 +1778,10 @@ router.put('/api/database/jobs/:id', async (req, res) => {
 
     if (!result.rowCount) {
       return res.status(404).json({ error: 'Database job not found' });
+    }
+
+    if (hasOrderType) {
+      await clearDashboardTypeOverride(pool, job.source_order_id);
     }
 
     res.json({ job: result.rows[0] });
@@ -2709,6 +2726,15 @@ function addLineItemUpdateField(update, column, value) {
 }
 
 function appendDatabaseJobUpdates(payload, values, updates) {
+  if (hasOwn(payload, 'order_type')) {
+    const orderType = normalizeDatabaseOrderType(payload.order_type);
+    values.push(orderType);
+    updates.push(`order_type = $${values.length}`);
+    values.push(orderTypeAbbreviation(orderType));
+    updates.push(`order_type_abbr = $${values.length}`);
+    updates.push('dashboard_type = NULL');
+  }
+
   const textFields = [
     'job_title',
     'comments',
@@ -2805,6 +2831,16 @@ async function resolveDatabaseJobForMutation(db, id, options = {}) {
   return result.rows[0] || null;
 }
 
+async function clearDashboardTypeOverride(db, sourceOrderId) {
+  await db.query(
+    `UPDATE test_dashboard_job_state
+     SET column_values = COALESCE(column_values, '{}'::jsonb) - $2,
+         updated_at = NOW()
+     WHERE source_order_id = $1`,
+    [sourceOrderId, TEST_DASHBOARD_COLUMN_IDS.TYPE]
+  );
+}
+
 function parseDatabaseDate(value, label) {
   const clean = cleanQuery(value);
   if (!clean) return null;
@@ -2845,15 +2881,25 @@ function parseDatabaseDate(value, label) {
   };
 }
 
+function normalizeDatabaseOrderType(value) {
+  const clean = cleanQuery(value).toLowerCase().replace(/\s+/g, ' ');
+  if (!clean) return null;
+  if (clean.includes('gift')) return 'Business Gifts';
+  const isPrint = clean.includes('print');
+  const isEmbroidery = clean.includes('embro') || /\bemb\b/.test(clean);
+  if (isPrint && isEmbroidery) return 'Print + Emb';
+  if (isEmbroidery) return 'Embroidery';
+  if (isPrint) return 'Printing';
+  return null;
+}
+
 function orderTypeAbbreviation(orderType) {
-  const normalized = cleanQuery(orderType).toLowerCase();
-  const isPrint = normalized.includes('print');
-  const isEmbroidery = normalized.includes('embro') || /\bemb\b/.test(normalized);
-  if (isPrint && isEmbroidery) return 'PE';
-  if (normalized.includes('embro')) return 'E';
-  if (normalized.includes('gift')) return 'G';
-  if (normalized.includes('print')) return 'P';
-  return normalized.slice(0, 1).toUpperCase() || null;
+  const normalized = normalizeDatabaseOrderType(orderType);
+  if (normalized === 'Business Gifts') return 'G';
+  if (normalized === 'Print + Emb') return 'PE';
+  if (normalized === 'Embroidery') return 'E';
+  if (normalized === 'Printing') return 'P';
+  return null;
 }
 
 function invoiceRequiredValue(value) {

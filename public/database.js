@@ -81,6 +81,7 @@
   const STOCK_ORDERING_REPORT_ROW_BASE_MM = 5.8;
   const STOCK_ORDERING_REPORT_ROW_EXTRA_LINE_MM = 2.8;
   const STOCK_ORDERING_REPORT_DESCRIPTION_CHARS_PER_LINE = 54;
+  const ORDER_TYPE_OPTIONS = ['Business Gifts', 'Printing', 'Print + Emb', 'Embroidery'];
   const NEW_ORDER_REQUIRED_FIELDS = [
     { name: 'customer_name', label: 'Customer' },
     { name: 'contact_name', label: 'Contact' },
@@ -3731,7 +3732,7 @@
         <div class="db-detail-box db-customer-box">
           ${detailRow('Customer:', `${customerOpenButton(job)}<input class="db-legacy-input db-code-input" readonly value="${escapeAttr(job.customer_code || '')}">`)}
           ${detailRow('Contact:', inputBox(job.contact_name))}
-          ${detailRow('Order type:', inputBox(job.order_type || typeLabel(job)))}
+          ${detailRow('Order type:', orderTypeSelect(job))}
           ${detailRow('Taken by:', inputBox(takenByLabel(job)))}
           ${detailRow('Delivery:', inputBox(job.delivery_method))}
           ${detailRow('Order date:', inputBox(formatDate(job.order_date, 'short')))}
@@ -3771,14 +3772,39 @@
     return `${inputBox(formatDate(job.invoice_date, 'short'), 'db-invoice-date-field db-manual-invoice-date-field')}<label class="db-inline-check"><input class="db-tiny-check" type="checkbox" data-db-manual-invoice-date="true"> Manual Date</label><input class="db-legacy-input db-invoice-number-field" readonly value="${escapeAttr(job.invoice_no || '')}">`;
   }
 
+  function orderTypeSelect(job) {
+    const current = normalizeOrderTypeOption(job?.order_type) || normalizeOrderTypeOption(typeLabel(job));
+    const options = current ? [] : ['<option value="" selected></option>'];
+    options.push(...ORDER_TYPE_OPTIONS.map((orderType) => `
+      <option value="${escapeAttr(orderType)}" ${orderType === current ? 'selected' : ''}>${escapeHtml(orderType)}</option>
+    `));
+    return `<select class="db-order-type-select" data-db-job-field="order_type">${options.join('')}</select>`;
+  }
+
   function handleDetailsPanelChange(event) {
     if (event.target?.matches?.('[data-db-manual-invoice-date]')) {
       syncManualInvoiceDateInput(event.target.checked);
       return;
     }
+    if (event.target?.matches?.('[data-db-job-field="order_type"]')) {
+      handleOrderTypeChange(event.target);
+      return;
+    }
     if (event.target?.matches?.('[data-db-address-select]')) {
       saveOrderAddressSelection(event.target);
     }
+  }
+
+  function handleOrderTypeChange(select) {
+    const orderType = normalizeOrderTypeOption(select.value);
+    if (!orderType || !state.selectedJob?.source_order_id) return;
+    if (select.value !== orderType) select.value = orderType;
+    state.selectedJob.order_type = orderType;
+    state.selectedJob.order_type_abbr = orderTypeAbbreviation(orderType);
+    updateOutstandingJob(state.selectedJob);
+    renderOutstandingOrders();
+    state.jobDirty = true;
+    flushJobAutosave();
   }
 
   function handleDetailsPanelInput(event) {
@@ -7665,11 +7691,18 @@
 
   async function saveJobFields(options = {}) {
     const commentsInput = els.detailsPanel?.querySelector('[data-db-job-field="comments"]');
+    const orderTypeSelect = els.detailsPanel?.querySelector('[data-db-job-field="order_type"]');
+    const orderType = normalizeOrderTypeOption(orderTypeSelect?.value)
+      || normalizeOrderTypeOption(state.selectedJob?.order_type)
+      || normalizeOrderTypeOption(typeLabel(state.selectedJob));
     const payload = {
       job_title: els.orderTitle.value.trim(),
       comments: commentsInput ? commentsInput.value : (state.selectedJob?.comments || ''),
     };
+    if (orderType) payload.order_type = orderType;
     const signature = jobSignature(payload);
+    const lastSavedSignature = parseJobSignature(state.jobLastSavedSignature);
+    const orderTypeChanged = Boolean(payload.order_type) && lastSavedSignature.order_type !== payload.order_type;
 
     if (signature === state.jobLastSavedSignature) {
       state.jobDirty = false;
@@ -7709,6 +7742,7 @@
       updateOutstandingJob(state.selectedJob);
       renderOutstandingOrders();
       hydrateOrderSelectors();
+      if (orderTypeChanged) refreshDashboardAfterOrderTypeChange();
     } catch (err) {
       state.jobDirty = true;
       console.error('Job title autosave failed', err);
@@ -7732,7 +7766,30 @@
   function jobSignature(job) {
     return JSON.stringify({
       job_title: job?.job_title || '',
+      order_type: normalizeOrderTypeOption(job?.order_type) || '',
       comments: job?.comments || '',
+    });
+  }
+
+  function parseJobSignature(signature) {
+    try {
+      const parsed = JSON.parse(signature || '{}');
+      return parsed && typeof parsed === 'object'
+        ? {
+          job_title: parsed.job_title || '',
+          order_type: normalizeOrderTypeOption(parsed.order_type) || '',
+          comments: parsed.comments || '',
+        }
+        : { job_title: '', order_type: '', comments: '' };
+    } catch {
+      return { job_title: '', order_type: '', comments: '' };
+    }
+  }
+
+  function refreshDashboardAfterOrderTypeChange() {
+    if (!window.__latestTestBoardPayload || typeof window.loadTestBoard !== 'function') return;
+    window.loadTestBoard({ forceRefresh: true }).catch((err) => {
+      console.warn('Tuesday Dashboard refresh after order type change failed', err);
     });
   }
 
@@ -8506,6 +8563,27 @@
     if (category === 'print_embroidery') return 'Print + Emb';
     if (category === 'embroidery') return 'Embroidery';
     if (category === 'print') return 'Printing';
+    return '';
+  }
+
+  function normalizeOrderTypeOption(value) {
+    const clean = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!clean) return '';
+    if (clean.includes('gift')) return 'Business Gifts';
+    const isPrint = clean.includes('print');
+    const isEmbroidery = clean.includes('embro') || /\bemb\b/.test(clean);
+    if (isPrint && isEmbroidery) return 'Print + Emb';
+    if (isEmbroidery) return 'Embroidery';
+    if (isPrint) return 'Printing';
+    return '';
+  }
+
+  function orderTypeAbbreviation(orderType) {
+    const normalized = normalizeOrderTypeOption(orderType);
+    if (normalized === 'Business Gifts') return 'G';
+    if (normalized === 'Print + Emb') return 'PE';
+    if (normalized === 'Embroidery') return 'E';
+    if (normalized === 'Printing') return 'P';
     return '';
   }
 
