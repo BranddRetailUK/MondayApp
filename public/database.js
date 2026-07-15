@@ -12,7 +12,7 @@
   const DATABASE_ROUTE_STORAGE_KEY = 'ultimateHub.databaseRoute.v1';
   const DATABASE_CUSTOMER_SORTS = new Set(['recent', 'active', 'az', 'za']);
   const DATABASE_STYLE_SORTS = new Set(['most-used', 'highest-price', 'lowest-price', 'az', 'za']);
-  const DATABASE_REPORT_RANGES = new Set(['daily', 'weekly', 'monthly', 'mtd', 'ytd', 'last12']);
+  const DATABASE_REPORT_RANGES = new Set(['daily', 'weekly', 'monthly', 'yearly', 'mtd', 'ytd']);
   const DATABASE_REPORT_COMPARE_MODES = new Set(['month', 'year']);
   const DATABASE_REPORT_METRICS = Object.freeze({
     grossSales: Object.freeze({ label: 'Gross sales', subtitle: 'Net sales plus VAT', currency: true }),
@@ -281,6 +281,7 @@
     reportsRange: 'ytd',
     reportsMetric: 'grossSales',
     reportsYear: null,
+    reportsMonth: '',
     reportsAvailableYears: [],
     reportsCompareMode: 'none',
     reportsCompareMonthA: '',
@@ -331,6 +332,8 @@
       homeCountGifts: document.getElementById('db-count-gifts'),
       reportsPeriod: document.getElementById('db-reports-period'),
       reportsRangeButtons: Array.from(document.querySelectorAll('[data-db-report-range]')),
+      reportsPeriodControl: document.getElementById('db-report-period-control'),
+      reportsPeriodControlLabel: document.getElementById('db-report-period-control-label'),
       reportsYear: document.getElementById('db-report-year-select'),
       reportsCompareMonthWrap: document.getElementById('db-report-compare-months'),
       reportsCompareYearWrap: document.getElementById('db-report-compare-years'),
@@ -610,6 +613,11 @@
     const reportRange = button.dataset.dbReportRange;
     if (reportRange && DATABASE_REPORT_RANGES.has(reportRange)) {
       state.reportsRange = reportRange;
+      if (reportRange === 'monthly') {
+        const month = normalizeDatabaseReportMonth(state.reportsMonth) || currentDatabaseReportMonth();
+        const year = normalizeDatabaseReportYear(state.reportsYear) || currentDatabaseReportYear();
+        state.reportsMonth = `${year}-${month.slice(5, 7)}`;
+      }
       state.reportsCompareMode = 'none';
       state.reportsComparisonData = null;
       syncReportRangeButtons();
@@ -963,6 +971,7 @@
       state.reportsRange = normalizeDatabaseReportRange(route.reportsRange);
       state.reportsMetric = normalizeDatabaseReportMetric(route.reportsMetric);
       state.reportsYear = normalizeDatabaseReportYear(route.reportsYear);
+      state.reportsMonth = normalizeDatabaseReportMonth(route.reportsMonth);
       state.reportsCompareMode = normalizeDatabaseReportCompareMode(route.reportsCompareMode);
       state.reportsCompareMonthA = normalizeDatabaseReportMonth(route.reportsCompareMonthA);
       state.reportsCompareMonthB = normalizeDatabaseReportMonth(route.reportsCompareMonthB);
@@ -1076,6 +1085,7 @@
       route.reportsRange = normalizeDatabaseReportRange(state.reportsRange);
       route.reportsMetric = normalizeDatabaseReportMetric(state.reportsMetric);
       route.reportsYear = normalizeDatabaseReportYear(state.reportsYear);
+      route.reportsMonth = normalizeDatabaseReportMonth(state.reportsMonth);
       route.reportsCompareMode = normalizeDatabaseReportCompareMode(state.reportsCompareMode);
       route.reportsCompareMonthA = normalizeDatabaseReportMonth(state.reportsCompareMonthA);
       route.reportsCompareMonthB = normalizeDatabaseReportMonth(state.reportsCompareMonthB);
@@ -1111,6 +1121,7 @@
   }
 
   function normalizeDatabaseReportRange(range) {
+    if (range === 'last12') return 'yearly';
     return DATABASE_REPORT_RANGES.has(range) ? range : 'ytd';
   }
 
@@ -1245,14 +1256,17 @@
       button.classList.toggle('active', active);
       button.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
-    if (els.reportsYear) {
-      els.reportsYear.disabled = state.reportsCompareMode !== 'none' || state.reportsRange !== 'ytd';
-    }
+    syncDatabaseReportPeriodControl();
   }
 
   function ensureDatabaseReportSelectionDefaults() {
     const currentYear = currentDatabaseReportYear();
     state.reportsYear = normalizeDatabaseReportYear(state.reportsYear) || currentYear;
+    state.reportsMonth = normalizeDatabaseReportMonth(state.reportsMonth)
+      || `${state.reportsYear}-${currentDatabaseReportMonth().slice(5, 7)}`;
+    if (state.reportsRange === 'monthly') {
+      state.reportsYear = databaseReportMonthYear(state.reportsMonth) || state.reportsYear;
+    }
     state.reportsCompareMonthB = normalizeDatabaseReportMonth(state.reportsCompareMonthB) || currentDatabaseReportMonth();
     state.reportsCompareMonthA = normalizeDatabaseReportMonth(state.reportsCompareMonthA)
       || shiftDatabaseReportMonth(state.reportsCompareMonthB, -1);
@@ -1260,6 +1274,7 @@
     state.reportsCompareYearA = normalizeDatabaseReportYear(state.reportsCompareYearA) || currentYear - 1;
     mergeDatabaseReportYears([
       state.reportsYear,
+      databaseReportMonthYear(state.reportsMonth),
       state.reportsCompareYearA,
       state.reportsCompareYearB,
       databaseReportMonthYear(state.reportsCompareMonthA),
@@ -1300,7 +1315,7 @@
       ...(Array.isArray(years) ? years : []),
     ].map(normalizeDatabaseReportYear).filter(Boolean);
     state.reportsAvailableYears = Array.from(new Set(values)).sort((a, b) => b - a);
-    populateDatabaseReportYearSelect(els.reportsYear, state.reportsYear);
+    syncDatabaseReportPeriodControl();
     populateDatabaseReportYearSelect(els.reportsCompareYearA, state.reportsCompareYearA);
     populateDatabaseReportYearSelect(els.reportsCompareYearB, state.reportsCompareYearB);
     populateDatabaseReportYearSelect(els.reportsCompareMonthYearA, databaseReportMonthYear(state.reportsCompareMonthA));
@@ -1325,6 +1340,39 @@
       return `<option value="${value}">${escapeHtml(label)}</option>`;
     }).join('');
     select.value = month;
+  }
+
+  function populateDatabaseSingleReportMonthSelect(select, selectedMonth) {
+    if (!select) return;
+    const month = normalizeDatabaseReportMonth(selectedMonth) || currentDatabaseReportMonth();
+    const year = databaseReportMonthYear(month) || currentDatabaseReportYear();
+    select.innerHTML = Array.from({ length: 12 }, (_, index) => {
+      const monthValue = String(index + 1).padStart(2, '0');
+      const value = `${year}-${monthValue}`;
+      const label = new Intl.DateTimeFormat('en-GB', {
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'UTC',
+      }).format(new Date(Date.UTC(year, index, 1)));
+      return `<option value="${value}">${escapeHtml(label)}</option>`;
+    }).join('');
+    select.value = month;
+  }
+
+  function syncDatabaseReportPeriodControl() {
+    if (!els.reportsYear) return;
+    const isMonthly = state.reportsRange === 'monthly';
+    const isEnabled = state.reportsCompareMode === 'none'
+      && (isMonthly || state.reportsRange === 'yearly' || state.reportsRange === 'ytd');
+    if (els.reportsPeriodControlLabel) els.reportsPeriodControlLabel.textContent = isMonthly ? 'Month' : 'Year';
+    els.reportsPeriodControl?.classList.toggle('is-month', isMonthly);
+    els.reportsYear.disabled = !isEnabled;
+    els.reportsYear.setAttribute('aria-label', isMonthly ? 'Report month' : 'Report year');
+    if (isMonthly) {
+      populateDatabaseSingleReportMonthSelect(els.reportsYear, state.reportsMonth);
+    } else {
+      populateDatabaseReportYearSelect(els.reportsYear, state.reportsYear);
+    }
   }
 
   function databaseReportMonthYear(value) {
@@ -1360,8 +1408,21 @@
   }
 
   async function handleReportYearChange() {
+    if (state.reportsRange === 'monthly') {
+      state.reportsMonth = normalizeDatabaseReportMonth(els.reportsYear?.value) || currentDatabaseReportMonth();
+      state.reportsYear = databaseReportMonthYear(state.reportsMonth) || currentDatabaseReportYear();
+      state.reportsCompareMode = 'none';
+      state.reportsComparisonData = null;
+      syncReportRangeButtons();
+      syncReportComparisonControls();
+      persistDatabaseRoute();
+      await loadDatabaseReports();
+      return;
+    }
     state.reportsYear = normalizeDatabaseReportYear(els.reportsYear?.value) || currentDatabaseReportYear();
-    state.reportsRange = 'ytd';
+    const month = normalizeDatabaseReportMonth(state.reportsMonth) || currentDatabaseReportMonth();
+    state.reportsMonth = `${state.reportsYear}-${month.slice(5, 7)}`;
+    state.reportsRange = state.reportsRange === 'yearly' ? 'yearly' : 'ytd';
     state.reportsCompareMode = 'none';
     state.reportsComparisonData = null;
     syncReportRangeButtons();
@@ -1469,7 +1530,10 @@
     renderDatabaseReportsLoading();
 
     try {
-      const params = new URLSearchParams({ range });
+      const requestRange = range === 'monthly' ? 'custom-month' : (range === 'yearly' ? 'custom-year' : range);
+      const params = new URLSearchParams({ range: requestRange });
+      if (range === 'monthly') params.set('period', normalizeDatabaseReportMonth(state.reportsMonth) || currentDatabaseReportMonth());
+      if (range === 'yearly') params.set('period', String(normalizeDatabaseReportYear(state.reportsYear) || currentDatabaseReportYear()));
       if (range === 'ytd' && state.reportsYear) params.set('year', String(state.reportsYear));
       const data = await fetchJson(`/api/database/reports?${params.toString()}`);
       if (request !== state.reportsRequest) return;
@@ -5674,8 +5738,23 @@
   async function openFinancialReportDocument() {
     const range = normalizeDatabaseReportRange(state.reportsRange);
     let data = state.reportsComparisonData?.primary || state.reportsData;
-    if (!state.reportsComparisonData && (!data || data.range !== range)) data = await loadDatabaseReports();
-    if (!data || (!state.reportsComparisonData && data.range !== range)) {
+    const matchesSelection = (report) => {
+      if (range === 'monthly') {
+        return report?.range === 'custom-month'
+          && normalizeDatabaseReportMonth(report?.period) === normalizeDatabaseReportMonth(state.reportsMonth);
+      }
+      if (range === 'yearly') {
+        return report?.range === 'custom-year'
+          && normalizeDatabaseReportYear(report?.period) === normalizeDatabaseReportYear(state.reportsYear);
+      }
+      if (range === 'ytd') {
+        return report?.range === 'ytd'
+          && normalizeDatabaseReportYear(report?.period) === normalizeDatabaseReportYear(state.reportsYear);
+      }
+      return report?.range === range;
+    };
+    if (!state.reportsComparisonData && !matchesSelection(data)) data = await loadDatabaseReports();
+    if (!data || (!state.reportsComparisonData && !matchesSelection(data))) {
       alert('Financial report data is not available');
       return;
     }

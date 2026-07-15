@@ -2302,6 +2302,7 @@ body.modal-open{overflow:hidden}
   color:#000;
   font:11px Arial, Helvetica, sans-serif;
 }
+.db-report-year-control.is-month select{width:112px}
 .db-report-year-control select:disabled{
   background:#d5d5d5;
   color:#777;
