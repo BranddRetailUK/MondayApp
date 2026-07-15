@@ -1494,7 +1494,13 @@ router.put('/api/database/jobs/:id', async (req, res) => {
       await client.query('BEGIN');
       await client.query('SELECT pg_advisory_xact_lock(71060217)');
 
-      const values = [id];
+      const job = await resolveDatabaseJobForMutation(client, id, { forUpdate: true });
+      if (!job) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Database job not found' });
+      }
+
+      const values = [job.source_order_id];
       const updates = [];
       appendDatabaseJobUpdates(payload, values, updates);
       values.push(manualInvoiceDate);
@@ -1517,7 +1523,7 @@ router.put('/api/database/jobs/:id', async (req, res) => {
              updated_at_source = NOW(),
              imported_at = NOW()
          FROM next_invoice
-         WHERE j.source_order_id = $1 OR j.order_no = $1
+         WHERE j.source_order_id = $1
          RETURNING j.*`,
         values
       );
@@ -1538,21 +1544,26 @@ router.put('/api/database/jobs/:id', async (req, res) => {
     }
   }
 
-  const values = [id];
-  const updates = [];
-  appendDatabaseJobUpdates(payload, values, updates);
-  if (hasIsComplete) {
-    values.push(toBoolean(payload.is_complete));
-    updates.push(`is_complete = $${values.length}`);
-  }
-
   try {
+    const job = await resolveDatabaseJobForMutation(pool, id);
+    if (!job) {
+      return res.status(404).json({ error: 'Database job not found' });
+    }
+
+    const values = [job.source_order_id];
+    const updates = [];
+    appendDatabaseJobUpdates(payload, values, updates);
+    if (hasIsComplete) {
+      values.push(toBoolean(payload.is_complete));
+      updates.push(`is_complete = $${values.length}`);
+    }
+
     const result = await pool.query(
       `UPDATE database_jobs
        SET ${updates.join(', ')},
            updated_at_source = NOW(),
            imported_at = NOW()
-       WHERE source_order_id = $1 OR order_no = $1
+       WHERE source_order_id = $1
        RETURNING *`,
       values
     );
@@ -1584,22 +1595,13 @@ router.put('/api/database/jobs/:id/positions', async (req, res) => {
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(71060217)');
 
-    const job = await client.query(
-      `SELECT source_order_id
-       FROM database_jobs
-       WHERE source_order_id = $1 OR order_no = $1
-       ORDER BY CASE WHEN source_order_id = $1 THEN 0 ELSE 1 END
-       LIMIT 1
-       FOR UPDATE`,
-      [id]
-    );
-
-    if (!job.rowCount) {
+    const job = await resolveDatabaseJobForMutation(client, id, { forUpdate: true });
+    if (!job) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Database job not found' });
     }
 
-    const sourceOrderId = job.rows[0].source_order_id;
+    const sourceOrderId = job.source_order_id;
     const existingIds = positions
       .map((position) => position.source_order_position_id)
       .filter((positionId) => Number.isFinite(positionId));
@@ -1816,17 +1818,8 @@ router.post('/api/database/jobs/:id/line-items', async (req, res) => {
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(71060218)');
 
-    const job = await client.query(
-      `SELECT source_order_id
-       FROM database_jobs
-       WHERE source_order_id = $1 OR order_no = $1
-       ORDER BY CASE WHEN source_order_id = $1 THEN 0 ELSE 1 END
-       LIMIT 1
-       FOR UPDATE`,
-      [id]
-    );
-
-    if (!job.rowCount) {
+    const job = await resolveDatabaseJobForMutation(client, id, { forUpdate: true });
+    if (!job) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Database job not found' });
     }
@@ -1850,7 +1843,7 @@ router.post('/api/database/jobs/:id/line-items', async (req, res) => {
     `);
 
     const productRow = product.rows[0];
-    const sourceOrderId = job.rows[0].source_order_id;
+    const sourceOrderId = job.source_order_id;
     const sourceOrderItemId = next.rows[0].next_id;
     const nextSort = await client.query(
       `SELECT (COALESCE(MAX(line_sort_order), COUNT(*)) + 1)::int AS next_sort_order
@@ -1956,17 +1949,8 @@ router.post('/api/database/jobs/:id/line-items/custom', async (req, res) => {
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(71060220)');
 
-    const job = await client.query(
-      `SELECT source_order_id
-       FROM database_jobs
-       WHERE source_order_id = $1 OR order_no = $1
-       ORDER BY CASE WHEN source_order_id = $1 THEN 0 ELSE 1 END
-       LIMIT 1
-       FOR UPDATE`,
-      [id]
-    );
-
-    if (!job.rowCount) {
+    const job = await resolveDatabaseJobForMutation(client, id, { forUpdate: true });
+    if (!job) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Database job not found' });
     }
@@ -1976,7 +1960,7 @@ router.post('/api/database/jobs/:id/line-items/custom', async (req, res) => {
       FROM database_job_line_items
     `);
 
-    const sourceOrderId = job.rows[0].source_order_id;
+    const sourceOrderId = job.source_order_id;
     const sourceOrderItemId = next.rows[0].next_id;
     const nextSort = await client.query(
       `SELECT (COALESCE(MAX(line_sort_order), COUNT(*)) + 1)::int AS next_sort_order
@@ -2051,22 +2035,13 @@ router.put('/api/database/jobs/:id/line-items/order', async (req, res) => {
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(71060219)');
 
-    const job = await client.query(
-      `SELECT source_order_id
-       FROM database_jobs
-       WHERE source_order_id = $1 OR order_no = $1
-       ORDER BY CASE WHEN source_order_id = $1 THEN 0 ELSE 1 END
-       LIMIT 1
-       FOR UPDATE`,
-      [id]
-    );
-
-    if (!job.rowCount) {
+    const job = await resolveDatabaseJobForMutation(client, id, { forUpdate: true });
+    if (!job) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Database job not found' });
     }
 
-    const sourceOrderId = job.rows[0].source_order_id;
+    const sourceOrderId = job.source_order_id;
     const existing = await client.query(
       `SELECT source_order_item_id
        FROM database_job_line_items
@@ -2133,22 +2108,13 @@ router.put('/api/database/jobs/:id/line-items/:lineItemId', async (req, res) => 
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(71060221)');
 
-    const job = await client.query(
-      `SELECT source_order_id
-       FROM database_jobs
-       WHERE source_order_id = $1 OR order_no = $1
-       ORDER BY CASE WHEN source_order_id = $1 THEN 0 ELSE 1 END
-       LIMIT 1
-       FOR UPDATE`,
-      [id]
-    );
-
-    if (!job.rowCount) {
+    const job = await resolveDatabaseJobForMutation(client, id, { forUpdate: true });
+    if (!job) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Database job not found' });
     }
 
-    const sourceOrderId = job.rows[0].source_order_id;
+    const sourceOrderId = job.source_order_id;
     const existing = await client.query(
       `SELECT source_order_item_id, style_id
        FROM database_job_line_items
@@ -2226,22 +2192,13 @@ router.delete('/api/database/jobs/:id/line-items/:lineItemId', async (req, res) 
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(71060222)');
 
-    const job = await client.query(
-      `SELECT source_order_id
-       FROM database_jobs
-       WHERE source_order_id = $1 OR order_no = $1
-       ORDER BY CASE WHEN source_order_id = $1 THEN 0 ELSE 1 END
-       LIMIT 1
-       FOR UPDATE`,
-      [id]
-    );
-
-    if (!job.rowCount) {
+    const job = await resolveDatabaseJobForMutation(client, id, { forUpdate: true });
+    if (!job) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Database job not found' });
     }
 
-    const sourceOrderId = job.rows[0].source_order_id;
+    const sourceOrderId = job.source_order_id;
     const deleted = await client.query(
       `DELETE FROM database_job_line_items
        WHERE source_order_id = $1
@@ -2609,6 +2566,20 @@ async function fetchLineItems(db, sourceOrderId) {
     [sourceOrderId]
   );
   return result.rows;
+}
+
+async function resolveDatabaseJobForMutation(db, id, options = {}) {
+  const lockClause = options.forUpdate ? 'FOR UPDATE' : '';
+  const result = await db.query(
+    `SELECT source_order_id, order_no
+     FROM database_jobs
+     WHERE source_order_id = $1 OR order_no = $1
+     ORDER BY CASE WHEN source_order_id = $1 THEN 0 ELSE 1 END
+     LIMIT 1
+     ${lockClause}`,
+    [id]
+  );
+  return result.rows[0] || null;
 }
 
 function parseDatabaseDate(value, label) {

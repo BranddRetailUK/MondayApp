@@ -35,6 +35,8 @@
   const ORDER_ACK_ITEM_ROW_BASE_MM = 6.8;
   const ORDER_ACK_ITEM_ROW_EXTRA_LINE_MM = 3.4;
   const ORDER_ACK_ITEM_CHARS_PER_LINE = 48;
+  const ORDER_ACK_PAGE_SPLIT_BUFFER_MM = 3;
+  const ORDER_ACK_ROW_MEASURE_BUFFER_MM = 0.8;
   const ORDER_ACK_SUMMARY_MM = 22;
   const ORDER_ACK_COMMENTS_TOP_MM = 6;
   const ORDER_ACK_COMMENTS_BASE_MM = 11;
@@ -48,6 +50,8 @@
   const ORDER_DOC_ITEM_ROW_BASE_MM = 5.8;
   const ORDER_DOC_ITEM_ROW_EXTRA_LINE_MM = 3;
   const ORDER_DOC_ITEM_CHARS_PER_LINE = 42;
+  const ORDER_DOC_PAGE_SPLIT_BUFFER_MM = 4;
+  const ORDER_DOC_ROW_MEASURE_BUFFER_MM = 0.8;
   const INVOICE_SUMMARY_MM = 32;
   const PRO_FORMA_SUMMARY_MM = 42;
   const OUTSTANDING_REPORT_PAGE_CONTENT_MAX_MM = 220;
@@ -5045,6 +5049,7 @@
   function renderInvoiceDocument(documentType = 'invoice') {
     const job = state.selectedJob || {};
     const isProForma = documentType === 'pro-forma';
+    const businessGift = isBusinessGiftOrder(job);
     const items = orderDocumentLineItems(documentType);
     const totals = orderAckTotals(items);
     const generatedAt = currentDatabaseDocumentDate();
@@ -5073,7 +5078,12 @@
         { label: 'Delivery address:', value: orderDocumentAddressText(deliveryDisplay) },
       ],
     };
-    const pages = buildOrderDocumentPages({ items, summaryHeightMm: isProForma ? PRO_FORMA_SUMMARY_MM : INVOICE_SUMMARY_MM });
+    const pages = buildOrderDocumentPages({
+      items,
+      documentType,
+      businessGift,
+      summaryHeightMm: isProForma ? PRO_FORMA_SUMMARY_MM : INVOICE_SUMMARY_MM,
+    });
     return pages.map((pageContent, index) => renderOrderDocumentPage(context, pageContent, index)).join('');
   }
 
@@ -5097,7 +5107,11 @@
         { label: 'Order taken by:', value: jobOwnerLabel(job) },
       ],
     };
-    const pages = buildOrderDocumentPages({ items });
+    const pages = buildOrderDocumentPages({
+      items,
+      documentType: 'delivery-note',
+      businessGift: isBusinessGiftOrder(job),
+    });
     return pages.map((pageContent, index) => renderOrderDocumentPage(context, pageContent, index)).join('');
   }
 
@@ -5190,9 +5204,7 @@
 
   function renderInvoiceItemsTable(entries, options = {}) {
     const businessGift = Boolean(options.businessGift);
-    const columns = businessGift
-      ? ['Description', 'Qty', 'Price', 'Total', 'VAT', 'Rate']
-      : ['Stock item #', 'Description', 'Size', 'Colour', 'Qty', 'Price', 'Total', 'VAT', 'Rate'];
+    const columns = invoiceItemColumns(businessGift);
     const tableClass = `db-order-doc-items db-invoice-items${businessGift ? ' db-invoice-items-business-gift' : ''}`;
     return `
       <table class="${tableClass}">
@@ -5248,9 +5260,7 @@
 
   function renderDeliveryNoteItemsTable(entries, options = {}) {
     const businessGift = Boolean(options.businessGift);
-    const columns = businessGift
-      ? ['Description', 'Qty']
-      : ['Stock item #', 'Description', 'Size', 'Colour', 'Qty'];
+    const columns = deliveryNoteItemColumns(businessGift);
     const tableClass = `db-order-doc-items db-delivery-note-items${businessGift ? ' db-delivery-note-items-business-gift' : ''}`;
     return `
       <table class="${tableClass}">
@@ -5293,6 +5303,18 @@
     `;
   }
 
+  function invoiceItemColumns(businessGift = false) {
+    return businessGift
+      ? ['Description', 'Qty', 'Price', 'Total', 'VAT', 'Rate']
+      : ['Stock item #', 'Description', 'Size', 'Colour', 'Qty', 'Price', 'Total', 'VAT', 'Rate'];
+  }
+
+  function deliveryNoteItemColumns(businessGift = false) {
+    return businessGift
+      ? ['Description', 'Qty']
+      : ['Stock item #', 'Description', 'Size', 'Colour', 'Qty'];
+  }
+
   function renderInvoiceSummary(items, totals) {
     return `
       <section class="db-invoice-summary" aria-label="Invoice totals">
@@ -5331,10 +5353,11 @@
     `;
   }
 
-  function buildOrderDocumentPages({ items, summaryHeightMm = 0 }) {
+  function buildOrderDocumentPages({ items, documentType = 'invoice', businessGift = false, summaryHeightMm = 0 }) {
     const pages = [];
     let page = emptyOrderDocumentPageContent();
     let usedMm = 0;
+    const contentMaxMm = ORDER_DOC_PAGE_CONTENT_MAX_MM - ORDER_DOC_PAGE_SPLIT_BUFFER_MM;
 
     const pushPage = () => {
       pages.push(page);
@@ -5342,10 +5365,10 @@
       usedMm = 0;
     };
     const ensureSpace = (heightMm) => {
-      if (usedMm > 0 && usedMm + heightMm > ORDER_DOC_PAGE_CONTENT_MAX_MM) pushPage();
+      if (usedMm > 0 && usedMm + heightMm > contentMaxMm) pushPage();
     };
 
-    const itemEntries = orderDocumentItemEntries(items);
+    const itemEntries = orderDocumentItemEntries(items, { documentType, businessGift });
     if (!itemEntries.length) {
       const emptyTableHeight = ORDER_DOC_TABLE_TOP_MM + ORDER_DOC_TABLE_HEADER_MM + ORDER_DOC_EMPTY_ROW_MM;
       ensureSpace(emptyTableHeight);
@@ -5385,7 +5408,7 @@
     return Boolean(page.itemEntries.length || page.showEmptyItems || page.showSummary);
   }
 
-  function orderDocumentItemEntries(items) {
+  function orderDocumentItemEntries(items, options = {}) {
     const entries = [];
     let hasPreviousRows = false;
 
@@ -5398,19 +5421,144 @@
         entries.push({
           type: 'item',
           item,
-          heightMm: orderDocumentItemRowHeight(item),
+          heightMm: orderDocumentItemRowHeight(item, options),
         });
       }
       hasPreviousRows = true;
     }
 
-    return entries;
+    return measureOrderDocumentItemEntries(entries, options);
   }
 
-  function orderDocumentItemRowHeight(item) {
+  function orderDocumentItemRowHeight(item, options = {}) {
     const description = orderDocumentItemDescription(item);
-    const lineCount = Math.max(1, Math.ceil(description.length / ORDER_DOC_ITEM_CHARS_PER_LINE));
+    const documentType = databaseDocumentType(options.documentType);
+    const businessGift = Boolean(options.businessGift);
+    const lineCount = estimatedOrderDocumentRowLineCount(item, documentType, businessGift, description);
     return ORDER_DOC_ITEM_ROW_BASE_MM + ((lineCount - 1) * ORDER_DOC_ITEM_ROW_EXTRA_LINE_MM);
+  }
+
+  function estimatedOrderDocumentRowLineCount(item, documentType, businessGift, description) {
+    if (isInvoiceLikeDocumentType(documentType)) {
+      const price = orderAckNumber(item.unit_price);
+      const moneyValues = Number.isFinite(price)
+        ? [formatCurrency(price), formatCurrency(orderAckLineNet(item)), formatCurrency(orderAckLineVat(item))]
+        : ['', '', ''];
+      if (businessGift) {
+        return maxWrappedLineCount([
+          [description, 58],
+          [formatNumber(orderAckQuantity(item)), 8],
+          [moneyValues[0], 10],
+          [moneyValues[1], 11],
+          [moneyValues[2], 10],
+          [formatVat(effectiveLineVatRate(item)), 8],
+        ]);
+      }
+      return maxWrappedLineCount([
+        [orderDocumentItemCode(item), 14],
+        [description, 27],
+        [item.size || '', 9],
+        [item.colour || '', 14],
+        [formatNumber(orderAckQuantity(item)), 8],
+        [moneyValues[0], 10],
+        [moneyValues[1], 11],
+        [moneyValues[2], 10],
+        [formatVat(effectiveLineVatRate(item)), 8],
+      ]);
+    }
+
+    if (businessGift) {
+      return maxWrappedLineCount([
+        [description, 82],
+        [formatNumber(orderAckQuantity(item)), 8],
+      ]);
+    }
+
+    return maxWrappedLineCount([
+      [orderDocumentItemCode(item), 18],
+      [description, ORDER_DOC_ITEM_CHARS_PER_LINE],
+      [item.size || '', 18],
+      [item.colour || '', 24],
+      [formatNumber(orderAckQuantity(item)), 8],
+    ]);
+  }
+
+  function maxWrappedLineCount(values) {
+    return values.reduce((max, pair) => {
+      const [value, charsPerLine] = pair;
+      const text = String(value || '');
+      const cleanCharsPerLine = Math.max(1, Number(charsPerLine) || 1);
+      const explicitLines = text.split(/\r?\n/).reduce((count, line) => (
+        count + Math.max(1, Math.ceil(line.length / cleanCharsPerLine))
+      ), 0);
+      return Math.max(max, explicitLines || 1);
+    }, 1);
+  }
+
+  function canMeasureDocumentRows() {
+    return typeof document !== 'undefined' && Boolean(document.body);
+  }
+
+  function pxToMm(px) {
+    return (Number(px) || 0) * 25.4 / 96;
+  }
+
+  function measureOrderDocumentItemEntries(entries, options = {}) {
+    if (!entries.length || !canMeasureDocumentRows()) return entries;
+
+    const documentType = databaseDocumentType(options.documentType);
+    const businessGift = Boolean(options.businessGift);
+    const isDeliveryNote = documentType === 'delivery-note';
+    const tableClass = isDeliveryNote
+      ? `db-order-doc-items db-delivery-note-items${businessGift ? ' db-delivery-note-items-business-gift' : ''}`
+      : `db-order-doc-items db-invoice-items${businessGift ? ' db-invoice-items-business-gift' : ''}`;
+    const columns = isDeliveryNote
+      ? deliveryNoteItemColumns(businessGift)
+      : invoiceItemColumns(businessGift);
+    const rowHtml = entries.map((entry) => (
+      isDeliveryNote
+        ? renderDeliveryNoteItemEntry(entry, { businessGift })
+        : renderInvoiceItemEntry(entry, { businessGift })
+    )).join('');
+    const probe = document.createElement('div');
+    probe.className = 'db-document-measure-probe';
+    probe.setAttribute('aria-hidden', 'true');
+    Object.assign(probe.style, {
+      position: 'absolute',
+      left: '-10000px',
+      top: '0',
+      visibility: 'hidden',
+      pointerEvents: 'none',
+    });
+    probe.innerHTML = `
+      <section class="db-order-ack-page db-order-doc-page db-order-doc-page-${escapeAttr(documentType)}">
+        <section class="db-order-doc-page-content">
+          <table class="${tableClass}">
+            <thead>
+              <tr>${columns.map((column) => `<th>${escapeHtml(column)}</th>`).join('')}</tr>
+            </thead>
+            <tbody>${rowHtml}</tbody>
+          </table>
+        </section>
+      </section>
+    `;
+
+    try {
+      document.body.appendChild(probe);
+      const rows = Array.from(probe.querySelectorAll('tbody tr'));
+      return entries.map((entry, index) => {
+        const row = rows[index];
+        if (!row) return entry;
+        const measuredMm = pxToMm(row.getBoundingClientRect().height) + ORDER_DOC_ROW_MEASURE_BUFFER_MM;
+        if (!Number.isFinite(measuredMm) || measuredMm <= 0) return entry;
+        return {
+          ...entry,
+          heightMm: Math.max(entry.heightMm || 0, measuredMm),
+        };
+      });
+    } finally {
+      probe.remove();
+    }
   }
 
   function orderDocumentLineItems(type) {
@@ -5519,7 +5667,8 @@
     let usedMm = 0;
 
     const currentPageContentMaxMm = () => (
-      pages.length === 0 ? ORDER_ACK_FIRST_PAGE_CONTENT_MAX_MM : ORDER_ACK_CONTINUATION_PAGE_CONTENT_MAX_MM
+      (pages.length === 0 ? ORDER_ACK_FIRST_PAGE_CONTENT_MAX_MM : ORDER_ACK_CONTINUATION_PAGE_CONTENT_MAX_MM)
+      - ORDER_ACK_PAGE_SPLIT_BUFFER_MM
     );
     const pushPage = () => {
       pages.push(page);
@@ -5600,13 +5749,72 @@
       hasPreviousRows = true;
     }
 
-    return entries;
+    return measureOrderAckItemEntries(entries);
   }
 
   function orderAckItemRowHeight(item) {
     const description = orderAckItemDescription(item);
-    const lineCount = Math.max(1, Math.ceil(description.length / ORDER_ACK_ITEM_CHARS_PER_LINE));
+    const price = orderAckNumber(item.unit_price);
+    const lineCount = maxWrappedLineCount([
+      [description, ORDER_ACK_ITEM_CHARS_PER_LINE],
+      [formatNumber(orderAckQuantity(item)), 10],
+      [Number.isFinite(price) ? formatCurrency(price) : '', 15],
+      [formatCurrency(orderAckLineNet(item)), 15],
+      [formatCurrency(orderAckLineVat(item)), 15],
+      [formatVat(effectiveLineVatRate(item)), 10],
+    ]);
     return ORDER_ACK_ITEM_ROW_BASE_MM + ((lineCount - 1) * ORDER_ACK_ITEM_ROW_EXTRA_LINE_MM);
+  }
+
+  function measureOrderAckItemEntries(entries) {
+    if (!entries.length || !canMeasureDocumentRows()) return entries;
+
+    const probe = document.createElement('div');
+    probe.className = 'db-document-measure-probe';
+    probe.setAttribute('aria-hidden', 'true');
+    Object.assign(probe.style, {
+      position: 'absolute',
+      left: '-10000px',
+      top: '0',
+      visibility: 'hidden',
+      pointerEvents: 'none',
+    });
+    probe.innerHTML = `
+      <section class="db-order-ack-page db-order-ack-page-first">
+        <section class="db-order-ack-page-content">
+          <table class="db-order-ack-items">
+            <thead>
+              <tr>
+                <th>Items</th>
+                <th>Qty</th>
+                <th>Price</th>
+                <th>Total</th>
+                <th>VAT</th>
+                <th>Rate</th>
+              </tr>
+            </thead>
+            <tbody class="db-order-ack-item-group">${entries.map(renderOrderAckItemEntry).join('')}</tbody>
+          </table>
+        </section>
+      </section>
+    `;
+
+    try {
+      document.body.appendChild(probe);
+      const rows = Array.from(probe.querySelectorAll('tbody tr'));
+      return entries.map((entry, index) => {
+        const row = rows[index];
+        if (!row) return entry;
+        const measuredMm = pxToMm(row.getBoundingClientRect().height) + ORDER_ACK_ROW_MEASURE_BUFFER_MM;
+        if (!Number.isFinite(measuredMm) || measuredMm <= 0) return entry;
+        return {
+          ...entry,
+          heightMm: Math.max(entry.heightMm || 0, measuredMm),
+        };
+      });
+    } finally {
+      probe.remove();
+    }
   }
 
   function orderAckCommentsHeight(comments) {
