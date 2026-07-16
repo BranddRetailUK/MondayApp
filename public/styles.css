@@ -3377,6 +3377,8 @@ body.modal-open{overflow:hidden}
 .db-styles-detail-panel{
   height:100%;
   padding:8px;
+  display:flex;
+  flex-direction:column;
   background:#858585;
   overflow:hidden;
   box-sizing:border-box;
@@ -3425,7 +3427,8 @@ body.modal-open{overflow:hidden}
 }
 .db-styles-preview{
   position:relative;
-  height:216px;
+  height:196px;
+  flex:0 0 196px;
   display:flex;
   align-items:center;
   justify-content:center;
@@ -3435,21 +3438,26 @@ body.modal-open{overflow:hidden}
   overflow:hidden;
 }
 .db-styles-preview img{
+  position:absolute;
+  inset:0;
   display:block;
   width:100%;
   height:100%;
   object-fit:contain;
 }
-.db-styles-preview img[hidden]{
-  display:none;
+.db-styles-preview img.is-loading{
+  visibility:hidden;
 }
 .db-styles-preview-placeholder{
+  position:relative;
+  z-index:1;
   padding:12px;
   color:#555;
   font-size:11px;
   text-align:center;
 }
 .db-styles-variant-options{
+  flex:1 1 auto;
   min-height:0;
 }
 .db-styles-option-selection{
@@ -3460,11 +3468,14 @@ body.modal-open{overflow:hidden}
   margin-top:5px;
 }
 .db-styles-chip-list{
-  height:45px;
+  width:100%;
+  height:auto;
+  min-height:32px;
   padding:4px;
   border:1px solid #000;
   background:#ffffef;
-  overflow:auto;
+  overflow-x:hidden;
+  overflow-y:auto;
   display:flex;
   align-content:flex-start;
   align-items:flex-start;
@@ -3473,10 +3484,26 @@ body.modal-open{overflow:hidden}
   box-sizing:border-box;
 }
 .db-styles-colour-list{
-  height:55px;
+  max-height:175px;
 }
 .db-styles-size-list{
-  height:43px;
+  max-height:72px;
+}
+.db-styles-detail-panel.db-styles-many-colours .db-styles-preview{
+  height:142px;
+  flex-basis:142px;
+}
+.db-styles-detail-panel.db-styles-many-colours .db-styles-chip-list{
+  gap:2px;
+}
+.db-styles-detail-panel.db-styles-many-colours .db-styles-colour-list{
+  max-height:180px;
+}
+.db-styles-detail-panel.db-styles-many-colours .db-styles-chip{
+  min-height:14px;
+  padding:0 3px;
+  font-size:9px;
+  line-height:11px;
 }
 .db-styles-chip{
   max-width:100%;
@@ -6497,12 +6524,18 @@ input.db-custom-line-input{
   }
   .db-styles-preview{
     height:min(72vw, 320px);
+    flex-basis:min(72vw, 320px);
+  }
+  .db-styles-detail-panel.db-styles-many-colours .db-styles-preview{
+    height:min(62vw, 280px);
+    flex-basis:min(62vw, 280px);
   }
   .db-styles-colour-list,
   .db-styles-size-list{
     height:auto;
     min-height:45px;
-    max-height:140px;
+    max-height:none;
+    overflow:visible;
   }
   #db-styles-table{
     min-width:640px;

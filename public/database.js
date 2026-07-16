@@ -403,6 +403,7 @@
       stylesSummary: document.getElementById('db-styles-summary'),
       stylesFrame: document.querySelector('.db-styles-table-frame'),
       stylesBody: document.getElementById('db-styles-body'),
+      stylesDetailPanel: document.querySelector('.db-styles-detail-panel'),
       stylesSelectedTitle: document.getElementById('db-styles-selected-title'),
       stylesSelectedMeta: document.getElementById('db-styles-selected-meta'),
       stylesSelectedCost: document.getElementById('db-styles-selected-cost'),
@@ -4570,6 +4571,7 @@
       || !els.stylesColours
     ) return;
     if (!style) {
+      els.stylesDetailPanel?.classList.remove('db-styles-many-colours');
       els.stylesSelectedTitle.textContent = message || 'Select a parent product';
       els.stylesSelectedMeta.textContent = '';
       els.stylesSelectedCost.textContent = '';
@@ -4609,6 +4611,7 @@
 
   function renderProductStyleVariantOptions(style, variants) {
     const colourGroups = productStyleColourGroups(variants);
+    els.stylesDetailPanel?.classList.toggle('db-styles-many-colours', colourGroups.length > 24);
     if (!colourGroups.length) {
       if (els.stylesColourLabel) els.stylesColourLabel.textContent = '';
       if (els.stylesSizeLabel) els.stylesSizeLabel.textContent = '';
@@ -4712,12 +4715,12 @@
       && els.stylesPreviewImage.complete
       && els.stylesPreviewImage.naturalWidth > 0
     ) {
-      els.stylesPreviewImage.hidden = false;
+      els.stylesPreviewImage.classList.remove('is-loading');
       els.stylesPreviewPlaceholder.hidden = true;
       return;
     }
 
-    els.stylesPreviewImage.hidden = true;
+    els.stylesPreviewImage.classList.add('is-loading');
     els.stylesPreviewPlaceholder.hidden = false;
     els.stylesPreviewPlaceholder.textContent = imageUrl ? 'Loading image...' : (emptyLabel || 'No image available');
     if (!imageUrl) {
@@ -4732,13 +4735,13 @@
   function handleProductStyleImageLoad(event) {
     const image = event.currentTarget;
     if (!image?.src) return;
-    image.hidden = false;
+    image.classList.remove('is-loading');
     if (els.stylesPreviewPlaceholder) els.stylesPreviewPlaceholder.hidden = true;
   }
 
   function handleProductStyleImageError(event) {
     const image = event.currentTarget;
-    image.hidden = true;
+    image.classList.add('is-loading');
     if (els.stylesPreviewPlaceholder) {
       els.stylesPreviewPlaceholder.hidden = false;
       els.stylesPreviewPlaceholder.textContent = image.dataset.emptyLabel || 'Image unavailable';
