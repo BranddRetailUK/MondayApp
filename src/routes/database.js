@@ -2946,31 +2946,60 @@ router.get('/api/database/products/search', async (req, res) => {
   }
 });
 
-router.get('/api/database/products/styles', async (_req, res) => {
+router.get('/api/database/products/styles', async (req, res) => {
+  const limit = clampInt(req.query.limit, 50, 1, 100);
+  const offset = clampInt(req.query.offset, 0, 0, 100000);
+  const search = cleanQuery(req.query.q).slice(0, 120);
+  const normalizedSearch = normalizeStyleCodeSearchKey(search);
+  const requestedStyleId = cleanQuery(req.query.styleId);
+  const selectedStyleId = requestedStyleId ? Number(requestedStyleId) : null;
+  if (requestedStyleId && (!Number.isInteger(selectedStyleId) || selectedStyleId < 1)) {
+    return res.status(400).json({ error: 'Invalid style id' });
+  }
+  const requestedSort = cleanQuery(req.query.sort).toLowerCase();
+  const sort = new Set(['most-used', 'highest-price', 'lowest-price', 'az', 'za']).has(requestedSort)
+    ? requestedSort
+    : 'most-used';
+  const normalizedStyleCode = normalizedStyleCodeSql('s.style_code');
+  const normalizedManufacturerStyleCode = normalizedStyleCodeSql('s.manufacturer_style_code');
+  const usesPriceSort = sort === 'highest-price' || sort === 'lowest-price';
+  const stylePriceCteSql = usesPriceSort
+    ? `,
+       style_prices AS (
+         SELECT v.style_id::int AS style_id,
+                MIN(v.carton_price) FILTER (WHERE v.carton_price > 0) AS min_positive_unit_cost,
+                MAX(v.carton_price) FILTER (WHERE v.carton_price > 0) AS max_positive_unit_cost
+         FROM database_ralawise_catalog_variants v
+         JOIN candidate_styles cs ON cs.style_id = v.style_id
+         GROUP BY v.style_id
+       )`
+    : '';
+  const stylePriceJoinSql = usesPriceSort
+    ? 'LEFT JOIN style_prices sp ON sp.style_id = cs.style_id'
+    : '';
+  const sortSql = {
+    'highest-price': 'sp.max_positive_unit_cost DESC NULLS LAST',
+    'lowest-price': 'sp.min_positive_unit_cost ASC NULLS LAST',
+    az: "LOWER(COALESCE(cs.style_name, '')) ASC, LOWER(COALESCE(cs.style_code, '')) ASC",
+    za: "LOWER(COALESCE(cs.style_name, '')) DESC, LOWER(COALESCE(cs.style_code, '')) DESC",
+    'most-used': 'COALESCE(su.usage_count, 0) DESC, COALESCE(su.usage_quantity, 0) DESC',
+  }[sort];
+  const orderSql = `cs.search_rank ASC,
+                    ${sortSql},
+                    LOWER(COALESCE(cs.style_name, '')) ASC,
+                    LOWER(COALESCE(cs.style_code, '')) ASC,
+                    cs.style_id ASC`;
+
   try {
     const result = await pool.query(
-      `WITH product_rows AS (
-         SELECT s.id::int AS style_id,
-                v.database_product_source_id AS source_product_id,
-                s.style_code,
-                s.manufacturer_style_code AS alt_style_code,
-                s.style_name,
-                s.product_type,
-                s.brand,
-                c.id AS colour_id,
-                c.colour_name AS colour,
-                v.size_code,
-                v.size_name AS size,
-                v.carton_price AS unit_cost,
-                v.primary_image_url,
-                v.is_active,
-                v.sku_status
-         FROM database_ralawise_catalog_styles s
-         JOIN database_ralawise_catalog_variants v ON v.style_id = s.id
-         JOIN database_ralawise_catalog_colours c ON c.id = v.colour_id
-       ),
-       style_aliases AS (
+      `WITH style_aliases AS (
          SELECT v.style_id::int AS style_id,
+                ARRAY_AGG(DISTINCT UPPER(BTRIM(p.style_code))) FILTER (
+                  WHERE NULLIF(BTRIM(p.style_code), '') IS NOT NULL
+                ) AS style_code_aliases,
+                ARRAY_AGG(DISTINCT UPPER(BTRIM(p.alt_style_code))) FILTER (
+                  WHERE NULLIF(BTRIM(p.alt_style_code), '') IS NOT NULL
+                ) AS alt_style_code_aliases,
                 STRING_AGG(DISTINCT NULLIF(BTRIM(p.style_code), ''), ' ') FILTER (
                   WHERE NULLIF(BTRIM(p.style_code), '') IS NOT NULL
                 ) AS legacy_style_codes,
@@ -2982,55 +3011,40 @@ router.get('/api/database/products/styles', async (_req, res) => {
          WHERE p.source_product_id > 0
          GROUP BY v.style_id
        ),
-       style_costs AS (
-         SELECT style_id,
-                JSON_AGG(unit_cost ORDER BY unit_cost) AS unit_costs
-         FROM (
-           SELECT DISTINCT style_id, unit_cost
-           FROM product_rows
-           WHERE unit_cost IS NOT NULL
-         ) costs
-         GROUP BY style_id
-       ),
-       style_sizes AS (
-         SELECT style_id,
-                JSON_AGG(
-                  JSON_BUILD_OBJECT(
-                    'label', size,
-                    'variant_count', variant_count
-                  )
-                  ORDER BY size_order ASC NULLS LAST, LOWER(size), size
-                ) AS sizes
-         FROM (
-           SELECT style_id,
-                  NULLIF(BTRIM(size), '') AS size,
-                  MIN(size_code) AS size_order,
-                  COUNT(*)::int AS variant_count
-           FROM product_rows
-           WHERE NULLIF(BTRIM(size), '') IS NOT NULL
-           GROUP BY style_id, NULLIF(BTRIM(size), '')
-         ) size_rows
-         GROUP BY style_id
-       ),
-       style_colours AS (
-         SELECT style_id,
-                JSON_AGG(
-                  JSON_BUILD_OBJECT(
-                    'label', colour,
-                    'variant_count', variant_count
-                  )
-                  ORDER BY colour_order ASC NULLS LAST, LOWER(colour), colour
-                ) AS colours
-         FROM (
-           SELECT style_id,
-                  NULLIF(BTRIM(colour), '') AS colour,
-                  MIN(colour_id) AS colour_order,
-                  COUNT(*)::int AS variant_count
-           FROM product_rows
-           WHERE NULLIF(BTRIM(colour), '') IS NOT NULL
-           GROUP BY style_id, NULLIF(BTRIM(colour), '')
-         ) colour_rows
-         GROUP BY style_id
+       candidate_styles AS (
+         SELECT s.id::int AS style_id,
+                NULLIF(BTRIM(s.style_code), '') AS style_code,
+                NULLIF(BTRIM(s.manufacturer_style_code), '') AS alt_style_code,
+                NULLIF(BTRIM(s.style_name), '') AS style_name,
+                NULLIF(BTRIM(s.product_type), '') AS product_type,
+                NULLIF(BTRIM(s.brand), '') AS brand,
+                aliases.style_code_aliases,
+                aliases.alt_style_code_aliases,
+                aliases.legacy_style_codes,
+                aliases.legacy_alt_style_codes,
+                CASE
+                  WHEN $1::text IS NULL THEN 0
+                  WHEN ${normalizedStyleCode} = $3 THEN 0
+                  WHEN ${normalizedManufacturerStyleCode} = $3 THEN 1
+                  WHEN UPPER($2) = ANY(COALESCE(aliases.style_code_aliases, ARRAY[]::text[])) THEN 2
+                  WHEN UPPER($2) = ANY(COALESCE(aliases.alt_style_code_aliases, ARRAY[]::text[])) THEN 3
+                  ELSE 4
+                END::int AS search_rank
+         FROM database_ralawise_catalog_styles s
+         LEFT JOIN style_aliases aliases ON aliases.style_id = s.id
+         WHERE ($6::int IS NULL OR s.id = $6)
+           AND (
+             $1::text IS NULL
+             OR s.style_name ILIKE $1
+             OR s.brand ILIKE $1
+             OR s.product_type ILIKE $1
+             OR s.style_code ILIKE $1
+             OR s.manufacturer_style_code ILIKE $1
+             OR COALESCE(aliases.legacy_style_codes, '') ILIKE $1
+             OR COALESCE(aliases.legacy_alt_style_codes, '') ILIKE $1
+             OR ${normalizedStyleCode} = $3
+             OR ${normalizedManufacturerStyleCode} = $3
+           )
        ),
        style_usage AS (
          SELECT v.style_id::int AS style_id,
@@ -3039,52 +3053,154 @@ router.get('/api/database/products/styles', async (_req, res) => {
          FROM database_job_line_items li
          JOIN database_ralawise_catalog_variants v
            ON v.id = li.ralawise_catalog_variant_id
+         JOIN candidate_styles cs ON cs.style_id = v.style_id
          GROUP BY v.style_id
+       )${stylePriceCteSql},
+       ordered_styles AS (
+         SELECT cs.*,
+                COALESCE(su.usage_count, 0)::int AS usage_count,
+                COALESCE(su.usage_quantity, 0)::int AS usage_quantity,
+                COUNT(*) OVER()::int AS total_count,
+                ROW_NUMBER() OVER (ORDER BY ${orderSql})::int AS page_order
+         FROM candidate_styles cs
+         LEFT JOIN style_usage su ON su.style_id = cs.style_id
+         ${stylePriceJoinSql}
+         ORDER BY ${orderSql}
+         LIMIT $4 OFFSET $5
        ),
-       style_summaries AS (
-         SELECT style_id,
-                MIN(source_product_id)::int AS sample_product_id,
-                MIN(NULLIF(BTRIM(style_code), '')) AS style_code,
-                MIN(NULLIF(BTRIM(alt_style_code), '')) AS alt_style_code,
-                MIN(NULLIF(BTRIM(style_name), '')) AS style_name,
-                MIN(NULLIF(BTRIM(product_type), '')) AS product_type,
-                MIN(NULLIF(BTRIM(brand), '')) AS brand,
+       paged_styles AS (
+         SELECT os.style_id,
+                MIN(v.database_product_source_id)::int AS sample_product_id,
+                os.style_code,
+                os.alt_style_code,
+                os.style_name,
+                os.product_type,
+                os.brand,
                 'Ralawise'::text AS supplier_name,
-                MIN(NULLIF(BTRIM(primary_image_url), '')) FILTER (
-                  WHERE LOWER(BTRIM(COALESCE(primary_image_url, ''))) <> 'not available'
+                MIN(NULLIF(BTRIM(v.primary_image_url), '')) FILTER (
+                  WHERE LOWER(BTRIM(COALESCE(v.primary_image_url, ''))) <> 'not available'
                 ) AS primary_image_url,
                 COUNT(*)::int AS catalogue_variant_count,
-                COUNT(*) FILTER (WHERE is_active)::int AS live_catalogue_variant_count,
-                MIN(unit_cost) AS min_unit_cost,
-                MAX(unit_cost) AS max_unit_cost,
+                COUNT(*) FILTER (WHERE v.is_active)::int AS live_catalogue_variant_count,
+                MIN(v.carton_price) AS min_unit_cost,
+                MAX(v.carton_price) AS max_unit_cost,
+                MIN(v.carton_price) FILTER (WHERE v.carton_price > 0) AS min_positive_unit_cost,
+                MAX(v.carton_price) FILTER (WHERE v.carton_price > 0) AS max_positive_unit_cost,
+                COALESCE(
+                  JSON_AGG(DISTINCT v.carton_price ORDER BY v.carton_price) FILTER (
+                    WHERE v.carton_price IS NOT NULL
+                  ),
+                  '[]'::json
+                ) AS unit_costs,
                 COUNT(*)::int AS variant_count,
-                COUNT(*) FILTER (WHERE is_active)::int AS active_variant_count,
-                COUNT(DISTINCT NULLIF(BTRIM(colour), ''))::int AS colour_count,
-                COUNT(DISTINCT NULLIF(BTRIM(size), ''))::int AS size_count
-         FROM product_rows
-         GROUP BY style_id
+                COUNT(*) FILTER (WHERE v.is_active)::int AS active_variant_count,
+                COUNT(DISTINCT v.colour_id)::int AS colour_count,
+                COUNT(DISTINCT COALESCE(NULLIF(BTRIM(v.size_code), ''), NULLIF(BTRIM(v.size_name), '')))::int AS size_count,
+                os.style_code_aliases,
+                os.alt_style_code_aliases,
+                os.legacy_style_codes,
+                os.legacy_alt_style_codes,
+                os.usage_count,
+                os.usage_quantity,
+                os.search_rank,
+                os.total_count,
+                os.page_order
+         FROM ordered_styles os
+         JOIN database_ralawise_catalog_variants v ON v.style_id = os.style_id
+         GROUP BY os.style_id,
+                  os.style_code,
+                  os.alt_style_code,
+                  os.style_name,
+                  os.product_type,
+                  os.brand,
+                  os.style_code_aliases,
+                  os.alt_style_code_aliases,
+                  os.legacy_style_codes,
+                  os.legacy_alt_style_codes,
+                  os.usage_count,
+                  os.usage_quantity,
+                  os.search_rank,
+                  os.total_count,
+                  os.page_order
        )
-       SELECT ss.*,
-              aliases.legacy_style_codes,
-              aliases.legacy_alt_style_codes,
-              COALESCE(su.usage_count, 0)::int AS usage_count,
-              COALESCE(su.usage_quantity, 0)::int AS usage_quantity,
-              COALESCE(sc.unit_costs, '[]'::json) AS unit_costs,
+       SELECT ps.*,
               COALESCE(sz.sizes, '[]'::json) AS sizes,
               COALESCE(co.colours, '[]'::json) AS colours
-       FROM style_summaries ss
-       LEFT JOIN style_aliases aliases ON aliases.style_id = ss.style_id
-       LEFT JOIN style_usage su ON su.style_id = ss.style_id
-       LEFT JOIN style_costs sc ON sc.style_id = ss.style_id
-       LEFT JOIN style_sizes sz ON sz.style_id = ss.style_id
-       LEFT JOIN style_colours co ON co.style_id = ss.style_id
-       ORDER BY COALESCE(su.usage_count, 0) DESC,
-                LOWER(COALESCE(ss.style_name, '')) ASC,
-                LOWER(COALESCE(ss.style_code, '')) ASC,
-                ss.style_id ASC`
+       FROM paged_styles ps
+       LEFT JOIN LATERAL (
+         SELECT JSON_AGG(
+                  JSON_BUILD_OBJECT(
+                    'label', size_rows.size,
+                    'variant_count', size_rows.variant_count
+                  )
+                  ORDER BY size_rows.size_order ASC NULLS LAST,
+                           LOWER(size_rows.size),
+                           size_rows.size
+                ) AS sizes
+         FROM (
+           SELECT NULLIF(BTRIM(v.size_name), '') AS size,
+                  MIN(NULLIF(BTRIM(v.size_code), '')) AS size_order,
+                  COUNT(*)::int AS variant_count
+           FROM database_ralawise_catalog_variants v
+           WHERE v.style_id = ps.style_id
+             AND v.is_active IS TRUE
+             AND NULLIF(BTRIM(v.size_name), '') IS NOT NULL
+           GROUP BY NULLIF(BTRIM(v.size_name), '')
+         ) size_rows
+       ) sz ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT JSON_AGG(
+                  JSON_BUILD_OBJECT(
+                    'key', colour_rows.colour_order,
+                    'label', colour_rows.colour,
+                    'variant_count', colour_rows.variant_count,
+                    'image_url', colour_rows.image_url,
+                    'sizes', colour_rows.sizes
+                  )
+                  ORDER BY colour_rows.colour_order ASC,
+                           LOWER(colour_rows.colour),
+                           colour_rows.colour
+                ) AS colours
+         FROM (
+           SELECT NULLIF(BTRIM(c.colour_name), '') AS colour,
+                  MIN(c.id) AS colour_order,
+                  COUNT(*)::int AS variant_count,
+                  COALESCE(
+                    MIN(NULLIF(BTRIM(v.colour_image_url), '')) FILTER (
+                      WHERE LOWER(BTRIM(COALESCE(v.colour_image_url, ''))) <> 'not available'
+                    ),
+                    MIN(NULLIF(BTRIM(v.primary_image_url), '')) FILTER (
+                      WHERE LOWER(BTRIM(COALESCE(v.primary_image_url, ''))) <> 'not available'
+                    )
+                  ) AS image_url,
+                  JSON_AGG(
+                    DISTINCT NULLIF(BTRIM(v.size_name), '')
+                    ORDER BY NULLIF(BTRIM(v.size_name), '')
+                  ) FILTER (
+                    WHERE NULLIF(BTRIM(v.size_name), '') IS NOT NULL
+                  ) AS sizes
+           FROM database_ralawise_catalog_variants v
+           JOIN database_ralawise_catalog_colours c ON c.id = v.colour_id
+           WHERE v.style_id = ps.style_id
+             AND v.is_active IS TRUE
+             AND NULLIF(BTRIM(c.colour_name), '') IS NOT NULL
+           GROUP BY NULLIF(BTRIM(c.colour_name), '')
+         ) colour_rows
+       ) co ON TRUE
+       ORDER BY ps.page_order ASC`,
+      [search ? `%${search}%` : null, search || null, normalizedSearch, limit, offset, selectedStyleId]
     );
 
-    res.json({ styles: result.rows });
+    const total = Number(result.rows[0]?.total_count || 0);
+    const styles = result.rows.map(({ total_count, page_order, style_code_aliases, alt_style_code_aliases, ...style }) => style);
+    res.json({
+      styles,
+      total,
+      limit,
+      offset,
+      nextOffset: offset + styles.length,
+      hasMore: offset + styles.length < total,
+    });
   } catch (err) {
     console.error('GET /api/database/products/styles', err);
     res.status(500).json({ error: 'Failed to fetch product styles' });

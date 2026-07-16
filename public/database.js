@@ -46,6 +46,8 @@
   const OUTSTANDING_INVOICE_COLUMN_WIDTH = 98;
   const TO_INVOICE_TABLE_COLUMN_COUNT = 7;
   const STYLE_TABLE_COLUMN_COUNT = 5;
+  const STYLE_PAGE_LIMIT = 50;
+  const STYLE_SEARCH_DELAY = 180;
   const OUTSTANDING_STATUS_COLUMN_WIDTH = 128;
   const OUTSTANDING_TAKEN_BY_COLUMN_MIN_WIDTH = 54;
   const OUTSTANDING_TAKEN_BY_CELL_EXTRA_WIDTH = 12;
@@ -183,7 +185,13 @@
     productStyles: [],
     productStylesLoaded: false,
     productStylesLoading: false,
+    productStylesTotal: 0,
+    productStylesHasMore: false,
+    productStylesNextOffset: 0,
+    loadedProductStyleQuery: '',
+    loadedProductStyleSort: '',
     selectedStyleId: '',
+    selectedStyleColourKeys: new Map(),
     productStyleQuery: '',
     productStyleSort: 'most-used',
     orderLoadToken: 0,
@@ -304,9 +312,11 @@
   let customerSearchTimer = 0;
   let databaseCustomerSearchTimer = 0;
   let productSearchTimer = 0;
+  let productStyleSearchTimer = 0;
   let customerSearchRequest = 0;
   let databaseCustomerRequest = 0;
   let productSearchRequest = 0;
+  let productStylesRequest = 0;
   let designAutosaveTimer = 0;
   let jobAutosaveTimer = 0;
   let contactAutosaveTimer = 0;
@@ -314,6 +324,7 @@
   let lineOrderAutosaveTimer = 0;
   let orderSearchTimer = 0;
   let outstandingScrollFrame = 0;
+  let productStylesScrollFrame = 0;
   let outstandingLayoutFrame = 0;
   let outstandingTitleMeasureCanvas = null;
   let lineItemMeasureCanvas = null;
@@ -390,10 +401,15 @@
       stylesSearch: document.getElementById('db-styles-search'),
       stylesSort: document.getElementById('db-styles-sort'),
       stylesSummary: document.getElementById('db-styles-summary'),
+      stylesFrame: document.querySelector('.db-styles-table-frame'),
       stylesBody: document.getElementById('db-styles-body'),
       stylesSelectedTitle: document.getElementById('db-styles-selected-title'),
       stylesSelectedMeta: document.getElementById('db-styles-selected-meta'),
       stylesSelectedCost: document.getElementById('db-styles-selected-cost'),
+      stylesPreviewImage: document.getElementById('db-styles-preview-image'),
+      stylesPreviewPlaceholder: document.getElementById('db-styles-preview-placeholder'),
+      stylesColourLabel: document.getElementById('db-styles-colour-label'),
+      stylesSizeLabel: document.getElementById('db-styles-size-label'),
       stylesSizes: document.getElementById('db-styles-sizes'),
       stylesColours: document.getElementById('db-styles-colours'),
       usersTable: document.getElementById('db-users-table'),
@@ -450,6 +466,10 @@
     els.stylesBody?.addEventListener('keydown', handleProductStyleRowKeydown);
     els.stylesSearch?.addEventListener('input', handleProductStyleSearchInput);
     els.stylesSort?.addEventListener('change', handleProductStyleSortChange);
+    els.stylesFrame?.addEventListener('scroll', handleProductStylesScroll);
+    els.stylesColours?.addEventListener('click', handleProductStyleColourClick);
+    els.stylesPreviewImage?.addEventListener('load', handleProductStyleImageLoad);
+    els.stylesPreviewImage?.addEventListener('error', handleProductStyleImageError);
     els.reportsYear?.addEventListener('change', handleReportYearChange);
     els.reportsCompareMonthNameA?.addEventListener('change', handleReportComparisonInputChange);
     els.reportsCompareMonthYearA?.addEventListener('change', handleReportComparisonInputChange);
@@ -4361,55 +4381,105 @@
   }
 
   async function loadProductStyles(options = {}) {
-    if (state.productStylesLoading && !options.force) {
-      if (els.stylesBody) els.stylesBody.innerHTML = renderStatusRow('Loading styles', STYLE_TABLE_COLUMN_COUNT);
-      renderProductStyleDetails(null, 'Loading style details');
-      return;
-    }
-    if (state.productStylesLoaded && !options.force) {
+    const append = Boolean(options.append);
+    const query = String(state.productStyleQuery || '').trim();
+    const sort = normalizeDatabaseStyleSort(state.productStyleSort);
+    const matchesLoadedRequest = state.loadedProductStyleQuery === query
+      && state.loadedProductStyleSort === sort;
+
+    if (append && (!state.productStylesHasMore || state.productStylesLoading || !matchesLoadedRequest)) return;
+    if (state.productStylesLoading && !options.force) return;
+    if (state.productStylesLoaded && matchesLoadedRequest && !options.force && !append) {
       renderProductStyles();
       return;
     }
 
+    const requestId = ++productStylesRequest;
+    const offset = append ? state.productStylesNextOffset : 0;
+    const preferredStyleId = append ? '' : String(state.selectedStyleId || '');
     state.productStylesLoading = true;
-    state.productStylesLoaded = false;
-    if (els.stylesBody) els.stylesBody.innerHTML = renderStatusRow('Loading styles', STYLE_TABLE_COLUMN_COUNT);
-    renderProductStyleDetails(null, 'Loading style details');
+    if (!append) {
+      state.productStylesLoaded = false;
+      state.productStylesHasMore = false;
+      state.productStylesTotal = 0;
+      state.productStylesNextOffset = 0;
+      if (els.stylesFrame) els.stylesFrame.scrollTop = 0;
+      if (els.stylesBody) {
+        els.stylesBody.innerHTML = renderStatusRow(query ? 'Searching styles' : 'Loading styles', STYLE_TABLE_COLUMN_COUNT);
+      }
+      renderProductStyleDetails(null, query ? 'Searching style catalogue' : 'Loading style details');
+    } else {
+      updateProductStyleSummary(state.productStyles.length, state.productStylesTotal);
+    }
+
+    const params = new URLSearchParams({
+      limit: String(STYLE_PAGE_LIMIT),
+      offset: String(offset),
+      sort,
+    });
+    if (query) params.set('q', query);
 
     try {
-      const data = await fetchJson('/api/database/products/styles');
-      state.productStyles = Array.isArray(data.styles) ? data.styles : [];
+      const data = await fetchJson(`/api/database/products/styles?${params.toString()}`);
+      if (requestId !== productStylesRequest) return;
+
+      let rows = Array.isArray(data.styles) ? data.styles : [];
+      if (!append && preferredStyleId && !styleIdExists(preferredStyleId, rows)) {
+        const selectedParams = new URLSearchParams(params);
+        selectedParams.set('limit', '1');
+        selectedParams.set('offset', '0');
+        selectedParams.set('styleId', preferredStyleId);
+        const selectedData = await fetchJson(`/api/database/products/styles?${selectedParams.toString()}`);
+        if (requestId !== productStylesRequest) return;
+        const selectedStyle = Array.isArray(selectedData.styles) ? selectedData.styles[0] : null;
+        if (selectedStyle) rows = [selectedStyle, ...rows];
+      }
+      if (append) {
+        const existingIds = new Set(state.productStyles.map(productStyleKey));
+        state.productStyles = state.productStyles.concat(
+          rows.filter((style) => !existingIds.has(productStyleKey(style)))
+        );
+      } else {
+        state.productStyles = rows;
+      }
+      state.productStylesTotal = Number.isFinite(Number(data.total))
+        ? Number(data.total)
+        : state.productStyles.length;
+      state.productStylesNextOffset = Number.isFinite(Number(data.nextOffset))
+        ? Number(data.nextOffset)
+        : offset + (Array.isArray(data.styles) ? data.styles.length : 0);
+      state.productStylesHasMore = Boolean(data.hasMore)
+        && state.productStyles.length < state.productStylesTotal;
+      state.loadedProductStyleQuery = query;
+      state.loadedProductStyleSort = sort;
       state.productStylesLoaded = true;
       if (!styleIdExists(state.selectedStyleId)) {
         state.selectedStyleId = productStyleKey(state.productStyles[0]);
       }
       renderProductStyles();
     } catch (err) {
-      state.productStylesLoaded = false;
-      if (els.stylesBody) {
+      if (requestId !== productStylesRequest) return;
+      state.productStylesLoaded = append && state.productStyles.length > 0;
+      if (!append && els.stylesBody) {
         els.stylesBody.innerHTML = renderStatusRow(err.message || 'Failed to load styles', STYLE_TABLE_COLUMN_COUNT);
       }
-      renderProductStyleDetails(null, err.message || 'Failed to load style details');
+      if (!append) renderProductStyleDetails(null, err.message || 'Failed to load style details');
     } finally {
-      state.productStylesLoading = false;
+      if (requestId === productStylesRequest) {
+        state.productStylesLoading = false;
+        updateProductStyleSummary(state.productStyles.length, state.productStylesTotal);
+      }
     }
   }
 
   function renderProductStyles() {
     if (!els.stylesBody) return;
-    const allStyles = state.productStyles || [];
-    if (!allStyles.length) {
-      els.stylesBody.innerHTML = renderStatusRow('No product styles found', STYLE_TABLE_COLUMN_COUNT);
-      renderProductStyleDetails(null, 'No product styles found');
-      updateProductStyleSummary(0, 0);
-      return;
-    }
-
-    const styles = productStylesForRender();
-    updateProductStyleSummary(styles.length, allStyles.length);
+    const styles = state.productStyles || [];
+    updateProductStyleSummary(styles.length, state.productStylesTotal);
     if (!styles.length) {
-      els.stylesBody.innerHTML = renderStatusRow('No matching styles', STYLE_TABLE_COLUMN_COUNT);
-      renderProductStyleDetails(null, 'No matching styles');
+      const emptyMessage = state.productStyleQuery ? 'No matching styles' : 'No product styles found';
+      els.stylesBody.innerHTML = renderStatusRow(emptyMessage, STYLE_TABLE_COLUMN_COUNT);
+      renderProductStyleDetails(null, emptyMessage);
       return;
     }
 
@@ -4450,17 +4520,37 @@
 
   function handleProductStyleSearchInput() {
     state.productStyleQuery = String(els.stylesSearch?.value || '').trim();
-    renderProductStyles();
+    state.selectedStyleId = '';
+    window.clearTimeout(productStyleSearchTimer);
+    productStylesRequest += 1;
+    state.productStylesLoading = false;
+    if (els.stylesSummary) els.stylesSummary.textContent = 'Searching styles...';
+    productStyleSearchTimer = window.setTimeout(() => {
+      loadProductStyles({ force: true });
+    }, STYLE_SEARCH_DELAY);
     persistDatabaseRoute();
   }
 
   function handleProductStyleSortChange() {
+    window.clearTimeout(productStyleSearchTimer);
     state.productStyleSort = normalizeDatabaseStyleSort(els.stylesSort?.value);
     if (els.stylesSort && els.stylesSort.value !== state.productStyleSort) {
       els.stylesSort.value = state.productStyleSort;
     }
-    renderProductStyles();
+    loadProductStyles({ force: true });
     persistDatabaseRoute();
+  }
+
+  function handleProductStylesScroll() {
+    if (productStylesScrollFrame) return;
+    productStylesScrollFrame = window.requestAnimationFrame(() => {
+      productStylesScrollFrame = 0;
+      if (!els.stylesFrame || !state.productStylesHasMore || state.productStylesLoading) return;
+      const distanceFromBottom = els.stylesFrame.scrollHeight
+        - els.stylesFrame.scrollTop
+        - els.stylesFrame.clientHeight;
+      if (distanceFromBottom <= 120) loadProductStyles({ append: true });
+    });
   }
 
   function selectProductStyle(styleId) {
@@ -4472,13 +4562,22 @@
   }
 
   function renderProductStyleDetails(style, message = '') {
-    if (!els.stylesSelectedTitle || !els.stylesSelectedMeta || !els.stylesSelectedCost || !els.stylesSizes || !els.stylesColours) return;
+    if (
+      !els.stylesSelectedTitle
+      || !els.stylesSelectedMeta
+      || !els.stylesSelectedCost
+      || !els.stylesSizes
+      || !els.stylesColours
+    ) return;
     if (!style) {
       els.stylesSelectedTitle.textContent = message || 'Select a parent product';
       els.stylesSelectedMeta.textContent = '';
       els.stylesSelectedCost.textContent = '';
+      if (els.stylesColourLabel) els.stylesColourLabel.textContent = '';
+      if (els.stylesSizeLabel) els.stylesSizeLabel.textContent = '';
       els.stylesSizes.innerHTML = `<div class="db-panel-message">${escapeHtml(message || 'No size options')}</div>`;
       els.stylesColours.innerHTML = `<div class="db-panel-message">${escapeHtml(message || 'No colours')}</div>`;
+      setProductStylePreview('', '', message || 'Select a parent product');
       return;
     }
 
@@ -4499,8 +4598,157 @@
     els.stylesSelectedTitle.textContent = productStyleTitle(style);
     els.stylesSelectedMeta.textContent = meta;
     els.stylesSelectedCost.textContent = formatProductStyleCost(style);
-    els.stylesSizes.innerHTML = renderProductStyleChips(sizes, 'No size options');
-    els.stylesColours.innerHTML = renderProductStyleChips(colours, 'No colours');
+    setProductStylePreview(
+      productStyleImageUrl(style.primary_image_url),
+      productStyleTitle(style),
+      'No image available'
+    );
+
+    renderProductStyleVariantOptions(style, colours);
+  }
+
+  function renderProductStyleVariantOptions(style, variants) {
+    const colourGroups = productStyleColourGroups(variants);
+    if (!colourGroups.length) {
+      if (els.stylesColourLabel) els.stylesColourLabel.textContent = '';
+      if (els.stylesSizeLabel) els.stylesSizeLabel.textContent = '';
+      els.stylesColours.innerHTML = renderProductStyleChips(style.colours, 'No colours');
+      els.stylesSizes.innerHTML = renderProductStyleChips(style.sizes, 'No size options');
+      return;
+    }
+
+    const styleId = productStyleKey(style);
+    const rememberedKey = state.selectedStyleColourKeys.get(styleId);
+    const selectedGroup = colourGroups.find((group) => group.key === rememberedKey)
+      || colourGroups.find((group) => group.imageUrl)
+      || colourGroups[0];
+    state.selectedStyleColourKeys.set(styleId, selectedGroup.key);
+
+    els.stylesColours.innerHTML = colourGroups.map((group) => {
+      const selected = group.key === selectedGroup.key;
+      return `
+        <button
+          class="db-styles-chip db-styles-colour-chip ${selected ? 'selected' : ''}"
+          type="button"
+          data-style-colour="${escapeAttr(group.key)}"
+          aria-pressed="${selected ? 'true' : 'false'}"
+          title="${escapeAttr(`Show ${group.label} image`)}"
+        ><span>${escapeHtml(group.label)}</span></button>
+      `;
+    }).join('');
+
+    const availableSizes = selectedGroup.sizes.length
+      ? selectedGroup.sizes
+      : unique(selectedGroup.variants
+        .map((variant) => String(variant?.size || '').trim())
+        .filter(Boolean));
+    const availableSizeSet = new Set(availableSizes);
+    const orderedSizes = productStyleOptionArray(style.sizes)
+      .map((size) => String(typeof size === 'string' ? size : size?.label || '').trim())
+      .filter((size) => size && availableSizeSet.has(size));
+    const sizes = unique(orderedSizes.concat(availableSizes));
+    els.stylesSizes.innerHTML = renderProductStyleChips(sizes, 'No sizes for this colour');
+    if (els.stylesColourLabel) els.stylesColourLabel.textContent = `· ${selectedGroup.label}`;
+    if (els.stylesSizeLabel) {
+      els.stylesSizeLabel.textContent = sizes.length
+        ? `· ${formatNumber(sizes.length)} available`
+        : '';
+    }
+
+    const imageUrl = selectedGroup.imageUrl || productStyleImageUrl(style.primary_image_url);
+    setProductStylePreview(
+      imageUrl,
+      `${productStyleTitle(style)} - ${selectedGroup.label}`,
+      `No image available for ${selectedGroup.label}`
+    );
+  }
+
+  function productStyleColourGroups(variants) {
+    const groups = new Map();
+    for (const variant of variants || []) {
+      const label = String(variant?.colour || variant?.label || '').trim();
+      if (!label) continue;
+      const key = String(variant?.colour_id ?? variant?.key ?? label.toLowerCase());
+      if (!groups.has(key)) {
+        groups.set(key, {
+          key,
+          label,
+          imageUrl: '',
+          sizes: [],
+          variants: [],
+        });
+      }
+      const group = groups.get(key);
+      group.variants.push(variant);
+      group.imageUrl = group.imageUrl
+        || productStyleImageUrl(variant?.image_url)
+        || productStyleImageUrl(variant?.colour_image_url)
+        || productStyleImageUrl(variant?.primary_image_url);
+      group.sizes = unique(group.sizes.concat(
+        productStyleOptionArray(variant?.sizes)
+          .map((size) => String(typeof size === 'string' ? size : size?.label || '').trim())
+          .filter(Boolean)
+      ));
+    }
+    return Array.from(groups.values());
+  }
+
+  function handleProductStyleColourClick(event) {
+    const button = event.target.closest('button[data-style-colour]');
+    const style = selectedProductStyle();
+    if (!button || !style) return;
+    state.selectedStyleColourKeys.set(productStyleKey(style), String(button.dataset.styleColour || ''));
+    renderProductStyleVariantOptions(style, productStyleOptionArray(style.colours));
+  }
+
+  function setProductStylePreview(url, alt, emptyLabel) {
+    if (!els.stylesPreviewImage || !els.stylesPreviewPlaceholder) return;
+    const imageUrl = productStyleImageUrl(url);
+    els.stylesPreviewImage.alt = alt || '';
+    els.stylesPreviewImage.dataset.emptyLabel = emptyLabel || 'No image available';
+    if (
+      imageUrl
+      && els.stylesPreviewImage.dataset.imageUrl === imageUrl
+      && els.stylesPreviewImage.complete
+      && els.stylesPreviewImage.naturalWidth > 0
+    ) {
+      els.stylesPreviewImage.hidden = false;
+      els.stylesPreviewPlaceholder.hidden = true;
+      return;
+    }
+
+    els.stylesPreviewImage.hidden = true;
+    els.stylesPreviewPlaceholder.hidden = false;
+    els.stylesPreviewPlaceholder.textContent = imageUrl ? 'Loading image...' : (emptyLabel || 'No image available');
+    if (!imageUrl) {
+      delete els.stylesPreviewImage.dataset.imageUrl;
+      els.stylesPreviewImage.removeAttribute('src');
+      return;
+    }
+    els.stylesPreviewImage.dataset.imageUrl = imageUrl;
+    els.stylesPreviewImage.src = imageUrl;
+  }
+
+  function handleProductStyleImageLoad(event) {
+    const image = event.currentTarget;
+    if (!image?.src) return;
+    image.hidden = false;
+    if (els.stylesPreviewPlaceholder) els.stylesPreviewPlaceholder.hidden = true;
+  }
+
+  function handleProductStyleImageError(event) {
+    const image = event.currentTarget;
+    image.hidden = true;
+    if (els.stylesPreviewPlaceholder) {
+      els.stylesPreviewPlaceholder.hidden = false;
+      els.stylesPreviewPlaceholder.textContent = image.dataset.emptyLabel || 'Image unavailable';
+    }
+  }
+
+  function productStyleImageUrl(value) {
+    const url = String(value || '').trim();
+    if (!/^https?:\/\//i.test(url) || url.toLowerCase() === 'not available') return '';
+    return url;
   }
 
   function renderProductStyleChips(items, emptyLabel) {
@@ -4528,136 +4776,19 @@
     return Boolean(key && (styles || []).some((style) => productStyleKey(style) === key));
   }
 
-  function productStylesForRender() {
-    const query = String(state.productStyleQuery || '').trim().toLowerCase();
-    const sort = normalizeDatabaseStyleSort(state.productStyleSort);
-    return (state.productStyles || [])
-      .filter((style) => productStyleMatchesSearch(style, query))
-      .slice()
-      .sort((a, b) => compareProductStyleSearchRank(a, b, query)
-        || compareProductStyles(a, b, sort));
-  }
-
-  function compareProductStyleSearchRank(left, right, query) {
-    if (!query) return 0;
-    return productStyleSearchRank(left, query) - productStyleSearchRank(right, query);
-  }
-
-  function productStyleSearchRank(style, query) {
-    const normalizedQuery = normalizeProductStyleSearchCode(query);
-    const canonicalCode = productStyleSku(style);
-    const manufacturerCode = style?.alt_style_code;
-    const legacyStyleCodes = String(style?.legacy_style_codes || '').split(/\s+/).filter(Boolean);
-    const legacyAltStyleCodes = String(style?.legacy_alt_style_codes || '').split(/\s+/).filter(Boolean);
-    const isExactOrNormalized = (code) => {
-      const value = String(code || '').trim();
-      return value.toLowerCase() === query
-        || (normalizedQuery && normalizeProductStyleSearchCode(value) === normalizedQuery);
-    };
-
-    if (isExactOrNormalized(canonicalCode)) return 0;
-    if (isExactOrNormalized(manufacturerCode)) return 1;
-    if (legacyStyleCodes.some(isExactOrNormalized)) return 2;
-    if (legacyAltStyleCodes.some(isExactOrNormalized)) return 3;
-    return 4;
-  }
-
-  function productStyleMatchesSearch(style, query) {
-    if (!query) return true;
-    if (productStyleSearchText(style).includes(query)) return true;
-
-    const normalizedQuery = normalizeProductStyleSearchCode(query);
-    if (!normalizedQuery) return false;
-    return productStyleSearchCodes(style)
-      .some((code) => normalizeProductStyleSearchCode(code) === normalizedQuery);
-  }
-
-  function productStyleSearchCodes(style) {
-    return [
-      productStyleSku(style),
-      style?.alt_style_code,
-      ...String(style?.legacy_style_codes || '').split(/\s+/),
-      ...String(style?.legacy_alt_style_codes || '').split(/\s+/),
-    ].filter(Boolean);
-  }
-
-  function normalizeProductStyleSearchCode(value) {
-    return String(value || '')
-      .trim()
-      .toUpperCase()
-      .replace(/^([A-Z]+)0+([0-9])/, '$1$2');
-  }
-
-  function productStyleSearchText(style) {
-    const sizes = productStyleOptionArray(style?.sizes).map(productStyleOptionLabel);
-    const colours = productStyleOptionArray(style?.colours).map(productStyleOptionLabel);
-    return [
-      productStyleKey(style),
-      productStyleSku(style),
-      style?.alt_style_code,
-      style?.legacy_style_codes,
-      style?.legacy_alt_style_codes,
-      productStyleTitle(style),
-      style?.product_type,
-      style?.supplier_name,
-      formatProductStyleCost(style),
-      ...sizes,
-      ...colours,
-    ].filter(Boolean).join(' ').toLowerCase();
-  }
-
-  function productStyleOptionLabel(item) {
-    return typeof item === 'string' ? item : item?.label;
-  }
-
-  function compareProductStyles(a, b, sort) {
-    if (sort === 'highest-price') {
-      return compareSortNumber(productStyleMaxCost(a), productStyleMaxCost(b), 'desc')
-        || compareProductStyleNames(a, b);
-    }
-    if (sort === 'lowest-price') {
-      return compareSortNumber(productStyleMinCost(a), productStyleMinCost(b), 'asc')
-        || compareProductStyleNames(a, b);
-    }
-    if (sort === 'za') {
-      return compareProductStyleNames(b, a);
-    }
-    if (sort === 'az') {
-      return compareProductStyleNames(a, b);
-    }
-    return compareSortNumber(productStyleUsageCount(a), productStyleUsageCount(b), 'desc', false)
-      || compareSortNumber(productStyleUsageQuantity(a), productStyleUsageQuantity(b), 'desc', false)
-      || compareProductStyleNames(a, b);
-  }
-
-  function compareProductStyleNames(a, b) {
-    return productStyleSortLabel(a).localeCompare(productStyleSortLabel(b), undefined, {
-      numeric: true,
-      sensitivity: 'base',
-    }) || Number(productStyleKey(a) || 0) - Number(productStyleKey(b) || 0);
-  }
-
-  function productStyleSortLabel(style) {
-    return [productStyleTitle(style), productStyleSku(style), productStyleKey(style)]
-      .filter(Boolean)
-      .join(' ');
-  }
-
-  function compareSortNumber(left, right, direction = 'asc', emptyLast = true) {
-    const leftValid = Number.isFinite(left);
-    const rightValid = Number.isFinite(right);
-    if (!leftValid && !rightValid) return 0;
-    if (!leftValid) return emptyLast ? 1 : -1;
-    if (!rightValid) return emptyLast ? -1 : 1;
-    return direction === 'desc' ? right - left : left - right;
-  }
-
-  function updateProductStyleSummary(visibleCount, totalCount) {
+  function updateProductStyleSummary(loadedCount, totalCount) {
     if (!els.stylesSummary) return;
     const query = String(state.productStyleQuery || '').trim();
-    els.stylesSummary.textContent = query
-      ? `${formatNumber(visibleCount)} of ${formatNumber(totalCount)} styles`
-      : `${formatNumber(totalCount)} styles`;
+    if (state.productStylesLoading && !state.productStylesLoaded) {
+      els.stylesSummary.textContent = query ? 'Searching styles...' : 'Loading styles...';
+      return;
+    }
+    const total = Number.isFinite(Number(totalCount)) ? Number(totalCount) : loadedCount;
+    if (loadedCount < total) {
+      els.stylesSummary.textContent = `Showing ${formatNumber(loadedCount)} of ${formatNumber(total)}${query ? ' matches' : ' styles'}${state.productStylesLoading ? ' · loading more' : ''}`;
+      return;
+    }
+    els.stylesSummary.textContent = `${formatNumber(total)}${query ? ' matches' : ' styles'}`;
   }
 
   function productStyleKey(style) {
@@ -4700,26 +4831,6 @@
       .sort((a, b) => a - b);
     const positiveCosts = uniqueCosts.filter((value) => value > 0);
     return positiveCosts.length ? positiveCosts : uniqueCosts;
-  }
-
-  function productStyleMinCost(style) {
-    const costs = productStyleCosts(style);
-    return costs.length ? costs[0] : Number.NaN;
-  }
-
-  function productStyleMaxCost(style) {
-    const costs = productStyleCosts(style);
-    return costs.length ? costs[costs.length - 1] : Number.NaN;
-  }
-
-  function productStyleUsageCount(style) {
-    const count = Number(style?.usage_count);
-    return Number.isFinite(count) ? count : 0;
-  }
-
-  function productStyleUsageQuantity(style) {
-    const quantity = Number(style?.usage_quantity);
-    return Number.isFinite(quantity) ? quantity : 0;
   }
 
   function formatProductStyleCost(style) {
@@ -8886,8 +8997,7 @@
   async function loadStyleVariants(styleId) {
     const key = styleVariantCacheKey(styleId);
     if (!key) return [];
-    const cached = getCachedStyleVariants(styleId);
-    if (cached.length) return cached;
+    if (state.productVariantCache.has(key)) return getCachedStyleVariants(styleId);
     if (state.productVariantLoading.has(key)) return state.productVariantLoading.get(key);
 
     const promise = fetchJson(`/api/database/products/styles/${encodeURIComponent(styleId)}/variants`)

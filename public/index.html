@@ -684,7 +684,7 @@
                 </div>
 
                 <div class="db-styles-detail-column">
-                  <div class="db-styles-panel db-styles-detail-panel db-styles-sizes-panel">
+                  <div class="db-styles-panel db-styles-detail-panel">
                     <div class="db-styles-detail-head">
                       <div>
                         <div id="db-styles-selected-title" class="db-styles-selected-title">Select a parent product</div>
@@ -692,13 +692,20 @@
                       </div>
                       <div id="db-styles-selected-cost" class="db-styles-selected-cost"></div>
                     </div>
-                    <div class="db-styles-section-title">Size options</div>
-                    <div id="db-styles-sizes" class="db-styles-chip-list"></div>
-                  </div>
-
-                  <div class="db-styles-panel db-styles-detail-panel">
-                    <div class="db-styles-section-title">Colours</div>
-                    <div id="db-styles-colours" class="db-styles-chip-list db-styles-colour-list"></div>
+                    <div id="db-styles-preview" class="db-styles-preview" aria-live="polite">
+                      <img id="db-styles-preview-image" alt="" loading="lazy" decoding="async" hidden>
+                      <div id="db-styles-preview-placeholder" class="db-styles-preview-placeholder">Select a parent product</div>
+                    </div>
+                    <div class="db-styles-variant-options">
+                      <div class="db-styles-section-title">
+                        Colours <span id="db-styles-colour-label" class="db-styles-option-selection"></span>
+                      </div>
+                      <div id="db-styles-colours" class="db-styles-chip-list db-styles-colour-list" aria-label="Colour variants"></div>
+                      <div class="db-styles-section-title db-styles-size-title">
+                        Sizes <span id="db-styles-size-label" class="db-styles-option-selection"></span>
+                      </div>
+                      <div id="db-styles-sizes" class="db-styles-chip-list db-styles-size-list" aria-label="Available sizes"></div>
+                    </div>
                   </div>
                 </div>
               </div>
