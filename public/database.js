@@ -407,8 +407,12 @@
       stylesSelectedTitle: document.getElementById('db-styles-selected-title'),
       stylesSelectedMeta: document.getElementById('db-styles-selected-meta'),
       stylesSelectedCost: document.getElementById('db-styles-selected-cost'),
+      stylesPreview: document.getElementById('db-styles-preview'),
       stylesPreviewImage: document.getElementById('db-styles-preview-image'),
       stylesPreviewPlaceholder: document.getElementById('db-styles-preview-placeholder'),
+      stylesImageModal: document.getElementById('db-styles-image-modal'),
+      stylesImageModalImage: document.getElementById('db-styles-image-modal-image'),
+      stylesImageModalClose: document.getElementById('db-styles-image-modal-close'),
       stylesColourLabel: document.getElementById('db-styles-colour-label'),
       stylesSizeLabel: document.getElementById('db-styles-size-label'),
       stylesSizes: document.getElementById('db-styles-sizes'),
@@ -469,8 +473,12 @@
     els.stylesSort?.addEventListener('change', handleProductStyleSortChange);
     els.stylesFrame?.addEventListener('scroll', handleProductStylesScroll);
     els.stylesColours?.addEventListener('click', handleProductStyleColourClick);
+    els.stylesPreview?.addEventListener('click', openProductStyleImageModal);
+    els.stylesPreview?.addEventListener('keydown', handleProductStylePreviewKeydown);
     els.stylesPreviewImage?.addEventListener('load', handleProductStyleImageLoad);
     els.stylesPreviewImage?.addEventListener('error', handleProductStyleImageError);
+    els.stylesImageModal?.addEventListener('click', handleProductStyleImageModalClick);
+    els.stylesImageModalClose?.addEventListener('click', closeProductStyleImageModal);
     els.reportsYear?.addEventListener('change', handleReportYearChange);
     els.reportsCompareMonthNameA?.addEventListener('change', handleReportComparisonInputChange);
     els.reportsCompareMonthYearA?.addEventListener('change', handleReportComparisonInputChange);
@@ -4717,10 +4725,12 @@
     ) {
       els.stylesPreviewImage.classList.remove('is-loading');
       els.stylesPreviewPlaceholder.hidden = true;
+      setProductStylePreviewInteractive(true);
       return;
     }
 
     els.stylesPreviewImage.classList.add('is-loading');
+    setProductStylePreviewInteractive(false);
     els.stylesPreviewPlaceholder.hidden = false;
     els.stylesPreviewPlaceholder.textContent = imageUrl ? 'Loading image...' : (emptyLabel || 'No image available');
     if (!imageUrl) {
@@ -4737,15 +4747,63 @@
     if (!image?.src) return;
     image.classList.remove('is-loading');
     if (els.stylesPreviewPlaceholder) els.stylesPreviewPlaceholder.hidden = true;
+    setProductStylePreviewInteractive(true);
   }
 
   function handleProductStyleImageError(event) {
     const image = event.currentTarget;
     image.classList.add('is-loading');
+    setProductStylePreviewInteractive(false);
     if (els.stylesPreviewPlaceholder) {
       els.stylesPreviewPlaceholder.hidden = false;
       els.stylesPreviewPlaceholder.textContent = image.dataset.emptyLabel || 'Image unavailable';
     }
+  }
+
+  function setProductStylePreviewInteractive(enabled) {
+    if (!els.stylesPreview) return;
+    els.stylesPreview.classList.toggle('is-zoomable', enabled);
+    els.stylesPreview.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+    els.stylesPreview.title = enabled ? 'Click to view fullscreen' : '';
+  }
+
+  function handleProductStylePreviewKeydown(event) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    openProductStyleImageModal();
+  }
+
+  function openProductStyleImageModal() {
+    const previewImage = els.stylesPreviewImage;
+    if (
+      !previewImage
+      || previewImage.classList.contains('is-loading')
+      || !previewImage.complete
+      || previewImage.naturalWidth <= 0
+      || !els.stylesImageModal
+      || !els.stylesImageModalImage
+    ) return;
+
+    const imageUrl = productStyleImageUrl(previewImage.dataset.imageUrl || previewImage.currentSrc || previewImage.src);
+    if (!imageUrl) return;
+    els.stylesImageModalImage.src = imageUrl;
+    els.stylesImageModalImage.alt = previewImage.alt || 'Product image';
+    els.stylesImageModal.hidden = false;
+    els.stylesImageModal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open', 'db-styles-image-modal-open');
+    els.stylesImageModalClose?.focus({ preventScroll: true });
+  }
+
+  function handleProductStyleImageModalClick(event) {
+    if (event.target === els.stylesImageModal) closeProductStyleImageModal();
+  }
+
+  function closeProductStyleImageModal() {
+    if (!els.stylesImageModal || els.stylesImageModal.hidden) return;
+    els.stylesImageModal.hidden = true;
+    els.stylesImageModal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('modal-open', 'db-styles-image-modal-open');
+    els.stylesPreview?.focus({ preventScroll: true });
   }
 
   function productStyleImageUrl(value) {
@@ -6874,6 +6932,10 @@
 
   function handleOrderAckKeydown(event) {
     if (event.key !== 'Escape') return;
+    if (els.stylesImageModal && !els.stylesImageModal.hidden) {
+      closeProductStyleImageModal();
+      return;
+    }
     const deleteModal = document.getElementById('db-line-delete-modal');
     if (deleteModal && !deleteModal.hidden) {
       closeLineDeleteConfirmation();
