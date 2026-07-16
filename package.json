@@ -6,11 +6,17 @@
     "start": "node server.js",
     "import:database-mdb": "node scripts/import-database-mdb.js",
     "verify:mdb-invoices": "node scripts/verify-mdb-invoice-numbers.js",
-    "verify:mdb-numbering": "node scripts/verify-mdb-invoice-numbers.js"
+    "verify:mdb-numbering": "node scripts/verify-mdb-invoice-numbers.js",
+    "import:ralawise-catalogue": "node scripts/import-ralawise-catalogue.js",
+    "verify:ralawise-catalogue": "node scripts/verify-ralawise-catalogue.js",
+    "test:ralawise-catalogue": "node --test test/ralawise-catalogue.test.js",
+    "test:suppliers": "node --test test/supplier-integrations.test.js test/ralawise-basket.test.js test/stock-ordering-ralawise.test.js",
+    "suppliers:ping": "node scripts/ping-supplier-apis.js"
   },
   "dependencies": {
     "cloudinary": "^2.10.0",
     "cors": "^2.8.5",
+    "csv-parse": "^6.2.1",
     "dotenv": "^16.4.0",
     "express": "^4.21.2",
     "multer": "^2.0.2",

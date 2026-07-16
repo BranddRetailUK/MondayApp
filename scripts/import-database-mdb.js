@@ -1095,7 +1095,7 @@ async function importSnapshot(snapshot, options) {
       await client.query('DELETE FROM database_job_line_items');
       await client.query('DELETE FROM database_jobs');
       await client.query('DELETE FROM database_customer_addresses');
-      await client.query('DELETE FROM database_products');
+      await client.query('DELETE FROM database_products WHERE source_product_id >= 0 OR source_product_id IS NULL');
       await client.query('DELETE FROM database_customer_contacts WHERE source_contact_id IS NOT NULL');
     }
 
@@ -1296,7 +1296,7 @@ async function importProductRows(productRows, options) {
 
     if (options.replaceExisting) {
       console.log('[database-import] Replacing existing product rows');
-      await client.query('DELETE FROM database_products');
+      await client.query('DELETE FROM database_products WHERE source_product_id >= 0 OR source_product_id IS NULL');
     }
 
     console.log(`[database-import] Writing ${productRows.length} products`);

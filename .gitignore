@@ -4,4 +4,5 @@ uploads
 tmp
 *.mdb
 *.ldb
+CustomerDataFull.csv
 database2monday_script/

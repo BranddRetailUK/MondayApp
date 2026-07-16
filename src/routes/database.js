@@ -1,7 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db/pool');
+const { ensureStockOrderingBasketTables } = require('../db/stockOrderingBasketSchema');
+const {
+  RalawiseBasketError,
+  createRalawiseBasketClient,
+} = require('../integrations/ralawiseBasket');
 const { fullName } = require('../services/hubAuth');
+const {
+  StockOrderingRalawiseError,
+  basketContainsPlan,
+  buildJobBasketPlan,
+  publicBasketError,
+} = require('../services/stockOrderingRalawise');
 const {
   AWAITING_APPROVAL_LABEL,
   STOCK_ORDERED_LABEL,
@@ -20,6 +31,8 @@ const {
 
 const DASHBOARD_STATUS_COLORS = buildDashboardStatusColors(STATUS_SETTINGS);
 const MAX_STOCK_ORDERING_MARK_IDS = 500;
+const RALAWISE_ADDING_STALE_MS = 10 * 60 * 1000;
+const ralawiseBasketClient = createRalawiseBasketClient();
 const DATABASE_REPORT_PERIODS = Object.freeze({
   daily: Object.freeze({
     label: 'Daily',
@@ -88,6 +101,144 @@ function parseSourceOrderIds(value) {
     .map((raw) => Number.parseInt(String(raw), 10))
     .filter((id) => Number.isFinite(id) && id > 0);
   return Array.from(new Set(ids));
+}
+
+function ralawiseProductSkuSql(alias = 'p') {
+  return `COALESCE(
+    NULLIF(BTRIM(TO_JSONB(${alias}) ->> 'ralawise_sku'), ''),
+    NULLIF(BTRIM(TO_JSONB(${alias}) ->> 'supplier_sku'), ''),
+    NULLIF(BTRIM(TO_JSONB(${alias}) ->> 'catalog_sku'), '')
+  )`;
+}
+
+function ralawiseProductStatusSql(alias = 'p') {
+  return `COALESCE(
+    NULLIF(BTRIM(TO_JSONB(${alias}) ->> 'ralawise_catalog_status'), ''),
+    NULLIF(BTRIM(TO_JSONB(${alias}) ->> 'catalogue_status'), ''),
+    NULLIF(BTRIM(TO_JSONB(${alias}) ->> 'catalog_status'), ''),
+    NULLIF(BTRIM(TO_JSONB(${alias}) ->> 'supplier_status'), '')
+  )`;
+}
+
+async function selectDashboardJobsForStockOrdered(client, sourceOrderIds) {
+  return client.query(
+    `SELECT j.source_order_id,
+            j.order_no,
+            j.customer_name,
+            j.job_title,
+            j.order_type,
+            j.order_type_abbr,
+            j.dashboard_status,
+            j.dashboard_type,
+            j.proof_approved,
+            s.group_id,
+            s.item_name,
+            s.column_values,
+            s.archived
+     FROM database_jobs j
+     LEFT JOIN test_dashboard_job_state s ON s.source_order_id = j.source_order_id
+     WHERE j.source_order_id = ANY($1::int[])
+     FOR UPDATE OF j`,
+    [sourceOrderIds]
+  );
+}
+
+async function applyStockOrderedStatus(client, rows) {
+  const sourceOrderIds = rows.map((row) => Number(row.source_order_id));
+  const updatedJobs = [];
+  for (const row of rows) {
+    const columnValues = { ...(row.column_values || {}) };
+    columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS] = stockOrderedStatusValue();
+    const groupId = stockOrderedGroupIdForJob(row);
+    const itemName = row.item_name || formatDashboardJobName(row);
+
+    await client.query(
+      `INSERT INTO test_dashboard_job_state (
+         source_order_id,
+         group_id,
+         item_name,
+         column_values,
+         archived,
+         updated_at
+       ) VALUES ($1,$2,$3,$4,FALSE,NOW())
+       ON CONFLICT (source_order_id) DO UPDATE SET
+         group_id = EXCLUDED.group_id,
+         item_name = COALESCE(EXCLUDED.item_name, test_dashboard_job_state.item_name),
+         column_values = EXCLUDED.column_values,
+         archived = FALSE,
+         updated_at = NOW()`,
+      [row.source_order_id, groupId, itemName || null, columnValues]
+    );
+
+    updatedJobs.push({
+      source_order_id: row.source_order_id,
+      dashboard_status: STOCK_ORDERED_LABEL,
+      group_id: groupId,
+    });
+  }
+
+  const updatedDbJobs = await client.query(
+    `UPDATE database_jobs
+     SET dashboard_status = $2,
+         dashboard_status_updated_at = NOW(),
+         updated_at_source = NOW(),
+         imported_at = NOW()
+     WHERE source_order_id = ANY($1::int[])
+     RETURNING source_order_id, dashboard_status, dashboard_status_updated_at`,
+    [sourceOrderIds, STOCK_ORDERED_LABEL]
+  );
+  const dbJobMap = new Map(updatedDbJobs.rows.map((row) => [Number(row.source_order_id), row]));
+  return updatedJobs.map((job) => ({
+    ...job,
+    dashboard_status_updated_at: dbJobMap.get(Number(job.source_order_id))?.dashboard_status_updated_at || null,
+  }));
+}
+
+async function selectStockOrderingLinesForBasket(client, sourceOrderId) {
+  return client.query(
+    `SELECT li.*,
+            ${ralawiseProductSkuSql('p')} AS ralawise_sku,
+            ${ralawiseProductStatusSql('p')} AS ralawise_catalog_status
+     FROM database_job_line_items li
+     LEFT JOIN database_products p ON p.source_product_id = li.source_product_id
+     WHERE li.source_order_id = $1
+       AND li.is_non_deliverable IS NOT TRUE
+       AND li.is_internal IS NOT TRUE
+     ORDER BY COALESCE(li.line_sort_order, li.source_order_item_id),
+              li.source_order_item_id`,
+    [sourceOrderId]
+  );
+}
+
+async function recordRalawiseBasketFailure(sourceOrderId, error) {
+  const message = publicBasketError(error).slice(0, 1000);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE database_ralawise_basket_jobs
+       SET status = 'failed',
+           last_error = $2,
+           updated_at = NOW()
+       WHERE source_order_id = $1
+         AND status = 'adding'`,
+      [sourceOrderId, message]
+    );
+    await client.query(
+      `UPDATE database_ralawise_basket_lines
+       SET status = 'failed',
+           updated_at = NOW()
+       WHERE source_order_id = $1
+         AND status = 'adding'`,
+      [sourceOrderId]
+    );
+    await client.query('COMMIT');
+  } catch (failureError) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Failed to record Ralawise basket error', failureError);
+  } finally {
+    client.release();
+  }
 }
 
 router.get('/api/database/summary', async (_req, res) => {
@@ -526,6 +677,7 @@ router.get('/api/database/outstanding-counts', async (_req, res) => {
 
 router.get('/api/database/stock-ordering', async (_req, res) => {
   try {
+    await ensureStockOrderingBasketTables(pool);
     const jobs = await pool.query(
       `WITH candidate_jobs AS (
          SELECT j.source_order_id,
@@ -547,6 +699,12 @@ router.get('/api/database/stock-ordering', async (_req, res) => {
                 ) AS dashboard_status,
                 j.dashboard_status_updated_at,
                 s.group_id,
+                bj.status AS ralawise_basket_status,
+                bj.last_error AS ralawise_basket_error,
+                bj.basket_url AS ralawise_basket_url,
+                bj.stock_warnings AS ralawise_stock_warnings,
+                bj.adding_started_at AS ralawise_adding_started_at,
+                bj.basketed_at AS ralawise_basketed_at,
                 CASE
                   WHEN LOWER(COALESCE(j.order_type, '') || ' ' || COALESCE(j.order_type_abbr, '')) LIKE '%gift%'
                     OR LOWER(COALESCE(j.order_type_abbr, '')) = 'g'
@@ -571,6 +729,7 @@ router.get('/api/database/stock-ordering', async (_req, res) => {
                 ))) AS normalized_state_status
          FROM database_jobs j
          LEFT JOIN test_dashboard_job_state s ON s.source_order_id = j.source_order_id
+         LEFT JOIN database_ralawise_basket_jobs bj ON bj.source_order_id = j.source_order_id
          WHERE j.is_complete IS NOT TRUE
            AND s.archived IS NOT TRUE
        ),
@@ -647,12 +806,17 @@ router.get('/api/database/stock-ordering', async (_req, res) => {
     const sourceOrderIds = jobs.rows.map((job) => job.source_order_id);
     const lines = sourceOrderIds.length
       ? await pool.query(
-        `SELECT *
-         FROM database_job_line_items
-         WHERE source_order_id = ANY($1::int[])
-           AND is_non_deliverable IS NOT TRUE
-           AND is_internal IS NOT TRUE
-         ORDER BY source_order_id, COALESCE(line_sort_order, source_order_item_id), source_order_item_id`,
+        `SELECT li.*,
+                ${ralawiseProductSkuSql('p')} AS ralawise_sku,
+                ${ralawiseProductStatusSql('p')} AS ralawise_catalog_status
+         FROM database_job_line_items li
+         LEFT JOIN database_products p ON p.source_product_id = li.source_product_id
+         WHERE li.source_order_id = ANY($1::int[])
+           AND li.is_non_deliverable IS NOT TRUE
+           AND li.is_internal IS NOT TRUE
+         ORDER BY li.source_order_id,
+                  COALESCE(li.line_sort_order, li.source_order_item_id),
+                  li.source_order_item_id`,
         [sourceOrderIds]
       )
       : { rows: [] };
@@ -664,10 +828,32 @@ router.get('/api/database/stock-ordering', async (_req, res) => {
     }
 
     res.json({
-      jobs: jobs.rows.map((job) => ({
-        ...job,
-        lineItems: linesByJob.get(job.source_order_id) || [],
-      })),
+      jobs: jobs.rows.map((job) => {
+        const lineItems = linesByJob.get(job.source_order_id) || [];
+        const plan = buildJobBasketPlan(job, lineItems);
+        const addingStartedAt = Date.parse(job.ralawise_adding_started_at || '');
+        const addingIsActive = job.ralawise_basket_status === 'adding'
+          && Number.isFinite(addingStartedAt)
+          && Date.now() - addingStartedAt < RALAWISE_ADDING_STALE_MS;
+        const alreadyBasketed = job.ralawise_basket_status === 'basketed';
+        return {
+          ...job,
+          lineItems,
+          ralawiseBasket: {
+            status: job.ralawise_basket_status || 'pending',
+            eligible: alreadyBasketed || (plan.eligible && !addingIsActive),
+            busy: addingIsActive,
+            alreadyBasketed,
+            mappedLineCount: plan.resolved_line_count,
+            productLineCount: plan.product_line_count,
+            totalQuantity: plan.total_quantity,
+            unresolved: plan.unresolved,
+            basketUrl: job.ralawise_basket_url || null,
+            stockWarnings: job.ralawise_stock_warnings || [],
+            error: job.ralawise_basket_error || null,
+          },
+        };
+      }),
     });
   } catch (err) {
     console.error('GET /api/database/stock-ordering', err);
@@ -688,26 +874,7 @@ router.post('/api/database/stock-ordering/mark-ordered', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    const result = await client.query(
-      `SELECT j.source_order_id,
-              j.order_no,
-              j.customer_name,
-              j.job_title,
-              j.order_type,
-              j.order_type_abbr,
-              j.dashboard_status,
-              j.dashboard_type,
-              j.proof_approved,
-              s.group_id,
-              s.item_name,
-              s.column_values,
-              s.archived
-       FROM database_jobs j
-       LEFT JOIN test_dashboard_job_state s ON s.source_order_id = j.source_order_id
-       WHERE j.source_order_id = ANY($1::int[])
-       FOR UPDATE OF j`,
-      [sourceOrderIds]
-    );
+    const result = await selectDashboardJobsForStockOrdered(client, sourceOrderIds);
 
     const foundIds = new Set(result.rows.map((row) => Number(row.source_order_id)));
     const missingIds = sourceOrderIds.filter((id) => !foundIds.has(id));
@@ -719,63 +886,13 @@ router.post('/api/database/stock-ordering/mark-ordered', async (req, res) => {
       });
     }
 
-    const updatedJobs = [];
-    for (const row of result.rows) {
-      const columnValues = { ...(row.column_values || {}) };
-      columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS] = stockOrderedStatusValue();
-      const groupId = stockOrderedGroupIdForJob(row);
-      const itemName = row.item_name || formatDashboardJobName(row);
-
-      await client.query(
-        `INSERT INTO test_dashboard_job_state (
-           source_order_id,
-           group_id,
-           item_name,
-           column_values,
-           archived,
-           updated_at
-         ) VALUES ($1,$2,$3,$4,FALSE,NOW())
-         ON CONFLICT (source_order_id) DO UPDATE SET
-           group_id = EXCLUDED.group_id,
-           item_name = COALESCE(EXCLUDED.item_name, test_dashboard_job_state.item_name),
-           column_values = EXCLUDED.column_values,
-           archived = FALSE,
-           updated_at = NOW()`,
-        [
-          row.source_order_id,
-          groupId,
-          itemName || null,
-          columnValues,
-        ]
-      );
-
-      updatedJobs.push({
-        source_order_id: row.source_order_id,
-        dashboard_status: STOCK_ORDERED_LABEL,
-        group_id: groupId,
-      });
-    }
-
-    const updatedDbJobs = await client.query(
-      `UPDATE database_jobs
-       SET dashboard_status = $2,
-           dashboard_status_updated_at = NOW(),
-           updated_at_source = NOW(),
-           imported_at = NOW()
-       WHERE source_order_id = ANY($1::int[])
-       RETURNING source_order_id, dashboard_status, dashboard_status_updated_at`,
-      [sourceOrderIds, STOCK_ORDERED_LABEL]
-    );
+    const updatedJobs = await applyStockOrderedStatus(client, result.rows);
 
     await client.query('COMMIT');
 
-    const dbJobMap = new Map(updatedDbJobs.rows.map((row) => [Number(row.source_order_id), row]));
     res.json({
       ok: true,
-      updatedJobs: updatedJobs.map((job) => ({
-        ...job,
-        dashboard_status_updated_at: dbJobMap.get(Number(job.source_order_id))?.dashboard_status_updated_at || null,
-      })),
+      updatedJobs,
     });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -783,6 +900,296 @@ router.post('/api/database/stock-ordering/mark-ordered', async (req, res) => {
     res.status(500).json({ error: 'Failed to mark stock ordering jobs as ordered' });
   } finally {
     client.release();
+  }
+});
+
+router.post('/api/database/stock-ordering/:id/ralawise-basket', async (req, res) => {
+  const sourceOrderId = Number.parseInt(req.params.id, 10);
+  if (!Number.isFinite(sourceOrderId) || sourceOrderId < 1) {
+    return res.status(400).json({ error: 'Invalid stock ordering job id' });
+  }
+
+  try {
+    await ensureStockOrderingBasketTables(pool);
+  } catch (error) {
+    console.error('Failed to prepare Ralawise basket audit tables', error);
+    return res.status(500).json({ error: 'Failed to prepare Ralawise basket tracking' });
+  }
+
+  let job;
+  let plan;
+  let prepared = false;
+  const preparationClient = await pool.connect();
+  try {
+    await preparationClient.query('BEGIN');
+    await preparationClient.query('SELECT pg_advisory_xact_lock($1, $2)', [71060219, sourceOrderId]);
+
+    const jobs = await selectDashboardJobsForStockOrdered(preparationClient, [sourceOrderId]);
+    if (!jobs.rowCount) {
+      await preparationClient.query('ROLLBACK');
+      return res.status(404).json({ error: 'Stock ordering job not found' });
+    }
+    [job] = jobs.rows;
+
+    const existingAudit = await preparationClient.query(
+      `SELECT *
+       FROM database_ralawise_basket_jobs
+       WHERE source_order_id = $1
+       FOR UPDATE`,
+      [sourceOrderId]
+    );
+    const audit = existingAudit.rows[0] || null;
+    if (audit?.status === 'basketed') {
+      const updatedJobs = await applyStockOrderedStatus(preparationClient, [job]);
+      await preparationClient.query('COMMIT');
+      return res.json({
+        ok: true,
+        alreadyBasketed: true,
+        basketUrl: audit.basket_url || null,
+        stockWarnings: audit.stock_warnings || [],
+        updatedJobs,
+      });
+    }
+
+    const addingStartedAt = Date.parse(audit?.adding_started_at || '');
+    if (
+      audit?.status === 'adding'
+      && Number.isFinite(addingStartedAt)
+      && Date.now() - addingStartedAt < RALAWISE_ADDING_STALE_MS
+    ) {
+      throw new StockOrderingRalawiseError('This job is already being added to Ralawise.', {
+        code: 'basket_busy',
+        status: 409,
+      });
+    }
+
+    const lines = await selectStockOrderingLinesForBasket(preparationClient, sourceOrderId);
+    plan = buildJobBasketPlan(job, lines.rows);
+    if (!plan.eligible) {
+      throw new StockOrderingRalawiseError(
+        'Every product line needs an exact live Ralawise colour/size SKU before this job can be added.',
+        {
+          code: 'unresolved_skus',
+          status: 409,
+          unresolved: plan.unresolved,
+        }
+      );
+    }
+
+    await preparationClient.query(
+      `INSERT INTO database_ralawise_basket_jobs (
+         source_order_id,
+         order_no,
+         status,
+         attempt_count,
+         line_count,
+         total_quantity,
+         stock_warnings,
+         request_snapshot,
+         last_error,
+         adding_started_at,
+         updated_at
+       ) VALUES ($1,$2,'adding',1,$3,$4,'[]'::jsonb,$5::jsonb,NULL,NOW(),NOW())
+       ON CONFLICT (source_order_id) DO UPDATE SET
+         order_no = EXCLUDED.order_no,
+         status = 'adding',
+         attempt_count = database_ralawise_basket_jobs.attempt_count + 1,
+         line_count = EXCLUDED.line_count,
+         total_quantity = EXCLUDED.total_quantity,
+         stock_warnings = '[]'::jsonb,
+         request_snapshot = EXCLUDED.request_snapshot,
+         response_snapshot = NULL,
+         last_error = NULL,
+         adding_started_at = NOW(),
+         updated_at = NOW()`,
+      [
+        sourceOrderId,
+        job.order_no || null,
+        plan.lines.length,
+        plan.total_quantity,
+        JSON.stringify(plan.items),
+      ]
+    );
+
+    for (const line of plan.lines) {
+      await preparationClient.query(
+        `INSERT INTO database_ralawise_basket_lines (
+           source_order_item_id,
+           source_order_id,
+           order_no,
+           ralawise_sku,
+           quantity,
+           status,
+           stock_warning,
+           updated_at
+         ) VALUES ($1,$2,$3,$4,$5,'adding',NULL,NOW())
+         ON CONFLICT (source_order_item_id) DO UPDATE SET
+           source_order_id = EXCLUDED.source_order_id,
+           order_no = EXCLUDED.order_no,
+           ralawise_sku = EXCLUDED.ralawise_sku,
+           quantity = EXCLUDED.quantity,
+           status = 'adding',
+           stock_warning = NULL,
+           updated_at = NOW()`,
+        [
+          line.source_order_item_id,
+          sourceOrderId,
+          job.order_no || null,
+          line.ralawise_sku,
+          line.quantity,
+        ]
+      );
+    }
+
+    await preparationClient.query('COMMIT');
+    prepared = true;
+  } catch (error) {
+    await preparationClient.query('ROLLBACK').catch(() => {});
+    if (error instanceof StockOrderingRalawiseError) {
+      return res.status(error.status || 409).json({
+        error: error.message,
+        code: error.code,
+        unresolved: error.unresolved || [],
+      });
+    }
+    console.error('Failed to prepare stock ordering Ralawise basket', error);
+    return res.status(500).json({ error: 'Failed to prepare this job for Ralawise' });
+  } finally {
+    preparationClient.release();
+  }
+
+  let basketResult;
+  let recoveredFromBasket = false;
+  try {
+    const snapshot = await ralawiseBasketClient.getSnapshot();
+    recoveredFromBasket = basketContainsPlan(snapshot.items, plan);
+    basketResult = recoveredFromBasket
+      ? {
+        success: true,
+        item_count: plan.items.length,
+        total_quantity: plan.total_quantity,
+        items: plan.items,
+        basket_url: snapshot.basket_url,
+        stock_warnings: [],
+        out_of_stock_count: 0,
+        recovered_from_basket: true,
+      }
+      : await ralawiseBasketClient.addItems(plan.items);
+  } catch (error) {
+    if (prepared) await recordRalawiseBasketFailure(sourceOrderId, error);
+    console.error('POST /api/database/stock-ordering/:id/ralawise-basket', {
+      sourceOrderId,
+      code: error?.code,
+      status: error?.status,
+      message: publicBasketError(error),
+    });
+    const status = error instanceof RalawiseBasketError
+      ? (error.code === 'missing_credentials' ? 503 : 502)
+      : 500;
+    return res.status(status).json({
+      error: publicBasketError(error),
+      code: error?.code || 'ralawise_basket_failed',
+    });
+  }
+
+  const stockWarnings = Array.isArray(basketResult.stock_warnings)
+    ? basketResult.stock_warnings
+    : [];
+  const completionClient = await pool.connect();
+  try {
+    await completionClient.query('BEGIN');
+    await completionClient.query('SELECT pg_advisory_xact_lock($1, $2)', [71060219, sourceOrderId]);
+    await completionClient.query(
+      `UPDATE database_ralawise_basket_jobs
+       SET status = 'basketed',
+           basket_url = $2,
+           stock_warnings = $3::jsonb,
+           response_snapshot = $4::jsonb,
+           last_error = NULL,
+           basketed_at = NOW(),
+           updated_at = NOW()
+       WHERE source_order_id = $1`,
+      [
+        sourceOrderId,
+        basketResult.basket_url || null,
+        JSON.stringify(stockWarnings),
+        JSON.stringify(basketResult),
+      ]
+    );
+
+    const warningBySku = new Map(
+      stockWarnings.map((warning) => [String(warning.code || '').trim().toUpperCase(), warning])
+    );
+    for (const line of plan.lines) {
+      const warning = warningBySku.get(line.ralawise_sku) || null;
+      await completionClient.query(
+        `UPDATE database_ralawise_basket_lines
+         SET status = 'basketed',
+             stock_warning = $2::jsonb,
+             basketed_at = NOW(),
+             updated_at = NOW()
+         WHERE source_order_item_id = $1`,
+        [line.source_order_item_id, warning ? JSON.stringify(warning) : null]
+      );
+    }
+    await completionClient.query('COMMIT');
+  } catch (error) {
+    await completionClient.query('ROLLBACK').catch(() => {});
+    await recordRalawiseBasketFailure(
+      sourceOrderId,
+      new StockOrderingRalawiseError(
+        'Ralawise accepted the basket items, but their audit result could not be saved.',
+        { code: 'basket_audit_failed', cause: error }
+      )
+    );
+    console.error('Ralawise basket succeeded but its audit result could not be saved', {
+      sourceOrderId,
+      message: error?.message,
+    });
+    return res.status(500).json({
+      error: 'The job is in the Ralawise basket, but the local audit could not be saved. Retry the button to reconcile it safely.',
+      code: 'basket_audit_failed',
+      basketUrl: basketResult.basket_url || null,
+    });
+  } finally {
+    completionClient.release();
+  }
+
+  const statusClient = await pool.connect();
+  try {
+    await statusClient.query('BEGIN');
+    await statusClient.query('SELECT pg_advisory_xact_lock($1, $2)', [71060219, sourceOrderId]);
+    const dashboardJobs = await selectDashboardJobsForStockOrdered(statusClient, [sourceOrderId]);
+    if (!dashboardJobs.rowCount) {
+      throw new StockOrderingRalawiseError('Job disappeared before its status could be updated.', {
+        code: 'job_missing_after_basket',
+      });
+    }
+    const updatedJobs = await applyStockOrderedStatus(statusClient, dashboardJobs.rows);
+    await statusClient.query('COMMIT');
+    return res.json({
+      ok: true,
+      recoveredFromBasket,
+      basketUrl: basketResult.basket_url || null,
+      itemCount: basketResult.item_count || plan.items.length,
+      totalQuantity: basketResult.total_quantity || plan.total_quantity,
+      stockWarnings,
+      outOfStockCount: Number(basketResult.out_of_stock_count || 0),
+      updatedJobs,
+    });
+  } catch (error) {
+    await statusClient.query('ROLLBACK').catch(() => {});
+    console.error('Ralawise basket succeeded but stock ordered status update failed', {
+      sourceOrderId,
+      message: error?.message,
+    });
+    return res.status(500).json({
+      error: 'The job is in the Ralawise basket, but its Stock Ordered status could not be saved. Retry the button to finish safely.',
+      code: 'status_update_failed',
+      basketUrl: basketResult.basket_url || null,
+    });
+  } finally {
+    statusClient.release();
   }
 });
 
@@ -2368,11 +2775,17 @@ router.get('/api/database/products/search', async (req, res) => {
         AND (
           style_code ILIKE $1
           OR alt_style_code ILIKE $1
+          OR supplier_sku ILIKE $1
+          OR supplier_alpha_sku ILIKE $1
         )`;
       rankSql = `
         CASE
+          WHEN LOWER(COALESCE(supplier_sku, '')) = LOWER($2) THEN 0
+          WHEN LOWER(COALESCE(supplier_alpha_sku, '')) = LOWER($2) THEN 0
           WHEN LOWER(COALESCE(style_code, '')) = LOWER($2) THEN 0
           WHEN LOWER(COALESCE(alt_style_code, '')) = LOWER($2) THEN 0
+          WHEN supplier_sku ILIKE $3 THEN 1
+          WHEN supplier_alpha_sku ILIKE $3 THEN 1
           WHEN style_code ILIKE $3 THEN 1
           WHEN alt_style_code ILIKE $3 THEN 1
           ELSE 2
@@ -2410,6 +2823,14 @@ router.get('/api/database/products/search', async (req, res) => {
               MIN(style_name) AS style_name,
               MIN(product_type) AS product_type,
               MIN(supplier_name) AS supplier_name,
+              MIN(supplier_sku) AS supplier_sku,
+              MIN(supplier_alpha_sku) AS supplier_alpha_sku,
+              MIN(catalogue_status) AS catalogue_status,
+              MIN(primary_image_url) AS primary_image_url,
+              MIN(colour_image_url) AS colour_image_url,
+              MIN(supplier_carton_price) AS supplier_carton_price,
+              MIN(supplier_pack_price) AS supplier_pack_price,
+              MIN(supplier_single_price) AS supplier_single_price,
               COUNT(*)::int AS variant_count,
               COUNT(DISTINCT colour)::int AS colour_count,
               COUNT(DISTINCT size)::int AS size_count,
@@ -2505,6 +2926,9 @@ router.get('/api/database/products/styles', async (_req, res) => {
                 MIN(NULLIF(BTRIM(style_name), '')) AS style_name,
                 MIN(NULLIF(BTRIM(product_type), '')) AS product_type,
                 MIN(NULLIF(BTRIM(supplier_name), '')) AS supplier_name,
+                MIN(NULLIF(BTRIM(primary_image_url), '')) AS primary_image_url,
+                COUNT(*) FILTER (WHERE catalog_source = 'Ralawise')::int AS catalogue_variant_count,
+                COUNT(*) FILTER (WHERE catalogue_status = 'Live')::int AS live_catalogue_variant_count,
                 MIN(unit_cost) AS min_unit_cost,
                 MAX(unit_cost) AS max_unit_cost,
                 COUNT(*)::int AS variant_count,
@@ -2565,6 +2989,50 @@ router.get('/api/database/products/styles/:styleId/variants', async (req, res) =
   } catch (err) {
     console.error('GET /api/database/products/styles/:styleId/variants', err);
     res.status(500).json({ error: 'Failed to fetch product variants' });
+  }
+});
+
+router.get('/api/database/products/:sourceProductId/detail', async (req, res) => {
+  const sourceProductId = Number.parseInt(req.params.sourceProductId, 10);
+  if (!Number.isFinite(sourceProductId) || sourceProductId === 0) {
+    return res.status(400).json({ error: 'Invalid source product id' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT p.*,
+              CASE
+                WHEN v.id IS NULL THEN NULL
+                ELSE JSONB_BUILD_OBJECT(
+                  'style', TO_JSONB(s),
+                  'colour', TO_JSONB(c),
+                  'variant', TO_JSONB(v),
+                  'images', COALESCE(images.images, '[]'::jsonb)
+                )
+              END AS ralawise_catalogue
+       FROM database_products p
+       LEFT JOIN database_ralawise_catalog_variants v
+         ON v.id = p.ralawise_catalog_variant_id
+       LEFT JOIN database_ralawise_catalog_styles s ON s.id = v.style_id
+       LEFT JOIN database_ralawise_catalog_colours c ON c.id = v.colour_id
+       LEFT JOIN LATERAL (
+         SELECT JSONB_AGG(TO_JSONB(i) ORDER BY i.image_type, i.source_url) AS images
+         FROM database_ralawise_catalog_images i
+         WHERE i.style_id = v.style_id
+           AND (i.colour_id IS NULL OR i.colour_id = v.colour_id)
+       ) images ON TRUE
+       WHERE p.source_product_id = $1
+       LIMIT 1`,
+      [sourceProductId]
+    );
+
+    if (!result.rowCount) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+    res.json({ product: result.rows[0] });
+  } catch (err) {
+    console.error('GET /api/database/products/:sourceProductId/detail', err);
+    res.status(500).json({ error: 'Failed to fetch product detail' });
   }
 });
 

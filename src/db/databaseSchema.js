@@ -1,3 +1,5 @@
+const { createStockOrderingBasketTables } = require('./stockOrderingBasketSchema');
+
 async function ensureDatabaseTables(db) {
   await db.query(`
     CREATE TABLE IF NOT EXISTS database_jobs (
@@ -342,6 +344,175 @@ async function ensureDatabaseTables(db) {
   await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS created_at_source TIMESTAMP;');
   await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS updated_at_source TIMESTAMP;');
   await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS imported_at TIMESTAMP NOT NULL DEFAULT NOW();');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS catalog_source TEXT;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS supplier_sku TEXT;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS ralawise_sku TEXT;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS supplier_alpha_sku TEXT;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS supplier_style_code TEXT;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS supplier_colour_code TEXT;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS supplier_size_code TEXT;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS ralawise_catalog_variant_id BIGINT;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS catalogue_status TEXT;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS catalogue_synced_at TIMESTAMP;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS primary_image_url TEXT;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS colour_image_url TEXT;');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS supplier_carton_price NUMERIC(15, 4);');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS supplier_pack_price NUMERIC(15, 4);');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS supplier_single_price NUMERIC(15, 4);');
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS database_ralawise_catalog_styles (
+      id BIGSERIAL PRIMARY KEY,
+      style_code TEXT NOT NULL UNIQUE,
+      database_product_style_id INTEGER UNIQUE,
+      manufacturer_style_code TEXT,
+      brand TEXT,
+      style_name TEXT,
+      specification TEXT,
+      retail_description TEXT,
+      product_feature_1 TEXT,
+      product_feature_2 TEXT,
+      product_feature_3 TEXT,
+      size_range TEXT,
+      sizing_to_fit TEXT,
+      size_exclusions TEXT,
+      washing_instructions TEXT,
+      jacket_length TEXT,
+      leg_length TEXT,
+      fabric TEXT,
+      weight_gsm TEXT,
+      bag_capacity TEXT,
+      print_area TEXT,
+      embroidery_information TEXT,
+      bag_dimensions TEXT,
+      product_type TEXT,
+      gender TEXT,
+      age_group TEXT,
+      accreditations TEXT,
+      tag TEXT,
+      sustainable_organic TEXT,
+      plus_sizes TEXT,
+      categorisation TEXT,
+      size_guide_url TEXT,
+      spec_sheet_url TEXT,
+      is_new_product BOOLEAN,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      import_source TEXT,
+      source_imported_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS database_ralawise_catalog_colours (
+      id BIGSERIAL PRIMARY KEY,
+      style_id BIGINT NOT NULL REFERENCES database_ralawise_catalog_styles(id),
+      colour_code TEXT NOT NULL,
+      colour_name TEXT,
+      primary_colour TEXT,
+      colour_shade TEXT,
+      pantone TEXT,
+      rgb TEXT,
+      cmyk TEXT,
+      colour_image_url TEXT,
+      colour_image_filename TEXT,
+      is_new_colour BOOLEAN,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      import_source TEXT,
+      source_imported_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      UNIQUE (style_id, colour_code)
+    );
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS database_ralawise_catalog_variants (
+      id BIGSERIAL PRIMARY KEY,
+      sku_code TEXT NOT NULL UNIQUE,
+      database_product_source_id INTEGER UNIQUE,
+      alpha_sku_code TEXT,
+      style_id BIGINT NOT NULL REFERENCES database_ralawise_catalog_styles(id),
+      colour_id BIGINT NOT NULL REFERENCES database_ralawise_catalog_colours(id),
+      size_code TEXT,
+      size_name TEXT,
+      carton_quantity INTEGER,
+      pack_quantity INTEGER,
+      carton_price NUMERIC(15, 4),
+      pack_price NUMERIC(15, 4),
+      single_price NUMERIC(15, 4),
+      vat_status TEXT,
+      commodity_code TEXT,
+      item_weight_kg NUMERIC(15, 6),
+      country_of_origin TEXT,
+      sku_status TEXT NOT NULL,
+      is_new_sku BOOLEAN,
+      ean TEXT,
+      primary_image_url TEXT,
+      colour_image_url TEXT,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      is_active BOOLEAN NOT NULL DEFAULT FALSE,
+      import_source TEXT,
+      source_imported_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS database_ralawise_catalog_images (
+      id BIGSERIAL PRIMARY KEY,
+      style_id BIGINT NOT NULL REFERENCES database_ralawise_catalog_styles(id),
+      colour_id BIGINT REFERENCES database_ralawise_catalog_colours(id),
+      image_type TEXT NOT NULL CHECK (image_type IN ('primary', 'colour')),
+      source_url TEXT NOT NULL,
+      filename TEXT,
+      licence_expiry_date DATE,
+      source_key TEXT NOT NULL UNIQUE,
+      import_source TEXT,
+      source_imported_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      UNIQUE (style_id, colour_id, image_type, source_url)
+    );
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS database_ralawise_catalog_imports (
+      id BIGSERIAL PRIMARY KEY,
+      source_file TEXT NOT NULL,
+      source_sha256 TEXT,
+      mode TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'running',
+      row_count INTEGER NOT NULL DEFAULT 0,
+      style_count INTEGER NOT NULL DEFAULT 0,
+      colour_count INTEGER NOT NULL DEFAULT 0,
+      variant_count INTEGER NOT NULL DEFAULT 0,
+      live_count INTEGER NOT NULL DEFAULT 0,
+      discontinued_count INTEGER NOT NULL DEFAULT 0,
+      report JSONB NOT NULL DEFAULT '{}'::jsonb,
+      started_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      finished_at TIMESTAMP
+    );
+  `);
+
+  await db.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'database_products_ralawise_variant_fk'
+      ) THEN
+        ALTER TABLE database_products
+          ADD CONSTRAINT database_products_ralawise_variant_fk
+          FOREIGN KEY (ralawise_catalog_variant_id)
+          REFERENCES database_ralawise_catalog_variants(id)
+          ON DELETE SET NULL;
+      END IF;
+    END $$;
+  `);
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS database_job_positions (
@@ -411,6 +582,16 @@ async function ensureDatabaseTables(db) {
   await db.query('CREATE INDEX IF NOT EXISTS database_products_colour_idx ON database_products(colour);');
   await db.query('CREATE INDEX IF NOT EXISTS database_products_size_idx ON database_products(size);');
   await db.query('CREATE INDEX IF NOT EXISTS database_products_active_idx ON database_products(is_product_active);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_products_catalog_source_idx ON database_products(catalog_source);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_products_supplier_sku_idx ON database_products(supplier_sku);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_products_ralawise_sku_idx ON database_products(ralawise_sku);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_products_ralawise_variant_idx ON database_products(ralawise_catalog_variant_id);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_ralawise_styles_manufacturer_idx ON database_ralawise_catalog_styles(manufacturer_style_code);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_ralawise_colours_style_idx ON database_ralawise_catalog_colours(style_id);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_ralawise_variants_style_idx ON database_ralawise_catalog_variants(style_id);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_ralawise_variants_colour_idx ON database_ralawise_catalog_variants(colour_id);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_ralawise_variants_status_idx ON database_ralawise_catalog_variants(sku_status);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_ralawise_images_style_idx ON database_ralawise_catalog_images(style_id);');
   await db.query('CREATE UNIQUE INDEX IF NOT EXISTS database_job_positions_source_position_idx ON database_job_positions(source_order_position_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_job_positions_order_idx ON database_job_positions(source_order_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_job_positions_sort_idx ON database_job_positions(source_order_id, position_sort_order);');
@@ -419,6 +600,7 @@ async function ensureDatabaseTables(db) {
   await db.query('ALTER TABLE database_import_runs ADD COLUMN IF NOT EXISTS product_count INTEGER NOT NULL DEFAULT 0;');
   await db.query("ALTER TABLE database_import_runs ALTER COLUMN source_years SET DEFAULT 'all';");
 
+  await createStockOrderingBasketTables(db);
   await ensureTestDashboardTables(db);
 }
 

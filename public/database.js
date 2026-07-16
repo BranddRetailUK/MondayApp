@@ -50,7 +50,7 @@
   const OUTSTANDING_TAKEN_BY_COLUMN_MIN_WIDTH = 54;
   const OUTSTANDING_TAKEN_BY_CELL_EXTRA_WIDTH = 12;
   const OUTSTANDING_TABLE_FIXED_BASE_WIDTH = 19 + 68 + 198 + 36 + 88 + 82 + OUTSTANDING_STATUS_COLUMN_WIDTH;
-  const STOCK_ORDERING_TABLE_COLUMN_COUNT = 8;
+  const STOCK_ORDERING_TABLE_COLUMN_COUNT = 9;
   const STOCK_ORDERED_STATUS_LABEL = 'STOCK ORDERED';
   const OUTSTANDING_TITLE_COLUMN_MIN_WIDTH = 170;
   const OUTSTANDING_TITLE_CELL_EXTRA_WIDTH = 12;
@@ -174,6 +174,7 @@
     stockOrderingJobs: [],
     stockOrderingLoaded: false,
     stockOrderingLoading: false,
+    stockOrderingRalawiseAddingIds: new Set(),
     stockOrderingSelectedIds: new Set(),
     stockOrderingExpandedIds: new Set(),
     stockOrderingSnapshot: null,
@@ -619,6 +620,12 @@
     const stockToggleId = button.dataset.dbStockToggle;
     if (stockToggleId) {
       toggleStockOrderingDetails(stockToggleId);
+      return;
+    }
+
+    const stockRalawiseId = button.dataset.dbStockRalawise;
+    if (stockRalawiseId) {
+      await addStockOrderingJobToRalawise(stockRalawiseId);
       return;
     }
 
@@ -4103,6 +4110,22 @@
       customer_id: job.customer_id,
       business_name: job.customer_name,
     });
+    const ralawise = job.ralawiseBasket || {};
+    const adding = state.stockOrderingRalawiseAddingIds.has(sourceOrderId) || ralawise.busy;
+    const unresolvedCount = Array.isArray(ralawise.unresolved) ? ralawise.unresolved.length : 0;
+    const buttonLabel = adding
+      ? 'Adding...'
+      : ralawise.alreadyBasketed
+        ? 'Complete status'
+        : unresolvedCount
+          ? 'Needs SKU'
+          : ralawise.status === 'failed'
+            ? 'Retry Ralawise'
+            : 'Add to Ralawise';
+    const buttonTitle = unresolvedCount
+      ? `${formatNumber(unresolvedCount)} product line${unresolvedCount === 1 ? '' : 's'} need an exact live Ralawise colour/size SKU`
+      : ralawise.error || '';
+    const ralawiseDisabled = adding || !ralawise.eligible;
     return `
       <tr class="db-stock-ordering-row" data-stock-order-id="${escapeAttr(sourceOrderId)}" tabindex="0">
         <td class="db-row-selector">
@@ -4132,6 +4155,15 @@
         <td>${escapeHtml(job.job_title || '')}</td>
         <td>${escapeHtml(formatNumber(lineItems.length))}</td>
         <td>${escapeHtml(formatNumber(stockOrderingQuantity(job)))}</td>
+        <td class="db-stock-ralawise-cell">
+          <button
+            class="db-stock-ralawise-button"
+            type="button"
+            data-db-stock-ralawise="${escapeAttr(sourceOrderId)}"
+            ${ralawiseDisabled ? 'disabled' : ''}
+            ${buttonTitle ? `title="${escapeAttr(buttonTitle)}"` : ''}
+          >${escapeHtml(buttonLabel)}</button>
+        </td>
       </tr>
     `;
   }
@@ -4181,6 +4213,7 @@
           <tr>
             <th>Type</th>
             <th>Code</th>
+            <th>Ralawise SKU</th>
             <th>Description</th>
             <th>Colour</th>
             <th>Size</th>
@@ -4191,18 +4224,19 @@
         <tbody>
           ${lineItems.length
             ? lineItems.map(renderStockOrderingLineRow).join('')
-            : '<tr><td colspan="7">No stock ordering line items</td></tr>'}
+            : '<tr><td colspan="8">No stock ordering line items</td></tr>'}
         </tbody>
       </table>
     `;
   }
 
   function renderStockOrderingLineColgroup(lineItems) {
-    const headers = ['Type', 'Code', 'Description', 'Colour', 'Size', 'Qty', 'Supplier'];
-    const minChars = [6, 6, 12, 8, 6, 4, 8];
+    const headers = ['Type', 'Code', 'Ralawise SKU', 'Description', 'Colour', 'Size', 'Qty', 'Supplier'];
+    const minChars = [6, 6, 12, 12, 8, 6, 4, 8];
     const rows = (lineItems || []).map((item) => [
       isStockItem(item) ? 'Stock' : 'Non-stock',
       orderDocumentItemCode(item),
+      item.ralawise_sku || (isStockItem(item) ? 'Needs mapping' : '-'),
       orderDocumentItemDescription(item),
       item.colour || '',
       item.size || '',
@@ -4224,6 +4258,7 @@
       <tr>
         <td>${escapeHtml(isStockItem(item) ? 'Stock' : 'Non-stock')}</td>
         <td>${escapeHtml(orderDocumentItemCode(item))}</td>
+        <td>${escapeHtml(item.ralawise_sku || (isStockItem(item) ? 'Needs mapping' : '-'))}</td>
         <td>${escapeHtml(orderDocumentItemDescription(item))}</td>
         <td>${escapeHtml(item.colour || '')}</td>
         <td>${escapeHtml(item.size || '')}</td>
@@ -4255,6 +4290,45 @@
       state.stockOrderingExpandedIds.add(id);
     }
     renderStockOrderingJobs();
+  }
+
+  async function addStockOrderingJobToRalawise(sourceOrderId) {
+    const id = String(sourceOrderId || '');
+    if (!id || state.stockOrderingRalawiseAddingIds.has(id)) return;
+    const job = (state.stockOrderingJobs || []).find((item) => String(item.source_order_id || '') === id);
+    if (!job) return;
+
+    state.stockOrderingRalawiseAddingIds.add(id);
+    renderStockOrderingJobs();
+    try {
+      const data = await fetchJson(`/api/database/stock-ordering/${encodeURIComponent(id)}/ralawise-basket`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      removeStockOrderedJobsFromStockOrderingList([job]);
+      updateCachedDashboardStatusForJobs([job], STOCK_ORDERED_STATUS_LABEL);
+
+      const warnings = Array.isArray(data.stockWarnings) ? data.stockWarnings : [];
+      if (warnings.length) {
+        const unavailable = warnings.filter((warning) => warning.out_of_stock).length;
+        alert(
+          `Order ${job.order_no || id} was added to Ralawise and marked Stock Ordered. `
+          + `Ralawise reported ${formatNumber(warnings.length)} stock warning${warnings.length === 1 ? '' : 's'}`
+          + `${unavailable ? `, including ${formatNumber(unavailable)} out of stock` : ''}.`
+        );
+      }
+    } catch (err) {
+      alert(err.message || 'Failed to add this job to Ralawise');
+      const current = (state.stockOrderingJobs || []).find((item) => String(item.source_order_id || '') === id);
+      if (current?.ralawiseBasket) {
+        current.ralawiseBasket.status = 'failed';
+        current.ralawiseBasket.error = err.message || 'Failed to add this job to Ralawise';
+      }
+    } finally {
+      state.stockOrderingRalawiseAddingIds.delete(id);
+      if (state.activeView === 'stock-ordering') renderStockOrderingJobs();
+    }
   }
 
   function updateStockOrderingControls() {

@@ -3269,7 +3269,7 @@ body.modal-open{overflow:hidden}
 #db-to-invoice-table th:nth-child(6){width:92px}
 #db-to-invoice-table th:nth-child(7){width:82px}
 #db-stock-ordering-table{
-  min-width:720px;
+  min-width:842px;
 }
 #db-stock-ordering-table th:nth-child(1),
 #db-stock-ordering-table th:nth-child(2){
@@ -3286,6 +3286,26 @@ body.modal-open{overflow:hidden}
 #db-stock-ordering-table td:nth-child(7),
 #db-stock-ordering-table td:nth-child(8){
   text-align:center;
+}
+#db-stock-ordering-table th:nth-child(9){width:122px;text-align:center}
+.db-stock-ralawise-cell{
+  padding:1px 3px!important;
+  text-align:center;
+}
+.db-stock-ralawise-button{
+  width:112px;
+  height:20px;
+  padding:0 4px;
+  border:2px outset #fff;
+  border-radius:0;
+  background:#e9e9e9;
+  color:#000;
+  font:11px Arial, Helvetica, sans-serif;
+  cursor:pointer;
+}
+.db-stock-ralawise-button:disabled{
+  color:#777;
+  cursor:not-allowed;
 }
 .db-styles-layout{
   display:grid;
@@ -3610,8 +3630,8 @@ body.modal-open{overflow:hidden}
   background:#e9e9e9;
   font-weight:700;
 }
-.db-stock-ordering-lines th:nth-child(6){text-align:center}
-.db-stock-ordering-lines td:nth-child(6){text-align:center}
+.db-stock-ordering-lines th:nth-child(7){text-align:center}
+.db-stock-ordering-lines td:nth-child(7){text-align:center}
 .db-stock-ordering-actions{
   height:38px;
   display:flex;
