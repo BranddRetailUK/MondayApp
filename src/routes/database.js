@@ -809,22 +809,32 @@ router.get('/api/database/jobs', async (req, res) => {
       )
       : null;
 
-    const listParams = [...params, limit, offset];
+    const listParams = [...params, limit + 1, offset];
     const limitParam = listParams.length - 1;
     const offsetParam = listParams.length;
 
     const jobs = await pool.query(
-      `WITH line_summary AS (
-         SELECT source_order_id,
+      `WITH selected_jobs AS MATERIALIZED (
+         SELECT j.*
+         FROM database_jobs j
+         ${whereSql}
+         ${orderSql}
+         LIMIT $${limitParam}
+         OFFSET $${offsetParam}
+       ),
+       line_summary AS (
+         SELECT li.source_order_id,
                 COUNT(*)::int AS line_item_count,
-                COALESCE(SUM(quantity), 0)::int AS total_quantity
-         FROM database_job_line_items
-         GROUP BY source_order_id
+                COALESCE(SUM(li.quantity), 0)::int AS total_quantity
+         FROM database_job_line_items li
+         JOIN selected_jobs selected ON selected.source_order_id = li.source_order_id
+         GROUP BY li.source_order_id
        ),
        position_summary AS (
-         SELECT source_order_id, COUNT(*)::int AS position_count
-         FROM database_job_positions
-         GROUP BY source_order_id
+         SELECT positions.source_order_id, COUNT(*)::int AS position_count
+         FROM database_job_positions positions
+         JOIN selected_jobs selected ON selected.source_order_id = positions.source_order_id
+         GROUP BY positions.source_order_id
        )
        SELECT j.source_order_id,
               j.order_no,
@@ -875,19 +885,23 @@ router.get('/api/database/jobs', async (req, res) => {
               COALESCE(ls.line_item_count, 0)::int AS line_item_count,
               COALESCE(ls.total_quantity, 0)::int AS total_quantity,
               COALESCE(ps.position_count, 0)::int AS position_count
-       FROM database_jobs j
+       FROM selected_jobs j
        LEFT JOIN line_summary ls ON ls.source_order_id = j.source_order_id
        LEFT JOIN position_summary ps ON ps.source_order_id = j.source_order_id
-       ${whereSql}
-       ${orderSql}
-       LIMIT $${limitParam}
-       OFFSET $${offsetParam}`,
+       ${orderSql}`,
       listParams
     );
 
+    const pageJobs = jobs.rows.slice(0, limit);
+    const total = includeTotal ? count.rows[0].total : null;
+    const hasMore = includeTotal
+      ? offset + pageJobs.length < total
+      : jobs.rows.length > limit;
+
     res.json({
-      jobs: jobs.rows,
-      total: includeTotal ? count.rows[0].total : null,
+      jobs: pageJobs,
+      total,
+      hasMore,
       limit,
       offset,
       dashboardStatusColors: DASHBOARD_STATUS_COLORS,

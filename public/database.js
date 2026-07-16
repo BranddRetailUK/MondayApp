@@ -5034,7 +5034,7 @@
       renderOutstandingOrders();
       hydrateOrderSelectors();
       if (result.hasMore) {
-        loadRemainingJobs(mode, result.nextOffset, token);
+        loadRemainingJobs(mode, result.nextOffset, token, result.hasMore);
       } else {
         state.loadingOrders = false;
         state.orderLoadComplete = true;
@@ -5049,17 +5049,20 @@
     }
   }
 
-  async function loadRemainingJobs(mode, offset, token) {
+  async function loadRemainingJobs(mode, offset, token, hasMore) {
     let nextOffset = offset;
+    let hasMorePages = hasMore;
 
     try {
-      while (isCurrentOrderLoad(token, mode) && nextOffset < state.outstandingTotal) {
+      while (isCurrentOrderLoad(token, mode) && hasMorePages) {
         const result = await fetchJobsPage(mode, nextOffset, { includeTotal: false });
         if (!isCurrentOrderLoad(token, mode)) return;
         if (!result.jobs.length) break;
 
         state.outstandingJobs.push(...result.jobs);
+        state.outstandingTotal = Math.max(state.outstandingTotal, result.total);
         nextOffset = result.nextOffset;
+        hasMorePages = result.hasMore;
         await yieldOrderLoad(BACKGROUND_LOAD_DELAY_MS);
       }
     } catch (err) {
@@ -5068,6 +5071,7 @@
       }
     } finally {
       if (!isCurrentOrderLoad(token, mode)) return;
+      state.outstandingTotal = state.outstandingJobs.length;
       state.loadingOrders = false;
       state.orderLoadComplete = true;
     }
@@ -5075,27 +5079,31 @@
 
   async function fetchJobsPage(mode, offset, options = {}) {
     const includeTotal = options.includeTotal !== false;
+    const hasActiveSearch = mode === 'all' && Boolean(state.orderSearchQuery);
     const params = new URLSearchParams({
       limit: String(PAGE_LIMIT),
       offset: String(offset),
     });
-    if (!includeTotal) params.set('includeTotal', 'false');
+    if (!includeTotal || hasActiveSearch) params.set('includeTotal', 'false');
     if (mode !== 'all') params.set('status', 'open');
-    if (mode === 'all' && state.orderSearchQuery) params.set('q', state.orderSearchQuery);
+    if (hasActiveSearch) params.set('q', state.orderSearchQuery);
 
     const data = await fetchJson(`/api/database/jobs?${params.toString()}`);
     storeDashboardStatusColors(data.dashboardStatusColors);
     const jobs = data.jobs || [];
     const limit = data.limit || PAGE_LIMIT;
     const nextOffset = offset + limit;
+    const hasMore = typeof data.hasMore === 'boolean'
+      ? data.hasMore
+      : jobs.length > 0 && nextOffset < Number(data.total || 0);
     const total = Number.isFinite(Number(data.total))
       ? Number(data.total)
-      : Math.max(state.outstandingTotal || 0, offset + jobs.length);
+      : Math.max(state.outstandingTotal || 0, offset + jobs.length + (hasMore ? 1 : 0));
     return {
       jobs,
       total,
       nextOffset,
-      hasMore: jobs.length > 0 && nextOffset < total,
+      hasMore,
     };
   }
 
