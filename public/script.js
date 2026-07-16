@@ -299,7 +299,8 @@ function handleDashboardPinchEnd(event) {
 }
 
 function preventDatabasePinch(event) {
-  if (event.touches?.length > 1) {
+  const databaseVisualViewer = event.target?.closest?.('.db-proof-viewer');
+  if (event.touches?.length > 1 && !databaseVisualViewer) {
     event.preventDefault();
   }
 }

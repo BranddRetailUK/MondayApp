@@ -10,6 +10,10 @@
   const CONTACT_AUTOSAVE_MS = DESIGN_AUTOSAVE_MS;
   const LINE_ORDER_AUTOSAVE_MS = 3500;
   const DATABASE_ROUTE_STORAGE_KEY = 'ultimateHub.databaseRoute.v1';
+  const DATABASE_MOBILE_MEDIA = '(max-width: 720px), (max-width: 960px) and (max-height: 520px)';
+  const DATABASE_PROOF_ZOOM_MIN = 0.75;
+  const DATABASE_PROOF_ZOOM_MAX = 4;
+  const DATABASE_PROOF_ZOOM_STEP = 0.25;
   const DATABASE_CUSTOMER_SORTS = new Set(['recent', 'active', 'az', 'za']);
   const DATABASE_STYLE_SORTS = new Set(['most-used', 'highest-price', 'lowest-price', 'az', 'za']);
   const DATABASE_REPORT_RANGES = new Set(['daily', 'weekly', 'monthly', 'yearly', 'mtd', 'ytd']);
@@ -247,6 +251,8 @@
       pageNumber: 1,
       pageCount: 1,
       pdf: null,
+      pdfZoom: 1,
+      pdfPinch: null,
       renderToken: 0,
     },
     lineDraft: null,
@@ -327,6 +333,9 @@
   let outstandingScrollFrame = 0;
   let productStylesScrollFrame = 0;
   let outstandingLayoutFrame = 0;
+  let databaseProofResizeFrame = 0;
+  let mobileTableLabelFrame = 0;
+  let mobileTableObserver = null;
   let outstandingTitleMeasureCanvas = null;
   let lineItemMeasureCanvas = null;
   let lineDrag = null;
@@ -459,6 +468,7 @@
 
     if (!els.root) return;
     els.stage?.classList.add('db-view-home');
+    setupDatabaseMobileTableLabels();
 
     els.root.addEventListener('click', handleRootClick);
     els.outstandingBody.addEventListener('click', handleOutstandingRowClick);
@@ -547,10 +557,16 @@
     els.designPanel.addEventListener('input', handleDesignInput);
     els.designPanel.addEventListener('focusout', handleDesignFocusOut);
     els.designPanel.addEventListener('pointerdown', handleLineDragPointerDown);
+    els.proofPanel?.addEventListener('touchstart', handleDatabaseProofTouchStart, { passive: false });
+    els.proofPanel?.addEventListener('touchmove', handleDatabaseProofTouchMove, { passive: false });
+    els.proofPanel?.addEventListener('touchend', handleDatabaseProofTouchEnd, { passive: false });
+    els.proofPanel?.addEventListener('touchcancel', handleDatabaseProofTouchEnd, { passive: false });
     document.addEventListener('pointermove', handleLineDragPointerMove);
     document.addEventListener('pointerup', handleLineDragPointerUp);
     document.addEventListener('pointercancel', handleLineDragPointerUp);
     document.addEventListener('keydown', handleOrderAckKeydown);
+    window.addEventListener('scroll', handleDatabasePageScroll, { passive: true });
+    window.addEventListener('resize', handleDatabaseViewportResize);
     window.addEventListener('pagehide', () => flushOrderAutosaves({ keepalive: true }));
     window.addEventListener('beforeunload', () => flushOrderAutosaves({ keepalive: true }));
     document.querySelectorAll('.nav-tabs li').forEach((tab) => {
@@ -589,6 +605,68 @@
       if (!state.loadedHome) loadHomeMetrics();
       restoreDatabaseRouteOnce();
     }
+  }
+
+  function setupDatabaseMobileTableLabels() {
+    syncDatabaseMobileTableLabels();
+    if (!els.root || typeof MutationObserver !== 'function') return;
+    mobileTableObserver?.disconnect();
+    mobileTableObserver = new MutationObserver(scheduleDatabaseMobileTableLabels);
+    mobileTableObserver.observe(els.root, { childList: true, subtree: true });
+  }
+
+  function scheduleDatabaseMobileTableLabels() {
+    if (mobileTableLabelFrame) return;
+    mobileTableLabelFrame = window.requestAnimationFrame(() => {
+      mobileTableLabelFrame = 0;
+      syncDatabaseMobileTableLabels();
+    });
+  }
+
+  function syncDatabaseMobileTableLabels() {
+    els.root?.querySelectorAll('table.db-mobile-card-table').forEach((table) => {
+      const labels = Array.from(table.querySelectorAll(':scope > thead > tr > th')).map((header) => (
+        String(header.textContent || '').replace(/:\s*$/, '').trim()
+      ));
+      table.querySelectorAll(':scope > tbody > tr:not([data-mobile-label-ready])').forEach((row) => {
+        Array.from(row.children).forEach((cell, index) => {
+          if (cell.tagName !== 'TD') return;
+          if (Number.parseInt(cell.getAttribute('colspan'), 10) > 1) {
+            cell.removeAttribute('data-mobile-label');
+            return;
+          }
+          const label = labels[index] || '';
+          if (label) cell.dataset.mobileLabel = label;
+          else cell.removeAttribute('data-mobile-label');
+        });
+        row.dataset.mobileLabelReady = 'true';
+      });
+    });
+  }
+
+  function isDatabaseMobileLayout() {
+    return window.matchMedia?.(DATABASE_MOBILE_MEDIA).matches === true;
+  }
+
+  function handleDatabasePageScroll() {
+    if (!isDatabaseMobileLayout() || !isDatabaseTopLevelActive()) return;
+    if (state.activeView === 'outstanding') handleOutstandingScroll();
+    if (state.activeView === 'styles') handleProductStylesScroll();
+  }
+
+  function handleDatabaseViewportResize() {
+    fitDatabaseDocumentPreviewToViewport();
+    if (databaseProofResizeFrame) window.cancelAnimationFrame(databaseProofResizeFrame);
+    databaseProofResizeFrame = window.requestAnimationFrame(() => {
+      databaseProofResizeFrame = 0;
+      if (!state.proofViewer?.pdf || !els.proofPanel?.classList.contains('active')) return;
+      state.proofViewer.pdfPinch = null;
+      state.proofViewer.renderToken += 1;
+      renderDatabaseProofPdfPage().catch((err) => {
+        console.error('Database proof resize render failed', err);
+        updateDatabaseProofControls(false);
+      });
+    });
   }
 
   async function handleRootClick(event) {
@@ -721,6 +799,17 @@
     if (button.id === 'db-home-button') {
       await flushOrderAutosaves();
       goBackDatabaseView();
+      return;
+    }
+
+    const proofZoomDelta = button.dataset.dbProofZoom;
+    if (proofZoomDelta !== undefined) {
+      changeDatabaseProofZoom(Number.parseFloat(proofZoomDelta));
+      return;
+    }
+
+    if (button.dataset.dbProofFit !== undefined) {
+      setDatabaseProofZoom(1);
       return;
     }
 
@@ -933,9 +1022,11 @@
   function maybeExtendVisibleOrders() {
     if (state.orderMode !== 'all' || !els.outstandingFrame) return;
 
-    const distanceFromBottom = els.outstandingFrame.scrollHeight
-      - els.outstandingFrame.scrollTop
-      - els.outstandingFrame.clientHeight;
+    const distanceFromBottom = isDatabaseMobileLayout()
+      ? els.outstandingFrame.getBoundingClientRect().bottom - window.innerHeight
+      : els.outstandingFrame.scrollHeight
+        - els.outstandingFrame.scrollTop
+        - els.outstandingFrame.clientHeight;
     if (distanceFromBottom > 140) return;
 
     const nextLimit = Math.min(
@@ -4259,7 +4350,7 @@
   function renderStockOrderingLineTable(lineItems, options = {}) {
     const compactClass = options.compact ? ' db-stock-ordering-lines-compact' : '';
     return `
-      <table class="db-stock-ordering-lines${compactClass}">
+      <table class="db-stock-ordering-lines db-mobile-card-table${compactClass}">
         ${renderStockOrderingLineColgroup(lineItems)}
         <thead>
           <tr>
@@ -4586,9 +4677,11 @@
     productStylesScrollFrame = window.requestAnimationFrame(() => {
       productStylesScrollFrame = 0;
       if (!els.stylesFrame || !state.productStylesHasMore || state.productStylesLoading) return;
-      const distanceFromBottom = els.stylesFrame.scrollHeight
-        - els.stylesFrame.scrollTop
-        - els.stylesFrame.clientHeight;
+      const distanceFromBottom = isDatabaseMobileLayout()
+        ? els.stylesFrame.getBoundingClientRect().bottom - window.innerHeight
+        : els.stylesFrame.scrollHeight
+          - els.stylesFrame.scrollTop
+          - els.stylesFrame.clientHeight;
       if (distanceFromBottom <= 120) loadProductStyles({ append: true });
     });
   }
@@ -4599,6 +4692,11 @@
     state.selectedStyleId = nextId;
     renderProductStyles();
     persistDatabaseRoute();
+    if (isDatabaseMobileLayout()) {
+      window.requestAnimationFrame(() => {
+        els.stylesDetailPanel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
   }
 
   function renderProductStyleDetails(style, message = '') {
@@ -5150,6 +5248,12 @@
   function updateOutstandingTableLayout(jobs = []) {
     const table = els.outstandingTable;
     if (!table) return;
+    if (isDatabaseMobileLayout()) {
+      table.style.removeProperty('--db-outstanding-taken-by-width');
+      table.style.removeProperty('--db-outstanding-title-width');
+      table.style.removeProperty('--db-outstanding-table-width');
+      return;
+    }
 
     const frameWidth = els.outstandingFrame?.clientWidth || 0;
     const measuredTakenByWidth = measureOutstandingTakenByWidth(table, jobs);
@@ -5713,7 +5817,7 @@
     els.itemsPanel.innerHTML = `
       <div class="db-items-layout">
         <div class="db-items-stock-frame" data-db-item-scroll>
-          <table class="db-legacy-table db-items-table">
+          <table class="db-legacy-table db-items-table db-mobile-card-table">
             <thead>
               <tr>
                 <th class="db-row-selector"></th>
@@ -5740,7 +5844,7 @@
           <div class="db-edit-spine">E<br>D<br>I<br>T</div>
           <div class="db-nonstock-box">
             <div class="db-custom-table-scroll" data-db-item-scroll>
-              <table class="db-legacy-table db-nonstock-table ${showNonStockSupplier ? 'has-supplier' : ''}">
+              <table class="db-legacy-table db-nonstock-table db-mobile-card-table ${showNonStockSupplier ? 'has-supplier' : ''}">
                 ${renderNonStockColgroup(showNonStockSupplier)}
                 <thead>
                   <tr>
@@ -5834,7 +5938,7 @@
     els.designPanel.innerHTML = `
       <div class="db-design-layout">
         <div class="db-design-table-frame">
-          <table class="db-legacy-table db-design-table">
+          <table class="db-legacy-table db-design-table db-mobile-card-table">
             <thead>
               <tr>
                 <th class="db-row-selector"></th>
@@ -5874,9 +5978,18 @@
         <button class="db-proof-file-arrow db-proof-file-arrow-left" type="button" data-db-proof-file="-1" aria-label="Previous proof file" ${hasMultiple ? '' : 'hidden'} ${fileIndex <= 0 ? 'disabled' : ''}>‹</button>
         <div class="db-proof-frame">
           <div class="db-proof-toolbar">
-            <span>Proof:</span>
-            <input class="db-legacy-input db-proof-name-field" readonly value="${escapeAttr(currentFile?.name || '')}">
-            <span class="db-proof-file-count">${escapeHtml(fileCount)}</span>
+            <div class="db-proof-file-meta">
+              <span>Visual:</span>
+              <input class="db-legacy-input db-proof-name-field" aria-label="Visual filename" readonly value="${escapeAttr(currentFile?.name || '')}">
+              <span class="db-proof-file-count">${escapeHtml(fileCount)}</span>
+            </div>
+            <div class="db-proof-zoom-controls" data-db-proof-zoom-controls hidden aria-label="PDF zoom controls">
+              <button class="db-proof-zoom-button" type="button" data-db-proof-zoom="-${DATABASE_PROOF_ZOOM_STEP}" aria-label="Zoom out">−</button>
+              <span class="db-proof-zoom-status" data-db-proof-zoom-status aria-live="polite">100%</span>
+              <button class="db-proof-zoom-button" type="button" data-db-proof-zoom="${DATABASE_PROOF_ZOOM_STEP}" aria-label="Zoom in">+</button>
+              <button class="db-proof-fit-button" type="button" data-db-proof-fit aria-label="Fit PDF to screen">Fit</button>
+              <span class="db-proof-gesture-hint">Pinch to zoom · drag to move</span>
+            </div>
           </div>
           <div class="db-proof-viewer" data-db-proof-viewer>
             <div class="db-panel-message">${files.length ? 'Loading proof file' : 'No proof PDFs attached in the Tuesday Dashboard proof column'}</div>
@@ -5929,6 +6042,8 @@
       pageNumber: 1,
       pageCount: 1,
       pdf: null,
+      pdfZoom: 1,
+      pdfPinch: null,
       renderToken: (state.proofViewer?.renderToken || 0) + 1,
     };
   }
@@ -5948,6 +6063,8 @@
     viewer.pageNumber = 1;
     viewer.pageCount = 1;
     viewer.pdf = null;
+    viewer.pdfZoom = 1;
+    viewer.pdfPinch = null;
     updateDatabaseProofControls(true);
 
     if (!file) {
@@ -5998,15 +6115,17 @@
     const token = viewer.renderToken;
     const body = els.proofPanel?.querySelector('[data-db-proof-viewer]');
     if (!body || !viewer.pdf) return;
+    const scrollPosition = getDatabaseProofScrollPosition(body);
     setDatabaseProofViewerMessage('Rendering page...');
     updateDatabaseProofControls(true);
 
     const page = await viewer.pdf.getPage(viewer.pageNumber);
     if (token !== viewer.renderToken) return;
     const baseViewport = page.getViewport({ scale: 1 });
-    const availableWidth = Math.max(300, (body.clientWidth || 860) - 26);
-    const scale = Math.min(1.75, Math.max(0.65, availableWidth / baseViewport.width));
-    const viewport = page.getViewport({ scale });
+    const availableWidth = Math.max(160, (body.clientWidth || 860) - (isDatabaseMobileLayout() ? 12 : 26));
+    const fitScale = Math.min(1.75, Math.max(0.25, availableWidth / baseViewport.width));
+    const zoom = normalizeDatabaseProofZoom(viewer.pdfZoom);
+    const viewport = page.getViewport({ scale: fitScale * zoom });
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { alpha: false });
     canvas.width = Math.floor(viewport.width);
@@ -6020,6 +6139,7 @@
     stage.appendChild(canvas);
     body.innerHTML = '';
     body.appendChild(stage);
+    restoreDatabaseProofScrollPosition(body, scrollPosition);
     updateDatabaseProofControls(false);
   }
 
@@ -6077,6 +6197,8 @@
     viewer.pageNumber = 1;
     viewer.pageCount = 1;
     viewer.pdf = null;
+    viewer.pdfZoom = 1;
+    viewer.pdfPinch = null;
     viewer.renderToken += 1;
     renderProofPanel();
     queueRenderDatabaseProofFile();
@@ -6096,6 +6218,117 @@
     });
   }
 
+  function normalizeDatabaseProofZoom(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return 1;
+    return Math.min(
+      DATABASE_PROOF_ZOOM_MAX,
+      Math.max(DATABASE_PROOF_ZOOM_MIN, Number(numeric.toFixed(2)))
+    );
+  }
+
+  function formatDatabaseProofZoom(value) {
+    return `${Math.round(normalizeDatabaseProofZoom(value) * 100)}%`;
+  }
+
+  function getDatabaseProofScrollPosition(body) {
+    if (!body?.querySelector('.db-proof-pdf-stage')) return { x: 0.5, y: 0 };
+    const maxLeft = Math.max(0, body.scrollWidth - body.clientWidth);
+    const maxTop = Math.max(0, body.scrollHeight - body.clientHeight);
+    return {
+      x: maxLeft > 0 ? body.scrollLeft / maxLeft : 0.5,
+      y: maxTop > 0 ? body.scrollTop / maxTop : 0,
+    };
+  }
+
+  function restoreDatabaseProofScrollPosition(body, position = { x: 0.5, y: 0 }) {
+    if (!body) return;
+    const maxLeft = Math.max(0, body.scrollWidth - body.clientWidth);
+    const maxTop = Math.max(0, body.scrollHeight - body.clientHeight);
+    const x = Number.isFinite(position.x) ? clampNumber(position.x, 0, 1) : 0.5;
+    const y = Number.isFinite(position.y) ? clampNumber(position.y, 0, 1) : 0;
+    body.scrollLeft = maxLeft * x;
+    body.scrollTop = maxTop * y;
+  }
+
+  function changeDatabaseProofZoom(delta) {
+    if (!Number.isFinite(delta) || !delta) return;
+    setDatabaseProofZoom(normalizeDatabaseProofZoom(state.proofViewer?.pdfZoom) + delta);
+  }
+
+  function setDatabaseProofZoom(value) {
+    const viewer = state.proofViewer;
+    if (!viewer?.pdf) return;
+    const nextZoom = normalizeDatabaseProofZoom(value);
+    if (nextZoom === normalizeDatabaseProofZoom(viewer.pdfZoom)) return;
+    viewer.pdfZoom = nextZoom;
+    viewer.pdfPinch = null;
+    viewer.renderToken += 1;
+    renderDatabaseProofPdfPage().catch((err) => {
+      console.error('Database proof zoom render failed', err);
+      updateDatabaseProofControls(false);
+    });
+  }
+
+  function databaseProofTouchDistance(touches) {
+    if (!touches || touches.length < 2) return 0;
+    return Math.hypot(
+      touches[1].clientX - touches[0].clientX,
+      touches[1].clientY - touches[0].clientY
+    );
+  }
+
+  function handleDatabaseProofTouchStart(event) {
+    const viewer = state.proofViewer;
+    if (!viewer?.pdf || event.touches.length !== 2 || !event.target.closest('.db-proof-viewer')) return;
+    const distance = databaseProofTouchDistance(event.touches);
+    if (!distance) return;
+    viewer.pdfPinch = {
+      startDistance: distance,
+      startZoom: normalizeDatabaseProofZoom(viewer.pdfZoom),
+      nextZoom: normalizeDatabaseProofZoom(viewer.pdfZoom),
+    };
+    event.preventDefault();
+  }
+
+  function handleDatabaseProofTouchMove(event) {
+    const viewer = state.proofViewer;
+    const pinch = viewer?.pdfPinch;
+    if (!pinch || event.touches.length !== 2) return;
+    const distance = databaseProofTouchDistance(event.touches);
+    if (!distance) return;
+    pinch.nextZoom = normalizeDatabaseProofZoom(
+      pinch.startZoom * (distance / pinch.startDistance)
+    );
+    const stage = els.proofPanel?.querySelector('.db-proof-pdf-stage');
+    if (stage) {
+      stage.style.transformOrigin = 'center top';
+      stage.style.transform = `scale(${pinch.nextZoom / pinch.startZoom})`;
+    }
+    const zoomStatus = els.proofPanel?.querySelector('[data-db-proof-zoom-status]');
+    if (zoomStatus) zoomStatus.textContent = formatDatabaseProofZoom(pinch.nextZoom);
+    event.preventDefault();
+  }
+
+  function handleDatabaseProofTouchEnd(event) {
+    const viewer = state.proofViewer;
+    const pinch = viewer?.pdfPinch;
+    if (!pinch || event.touches.length >= 2) return;
+    const stage = els.proofPanel?.querySelector('.db-proof-pdf-stage');
+    if (stage) {
+      stage.style.transform = '';
+      stage.style.transformOrigin = '';
+    }
+    viewer.pdfPinch = null;
+    const nextZoom = normalizeDatabaseProofZoom(pinch.nextZoom);
+    if (nextZoom !== normalizeDatabaseProofZoom(viewer.pdfZoom)) {
+      setDatabaseProofZoom(nextZoom);
+    } else {
+      updateDatabaseProofControls(false);
+    }
+    event.preventDefault();
+  }
+
   function updateDatabaseProofControls(loading = false) {
     const files = state.selectedProofFiles || [];
     const viewer = state.proofViewer || {};
@@ -6109,11 +6342,22 @@
     const fileNext = els.proofPanel?.querySelector('[data-db-proof-file="1"]');
     const nameField = els.proofPanel?.querySelector('.db-proof-name-field');
     const fileCount = els.proofPanel?.querySelector('.db-proof-file-count');
+    const zoomControls = els.proofPanel?.querySelector('[data-db-proof-zoom-controls]');
+    const zoomStatus = els.proofPanel?.querySelector('[data-db-proof-zoom-status]');
+    const zoomOut = els.proofPanel?.querySelector('[data-db-proof-zoom^="-"]');
+    const zoomIn = els.proofPanel?.querySelector('[data-db-proof-zoom]:not([data-db-proof-zoom^="-"])');
+    const fit = els.proofPanel?.querySelector('[data-db-proof-fit]');
+    const zoom = normalizeDatabaseProofZoom(viewer.pdfZoom);
 
     if (nameField) nameField.value = file?.name || '';
     if (fileCount) fileCount.textContent = files.length ? `${viewer.fileIndex + 1} of ${files.length}` : '';
     if (pageStatus) pageStatus.textContent = `Page ${viewer.pageNumber || 1} / ${viewer.pageCount || 1}`;
     if (pageControls) pageControls.hidden = !isDatabasePdfFile(file);
+    if (zoomControls) zoomControls.hidden = !isDatabasePdfFile(file);
+    if (zoomStatus) zoomStatus.textContent = formatDatabaseProofZoom(zoom);
+    if (zoomOut) zoomOut.disabled = loading || !isPdf || zoom <= DATABASE_PROOF_ZOOM_MIN;
+    if (zoomIn) zoomIn.disabled = loading || !isPdf || zoom >= DATABASE_PROOF_ZOOM_MAX;
+    if (fit) fit.disabled = loading || !isPdf || zoom === 1;
     if (pagePrev) pagePrev.disabled = loading || !isPdf || viewer.pageNumber <= 1;
     if (pageNext) pageNext.disabled = loading || !isPdf || viewer.pageNumber >= viewer.pageCount;
     if (filePrev) filePrev.disabled = loading || files.length <= 1 || viewer.fileIndex <= 0;
@@ -6195,6 +6439,7 @@
     document.body.classList.add('modal-open', 'db-order-ack-open');
 
     window.requestAnimationFrame(() => {
+      fitDatabaseDocumentPreviewToViewport();
       const printButton = modal.querySelector('[data-db-ack-print]');
       if (printButton) printButton.focus();
     });
@@ -6224,6 +6469,7 @@
     document.body.classList.add('modal-open', 'db-order-ack-open');
 
     window.requestAnimationFrame(() => {
+      fitDatabaseDocumentPreviewToViewport();
       const printButton = modal.querySelector('[data-db-ack-print]');
       if (printButton) printButton.focus();
     });
@@ -6271,6 +6517,7 @@
     document.body.classList.add('modal-open', 'db-order-ack-open');
 
     window.requestAnimationFrame(() => {
+      fitDatabaseDocumentPreviewToViewport();
       const printButton = modal.querySelector('[data-db-ack-print]');
       if (printButton) printButton.focus();
     });
@@ -6301,6 +6548,7 @@
     document.body.classList.add('modal-open', 'db-order-ack-open');
 
     window.requestAnimationFrame(() => {
+      fitDatabaseDocumentPreviewToViewport();
       const printButton = modal.querySelector('[data-db-ack-print]');
       if (printButton) printButton.focus();
     });
@@ -6945,6 +7193,23 @@
     modal.addEventListener('click', handleOrderAckModalClick);
     document.body.appendChild(modal);
     return modal;
+  }
+
+  function fitDatabaseDocumentPreviewToViewport() {
+    const modal = document.getElementById('db-order-ack-modal');
+    const pages = modal?.querySelector('.db-order-ack-pages');
+    if (!pages) return;
+
+    pages.style.removeProperty('zoom');
+    if (modal.hidden || !isDatabaseMobileLayout()) return;
+
+    const scroll = modal.querySelector('.db-order-ack-scroll');
+    const page = pages.querySelector('.db-order-ack-page');
+    if (!scroll || !page) return;
+    const availableWidth = Math.max(240, scroll.clientWidth - 16);
+    const pageWidth = page.getBoundingClientRect().width;
+    if (!pageWidth) return;
+    pages.style.zoom = String(Math.min(1, availableWidth / pageWidth));
   }
 
   async function handleOrderAckModalClick(event) {
@@ -10481,7 +10746,7 @@
     return `
       <div class="db-small-item-box">
         <div class="db-custom-table-scroll" data-db-item-scroll>
-          <table class="db-legacy-table">
+          <table class="db-legacy-table db-mobile-card-table">
             <thead>
               <tr>
                 <th class="db-row-selector"></th>

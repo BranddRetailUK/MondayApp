@@ -52,11 +52,13 @@
       <section id="tab-database" class="tab-content db-legacy-tab">
         <div id="db-legacy-app" class="db-legacy-app">
           <div class="db-legacy-stage">
-            <button id="db-home-button" class="db-home-button" type="button">Back</button>
+            <div class="db-stage-nav">
+              <button id="db-home-button" class="db-home-button" type="button">Back</button>
 
-            <div class="db-main-tabs" role="tablist" aria-label="Database sections">
-              <button class="db-main-tab active" type="button" data-db-go="home">Home</button>
-              <button class="db-main-tab" type="button" data-db-go="outstanding">Open Orders</button>
+              <div class="db-main-tabs" role="tablist" aria-label="Database sections">
+                <button class="db-main-tab active" type="button" data-db-go="home">Home</button>
+                <button class="db-main-tab" type="button" data-db-go="outstanding">Open Orders</button>
+              </div>
             </div>
 
             <section id="db-home-view" class="db-view db-home-view active" aria-label="Database home">
@@ -314,7 +316,7 @@
               </div>
 
               <div class="db-table-frame db-customers-table-frame">
-                <table id="db-customers-table" class="db-legacy-table">
+                <table id="db-customers-table" class="db-legacy-table db-mobile-card-table">
                   <thead>
                     <tr>
                       <th class="db-row-selector"></th>
@@ -442,7 +444,7 @@
 
               <div class="db-customer-panel active" id="db-customer-orders-panel">
                 <div class="db-customer-table-frame">
-                  <table id="db-customer-orders-table" class="db-legacy-table">
+                  <table id="db-customer-orders-table" class="db-legacy-table db-mobile-card-table">
                     <thead>
                       <tr>
                         <th class="db-row-selector"></th>
@@ -482,7 +484,7 @@
               </div>
               <div class="db-customer-panel" id="db-customer-design-numbers-panel">
                 <div class="db-customer-table-frame">
-                  <table id="db-customer-design-numbers-table" class="db-legacy-table">
+                  <table id="db-customer-design-numbers-table" class="db-legacy-table db-mobile-card-table">
                     <thead>
                       <tr>
                         <th class="db-row-selector"></th>
@@ -557,7 +559,7 @@
 
             <section id="db-outstanding-view" class="db-view db-outstanding-view" aria-label="Outstanding orders">
               <div class="db-table-frame db-outstanding-table-frame">
-                <table id="db-outstanding-table" class="db-legacy-table">
+                <table id="db-outstanding-table" class="db-legacy-table db-mobile-card-table">
                   <thead>
                     <tr>
                       <th class="db-row-selector"></th>
@@ -598,7 +600,7 @@
 
             <section id="db-to-invoice-view" class="db-view db-to-invoice-view" aria-label="To invoice">
               <div class="db-table-frame db-to-invoice-table-frame">
-                <table id="db-to-invoice-table" class="db-legacy-table">
+                <table id="db-to-invoice-table" class="db-legacy-table db-mobile-card-table">
                   <thead>
                     <tr>
                       <th class="db-row-selector"></th>
@@ -619,7 +621,7 @@
 
             <section id="db-stock-ordering-view" class="db-view db-stock-ordering-view" aria-label="Stock ordering">
               <div class="db-table-frame db-stock-ordering-table-frame">
-                <table id="db-stock-ordering-table" class="db-legacy-table">
+                <table id="db-stock-ordering-table" class="db-legacy-table db-mobile-card-table">
                   <thead>
                     <tr>
                       <th class="db-row-selector"></th>
@@ -666,7 +668,7 @@
                 <div class="db-styles-panel db-styles-parent-panel">
                   <div class="db-styles-panel-title">Parent products</div>
                   <div class="db-table-frame db-styles-table-frame">
-                    <table id="db-styles-table" class="db-legacy-table">
+                    <table id="db-styles-table" class="db-legacy-table db-mobile-card-table">
                       <thead>
                         <tr>
                           <th class="db-row-selector"></th>
@@ -722,7 +724,7 @@
             <section id="db-users-view" class="db-view db-users-view" aria-label="Users">
               <div class="db-users-section-title">Pending signup requests</div>
               <div class="db-table-frame db-signup-requests-table-frame">
-                <table id="db-signup-requests-table" class="db-legacy-table">
+                <table id="db-signup-requests-table" class="db-legacy-table db-mobile-card-table">
                   <thead>
                     <tr>
                       <th>Name:</th>
@@ -739,7 +741,7 @@
 
               <div class="db-users-section-title db-registered-users-title">Registered users</div>
               <div class="db-table-frame db-users-table-frame">
-                <table id="db-users-table" class="db-legacy-table">
+                <table id="db-users-table" class="db-legacy-table db-mobile-card-table">
                   <thead>
                     <tr>
                       <th>Name:</th>
