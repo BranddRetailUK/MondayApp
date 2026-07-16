@@ -8517,7 +8517,9 @@
 
     return `
       <tr class="db-add-line-edit-row">
-        <td class="db-row-selector db-line-delete-cell"></td>
+        <td class="db-row-selector db-line-delete-cell">
+          <button class="db-line-delete-button" type="button" data-db-line-action="cancel" aria-label="Delete unsaved line item" title="Delete unsaved line item">X</button>
+        </td>
         <td class="db-row-selector"></td>
         <td>${renderLineSearchInput('code', draft.codeQuery)}</td>
         <td>${renderLineSearchInput('style', draft.styleQuery)}</td>
@@ -9818,7 +9820,9 @@
 
     return `
       <tr class="db-custom-line-edit-row" data-custom-line-type="${escapeAttr(type)}">
-        <td class="db-row-selector db-line-delete-cell"></td>
+        <td class="db-row-selector db-line-delete-cell">
+          <button class="db-line-delete-button" type="button" data-db-custom-line-action="cancel" data-db-line-type="${escapeAttr(type)}" aria-label="Delete unsaved line item" title="Delete unsaved line item">X</button>
+        </td>
         <td class="db-row-selector"></td>
         <td><input class="db-custom-line-input" data-custom-line-field="line_description" value="${escapeAttr(draft.line_description)}"></td>
         ${showSupplier ? `<td><input class="db-custom-line-input" data-custom-line-field="supplier_name" value="${escapeAttr(draft.supplier_name)}"></td>` : ''}
