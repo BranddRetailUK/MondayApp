@@ -5493,7 +5493,7 @@
 
         <div class="db-detail-box db-payment-box">
           ${detailRow('Payment:', paymentTermsSelect(job))}
-          ${detailRow('Client ref:', inputBox(job.client_order_no || job.contact_name || ''))}
+          ${detailRow('Client ref:', editableJobInput('client_order_no', job.client_order_no || ''))}
           <div class="db-form-row db-comments-row">
             <label>Comments:</label>
             <textarea data-db-job-field="comments">${escapeHtml(job.comments || '')}</textarea>
@@ -5624,9 +5624,10 @@
   }
 
   function handleDetailsPanelInput(event) {
-    if (!event.target?.matches?.('[data-db-job-field="comments"]')) return;
+    const field = event.target?.dataset?.dbJobField;
+    if (field !== 'comments' && field !== 'client_order_no') return;
     if (!state.selectedJob?.source_order_id) return;
-    state.selectedJob.comments = event.target.value;
+    state.selectedJob[field] = event.target.value;
     state.jobDirty = true;
     scheduleJobAutosave();
   }
@@ -8661,7 +8662,7 @@
   function renderLineItemInput(item, field, className = '') {
     const value = lineItemEditDisplayValue(item, field);
     const canonicalReadonly = Boolean(item?.ralawise_catalog_variant_id)
-      && ['style_code', 'style_name', 'unit_cost'].includes(field);
+      && ['style_code', 'style_name'].includes(field);
     return `
       <input
         class="db-line-item-input ${escapeAttr(className)}"
@@ -9828,6 +9829,7 @@
 
   async function saveJobFields(options = {}) {
     const commentsInput = els.detailsPanel?.querySelector('[data-db-job-field="comments"]');
+    const clientOrderNoInput = els.detailsPanel?.querySelector('[data-db-job-field="client_order_no"]');
     const orderTypeSelect = els.detailsPanel?.querySelector('[data-db-job-field="order_type"]');
     const orderType = normalizeOrderTypeOption(orderTypeSelect?.value)
       || normalizeOrderTypeOption(state.selectedJob?.order_type)
@@ -9835,6 +9837,9 @@
     const payload = {
       job_title: els.orderTitle.value.trim(),
       comments: commentsInput ? commentsInput.value : (state.selectedJob?.comments || ''),
+      client_order_no: clientOrderNoInput
+        ? clientOrderNoInput.value.trim()
+        : (state.selectedJob?.client_order_no || ''),
     };
     if (orderType) payload.order_type = orderType;
     const signature = jobSignature(payload);
@@ -9904,6 +9909,7 @@
       job_title: job?.job_title || '',
       order_type: normalizeOrderTypeOption(job?.order_type) || '',
       comments: job?.comments || '',
+      client_order_no: job?.client_order_no || '',
     });
   }
 
@@ -9915,10 +9921,11 @@
           job_title: parsed.job_title || '',
           order_type: normalizeOrderTypeOption(parsed.order_type) || '',
           comments: parsed.comments || '',
+          client_order_no: parsed.client_order_no || '',
         }
-        : { job_title: '', order_type: '', comments: '' };
+        : { job_title: '', order_type: '', comments: '', client_order_no: '' };
     } catch {
-      return { job_title: '', order_type: '', comments: '' };
+      return { job_title: '', order_type: '', comments: '', client_order_no: '' };
     }
   }
 
@@ -10563,6 +10570,10 @@
 
   function inputBox(value, className = '') {
     return `<input class="db-legacy-input ${className}" readonly value="${escapeAttr(value || '')}">`;
+  }
+
+  function editableJobInput(field, value, className = '') {
+    return `<input class="db-legacy-input ${className}" data-db-job-field="${escapeAttr(field)}" autocomplete="off" value="${escapeAttr(value || '')}">`;
   }
 
   function orderAddressSelect(role, currentValue) {

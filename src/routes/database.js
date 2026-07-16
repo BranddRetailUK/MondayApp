@@ -2546,6 +2546,7 @@ router.put('/api/database/jobs/:id', async (req, res) => {
   const hasJobTitle = Object.prototype.hasOwnProperty.call(payload, 'job_title');
   const hasOrderType = Object.prototype.hasOwnProperty.call(payload, 'order_type');
   const hasComments = Object.prototype.hasOwnProperty.call(payload, 'comments');
+  const hasClientOrderNo = Object.prototype.hasOwnProperty.call(payload, 'client_order_no');
   const hasIsComplete = Object.prototype.hasOwnProperty.call(payload, 'is_complete');
   const hasMarkInvoiced = payload.mark_invoiced === true || payload.mark_invoiced === 'true';
   const hasManualInvoiceDate = payload.manual_invoice_date === true || payload.manual_invoice_date === 'true';
@@ -2562,7 +2563,7 @@ router.put('/api/database/jobs/:id', async (req, res) => {
     payload.order_type = orderType;
   }
 
-  if (!hasJobTitle && !hasOrderType && !hasComments && !hasIsComplete && !hasMarkInvoiced && !hasContactFields && !hasAddressFields) {
+  if (!hasJobTitle && !hasOrderType && !hasComments && !hasClientOrderNo && !hasIsComplete && !hasMarkInvoiced && !hasContactFields && !hasAddressFields) {
     return res.status(400).json({ error: 'No supported job fields supplied' });
   }
 
@@ -3698,7 +3699,6 @@ router.put('/api/database/jobs/:id/line-items/:lineItemId', async (req, res) => 
       'style_name',
       'colour',
       'size',
-      'unit_cost',
       'supplier_name',
     ];
     if (
@@ -3707,7 +3707,7 @@ router.put('/api/database/jobs/:id/line-items/:lineItemId', async (req, res) => 
     ) {
       await client.query('ROLLBACK');
       return res.status(400).json({
-        error: 'Catalogue product fields can only be changed by selecting another Ralawise variant',
+        error: 'Catalogue product identity fields can only be changed by selecting another Ralawise variant',
       });
     }
 
@@ -4442,6 +4442,7 @@ function appendDatabaseJobUpdates(payload, values, updates) {
   const textFields = [
     'job_title',
     'comments',
+    'client_order_no',
     'contact_name',
     'contact_phone',
     'contact_mobile',
