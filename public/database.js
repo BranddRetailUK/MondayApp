@@ -2287,12 +2287,12 @@
     state.newOrderCustomerDetail = null;
     els.newCustomerInput.value = customer.business_name || '';
 
-    const invoiceAddress = formatCustomerAddress(customer, 'inv') || customer.business_name || '';
-    const deliveryAddress = formatCustomerAddress(customer, 'ship') || invoiceAddress;
+    const invoiceAddress = formatCustomerAddress(customer, 'inv') || '';
+    const deliveryAddress = formatCustomerAddress(customer, 'ship') || '';
     populateNewOrderCustomerChoices({
       contactName: customer.contact_name || '',
-      deliveryAddress: deliveryAddress || '',
-      invoiceAddress: invoiceAddress || deliveryAddress || '',
+      invoiceAddress: invoiceAddress || deliveryAddress || customer.business_name || '',
+      deliveryAddress: deliveryAddress || invoiceAddress || customer.business_name || '',
     });
     loadNewOrderCustomerDetail(customer);
 
@@ -2389,16 +2389,11 @@
   }
 
   function newOrderAddressChoices(role, fallbackAddress = '') {
-    const addresses = customerAddressChoices(state.newOrderCustomerDetail, fallbackAddress);
-    if (addresses.length) {
-      return sortAddressChoicesForRole(addresses, role);
-    }
-
     const selected = state.selectedCustomer || {};
     const directAddress = role === 'invoice'
       ? (fallbackAddress || selected.invoice_address)
       : (fallbackAddress || selected.delivery_address);
-    return directAddress ? [normalizeCustomerAddress({ address: directAddress, address_type: role })] : [];
+    return customerAddressChoicesForRole(state.newOrderCustomerDetail, role, directAddress);
   }
 
   function populateContactSelect(select, contacts) {
@@ -2424,7 +2419,7 @@
   function populateAddressSelect(select, addresses, preferredAddress = '') {
     if (!select) return;
     const current = preferredAddress || select.value;
-    const options = ['<option value=""></option>'];
+    const options = addresses.length ? [] : ['<option value=""></option>'];
     addresses.forEach((address, index) => {
       options.push(`
         <option
@@ -2552,27 +2547,25 @@
     return uniqueAddresses;
   }
 
-  function sortAddressChoicesForRole(addresses, role) {
-    const wanted = role === 'invoice' ? 'invoice' : 'delivery';
-    return [...addresses].sort((a, b) => {
-      const aScore = addressRoleScore(a, wanted);
-      const bScore = addressRoleScore(b, wanted);
-      if (aScore !== bScore) return aScore - bScore;
-      return String(a.address || '').localeCompare(String(b.address || ''), 'en', { sensitivity: 'base' });
+  function customerAddressChoicesForRole(detail, role, fallbackAddress = '') {
+    const addresses = customerAddressChoices(detail);
+    const matchingAddresses = addresses.filter((address) => customerAddressHasRole(address, role));
+    const genericAddresses = addresses.filter((address) => {
+      const type = String(address?.address_type || '').trim().toLowerCase();
+      return !type || type === 'address';
     });
-  }
+    const choices = matchingAddresses.length ? matchingAddresses : genericAddresses;
+    if (!fallbackAddress) return choices;
 
-  function addressRoleScore(address, wanted) {
-    const type = String(address?.address_type || '').toLowerCase();
-    if (wanted === 'invoice' && type.includes('invoice')) return 0;
-    if (wanted === 'delivery' && type.includes('delivery')) return 0;
-    if (type.includes('address')) return 1;
-    return 2;
+    const normalizedFallback = normalizeCustomerAddress({ address: fallbackAddress });
+    const storedFallback = addresses.find((address) => (
+      normalizeOrderAckText(address.address) === normalizeOrderAckText(fallbackAddress)
+    ));
+    return dedupeAddresses([storedFallback || normalizedFallback, ...choices]);
   }
 
   function addressOptionLabel(address) {
-    const label = String(address.address || '').replace(/\s*,\s*/g, ', ');
-    return address.address_type ? `${address.address_type}: ${label}` : label;
+    return String(address.address || '').replace(/\s*,\s*/g, ', ');
   }
 
   function highlightMatch(value, query) {
@@ -10233,12 +10226,9 @@
   }
 
   function orderAddressSelect(role, currentValue) {
-    const addresses = sortAddressChoicesForRole(
-      customerAddressChoices(state.orderCustomerDetail, currentValue),
-      role
-    );
-    const selectedAddress = String(currentValue || '').trim();
-    const options = ['<option value=""></option>'];
+    const addresses = customerAddressChoicesForRole(state.orderCustomerDetail, role, currentValue);
+    const selectedAddress = String(currentValue || addresses[0]?.address || '').trim();
+    const options = addresses.length ? [] : ['<option value=""></option>'];
     addresses.forEach((address, index) => {
       const selected = normalizeOrderAckText(address.address) === normalizeOrderAckText(selectedAddress);
       options.push(`
@@ -10249,9 +10239,6 @@
         >${escapeHtml(addressOptionLabel(address))}</option>
       `);
     });
-    if (selectedAddress && !addresses.some((address) => normalizeOrderAckText(address.address) === normalizeOrderAckText(selectedAddress))) {
-      options.push(`<option value="${escapeAttr(selectedAddress)}" selected>${escapeHtml(selectedAddress)}</option>`);
-    }
     return `
       <select
         class="db-address-select"
