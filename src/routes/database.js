@@ -296,7 +296,7 @@ async function performRalawisePlacedOrderSync({ source = 'manual' } = {}) {
     if (!locked) return { ok: true, skipped: 'locked', checkedJobs: 0, orderedJobs: 0, costUpdates: 0 };
 
     const basketedJobs = await client.query(
-      `SELECT source_order_id, order_no, line_count, basketed_at
+      `SELECT source_order_id, order_no, line_reference, line_count, basketed_at
        FROM database_ralawise_basket_jobs
        WHERE status = 'basketed'
        ORDER BY basketed_at ASC NULLS LAST, source_order_id
@@ -308,7 +308,7 @@ async function performRalawisePlacedOrderSync({ source = 'manual' } = {}) {
 
     const sourceOrderIds = basketedJobs.rows.map((job) => Number(job.source_order_id));
     const basketedLines = await client.query(
-      `SELECT source_order_item_id, source_order_id, order_no, ralawise_sku, quantity
+      `SELECT source_order_item_id, source_order_id, order_no, line_reference, ralawise_sku, quantity
        FROM database_ralawise_basket_lines
        WHERE source_order_id = ANY($1::int[])
          AND status = 'basketed'
@@ -1281,6 +1281,7 @@ router.post('/api/database/stock-ordering/:id/ralawise-basket', async (req, res)
       `INSERT INTO database_ralawise_basket_jobs (
          source_order_id,
          order_no,
+         line_reference,
          status,
          attempt_count,
          line_count,
@@ -1290,9 +1291,10 @@ router.post('/api/database/stock-ordering/:id/ralawise-basket', async (req, res)
          last_error,
          adding_started_at,
          updated_at
-       ) VALUES ($1,$2,'adding',1,$3,$4,'[]'::jsonb,$5::jsonb,NULL,NOW(),NOW())
+       ) VALUES ($1,$2,$3,'adding',1,$4,$5,'[]'::jsonb,$6::jsonb,NULL,NOW(),NOW())
        ON CONFLICT (source_order_id) DO UPDATE SET
          order_no = EXCLUDED.order_no,
+         line_reference = EXCLUDED.line_reference,
          status = 'adding',
          attempt_count = database_ralawise_basket_jobs.attempt_count + 1,
          line_count = EXCLUDED.line_count,
@@ -1312,6 +1314,7 @@ router.post('/api/database/stock-ordering/:id/ralawise-basket', async (req, res)
       [
         sourceOrderId,
         job.order_no || null,
+        plan.reference,
         plan.lines.length,
         plan.total_quantity,
         JSON.stringify(plan.items),
@@ -1324,15 +1327,17 @@ router.post('/api/database/stock-ordering/:id/ralawise-basket', async (req, res)
            source_order_item_id,
            source_order_id,
            order_no,
+           line_reference,
            ralawise_sku,
            quantity,
            status,
            stock_warning,
            updated_at
-         ) VALUES ($1,$2,$3,$4,$5,'adding',NULL,NOW())
+         ) VALUES ($1,$2,$3,$4,$5,$6,'adding',NULL,NOW())
          ON CONFLICT (source_order_item_id) DO UPDATE SET
            source_order_id = EXCLUDED.source_order_id,
            order_no = EXCLUDED.order_no,
+           line_reference = EXCLUDED.line_reference,
            ralawise_sku = EXCLUDED.ralawise_sku,
            quantity = EXCLUDED.quantity,
            status = 'adding',
@@ -1348,6 +1353,7 @@ router.post('/api/database/stock-ordering/:id/ralawise-basket', async (req, res)
           line.source_order_item_id,
           sourceOrderId,
           job.order_no || null,
+          plan.reference,
           line.ralawise_sku,
           line.quantity,
         ]

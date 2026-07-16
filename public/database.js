@@ -4179,7 +4179,7 @@
       : ralawise.error || '';
     const ralawiseDisabled = adding || ralawise.alreadyBasketed || !ralawise.eligible;
     return `
-      <tr class="db-stock-ordering-row" data-stock-order-id="${escapeAttr(sourceOrderId)}" tabindex="0">
+      <tr class="db-stock-ordering-row${ralawise.alreadyBasketed ? ' is-ralawise-basketed' : ''}" data-stock-order-id="${escapeAttr(sourceOrderId)}" tabindex="0">
         <td class="db-row-selector">
           <input
             class="db-stock-ordering-check"

@@ -3724,6 +3724,12 @@ body.modal-open{overflow:hidden}
 .db-stock-ordering-row:hover td{
   background:#e6f1ff;
 }
+.db-stock-ordering-row.is-ralawise-basketed td{
+  background:#c8f0d6;
+}
+.db-stock-ordering-row.is-ralawise-basketed:hover td{
+  background:#aee5c2;
+}
 .db-stock-ordering-check{
   width:13px;
   height:13px;

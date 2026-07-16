@@ -43,7 +43,10 @@ function exactRalawiseSku(line) {
 }
 
 function buildJobBasketPlan(job, lineItems) {
-  const reference = trimText(job?.order_no || job?.source_order_id).slice(0, 15);
+  const reference = (
+    trimText(job?.customer_name)
+    || trimText(job?.order_no || job?.source_order_id)
+  ).slice(0, 15);
   const productLines = (Array.isArray(lineItems) ? lineItems : []).filter(isProductLine);
   const unresolved = [];
   const resolvedLines = [];
@@ -120,7 +123,12 @@ function normalizedRemoteReference(value) {
 }
 
 function matchBasketedJobToPlacedOrders(job, auditLines, placedOrders) {
-  const reference = normalizedRemoteReference(job?.order_no || job?.source_order_id);
+  const reference = normalizedRemoteReference(
+    job?.line_reference
+    || trimText(job?.customer_name).slice(0, 15)
+    || job?.order_no
+    || job?.source_order_id
+  );
   const remoteLines = [];
   (Array.isArray(placedOrders) ? placedOrders : []).forEach((order) => {
     (Array.isArray(order?.lines) ? order.lines : []).forEach((line) => {

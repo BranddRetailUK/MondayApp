@@ -7,8 +7,12 @@ const {
   matchBasketedJobToPlacedOrders,
 } = require('../src/services/stockOrderingRalawise');
 
-test('buildJobBasketPlan groups exact variant SKUs and keeps line-level quantities', () => {
-  const plan = buildJobBasketPlan({ source_order_id: 10, order_no: 56789 }, [
+test('buildJobBasketPlan groups exact variant SKUs and uses the customer name as OL Ref', () => {
+  const plan = buildJobBasketPlan({
+    source_order_id: 10,
+    order_no: 56789,
+    customer_name: 'Acme Promotions Limited',
+  }, [
     {
       source_order_item_id: 1,
       source_product_id: 100,
@@ -36,7 +40,7 @@ test('buildJobBasketPlan groups exact variant SKUs and keeps line-level quantiti
   assert.equal(plan.product_line_count, 2);
   assert.equal(plan.total_quantity, 5);
   assert.deepEqual(plan.items, [
-    { code: 'GD001BLACL', quantity: 5, reference: '56789' },
+    { code: 'GD001BLACL', quantity: 5, reference: 'Acme Promotions' },
   ]);
   assert.equal(plan.lines.length, 2);
 });
@@ -125,7 +129,7 @@ test('basketContainsPlan requires the exact SKU, reference, and requested quanti
 
 test('matchBasketedJobToPlacedOrders requires every job line and returns actual supplier costs', () => {
   const match = matchBasketedJobToPlacedOrders(
-    { source_order_id: 50407, order_no: 51160 },
+    { source_order_id: 50407, order_no: 51160, line_reference: 'Acme Promotions' },
     [
       { source_order_item_id: 1, ralawise_sku: 'GD001BLACL', quantity: 2 },
       { source_order_item_id: 2, ralawise_sku: 'GD001BLACL', quantity: 1 },
@@ -137,8 +141,8 @@ test('matchBasketedJobToPlacedOrders requires every job line and returns actual 
       ordered_at: '2026-07-16T12:30:00.000Z',
       order_url: 'https://shop.ralawise.com/order/W12345',
       lines: [
-        { code: 'GD001BLACL', quantity: 3, line_reference: '51160', unit_price: 2.17, order_line: '1000' },
-        { code: 'JH001NAVYM', quantity: 1, line_reference: '51160', unit_price: 6.42, order_line: '1001' },
+        { code: 'GD001BLACL', quantity: 3, line_reference: 'Acme Promotions', unit_price: 2.17, order_line: '1000' },
+        { code: 'JH001NAVYM', quantity: 1, line_reference: 'Acme Promotions', unit_price: 6.42, order_line: '1001' },
       ],
     }]
   );

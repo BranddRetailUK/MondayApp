@@ -6,6 +6,7 @@ async function createStockOrderingBasketTables(db) {
       id BIGSERIAL PRIMARY KEY,
       source_order_id INTEGER NOT NULL UNIQUE,
       order_no TEXT,
+      line_reference TEXT,
       status TEXT NOT NULL DEFAULT 'adding',
       attempt_count INTEGER NOT NULL DEFAULT 0,
       line_count INTEGER NOT NULL DEFAULT 0,
@@ -28,6 +29,13 @@ async function createStockOrderingBasketTables(db) {
         CHECK (status IN ('adding', 'basketed', 'ordered', 'failed'))
     )
   `);
+  await db.query('ALTER TABLE database_ralawise_basket_jobs ADD COLUMN IF NOT EXISTS line_reference TEXT;');
+  await db.query(`
+    UPDATE database_ralawise_basket_jobs
+    SET line_reference = LEFT(BTRIM(order_no), 15)
+    WHERE NULLIF(BTRIM(line_reference), '') IS NULL
+      AND NULLIF(BTRIM(order_no), '') IS NOT NULL
+  `);
   await db.query('ALTER TABLE database_ralawise_basket_jobs ADD COLUMN IF NOT EXISTS placed_order_snapshot JSONB;');
   await db.query('ALTER TABLE database_ralawise_basket_jobs ADD COLUMN IF NOT EXISTS ralawise_order_number TEXT;');
   await db.query('ALTER TABLE database_ralawise_basket_jobs ADD COLUMN IF NOT EXISTS order_url TEXT;');
@@ -45,6 +53,7 @@ async function createStockOrderingBasketTables(db) {
       source_order_item_id INTEGER NOT NULL UNIQUE,
       source_order_id INTEGER NOT NULL,
       order_no TEXT,
+      line_reference TEXT,
       ralawise_sku TEXT NOT NULL,
       quantity INTEGER NOT NULL,
       status TEXT NOT NULL DEFAULT 'adding',
@@ -61,6 +70,13 @@ async function createStockOrderingBasketTables(db) {
       CONSTRAINT database_ralawise_basket_lines_status_check
         CHECK (status IN ('adding', 'basketed', 'ordered', 'failed'))
     )
+  `);
+  await db.query('ALTER TABLE database_ralawise_basket_lines ADD COLUMN IF NOT EXISTS line_reference TEXT;');
+  await db.query(`
+    UPDATE database_ralawise_basket_lines
+    SET line_reference = LEFT(BTRIM(order_no), 15)
+    WHERE NULLIF(BTRIM(line_reference), '') IS NULL
+      AND NULLIF(BTRIM(order_no), '') IS NOT NULL
   `);
   await db.query('ALTER TABLE database_ralawise_basket_lines ADD COLUMN IF NOT EXISTS ralawise_order_number TEXT;');
   await db.query('ALTER TABLE database_ralawise_basket_lines ADD COLUMN IF NOT EXISTS supplier_order_line TEXT;');
