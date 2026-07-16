@@ -8,22 +8,76 @@ const COOKIE_NAME = 'uh_session';
 const SESSION_DAYS = 30;
 const SESSION_MAX_AGE_SECONDS = SESSION_DAYS * 24 * 60 * 60;
 const SESSION_MAX_AGE_MS = SESSION_MAX_AGE_SECONDS * 1000;
-const ALLOWED_EMAIL_DOMAIN = 'ultimatepromotions.co.uk';
 const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 const PASSWORD_KEY_LENGTH = 64;
+const MIN_PASSWORD_LENGTH = 12;
+const MAX_PASSWORD_LENGTH = 128;
+const EMAIL_MAX_LENGTH = 254;
+const NAME_MAX_LENGTH = 80;
+const COMMON_PASSWORDS = new Set([
+  '123456789012',
+  'letmeinletmein',
+  'password1234',
+  'qwertyqwerty',
+  'ultimatepromotions',
+]);
 
 function normalizeEmail(value) {
   return String(value || '').trim().toLowerCase();
 }
 
-function isAllowedEmail(value) {
+function isValidEmail(value) {
   const email = normalizeEmail(value);
-  const parts = email.split('@');
-  return parts.length === 2 && Boolean(parts[0]) && parts[1] === ALLOWED_EMAIL_DOMAIN;
+  if (!email || email.length > EMAIL_MAX_LENGTH || /\s/.test(email)) return false;
+
+  const at = email.lastIndexOf('@');
+  if (at <= 0 || at !== email.indexOf('@')) return false;
+  const local = email.slice(0, at);
+  const domain = email.slice(at + 1);
+  if (!local || local.length > 64 || !domain || domain.length > 253) return false;
+  if (local.startsWith('.') || local.endsWith('.') || local.includes('..')) return false;
+  if (!/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$/i.test(local)) return false;
+
+  const labels = domain.split('.');
+  return labels.length >= 2 && labels.every((label) => (
+    label.length >= 1
+    && label.length <= 63
+    && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label)
+  ));
 }
 
 function cleanName(value) {
-  return String(value || '').trim().replace(/\s+/g, ' ');
+  return String(value || '')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, NAME_MAX_LENGTH);
+}
+
+function passwordValidationError(password, identity = {}) {
+  const value = String(password || '');
+  if (value.length < MIN_PASSWORD_LENGTH) {
+    return `Password must be at least ${MIN_PASSWORD_LENGTH} characters`;
+  }
+  if (value.length > MAX_PASSWORD_LENGTH) {
+    return `Password must be no more than ${MAX_PASSWORD_LENGTH} characters`;
+  }
+  if (COMMON_PASSWORDS.has(value.toLowerCase()) || new Set(value).size < 4) {
+    return 'Choose a less predictable password';
+  }
+
+  const lowerPassword = value.toLowerCase();
+  const identityParts = [
+    normalizeEmail(identity.email).split('@')[0],
+    cleanName(identity.firstName),
+    cleanName(identity.lastName),
+  ]
+    .map((part) => part.toLowerCase())
+    .filter((part) => part.length >= 4);
+  if (identityParts.some((part) => lowerPassword.includes(part))) {
+    return 'Password must not contain your name or email address';
+  }
+  return '';
 }
 
 function fullName(user) {
@@ -38,6 +92,7 @@ function safeUser(row) {
     first_name: row.first_name,
     last_name: row.last_name,
     full_name: fullName(row),
+    can_manage_users: row.can_manage_users === true,
   };
 }
 
@@ -154,7 +209,7 @@ async function currentUser(req) {
   if (!token) return null;
 
   const result = await pool.query(
-    `SELECT u.id, u.email, u.first_name, u.last_name
+    `SELECT u.id, u.email, u.first_name, u.last_name, u.can_manage_users
      FROM hub_sessions s
      JOIN hub_users u ON u.id = s.user_id
      WHERE s.id = $1
@@ -168,16 +223,18 @@ async function currentUser(req) {
 }
 
 module.exports = {
-  ALLOWED_EMAIL_DOMAIN,
   COOKIE_NAME,
+  MAX_PASSWORD_LENGTH,
+  MIN_PASSWORD_LENGTH,
   cleanName,
   createSession,
   currentUser,
   destroySession,
   fullName,
   hashPassword,
-  isAllowedEmail,
+  isValidEmail,
   normalizeEmail,
+  passwordValidationError,
   safeUser,
   verifyPassword,
 };

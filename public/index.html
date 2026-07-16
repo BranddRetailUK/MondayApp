@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>Ultimate Hub · Dashboard</title>
-  <link rel="icon" type="image/png" href="https://res.cloudinary.com/brandduk/image/upload/v1783932861/UPC_FAV_all5bl.png">
+  <link rel="icon" type="image/png" href="https://res.cloudinary.com/brandduk/image/upload/v1784184878/UPC_FAV_xeevye.png" media="(prefers-color-scheme: light)">
+  <link rel="icon" type="image/png" href="https://res.cloudinary.com/brandduk/image/upload/v1783932861/UPC_FAV_all5bl.png" media="(prefers-color-scheme: dark)">
   <link rel="stylesheet" href="styles.css">
   <script src="auth-session.js" defer></script>
   <script src="script.js" defer></script>
@@ -65,7 +66,7 @@
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="all-orders">All Orders</button>
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="customers">Customers</button>
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="styles">Styles</button>
-                <button class="db-raised-button db-blue-link" type="button" data-db-action="stock-ordering">Stock Ordering</button>
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="stock-ordering" disabled>Stock Ordering</button>
               </div>
 
               <div class="db-outstanding-actions">
@@ -87,12 +88,12 @@
               </div>
 
               <div class="db-menu-column db-menu-right">
-                <button class="db-raised-button db-blue-link" type="button" data-db-action="users">Users</button>
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="users" disabled>Users</button>
                 <button class="db-raised-button" type="button" data-db-action="placeholder">Passwords</button>
                 <button class="db-raised-button" type="button" data-db-action="placeholder">Configuration</button>
                 <button class="db-raised-button" type="button" data-db-action="placeholder">Error log</button>
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="reports" disabled>Reports</button>
-                <button class="db-raised-button db-blue-link" type="button" data-db-action="to-invoice">To Invoice</button>
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="to-invoice" disabled>To Invoice</button>
               </div>
             </section>
 
@@ -703,6 +704,24 @@
             </section>
 
             <section id="db-users-view" class="db-view db-users-view" aria-label="Users">
+              <div class="db-users-section-title">Pending signup requests</div>
+              <div class="db-table-frame db-signup-requests-table-frame">
+                <table id="db-signup-requests-table" class="db-legacy-table">
+                  <thead>
+                    <tr>
+                      <th>Name:</th>
+                      <th>Email:</th>
+                      <th>Date requested:</th>
+                      <th>Review:</th>
+                    </tr>
+                  </thead>
+                  <tbody id="db-signup-requests-body">
+                    <tr><td colspan="4" class="db-empty-cell">Loading signup requests</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="db-users-section-title db-registered-users-title">Registered users</div>
               <div class="db-table-frame db-users-table-frame">
                 <table id="db-users-table" class="db-legacy-table">
                   <thead>

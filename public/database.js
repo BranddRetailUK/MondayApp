@@ -14,6 +14,8 @@
   const DATABASE_STYLE_SORTS = new Set(['most-used', 'highest-price', 'lowest-price', 'az', 'za']);
   const DATABASE_REPORT_RANGES = new Set(['daily', 'weekly', 'monthly', 'yearly', 'mtd', 'ytd']);
   const DATABASE_REPORT_COMPARE_MODES = new Set(['month', 'year']);
+  const DATABASE_RESTRICTED_HOME_USERS = new Set(['ultimate packing', 'lubos svorad']);
+  const DATABASE_RESTRICTED_HOME_VIEWS = new Set(['reports', 'stock-ordering', 'to-invoice', 'users']);
   const DATABASE_REPORT_METRICS = Object.freeze({
     grossSales: Object.freeze({ label: 'Gross sales', subtitle: 'Net sales plus VAT', currency: true }),
     netSales: Object.freeze({ label: 'Net sales', subtitle: 'Sales before VAT', currency: true }),
@@ -218,6 +220,9 @@
     customerUsers: [],
     loadedCustomerUsers: false,
     registeredUsers: [],
+    signupRequests: [],
+    signupRequestSavingIds: new Set(),
+    canManageUsers: false,
     usersLoaded: false,
     usersLoading: false,
     userDeleteTarget: null,
@@ -331,7 +336,10 @@
       homeCountEmbroidery: document.getElementById('db-count-embroidery'),
       homeCountGifts: document.getElementById('db-count-gifts'),
       reportsPeriod: document.getElementById('db-reports-period'),
+      stockOrderingHomeButton: document.querySelector('[data-db-action="stock-ordering"]'),
+      usersHomeButton: document.querySelector('[data-db-action="users"]'),
       reportsHomeButton: document.querySelector('[data-db-action="reports"]'),
+      toInvoiceHomeButton: document.querySelector('[data-db-action="to-invoice"]'),
       reportsRangeButtons: Array.from(document.querySelectorAll('[data-db-report-range]')),
       reportsPeriodControl: document.getElementById('db-report-period-control'),
       reportsPeriodControlLabel: document.getElementById('db-report-period-control-label'),
@@ -389,6 +397,7 @@
       stylesColours: document.getElementById('db-styles-colours'),
       usersTable: document.getElementById('db-users-table'),
       usersBody: document.getElementById('db-users-body'),
+      signupRequestsBody: document.getElementById('db-signup-requests-body'),
       orderSearch: document.getElementById('db-order-search'),
       selectOrder: document.getElementById('db-select-order'),
       footerTitle: document.getElementById('db-footer-title'),
@@ -597,6 +606,13 @@
     const deleteUserId = button.dataset.dbUserRemove;
     if (deleteUserId) {
       openUserDeleteConfirmation(deleteUserId);
+      return;
+    }
+
+    const signupRequestId = button.dataset.dbSignupRequest;
+    const signupDecision = button.dataset.dbSignupDecision;
+    if (signupRequestId && (signupDecision === 'accept' || signupDecision === 'reject')) {
+      await reviewSignupRequest(signupRequestId, signupDecision);
       return;
     }
 
@@ -1218,26 +1234,38 @@
   }
 
   function showToInvoice(options = {}) {
+    if (isDatabaseHomeAccessRestrictedUser()) {
+      syncDatabaseHomeAccess();
+      return;
+    }
     showView('to-invoice', options);
     setFooterTitle('To Invoice');
     loadToInvoiceJobs({ force: true });
   }
 
   function showStockOrdering(options = {}) {
+    if (isDatabaseHomeAccessRestrictedUser()) {
+      syncDatabaseHomeAccess();
+      return;
+    }
     showView('stock-ordering', options);
     setFooterTitle('Stock Ordering');
     loadStockOrderingJobs({ force: true });
   }
 
   function showUsers(options = {}) {
+    if (isDatabaseHomeAccessRestrictedUser()) {
+      syncDatabaseHomeAccess();
+      return;
+    }
     showView('users', options);
     setFooterTitle('Users');
     loadRegisteredUsers({ force: true });
   }
 
   function showReports(options = {}) {
-    if (isDatabaseAnalyticsRestrictedUser()) {
-      syncDatabaseAnalyticsAccess();
+    if (isDatabaseHomeAccessRestrictedUser()) {
+      syncDatabaseHomeAccess();
       return;
     }
     state.reportsRange = normalizeDatabaseReportRange(state.reportsRange);
@@ -1982,29 +2010,42 @@
 
   function setCurrentUser(user) {
     state.currentUser = user || null;
-    syncDatabaseAnalyticsAccess();
+    syncDatabaseHomeAccess();
     updateNewOrderTakenBy();
     populateNewCustomerAccountManagers();
+    if (state.usersLoaded) renderRegisteredUsers();
   }
 
-  function isDatabaseAnalyticsRestrictedUser(user = state.currentUser || window.ultimateHubUser) {
+  function isDatabaseHomeAccessRestrictedUser(user = state.currentUser || window.ultimateHubUser) {
     const fullName = String(
       user?.full_name || [user?.first_name, user?.last_name].filter(Boolean).join(' ')
     ).trim().replace(/\s+/g, ' ').toLowerCase();
-    return fullName === 'ultimate packing';
+    return DATABASE_RESTRICTED_HOME_USERS.has(fullName);
   }
 
-  function syncDatabaseAnalyticsAccess() {
-    const restricted = isDatabaseAnalyticsRestrictedUser();
-    if (els.reportsHomeButton) {
-      els.reportsHomeButton.disabled = restricted;
-      els.reportsHomeButton.setAttribute('aria-disabled', restricted ? 'true' : 'false');
-      els.reportsHomeButton.title = restricted ? 'Analytics is unavailable for Ultimate Packing' : '';
-    }
-    if (restricted && state.activeView === 'reports') {
-      state.reportsRequest += 1;
-      state.reportsLoading = false;
-      showHome();
+  function syncDatabaseHomeAccess() {
+    const restricted = isDatabaseHomeAccessRestrictedUser();
+    const restrictedButtons = [
+      els.stockOrderingHomeButton,
+      els.usersHomeButton,
+      els.reportsHomeButton,
+      els.toInvoiceHomeButton,
+    ];
+    restrictedButtons.forEach((button) => {
+      if (!button) return;
+      button.disabled = restricted;
+      button.setAttribute('aria-disabled', restricted ? 'true' : 'false');
+      button.title = restricted ? 'This page is unavailable for this user' : '';
+    });
+    if (!restricted) return;
+
+    state.viewHistory = state.viewHistory.filter((view) => !DATABASE_RESTRICTED_HOME_VIEWS.has(view));
+    if (DATABASE_RESTRICTED_HOME_VIEWS.has(state.activeView)) {
+      if (state.activeView === 'reports') {
+        state.reportsRequest += 1;
+        state.reportsLoading = false;
+      }
+      showHome({ skipHistory: true });
     }
   }
 
@@ -2966,10 +3007,15 @@
     if (els.usersBody) {
       els.usersBody.innerHTML = renderStatusRow('Loading users', 4);
     }
+    if (els.signupRequestsBody) {
+      els.signupRequestsBody.innerHTML = renderStatusRow('Loading signup requests', 4);
+    }
 
     try {
       const data = await fetchJson('/api/database/users');
       const users = Array.isArray(data.users) ? data.users : [];
+      state.signupRequests = Array.isArray(data.signupRequests) ? data.signupRequests : [];
+      state.canManageUsers = data.canManageUsers === true;
       state.registeredUsers = users;
       state.customerUsers = users;
       state.loadedCustomerUsers = true;
@@ -2980,12 +3026,16 @@
       if (els.usersBody) {
         els.usersBody.innerHTML = renderStatusRow(err.message || 'Failed to load users', 4);
       }
+      if (els.signupRequestsBody) {
+        els.signupRequestsBody.innerHTML = renderStatusRow(err.message || 'Failed to load signup requests', 4);
+      }
     } finally {
       state.usersLoading = false;
     }
   }
 
   function renderRegisteredUsers() {
+    renderPendingSignupRequests();
     if (!els.usersBody) return;
     const users = state.registeredUsers || [];
     if (!users.length) {
@@ -2996,14 +3046,101 @@
   }
 
   function renderRegisteredUserRow(user) {
+    const currentUserId = Number(state.currentUser?.id || window.ultimateHubUser?.id);
+    const canRemove = state.canManageUsers && Number(user.id) !== currentUserId;
     return `
       <tr>
         <td>${escapeHtml(user.full_name || [user.first_name, user.last_name].filter(Boolean).join(' ') || '-')}</td>
         <td>${escapeHtml(user.email || '')}</td>
         <td>${escapeHtml(formatDate(user.created_at, 'long'))}</td>
-        <td><button class="db-user-remove-button" type="button" data-db-user-remove="${escapeAttr(user.id || '')}">Remove</button></td>
+        <td>${canRemove
+          ? `<button class="db-user-remove-button" type="button" data-db-user-remove="${escapeAttr(user.id || '')}">Remove</button>`
+          : '<span aria-hidden="true">—</span>'}</td>
       </tr>
     `;
+  }
+
+  function renderPendingSignupRequests() {
+    if (!els.signupRequestsBody) return;
+    if (!state.canManageUsers) {
+      els.signupRequestsBody.innerHTML = renderStatusRow('User management permission required', 4);
+      return;
+    }
+    const requests = state.signupRequests || [];
+    if (!requests.length) {
+      els.signupRequestsBody.innerHTML = renderStatusRow('No pending signup requests', 4);
+      return;
+    }
+
+    els.signupRequestsBody.innerHTML = requests.map((request) => {
+      const requestId = Number(request.id);
+      const saving = state.signupRequestSavingIds.has(requestId);
+      return `
+        <tr>
+          <td>${escapeHtml(request.full_name || [request.first_name, request.last_name].filter(Boolean).join(' ') || '-')}</td>
+          <td>${escapeHtml(request.email || '')}</td>
+          <td>${escapeHtml(formatDate(request.requested_at, 'long'))}</td>
+          <td class="db-signup-review-cell">
+            <button
+              class="db-signup-review-button db-signup-accept-button"
+              type="button"
+              data-db-signup-request="${escapeAttr(requestId)}"
+              data-db-signup-decision="accept"
+              ${saving ? 'disabled' : ''}
+            >${saving ? 'Saving...' : 'Accept'}</button>
+            <button
+              class="db-signup-review-button db-signup-reject-button"
+              type="button"
+              data-db-signup-request="${escapeAttr(requestId)}"
+              data-db-signup-decision="reject"
+              ${saving ? 'disabled' : ''}
+            >Reject</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  async function reviewSignupRequest(requestId, decision) {
+    const id = Number.parseInt(String(requestId), 10);
+    const request = (state.signupRequests || []).find((item) => Number(item.id) === id);
+    if (!request || state.signupRequestSavingIds.has(id)) return;
+
+    const label = request.full_name || request.email || 'this signup request';
+    const verb = decision === 'accept' ? 'Accept' : 'Reject';
+    if (!window.confirm(`${verb} ${label}?`)) return;
+
+    state.signupRequestSavingIds.add(id);
+    renderPendingSignupRequests();
+    try {
+      const data = await fetchJson(
+        `/api/database/signup-requests/${encodeURIComponent(id)}/${decision}`,
+        { method: 'POST' }
+      );
+      state.signupRequests = (state.signupRequests || []).filter((item) => Number(item.id) !== id);
+
+      if (decision === 'accept' && data.user) {
+        const withoutAcceptedUser = (state.registeredUsers || []).filter((user) => (
+          Number(user.id) !== Number(data.user.id)
+          && String(user.email || '').toLowerCase() !== String(data.user.email || '').toLowerCase()
+        ));
+        state.registeredUsers = [...withoutAcceptedUser, data.user].sort((left, right) => (
+          String(left.full_name || left.email || '').localeCompare(
+            String(right.full_name || right.email || ''),
+            undefined,
+            { sensitivity: 'base' }
+          )
+        ));
+        state.customerUsers = state.registeredUsers.slice();
+        state.loadedCustomerUsers = true;
+        populateNewCustomerAccountManagers();
+      }
+    } catch (err) {
+      window.alert(err.message || `Failed to ${decision} signup request`);
+    } finally {
+      state.signupRequestSavingIds.delete(id);
+      renderRegisteredUsers();
+    }
   }
 
   function setCustomerAccountManagerOptions(customer, disabled) {

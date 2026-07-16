@@ -786,30 +786,183 @@ router.post('/api/database/stock-ordering/mark-ordered', async (req, res) => {
   }
 });
 
-router.get('/api/database/users', async (_req, res) => {
+router.get('/api/database/users', async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT id,
-             email,
-             first_name,
-             last_name,
-             CONCAT_WS(' ', NULLIF(TRIM(first_name), ''), NULLIF(TRIM(last_name), '')) AS full_name,
-             created_at
-      FROM hub_users
-      ORDER BY LOWER(first_name), LOWER(last_name), LOWER(email)
-    `);
+    const canManageUsers = req.hubUser?.can_manage_users === true;
+    const [usersResult, requestsResult] = await Promise.all([
+      pool.query(`
+        SELECT id,
+               email,
+               first_name,
+               last_name,
+               CONCAT_WS(' ', NULLIF(TRIM(first_name), ''), NULLIF(TRIM(last_name), '')) AS full_name,
+               can_manage_users,
+               created_at
+        FROM hub_users
+        ORDER BY LOWER(first_name), LOWER(last_name), LOWER(email)
+      `),
+      canManageUsers ? pool.query(`
+        SELECT request.id,
+               request.email,
+               request.first_name,
+               request.last_name,
+               CONCAT_WS(
+                 ' ',
+                 NULLIF(TRIM(request.first_name), ''),
+                 NULLIF(TRIM(request.last_name), '')
+               ) AS full_name,
+               request.requested_at
+        FROM hub_signup_requests request
+        WHERE request.status = 'pending'
+          AND request.password_hash IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM hub_users users
+            WHERE LOWER(users.email) = LOWER(request.email)
+          )
+        ORDER BY request.requested_at, LOWER(request.email)
+      `) : Promise.resolve({ rows: [] }),
+    ]);
 
-    res.json({ users: result.rows });
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      users: usersResult.rows,
+      signupRequests: requestsResult.rows,
+      canManageUsers,
+    });
   } catch (err) {
     console.error('GET /api/database/users', err);
     res.status(500).json({ error: 'Failed to fetch database users' });
   }
 });
 
+router.post('/api/database/signup-requests/:id/accept', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  if (req.hubUser?.can_manage_users !== true) {
+    return res.status(403).json({ error: 'User management permission required' });
+  }
+  const id = Number.parseInt(req.params.id, 10);
+  if (!Number.isFinite(id) || id <= 0) {
+    return res.status(400).json({ error: 'Invalid signup request id' });
+  }
+
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+    const requestResult = await client.query(
+      `SELECT id, email, first_name, last_name, password_hash
+       FROM hub_signup_requests
+       WHERE id = $1
+         AND status = 'pending'
+       FOR UPDATE`,
+      [id]
+    );
+    const signupRequest = requestResult.rows[0];
+    if (!signupRequest || !signupRequest.password_hash) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Pending signup request not found' });
+    }
+
+    let userResult = await client.query(
+      `INSERT INTO hub_users (email, first_name, last_name, password_hash, can_manage_users)
+       VALUES ($1, $2, $3, $4, FALSE)
+       ON CONFLICT ((LOWER(email))) DO NOTHING
+       RETURNING id, email, first_name, last_name, can_manage_users, created_at`,
+      [
+        signupRequest.email,
+        signupRequest.first_name,
+        signupRequest.last_name,
+        signupRequest.password_hash,
+      ]
+    );
+    if (!userResult.rowCount) {
+      userResult = await client.query(
+        `SELECT id, email, first_name, last_name, can_manage_users, created_at
+         FROM hub_users
+         WHERE LOWER(email) = LOWER($1)
+         LIMIT 1`,
+        [signupRequest.email]
+      );
+    }
+
+    const reviewerName = fullName(req.hubUser) || req.hubUser?.email || 'Hub user';
+    await client.query(
+      `UPDATE hub_signup_requests
+       SET status = 'accepted',
+           password_hash = NULL,
+           reviewed_at = NOW(),
+           reviewed_by_user_id = $2,
+           reviewed_by_name = $3,
+           updated_at = NOW()
+       WHERE id = $1`,
+      [id, req.hubUser.id, reviewerName]
+    );
+    await client.query('COMMIT');
+
+    const user = userResult.rows[0];
+    res.status(201).json({
+      ok: true,
+      user: {
+        ...user,
+        full_name: fullName(user),
+      },
+    });
+  } catch (err) {
+    await client?.query('ROLLBACK').catch(() => {});
+    console.error('POST /api/database/signup-requests/:id/accept', err);
+    res.status(500).json({ error: 'Failed to accept signup request' });
+  } finally {
+    client?.release();
+  }
+});
+
+router.post('/api/database/signup-requests/:id/reject', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  if (req.hubUser?.can_manage_users !== true) {
+    return res.status(403).json({ error: 'User management permission required' });
+  }
+  const id = Number.parseInt(req.params.id, 10);
+  if (!Number.isFinite(id) || id <= 0) {
+    return res.status(400).json({ error: 'Invalid signup request id' });
+  }
+
+  try {
+    const reviewerName = fullName(req.hubUser) || req.hubUser?.email || 'Hub user';
+    const result = await pool.query(
+      `UPDATE hub_signup_requests
+       SET status = 'rejected',
+           password_hash = NULL,
+           reviewed_at = NOW(),
+           reviewed_by_user_id = $2,
+           reviewed_by_name = $3,
+           updated_at = NOW()
+       WHERE id = $1
+         AND status = 'pending'
+       RETURNING id, email, first_name, last_name`,
+      [id, req.hubUser.id, reviewerName]
+    );
+    if (!result.rowCount) {
+      return res.status(404).json({ error: 'Pending signup request not found' });
+    }
+
+    res.json({ ok: true, request: result.rows[0] });
+  } catch (err) {
+    console.error('POST /api/database/signup-requests/:id/reject', err);
+    res.status(500).json({ error: 'Failed to reject signup request' });
+  }
+});
+
 router.delete('/api/database/users/:id', async (req, res) => {
+  if (req.hubUser?.can_manage_users !== true) {
+    return res.status(403).json({ error: 'User management permission required' });
+  }
   const id = Number.parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) {
     return res.status(400).json({ error: 'Invalid user id' });
+  }
+  if (id === Number(req.hubUser.id)) {
+    return res.status(400).json({ error: 'You cannot remove your own user account' });
   }
 
   try {

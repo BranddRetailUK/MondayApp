@@ -7,6 +7,8 @@ const publicDir = path.join(__dirname, '..', 'public');
 const { attachHubUser, requireHubApiAuth, requireHubPageAuth } = require('./middleware/hubAuth');
 const testDashboardRoutes = require('./routes/test-dashboard');
 
+app.set('trust proxy', 1);
+
 // ---- parse JSON BEFORE routes
 app.use(express.json());
 app.use(attachHubUser);

@@ -267,6 +267,34 @@ body{
   height:42px;
   margin-top:4px;
 }
+.auth-signup-note{
+  margin:0;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.45;
+}
+.auth-signup-received{
+  display:grid;
+  gap:12px;
+  padding:16px;
+  border:1px solid #3f8f72;
+  border-radius:10px;
+  background:rgba(34,197,138,.1);
+  color:#e9edf5;
+  text-align:center;
+}
+.auth-signup-received[hidden]{
+  display:none;
+}
+.auth-signup-received strong{
+  color:#70e3b9;
+  font-size:17px;
+}
+.auth-signup-received p{
+  margin:0;
+  color:#c6d4cf;
+  font-size:13px;
+}
 .auth-status{
   min-height:20px;
   margin-top:12px;
@@ -3080,6 +3108,18 @@ body.modal-open{overflow:hidden}
 .db-users-view{
   padding:15px 13px 0;
 }
+.db-users-section-title{
+  height:20px;
+  padding:2px 5px;
+  border:1px solid #000;
+  border-bottom:0;
+  background:#000080;
+  color:#fff;
+  font:bold 12px Arial, Helvetica, sans-serif;
+}
+.db-registered-users-title{
+  margin-top:8px;
+}
 .db-customers-view{
   padding:15px 13px 0;
 }
@@ -3131,7 +3171,10 @@ body.modal-open{overflow:hidden}
   height:421px;
 }
 .db-users-table-frame{
-  height:502px;
+  height:296px;
+}
+.db-signup-requests-table-frame{
+  height:168px;
 }
 .db-customers-table-frame{
   height:476px;
@@ -3436,6 +3479,34 @@ body.modal-open{overflow:hidden}
 #db-users-table th:nth-child(3){width:118px}
 #db-users-table th:nth-child(4){width:78px;text-align:center}
 #db-users-table td:nth-child(4){text-align:center}
+#db-signup-requests-table th:nth-child(1){width:190px}
+#db-signup-requests-table th:nth-child(2){width:auto}
+#db-signup-requests-table th:nth-child(3){width:118px}
+#db-signup-requests-table th:nth-child(4){width:170px;text-align:center}
+#db-signup-requests-table td:nth-child(4){text-align:center}
+.db-signup-review-cell{
+  white-space:nowrap;
+}
+.db-signup-review-button{
+  min-width:64px;
+  height:22px;
+  margin:0 2px;
+  border:2px outset #fff;
+  border-radius:0;
+  color:#000;
+  font:12px Arial, Helvetica, sans-serif;
+  cursor:pointer;
+}
+.db-signup-review-button:disabled{
+  color:#777;
+  cursor:wait;
+}
+.db-signup-accept-button{
+  background:#82d173;
+}
+.db-signup-reject-button{
+  background:#f08080;
+}
 #db-customers-table th:nth-child(2){width:250px}
 #db-customers-table th:nth-child(3){width:88px}
 #db-customers-table th:nth-child(4){width:auto}
@@ -6295,6 +6366,10 @@ input.db-custom-line-input{
   .db-styles-table-frame{
     height:min(62dvh, 520px);
   }
+  .db-signup-requests-table-frame,
+  .db-users-table-frame{
+    height:min(36dvh, 320px);
+  }
   #db-outstanding-table{
     min-width:854px;
   }
@@ -6353,6 +6428,10 @@ input.db-custom-line-input{
   }
   #db-styles-table{
     min-width:640px;
+  }
+  #db-signup-requests-table,
+  #db-users-table{
+    min-width:680px;
   }
   #db-customers-table{
     min-width:860px;
