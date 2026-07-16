@@ -39,7 +39,7 @@ function exactRalawiseSku(line) {
     || line?.supplier_sku
     || line?.catalog_sku
   ).toUpperCase();
-  return /^[A-Z0-9/_-]{1,30}$/.test(sku) ? sku : '';
+  return /^[A-Z0-9._/-]{1,30}$/.test(sku) ? sku : '';
 }
 
 function buildJobBasketPlan(job, lineItems) {

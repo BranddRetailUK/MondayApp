@@ -197,10 +197,20 @@ async function applyStockOrderedStatus(client, rows) {
 async function selectStockOrderingLinesForBasket(client, sourceOrderId) {
   return client.query(
     `SELECT li.*,
-            ${ralawiseProductSkuSql('p')} AS ralawise_sku,
-            ${ralawiseProductStatusSql('p')} AS ralawise_catalog_status
+            COALESCE(
+              NULLIF(BTRIM(li.ralawise_sku), ''),
+              v.sku_code,
+              ${ralawiseProductSkuSql('p')}
+            ) AS ralawise_sku,
+            COALESCE(
+              NULLIF(BTRIM(li.catalogue_status), ''),
+              v.sku_status,
+              ${ralawiseProductStatusSql('p')}
+            ) AS ralawise_catalog_status
      FROM database_job_line_items li
      LEFT JOIN database_products p ON p.source_product_id = li.source_product_id
+     LEFT JOIN database_ralawise_catalog_variants v
+       ON v.id = COALESCE(li.ralawise_catalog_variant_id, p.ralawise_catalog_variant_id)
      WHERE li.source_order_id = $1
        AND li.is_non_deliverable IS NOT TRUE
        AND li.is_internal IS NOT TRUE
@@ -807,10 +817,21 @@ router.get('/api/database/stock-ordering', async (_req, res) => {
     const lines = sourceOrderIds.length
       ? await pool.query(
         `SELECT li.*,
-                ${ralawiseProductSkuSql('p')} AS ralawise_sku,
-                ${ralawiseProductStatusSql('p')} AS ralawise_catalog_status
+                COALESCE(
+                  NULLIF(BTRIM(li.ralawise_sku), ''),
+                  v.sku_code,
+                  ${ralawiseProductSkuSql('p')}
+                ) AS ralawise_sku,
+                COALESCE(
+                  NULLIF(BTRIM(li.catalogue_status), ''),
+                  v.sku_status,
+                  ${ralawiseProductStatusSql('p')}
+                ) AS ralawise_catalog_status,
+                v.style_id::int AS ralawise_catalog_style_id
          FROM database_job_line_items li
          LEFT JOIN database_products p ON p.source_product_id = li.source_product_id
+         LEFT JOIN database_ralawise_catalog_variants v
+           ON v.id = COALESCE(li.ralawise_catalog_variant_id, p.ralawise_catalog_variant_id)
          WHERE li.source_order_id = ANY($1::int[])
            AND li.is_non_deliverable IS NOT TRUE
            AND li.is_internal IS NOT TRUE
@@ -2765,7 +2786,7 @@ router.get('/api/database/products/search', async (req, res) => {
   const search = cleanQuery(req.query.q);
   const field = cleanQuery(req.query.field).toLowerCase() === 'code' ? 'code' : 'style';
   const params = [];
-  let whereSql = 'WHERE style_id IS NOT NULL';
+  let whereSql = 'WHERE v.is_active IS TRUE';
   let rankSql = '2';
 
   if (search) {
@@ -2773,36 +2794,38 @@ router.get('/api/database/products/search', async (req, res) => {
     if (field === 'code') {
       whereSql += `
         AND (
-          style_code ILIKE $1
-          OR alt_style_code ILIKE $1
-          OR supplier_sku ILIKE $1
-          OR supplier_alpha_sku ILIKE $1
+          s.style_code ILIKE $1
+          OR s.manufacturer_style_code ILIKE $1
+          OR v.sku_code ILIKE $1
+          OR v.alpha_sku_code ILIKE $1
         )`;
       rankSql = `
         CASE
-          WHEN LOWER(COALESCE(supplier_sku, '')) = LOWER($2) THEN 0
-          WHEN LOWER(COALESCE(supplier_alpha_sku, '')) = LOWER($2) THEN 0
-          WHEN LOWER(COALESCE(style_code, '')) = LOWER($2) THEN 0
-          WHEN LOWER(COALESCE(alt_style_code, '')) = LOWER($2) THEN 0
-          WHEN supplier_sku ILIKE $3 THEN 1
-          WHEN supplier_alpha_sku ILIKE $3 THEN 1
-          WHEN style_code ILIKE $3 THEN 1
-          WHEN alt_style_code ILIKE $3 THEN 1
+          WHEN LOWER(COALESCE(v.sku_code, '')) = LOWER($2) THEN 0
+          WHEN LOWER(COALESCE(v.alpha_sku_code, '')) = LOWER($2) THEN 0
+          WHEN LOWER(COALESCE(s.style_code, '')) = LOWER($2) THEN 0
+          WHEN LOWER(COALESCE(s.manufacturer_style_code, '')) = LOWER($2) THEN 0
+          WHEN v.sku_code ILIKE $3 THEN 1
+          WHEN v.alpha_sku_code ILIKE $3 THEN 1
+          WHEN s.style_code ILIKE $3 THEN 1
+          WHEN s.manufacturer_style_code ILIKE $3 THEN 1
           ELSE 2
         END`;
     } else {
       whereSql += `
         AND (
-          style_name ILIKE $1
-          OR style_code ILIKE $1
-          OR alt_style_code ILIKE $1
+          s.style_name ILIKE $1
+          OR s.brand ILIKE $1
+          OR s.style_code ILIKE $1
+          OR s.manufacturer_style_code ILIKE $1
         )`;
       rankSql = `
         CASE
-          WHEN LOWER(COALESCE(style_name, '')) = LOWER($2) THEN 0
-          WHEN style_name ILIKE $3 THEN 1
-          WHEN style_code ILIKE $3 THEN 2
-          WHEN alt_style_code ILIKE $3 THEN 3
+          WHEN LOWER(COALESCE(s.style_name, '')) = LOWER($2) THEN 0
+          WHEN s.style_name ILIKE $3 THEN 1
+          WHEN s.brand ILIKE $3 THEN 2
+          WHEN s.style_code ILIKE $3 THEN 2
+          WHEN s.manufacturer_style_code ILIKE $3 THEN 3
           ELSE 4
         END`;
     }
@@ -2811,29 +2834,49 @@ router.get('/api/database/products/search', async (req, res) => {
   try {
     const result = await pool.query(
       `WITH candidates AS (
-         SELECT *,
+         SELECT s.id AS style_id,
+                s.style_code,
+                s.manufacturer_style_code,
+                s.style_name,
+                s.product_type,
+                s.brand,
+                v.database_product_source_id,
+                v.sku_code,
+                v.alpha_sku_code,
+                v.sku_status,
+                v.primary_image_url,
+                v.colour_image_url,
+                v.carton_price,
+                v.pack_price,
+                v.single_price,
+                v.size_code,
+                v.size_name,
+                c.id AS colour_id,
                 ${rankSql} AS match_rank
-         FROM database_products
+         FROM database_ralawise_catalog_styles s
+         JOIN database_ralawise_catalog_variants v ON v.style_id = s.id
+         JOIN database_ralawise_catalog_colours c ON c.id = v.colour_id
          ${whereSql}
        )
-       SELECT style_id,
-              MIN(source_product_id)::int AS sample_product_id,
+       SELECT style_id::int,
+              style_id::int AS ralawise_catalog_style_id,
+              MIN(database_product_source_id)::int AS sample_product_id,
               MIN(style_code) AS style_code,
-              MIN(alt_style_code) AS alt_style_code,
+              MIN(manufacturer_style_code) AS alt_style_code,
               MIN(style_name) AS style_name,
               MIN(product_type) AS product_type,
-              MIN(supplier_name) AS supplier_name,
-              MIN(supplier_sku) AS supplier_sku,
-              MIN(supplier_alpha_sku) AS supplier_alpha_sku,
-              MIN(catalogue_status) AS catalogue_status,
-              MIN(primary_image_url) AS primary_image_url,
+              'Ralawise'::text AS supplier_name,
+              MIN(sku_code) AS supplier_sku,
+              MIN(alpha_sku_code) AS supplier_alpha_sku,
+              MIN(sku_status) AS catalogue_status,
+              MIN(NULLIF(primary_image_url, 'Not available')) AS primary_image_url,
               MIN(colour_image_url) AS colour_image_url,
-              MIN(supplier_carton_price) AS supplier_carton_price,
-              MIN(supplier_pack_price) AS supplier_pack_price,
-              MIN(supplier_single_price) AS supplier_single_price,
+              MIN(carton_price) AS supplier_carton_price,
+              MIN(pack_price) AS supplier_pack_price,
+              MIN(single_price) AS supplier_single_price,
               COUNT(*)::int AS variant_count,
-              COUNT(DISTINCT colour)::int AS colour_count,
-              COUNT(DISTINCT size)::int AS size_count,
+              COUNT(DISTINCT colour_id)::int AS colour_count,
+              COUNT(DISTINCT COALESCE(NULLIF(size_code, ''), size_name))::int AS size_count,
               MIN(match_rank)::int AS match_rank
        FROM candidates
        GROUP BY style_id
@@ -2855,9 +2898,24 @@ router.get('/api/database/products/styles', async (_req, res) => {
   try {
     const result = await pool.query(
       `WITH product_rows AS (
-         SELECT *
-         FROM database_products
-         WHERE style_id IS NOT NULL
+         SELECT s.id::int AS style_id,
+                v.database_product_source_id AS source_product_id,
+                s.style_code,
+                s.manufacturer_style_code AS alt_style_code,
+                s.style_name,
+                s.product_type,
+                s.brand,
+                c.id AS colour_id,
+                c.colour_name AS colour,
+                v.size_code,
+                v.size_name AS size,
+                v.carton_price AS unit_cost,
+                v.primary_image_url,
+                v.is_active,
+                v.sku_status
+         FROM database_ralawise_catalog_styles s
+         JOIN database_ralawise_catalog_variants v ON v.style_id = s.id
+         JOIN database_ralawise_catalog_colours c ON c.id = v.colour_id
        ),
        style_costs AS (
          SELECT style_id,
@@ -2881,7 +2939,7 @@ router.get('/api/database/products/styles', async (_req, res) => {
          FROM (
            SELECT style_id,
                   NULLIF(BTRIM(size), '') AS size,
-                  MIN(size_id) AS size_order,
+                  MIN(size_code) AS size_order,
                   COUNT(*)::int AS variant_count
            FROM product_rows
            WHERE NULLIF(BTRIM(size), '') IS NOT NULL
@@ -2910,13 +2968,13 @@ router.get('/api/database/products/styles', async (_req, res) => {
          GROUP BY style_id
        ),
        style_usage AS (
-         SELECT COALESCE(li.style_id, p.style_id) AS style_id,
+         SELECT v.style_id::int AS style_id,
                 COUNT(*)::int AS usage_count,
                 COALESCE(SUM(COALESCE(li.quantity, 0)), 0)::int AS usage_quantity
          FROM database_job_line_items li
-         LEFT JOIN database_products p ON p.source_product_id = li.source_product_id
-         WHERE COALESCE(li.style_id, p.style_id) IS NOT NULL
-         GROUP BY COALESCE(li.style_id, p.style_id)
+         JOIN database_ralawise_catalog_variants v
+           ON v.id = li.ralawise_catalog_variant_id
+         GROUP BY v.style_id
        ),
        style_summaries AS (
          SELECT style_id,
@@ -2925,14 +2983,17 @@ router.get('/api/database/products/styles', async (_req, res) => {
                 MIN(NULLIF(BTRIM(alt_style_code), '')) AS alt_style_code,
                 MIN(NULLIF(BTRIM(style_name), '')) AS style_name,
                 MIN(NULLIF(BTRIM(product_type), '')) AS product_type,
-                MIN(NULLIF(BTRIM(supplier_name), '')) AS supplier_name,
-                MIN(NULLIF(BTRIM(primary_image_url), '')) AS primary_image_url,
-                COUNT(*) FILTER (WHERE catalog_source = 'Ralawise')::int AS catalogue_variant_count,
-                COUNT(*) FILTER (WHERE catalogue_status = 'Live')::int AS live_catalogue_variant_count,
+                MIN(NULLIF(BTRIM(brand), '')) AS brand,
+                'Ralawise'::text AS supplier_name,
+                MIN(NULLIF(BTRIM(primary_image_url), '')) FILTER (
+                  WHERE LOWER(BTRIM(COALESCE(primary_image_url, ''))) <> 'not available'
+                ) AS primary_image_url,
+                COUNT(*)::int AS catalogue_variant_count,
+                COUNT(*) FILTER (WHERE is_active)::int AS live_catalogue_variant_count,
                 MIN(unit_cost) AS min_unit_cost,
                 MAX(unit_cost) AS max_unit_cost,
                 COUNT(*)::int AS variant_count,
-                COUNT(*) FILTER (WHERE is_product_active IS TRUE)::int AS active_variant_count,
+                COUNT(*) FILTER (WHERE is_active)::int AS active_variant_count,
                 COUNT(DISTINCT NULLIF(BTRIM(colour), ''))::int AS colour_count,
                 COUNT(DISTINCT NULLIF(BTRIM(size), ''))::int AS size_count
          FROM product_rows
@@ -2970,14 +3031,45 @@ router.get('/api/database/products/styles/:styleId/variants', async (req, res) =
 
   try {
     const result = await pool.query(
-      `SELECT *
-       FROM database_products
-       WHERE style_id = $1
-       ORDER BY LOWER(COALESCE(colour, '')) ASC,
-                colour_id ASC NULLS LAST,
-                size_id ASC NULLS LAST,
-                LOWER(COALESCE(size, '')) ASC,
-                source_product_id ASC`,
+      `SELECT v.database_product_source_id::int AS source_product_id,
+              s.id::int AS style_id,
+              s.id::int AS ralawise_catalog_style_id,
+              s.database_product_style_id AS legacy_product_style_id,
+              c.id::int AS colour_id,
+              NULL::int AS size_id,
+              'Ralawise'::text AS supplier_name,
+              s.style_code,
+              s.manufacturer_style_code AS alt_style_code,
+              s.style_name,
+              s.product_type,
+              c.colour_name AS colour,
+              v.size_name AS size,
+              v.carton_price AS unit_cost,
+              NULL::int AS stock,
+              v.is_active AS is_product_active,
+              'Ralawise'::text AS catalog_source,
+              v.id AS ralawise_catalog_variant_id,
+              v.sku_code AS ralawise_sku,
+              v.sku_code AS supplier_sku,
+              v.alpha_sku_code AS supplier_alpha_sku,
+              s.style_code AS supplier_style_code,
+              c.colour_code AS supplier_colour_code,
+              v.size_code AS supplier_size_code,
+              v.sku_status AS catalogue_status,
+              NULLIF(v.primary_image_url, 'Not available') AS primary_image_url,
+              v.colour_image_url,
+              v.carton_price AS supplier_carton_price,
+              v.pack_price AS supplier_pack_price,
+              v.single_price AS supplier_single_price
+       FROM database_ralawise_catalog_variants v
+       JOIN database_ralawise_catalog_styles s ON s.id = v.style_id
+       JOIN database_ralawise_catalog_colours c ON c.id = v.colour_id
+       WHERE s.id = $1
+         AND v.is_active IS TRUE
+       ORDER BY LOWER(COALESCE(c.colour_name, '')) ASC,
+                c.id ASC,
+                LOWER(COALESCE(v.size_name, '')) ASC,
+                v.sku_code ASC`,
       [styleId]
     );
 
@@ -3042,9 +3134,10 @@ router.post('/api/database/jobs/:id/line-items', async (req, res) => {
     return res.status(400).json({ error: 'Invalid job id' });
   }
 
+  const variantId = nullableInt(req.body?.ralawise_catalog_variant_id);
   const productId = nullableInt(req.body?.source_product_id);
-  if (!productId) {
-    return res.status(400).json({ error: 'Product is required' });
+  if (!variantId && !productId) {
+    return res.status(400).json({ error: 'A Ralawise product variant is required' });
   }
 
   const quantity = nullableInt(req.body?.quantity) || 1;
@@ -3066,17 +3159,33 @@ router.post('/api/database/jobs/:id/line-items', async (req, res) => {
       return res.status(404).json({ error: 'Database job not found' });
     }
 
-    const product = await client.query(
-      `SELECT *
-       FROM database_products
-       WHERE source_product_id = $1
-       LIMIT 1`,
-      [productId]
-    );
-
-    if (!product.rowCount) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Product not found in referenced product table' });
+    let productRow;
+    if (variantId) {
+      const variant = await selectRalawiseOrderVariant(client, variantId);
+      if (!variant) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Live Ralawise product variant not found' });
+      }
+      productRow = {
+        ...variant,
+        source_product_id: variant.canonical_source_product_id,
+        style_id: variant.legacy_product_style_id,
+        supplier_name: 'Ralawise',
+        stock: null,
+      };
+    } else {
+      const product = await client.query(
+        `SELECT *
+         FROM database_products
+         WHERE source_product_id = $1
+         LIMIT 1`,
+        [productId]
+      );
+      if (!product.rowCount) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Product not found in referenced product table' });
+      }
+      productRow = product.rows[0];
     }
 
     const next = await client.query(`
@@ -3084,7 +3193,6 @@ router.post('/api/database/jobs/:id/line-items', async (req, res) => {
       FROM database_job_line_items
     `);
 
-    const productRow = product.rows[0];
     const sourceOrderId = job.source_order_id;
     const sourceOrderItemId = next.rows[0].next_id;
     const nextSort = await client.query(
@@ -3117,12 +3225,21 @@ router.post('/api/database/jobs/:id/line-items', async (req, res) => {
          product_type,
          stock,
          is_product_active,
+         ralawise_catalog_variant_id,
+         ralawise_sku,
+         supplier_style_code,
+         supplier_colour_code,
+         supplier_size_code,
+         catalogue_status,
+         catalogue_synced_at,
          created_at_source,
          updated_at_source
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9,
          FALSE, FALSE, $10, $11, $12, $13, $14, $15, $16, $17,
-         $18, $19, NOW(), NOW()
+         $18, $19, $20, $21, $22, $23, $24, $25,
+         CASE WHEN $20::bigint IS NULL THEN NULL ELSE NOW() END,
+         NOW(), NOW()
        )`,
       [
         sourceOrderItemId,
@@ -3144,6 +3261,12 @@ router.post('/api/database/jobs/:id/line-items', async (req, res) => {
         productRow.product_type,
         productRow.stock,
         productRow.is_product_active,
+        productRow.ralawise_catalog_variant_id || null,
+        productRow.ralawise_sku || null,
+        productRow.supplier_style_code || null,
+        productRow.supplier_colour_code || null,
+        productRow.supplier_size_code || null,
+        productRow.catalogue_status || null,
       ]
     );
 
@@ -3335,6 +3458,12 @@ router.put('/api/database/jobs/:id/line-items/:lineItemId', async (req, res) => 
   }
 
   const payload = req.body || {};
+  const requestedVariantId = hasOwn(payload, 'ralawise_catalog_variant_id')
+    ? nullableInt(payload.ralawise_catalog_variant_id)
+    : null;
+  if (hasOwn(payload, 'ralawise_catalog_variant_id') && !requestedVariantId) {
+    return res.status(400).json({ error: 'Ralawise product variant is required' });
+  }
   const requestedProductId = hasOwn(payload, 'source_product_id') ? nullableInt(payload.source_product_id) : null;
   if (hasOwn(payload, 'source_product_id') && !requestedProductId) {
     return res.status(400).json({ error: 'Product is required' });
@@ -3358,11 +3487,19 @@ router.put('/api/database/jobs/:id/line-items/:lineItemId', async (req, res) => 
 
     const sourceOrderId = job.source_order_id;
     const existing = await client.query(
-      `SELECT source_order_item_id, style_id
-       FROM database_job_line_items
-       WHERE source_order_id = $1
-         AND source_order_item_id = $2
-       FOR UPDATE`,
+      `SELECT li.source_order_item_id,
+              li.source_product_id,
+              li.legacy_source_product_id,
+              li.style_id,
+              COALESCE(li.ralawise_catalog_variant_id, p.ralawise_catalog_variant_id) AS current_variant_id,
+              current_variant.style_id AS current_catalog_style_id
+       FROM database_job_line_items li
+       LEFT JOIN database_products p ON p.source_product_id = li.source_product_id
+       LEFT JOIN database_ralawise_catalog_variants current_variant
+         ON current_variant.id = COALESCE(li.ralawise_catalog_variant_id, p.ralawise_catalog_variant_id)
+       WHERE li.source_order_id = $1
+         AND li.source_order_item_id = $2
+       FOR UPDATE OF li`,
       [sourceOrderId, lineItemId]
     );
 
@@ -3371,7 +3508,47 @@ router.put('/api/database/jobs/:id/line-items/:lineItemId', async (req, res) => 
       return res.status(404).json({ error: 'Line item not found for this order' });
     }
 
-    if (requestedProductId) {
+    const canonicalLockedFields = [
+      'style_code',
+      'alt_style_code',
+      'style_name',
+      'colour',
+      'size',
+      'unit_cost',
+      'supplier_name',
+    ];
+    if (
+      (existing.rows[0].current_variant_id || requestedVariantId)
+      && canonicalLockedFields.some((field) => hasOwn(payload, field))
+    ) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: 'Catalogue product fields can only be changed by selecting another Ralawise variant',
+      });
+    }
+
+    if (requestedVariantId) {
+      const variant = await selectRalawiseOrderVariant(client, requestedVariantId);
+      if (!variant) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Live Ralawise product variant not found' });
+      }
+      const currentCatalogStyleId = nullableInt(existing.rows[0].current_catalog_style_id);
+      if (
+        currentCatalogStyleId
+        && currentCatalogStyleId !== nullableInt(variant.ralawise_catalog_style_id)
+      ) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Selected product is not a variant of this line item style' });
+      }
+      if (
+        nullableInt(existing.rows[0].source_product_id) > 0
+        && !nullableInt(existing.rows[0].legacy_source_product_id)
+      ) {
+        addLineItemUpdateField(update, 'legacy_source_product_id', existing.rows[0].source_product_id);
+      }
+      appendLineItemRalawiseVariantUpdate(update, variant);
+    } else if (requestedProductId) {
       const product = await client.query(
         `SELECT *
          FROM database_products
@@ -4118,6 +4295,59 @@ function appendLineItemProductUpdate(update, productRow) {
   addLineItemUpdateField(update, 'is_product_active', productRow.is_product_active);
 }
 
+function appendLineItemRalawiseVariantUpdate(update, variantRow) {
+  addLineItemUpdateField(update, 'line_description', variantRow.style_name);
+  addLineItemUpdateField(update, 'unit_cost', variantRow.unit_cost);
+  addLineItemUpdateField(update, 'supplier_name', 'Ralawise');
+  addLineItemUpdateField(update, 'style_code', variantRow.style_code);
+  addLineItemUpdateField(update, 'alt_style_code', variantRow.alt_style_code);
+  addLineItemUpdateField(update, 'style_name', variantRow.style_name);
+  addLineItemUpdateField(update, 'colour', variantRow.colour);
+  addLineItemUpdateField(update, 'size', variantRow.size);
+  addLineItemUpdateField(update, 'product_type', variantRow.product_type);
+  addLineItemUpdateField(update, 'stock', null);
+  addLineItemUpdateField(update, 'is_product_active', variantRow.is_product_active);
+  addLineItemUpdateField(update, 'ralawise_catalog_variant_id', variantRow.ralawise_catalog_variant_id);
+  addLineItemUpdateField(update, 'ralawise_sku', variantRow.ralawise_sku);
+  addLineItemUpdateField(update, 'supplier_style_code', variantRow.supplier_style_code);
+  addLineItemUpdateField(update, 'supplier_colour_code', variantRow.supplier_colour_code);
+  addLineItemUpdateField(update, 'supplier_size_code', variantRow.supplier_size_code);
+  addLineItemUpdateField(update, 'catalogue_status', variantRow.catalogue_status);
+  update.assignments.push('catalogue_synced_at = NOW()');
+}
+
+async function selectRalawiseOrderVariant(db, variantId, options = {}) {
+  const activeClause = options.includeInactive ? '' : 'AND v.is_active IS TRUE';
+  const result = await db.query(
+    `SELECT v.id AS ralawise_catalog_variant_id,
+            v.database_product_source_id::int AS canonical_source_product_id,
+            v.sku_code AS ralawise_sku,
+            v.alpha_sku_code AS supplier_alpha_sku,
+            v.sku_status AS catalogue_status,
+            v.is_active AS is_product_active,
+            v.carton_price AS unit_cost,
+            s.id::int AS ralawise_catalog_style_id,
+            s.database_product_style_id AS legacy_product_style_id,
+            s.style_code,
+            s.manufacturer_style_code AS alt_style_code,
+            s.style_name,
+            s.product_type,
+            c.colour_name AS colour,
+            v.size_name AS size,
+            s.style_code AS supplier_style_code,
+            c.colour_code AS supplier_colour_code,
+            v.size_code AS supplier_size_code
+     FROM database_ralawise_catalog_variants v
+     JOIN database_ralawise_catalog_styles s ON s.id = v.style_id
+     JOIN database_ralawise_catalog_colours c ON c.id = v.colour_id
+     WHERE v.id = $1
+       ${activeClause}
+     LIMIT 1`,
+    [variantId]
+  );
+  return result.rows[0] || null;
+}
+
 function hasOwn(value, key) {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
@@ -4151,10 +4381,22 @@ function customLineFlags(lineType) {
 
 async function fetchLineItems(db, sourceOrderId) {
   const result = await db.query(
-    `SELECT *
-     FROM database_job_line_items
-     WHERE source_order_id = $1
-     ORDER BY COALESCE(line_sort_order, source_order_item_id), source_order_item_id`,
+    `SELECT li.*,
+            COALESCE(li.ralawise_catalog_variant_id, p.ralawise_catalog_variant_id) AS ralawise_catalog_variant_id,
+            COALESCE(NULLIF(BTRIM(li.ralawise_sku), ''), v.sku_code) AS ralawise_sku,
+            COALESCE(NULLIF(BTRIM(li.catalogue_status), ''), v.sku_status) AS catalogue_status,
+            v.style_id::int AS ralawise_catalog_style_id,
+            s.style_code AS ralawise_catalog_style_code,
+            c.colour_code AS ralawise_catalog_colour_code,
+            v.size_code AS ralawise_catalog_size_code
+     FROM database_job_line_items li
+     LEFT JOIN database_products p ON p.source_product_id = li.source_product_id
+     LEFT JOIN database_ralawise_catalog_variants v
+       ON v.id = COALESCE(li.ralawise_catalog_variant_id, p.ralawise_catalog_variant_id)
+     LEFT JOIN database_ralawise_catalog_styles s ON s.id = v.style_id
+     LEFT JOIN database_ralawise_catalog_colours c ON c.id = v.colour_id
+     WHERE li.source_order_id = $1
+     ORDER BY COALESCE(li.line_sort_order, li.source_order_item_id), li.source_order_item_id`,
     [sourceOrderId]
   );
   return result.rows;

@@ -500,6 +500,12 @@ async function enrichExistingProducts(client, matches, batchSize) {
     const batch = matches.slice(start, start + batchSize).map((match) => ({
       source_product_id: match.sourceProductId,
       sku_code: match.skuCode,
+      match_method: `${match.parentMatchMethod}:${match.variantMatchMethod}`,
+      match_details: {
+        parent_style_code: match.parentStyleCode,
+        parent_match_method: match.parentMatchMethod,
+        variant_match_method: match.variantMatchMethod,
+      },
     }));
     const result = await client.query(`
       UPDATE database_products p
@@ -518,10 +524,18 @@ async function enrichExistingProducts(client, matches, batchSize) {
           supplier_carton_price = v.carton_price,
           supplier_pack_price = v.pack_price,
           supplier_single_price = v.single_price,
+          ralawise_match_method = x.match_method,
+          ralawise_match_details = COALESCE(x.match_details, '{}'::jsonb),
+          ralawise_matched_at = NOW(),
           unit_cost = COALESCE(v.carton_price, p.unit_cost),
           is_product_active = v.is_active,
           imported_at = NOW()
-      FROM jsonb_to_recordset($1::jsonb) AS x(source_product_id integer, sku_code text)
+      FROM jsonb_to_recordset($1::jsonb) AS x(
+        source_product_id integer,
+        sku_code text,
+        match_method text,
+        match_details jsonb
+      )
       JOIN database_ralawise_catalog_variants v ON v.sku_code = x.sku_code
       JOIN database_ralawise_catalog_styles s ON s.id = v.style_id
       JOIN database_ralawise_catalog_colours c ON c.id = v.colour_id
@@ -713,6 +727,9 @@ async function run(options, dependencies = {}) {
     }
     if (report.products.parentOverridesApplied.length) {
       console.log(`[ralawise-catalogue] Approved parent overrides: ${JSON.stringify(report.products.parentOverridesApplied)}`);
+    }
+    if (report.products.parentRejectionsApplied.length) {
+      console.log(`[ralawise-catalogue] Rejected code collisions: ${JSON.stringify(report.products.parentRejectionsApplied)}`);
     }
     if (report.products.styleAssignmentOverridesApplied.length) {
       console.log(`[ralawise-catalogue] Approved canonical style assignments: ${JSON.stringify(report.products.styleAssignmentOverridesApplied)}`);

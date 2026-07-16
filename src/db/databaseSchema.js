@@ -291,6 +291,14 @@ async function ensureDatabaseTables(db) {
   `);
 
   await db.query('ALTER TABLE database_job_line_items ADD COLUMN IF NOT EXISTS line_sort_order INTEGER;');
+  await db.query('ALTER TABLE database_job_line_items ADD COLUMN IF NOT EXISTS legacy_source_product_id INTEGER;');
+  await db.query('ALTER TABLE database_job_line_items ADD COLUMN IF NOT EXISTS ralawise_catalog_variant_id BIGINT;');
+  await db.query('ALTER TABLE database_job_line_items ADD COLUMN IF NOT EXISTS ralawise_sku TEXT;');
+  await db.query('ALTER TABLE database_job_line_items ADD COLUMN IF NOT EXISTS supplier_style_code TEXT;');
+  await db.query('ALTER TABLE database_job_line_items ADD COLUMN IF NOT EXISTS supplier_colour_code TEXT;');
+  await db.query('ALTER TABLE database_job_line_items ADD COLUMN IF NOT EXISTS supplier_size_code TEXT;');
+  await db.query('ALTER TABLE database_job_line_items ADD COLUMN IF NOT EXISTS catalogue_status TEXT;');
+  await db.query('ALTER TABLE database_job_line_items ADD COLUMN IF NOT EXISTS catalogue_synced_at TIMESTAMP;');
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS database_products (
@@ -359,6 +367,9 @@ async function ensureDatabaseTables(db) {
   await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS supplier_carton_price NUMERIC(15, 4);');
   await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS supplier_pack_price NUMERIC(15, 4);');
   await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS supplier_single_price NUMERIC(15, 4);');
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS ralawise_match_method TEXT;');
+  await db.query("ALTER TABLE database_products ADD COLUMN IF NOT EXISTS ralawise_match_details JSONB NOT NULL DEFAULT '{}'::jsonb;");
+  await db.query('ALTER TABLE database_products ADD COLUMN IF NOT EXISTS ralawise_matched_at TIMESTAMP;');
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS database_ralawise_catalog_styles (
@@ -515,6 +526,23 @@ async function ensureDatabaseTables(db) {
   `);
 
   await db.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'database_line_items_ralawise_variant_fk'
+      ) THEN
+        ALTER TABLE database_job_line_items
+          ADD CONSTRAINT database_line_items_ralawise_variant_fk
+          FOREIGN KEY (ralawise_catalog_variant_id)
+          REFERENCES database_ralawise_catalog_variants(id)
+          ON DELETE SET NULL;
+      END IF;
+    END $$;
+  `);
+
+  await db.query(`
     CREATE TABLE IF NOT EXISTS database_job_positions (
       id SERIAL PRIMARY KEY,
       source_order_position_id INTEGER NOT NULL UNIQUE,
@@ -577,6 +605,8 @@ async function ensureDatabaseTables(db) {
   await db.query('CREATE INDEX IF NOT EXISTS database_customer_addresses_customer_idx ON database_customer_addresses(customer_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_job_line_items_order_idx ON database_job_line_items(source_order_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_job_line_items_sort_idx ON database_job_line_items(source_order_id, line_sort_order);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_job_line_items_ralawise_variant_idx ON database_job_line_items(ralawise_catalog_variant_id);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_job_line_items_ralawise_sku_idx ON database_job_line_items(ralawise_sku);');
   await db.query('CREATE UNIQUE INDEX IF NOT EXISTS database_products_source_product_idx ON database_products(source_product_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_products_style_code_idx ON database_products(style_code);');
   await db.query('CREATE INDEX IF NOT EXISTS database_products_colour_idx ON database_products(colour);');

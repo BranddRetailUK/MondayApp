@@ -7,11 +7,14 @@ const path = require('node:path');
 const {
   EXPECTED_HEADERS,
   RALAWISE_PARENT_MATCH_OVERRIDES,
+  RALAWISE_PARENT_MATCH_REJECTIONS,
   RALAWISE_STYLE_ASSIGNMENT_OVERRIDES,
   allocateStableNegativeIds,
   auditCatalogueFile,
   mapCsvRow,
   matchExistingProducts,
+  normalizeLegacyColour,
+  normalizeLegacySize,
 } = require('../src/services/ralawiseCatalogue');
 const { run } = require('../scripts/import-ralawise-catalogue');
 
@@ -222,6 +225,80 @@ test('approved parent overrides can map duplicate Access parents to one canonica
   }]);
 });
 
+test('reviewed parent overrides can safely normalize legacy colour and size labels', async (t) => {
+  const parsed = await catalogue(t, [sourceRow({
+    'Colour Name': 'Arctic White*',
+    'Size Code': 'M',
+    'Size Name': 'M',
+  })]);
+  const product = existingProduct({
+    style_id: 10,
+    style_code: 'LEGACY-AA001',
+    colour: 'Artic White',
+    size: 'Medium',
+  });
+  const report = matchExistingProducts(parsed, [product], {
+    parentMatchOverrides: new Map([[10, 'AA001']]),
+  });
+
+  assert.equal(normalizeLegacyColour('Artic White'), 'arcticwhite');
+  assert.equal(normalizeLegacySize('Medium'), 'm');
+  assert.equal(normalizeLegacySize('XXL'), '2xl');
+  assert.equal(normalizeLegacySize('YL'), 'l');
+  assert.equal(report.matchedCount, 1);
+  assert.equal(report.matched[0].parentMatchMethod, 'reviewed_override');
+  assert.equal(report.matched[0].variantMatchMethod, 'reviewed_alias');
+});
+
+test('reviewed parent overrides can match a supplier size code when its display name differs', async (t) => {
+  const parsed = await catalogue(t, [sourceRow({
+    'Sku Code': 'R200XFYEL2XL',
+    'Style Code': 'R200X',
+    'Manufacturer Style Code': 'R200X',
+    'Style Name': 'Core hi-vis vest',
+    'Colour Code': 'FYEL',
+    'Colour Name': 'Fluorescent Yellow',
+    'Size Code': '2XL/3XL',
+    'Size Name': '2XL',
+  })]);
+  const report = matchExistingProducts(parsed, [existingProduct({
+    source_product_id: 73365,
+    style_id: 2662,
+    style_code: 'RS201M',
+    colour: 'Fluorescent Yellow',
+    size: '2XL/3XL',
+  })], {
+    parentMatchOverrides: new Map([[2662, 'R200X']]),
+  });
+
+  assert.equal(report.matchedCount, 1);
+  assert.equal(report.matched[0].skuCode, 'R200XFYEL2XL');
+  assert.equal(report.matched[0].variantMatchMethod, 'reviewed_alias');
+});
+
+test('semantic dimension aliases are not applied to unreviewed code-only parents', async (t) => {
+  const parsed = await catalogue(t, [sourceRow({
+    'Size Code': 'M',
+    'Size Name': 'M',
+  })]);
+  const report = matchExistingProducts(parsed, [existingProduct({ size: 'Medium' })]);
+  assert.equal(report.matchedCount, 0);
+  assert.equal(report.unmatched, 1);
+});
+
+test('known legacy code collisions are rejected before variant matching', async (t) => {
+  assert.match(RALAWISE_PARENT_MATCH_REJECTIONS[3670], /rain jacket/i);
+  assert.match(RALAWISE_PARENT_MATCH_REJECTIONS[3671], /winter jacket/i);
+
+  const parsed = await catalogue(t, [sourceRow()]);
+  const report = matchExistingProducts(parsed, [existingProduct({ style_id: 10 })], {
+    parentMatchRejections: new Map([[10, 'Reviewed collision']]),
+  });
+  assert.equal(report.matchedCount, 0);
+  assert.equal(report.parentRejectionsApplied.length, 1);
+  assert.equal(report.unmatchedSamples[0].reason, 'parent_rejected');
+});
+
 test('cost planning compares decimals and uses Carton Price only', async (t) => {
   const parsed = await catalogue(t, [sourceRow({
     'Carton Price': '4.20',
@@ -298,6 +375,13 @@ test('multiple primary images and colour images are all preserved by source key'
   ]);
   assert.equal(parsed.audit.stylesWithMultiplePrimaryImages, 1);
   assert.equal(parsed.audit.images, 4);
+});
+
+test('vendor image sentinel is stored as missing rather than as a URL', async (t) => {
+  const mapped = mapCsvRow(sourceRow({ 'Primary Product Image URL': 'Not available' }));
+  assert.equal(mapped.primary_image_url, null);
+  const parsed = await catalogue(t, [sourceRow({ 'Primary Product Image URL': 'Not available' })]);
+  assert.equal(parsed.audit.images, 1);
 });
 
 test('zero item weight is normalized to unknown', () => {

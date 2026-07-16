@@ -144,6 +144,40 @@ const DASHBOARD_JOB_FIELD_COLUMNS = [
   'dashboard_status_updated_at',
 ];
 
+const CANONICAL_PRODUCT_FIELD_COLUMNS = [
+  'unit_cost',
+  'is_product_active',
+  'catalog_source',
+  'supplier_sku',
+  'ralawise_sku',
+  'supplier_alpha_sku',
+  'supplier_style_code',
+  'supplier_colour_code',
+  'supplier_size_code',
+  'ralawise_catalog_variant_id',
+  'catalogue_status',
+  'catalogue_synced_at',
+  'primary_image_url',
+  'colour_image_url',
+  'supplier_carton_price',
+  'supplier_pack_price',
+  'supplier_single_price',
+  'ralawise_match_method',
+  'ralawise_match_details',
+  'ralawise_matched_at',
+];
+
+const CANONICAL_LINE_FIELD_COLUMNS = [
+  'legacy_source_product_id',
+  'ralawise_catalog_variant_id',
+  'ralawise_sku',
+  'supplier_style_code',
+  'supplier_colour_code',
+  'supplier_size_code',
+  'catalogue_status',
+  'catalogue_synced_at',
+];
+
 const LINE_COLUMNS = [
   'source_order_item_id', 'source_order_id', 'line_sort_order',
   'source_product_id', 'supplier_order_id', 'line_description',
@@ -1088,9 +1122,13 @@ async function importSnapshot(snapshot, options) {
     }
 
     let preservedDashboardJobFields = [];
+    let preservedCanonicalProductFields = [];
+    let preservedCanonicalLineFields = [];
     if (options.replaceExisting) {
       console.log('[database-import] Replacing existing database snapshot');
       preservedDashboardJobFields = await fetchDashboardJobFieldSnapshot(client);
+      preservedCanonicalProductFields = await fetchCanonicalProductFieldSnapshot(client);
+      preservedCanonicalLineFields = await fetchCanonicalLineFieldSnapshot(client);
       await client.query('DELETE FROM database_job_positions');
       await client.query('DELETE FROM database_job_line_items');
       await client.query('DELETE FROM database_jobs');
@@ -1130,6 +1168,10 @@ async function importSnapshot(snapshot, options) {
       snapshot.products,
       { conflictAction }
     );
+    if (preservedCanonicalProductFields.length) {
+      console.log(`[database-import] Restoring ${preservedCanonicalProductFields.length} canonical product links`);
+      await restoreCanonicalProductFieldSnapshot(client, preservedCanonicalProductFields);
+    }
 
     console.log(`[database-import] Writing ${snapshot.jobs.length} jobs`);
     const jobWrite = await writeRows(
@@ -1159,6 +1201,10 @@ async function importSnapshot(snapshot, options) {
       snapshot.lineItems,
       { conflictAction }
     );
+    if (preservedCanonicalLineFields.length) {
+      console.log(`[database-import] Restoring ${preservedCanonicalLineFields.length} canonical line-item links`);
+      await restoreCanonicalLineFieldSnapshot(client, preservedCanonicalLineFields);
+    }
 
     console.log(`[database-import] Writing ${snapshot.positions.length} positions`);
     const positionWrite = await writeRows(
@@ -1294,8 +1340,10 @@ async function importProductRows(productRows, options) {
     await client.query('BEGIN');
     transactionStarted = true;
 
+    let preservedCanonicalProductFields = [];
     if (options.replaceExisting) {
       console.log('[database-import] Replacing existing product rows');
+      preservedCanonicalProductFields = await fetchCanonicalProductFieldSnapshot(client);
       await client.query('DELETE FROM database_products WHERE source_product_id >= 0 OR source_product_id IS NULL');
     }
 
@@ -1308,6 +1356,10 @@ async function importProductRows(productRows, options) {
       productRows,
       { conflictAction: options.insertOnly ? 'ignore' : 'update' }
     );
+    if (preservedCanonicalProductFields.length) {
+      console.log(`[database-import] Restoring ${preservedCanonicalProductFields.length} canonical product links`);
+      await restoreCanonicalProductFieldSnapshot(client, preservedCanonicalProductFields);
+    }
 
     await client.query('COMMIT');
 
@@ -1466,6 +1518,107 @@ async function restoreDashboardJobFieldSnapshot(client, rows) {
        WHERE jobs.source_order_id = updates.source_order_id`,
       values
     );
+  }
+}
+
+async function fetchCanonicalProductFieldSnapshot(client) {
+  const result = await client.query(`
+    SELECT source_product_id, ${CANONICAL_PRODUCT_FIELD_COLUMNS.join(', ')}
+    FROM database_products
+    WHERE source_product_id > 0
+      AND ralawise_catalog_variant_id IS NOT NULL
+  `);
+  return result.rows;
+}
+
+async function restoreCanonicalProductFieldSnapshot(client, rows) {
+  for (let start = 0; start < rows.length; start += INSERT_BATCH_SIZE) {
+    const batch = rows.slice(start, start + INSERT_BATCH_SIZE);
+    await client.query(`
+      UPDATE database_products p
+      SET unit_cost = x.unit_cost,
+          is_product_active = x.is_product_active,
+          catalog_source = x.catalog_source,
+          supplier_sku = x.supplier_sku,
+          ralawise_sku = x.ralawise_sku,
+          supplier_alpha_sku = x.supplier_alpha_sku,
+          supplier_style_code = x.supplier_style_code,
+          supplier_colour_code = x.supplier_colour_code,
+          supplier_size_code = x.supplier_size_code,
+          ralawise_catalog_variant_id = x.ralawise_catalog_variant_id,
+          catalogue_status = x.catalogue_status,
+          catalogue_synced_at = x.catalogue_synced_at,
+          primary_image_url = x.primary_image_url,
+          colour_image_url = x.colour_image_url,
+          supplier_carton_price = x.supplier_carton_price,
+          supplier_pack_price = x.supplier_pack_price,
+          supplier_single_price = x.supplier_single_price,
+          ralawise_match_method = x.ralawise_match_method,
+          ralawise_match_details = COALESCE(x.ralawise_match_details, '{}'::jsonb),
+          ralawise_matched_at = x.ralawise_matched_at
+      FROM jsonb_to_recordset($1::jsonb) AS x(
+        source_product_id integer,
+        unit_cost numeric,
+        is_product_active boolean,
+        catalog_source text,
+        supplier_sku text,
+        ralawise_sku text,
+        supplier_alpha_sku text,
+        supplier_style_code text,
+        supplier_colour_code text,
+        supplier_size_code text,
+        ralawise_catalog_variant_id bigint,
+        catalogue_status text,
+        catalogue_synced_at timestamp,
+        primary_image_url text,
+        colour_image_url text,
+        supplier_carton_price numeric,
+        supplier_pack_price numeric,
+        supplier_single_price numeric,
+        ralawise_match_method text,
+        ralawise_match_details jsonb,
+        ralawise_matched_at timestamp
+      )
+      WHERE p.source_product_id = x.source_product_id
+    `, [JSON.stringify(batch)]);
+  }
+}
+
+async function fetchCanonicalLineFieldSnapshot(client) {
+  const result = await client.query(`
+    SELECT source_order_item_id, ${CANONICAL_LINE_FIELD_COLUMNS.join(', ')}
+    FROM database_job_line_items
+    WHERE ralawise_catalog_variant_id IS NOT NULL
+  `);
+  return result.rows;
+}
+
+async function restoreCanonicalLineFieldSnapshot(client, rows) {
+  for (let start = 0; start < rows.length; start += INSERT_BATCH_SIZE) {
+    const batch = rows.slice(start, start + INSERT_BATCH_SIZE);
+    await client.query(`
+      UPDATE database_job_line_items li
+      SET legacy_source_product_id = x.legacy_source_product_id,
+          ralawise_catalog_variant_id = x.ralawise_catalog_variant_id,
+          ralawise_sku = x.ralawise_sku,
+          supplier_style_code = x.supplier_style_code,
+          supplier_colour_code = x.supplier_colour_code,
+          supplier_size_code = x.supplier_size_code,
+          catalogue_status = x.catalogue_status,
+          catalogue_synced_at = x.catalogue_synced_at
+      FROM jsonb_to_recordset($1::jsonb) AS x(
+        source_order_item_id integer,
+        legacy_source_product_id integer,
+        ralawise_catalog_variant_id bigint,
+        ralawise_sku text,
+        supplier_style_code text,
+        supplier_colour_code text,
+        supplier_size_code text,
+        catalogue_status text,
+        catalogue_synced_at timestamp
+      )
+      WHERE li.source_order_item_id = x.source_order_item_id
+    `, [JSON.stringify(batch)]);
   }
 }
 

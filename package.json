@@ -8,8 +8,9 @@
     "verify:mdb-invoices": "node scripts/verify-mdb-invoice-numbers.js",
     "verify:mdb-numbering": "node scripts/verify-mdb-invoice-numbers.js",
     "import:ralawise-catalogue": "node scripts/import-ralawise-catalogue.js",
+    "backfill:ralawise-line-items": "node scripts/backfill-ralawise-line-items.js",
     "verify:ralawise-catalogue": "node scripts/verify-ralawise-catalogue.js",
-    "test:ralawise-catalogue": "node --test test/ralawise-catalogue.test.js",
+    "test:ralawise-catalogue": "node --test test/ralawise-catalogue.test.js test/ralawise-line-items.test.js",
     "test:suppliers": "node --test test/supplier-integrations.test.js test/ralawise-basket.test.js test/stock-ordering-ralawise.test.js",
     "suppliers:ping": "node scripts/ping-supplier-apis.js"
   },

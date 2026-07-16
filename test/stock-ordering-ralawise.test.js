@@ -79,6 +79,26 @@ test('buildJobBasketPlan rejects discontinued SKUs', () => {
   assert.match(plan.unresolved[0].reason, /not live/);
 });
 
+test('buildJobBasketPlan accepts decimal Ralawise child SKUs', () => {
+  const plan = buildJobBasketPlan(
+    { source_order_id: 50416, order_no: 51169 },
+    [{
+      source_order_item_id: 209580,
+      source_product_id: 39555,
+      ralawise_sku: 'KK350BLAC15.5',
+      ralawise_catalog_status: 'Live',
+      quantity: 2,
+    }]
+  );
+
+  assert.equal(plan.eligible, true);
+  assert.deepEqual(plan.items, [{
+    code: 'KK350BLAC15.5',
+    quantity: 2,
+    reference: '51169',
+  }]);
+});
+
 test('basketContainsPlan requires the exact SKU, reference, and requested quantity', () => {
   const plan = {
     reference: '56789',

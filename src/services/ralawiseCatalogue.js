@@ -24,9 +24,29 @@ const EXPECTED_HEADERS = Object.freeze([
 // with another Ralawise style. These explicit mappings are the only exception
 // to the importer's normal unique-parent requirement.
 const RALAWISE_PARENT_MATCH_OVERRIDES = Object.freeze({
+  1155: 'J599M',
+  1349: 'KK350',
+  1418: 'JH001',
+  1472: 'WM101',
+  1531: 'GD001',
+  2563: 'GD01B',
+  2662: 'R200X',
+  2766: 'R207X',
+  2795: 'J266M',
+  3587: 'RX101',
+  3595: 'R903X',
+  3677: 'RX402',
   959: 'GD005',
   1179: 'PR150',
   1372: 'GD005',
+});
+
+// These legacy parent ids reuse a code that now identifies a different
+// Ralawise product. Never let a code-only match attach their children to the
+// current catalogue style.
+const RALAWISE_PARENT_MATCH_REJECTIONS = Object.freeze({
+  3670: 'Legacy PW265 is a PW2 rain jacket; catalogue PW265 is a DX4 polo shirt',
+  3671: 'Legacy PW261 is a PW2 winter jacket; catalogue PW261 is a DX4 baffle gilet',
 });
 
 // Access styles 959 and 1372 are duplicate local parents for the same GD005
@@ -59,6 +79,57 @@ function normalizeVariantExact(value) {
 
 function normalizeVariantLoose(value) {
   return normalizeVariantExact(value).replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+function normalizeLegacyColour(value) {
+  const words = normalizeVariantExact(value)
+    .replace(/\bartic\b/g, 'arctic')
+    .replace(/\blt\b/g, 'light');
+  const compact = words.replace(/[^\p{L}\p{N}]+/gu, '');
+  const aliases = {
+    bottle: 'bottlegreen',
+    forest: 'forestgreen',
+  };
+  return aliases[compact] || compact;
+}
+
+function normalizeLegacySize(value) {
+  const compact = normalizeVariantLoose(value);
+  const aliases = {
+    extrasmall: 'xs',
+    xsmall: 'xs',
+    yxs: 'xs',
+    small: 's',
+    ys: 's',
+    medium: 'm',
+    med: 'm',
+    ym: 'm',
+    large: 'l',
+    yl: 'l',
+    extralarge: 'xl',
+    xlarge: 'xl',
+    yxl: 'xl',
+    xxl: '2xl',
+    xxlarge: '2xl',
+    doublexl: '2xl',
+    xxxl: '3xl',
+    xxxlarge: '3xl',
+    triplexl: '3xl',
+    xxxxl: '4xl',
+    one: 'onesize',
+    onesizefitsall: 'onesize',
+  };
+  return aliases[compact] || compact;
+}
+
+function legacyPairKey(colour, size) {
+  return `${normalizeLegacyColour(colour)}\u0000${normalizeLegacySize(size)}`;
+}
+
+function imageUrl(value) {
+  const cleaned = text(value);
+  if (!cleaned || normalizeVariantExact(cleaned) === 'not available') return null;
+  return cleaned;
 }
 
 function decimalString(value) {
@@ -122,8 +193,8 @@ function mapCsvRow(row, importSource = null) {
   const colourCode = canonicalCode(row['Colour Code']);
   const skuCode = canonicalCode(row['Sku Code']);
   const skuStatus = text(row['Sku Status']) || 'Unknown';
-  const primaryImageUrl = text(row['Primary Product Image URL']);
-  const colourImageUrl = text(row['Colour Image']);
+  const primaryImageUrl = imageUrl(row['Primary Product Image URL']);
+  const colourImageUrl = imageUrl(row['Colour Image']);
 
   if (!styleCode) throw new Error(`Ralawise row ${skuCode || '(missing SKU)'} has no Style Code`);
   if (!colourCode) throw new Error(`Ralawise row ${skuCode || '(missing SKU)'} has no Colour Code`);
@@ -221,13 +292,14 @@ function createStyleIndexRow(row) {
     variants: [],
     exactPairs: new Map(),
     loosePairs: new Map(),
+    legacyPairs: new Map(),
     primaryImages: new Set(),
   };
 }
 
 function addMapArray(map, key, value) {
   if (!map.has(key)) map.set(key, []);
-  map.get(key).push(value);
+  if (!map.get(key).includes(value)) map.get(key).push(value);
 }
 
 function finalizeStyleIndex(style) {
@@ -242,6 +314,8 @@ function finalizeStyleIndex(style) {
       pairKey(variant.colourName, variant.sizeName, normalizeVariantLoose),
       variant
     );
+    addMapArray(style.legacyPairs, legacyPairKey(variant.colourName, variant.sizeName), variant);
+    addMapArray(style.legacyPairs, legacyPairKey(variant.colourName, variant.sizeCode), variant);
   }
 }
 
@@ -398,6 +472,7 @@ function overrideValue(overrides, key) {
 function matchExistingProducts(catalogue, products, {
   existingCatalogueSkus = new Set(),
   parentMatchOverrides = RALAWISE_PARENT_MATCH_OVERRIDES,
+  parentMatchRejections = RALAWISE_PARENT_MATCH_REJECTIONS,
   styleAssignmentOverrides = RALAWISE_STYLE_ASSIGNMENT_OVERRIDES,
 } = {}) {
   const styleLookup = catalogueStyleLookup(catalogue.styles);
@@ -431,6 +506,7 @@ function matchExistingProducts(catalogue, products, {
     ambiguousSamples: [],
     unmatchedSamples: [],
     parentOverridesApplied: [],
+    parentRejectionsApplied: [],
     styleAssignments: [],
     styleAssignmentOverridesApplied: [],
     catalogueStyleAssignmentAmbiguities: [],
@@ -455,6 +531,27 @@ function matchExistingProducts(catalogue, products, {
     const existingStyleId = group[0]?.style_id === null || group[0]?.style_id === undefined
       ? null
       : Number(group[0].style_id);
+    const parentRejection = existingStyleId === null
+      ? null
+      : text(overrideValue(parentMatchRejections, existingStyleId));
+    if (parentRejection) {
+      report.parentUnmatched += 1;
+      report.unmatched += group.length;
+      report.parentRejectionsApplied.push({
+        styleId: existingStyleId,
+        reason: parentRejection,
+        productCount: group.length,
+      });
+      if (report.unmatchedSamples.length < 100) {
+        report.unmatchedSamples.push({
+          sourceProductId: group[0]?.source_product_id,
+          styleId: group[0]?.style_id,
+          styleCode: group[0]?.style_code,
+          reason: 'parent_rejected',
+        });
+      }
+      continue;
+    }
     const parentOverride = existingStyleId === null
       ? null
       : canonicalCode(overrideValue(parentMatchOverrides, existingStyleId));
@@ -510,9 +607,16 @@ function matchExistingProducts(catalogue, products, {
     for (const product of group) {
       const exactKey = pairKey(product.colour, product.size, normalizeVariantExact);
       const exact = style.exactPairs.get(exactKey) || [];
-      const candidatesForVariant = exact.length
-        ? exact
+      const loose = exact.length
+        ? []
         : (style.loosePairs.get(pairKey(product.colour, product.size, normalizeVariantLoose)) || []);
+      const reviewedAlias = exact.length || loose.length || !parentOverride
+        ? []
+        : (style.legacyPairs.get(legacyPairKey(product.colour, product.size)) || []);
+      const candidatesForVariant = exact.length ? exact : (loose.length ? loose : reviewedAlias);
+      const variantMatchMethod = exact.length
+        ? 'exact'
+        : (loose.length ? 'normalized' : (reviewedAlias.length ? 'reviewed_alias' : 'unmatched'));
       const selected = chooseVariant(candidatesForVariant);
 
       if (selected.status === 'ambiguous') {
@@ -547,7 +651,13 @@ function matchExistingProducts(catalogue, products, {
       }
 
       const variant = selected.variant;
-      report.matched.push({ sourceProductId: Number(product.source_product_id), skuCode: variant.skuCode });
+      report.matched.push({
+        sourceProductId: Number(product.source_product_id),
+        skuCode: variant.skuCode,
+        parentStyleCode: styleCode,
+        parentMatchMethod: parentOverride ? 'reviewed_override' : 'direct_code',
+        variantMatchMethod,
+      });
       matchedSkuSet.add(variant.skuCode);
       if (variant.isLive) report.matchedLive += 1;
       else report.matchedDiscontinued += 1;
@@ -621,6 +731,7 @@ function allocateStableNegativeIds(keys, persisted = new Map(), minimumExisting 
 module.exports = {
   EXPECTED_HEADERS,
   RALAWISE_PARENT_MATCH_OVERRIDES,
+  RALAWISE_PARENT_MATCH_REJECTIONS,
   RALAWISE_STYLE_ASSIGNMENT_OVERRIDES,
   allocateStableNegativeIds,
   auditCatalogueFile,
@@ -632,6 +743,8 @@ module.exports = {
   mapCsvRow,
   matchExistingProducts,
   normalizeParentCode,
+  normalizeLegacyColour,
+  normalizeLegacySize,
   normalizeVariantExact,
   normalizeVariantLoose,
   nullableWeight,
