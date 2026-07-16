@@ -28,6 +28,10 @@ const {
   STATUS_SETTINGS,
   normalizeColumnTitle,
 } = require('../services/testDashboardDefaults');
+const {
+  normalizeStyleCodeSearchKey,
+  normalizedStyleCodeSql,
+} = require('../services/productStyleSearch');
 
 const DASHBOARD_STATUS_COLORS = buildDashboardStatusColors(STATUS_SETTINGS);
 const MAX_STOCK_ORDERING_MARK_IDS = 500;
@@ -2790,7 +2794,14 @@ router.get('/api/database/products/search', async (req, res) => {
   let rankSql = '2';
 
   if (search) {
-    params.push(`%${search}%`, search, `${search}%`);
+    params.push(
+      `%${search}%`,
+      search,
+      `${search}%`,
+      normalizeStyleCodeSearchKey(search)
+    );
+    const normalizedStyleCode = normalizedStyleCodeSql('s.style_code');
+    const normalizedManufacturerStyleCode = normalizedStyleCodeSql('s.manufacturer_style_code');
     if (field === 'code') {
       whereSql += `
         AND (
@@ -2798,6 +2809,9 @@ router.get('/api/database/products/search', async (req, res) => {
           OR s.manufacturer_style_code ILIKE $1
           OR v.sku_code ILIKE $1
           OR v.alpha_sku_code ILIKE $1
+          OR COALESCE(la.search_text, '') ILIKE $1
+          OR ${normalizedStyleCode} = $4
+          OR ${normalizedManufacturerStyleCode} = $4
         )`;
       rankSql = `
         CASE
@@ -2805,10 +2819,15 @@ router.get('/api/database/products/search', async (req, res) => {
           WHEN LOWER(COALESCE(v.alpha_sku_code, '')) = LOWER($2) THEN 0
           WHEN LOWER(COALESCE(s.style_code, '')) = LOWER($2) THEN 0
           WHEN LOWER(COALESCE(s.manufacturer_style_code, '')) = LOWER($2) THEN 0
+          WHEN ${normalizedStyleCode} = $4 THEN 0
+          WHEN ${normalizedManufacturerStyleCode} = $4 THEN 0
+          WHEN UPPER($2) = ANY(COALESCE(la.style_codes, ARRAY[]::text[])) THEN 1
+          WHEN UPPER($2) = ANY(COALESCE(la.alt_style_codes, ARRAY[]::text[])) THEN 2
           WHEN v.sku_code ILIKE $3 THEN 1
           WHEN v.alpha_sku_code ILIKE $3 THEN 1
           WHEN s.style_code ILIKE $3 THEN 1
           WHEN s.manufacturer_style_code ILIKE $3 THEN 1
+          WHEN COALESCE(la.search_text, '') ILIKE $1 THEN 2
           ELSE 2
         END`;
     } else {
@@ -2818,11 +2837,19 @@ router.get('/api/database/products/search', async (req, res) => {
           OR s.brand ILIKE $1
           OR s.style_code ILIKE $1
           OR s.manufacturer_style_code ILIKE $1
+          OR COALESCE(la.search_text, '') ILIKE $1
+          OR ${normalizedStyleCode} = $4
+          OR ${normalizedManufacturerStyleCode} = $4
         )`;
       rankSql = `
         CASE
           WHEN LOWER(COALESCE(s.style_name, '')) = LOWER($2) THEN 0
+          WHEN ${normalizedStyleCode} = $4 THEN 0
+          WHEN ${normalizedManufacturerStyleCode} = $4 THEN 0
+          WHEN UPPER($2) = ANY(COALESCE(la.style_codes, ARRAY[]::text[])) THEN 1
+          WHEN UPPER($2) = ANY(COALESCE(la.alt_style_codes, ARRAY[]::text[])) THEN 2
           WHEN s.style_name ILIKE $3 THEN 1
+          WHEN COALESCE(la.search_text, '') ILIKE $1 THEN 1
           WHEN s.brand ILIKE $3 THEN 2
           WHEN s.style_code ILIKE $3 THEN 2
           WHEN s.manufacturer_style_code ILIKE $3 THEN 3
@@ -2833,7 +2860,31 @@ router.get('/api/database/products/search', async (req, res) => {
 
   try {
     const result = await pool.query(
-      `WITH candidates AS (
+      `WITH legacy_style_aliases AS (
+         SELECT v.style_id,
+                ARRAY_AGG(DISTINCT UPPER(BTRIM(p.style_code))) FILTER (
+                  WHERE NULLIF(BTRIM(p.style_code), '') IS NOT NULL
+                ) AS style_codes,
+                ARRAY_AGG(DISTINCT UPPER(BTRIM(p.alt_style_code))) FILTER (
+                  WHERE NULLIF(BTRIM(p.alt_style_code), '') IS NOT NULL
+                ) AS alt_style_codes,
+                STRING_AGG(
+                  DISTINCT CONCAT_WS(
+                    ' ',
+                    NULLIF(BTRIM(p.style_code), ''),
+                    NULLIF(BTRIM(p.alt_style_code), '')
+                  ),
+                  ' '
+                ) FILTER (
+                  WHERE NULLIF(BTRIM(p.style_code), '') IS NOT NULL
+                     OR NULLIF(BTRIM(p.alt_style_code), '') IS NOT NULL
+                ) AS search_text
+         FROM database_products p
+         JOIN database_ralawise_catalog_variants v ON v.id = p.ralawise_catalog_variant_id
+         WHERE p.source_product_id > 0
+         GROUP BY v.style_id
+       ),
+       candidates AS (
          SELECT s.id AS style_id,
                 s.style_code,
                 s.manufacturer_style_code,
@@ -2856,6 +2907,7 @@ router.get('/api/database/products/search', async (req, res) => {
          FROM database_ralawise_catalog_styles s
          JOIN database_ralawise_catalog_variants v ON v.style_id = s.id
          JOIN database_ralawise_catalog_colours c ON c.id = v.colour_id
+         LEFT JOIN legacy_style_aliases la ON la.style_id = s.id
          ${whereSql}
        )
        SELECT style_id::int,
@@ -2916,6 +2968,19 @@ router.get('/api/database/products/styles', async (_req, res) => {
          FROM database_ralawise_catalog_styles s
          JOIN database_ralawise_catalog_variants v ON v.style_id = s.id
          JOIN database_ralawise_catalog_colours c ON c.id = v.colour_id
+       ),
+       style_aliases AS (
+         SELECT v.style_id::int AS style_id,
+                STRING_AGG(DISTINCT NULLIF(BTRIM(p.style_code), ''), ' ') FILTER (
+                  WHERE NULLIF(BTRIM(p.style_code), '') IS NOT NULL
+                ) AS legacy_style_codes,
+                STRING_AGG(DISTINCT NULLIF(BTRIM(p.alt_style_code), ''), ' ') FILTER (
+                  WHERE NULLIF(BTRIM(p.alt_style_code), '') IS NOT NULL
+                ) AS legacy_alt_style_codes
+         FROM database_products p
+         JOIN database_ralawise_catalog_variants v ON v.id = p.ralawise_catalog_variant_id
+         WHERE p.source_product_id > 0
+         GROUP BY v.style_id
        ),
        style_costs AS (
          SELECT style_id,
@@ -3000,12 +3065,15 @@ router.get('/api/database/products/styles', async (_req, res) => {
          GROUP BY style_id
        )
        SELECT ss.*,
+              aliases.legacy_style_codes,
+              aliases.legacy_alt_style_codes,
               COALESCE(su.usage_count, 0)::int AS usage_count,
               COALESCE(su.usage_quantity, 0)::int AS usage_quantity,
               COALESCE(sc.unit_costs, '[]'::json) AS unit_costs,
               COALESCE(sz.sizes, '[]'::json) AS sizes,
               COALESCE(co.colours, '[]'::json) AS colours
        FROM style_summaries ss
+       LEFT JOIN style_aliases aliases ON aliases.style_id = ss.style_id
        LEFT JOIN style_usage su ON su.style_id = ss.style_id
        LEFT JOIN style_costs sc ON sc.style_id = ss.style_id
        LEFT JOIN style_sizes sz ON sz.style_id = ss.style_id

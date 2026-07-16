@@ -4534,12 +4534,58 @@
     return (state.productStyles || [])
       .filter((style) => productStyleMatchesSearch(style, query))
       .slice()
-      .sort((a, b) => compareProductStyles(a, b, sort));
+      .sort((a, b) => compareProductStyleSearchRank(a, b, query)
+        || compareProductStyles(a, b, sort));
+  }
+
+  function compareProductStyleSearchRank(left, right, query) {
+    if (!query) return 0;
+    return productStyleSearchRank(left, query) - productStyleSearchRank(right, query);
+  }
+
+  function productStyleSearchRank(style, query) {
+    const normalizedQuery = normalizeProductStyleSearchCode(query);
+    const canonicalCode = productStyleSku(style);
+    const manufacturerCode = style?.alt_style_code;
+    const legacyStyleCodes = String(style?.legacy_style_codes || '').split(/\s+/).filter(Boolean);
+    const legacyAltStyleCodes = String(style?.legacy_alt_style_codes || '').split(/\s+/).filter(Boolean);
+    const isExactOrNormalized = (code) => {
+      const value = String(code || '').trim();
+      return value.toLowerCase() === query
+        || (normalizedQuery && normalizeProductStyleSearchCode(value) === normalizedQuery);
+    };
+
+    if (isExactOrNormalized(canonicalCode)) return 0;
+    if (isExactOrNormalized(manufacturerCode)) return 1;
+    if (legacyStyleCodes.some(isExactOrNormalized)) return 2;
+    if (legacyAltStyleCodes.some(isExactOrNormalized)) return 3;
+    return 4;
   }
 
   function productStyleMatchesSearch(style, query) {
     if (!query) return true;
-    return productStyleSearchText(style).includes(query);
+    if (productStyleSearchText(style).includes(query)) return true;
+
+    const normalizedQuery = normalizeProductStyleSearchCode(query);
+    if (!normalizedQuery) return false;
+    return productStyleSearchCodes(style)
+      .some((code) => normalizeProductStyleSearchCode(code) === normalizedQuery);
+  }
+
+  function productStyleSearchCodes(style) {
+    return [
+      productStyleSku(style),
+      style?.alt_style_code,
+      ...String(style?.legacy_style_codes || '').split(/\s+/),
+      ...String(style?.legacy_alt_style_codes || '').split(/\s+/),
+    ].filter(Boolean);
+  }
+
+  function normalizeProductStyleSearchCode(value) {
+    return String(value || '')
+      .trim()
+      .toUpperCase()
+      .replace(/^([A-Z]+)0+([0-9])/, '$1$2');
   }
 
   function productStyleSearchText(style) {
@@ -4549,6 +4595,8 @@
       productStyleKey(style),
       productStyleSku(style),
       style?.alt_style_code,
+      style?.legacy_style_codes,
+      style?.legacy_alt_style_codes,
       productStyleTitle(style),
       style?.product_type,
       style?.supplier_name,

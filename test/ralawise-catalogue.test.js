@@ -17,6 +17,10 @@ const {
   normalizeLegacySize,
 } = require('../src/services/ralawiseCatalogue');
 const { run } = require('../scripts/import-ralawise-catalogue');
+const {
+  normalizeStyleCodeSearchKey,
+  normalizedStyleCodeSql,
+} = require('../src/services/productStyleSearch');
 
 function sourceRow(overrides = {}) {
   return {
@@ -120,6 +124,17 @@ function existingProduct(overrides = {}) {
     ...overrides,
   };
 }
+
+test('style-code search tolerates omitted leading zeroes without changing canonical codes', () => {
+  assert.equal(normalizeStyleCodeSearchKey('AT001'), 'AT1');
+  assert.equal(normalizeStyleCodeSearchKey('at01'), 'AT1');
+  assert.equal(normalizeStyleCodeSearchKey('GD001'), 'GD1');
+  assert.equal(normalizeStyleCodeSearchKey('gd01'), 'GD1');
+  assert.equal(normalizeStyleCodeSearchKey('AT012'), 'AT12');
+  assert.equal(normalizeStyleCodeSearchKey('AT01J'), 'AT1J');
+  assert.match(normalizedStyleCodeSql('s.style_code'), /REGEXP_REPLACE/);
+  assert.match(normalizedStyleCodeSql('s.style_code'), /COALESCE\(s\.style_code/);
+});
 
 test('streaming parser handles a UTF-8 BOM, quoted commas, and embedded newlines', async (t) => {
   const parsed = await catalogue(t, [sourceRow({
