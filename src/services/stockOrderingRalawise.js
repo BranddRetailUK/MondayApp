@@ -113,6 +113,92 @@ function basketContainsPlan(basketItems, plan) {
   ));
 }
 
+function normalizedRemoteReference(value) {
+  const reference = trimText(value);
+  if (!reference || reference === '.' || /^(?:-|\u2013|\u2014)$/.test(reference)) return '';
+  return reference.slice(0, 80).toUpperCase();
+}
+
+function matchBasketedJobToPlacedOrders(job, auditLines, placedOrders) {
+  const reference = normalizedRemoteReference(job?.order_no || job?.source_order_id);
+  const remoteLines = [];
+  (Array.isArray(placedOrders) ? placedOrders : []).forEach((order) => {
+    (Array.isArray(order?.lines) ? order.lines : []).forEach((line) => {
+      const lineReference = normalizedRemoteReference(line?.line_reference);
+      const orderReference = normalizedRemoteReference(order?.customer_order_number);
+      if (!reference || (lineReference !== reference && orderReference !== reference)) return;
+      const quantity = positiveQuantity(line?.quantity);
+      const code = exactRalawiseSku({ ralawise_sku: line?.code || line?.variant_code || line?.product_code });
+      if (!code || !quantity) return;
+      remoteLines.push({
+        order,
+        line,
+        code,
+        available_quantity: quantity,
+      });
+    });
+  });
+
+  const assignments = [];
+  const missingLineIds = [];
+  for (const auditLine of (Array.isArray(auditLines) ? auditLines : [])) {
+    const sourceOrderItemId = Number(auditLine?.source_order_item_id);
+    const code = exactRalawiseSku({ ralawise_sku: auditLine?.ralawise_sku });
+    const quantity = positiveQuantity(auditLine?.quantity);
+    let remaining = quantity;
+    const portions = [];
+    for (const remote of remoteLines) {
+      if (remaining < 1) break;
+      if (remote.code !== code || remote.available_quantity < 1) continue;
+      const consumed = Math.min(remaining, remote.available_quantity);
+      remote.available_quantity -= consumed;
+      remaining -= consumed;
+      portions.push({ ...remote, consumed_quantity: consumed });
+    }
+    if (!code || !quantity || remaining > 0) {
+      missingLineIds.push(Number.isFinite(sourceOrderItemId) ? sourceOrderItemId : null);
+      continue;
+    }
+
+    const pricedPortions = portions.filter((portion) => (
+      portion.line?.unit_price != null
+      && trimText(portion.line.unit_price) !== ''
+      && Number.isFinite(Number(portion.line.unit_price))
+    ));
+    const allPortionsPriced = pricedPortions.length === portions.length;
+    const supplierLineTotal = allPortionsPriced
+      ? pricedPortions.reduce(
+        (sum, portion) => sum + (Number(portion.line.unit_price) * portion.consumed_quantity),
+        0
+      )
+      : null;
+    const orderNumbers = Array.from(new Set(portions.map((portion) => (
+      trimText(portion.order?.ralawise_order_number || portion.order?.sage_order_number)
+    )).filter(Boolean)));
+    assignments.push({
+      source_order_item_id: sourceOrderItemId,
+      ralawise_sku: code,
+      quantity,
+      ralawise_order_number: orderNumbers.join(', '),
+      supplier_order_line: trimText(portions[0]?.line?.order_line),
+      supplier_unit_price: supplierLineTotal == null
+        ? null
+        : Number((supplierLineTotal / quantity).toFixed(2)),
+      supplier_line_total: supplierLineTotal == null ? null : Number(supplierLineTotal.toFixed(2)),
+      ordered_at: portions.map((portion) => portion.order?.ordered_at).find(Boolean) || null,
+      order_url: portions.map((portion) => trimText(portion.order?.order_url)).find(Boolean) || '',
+    });
+  }
+
+  return {
+    matched: Boolean(assignments.length) && missingLineIds.length === 0
+      && assignments.length === (Array.isArray(auditLines) ? auditLines.length : 0),
+    reference,
+    assignments,
+    missing_line_ids: missingLineIds,
+  };
+}
+
 function publicBasketError(error) {
   if (error instanceof StockOrderingRalawiseError) return error.message;
   const upstream = trimText(error?.upstreamMessage);
@@ -126,5 +212,6 @@ module.exports = {
   buildJobBasketPlan,
   exactRalawiseSku,
   isProductLine,
+  matchBasketedJobToPlacedOrders,
   publicBasketError,
 };

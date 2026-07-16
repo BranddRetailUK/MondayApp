@@ -3307,6 +3307,12 @@ body.modal-open{overflow:hidden}
   color:#777;
   cursor:not-allowed;
 }
+.db-stock-ralawise-button.is-basketed,
+.db-stock-ralawise-button.is-basketed:disabled{
+  border-color:#b7cfb7;
+  background:#dcefdc;
+  color:#356535;
+}
 .db-styles-layout{
   display:grid;
   grid-template-columns:462px 1fr;

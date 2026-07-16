@@ -8,6 +8,7 @@ const {
   createRalawiseBasketClient,
   extractRequestVerificationToken,
   normalizeBasketItems,
+  parseRalawiseOrderDetailLines,
   splitSetCookieHeader,
 } = require('../src/integrations/ralawiseBasket');
 
@@ -88,6 +89,93 @@ test('buildStockWarnings reports partial and zero allocations', () => {
       message: 'No stock',
     },
   ]);
+});
+
+test('parseRalawiseOrderDetailLines reads placed-order references and discounted unit prices', () => {
+  const lines = parseRalawiseOrderDetailLines(`
+    <section>
+      <div class="card-body order-summary-item">
+        <input class="product-productcode" value="GD001">
+        <input class="product-variantcode" value="GD001BLACL">
+        <input class="product-productcolour" value="Black">
+        <input class="product-productsize" value="L">
+        <input class="product-orderqty" value="3">
+        <input class="product-unitprice" value="2.17">
+        <input class="product-orderline" value="1000">
+        <input class="product-sageorder" value="W12345">
+        <span>OL Ref 51160 Qty Alloc 3</span>
+        <span>Line Total £6.51</span>
+      </div>
+    </section>
+  `);
+
+  assert.deepEqual(lines, [{
+    line_index: 0,
+    product_code: 'GD001',
+    variant_code: 'GD001BLACL',
+    code: 'GD001BLACL',
+    colour: 'Black',
+    size: 'L',
+    quantity: 3,
+    order_line: '1000',
+    sage_order_number: 'W12345',
+    unit_price: 2.17,
+    line_total: 6.51,
+    line_reference: '51160',
+  }]);
+});
+
+test('getPlacedOrders searches order history and loads supplier order details', async () => {
+  const calls = [];
+  const queued = [
+    response('<input name="__RequestVerificationToken" value="login-token">'),
+    response({ Success: true }),
+    response({
+      Success: true,
+      Data: {
+        TotalRecord: 1,
+        records: [{
+          SageOrderNo: 'W12345',
+          WebOrderNo: '53000001',
+          CustomerOrderNo: '51160',
+          FormattedTotalAmount: '£6.51',
+          FormattedDateCreated: '16/07/2026 12:30:00',
+        }],
+      },
+    }),
+    response(`
+      <section><div class="card-body order-summary-item">
+        <input class="product-productcode" value="GD001">
+        <input class="product-variantcode" value="GD001BLACL">
+        <input class="product-orderqty" value="3">
+        <input class="product-unitprice" value="2.17">
+        <span>OL Ref 51160 Qty Alloc 3</span>
+      </div></section>
+    `),
+  ];
+  const client = createRalawiseBasketClient({
+    config: {
+      RALAWISE_SHOP_BASE_URL: 'https://shop.ralawise.com',
+      RALAWISE_USER: 'buyer@example.test',
+      RALAWISE_PASSWORD: 'secret',
+      RALAWISE_REQUEST_TIMEOUT_MS: 5000,
+    },
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      const next = queued.shift();
+      assert.ok(next, `Unexpected fetch call to ${url}`);
+      return next;
+    },
+  });
+
+  const result = await client.getPlacedOrders({ keywords: ['51160'], maxPages: 1 });
+
+  assert.equal(queued.length, 0);
+  assert.equal(new URL(calls[2].url).pathname, '/services/orderhistoryservice/searchorders');
+  assert.match(calls[2].options.body, /keyword=51160/);
+  assert.equal(result.orders[0].ralawise_order_number, 'W12345');
+  assert.equal(result.orders[0].lines[0].unit_price, 2.17);
+  assert.equal(result.orders[0].lines[0].line_reference, '51160');
 });
 
 test('addItems signs in, adds grouped quantities, updates references, and returns warnings', async () => {

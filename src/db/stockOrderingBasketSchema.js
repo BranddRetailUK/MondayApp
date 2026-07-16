@@ -14,14 +14,30 @@ async function createStockOrderingBasketTables(db) {
       stock_warnings JSONB NOT NULL DEFAULT '[]'::jsonb,
       request_snapshot JSONB NOT NULL DEFAULT '[]'::jsonb,
       response_snapshot JSONB,
+      placed_order_snapshot JSONB,
+      ralawise_order_number TEXT,
+      order_url TEXT,
       last_error TEXT,
       adding_started_at TIMESTAMPTZ,
       basketed_at TIMESTAMPTZ,
+      ordered_at TIMESTAMPTZ,
+      last_checked_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT database_ralawise_basket_jobs_status_check
-        CHECK (status IN ('adding', 'basketed', 'failed'))
+        CHECK (status IN ('adding', 'basketed', 'ordered', 'failed'))
     )
+  `);
+  await db.query('ALTER TABLE database_ralawise_basket_jobs ADD COLUMN IF NOT EXISTS placed_order_snapshot JSONB;');
+  await db.query('ALTER TABLE database_ralawise_basket_jobs ADD COLUMN IF NOT EXISTS ralawise_order_number TEXT;');
+  await db.query('ALTER TABLE database_ralawise_basket_jobs ADD COLUMN IF NOT EXISTS order_url TEXT;');
+  await db.query('ALTER TABLE database_ralawise_basket_jobs ADD COLUMN IF NOT EXISTS ordered_at TIMESTAMPTZ;');
+  await db.query('ALTER TABLE database_ralawise_basket_jobs ADD COLUMN IF NOT EXISTS last_checked_at TIMESTAMPTZ;');
+  await db.query('ALTER TABLE database_ralawise_basket_jobs DROP CONSTRAINT IF EXISTS database_ralawise_basket_jobs_status_check;');
+  await db.query(`
+    ALTER TABLE database_ralawise_basket_jobs
+    ADD CONSTRAINT database_ralawise_basket_jobs_status_check
+    CHECK (status IN ('adding', 'basketed', 'ordered', 'failed'))
   `);
   await db.query(`
     CREATE TABLE IF NOT EXISTS database_ralawise_basket_lines (
@@ -33,13 +49,29 @@ async function createStockOrderingBasketTables(db) {
       quantity INTEGER NOT NULL,
       status TEXT NOT NULL DEFAULT 'adding',
       stock_warning JSONB,
+      ralawise_order_number TEXT,
+      supplier_order_line TEXT,
+      supplier_unit_price NUMERIC(15, 2),
+      supplier_line_total NUMERIC(15, 2),
       basketed_at TIMESTAMPTZ,
+      ordered_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT database_ralawise_basket_lines_quantity_check CHECK (quantity > 0),
       CONSTRAINT database_ralawise_basket_lines_status_check
-        CHECK (status IN ('adding', 'basketed', 'failed'))
+        CHECK (status IN ('adding', 'basketed', 'ordered', 'failed'))
     )
+  `);
+  await db.query('ALTER TABLE database_ralawise_basket_lines ADD COLUMN IF NOT EXISTS ralawise_order_number TEXT;');
+  await db.query('ALTER TABLE database_ralawise_basket_lines ADD COLUMN IF NOT EXISTS supplier_order_line TEXT;');
+  await db.query('ALTER TABLE database_ralawise_basket_lines ADD COLUMN IF NOT EXISTS supplier_unit_price NUMERIC(15, 2);');
+  await db.query('ALTER TABLE database_ralawise_basket_lines ADD COLUMN IF NOT EXISTS supplier_line_total NUMERIC(15, 2);');
+  await db.query('ALTER TABLE database_ralawise_basket_lines ADD COLUMN IF NOT EXISTS ordered_at TIMESTAMPTZ;');
+  await db.query('ALTER TABLE database_ralawise_basket_lines DROP CONSTRAINT IF EXISTS database_ralawise_basket_lines_status_check;');
+  await db.query(`
+    ALTER TABLE database_ralawise_basket_lines
+    ADD CONSTRAINT database_ralawise_basket_lines_status_check
+    CHECK (status IN ('adding', 'basketed', 'ordered', 'failed'))
   `);
   await db.query(`
     CREATE INDEX IF NOT EXISTS database_ralawise_basket_lines_order_idx

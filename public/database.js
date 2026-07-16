@@ -176,6 +176,7 @@
     stockOrderingJobs: [],
     stockOrderingLoaded: false,
     stockOrderingLoading: false,
+    stockOrderingRalawiseSyncing: false,
     stockOrderingRalawiseAddingIds: new Set(),
     stockOrderingSelectedIds: new Set(),
     stockOrderingExpandedIds: new Set(),
@@ -4093,6 +4094,7 @@
       state.stockOrderingJobs = (data.jobs || []).filter((job) => !isStockOrderedDashboardStatus(job.dashboard_status));
       state.stockOrderingLoaded = true;
       renderStockOrderingJobs();
+      void syncStockOrderingRalawiseOrders();
     } catch (err) {
       state.stockOrderingLoaded = false;
       if (els.stockOrderingBody) {
@@ -4101,6 +4103,27 @@
       updateStockOrderingControls();
     } finally {
       state.stockOrderingLoading = false;
+    }
+  }
+
+  async function syncStockOrderingRalawiseOrders() {
+    if (state.stockOrderingRalawiseSyncing) return;
+    state.stockOrderingRalawiseSyncing = true;
+    try {
+      const result = await fetchJson('/api/database/stock-ordering/ralawise-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const updatedJobs = Array.isArray(result.updatedJobs) ? result.updatedJobs : [];
+      if (updatedJobs.length) {
+        removeStockOrderedJobsFromStockOrderingList(updatedJobs);
+        updateCachedDashboardStatusForJobs(updatedJobs, STOCK_ORDERED_STATUS_LABEL);
+      }
+    } catch (syncError) {
+      console.warn('Failed to check Ralawise placed orders from Stock Ordering', syncError);
+    } finally {
+      state.stockOrderingRalawiseSyncing = false;
     }
   }
 
@@ -4145,7 +4168,7 @@
     const buttonLabel = adding
       ? 'Adding...'
       : ralawise.alreadyBasketed
-        ? 'Complete status'
+        ? 'Added to basket'
         : unresolvedCount
           ? 'Needs SKU'
           : ralawise.status === 'failed'
@@ -4154,7 +4177,7 @@
     const buttonTitle = unresolvedCount
       ? `${formatNumber(unresolvedCount)} product line${unresolvedCount === 1 ? '' : 's'} need an exact live Ralawise colour/size SKU`
       : ralawise.error || '';
-    const ralawiseDisabled = adding || !ralawise.eligible;
+    const ralawiseDisabled = adding || ralawise.alreadyBasketed || !ralawise.eligible;
     return `
       <tr class="db-stock-ordering-row" data-stock-order-id="${escapeAttr(sourceOrderId)}" tabindex="0">
         <td class="db-row-selector">
@@ -4186,7 +4209,7 @@
         <td>${escapeHtml(formatNumber(stockOrderingQuantity(job)))}</td>
         <td class="db-stock-ralawise-cell">
           <button
-            class="db-stock-ralawise-button"
+            class="db-stock-ralawise-button${ralawise.alreadyBasketed ? ' is-basketed' : ''}"
             type="button"
             data-db-stock-ralawise="${escapeAttr(sourceOrderId)}"
             ${ralawiseDisabled ? 'disabled' : ''}
@@ -4335,14 +4358,22 @@
         headers: { 'Content-Type': 'application/json' },
         body: '{}',
       });
-      removeStockOrderedJobsFromStockOrderingList([job]);
-      updateCachedDashboardStatusForJobs([job], STOCK_ORDERED_STATUS_LABEL);
+      job.ralawiseBasket = {
+        ...(job.ralawiseBasket || {}),
+        status: 'basketed',
+        eligible: false,
+        busy: false,
+        alreadyBasketed: true,
+        basketUrl: data.basketUrl || job.ralawiseBasket?.basketUrl || null,
+        stockWarnings: Array.isArray(data.stockWarnings) ? data.stockWarnings : [],
+        error: null,
+      };
 
       const warnings = Array.isArray(data.stockWarnings) ? data.stockWarnings : [];
       if (warnings.length) {
         const unavailable = warnings.filter((warning) => warning.out_of_stock).length;
         alert(
-          `Order ${job.order_no || id} was added to Ralawise and marked Stock Ordered. `
+          `Order ${job.order_no || id} was added to the Ralawise basket. `
           + `Ralawise reported ${formatNumber(warnings.length)} stock warning${warnings.length === 1 ? '' : 's'}`
           + `${unavailable ? `, including ${formatNumber(unavailable)} out of stock` : ''}.`
         );

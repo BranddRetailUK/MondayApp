@@ -36,6 +36,21 @@ module.exports = {
   RALAWISE_HTTP_TIMEOUT_MS: int(process.env.RALAWISE_HTTP_TIMEOUT_MS, 20000),
   RALAWISE_REQUEST_TIMEOUT_MS: int(process.env.RALAWISE_REQUEST_TIMEOUT_MS, 20000),
   RALAWISE_RETRY_ATTEMPTS: int(process.env.RALAWISE_RETRY_ATTEMPTS, 2),
+  RALAWISE_ORDER_HISTORY_LOOKBACK_DAYS: Math.max(
+    1,
+    int(process.env.RALAWISE_ORDER_HISTORY_LOOKBACK_DAYS, 14)
+  ),
+  RALAWISE_ORDER_HISTORY_POLL_ENABLED: !['0', 'false', 'no', 'off'].includes(
+    str(process.env.RALAWISE_ORDER_HISTORY_POLL_ENABLED, 'true').toLowerCase()
+  ),
+  RALAWISE_ORDER_HISTORY_POLL_INTERVAL_MS: Math.max(
+    5 * 60 * 1000,
+    int(process.env.RALAWISE_ORDER_HISTORY_POLL_INTERVAL_MS, 10 * 60 * 1000)
+  ),
+  RALAWISE_ORDER_HISTORY_POLL_STARTUP_DELAY_MS: Math.max(
+    30 * 1000,
+    int(process.env.RALAWISE_ORDER_HISTORY_POLL_STARTUP_DELAY_MS, 2 * 60 * 1000)
+  ),
 
   // Flags
   VERBOSE_SQL: bool(process.env.VERBOSE_SQL, false),

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db/pool');
+const env = require('../config/env');
 const { ensureStockOrderingBasketTables } = require('../db/stockOrderingBasketSchema');
 const {
   RalawiseBasketError,
@@ -11,6 +12,7 @@ const {
   StockOrderingRalawiseError,
   basketContainsPlan,
   buildJobBasketPlan,
+  matchBasketedJobToPlacedOrders,
   publicBasketError,
 } = require('../services/stockOrderingRalawise');
 const {
@@ -36,7 +38,10 @@ const {
 const DASHBOARD_STATUS_COLORS = buildDashboardStatusColors(STATUS_SETTINGS);
 const MAX_STOCK_ORDERING_MARK_IDS = 500;
 const RALAWISE_ADDING_STALE_MS = 10 * 60 * 1000;
+const RALAWISE_ORDER_HISTORY_LOCK_KEYS = [71060219, 1206];
 const ralawiseBasketClient = createRalawiseBasketClient();
+let ralawiseOrderHistorySyncPromise = null;
+let ralawiseOrderHistoryTimer = null;
 const DATABASE_REPORT_PERIODS = Object.freeze({
   daily: Object.freeze({
     label: 'Daily',
@@ -253,6 +258,248 @@ async function recordRalawiseBasketFailure(sourceOrderId, error) {
   } finally {
     client.release();
   }
+}
+
+function formatRalawiseHistoryDate(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return [
+    String(date.getUTCDate()).padStart(2, '0'),
+    String(date.getUTCMonth() + 1).padStart(2, '0'),
+    String(date.getUTCFullYear()),
+  ].join('/');
+}
+
+function ralawiseOrderLookupDateRange(jobs = []) {
+  const now = Date.now();
+  let fromMs = now - (env.RALAWISE_ORDER_HISTORY_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+  for (const job of jobs) {
+    const basketedAt = Date.parse(job?.basketed_at || '');
+    if (Number.isFinite(basketedAt)) fromMs = Math.min(fromMs, basketedAt - (24 * 60 * 60 * 1000));
+  }
+  return {
+    fromDate: formatRalawiseHistoryDate(fromMs),
+    toDate: formatRalawiseHistoryDate(now + (24 * 60 * 60 * 1000)),
+  };
+}
+
+async function performRalawisePlacedOrderSync({ source = 'manual' } = {}) {
+  await ensureStockOrderingBasketTables(pool);
+  const client = await pool.connect();
+  let locked = false;
+  try {
+    const lockResult = await client.query(
+      'SELECT pg_try_advisory_lock($1, $2) AS locked',
+      RALAWISE_ORDER_HISTORY_LOCK_KEYS
+    );
+    locked = lockResult.rows[0]?.locked === true;
+    if (!locked) return { ok: true, skipped: 'locked', checkedJobs: 0, orderedJobs: 0, costUpdates: 0 };
+
+    const basketedJobs = await client.query(
+      `SELECT source_order_id, order_no, line_count, basketed_at
+       FROM database_ralawise_basket_jobs
+       WHERE status = 'basketed'
+       ORDER BY basketed_at ASC NULLS LAST, source_order_id
+       LIMIT 100`
+    );
+    if (!basketedJobs.rowCount) {
+      return { ok: true, source, checkedJobs: 0, orderedJobs: 0, costUpdates: 0, updatedJobs: [] };
+    }
+
+    const sourceOrderIds = basketedJobs.rows.map((job) => Number(job.source_order_id));
+    const basketedLines = await client.query(
+      `SELECT source_order_item_id, source_order_id, order_no, ralawise_sku, quantity
+       FROM database_ralawise_basket_lines
+       WHERE source_order_id = ANY($1::int[])
+         AND status = 'basketed'
+       ORDER BY source_order_id, source_order_item_id`,
+      [sourceOrderIds]
+    );
+    const linesByJob = new Map();
+    for (const line of basketedLines.rows) {
+      if (!linesByJob.has(line.source_order_id)) linesByJob.set(line.source_order_id, []);
+      linesByJob.get(line.source_order_id).push(line);
+    }
+
+    const lookupRange = ralawiseOrderLookupDateRange(basketedJobs.rows);
+    const placedResult = await ralawiseBasketClient.getPlacedOrders({
+      fromDate: lookupRange.fromDate,
+      toDate: lookupRange.toDate,
+      size: 50,
+      maxPages: 5,
+      includeDetails: true,
+    });
+    const placedOrders = Array.isArray(placedResult.orders) ? placedResult.orders : [];
+    await client.query(
+      `UPDATE database_ralawise_basket_jobs
+       SET last_checked_at = NOW(), updated_at = NOW()
+       WHERE source_order_id = ANY($1::int[])
+         AND status = 'basketed'`,
+      [sourceOrderIds]
+    );
+
+    const updatedJobs = [];
+    let orderedJobs = 0;
+    let costUpdates = 0;
+    let failedJobs = 0;
+    for (const job of basketedJobs.rows) {
+      const auditLines = linesByJob.get(job.source_order_id) || [];
+      if (!auditLines.length || auditLines.length !== Number(job.line_count || 0)) continue;
+      const match = matchBasketedJobToPlacedOrders(job, auditLines, placedOrders);
+      if (!match.matched) continue;
+      try {
+        let jobCostUpdates = 0;
+        await client.query('BEGIN');
+        await client.query('SELECT pg_advisory_xact_lock($1, $2)', [71060219, job.source_order_id]);
+        const currentAudit = await client.query(
+          `SELECT status
+           FROM database_ralawise_basket_jobs
+           WHERE source_order_id = $1
+           FOR UPDATE`,
+          [job.source_order_id]
+        );
+        if (currentAudit.rows[0]?.status !== 'basketed') {
+          await client.query('ROLLBACK');
+          continue;
+        }
+
+        for (const assignment of match.assignments) {
+          await client.query(
+            `UPDATE database_ralawise_basket_lines
+             SET status = 'ordered',
+                 ralawise_order_number = $2,
+                 supplier_order_line = $3,
+                 supplier_unit_price = $4,
+                 supplier_line_total = $5,
+                 ordered_at = COALESCE($6::timestamptz, NOW()),
+                 updated_at = NOW()
+             WHERE source_order_item_id = $1
+               AND source_order_id = $7`,
+            [
+              assignment.source_order_item_id,
+              assignment.ralawise_order_number || null,
+              assignment.supplier_order_line || null,
+              assignment.supplier_unit_price,
+              assignment.supplier_line_total,
+              assignment.ordered_at,
+              job.source_order_id,
+            ]
+          );
+          if (assignment.supplier_unit_price != null) {
+            const costUpdate = await client.query(
+              `UPDATE database_job_line_items
+               SET unit_cost = $2,
+                   updated_at_source = NOW(),
+                   imported_at = NOW()
+               WHERE source_order_item_id = $1
+                 AND source_order_id = $3`,
+              [
+                assignment.source_order_item_id,
+                assignment.supplier_unit_price,
+                job.source_order_id,
+              ]
+            );
+            jobCostUpdates += costUpdate.rowCount;
+          }
+        }
+
+        const orderNumbers = Array.from(new Set(
+          match.assignments.flatMap((assignment) => String(assignment.ralawise_order_number || '')
+            .split(',')
+            .map((value) => value.trim())
+            .filter(Boolean))
+        ));
+        const matchedOrders = placedOrders.filter((order) => orderNumbers.includes(
+          String(order.ralawise_order_number || order.sage_order_number || '').trim()
+        ));
+        const orderedAt = match.assignments.map((assignment) => assignment.ordered_at).find(Boolean) || null;
+        const orderUrl = match.assignments.map((assignment) => assignment.order_url).find(Boolean) || null;
+        await client.query(
+          `UPDATE database_ralawise_basket_jobs
+           SET status = 'ordered',
+               ralawise_order_number = $2,
+               order_url = $3,
+               placed_order_snapshot = $4::jsonb,
+               last_error = NULL,
+               ordered_at = COALESCE($5::timestamptz, NOW()),
+               last_checked_at = NOW(),
+               updated_at = NOW()
+           WHERE source_order_id = $1`,
+          [
+            job.source_order_id,
+            orderNumbers.join(', ') || null,
+            orderUrl,
+            JSON.stringify(matchedOrders),
+            orderedAt,
+          ]
+        );
+
+        const dashboardJobs = await selectDashboardJobsForStockOrdered(client, [job.source_order_id]);
+        if (!dashboardJobs.rowCount) throw new Error('Job disappeared before its placed Ralawise order was saved');
+        const statusUpdates = await applyStockOrderedStatus(client, dashboardJobs.rows);
+        await client.query('COMMIT');
+        orderedJobs += 1;
+        costUpdates += jobCostUpdates;
+        updatedJobs.push(...statusUpdates);
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        failedJobs += 1;
+        console.error('Failed to apply placed Ralawise order', {
+          sourceOrderId: job.source_order_id,
+          message: error?.message,
+        });
+      }
+    }
+
+    return {
+      ok: failedJobs === 0,
+      source,
+      checkedJobs: basketedJobs.rowCount,
+      supplierOrders: placedOrders.length,
+      orderedJobs,
+      costUpdates,
+      failedJobs,
+      updatedJobs,
+    };
+  } finally {
+    if (locked) {
+      await client.query('SELECT pg_advisory_unlock($1, $2)', RALAWISE_ORDER_HISTORY_LOCK_KEYS)
+        .catch(() => {});
+    }
+    client.release();
+  }
+}
+
+function syncRalawisePlacedOrders(options = {}) {
+  if (!ralawiseOrderHistorySyncPromise) {
+    ralawiseOrderHistorySyncPromise = performRalawisePlacedOrderSync(options)
+      .finally(() => {
+        ralawiseOrderHistorySyncPromise = null;
+      });
+  }
+  return ralawiseOrderHistorySyncPromise;
+}
+
+function initRalawiseOrderHistoryPoller() {
+  if (ralawiseOrderHistoryTimer) return { started: false, reason: 'already_started' };
+  if (!env.RALAWISE_ORDER_HISTORY_POLL_ENABLED) return { started: false, reason: 'disabled' };
+  if (!env.RALAWISE_USER || !env.RALAWISE_PASSWORD) return { started: false, reason: 'missing_credentials' };
+  const run = () => {
+    void syncRalawisePlacedOrders({ source: 'poller' })
+      .then((result) => {
+        if (result.orderedJobs || result.failedJobs) {
+          console.log('[ralawise-order-history-poll]', result);
+        }
+      })
+      .catch((error) => {
+        console.error('[ralawise-order-history-poll] failed', publicBasketError(error));
+      });
+  };
+  const startupTimer = setTimeout(run, env.RALAWISE_ORDER_HISTORY_POLL_STARTUP_DELAY_MS);
+  if (typeof startupTimer.unref === 'function') startupTimer.unref();
+  ralawiseOrderHistoryTimer = setInterval(run, env.RALAWISE_ORDER_HISTORY_POLL_INTERVAL_MS);
+  if (typeof ralawiseOrderHistoryTimer.unref === 'function') ralawiseOrderHistoryTimer.unref();
+  return { started: true };
 }
 
 router.get('/api/database/summary', async (_req, res) => {
@@ -866,7 +1113,7 @@ router.get('/api/database/stock-ordering', async (_req, res) => {
           lineItems,
           ralawiseBasket: {
             status: job.ralawise_basket_status || 'pending',
-            eligible: alreadyBasketed || (plan.eligible && !addingIsActive),
+            eligible: !alreadyBasketed && plan.eligible && !addingIsActive,
             busy: addingIsActive,
             alreadyBasketed,
             mappedLineCount: plan.resolved_line_count,
@@ -928,6 +1175,25 @@ router.post('/api/database/stock-ordering/mark-ordered', async (req, res) => {
   }
 });
 
+router.post('/api/database/stock-ordering/ralawise-sync', async (_req, res) => {
+  try {
+    const result = await syncRalawisePlacedOrders({ source: 'stock-ordering-page' });
+    res.status(result.ok === false ? 500 : 200).json(result);
+  } catch (error) {
+    console.error('POST /api/database/stock-ordering/ralawise-sync', {
+      code: error?.code,
+      status: error?.status,
+      message: error?.upstreamMessage || error?.message,
+    });
+    res.status(error instanceof RalawiseBasketError
+      ? (error.code === 'missing_credentials' ? 503 : 502)
+      : 500).json({
+      error: error?.upstreamMessage || error?.message || 'Failed to check Ralawise placed orders',
+      code: error?.code || 'ralawise_order_history_failed',
+    });
+  }
+});
+
 router.post('/api/database/stock-ordering/:id/ralawise-basket', async (req, res) => {
   const sourceOrderId = Number.parseInt(req.params.id, 10);
   if (!Number.isFinite(sourceOrderId) || sourceOrderId < 1) {
@@ -965,14 +1231,24 @@ router.post('/api/database/stock-ordering/:id/ralawise-basket', async (req, res)
     );
     const audit = existingAudit.rows[0] || null;
     if (audit?.status === 'basketed') {
-      const updatedJobs = await applyStockOrderedStatus(preparationClient, [job]);
       await preparationClient.query('COMMIT');
       return res.json({
         ok: true,
         alreadyBasketed: true,
         basketUrl: audit.basket_url || null,
         stockWarnings: audit.stock_warnings || [],
-        updatedJobs,
+        updatedJobs: [],
+      });
+    }
+    if (audit?.status === 'ordered') {
+      await preparationClient.query('COMMIT');
+      return res.json({
+        ok: true,
+        alreadyOrdered: true,
+        ralawiseOrderNumber: audit.ralawise_order_number || null,
+        basketUrl: audit.basket_url || null,
+        stockWarnings: audit.stock_warnings || [],
+        updatedJobs: [],
       });
     }
 
@@ -1024,8 +1300,14 @@ router.post('/api/database/stock-ordering/:id/ralawise-basket', async (req, res)
          stock_warnings = '[]'::jsonb,
          request_snapshot = EXCLUDED.request_snapshot,
          response_snapshot = NULL,
+         placed_order_snapshot = NULL,
+         ralawise_order_number = NULL,
+         order_url = NULL,
          last_error = NULL,
          adding_started_at = NOW(),
+         basketed_at = NULL,
+         ordered_at = NULL,
+         last_checked_at = NULL,
          updated_at = NOW()`,
       [
         sourceOrderId,
@@ -1055,6 +1337,12 @@ router.post('/api/database/stock-ordering/:id/ralawise-basket', async (req, res)
            quantity = EXCLUDED.quantity,
            status = 'adding',
            stock_warning = NULL,
+           ralawise_order_number = NULL,
+           supplier_order_line = NULL,
+           supplier_unit_price = NULL,
+           supplier_line_total = NULL,
+           basketed_at = NULL,
+           ordered_at = NULL,
            updated_at = NOW()`,
         [
           line.source_order_item_id,
@@ -1180,42 +1468,16 @@ router.post('/api/database/stock-ordering/:id/ralawise-basket', async (req, res)
     completionClient.release();
   }
 
-  const statusClient = await pool.connect();
-  try {
-    await statusClient.query('BEGIN');
-    await statusClient.query('SELECT pg_advisory_xact_lock($1, $2)', [71060219, sourceOrderId]);
-    const dashboardJobs = await selectDashboardJobsForStockOrdered(statusClient, [sourceOrderId]);
-    if (!dashboardJobs.rowCount) {
-      throw new StockOrderingRalawiseError('Job disappeared before its status could be updated.', {
-        code: 'job_missing_after_basket',
-      });
-    }
-    const updatedJobs = await applyStockOrderedStatus(statusClient, dashboardJobs.rows);
-    await statusClient.query('COMMIT');
-    return res.json({
-      ok: true,
-      recoveredFromBasket,
-      basketUrl: basketResult.basket_url || null,
-      itemCount: basketResult.item_count || plan.items.length,
-      totalQuantity: basketResult.total_quantity || plan.total_quantity,
-      stockWarnings,
-      outOfStockCount: Number(basketResult.out_of_stock_count || 0),
-      updatedJobs,
-    });
-  } catch (error) {
-    await statusClient.query('ROLLBACK').catch(() => {});
-    console.error('Ralawise basket succeeded but stock ordered status update failed', {
-      sourceOrderId,
-      message: error?.message,
-    });
-    return res.status(500).json({
-      error: 'The job is in the Ralawise basket, but its Stock Ordered status could not be saved. Retry the button to finish safely.',
-      code: 'status_update_failed',
-      basketUrl: basketResult.basket_url || null,
-    });
-  } finally {
-    statusClient.release();
-  }
+  return res.json({
+    ok: true,
+    recoveredFromBasket,
+    basketUrl: basketResult.basket_url || null,
+    itemCount: basketResult.item_count || plan.items.length,
+    totalQuantity: basketResult.total_quantity || plan.total_quantity,
+    stockWarnings,
+    outOfStockCount: Number(basketResult.out_of_stock_count || 0),
+    updatedJobs: [],
+  });
 });
 
 router.get('/api/database/users', async (req, res) => {
@@ -5771,5 +6033,8 @@ function isEarlier(candidate, current) {
 function toBoolean(value) {
   return value === true || value === 1 || value === '1' || cleanQuery(value).toLowerCase() === 'true';
 }
+
+router.initRalawiseOrderHistoryPoller = initRalawiseOrderHistoryPoller;
+router.syncRalawisePlacedOrders = syncRalawisePlacedOrders;
 
 module.exports = router;

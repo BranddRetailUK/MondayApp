@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   basketContainsPlan,
   buildJobBasketPlan,
+  matchBasketedJobToPlacedOrders,
 } = require('../src/services/stockOrderingRalawise');
 
 test('buildJobBasketPlan groups exact variant SKUs and keeps line-level quantities', () => {
@@ -120,4 +121,50 @@ test('basketContainsPlan requires the exact SKU, reference, and requested quanti
     { code: 'ONE', reference: '56789', quantity: 1 },
     { code: 'TWO', reference: '56789', quantity: 1 },
   ], plan), false);
+});
+
+test('matchBasketedJobToPlacedOrders requires every job line and returns actual supplier costs', () => {
+  const match = matchBasketedJobToPlacedOrders(
+    { source_order_id: 50407, order_no: 51160 },
+    [
+      { source_order_item_id: 1, ralawise_sku: 'GD001BLACL', quantity: 2 },
+      { source_order_item_id: 2, ralawise_sku: 'GD001BLACL', quantity: 1 },
+      { source_order_item_id: 3, ralawise_sku: 'JH001NAVYM', quantity: 1 },
+    ],
+    [{
+      ralawise_order_number: 'W12345',
+      customer_order_number: '',
+      ordered_at: '2026-07-16T12:30:00.000Z',
+      order_url: 'https://shop.ralawise.com/order/W12345',
+      lines: [
+        { code: 'GD001BLACL', quantity: 3, line_reference: '51160', unit_price: 2.17, order_line: '1000' },
+        { code: 'JH001NAVYM', quantity: 1, line_reference: '51160', unit_price: 6.42, order_line: '1001' },
+      ],
+    }]
+  );
+
+  assert.equal(match.matched, true);
+  assert.equal(match.assignments.length, 3);
+  assert.equal(match.assignments[0].supplier_unit_price, 2.17);
+  assert.equal(match.assignments[1].supplier_line_total, 2.17);
+  assert.equal(match.assignments[2].supplier_unit_price, 6.42);
+  assert.deepEqual(match.missing_line_ids, []);
+});
+
+test('matchBasketedJobToPlacedOrders does not confirm a partial placed order', () => {
+  const match = matchBasketedJobToPlacedOrders(
+    { source_order_id: 50407, order_no: 51160 },
+    [
+      { source_order_item_id: 1, ralawise_sku: 'GD001BLACL', quantity: 2 },
+      { source_order_item_id: 2, ralawise_sku: 'JH001NAVYM', quantity: 1 },
+    ],
+    [{
+      ralawise_order_number: 'W12345',
+      customer_order_number: '51160',
+      lines: [{ code: 'GD001BLACL', quantity: 2, unit_price: 2.17 }],
+    }]
+  );
+
+  assert.equal(match.matched, false);
+  assert.deepEqual(match.missing_line_ids, [2]);
 });
