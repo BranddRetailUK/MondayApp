@@ -741,7 +741,8 @@ async function ensureTestDashboardTables(db) {
   await db.query('CREATE INDEX IF NOT EXISTS test_dashboard_columns_position_idx ON test_dashboard_columns(is_subitem, position);');
   await db.query('CREATE INDEX IF NOT EXISTS test_dashboard_job_state_group_idx ON test_dashboard_job_state(group_id);');
   await db.query('CREATE INDEX IF NOT EXISTS test_dashboard_files_job_column_idx ON test_dashboard_files(source_order_id, column_id);');
-  await db.query('CREATE UNIQUE INDEX IF NOT EXISTS test_dashboard_files_public_id_idx ON test_dashboard_files(public_id);');
+  await db.query('DROP INDEX IF EXISTS test_dashboard_files_public_id_idx;');
+  await db.query('CREATE UNIQUE INDEX IF NOT EXISTS test_dashboard_files_job_public_id_idx ON test_dashboard_files(source_order_id, public_id);');
   await db.query('CREATE INDEX IF NOT EXISTS test_dashboard_private_jobs_group_idx ON test_dashboard_private_jobs(group_id);');
 }
 

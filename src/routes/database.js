@@ -2819,6 +2819,489 @@ router.post('/api/database/jobs', async (req, res) => {
   }
 });
 
+router.post('/api/database/jobs/:id/repeat', async (req, res) => {
+  const id = Number.parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: 'Invalid job id' });
+  }
+
+  const copyLineItems = req.body?.copy_line_items;
+  if (typeof copyLineItems !== 'boolean') {
+    return res.status(400).json({ error: 'copy_line_items must be true or false' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(71060216)');
+
+    const sourceJob = await resolveDatabaseJobForMutation(client, id, { forUpdate: true });
+    if (!sourceJob) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Database job not found' });
+    }
+
+    // Existing manual line/design creation allocates legacy-compatible ids from MAX + 1.
+    // Lock those tables while reserving a block so a repeat cannot collide with a
+    // line or design being added to another order at the same time.
+    await client.query('LOCK TABLE database_job_line_items IN SHARE ROW EXCLUSIVE MODE');
+    await client.query('LOCK TABLE database_job_positions IN SHARE ROW EXCLUSIVE MODE');
+
+    const allocation = await client.query(`
+      SELECT
+        (COALESCE(MAX(source_order_id), 0) + 1)::int AS source_order_id,
+        (GREATEST(COALESCE(MAX(order_no), 50000), 50000) + 1)::int AS order_no,
+        EXTRACT(YEAR FROM CURRENT_TIMESTAMP AT TIME ZONE 'Europe/London')::int AS source_year
+      FROM database_jobs
+    `);
+    const sourceOrderId = sourceJob.source_order_id;
+    const newSourceOrderId = allocation.rows[0].source_order_id;
+    const newOrderNo = allocation.rows[0].order_no;
+    const sourceYear = allocation.rows[0].source_year;
+    const repeatedByName = req.hubUser ? fullName(req.hubUser) : null;
+
+    const sourceReferenceText = await client.query(
+      `WITH position_text AS (
+         SELECT STRING_AGG(CONCAT_WS(' ', position_name, colour_notes, design_ref), ' ') AS text_value
+         FROM database_job_positions
+         WHERE source_order_id = $1
+       ), line_item_text AS (
+         SELECT STRING_AGG(line_description, ' ') AS text_value
+         FROM database_job_line_items
+         WHERE source_order_id = $1
+       )
+       SELECT CONCAT_WS(' ',
+                source.job_title,
+                source.client_order_no,
+                source.screen_numbers,
+                source.comments,
+                position_text.text_value,
+                line_item_text.text_value
+              ) AS all_reference_text,
+              CONCAT_WS(' ',
+                source.job_title,
+                source.client_order_no,
+                source.screen_numbers,
+                source.comments,
+                position_text.text_value
+              ) AS copied_reference_text
+       FROM database_jobs source
+       CROSS JOIN position_text
+       CROSS JOIN line_item_text
+       WHERE source.source_order_id = $1`,
+      [sourceOrderId]
+    );
+    const allReferences = extractOrderDesignReferences(sourceReferenceText.rows[0]?.all_reference_text);
+    const copiedReferences = new Set(
+      extractOrderDesignReferences(sourceReferenceText.rows[0]?.copied_reference_text)
+    );
+    const lineOnlyReferences = allReferences.filter(reference => !copiedReferences.has(reference));
+
+    const inserted = await client.query(
+      `INSERT INTO database_jobs (
+         source_order_id,
+         order_no,
+         source_year,
+         order_type_id,
+         order_type,
+         order_type_abbr,
+         customer_id,
+         customer_name,
+         customer_code,
+         contact_id,
+         contact_name,
+         contact_phone,
+         contact_mobile,
+         contact_email,
+         job_title,
+         client_order_no,
+         delivery_method,
+         payment_terms,
+         order_taken_by,
+         order_owner_user_id,
+         order_owner_name,
+         invoice_address_id,
+         delivery_address_id,
+         delivery_address,
+         invoice_address,
+         is_manual_entry,
+         order_date,
+         customer_date_required,
+         complete_date,
+         is_complete,
+         delivery_date,
+         is_reorder,
+         is_bagged,
+         is_automatic,
+         screen_numbers,
+         comments,
+         has_artwork,
+         has_screens,
+         has_shirts,
+         is_printed,
+         customer_supplied,
+         delivery_note_date,
+         invoice_no,
+         invoice_date,
+         trace_staff_id,
+         created_at_source,
+         updated_at_source,
+         invoice_required,
+         invoice_printed,
+         pf_invoice_printed,
+         pf_invoice_date,
+         dashboard_status,
+         dashboard_priority,
+         dashboard_type,
+         proof_approved,
+         proof_approved_at,
+         dashboard_status_updated_at
+       )
+       SELECT
+         $1,
+         $2,
+         $3,
+         source.order_type_id,
+         source.order_type,
+         source.order_type_abbr,
+         source.customer_id,
+         source.customer_name,
+         source.customer_code,
+         source.contact_id,
+         source.contact_name,
+         source.contact_phone,
+         source.contact_mobile,
+         source.contact_email,
+         source.job_title,
+         source.client_order_no,
+         source.delivery_method,
+         source.payment_terms,
+         COALESCE($4, source.order_owner_name, source.order_taken_by),
+         $5,
+         COALESCE($4, source.order_owner_name, source.order_taken_by),
+         source.invoice_address_id,
+         source.delivery_address_id,
+         source.delivery_address,
+         source.invoice_address,
+         TRUE,
+         CURRENT_TIMESTAMP,
+         FALSE,
+         NULL,
+         FALSE,
+         source.delivery_date,
+         TRUE,
+         FALSE,
+         FALSE,
+         source.screen_numbers,
+         source.comments,
+         FALSE,
+         FALSE,
+         FALSE,
+         FALSE,
+         source.customer_supplied,
+         NULL,
+         NULL,
+         NULL,
+         NULL,
+         CURRENT_TIMESTAMP,
+         CURRENT_TIMESTAMP,
+         source.invoice_required,
+         FALSE,
+         FALSE,
+         NULL,
+         $6,
+         NULL,
+         NULL,
+         FALSE,
+         NULL,
+         CURRENT_TIMESTAMP
+       FROM database_jobs source
+       WHERE source.source_order_id = $7
+       RETURNING *`,
+      [
+        newSourceOrderId,
+        newOrderNo,
+        sourceYear,
+        repeatedByName || null,
+        req.hubUser?.id || null,
+        AWAITING_APPROVAL_LABEL,
+        sourceOrderId,
+      ]
+    );
+
+    const job = inserted.rows[0];
+    if (!job) throw new Error('Failed to insert repeated database job');
+
+    let copiedLineItemCount = 0;
+    if (copyLineItems) {
+      const copiedLines = await client.query(
+        `WITH source_lines AS (
+           SELECT li.*,
+                  ROW_NUMBER() OVER (
+                    ORDER BY COALESCE(li.line_sort_order, li.source_order_item_id), li.source_order_item_id
+                  )::int AS copy_offset
+           FROM database_job_line_items li
+           WHERE li.source_order_id = $1
+         ), allocation AS (
+           SELECT COALESCE(MAX(source_order_item_id), 0)::int AS max_source_order_item_id
+           FROM database_job_line_items
+         )
+         INSERT INTO database_job_line_items (
+           source_order_item_id,
+           source_order_id,
+           line_sort_order,
+           source_product_id,
+           supplier_order_id,
+           line_description,
+           quantity,
+           unit_price,
+           unit_cost,
+           vat_rate,
+           is_non_deliverable,
+           is_internal,
+           supplier_name,
+           style_id,
+           style_code,
+           alt_style_code,
+           style_name,
+           colour,
+           size,
+           product_type,
+           stock,
+           is_product_active,
+           trace_staff_id,
+           created_at_source,
+           updated_at_source,
+           legacy_source_product_id,
+           ralawise_catalog_variant_id,
+           ralawise_sku,
+           supplier_style_code,
+           supplier_colour_code,
+           supplier_size_code,
+           catalogue_status,
+           catalogue_synced_at
+         )
+         SELECT
+           allocation.max_source_order_item_id + source_lines.copy_offset,
+           $2,
+           source_lines.line_sort_order,
+           source_lines.source_product_id,
+           NULL,
+           source_lines.line_description,
+           NULL,
+           source_lines.unit_price,
+           source_lines.unit_cost,
+           source_lines.vat_rate,
+           source_lines.is_non_deliverable,
+           source_lines.is_internal,
+           source_lines.supplier_name,
+           source_lines.style_id,
+           source_lines.style_code,
+           source_lines.alt_style_code,
+           source_lines.style_name,
+           source_lines.colour,
+           source_lines.size,
+           source_lines.product_type,
+           source_lines.stock,
+           source_lines.is_product_active,
+           NULL,
+           CURRENT_TIMESTAMP,
+           CURRENT_TIMESTAMP,
+           source_lines.legacy_source_product_id,
+           source_lines.ralawise_catalog_variant_id,
+           source_lines.ralawise_sku,
+           source_lines.supplier_style_code,
+           source_lines.supplier_colour_code,
+           source_lines.supplier_size_code,
+           source_lines.catalogue_status,
+           source_lines.catalogue_synced_at
+         FROM source_lines
+         CROSS JOIN allocation`,
+        [sourceOrderId, newSourceOrderId]
+      );
+      copiedLineItemCount = copiedLines.rowCount;
+    }
+
+    const copiedPositions = await client.query(
+      `WITH source_positions AS (
+         SELECT p.*,
+                ROW_NUMBER() OVER (
+                  ORDER BY COALESCE(p.position_sort_order, p.source_order_position_id),
+                           p.source_order_position_id
+                )::int AS copy_offset
+         FROM database_job_positions p
+         WHERE p.source_order_id = $1
+       ), allocation AS (
+         SELECT COALESCE(MAX(source_order_position_id), 0)::int AS max_source_order_position_id
+         FROM database_job_positions
+       )
+       INSERT INTO database_job_positions (
+         source_order_position_id,
+         source_order_id,
+         position_sort_order,
+         position_name,
+         colour_notes,
+         design_ref,
+         trace_staff_id,
+         created_at_source,
+         updated_at_source
+       )
+       SELECT
+         allocation.max_source_order_position_id + source_positions.copy_offset,
+         $2,
+         source_positions.position_sort_order,
+         source_positions.position_name,
+         source_positions.colour_notes,
+         source_positions.design_ref,
+         NULL,
+         CURRENT_TIMESTAMP,
+         CURRENT_TIMESTAMP
+       FROM source_positions
+       CROSS JOIN allocation`,
+      [sourceOrderId, newSourceOrderId]
+    );
+    let copiedPositionCount = copiedPositions.rowCount;
+
+    if (lineOnlyReferences.length) {
+      const materializedReferences = await client.query(
+        `WITH references AS (
+           SELECT BTRIM(reference) AS design_ref,
+                  ordinality::int AS copy_offset
+           FROM UNNEST($2::text[]) WITH ORDINALITY AS source(reference, ordinality)
+           WHERE NULLIF(BTRIM(reference), '') IS NOT NULL
+         ), allocation AS (
+           SELECT COALESCE(MAX(source_order_position_id), 0)::int AS max_source_order_position_id,
+                  COALESCE(
+                    MAX(position_sort_order) FILTER (WHERE source_order_id = $1),
+                    0
+                  )::int AS max_position_sort_order
+           FROM database_job_positions
+         )
+         INSERT INTO database_job_positions (
+           source_order_position_id,
+           source_order_id,
+           position_sort_order,
+           position_name,
+           colour_notes,
+           design_ref,
+           trace_staff_id,
+           created_at_source,
+           updated_at_source
+         )
+         SELECT
+           allocation.max_source_order_position_id + references.copy_offset,
+           $1,
+           allocation.max_position_sort_order + references.copy_offset,
+           NULL,
+           NULL,
+           references.design_ref,
+           NULL,
+           CURRENT_TIMESTAMP,
+           CURRENT_TIMESTAMP
+         FROM references
+         CROSS JOIN allocation`,
+        [newSourceOrderId, lineOnlyReferences]
+      );
+      copiedPositionCount += materializedReferences.rowCount;
+    }
+
+    // Hold a share lock on the source proof rows until the repeat commits. This
+    // keeps proof deletion from destroying a shared Cloudinary asset between
+    // copying its metadata and committing the new reference.
+    await client.query(
+      `SELECT id
+       FROM test_dashboard_files
+       WHERE source_order_id = $1
+         AND (column_id = $2 OR UPPER(BTRIM(column_title)) = 'PROOF')
+       FOR SHARE`,
+      [sourceOrderId, TEST_DASHBOARD_COLUMN_IDS.PROOF]
+    );
+    const copiedProofFiles = await client.query(
+      `INSERT INTO test_dashboard_files (
+         source_order_id,
+         column_id,
+         column_title,
+         public_id,
+         secure_url,
+         resource_type,
+         format,
+         original_filename,
+         bytes,
+         width,
+         height,
+         metadata,
+         created_by_user_id,
+         created_by_name,
+         created_at,
+         updated_at
+       )
+       SELECT
+         $1,
+         file.column_id,
+         file.column_title,
+         file.public_id,
+         file.secure_url,
+         file.resource_type,
+         file.format,
+         file.original_filename,
+         file.bytes,
+         file.width,
+         file.height,
+         file.metadata,
+         $2,
+         $3,
+         CURRENT_TIMESTAMP,
+         CURRENT_TIMESTAMP
+       FROM test_dashboard_files file
+       WHERE file.source_order_id = $4
+         AND (file.column_id = $5 OR UPPER(BTRIM(file.column_title)) = 'PROOF')
+       ON CONFLICT (source_order_id, public_id) DO NOTHING`,
+      [
+        newSourceOrderId,
+        req.hubUser?.id || null,
+        repeatedByName || null,
+        sourceOrderId,
+        TEST_DASHBOARD_COLUMN_IDS.PROOF,
+      ]
+    );
+
+    await client.query(
+      `INSERT INTO test_dashboard_job_state (
+         source_order_id,
+         group_id,
+         item_name,
+         column_values,
+         archived,
+         updated_at
+       ) VALUES ($1,$2,$3,$4,FALSE,NOW())`,
+      [
+        newSourceOrderId,
+        TEST_DASHBOARD_GROUP_IDS.OFFICE,
+        formatDashboardJobName(job) || null,
+        {
+          [TEST_DASHBOARD_COLUMN_IDS.STATUS]: awaitingApprovalStatusValue(),
+        },
+      ]
+    );
+
+    await client.query('COMMIT');
+    res.status(201).json({
+      job,
+      copied: {
+        line_items: copiedLineItemCount,
+        positions: copiedPositionCount,
+        proof_files: copiedProofFiles.rowCount,
+      },
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('POST /api/database/jobs/:id/repeat', err);
+    res.status(500).json({ error: 'Failed to repeat database job' });
+  } finally {
+    client.release();
+  }
+});
+
 router.put('/api/database/jobs/:id', async (req, res) => {
   const id = Number.parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) {

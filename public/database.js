@@ -293,6 +293,8 @@
     designDeleteSaving: false,
     closeOrderTarget: null,
     closeOrderSaving: false,
+    repeatOrderTarget: null,
+    repeatOrderSaving: false,
     currentUser: null,
     activeDocumentType: 'order-ack',
     documentGeneratedAt: null,
@@ -2941,6 +2943,14 @@
   }
 
   async function handleCustomerOrderRowClick(event) {
+    const repeatOrderButton = event.target.closest('[data-db-repeat-order]');
+    if (repeatOrderButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      openRepeatOrderConfirmation(repeatOrderButton.dataset.dbRepeatOrder);
+      return;
+    }
+
     const invoiceButton = event.target.closest('[data-db-invoice-job]');
     if (invoiceButton) {
       await openInvoiceFromOrderList(invoiceButton.dataset.dbInvoiceJob);
@@ -2955,11 +2965,137 @@
 
   async function handleCustomerOrderRowKeydown(event) {
     if (event.key !== 'Enter') return;
+    if (event.target.closest('[data-db-repeat-order]')) return;
     if (event.target.closest('[data-db-invoice-job]')) return;
     const row = event.target.closest('tr[data-job-id]');
     if (!row) return;
     await flushOrderAutosaves();
     openOrder(row.dataset.jobId, 'details');
+  }
+
+  function openRepeatOrderConfirmation(sourceOrderId) {
+    const id = Number.parseInt(sourceOrderId, 10);
+    if (!Number.isFinite(id) || state.repeatOrderSaving) return;
+
+    state.repeatOrderTarget = { sourceOrderId: id };
+    state.repeatOrderSaving = false;
+    const modal = ensureRepeatOrderModal();
+    const error = modal.querySelector('.db-repeat-order-error');
+    if (error) error.textContent = '';
+    setRepeatOrderModalSaving(false);
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open', 'db-repeat-order-open');
+
+    window.requestAnimationFrame(() => {
+      modal.querySelector('[data-db-repeat-order-choice="cancel"]')?.focus();
+    });
+  }
+
+  function ensureRepeatOrderModal() {
+    let modal = document.getElementById('db-repeat-order-modal');
+    if (modal) return modal;
+
+    modal = document.createElement('div');
+    modal.id = 'db-repeat-order-modal';
+    modal.className = 'db-repeat-order-modal';
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    modal.innerHTML = `
+      <div class="db-repeat-order-shell" role="dialog" aria-modal="true" aria-labelledby="db-repeat-order-title">
+        <div class="db-repeat-order-title" id="db-repeat-order-title">Repeat Order</div>
+        <div class="db-repeat-order-message">Copy line items?</div>
+        <div class="db-repeat-order-error" aria-live="polite"></div>
+        <div class="db-repeat-order-actions">
+          <button class="db-repeat-order-choice" type="button" data-db-repeat-order-choice="yes">Yes</button>
+          <button class="db-repeat-order-choice" type="button" data-db-repeat-order-choice="no">No</button>
+          <button class="db-repeat-order-choice" type="button" data-db-repeat-order-choice="cancel">Cancel</button>
+        </div>
+      </div>
+    `;
+    modal.addEventListener('click', handleRepeatOrderModalClick);
+    document.body.appendChild(modal);
+    return modal;
+  }
+
+  function handleRepeatOrderModalClick(event) {
+    const modal = document.getElementById('db-repeat-order-modal');
+    if (!modal || modal.hidden) return;
+
+    if (event.target === modal) {
+      closeRepeatOrderConfirmation();
+      return;
+    }
+
+    const button = event.target.closest('[data-db-repeat-order-choice]');
+    if (!button || state.repeatOrderSaving) return;
+    const choice = button.dataset.dbRepeatOrderChoice;
+    if (choice === 'cancel') {
+      closeRepeatOrderConfirmation();
+      return;
+    }
+    if (choice === 'yes' || choice === 'no') {
+      repeatSelectedOrder(choice === 'yes', choice);
+    }
+  }
+
+  async function repeatSelectedOrder(copyLineItems, choice) {
+    const target = state.repeatOrderTarget;
+    if (!target || state.repeatOrderSaving) return;
+
+    state.repeatOrderSaving = true;
+    setRepeatOrderModalSaving(true, choice);
+    const modal = document.getElementById('db-repeat-order-modal');
+    const error = modal?.querySelector('.db-repeat-order-error');
+    if (error) error.textContent = '';
+
+    try {
+      await flushOrderAutosaves();
+      const data = await fetchJson(`/api/database/jobs/${encodeURIComponent(target.sourceOrderId)}/repeat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ copy_line_items: copyLineItems }),
+      });
+      const job = data.job || {};
+      if (!job.source_order_id) throw new Error('The repeated order was created without a job id');
+
+      state.selectedCustomerOrders = [
+        job,
+        ...(state.selectedCustomerOrders || []).filter(order => (
+          Number(order.source_order_id) !== Number(job.source_order_id)
+        )),
+      ];
+      renderCustomerOrders();
+      state.repeatOrderSaving = false;
+      closeRepeatOrderConfirmation();
+      await openOrder(job.source_order_id, 'details');
+    } catch (err) {
+      state.repeatOrderSaving = false;
+      setRepeatOrderModalSaving(false);
+      if (error) error.textContent = err.message || 'Failed to repeat order';
+    }
+  }
+
+  function setRepeatOrderModalSaving(saving, choice = '') {
+    const modal = document.getElementById('db-repeat-order-modal');
+    if (!modal) return;
+    modal.querySelectorAll('[data-db-repeat-order-choice]').forEach((button) => {
+      button.disabled = saving;
+      const buttonChoice = button.dataset.dbRepeatOrderChoice;
+      if (buttonChoice === 'yes') button.textContent = saving && choice === 'yes' ? 'Copying...' : 'Yes';
+      if (buttonChoice === 'no') button.textContent = saving && choice === 'no' ? 'Copying...' : 'No';
+      if (buttonChoice === 'cancel') button.textContent = 'Cancel';
+    });
+  }
+
+  function closeRepeatOrderConfirmation() {
+    if (state.repeatOrderSaving) return;
+    const modal = document.getElementById('db-repeat-order-modal');
+    if (!modal) return;
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('modal-open', 'db-repeat-order-open');
+    state.repeatOrderTarget = null;
   }
 
   async function loadDatabaseCustomers(options = {}) {
@@ -3065,7 +3201,7 @@
     els.customerCode.value = '';
     setCustomerAccountManagerOptions(null, true);
     renderCustomerHeaderStats();
-    els.customerOrdersBody.innerHTML = renderStatusRow('Loading customer orders', 10);
+    els.customerOrdersBody.innerHTML = renderStatusRow('Loading customer orders', 11);
     els.customerContactsBody.innerHTML = '<div class="db-panel-message">Loading contacts</div>';
     els.customerAddressesBody.innerHTML = '<div class="db-panel-message">Loading addresses</div>';
     if (els.customerDesignNumbersBody) els.customerDesignNumbersBody.innerHTML = renderStatusRow('Loading design numbers', 6);
@@ -3079,7 +3215,7 @@
     state.selectedCustomerPageOverview = null;
     setCustomerAccountManagerOptions(null, true);
     renderCustomerHeaderStats();
-    els.customerOrdersBody.innerHTML = renderStatusRow(message, 10);
+    els.customerOrdersBody.innerHTML = renderStatusRow(message, 11);
     els.customerContactsBody.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
     els.customerAddressesBody.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
     if (els.customerDesignNumbersBody) els.customerDesignNumbersBody.innerHTML = renderStatusRow(message, 6);
@@ -3347,7 +3483,7 @@
   function renderCustomerOrders() {
     const orders = state.selectedCustomerOrders || [];
     if (!orders.length) {
-      els.customerOrdersBody.innerHTML = renderStatusRow('No orders recorded for this customer', 10);
+      els.customerOrdersBody.innerHTML = renderStatusRow('No orders recorded for this customer', 11);
       return;
     }
 
@@ -3367,6 +3503,13 @@
         <td>${escapeHtml(outstandingTakenByFirstName(order))}</td>
         <td>${escapeHtml(formatDate(order.order_date, 'long'))}</td>
         <td>${escapeHtml(formatDate(order.complete_date, 'long'))}</td>
+        <td class="db-repeat-order-cell">
+          <button
+            class="db-repeat-order-button"
+            type="button"
+            data-db-repeat-order="${escapeAttr(order.source_order_id || '')}"
+          >Repeat Order</button>
+        </td>
       </tr>
     `;
   }
@@ -7237,6 +7380,11 @@
 
   function handleOrderAckKeydown(event) {
     if (event.key !== 'Escape') return;
+    const repeatOrderModal = document.getElementById('db-repeat-order-modal');
+    if (repeatOrderModal && !repeatOrderModal.hidden) {
+      closeRepeatOrderConfirmation();
+      return;
+    }
     if (els.stylesImageModal && !els.stylesImageModal.hidden) {
       closeProductStyleImageModal();
       return;
@@ -9026,7 +9174,11 @@
   function lineItemEditDisplayValue(item, field) {
     if (!item) return '';
     if (field === 'vatPercent') return formatVatInput(effectiveLineVatRate(item));
-    if (field === 'quantity') return formatNumber(item.quantity || 0);
+    if (field === 'quantity') {
+      return item.quantity === null || item.quantity === undefined || item.quantity === ''
+        ? ''
+        : formatNumber(item.quantity);
+    }
     if (field === 'unit_cost' || field === 'unit_price') return formatMoneyInput(item[field]);
     if (field === 'style_name') return item.style_name || item.line_description || '';
     return item[field] || '';

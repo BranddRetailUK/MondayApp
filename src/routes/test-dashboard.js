@@ -789,7 +789,7 @@ protectedRouter.post('/api/test-dashboard/items/:jobId/files', async (req, res) 
          created_by_name,
          updated_at
        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
-       ON CONFLICT (public_id) DO UPDATE SET
+       ON CONFLICT (source_order_id, public_id) DO UPDATE SET
          secure_url = EXCLUDED.secure_url,
          resource_type = EXCLUDED.resource_type,
          format = EXCLUDED.format,
@@ -863,11 +863,7 @@ protectedRouter.delete('/api/test-dashboard/items/:jobId/proof-files', async (re
       [sourceOrderId, TEST_DASHBOARD_COLUMN_IDS.PROOF]
     );
 
-    for (const row of deleted.rows) {
-      destroyAsset(row.public_id, row.resource_type).catch((err) => {
-        console.warn('[test-dashboard] Cloudinary proof cleanup failed:', err?.message || err);
-      });
-    }
+    destroyUnreferencedDatabaseFileAssets(deleted.rows, 'proof cleanup');
 
     res.json({ ok: true, itemId: String(sourceOrderId), removed: deleted.rowCount });
   } catch (err) {
@@ -892,9 +888,7 @@ protectedRouter.delete('/api/test-dashboard/items/:jobId/files/:fileId', async (
     );
     if (!deleted.rowCount) return res.status(404).json({ error: 'Tuesday Dashboard file not found' });
 
-    destroyAsset(deleted.rows[0].public_id, deleted.rows[0].resource_type).catch((err) => {
-      console.warn('[test-dashboard] Cloudinary destroy failed:', err?.message || err);
-    });
+    destroyUnreferencedDatabaseFileAssets(deleted.rows, 'file cleanup');
     res.json({ ok: true, fileId });
   } catch (err) {
     console.error('DELETE /api/test-dashboard/items/:jobId/files/:fileId', err);
@@ -2213,6 +2207,37 @@ function destroyPrivateFileAssets(files, context = 'cleanup') {
       console.warn(`[test-dashboard] Cloudinary private file ${context} failed:`, err?.message || err);
     });
   }
+}
+
+function destroyUnreferencedDatabaseFileAssets(rows, context = 'cleanup') {
+  const assets = new Map();
+  for (const row of rows || []) {
+    const publicId = clean(row?.public_id);
+    if (!publicId || assets.has(publicId)) continue;
+    assets.set(publicId, {
+      publicId,
+      resourceType: clean(row?.resource_type) || 'image',
+    });
+  }
+  if (!assets.size) return;
+
+  const publicIds = Array.from(assets.keys());
+  pool.query(
+    `SELECT DISTINCT public_id
+     FROM test_dashboard_files
+     WHERE public_id = ANY($1::text[])`,
+    [publicIds]
+  ).then((result) => {
+    const stillReferenced = new Set(result.rows.map(row => clean(row.public_id)).filter(Boolean));
+    for (const asset of assets.values()) {
+      if (stillReferenced.has(asset.publicId)) continue;
+      destroyAsset(asset.publicId, asset.resourceType).catch((err) => {
+        console.warn(`[test-dashboard] Cloudinary ${context} failed:`, err?.message || err);
+      });
+    }
+  }).catch((err) => {
+    console.warn(`[test-dashboard] Cloudinary ${context} reference check failed:`, err?.message || err);
+  });
 }
 
 function privateUploadFileFromBody(body, column, { publicId, secureUrl, createdByName }) {
