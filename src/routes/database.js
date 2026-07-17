@@ -34,6 +34,7 @@ const {
   normalizeStyleCodeSearchKey,
   normalizedStyleCodeSql,
 } = require('../services/productStyleSearch');
+const { resolveAuditedProductStyleAlias } = require('../services/productStyleAliases');
 const { buildJobFilters } = require('../services/databaseJobFilters');
 const { sortSizes } = require('../../public/product-size-order');
 
@@ -3609,6 +3610,7 @@ router.put('/api/database/jobs/:id/positions', async (req, res) => {
 router.get('/api/database/products/search', async (req, res) => {
   const search = cleanQuery(req.query.q);
   const field = cleanQuery(req.query.field).toLowerCase() === 'code' ? 'code' : 'style';
+  const auditedAliasStyleCode = search ? resolveAuditedProductStyleAlias(search) : null;
   const usesUsageSort = !search;
   const params = [];
   let whereSql = 'WHERE v.is_active IS TRUE';
@@ -3619,7 +3621,8 @@ router.get('/api/database/products/search', async (req, res) => {
       `%${search}%`,
       search,
       `${search}%`,
-      normalizeStyleCodeSearchKey(search)
+      normalizeStyleCodeSearchKey(search),
+      auditedAliasStyleCode
     );
     const normalizedStyleCode = normalizedStyleCodeSql('s.style_code');
     const normalizedManufacturerStyleCode = normalizedStyleCodeSql('s.manufacturer_style_code');
@@ -3633,9 +3636,11 @@ router.get('/api/database/products/search', async (req, res) => {
           OR COALESCE(la.search_text, '') ILIKE $1
           OR ${normalizedStyleCode} = $4
           OR ${normalizedManufacturerStyleCode} = $4
+          OR ($5::text IS NOT NULL AND UPPER(BTRIM(s.style_code)) = $5)
         )`;
       rankSql = `
         CASE
+          WHEN $5::text IS NOT NULL AND UPPER(BTRIM(s.style_code)) = $5 THEN -1
           WHEN LOWER(COALESCE(v.sku_code, '')) = LOWER($2) THEN 0
           WHEN LOWER(COALESCE(v.alpha_sku_code, '')) = LOWER($2) THEN 0
           WHEN LOWER(COALESCE(s.style_code, '')) = LOWER($2) THEN 0
@@ -3661,9 +3666,11 @@ router.get('/api/database/products/search', async (req, res) => {
           OR COALESCE(la.search_text, '') ILIKE $1
           OR ${normalizedStyleCode} = $4
           OR ${normalizedManufacturerStyleCode} = $4
+          OR ($5::text IS NOT NULL AND UPPER(BTRIM(s.style_code)) = $5)
         )`;
       rankSql = `
         CASE
+          WHEN $5::text IS NOT NULL AND UPPER(BTRIM(s.style_code)) = $5 THEN -1
           WHEN LOWER(COALESCE(s.style_name, '')) = LOWER($2) THEN 0
           WHEN ${normalizedStyleCode} = $4 THEN 0
           WHEN ${normalizedManufacturerStyleCode} = $4 THEN 0
@@ -3810,6 +3817,7 @@ router.get('/api/database/products/styles', async (req, res) => {
   const offset = clampInt(req.query.offset, 0, 0, 100000);
   const search = cleanQuery(req.query.q).slice(0, 120);
   const normalizedSearch = normalizeStyleCodeSearchKey(search);
+  const auditedAliasStyleCode = search ? resolveAuditedProductStyleAlias(search) : null;
   const requestedStyleId = cleanQuery(req.query.styleId);
   const selectedStyleId = requestedStyleId ? Number(requestedStyleId) : null;
   if (requestedStyleId && (!Number.isInteger(selectedStyleId) || selectedStyleId < 1)) {
@@ -3883,6 +3891,7 @@ router.get('/api/database/products/styles', async (req, res) => {
                 aliases.legacy_alt_style_codes,
                 CASE
                   WHEN $1::text IS NULL THEN 0
+                  WHEN $7::text IS NOT NULL AND UPPER(BTRIM(s.style_code)) = $7 THEN -1
                   WHEN ${normalizedStyleCode} = $3 THEN 0
                   WHEN ${normalizedManufacturerStyleCode} = $3 THEN 1
                   WHEN UPPER($2) = ANY(COALESCE(aliases.style_code_aliases, ARRAY[]::text[])) THEN 2
@@ -3903,6 +3912,7 @@ router.get('/api/database/products/styles', async (req, res) => {
              OR COALESCE(aliases.legacy_alt_style_codes, '') ILIKE $1
              OR ${normalizedStyleCode} = $3
              OR ${normalizedManufacturerStyleCode} = $3
+             OR ($7::text IS NOT NULL AND UPPER(BTRIM(s.style_code)) = $7)
            )
        ),
        style_usage AS (
@@ -4047,7 +4057,15 @@ router.get('/api/database/products/styles', async (req, res) => {
          ) colour_rows
        ) co ON TRUE
        ORDER BY ps.page_order ASC`,
-      [search ? `%${search}%` : null, search || null, normalizedSearch, limit, offset, selectedStyleId]
+      [
+        search ? `%${search}%` : null,
+        search || null,
+        normalizedSearch,
+        limit,
+        offset,
+        selectedStyleId,
+        auditedAliasStyleCode,
+      ]
     );
 
     const total = Number(result.rows[0]?.total_count || 0);
