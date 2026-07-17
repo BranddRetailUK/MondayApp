@@ -129,6 +129,8 @@
   const CHILD_YOUTH_SIZE_PATTERN = /\bY(?:XS|S|M|L|XL|XXL)\b/i;
   const CHILD_AGE_RANGE_SIZE_PATTERN = /\b(?:[1-9]|1[0-8])\s*[-\u2010-\u2015]\s*(?:[1-9]|1[0-8])\b/;
   const CHILD_TODDLER_SIZE_PATTERN = /\b[2-5]T\b/i;
+  const compareProductSizes = window.DatabaseProductSizeOrder?.compareSizes
+    || ((left, right) => String(left || '').localeCompare(String(right || ''), undefined, { numeric: true }));
   const DATABASE_DOCUMENTS = {
     'order-ack': {
       toolbarTitle: 'Order acknowledgement',
@@ -5006,7 +5008,7 @@
       return;
     }
 
-    const sizes = productStyleOptionArray(style.sizes);
+    const sizes = sortProductSizeOptions(style.sizes);
     const colours = productStyleOptionArray(style.colours);
     const sku = productStyleSku(style);
     const type = String(style.product_type || '').trim();
@@ -5039,7 +5041,7 @@
       if (els.stylesColourLabel) els.stylesColourLabel.textContent = '';
       if (els.stylesSizeLabel) els.stylesSizeLabel.textContent = '';
       els.stylesColours.innerHTML = renderProductStyleChips(style.colours, 'No colours');
-      els.stylesSizes.innerHTML = renderProductStyleChips(style.sizes, 'No size options');
+      els.stylesSizes.innerHTML = renderProductStyleChips(sortProductSizeOptions(style.sizes), 'No size options');
       return;
     }
 
@@ -5063,16 +5065,16 @@
       `;
     }).join('');
 
-    const availableSizes = selectedGroup.sizes.length
+    const availableSizes = sortProductSizeLabels(selectedGroup.sizes.length
       ? selectedGroup.sizes
       : unique(selectedGroup.variants
         .map((variant) => String(variant?.size || '').trim())
-        .filter(Boolean));
+        .filter(Boolean)));
     const availableSizeSet = new Set(availableSizes);
-    const orderedSizes = productStyleOptionArray(style.sizes)
+    const orderedSizes = sortProductSizeOptions(style.sizes)
       .map((size) => String(typeof size === 'string' ? size : size?.label || '').trim())
       .filter((size) => size && availableSizeSet.has(size));
-    const sizes = unique(orderedSizes.concat(availableSizes));
+    const sizes = sortProductSizeLabels(unique(orderedSizes.concat(availableSizes)));
     els.stylesSizes.innerHTML = renderProductStyleChips(sizes, 'No sizes for this colour');
     if (els.stylesColourLabel) els.stylesColourLabel.textContent = `· ${selectedGroup.label}`;
     if (els.stylesSizeLabel) {
@@ -5116,7 +5118,10 @@
           .filter(Boolean)
       ));
     }
-    return Array.from(groups.values());
+    return Array.from(groups.values()).map((group) => ({
+      ...group,
+      sizes: sortProductSizeLabels(group.sizes),
+    }));
   }
 
   function handleProductStyleColourClick(event) {
@@ -5291,6 +5296,23 @@
       }
     }
     return [];
+  }
+
+  function productSizeOptionLabel(option) {
+    return String(typeof option === 'string' ? option : option?.label || '').trim();
+  }
+
+  function sortProductSizeLabels(values) {
+    return Array.from(values || []).sort(compareProductSizes);
+  }
+
+  function sortProductSizeOptions(value) {
+    return productStyleOptionArray(value)
+      .slice()
+      .sort((left, right) => compareProductSizes(
+        productSizeOptionLabel(left),
+        productSizeOptionLabel(right)
+      ));
   }
 
   function productStyleCosts(style) {
@@ -9916,7 +9938,11 @@
     const products = (draft?.variants || []).filter((product) => (
       !draft.colourValue || variantColourValue(product) === draft.colourValue
     ));
-    return uniqueVariantOptions(products.length ? products : (draft?.variants || []), variantSizeValue, 'size');
+    return sortVariantSizeOptions(uniqueVariantOptions(
+      products.length ? products : (draft?.variants || []),
+      variantSizeValue,
+      'size'
+    ));
   }
 
   function stockVariantOptionsForLine(item, variants, field) {
@@ -9934,6 +9960,8 @@
       field === 'colour' ? variantColourValue : variantSizeValue,
       field
     );
+
+    if (field === 'size') sortVariantSizeOptions(options, { inPlace: true });
 
     if (selectedValue && !options.some((option) => option.value === selectedValue)) {
       options.unshift({ value: selectedValue, label: item?.[field] || '' });
@@ -10025,6 +10053,11 @@
       options.push({ value, label: product[labelKey] || '' });
     }
     return options;
+  }
+
+  function sortVariantSizeOptions(options, { inPlace = false } = {}) {
+    const sorted = inPlace ? options : options.slice();
+    return sorted.sort((left, right) => compareProductSizes(left?.label, right?.label));
   }
 
   function variantColourValue(product) {

@@ -35,6 +35,7 @@ const {
   normalizedStyleCodeSql,
 } = require('../services/productStyleSearch');
 const { buildJobFilters } = require('../services/databaseJobFilters');
+const { sortSizes } = require('../../public/product-size-order');
 
 const DASHBOARD_STATUS_COLORS = buildDashboardStatusColors(STATUS_SETTINGS);
 const MAX_STOCK_ORDERING_MARK_IDS = 500;
@@ -4050,7 +4051,14 @@ router.get('/api/database/products/styles', async (req, res) => {
     );
 
     const total = Number(result.rows[0]?.total_count || 0);
-    const styles = result.rows.map(({ total_count, page_order, style_code_aliases, alt_style_code_aliases, ...style }) => style);
+    const styles = result.rows.map(({ total_count, page_order, style_code_aliases, alt_style_code_aliases, ...style }) => ({
+      ...style,
+      sizes: sortSizes(style.sizes, (size) => size?.label),
+      colours: (style.colours || []).map((colour) => ({
+        ...colour,
+        sizes: sortSizes(colour?.sizes),
+      })),
+    }));
     res.json({
       styles,
       total,
@@ -4119,7 +4127,17 @@ router.get('/api/database/products/styles/:styleId/variants', async (req, res) =
       return res.status(404).json({ error: 'Product style not found' });
     }
 
-    res.json({ products: result.rows });
+    const colourGroups = new Map();
+    for (const product of result.rows) {
+      const colourKey = String(product.colour_id ?? '');
+      if (!colourGroups.has(colourKey)) colourGroups.set(colourKey, []);
+      colourGroups.get(colourKey).push(product);
+    }
+    const products = Array.from(colourGroups.values()).flatMap((variants) => (
+      sortSizes(variants, (variant) => variant?.size)
+    ));
+
+    res.json({ products });
   } catch (err) {
     console.error('GET /api/database/products/styles/:styleId/variants', err);
     res.status(500).json({ error: 'Failed to fetch product variants' });
