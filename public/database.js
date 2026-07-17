@@ -9092,7 +9092,9 @@
 
   function startLineDraft() {
     resetCustomLineDraftState();
-    state.lineDraft = createLineDraft();
+    state.lineDraft = createLineDraft({
+      preferredStyleId: lastStockCatalogueStyleId(),
+    });
     state.productResults = [];
     state.productSearchOpen = false;
     renderItemsPanel();
@@ -9117,10 +9119,11 @@
     state.productSearchField = 'style';
   }
 
-  function createLineDraft() {
+  function createLineDraft(options = {}) {
     return {
       codeQuery: '',
       styleQuery: '',
+      preferredStyleId: options.preferredStyleId || null,
       selectedStyleId: null,
       variants: [],
       productId: null,
@@ -9134,6 +9137,15 @@
       saving: false,
       error: '',
     };
+  }
+
+  function lastStockCatalogueStyleId() {
+    const stockItems = (state.selectedLineItems || []).filter(isStockItem);
+    for (let index = stockItems.length - 1; index >= 0; index -= 1) {
+      const styleId = Number.parseInt(stockItems[index]?.ralawise_catalog_style_id, 10);
+      if (Number.isFinite(styleId) && styleId > 0) return styleId;
+    }
+    return null;
   }
 
   function handleLineDraftMouseDown(event) {
@@ -9399,7 +9411,12 @@
 
   async function searchProducts(field, query) {
     const requestId = ++productSearchRequest;
-    const params = new URLSearchParams({ field, q: query || '' });
+    const cleanQuery = String(query || '').trim();
+    const params = new URLSearchParams({ field, q: cleanQuery });
+    const preferredStyleId = Number.parseInt(state.lineDraft?.preferredStyleId, 10);
+    if (!cleanQuery && Number.isFinite(preferredStyleId) && preferredStyleId > 0) {
+      params.set('preferredStyleId', String(preferredStyleId));
+    }
 
     try {
       const data = await fetchJson(`/api/database/products/search?${params.toString()}`);

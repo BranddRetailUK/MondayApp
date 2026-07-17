@@ -3142,6 +3142,14 @@ router.get('/api/database/products/search', async (req, res) => {
     }
   }
 
+  const requestedPreferredStyleId = search ? null : nullableInt(req.query.preferredStyleId);
+  const preferredStyleId = requestedPreferredStyleId > 0 ? requestedPreferredStyleId : null;
+  let preferredRankSql = '0';
+  if (preferredStyleId) {
+    params.push(preferredStyleId);
+    preferredRankSql = `CASE WHEN style_id = $${params.length} THEN 0 ELSE 1 END`;
+  }
+
   try {
     const result = await pool.query(
       `WITH legacy_style_aliases AS (
@@ -3216,7 +3224,8 @@ router.get('/api/database/products/search', async (req, res) => {
               MIN(match_rank)::int AS match_rank
        FROM candidates
        GROUP BY style_id
-       ORDER BY MIN(match_rank) ASC,
+       ORDER BY ${preferredRankSql} ASC,
+                MIN(match_rank) ASC,
                 LOWER(MIN(style_name)) ASC NULLS LAST,
                 LOWER(MIN(style_code)) ASC NULLS LAST
        LIMIT 20`,
