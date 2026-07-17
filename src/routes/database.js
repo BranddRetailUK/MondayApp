@@ -3073,6 +3073,7 @@ router.put('/api/database/jobs/:id/positions', async (req, res) => {
 router.get('/api/database/products/search', async (req, res) => {
   const search = cleanQuery(req.query.q);
   const field = cleanQuery(req.query.field).toLowerCase() === 'code' ? 'code' : 'style';
+  const usesUsageSort = !search;
   const params = [];
   let whereSql = 'WHERE v.is_active IS TRUE';
   let rankSql = '2';
@@ -3144,15 +3145,42 @@ router.get('/api/database/products/search', async (req, res) => {
 
   const requestedPreferredStyleId = search ? null : nullableInt(req.query.preferredStyleId);
   const preferredStyleId = requestedPreferredStyleId > 0 ? requestedPreferredStyleId : null;
-  let preferredRankSql = '';
   if (preferredStyleId) {
     params.push(preferredStyleId);
-    preferredRankSql = `CASE WHEN style_id = $${params.length} THEN 0 ELSE 1 END ASC,`;
   }
+  const preferredRankSql = preferredStyleId
+    ? `CASE WHEN style_id = $${params.length} THEN 0 ELSE 1 END ASC`
+    : '';
+  const productOrderSql = [
+    preferredRankSql,
+    'MIN(match_rank) ASC',
+    usesUsageSort ? 'MAX(usage_count) DESC' : '',
+    usesUsageSort ? 'MAX(usage_quantity) DESC' : '',
+    'LOWER(MIN(style_name)) ASC NULLS LAST',
+    'LOWER(MIN(style_code)) ASC NULLS LAST',
+    'style_id ASC',
+  ].filter(Boolean).join(',\n                ');
+  const styleUsageCteSql = usesUsageSort
+    ? `style_usage AS (
+         SELECT v.style_id::int AS style_id,
+                COUNT(*)::int AS usage_count,
+                COALESCE(SUM(COALESCE(li.quantity, 0)), 0)::int AS usage_quantity
+         FROM database_job_line_items li
+         JOIN database_ralawise_catalog_variants v
+           ON v.id = li.ralawise_catalog_variant_id
+         GROUP BY v.style_id
+       ),`
+    : '';
+  const styleUsageJoinSql = usesUsageSort
+    ? 'LEFT JOIN style_usage su ON su.style_id = s.id'
+    : '';
+  const usageCountSql = usesUsageSort ? 'COALESCE(su.usage_count, 0)' : '0';
+  const usageQuantitySql = usesUsageSort ? 'COALESCE(su.usage_quantity, 0)' : '0';
 
   try {
     const result = await pool.query(
-      `WITH legacy_style_aliases AS (
+      `WITH ${styleUsageCteSql}
+       legacy_style_aliases AS (
          SELECT v.style_id,
                 ARRAY_AGG(DISTINCT UPPER(BTRIM(p.style_code))) FILTER (
                   WHERE NULLIF(BTRIM(p.style_code), '') IS NOT NULL
@@ -3195,11 +3223,14 @@ router.get('/api/database/products/search', async (req, res) => {
                 v.size_code,
                 v.size_name,
                 c.id AS colour_id,
+                ${usageCountSql}::int AS usage_count,
+                ${usageQuantitySql}::int AS usage_quantity,
                 ${rankSql} AS match_rank
          FROM database_ralawise_catalog_styles s
          JOIN database_ralawise_catalog_variants v ON v.style_id = s.id
          JOIN database_ralawise_catalog_colours c ON c.id = v.colour_id
          LEFT JOIN legacy_style_aliases la ON la.style_id = s.id
+         ${styleUsageJoinSql}
          ${whereSql}
        )
        SELECT style_id::int,
@@ -3221,13 +3252,12 @@ router.get('/api/database/products/search', async (req, res) => {
               COUNT(*)::int AS variant_count,
               COUNT(DISTINCT colour_id)::int AS colour_count,
               COUNT(DISTINCT COALESCE(NULLIF(size_code, ''), size_name))::int AS size_count,
+              MAX(usage_count)::int AS usage_count,
+              MAX(usage_quantity)::int AS usage_quantity,
               MIN(match_rank)::int AS match_rank
        FROM candidates
        GROUP BY style_id
-       ORDER BY ${preferredRankSql}
-                MIN(match_rank) ASC,
-                LOWER(MIN(style_name)) ASC NULLS LAST,
-                LOWER(MIN(style_code)) ASC NULLS LAST
+       ORDER BY ${productOrderSql}
        LIMIT 20`,
       params
     );
