@@ -877,6 +877,7 @@ router.get('/api/database/jobs', async (req, res) => {
               j.invoice_required,
               j.invoice_printed,
               j.pf_invoice_printed,
+              j.closed_without_invoice,
               j.pf_invoice_date,
               j.dashboard_status,
               j.dashboard_status_updated_at,
@@ -930,6 +931,14 @@ router.get('/api/database/outstanding-counts', async (_req, res) => {
         END AS category
         FROM database_jobs
         WHERE is_complete IS NOT TRUE
+          AND NOT (
+            COALESCE(UPPER(TRIM(dashboard_status)), '') = 'COMPLETED'
+            AND (
+              invoice_printed IS TRUE
+              OR pf_invoice_printed IS TRUE
+              OR (invoice_required IS FALSE AND closed_without_invoice IS TRUE)
+            )
+          )
       )
       SELECT
         (COUNT(*) FILTER (WHERE category = 'print'))::int AS printing,
@@ -3302,6 +3311,48 @@ router.post('/api/database/jobs/:id/repeat', async (req, res) => {
   }
 });
 
+router.post('/api/database/jobs/:id/close-without-invoice', async (req, res) => {
+  const id = Number.parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: 'Invalid job id' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const job = await resolveDatabaseJobForMutation(client, id, { forUpdate: true });
+    if (!job) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Database job not found' });
+    }
+
+    const result = await client.query(
+      `UPDATE database_jobs
+       SET closed_without_invoice = TRUE,
+           updated_at_source = NOW(),
+           imported_at = NOW()
+       WHERE source_order_id = $1
+         AND invoice_required IS FALSE
+       RETURNING *`,
+      [job.source_order_id]
+    );
+
+    if (!result.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Close Order is only available when an invoice is not required' });
+    }
+
+    await client.query('COMMIT');
+    return res.json({ job: result.rows[0] });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('POST /api/database/jobs/:id/close-without-invoice', err);
+    return res.status(500).json({ error: 'Failed to close database job' });
+  } finally {
+    client.release();
+  }
+});
+
 router.put('/api/database/jobs/:id', async (req, res) => {
   const id = Number.parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) {
@@ -3373,6 +3424,7 @@ router.put('/api/database/jobs/:id', async (req, res) => {
              invoice_no = COALESCE(j.invoice_no, next_invoice.invoice_no),
              invoice_required = TRUE,
              invoice_printed = TRUE,
+             closed_without_invoice = FALSE,
              invoice_date = CASE
                WHEN ${invoiceDateParam}::timestamp IS NOT NULL THEN ${invoiceDateParam}::timestamp
                ELSE COALESCE(j.invoice_date, j.complete_date, NOW())
@@ -4733,7 +4785,11 @@ async function fetchCustomerOverview(db, job) {
                 WHERE cj.is_complete IS NOT TRUE
                   AND NOT (
                     COALESCE(UPPER(TRIM(cj.dashboard_status)), '') = 'COMPLETED'
-                    AND (cj.invoice_printed IS TRUE OR cj.pf_invoice_printed IS TRUE)
+                    AND (
+                      cj.invoice_printed IS TRUE
+                      OR cj.pf_invoice_printed IS TRUE
+                      OR (cj.invoice_required IS FALSE AND cj.closed_without_invoice IS TRUE)
+                    )
                   )
               )::int AS open_jobs,
               COUNT(*) FILTER (

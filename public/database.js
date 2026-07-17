@@ -295,6 +295,8 @@
     closeOrderSaving: false,
     repeatOrderTarget: null,
     repeatOrderSaving: false,
+    noInvoiceCloseTarget: null,
+    noInvoiceCloseSaving: false,
     currentUser: null,
     activeDocumentType: 'order-ack',
     documentGeneratedAt: null,
@@ -772,6 +774,12 @@
       state.reportsMetric = reportMetric;
       persistDatabaseRoute();
       if (state.reportsData) renderDatabaseReports(state.reportsData);
+      return;
+    }
+
+    if (button.dataset.dbNoInvoiceClose) {
+      await flushOrderAutosaves();
+      openNoInvoiceCloseConfirmation();
       return;
     }
 
@@ -3096,6 +3104,141 @@
     modal.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('modal-open', 'db-repeat-order-open');
     state.repeatOrderTarget = null;
+  }
+
+  function openNoInvoiceCloseConfirmation() {
+    const sourceOrderId = Number(state.selectedJob?.source_order_id);
+    if (!Number.isFinite(sourceOrderId)
+      || !invoiceNotRequired(state.selectedJob)
+      || truthy(state.selectedJob?.closed_without_invoice)
+      || state.noInvoiceCloseSaving) {
+      return;
+    }
+
+    state.noInvoiceCloseTarget = { sourceOrderId };
+    const modal = ensureNoInvoiceCloseModal();
+    const error = modal.querySelector('.db-no-invoice-close-error');
+    if (error) error.textContent = '';
+    setNoInvoiceCloseModalSaving(false);
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open', 'db-no-invoice-close-open');
+
+    window.requestAnimationFrame(() => {
+      modal.querySelector('[data-db-no-invoice-close-choice="cancel"]')?.focus();
+    });
+  }
+
+  function ensureNoInvoiceCloseModal() {
+    let modal = document.getElementById('db-no-invoice-close-modal');
+    if (modal) return modal;
+
+    modal = document.createElement('div');
+    modal.id = 'db-no-invoice-close-modal';
+    modal.className = 'db-no-invoice-close-modal';
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    modal.innerHTML = `
+      <div class="db-no-invoice-close-shell" role="dialog" aria-modal="true" aria-labelledby="db-no-invoice-close-title">
+        <div class="db-no-invoice-close-title" id="db-no-invoice-close-title">Close Order</div>
+        <div class="db-no-invoice-close-message">Are you sure?</div>
+        <div class="db-no-invoice-close-error" aria-live="polite"></div>
+        <div class="db-no-invoice-close-actions">
+          <button class="db-no-invoice-close-choice" type="button" data-db-no-invoice-close-choice="yes">Yes</button>
+          <button class="db-no-invoice-close-choice" type="button" data-db-no-invoice-close-choice="cancel">Cancel</button>
+        </div>
+      </div>
+    `;
+    modal.addEventListener('click', handleNoInvoiceCloseModalClick);
+    document.body.appendChild(modal);
+    return modal;
+  }
+
+  function handleNoInvoiceCloseModalClick(event) {
+    const modal = document.getElementById('db-no-invoice-close-modal');
+    if (!modal || modal.hidden || state.noInvoiceCloseSaving) return;
+
+    if (event.target === modal) {
+      closeNoInvoiceCloseConfirmation();
+      return;
+    }
+
+    const button = event.target.closest('[data-db-no-invoice-close-choice]');
+    if (!button) return;
+    if (button.dataset.dbNoInvoiceCloseChoice === 'cancel') {
+      closeNoInvoiceCloseConfirmation();
+      return;
+    }
+    if (button.dataset.dbNoInvoiceCloseChoice === 'yes') closeSelectedNoInvoiceOrder();
+  }
+
+  async function closeSelectedNoInvoiceOrder() {
+    const target = state.noInvoiceCloseTarget;
+    if (!target || state.noInvoiceCloseSaving) return;
+
+    state.noInvoiceCloseSaving = true;
+    setNoInvoiceCloseModalSaving(true);
+    const modal = document.getElementById('db-no-invoice-close-modal');
+    const error = modal?.querySelector('.db-no-invoice-close-error');
+    if (error) error.textContent = '';
+
+    try {
+      const data = await fetchJson(
+        `/api/database/jobs/${encodeURIComponent(target.sourceOrderId)}/close-without-invoice`,
+        { method: 'POST' }
+      );
+      state.selectedJob = { ...state.selectedJob, ...data.job };
+
+      if (state.orderMode === 'all') {
+        updateOutstandingJob(state.selectedJob);
+      } else if (shouldRemoveFromOpenOrders(state.selectedJob)) {
+        state.outstandingJobs = state.outstandingJobs.filter((job) => (
+          Number(job.source_order_id) !== target.sourceOrderId
+        ));
+      } else {
+        updateOutstandingJob(state.selectedJob);
+      }
+      state.toInvoiceJobs = state.toInvoiceJobs.filter((job) => (
+        Number(job.source_order_id) !== target.sourceOrderId
+      ));
+
+      state.noInvoiceCloseSaving = false;
+      closeNoInvoiceCloseConfirmation();
+      renderOrderHeaderStats();
+      renderDetailsPanel();
+      renderOutstandingOrders();
+      renderToInvoiceJobs();
+      hydrateOrderSelectors();
+      syncOrderDocumentButtons(state.selectedJob);
+      loadHomeMetrics();
+    } catch (err) {
+      state.noInvoiceCloseSaving = false;
+      setNoInvoiceCloseModalSaving(false);
+      if (error) error.textContent = err.message || 'Failed to close order';
+    }
+  }
+
+  function setNoInvoiceCloseModalSaving(saving) {
+    const modal = document.getElementById('db-no-invoice-close-modal');
+    if (!modal) return;
+    modal.querySelectorAll('[data-db-no-invoice-close-choice]').forEach((button) => {
+      button.disabled = saving;
+      if (button.dataset.dbNoInvoiceCloseChoice === 'yes') {
+        button.textContent = saving ? 'Closing...' : 'Yes';
+      } else {
+        button.textContent = 'Cancel';
+      }
+    });
+  }
+
+  function closeNoInvoiceCloseConfirmation() {
+    if (state.noInvoiceCloseSaving) return;
+    const modal = document.getElementById('db-no-invoice-close-modal');
+    if (!modal) return;
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('modal-open', 'db-no-invoice-close-open');
+    state.noInvoiceCloseTarget = null;
   }
 
   async function loadDatabaseCustomers(options = {}) {
@@ -7296,7 +7439,11 @@
     if (!job) return false;
     if (truthy(job.is_complete)) return true;
     const status = normalizeDashboardStatusLabel(job.dashboard_status);
-    return status === 'COMPLETED' && Boolean(job.invoice_printed || job.pf_invoice_printed);
+    return status === 'COMPLETED' && Boolean(
+      job.invoice_printed
+      || job.pf_invoice_printed
+      || (invoiceNotRequired(job) && truthy(job.closed_without_invoice))
+    );
   }
 
   function selectedManualInvoiceDate() {
@@ -7380,6 +7527,11 @@
 
   function handleOrderAckKeydown(event) {
     if (event.key !== 'Escape') return;
+    const noInvoiceCloseModal = document.getElementById('db-no-invoice-close-modal');
+    if (noInvoiceCloseModal && !noInvoiceCloseModal.hidden) {
+      closeNoInvoiceCloseConfirmation();
+      return;
+    }
     const repeatOrderModal = document.getElementById('db-repeat-order-modal');
     if (repeatOrderModal && !repeatOrderModal.hidden) {
       closeRepeatOrderConfirmation();
@@ -7947,6 +8099,18 @@
         button.removeAttribute('title');
       }
     });
+
+    const closeOrderButton = document.querySelector('[data-db-no-invoice-close]');
+    if (closeOrderButton) {
+      const noSelectedJob = !job || (!job.source_order_id && !job.order_no);
+      const alreadyClosed = truthy(job?.closed_without_invoice) || truthy(job?.is_complete);
+      closeOrderButton.hidden = noSelectedJob || !invoiceNotRequired(job) || alreadyClosed;
+      closeOrderButton.disabled = noSelectedJob || state.noInvoiceCloseSaving;
+      closeOrderButton.closest('.db-document-buttons')?.classList.toggle(
+        'has-no-invoice-close',
+        !closeOrderButton.hidden
+      );
+    }
   }
 
   function invoiceNotRequired(job) {

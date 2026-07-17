@@ -142,6 +142,7 @@ const DASHBOARD_JOB_FIELD_COLUMNS = [
   'proof_approved',
   'proof_approved_at',
   'dashboard_status_updated_at',
+  'closed_without_invoice',
 ];
 
 const CANONICAL_PRODUCT_FIELD_COLUMNS = [
@@ -1477,6 +1478,7 @@ async function fetchDashboardJobFieldSnapshot(client) {
        OR proof_approved IS NOT NULL
        OR proof_approved_at IS NOT NULL
        OR dashboard_status_updated_at IS NOT NULL
+       OR closed_without_invoice IS TRUE
   `);
   return result.rows;
 }
@@ -1493,6 +1495,7 @@ async function restoreDashboardJobFieldSnapshot(client, rows) {
     proof_approved: '::boolean',
     proof_approved_at: '::timestamp',
     dashboard_status_updated_at: '::timestamp',
+    closed_without_invoice: '::boolean',
   };
 
   for (let start = 0; start < rows.length; start += INSERT_BATCH_SIZE) {

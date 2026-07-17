@@ -49,3 +49,25 @@ test('job filters keep parameter positions stable when filters are combined', ()
   assert.match(filters.whereSql, /j\.source_year = \$4/);
   assert.match(filters.whereSql, /j\.is_complete IS NOT TRUE/);
 });
+
+test('To Invoice includes completed no-invoice jobs until they are explicitly closed', () => {
+  const filters = buildJobFilters({ status: 'to-invoice' });
+
+  assert.match(filters.whereSql, /dashboard_status/);
+  assert.match(filters.whereSql, /j\.invoice_printed IS NOT TRUE/);
+  assert.match(filters.whereSql, /j\.pf_invoice_printed IS NOT TRUE/);
+  assert.match(
+    filters.whereSql,
+    /NOT \(j\.invoice_required IS FALSE AND j\.closed_without_invoice IS TRUE\)/
+  );
+  assert.doesNotMatch(filters.whereSql, /j\.invoice_required IS NOT FALSE/);
+});
+
+test('open jobs treat an eligible no-invoice closure as finalized', () => {
+  const filters = buildJobFilters({ status: 'open' });
+
+  assert.match(
+    filters.whereSql,
+    /j\.invoice_required IS FALSE AND j\.closed_without_invoice IS TRUE/
+  );
+});

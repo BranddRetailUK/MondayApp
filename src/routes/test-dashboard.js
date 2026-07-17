@@ -995,14 +995,18 @@ function shouldRenderDashboardJob(job, state, scan) {
   );
   if ((statusText === 'INVOICED' || statusText === 'COMPLETED')
     && isDashboardJobCompleted(job, statusText)
-    && isDashboardJobInvoiced(job)) {
+    && isDashboardJobFinalized(job)) {
     return false;
   }
   return hasDashboardIdentity(job, state, scan);
 }
 
-function isDashboardJobInvoiced(job) {
-  return Boolean(job?.invoice_printed || job?.pf_invoice_printed);
+function isDashboardJobFinalized(job) {
+  return Boolean(
+    job?.invoice_printed
+    || job?.pf_invoice_printed
+    || (job?.invoice_required === false && job?.closed_without_invoice)
+  );
 }
 
 function isDashboardJobCompleted(job, statusText = '') {

@@ -54,6 +54,7 @@ async function ensureDatabaseTables(db) {
       invoice_required BOOLEAN,
       invoice_printed BOOLEAN,
       pf_invoice_printed BOOLEAN,
+      closed_without_invoice BOOLEAN NOT NULL DEFAULT FALSE,
       pf_invoice_date TIMESTAMP,
       dashboard_status TEXT,
       dashboard_priority TEXT,
@@ -86,6 +87,7 @@ async function ensureDatabaseTables(db) {
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS proof_approved_at TIMESTAMP;');
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS dashboard_status_updated_at TIMESTAMP;');
   await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS invoice_date TIMESTAMP;');
+  await db.query('ALTER TABLE database_jobs ADD COLUMN IF NOT EXISTS closed_without_invoice BOOLEAN NOT NULL DEFAULT FALSE;');
   await db.query('ALTER TABLE database_jobs ALTER COLUMN source_year DROP NOT NULL;');
   await db.query('ALTER TABLE database_jobs DROP CONSTRAINT IF EXISTS database_jobs_source_year_check;');
 
