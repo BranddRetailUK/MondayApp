@@ -4122,7 +4122,6 @@
     const input = event.target.closest('[data-customer-address-field]');
     if (!input) return;
 
-    normalizeCustomerAddressPanel(input.closest('[data-customer-address-role]'));
     state.customerAddressDirty = true;
     els.customerAddressesBody?.classList.add('db-customer-addresses-dirty');
     els.customerAddressesBody?.classList.remove('db-customer-addresses-error');
@@ -4156,7 +4155,6 @@
     clearTimeout(customerAddressAutosaveTimer);
     if (!state.customerAddressDirty) return true;
 
-    normalizeCustomerAddressPanels();
     const payload = collectCustomerAddressPayloadFromDom();
     const signature = customerAddressSignature(payload);
     if (signature === state.customerAddressLastSavedSignature) {
@@ -4174,6 +4172,7 @@
     if (!customerKey) return false;
 
     state.customerAddressSaving = true;
+    let saveSucceeded = false;
     els.customerAddressesBody?.classList.add('db-customer-addresses-saving');
 
     try {
@@ -4185,10 +4184,12 @@
       });
       state.selectedCustomerDetail = { ...state.selectedCustomerDetail, ...(data.customer || {}) };
       if (Array.isArray(data.addresses)) state.selectedCustomerAddresses = data.addresses;
-      state.customerAddressLastSavedSignature = customerAddressSignature(collectCustomerAddressPayloadFromDom());
-      state.customerAddressDirty = false;
+      state.customerAddressLastSavedSignature = signature;
+      state.customerAddressDirty = customerAddressSignature(collectCustomerAddressPayloadFromDom()) !== signature;
+      saveSucceeded = true;
       updateCustomerHeaderFields();
-      els.customerAddressesBody?.classList.remove('db-customer-addresses-dirty', 'db-customer-addresses-error');
+      els.customerAddressesBody?.classList.toggle('db-customer-addresses-dirty', state.customerAddressDirty);
+      els.customerAddressesBody?.classList.remove('db-customer-addresses-error');
       return true;
     } catch (err) {
       state.customerAddressDirty = true;
@@ -4198,7 +4199,7 @@
     } finally {
       state.customerAddressSaving = false;
       els.customerAddressesBody?.classList.remove('db-customer-addresses-saving');
-      if (state.customerAddressSaveQueued) {
+      if (state.customerAddressSaveQueued || (saveSucceeded && state.customerAddressDirty)) {
         state.customerAddressSaveQueued = false;
         scheduleCustomerAddressAutosave();
       }
@@ -4247,10 +4248,6 @@
 
   function customerAddressSignature(payload) {
     return JSON.stringify(payload || {});
-  }
-
-  function normalizeCustomerAddressPanels() {
-    els.customerAddressesBody?.querySelectorAll('[data-customer-address-role]').forEach(normalizeCustomerAddressPanel);
   }
 
   function normalizeCustomerAddressPanel(panel) {

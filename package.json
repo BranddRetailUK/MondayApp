@@ -12,6 +12,7 @@
     "verify:ralawise-catalogue": "node scripts/verify-ralawise-catalogue.js",
     "test:ralawise-catalogue": "node --test test/ralawise-catalogue.test.js test/ralawise-line-items.test.js",
     "test:suppliers": "node --test test/supplier-integrations.test.js test/ralawise-basket.test.js test/stock-ordering-ralawise.test.js",
+    "test:database-addresses": "node --test test/database-customer-addresses.test.js",
     "suppliers:ping": "node scripts/ping-supplier-apis.js"
   },
   "dependencies": {
