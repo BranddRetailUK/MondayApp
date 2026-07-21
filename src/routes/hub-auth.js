@@ -127,7 +127,7 @@ router.post('/api/auth/login', async (req, res) => {
 
   try {
     const result = await pool.query(
-      `SELECT id, email, first_name, last_name, password_hash, can_manage_users
+      `SELECT id, email, first_name, last_name, password_hash, can_manage_users, access_scope
        FROM hub_users
        WHERE LOWER(email) = LOWER($1)
        LIMIT 1`,

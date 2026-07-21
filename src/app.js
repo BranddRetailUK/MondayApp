@@ -4,8 +4,15 @@ const express = require('express');
 const app = express();
 const publicDir = path.join(__dirname, '..', 'public');
 
-const { attachHubUser, requireHubApiAuth, requireHubPageAuth } = require('./middleware/hubAuth');
+const {
+  attachHubUser,
+  requireHubApiAuth,
+  requireHubFullApiAccess,
+  requireHubFullPageAccess,
+  requireHubPageAuth,
+} = require('./middleware/hubAuth');
 const testDashboardRoutes = require('./routes/test-dashboard');
+const dtfRoutes = require('./routes/dtf');
 
 app.set('trust proxy', 1);
 
@@ -18,8 +25,11 @@ app.use(require('./routes/hub-auth'));
 app.get(['/', '/index.html'], requireHubPageAuth, (_req, res) => {
   res.sendFile(path.join(publicDir, 'index.html'));
 });
-app.get('/database-job.html', requireHubPageAuth, (req, res) => {
+app.get('/database-job.html', requireHubFullPageAccess, (req, res) => {
   res.sendFile(path.join(publicDir, path.basename(req.path)));
+});
+app.get('/vendor/pdf-lib.min.js', requireHubPageAuth, (_req, res) => {
+  res.sendFile(require.resolve('pdf-lib/dist/pdf-lib.min.js'));
 });
 
 // Static
@@ -36,8 +46,9 @@ app.get('/health', (_req, res) => res.json({ ok: true }));
 
 // Routers
 app.use(testDashboardRoutes.publicRouter);
-app.use(requireHubApiAuth, require('./routes/database'));
-app.use(requireHubApiAuth, testDashboardRoutes.protectedRouter);
+app.use(requireHubApiAuth, dtfRoutes);
+app.use(requireHubFullApiAccess, require('./routes/database'));
+app.use(requireHubFullApiAccess, testDashboardRoutes.protectedRouter);
 
 // 404
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));

@@ -26,7 +26,7 @@ const PROOF_PDF_ZOOM_MIN = 0.5;
 const PROOF_PDF_ZOOM_MAX = 3;
 const PROOF_PDF_ZOOM_STEP = 0.25;
 const PRIORITY_HIGHLIGHT_STORAGE_KEY = 'ultimateHub.priorityHighlights';
-const DASHBOARD_TAB_NAMES = ['database', 'test-dashboard'];
+const DASHBOARD_TAB_NAMES = ['database', 'test-dashboard', 'dtf-uploader'];
 const BOARD_AUTO_REFRESH_MS = 1000;
 const BOARD_CONTEXT_TEST = 'test-dashboard';
 const ULTIMATE_PACKING_USER_NAME = 'ultimate packing';
@@ -140,9 +140,13 @@ document.addEventListener('DOMContentLoaded', () => {
   addSerialScannerUI();
   attachSerialEvents();
   initDashboardPinchZoom();
-  loadTestBoard({ forceRefresh: true });
-  startTestBoardAutoRefresh();
-  window.ultimateHubUserPromise?.then(() => refreshPackingControlVisibility());
+  Promise.resolve(window.ultimateHubUserPromise).then((user) => {
+    refreshPackingControlVisibility();
+    if (user && user.access_scope !== 'dtf_only') {
+      loadTestBoard({ forceRefresh: true });
+      startTestBoardAutoRefresh();
+    }
+  });
 });
 window.loadTestBoard = loadTestBoard;
 
@@ -4349,19 +4353,28 @@ window.addEventListener('beforeunload', async () => {
 
 document.addEventListener("DOMContentLoaded", () => {
   const tabs = document.querySelectorAll(".nav-tabs li");
-  const initialTab = getExplicitDashboardTab() || getStoredDashboardTab() || 'test-dashboard';
-
-  activateDashboardTab(initialTab);
-
   tabs.forEach(tab => {
     tab.addEventListener("click", () => {
       activateDashboardTab(tab.getAttribute("data-tab"));
     });
   });
+
+  Promise.resolve(window.ultimateHubUserPromise).then((user) => {
+    const dtfOnly = user?.access_scope === 'dtf_only';
+    const initialTab = dtfOnly
+      ? 'dtf-uploader'
+      : (getExplicitDashboardTab() || getStoredDashboardTab() || 'test-dashboard');
+    activateDashboardTab(initialTab);
+  });
 });
 
 function activateDashboardTab(target) {
-  const requestedTab = isValidDashboardTab(target) ? target : 'test-dashboard';
+  if (!window.ultimateHubUser) return;
+  const dtfOnly = window.ultimateHubUser?.access_scope === 'dtf_only';
+  const fallbackTab = dtfOnly ? 'dtf-uploader' : 'test-dashboard';
+  const requestedTab = !dtfOnly && isValidDashboardTab(target)
+    ? target
+    : (target === 'dtf-uploader' ? target : fallbackTab);
   const activeTab = document.getElementById(`tab-${requestedTab}`) ? requestedTab : 'test-dashboard';
   const tabs = document.querySelectorAll(".nav-tabs li");
   const contents = document.querySelectorAll(".tab-content");

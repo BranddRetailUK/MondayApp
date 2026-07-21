@@ -7,12 +7,16 @@
   <link rel="icon" type="image/png" href="https://res.cloudinary.com/brandduk/image/upload/v1784184878/UPC_FAV_xeevye.png" media="(prefers-color-scheme: light)">
   <link rel="icon" type="image/png" href="https://res.cloudinary.com/brandduk/image/upload/v1783932861/UPC_FAV_all5bl.png" media="(prefers-color-scheme: dark)">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="dtf-uploader.css">
+  <script src="vendor/pdf-lib.min.js" defer></script>
   <script src="auth-session.js" defer></script>
   <script src="script.js" defer></script>
   <script src="product-size-order.js" defer></script>
   <script src="database.js" defer></script>
+  <script src="dtf-layout.js" defer></script>
+  <script src="dtf-uploader.js" defer></script>
 </head>
-<body class="dashboard-only">
+<body class="dashboard-only hub-auth-pending">
   <div class="app-container">
     <button id="mobileNavToggle" class="mobile-nav-toggle" type="button" aria-label="Open navigation" aria-controls="appSidebar" aria-expanded="false">
       <span></span>
@@ -32,6 +36,7 @@
         <ul class="nav-tabs">
           <li data-tab="database">DATABASE</li>
           <li data-tab="test-dashboard" class="active">Tuesday Dashboard</li>
+          <li data-tab="dtf-uploader">DTF Uploader</li>
         </ul>
       </div>
       <div id="sidebarDashboardControls" class="sidebar-dashboard-controls" aria-label="Dashboard controls">
@@ -47,6 +52,116 @@
           <div id="test-labels-toolbar"></div>
         </div>
         <div id="test-board"></div>
+      </section>
+
+      <!-- DTF UPLOADER -->
+      <section id="tab-dtf-uploader" class="tab-content dtf-tab-content">
+        <div id="dtf-app" class="dtf-app">
+          <div class="dtf-page-head">
+            <div>
+              <div class="dtf-eyebrow">Lami DTF</div>
+              <h1>DTF Uploader</h1>
+              <p>Upload finished 550 × 1000mm gang sheets or build one from artwork.</p>
+            </div>
+            <div class="dtf-mode-tabs" role="tablist" aria-label="DTF uploader sections">
+              <button class="active" type="button" data-dtf-mode="upload">Upload sheets</button>
+              <button type="button" data-dtf-mode="layout">Create layout</button>
+            </div>
+          </div>
+
+          <section id="dtf-upload-view" class="dtf-mode-view active" aria-label="Upload DTF gang sheets">
+            <div class="dtf-upload-grid">
+              <div class="dtf-surface dtf-preview-panel">
+                <div class="dtf-eyebrow">Preview</div>
+                <h2 id="dtf-preview-title">Select a gang sheet to preview</h2>
+                <div id="dtf-pdf-preview" class="dtf-pdf-preview">
+                  <canvas id="dtf-pdf-canvas" hidden></canvas>
+                  <div id="dtf-preview-empty" class="dtf-empty-preview">
+                    <span class="dtf-upload-icon" aria-hidden="true">⇧</span>
+                    <strong>Drag or upload gang sheets</strong>
+                    <span>Drop one-page 550 × 1000mm PDFs here or choose them from the upload panel.</span>
+                  </div>
+                </div>
+              </div>
+
+              <aside class="dtf-upload-sidebar">
+                <div class="dtf-surface dtf-upload-card">
+                  <span class="dtf-upload-icon" aria-hidden="true">⇧</span>
+                  <h2>Add gang sheet PDFs</h2>
+                  <input id="dtf-sheet-input" type="file" accept="application/pdf,.pdf" multiple hidden>
+                  <button id="dtf-choose-sheets" class="dtf-primary-button" type="button">Choose gang sheets</button>
+                  <div id="dtf-sheet-list" class="dtf-sheet-list">
+                    <div class="dtf-empty-list">No gang sheets added yet.</div>
+                  </div>
+                  <div class="dtf-card-divider"></div>
+                  <strong>Need to create a gang sheet?</strong>
+                  <p>Build a 550 × 1000mm PDF from uploaded artwork, then add it to this list.</p>
+                  <button class="dtf-secondary-button" type="button" data-dtf-mode="layout">Create a gang sheet</button>
+                </div>
+
+                <div class="dtf-surface dtf-price-card">
+                  <div class="dtf-eyebrow">Price</div>
+                  <div id="dtf-total-large" class="dtf-total-large">£0.00</div>
+                  <dl>
+                    <div><dt>Sheets</dt><dd id="dtf-sheet-count">0</dd></div>
+                    <div><dt>Subtotal</dt><dd id="dtf-subtotal">£0.00</dd></div>
+                    <div><dt>VAT</dt><dd id="dtf-vat">£0.00</dd></div>
+                    <div class="dtf-price-total"><dt>Total</dt><dd id="dtf-total">£0.00</dd></div>
+                  </dl>
+                </div>
+                <button id="dtf-send-sheets" class="dtf-submit-button" type="button" disabled>Send gang sheets <span aria-hidden="true">⇧</span></button>
+                <div id="dtf-upload-feedback" class="dtf-feedback" aria-live="polite"></div>
+              </aside>
+            </div>
+          </section>
+
+          <section id="dtf-layout-view" class="dtf-mode-view" aria-label="Create DTF gang sheet">
+            <div class="dtf-layout-grid">
+              <aside class="dtf-surface dtf-layout-controls">
+                <div class="dtf-eyebrow">Layout</div>
+                <label class="dtf-control-label">Artwork gap</label>
+                <div class="dtf-stepper dtf-gap-stepper">
+                  <button type="button" data-dtf-gap="-1" aria-label="Decrease artwork gap">−</button>
+                  <input id="dtf-layout-gap" type="number" min="0" max="250" step="1" value="10" aria-label="Artwork gap in millimetres">
+                  <span>mm</span>
+                  <button type="button" data-dtf-gap="1" aria-label="Increase artwork gap">+</button>
+                </div>
+
+                <div class="dtf-eyebrow dtf-control-section">Background</div>
+                <div class="dtf-background-options" role="group" aria-label="Layout background">
+                  <button class="active" type="button" data-dtf-background="LIGHT">Light</button>
+                  <button type="button" data-dtf-background="GREY">Grey</button>
+                  <button type="button" data-dtf-background="DARK">Dark</button>
+                </div>
+
+                <div class="dtf-eyebrow dtf-control-section">Artwork</div>
+                <input id="dtf-artwork-input" type="file" accept="image/png,.png,.eps,application/postscript,application/pdf,.pdf" multiple hidden>
+                <button id="dtf-add-artwork" class="dtf-artwork-empty" type="button">
+                  <span class="dtf-upload-icon" aria-hidden="true">⇧</span>
+                  Add PNG, EPS or one-page PDF artwork
+                </button>
+                <div id="dtf-artwork-list" class="dtf-artwork-list"></div>
+                <div id="dtf-layout-feedback" class="dtf-feedback" aria-live="polite"></div>
+              </aside>
+
+              <div class="dtf-surface dtf-layout-preview-panel">
+                <div class="dtf-layout-preview-head">
+                  <div class="dtf-eyebrow">Template preview</div>
+                  <span>550mm × 1000mm</span>
+                </div>
+                <div class="dtf-layout-canvas-shell">
+                  <div id="dtf-layout-canvas" class="dtf-layout-canvas dtf-background-light">
+                    <button id="dtf-layout-empty" class="dtf-layout-empty" type="button">
+                      <span class="dtf-upload-icon" aria-hidden="true">⇧</span>
+                      Drag artwork here or choose files
+                    </button>
+                  </div>
+                </div>
+                <button id="dtf-add-to-order" class="dtf-submit-button" type="button" disabled>Add to order <span aria-hidden="true">⇧</span></button>
+              </div>
+            </div>
+          </section>
+        </div>
       </section>
 
       <!-- DATABASE -->
@@ -92,7 +207,7 @@
 
               <div class="db-menu-column db-menu-right">
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="users" disabled>Users</button>
-                <button class="db-raised-button" type="button" data-db-action="placeholder">Passwords</button>
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="dtf-admin">Lami DTF</button>
                 <button class="db-raised-button" type="button" data-db-action="placeholder">Configuration</button>
                 <button class="db-raised-button" type="button" data-db-action="placeholder">Error log</button>
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="reports" disabled>Reports</button>
@@ -748,14 +863,66 @@
                     <tr>
                       <th>Name:</th>
                       <th>Email:</th>
+                      <th>Access:</th>
                       <th>Date registered:</th>
                       <th>Remove:</th>
                     </tr>
                   </thead>
                   <tbody id="db-users-body">
-                    <tr><td colspan="4" class="db-empty-cell">Loading users</td></tr>
+                    <tr><td colspan="5" class="db-empty-cell">Loading users</td></tr>
                   </tbody>
                 </table>
+              </div>
+            </section>
+
+            <section id="db-dtf-admin-view" class="db-view db-dtf-admin-view" aria-label="Lami DTF jobs">
+              <div class="db-dtf-toolbar">
+                <div>
+                  <div class="db-dtf-title">Lami DTF</div>
+                  <div class="db-dtf-subtitle">Uploaded gang sheet jobs</div>
+                </div>
+                <div class="db-dtf-toolbar-actions">
+                  <label>Status:
+                    <select id="db-dtf-status-filter">
+                      <option value="">All</option>
+                      <option value="UPLOADING">Uploading</option>
+                      <option value="RECEIVED">Received</option>
+                      <option value="IN_PRODUCTION">In production</option>
+                      <option value="COMPLETED">Completed</option>
+                      <option value="FAILED">Failed</option>
+                    </select>
+                  </label>
+                  <button id="db-dtf-refresh" class="db-toolbar-button db-blue-link" type="button">Refresh</button>
+                </div>
+              </div>
+              <div class="db-table-frame db-dtf-table-frame">
+                <table class="db-legacy-table db-mobile-card-table">
+                  <thead><tr>
+                    <th>Job:</th><th>Date:</th><th>Customer:</th><th>Email:</th><th>Files:</th><th>Sheets:</th><th>Subtotal:</th><th>VAT:</th><th>Total:</th><th>Status:</th>
+                  </tr></thead>
+                  <tbody id="db-dtf-jobs-body"><tr><td colspan="10" class="db-empty-cell">Open Lami DTF to load jobs</td></tr></tbody>
+                </table>
+              </div>
+              <button id="db-dtf-load-more" class="db-toolbar-button db-dtf-load-more" type="button" hidden>Load more</button>
+              <div id="db-dtf-detail" class="db-dtf-detail" hidden>
+                <div class="db-dtf-detail-head">
+                  <div><strong id="db-dtf-detail-number"></strong><span id="db-dtf-detail-customer"></span></div>
+                  <label>Status:
+                    <select id="db-dtf-detail-status">
+                      <option value="RECEIVED">Received</option>
+                      <option value="IN_PRODUCTION">In production</option>
+                      <option value="COMPLETED">Completed</option>
+                      <option value="FAILED">Failed</option>
+                    </select>
+                  </label>
+                </div>
+                <div id="db-dtf-detail-pricing" class="db-dtf-detail-pricing"></div>
+                <div class="db-table-frame">
+                  <table class="db-legacy-table db-mobile-card-table">
+                    <thead><tr><th>File:</th><th>Qty:</th><th>Size:</th><th>Upload:</th><th>Error:</th><th>PDF:</th></tr></thead>
+                    <tbody id="db-dtf-files-body"></tbody>
+                  </table>
+                </div>
               </div>
             </section>
 

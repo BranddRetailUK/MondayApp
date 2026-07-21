@@ -20,8 +20,8 @@ Production data boundaries:
 - App composition: `src/app.js`.
 - Static frontend: `public/`.
 - Browser entry pages advertise theme-aware PNG favicons: the black Ultimate icon is selected for light browser themes and the white Ultimate icon is selected for dark browser themes.
-- Hub auth: `/login` and `/signup` serve the app login/signup page. `/`, `/index.html`, and `/database-job.html` require a Hub session. Browser APIs for DATABASE and the Tuesday Dashboard require the same Hub session, except the signed public `/test-scan` label endpoint.
-- Ultimate Hub has two top-level tabs: DATABASE and Tuesday Dashboard. Tuesday Dashboard is the default tab. The active tab is stored in browser localStorage unless `?tab=database`, `?tab=test-dashboard`, or the matching hash explicitly selects one. DATABASE also stores its current in-app view in browser localStorage, including the active order/customer tab and selected order/customer where applicable, so a browser reload restores the DATABASE page instead of returning to the DATABASE home screen.
+- Hub auth: `/login` and `/signup` serve the app login/signup page. `/` and `/index.html` require a Hub session. Full-access users may use DATABASE, Tuesday Dashboard, and `/database-job.html`; `dtf_only` users are restricted to DTF Uploader and its owned upload APIs. The signed public `/test-scan` label endpoint remains unauthenticated.
+- Ultimate Hub has three top-level tabs: DATABASE, Tuesday Dashboard, and DTF Uploader. Tuesday Dashboard is the default for full users; DTF Uploader is forced for `dtf_only` users. The active tab is stored in browser localStorage unless a matching `?tab=` value or hash explicitly selects one. DATABASE also stores its current in-app view in browser localStorage, including Lami DTF, the active order/customer tab, and selected order/customer where applicable.
 - DB bootstrap: `src/db/migrate.js`.
 - Config: `src/config/env.js`.
 
@@ -39,6 +39,8 @@ Production data boundaries:
 - `src/routes/hub-auth.js`: Ultimate Hub signup/login/session endpoints.
 - `src/services/hubAuth.js`: scrypt password hashing, session-cookie creation, and current-user lookup.
 - `src/middleware/hubAuth.js`: attaches `req.hubUser` and protects page/API routes.
+- `src/routes/dtf.js`, `src/services/dtf.js`, and `src/services/dtfCloudinary.js`: DTF pricing/status validation, signed PDF uploads, EPS conversion, job APIs, and Lami DTF administration.
+- `public/dtf-uploader.js` and `public/dtf-layout.js`: DTF upload workflow, IndexedDB drafts, high-quality PDF composition, and the 550 × 1000mm artwork packer.
 - `src/integrations/pencarrie.js`: server-side PenCarrie stock/ordering gateway client using customer-code and fixed-IP authorization.
 - `src/integrations/ralawise.js`: server-side Ralawise JWT login and inventory client.
 - `src/services/ralawiseCatalogue.js`: streaming catalogue row normalization, source auditing, decimal-safe cost comparison, and conservative Access-product matching.
@@ -57,7 +59,7 @@ Production data boundaries:
 
 - `GET /login`: serves the Hub login/signup page in login mode.
 - `GET /signup`: serves the same page in signup mode.
-- `GET /api/auth/me`: returns `{ user }` for the current Hub session, or `null`.
+- `GET /api/auth/me`: returns `{ user }` for the current Hub session, or `null`; authenticated users include `access_scope` as `full` or `dtf_only`.
 - `POST /api/auth/signup`: accepts a signup request for any syntactically valid email address. It validates the submitted name and password, stores a scrypt password hash in `hub_signup_requests`, returns HTTP 202 with `Your request has been received.`, and does not create a user or session. A repeated pending or rejected request for the same email refreshes that request; a request matching an existing user receives the same generic response without changing that user.
 - `POST /api/auth/login`: verifies email/password against `hub_users` and starts a session. Pending and rejected signup requests are not users and cannot log in; all `hub_users` rows that existed before the request workflow remain active without requiring review.
 - `POST /api/auth/logout`: deletes the current session and clears the cookie.
@@ -68,7 +70,7 @@ Security rules:
 - New signup passwords must be 12-128 characters, cannot be highly predictable, and cannot contain the submitted name or email identity. Signup never stores or returns plaintext passwords.
 - Signup and login requests have per-IP/account rate limits. Login uses the same generic invalid-credentials response and performs a dummy scrypt verification for unknown users to reduce account-enumeration timing differences.
 - Signup responses do not reveal whether an email already has an account or request. Only authenticated users with `hub_users.can_manage_users = true` can read, accept, or reject pending requests through the protected DATABASE API. The migration grants this permission to existing users; accounts created through the request workflow default to false and cannot administer other users.
-- Accepting a pending request transactionally inserts it into `hub_users`; rejecting it leaves no login-capable user. Both decisions immediately erase the request's stored password hash and record reviewer audit metadata.
+- Accepting a pending request transactionally inserts it into `hub_users`; the DATABASE reviewer chooses ordinary `full` access with Accept or uploader-only `dtf_only` access with Lami DTF. Rejecting it leaves no login-capable user. Both decisions immediately erase the request's stored password hash and record reviewer audit metadata.
 - Session cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` in production/HTTPS.
 - Database session rows store only a SHA-256 hash of the random browser session token.
 
@@ -76,6 +78,25 @@ Security rules:
 
 - `GET /health`: returns `{ ok: true }`.
 - `GET /api/status`: returns `{ ok: true, hubAuthenticated: boolean }`.
+
+### DTF Uploader
+
+- `POST /api/dtf/jobs`: creates a DTF job plus 1-40 expected PDF file rows for the logged-in user. Each file is limited to 250MB and quantity 1-99. The server calculates £14.00 net per sheet plus 20% VAT in integer pence and allocates a concurrency-safe `DTF-000001` style number.
+- `POST /api/dtf/uploads/sign`: verifies ownership of an expected file, marks it uploading, and returns a short-lived signed Cloudinary `image/authenticated` upload payload for the exact `ultimate-hub/dtf/{userId}/{jobId}/{fileId}` public id.
+- `POST /api/dtf/uploads/finalize`: ignores browser URLs and verifies the exact asset through Cloudinary. A valid file must be an authenticated PDF image resource, 1-250MB, with exactly one portrait 550 × 1000mm page within a three-point metadata tolerance. Invalid or failed assets are destroyed and the file/job becomes failed; all verified files move the job to received.
+- `POST /api/dtf/layouts/eps-preview`: accepts an authenticated user's EPS file up to 25MB, converts it temporarily through Cloudinary to lossless 300-DPI PNG, returns that PNG, and destroys the temporary asset.
+- `GET /api/dtf/files/:fileId`: authorizes the submitting owner or any full user and redirects to a five-minute signed Cloudinary PDF download.
+- `GET /api/dtf/admin/jobs` and `GET /api/dtf/admin/jobs/:jobId`: full-user-only paginated DTF job summaries and file details for the DATABASE Lami DTF page.
+- `PATCH /api/dtf/admin/jobs/:jobId`: full-user-only transition to RECEIVED, IN_PRODUCTION, COMPLETED, or FAILED with updater/timestamp audit fields.
+- Job creation is limited to 20, sign/finalize calls to 240 each, and EPS conversions to 30 per user per 15 minutes through Postgres-backed rate-limit buckets.
+
+DTF UI rules:
+
+- DTF Uploader contains only the UltimateHub shell plus Upload sheets/Create layout modes; the standalone BRAND header, home, profile, login, and customer history are not ported.
+- Premade sheets are browser-validated with PDF.js before job creation. Multiple PDFs and quantities may be combined in one job, previewed individually, and persisted as unsent per-user IndexedDB drafts.
+- The layout editor accepts PNG, EPS, and one-page PDF artwork on a fixed 550 × 1000mm sheet. It supports a 0-250mm gap (10mm default), light/grey/dark backgrounds, proportional W/H controls, copies, group/individual 90-degree rotation, selection/z-order, deletion, dragging, and automatic non-overlapping packing capped at 80 pieces.
+- Generated PDFs use `pdf-lib`: PNG bytes and one-page PDF artwork are embedded independently without whole-sheet rasterization; EPS uses the returned 300-DPI PNG. The output is one exact 550 × 1000mm PDF page and is added back to the upload draft.
+- DATABASE home exposes a blue Lami DTF button. Its admin view shows job number/date/customer/email, files, sheet quantity, subtotal, VAT, total, status, per-file upload detail, signed PDF links, and the status control.
 
 ### Tuesday Dashboard
 
@@ -354,6 +375,11 @@ Latest insert-only Railway catch-up import from root `PS_XP_tab JULY.mdb` on 202
 
 ## Database Tables
 
+- `hub_users.access_scope`: `full` or `dtf_only`; all pre-existing users are backfilled to `full`.
+- `dtf_jobs`: immutable customer identity/price snapshot, job number, derived/admin status, status audit, receipt/completion timestamps, and file/sheet counts.
+- `dtf_job_files`: expected filename, declared/verified bytes, quantity, upload state/error, verified page metadata, and Cloudinary identity.
+- `dtf_rate_limit_buckets`: cross-instance fixed-window counters for DTF mutation endpoints.
+
 Created by `src/db/migrate.js`:
 
 - `job_scans`
@@ -432,6 +458,7 @@ Existing production databases may retain unused legacy seed-audit columns/tables
 - `CLOUDINARY_API_KEY`
 - `CLOUDINARY_API_SECRET`
 - `CLOUDINARY_TEST_DASHBOARD_ROOT`: optional; defaults to `ultimate-hub/test-dashboard`.
+- `CLOUDINARY_DTF_ROOT`: optional; defaults to `ultimate-hub/dtf`.
 
 ### Supplier APIs
 
@@ -466,11 +493,15 @@ No external work-management token, OAuth, board, column, or webhook environment 
 - `npm run test:ralawise-catalogue`: runs focused parser, identity, reviewed/rejected matching, pricing, stable-ID, image, idempotency, weight, no-delete, dry-run write-safety, and historical line-write-scope tests.
 - `npm run test:suppliers`: runs mocked PenCarrie/Ralawise protocol tests plus Ralawise website-basket, placed-order detail/discount-price parsing, and Stock Ordering plan/reconciliation tests.
 - `npm run test:database-addresses`: runs focused customer-profile address route tests covering independent invoice/delivery persistence for existing profiles and first edits of imported-only customers.
+- `npm run test:dtf`: runs DTF pricing, status, job-number, page-size, PDF-generation, packing, access-middleware, idempotent-schema, job creation/finalization, and signup-scope route tests.
+- `npm run preflight:dtf-cloudinary`: uploads a temporary exact-size authenticated PDF through the same signed browser-upload contract, verifies Admin API page metadata and signed delivery, and destroys the temporary asset in a `finally` cleanup.
 - `npm run suppliers:ping`: performs read-only live probes against PenCarrie `pcgetstock` and Ralawise login/inventory, reports whether the observed egress IP matches `PENCARRIE_STATIC_IP`, and never outputs supplier credentials or the Ralawise JWT.
 
 ## Known Risks And Maintenance Notes
 
-- There is no general application test suite. Customer address profile persistence, supplier clients, and the Ralawise Stock Ordering basket/placed-order workflow have focused tests.
+- There is no general application test suite. DTF domain/access/layout/schema behavior, customer address profile persistence, supplier clients, and the Ralawise Stock Ordering basket/placed-order workflow have focused tests.
+- The currently pinned `xlsx` dependency has published prototype-pollution and ReDoS advisories with no upstream patched release available through npm audit; MDB/CSV import inputs must remain operator-controlled.
+- DTF premade PDF validation depends on Cloudinary returning PDF page count and dimensions for authenticated image resources, and PDF delivery must be enabled in the `brandduk` Cloudinary environment. EPS is intentionally rasterized to 300-DPI lossless PNG; PNG and PDF artwork are not flattened with the whole sheet.
 - DATABASE imports use an MDB snapshot for historical orders/products only. Run a fresh import whenever the source MDB copy changes, then verify that its canonical-link snapshot/restore completed; active product selection remains Ralawise-catalogue backed.
 - Ralawise catalogue CSV exports are external snapshots rather than live inventory. Re-run the dry-run before every apply, preserve the reported ambiguity review, and use the JWT inventory API for current stock availability.
 - The 2026-07-16 Stock Ordering audit found nine jobs with product lines: seven are fully exact-SKU eligible. Order 50333 remains blocked because its Portwest `DX416`, `DX413`, `PW379`, `DX457`, `PW275`, legacy `PW261`, and legacy `PW265` garments are absent from the supplied catalogue or collide with different current products. Order 51126 remains blocked on absent `70100` and `H830` variants. Do not guess substitute SKUs; select a current catalogue replacement on the order or obtain supplier-confirmed mappings.

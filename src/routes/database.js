@@ -1523,6 +1523,7 @@ router.get('/api/database/users', async (req, res) => {
                last_name,
                CONCAT_WS(' ', NULLIF(TRIM(first_name), ''), NULLIF(TRIM(last_name), '')) AS full_name,
                can_manage_users,
+               access_scope,
                created_at
         FROM hub_users
         ORDER BY LOWER(first_name), LOWER(last_name), LOWER(email)
@@ -1571,6 +1572,7 @@ router.post('/api/database/signup-requests/:id/accept', async (req, res) => {
   if (!Number.isFinite(id) || id <= 0) {
     return res.status(400).json({ error: 'Invalid signup request id' });
   }
+  const accessScope = req.body?.accessScope === 'dtf_only' ? 'dtf_only' : 'full';
 
   let client;
   try {
@@ -1591,20 +1593,21 @@ router.post('/api/database/signup-requests/:id/accept', async (req, res) => {
     }
 
     let userResult = await client.query(
-      `INSERT INTO hub_users (email, first_name, last_name, password_hash, can_manage_users)
-       VALUES ($1, $2, $3, $4, FALSE)
+      `INSERT INTO hub_users (email, first_name, last_name, password_hash, can_manage_users, access_scope)
+       VALUES ($1, $2, $3, $4, FALSE, $5)
        ON CONFLICT ((LOWER(email))) DO NOTHING
-       RETURNING id, email, first_name, last_name, can_manage_users, created_at`,
+       RETURNING id, email, first_name, last_name, can_manage_users, access_scope, created_at`,
       [
         signupRequest.email,
         signupRequest.first_name,
         signupRequest.last_name,
         signupRequest.password_hash,
+        accessScope,
       ]
     );
     if (!userResult.rowCount) {
       userResult = await client.query(
-        `SELECT id, email, first_name, last_name, can_manage_users, created_at
+        `SELECT id, email, first_name, last_name, can_manage_users, access_scope, created_at
          FROM hub_users
          WHERE LOWER(email) = LOWER($1)
          LIMIT 1`,

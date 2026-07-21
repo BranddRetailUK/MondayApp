@@ -40,6 +40,7 @@
     'to-invoice',
     'stock-ordering',
     'users',
+    'dtf-admin',
     'new-order',
     'new-customer',
   ]);
@@ -592,6 +593,7 @@
 
     if (els.sideTab) {
       els.sideTab.addEventListener('click', () => {
+        if (!window.ultimateHubUser || window.ultimateHubUser.access_scope === 'dtf_only') return;
         if (!state.loadedHome) loadHomeMetrics();
         restoreDatabaseRouteOnce();
       });
@@ -599,18 +601,19 @@
     window.ultimateHubOpenDatabaseOrder = openDatabaseOrderFromDashboard;
     document.addEventListener('ultimatehub:user', (event) => setCurrentUser(event.detail));
     if (window.ultimateHubUser) setCurrentUser(window.ultimateHubUser);
-    window.ultimateHubUserPromise?.then((user) => {
-      if (user) setCurrentUser(user);
+    window.ultimateHubUserPromise?.then((currentUser) => {
+      if (!currentUser) return;
+      setCurrentUser(currentUser);
+      if (currentUser.access_scope === 'dtf_only') return;
+      const params = new URLSearchParams(window.location.search);
+      if ((params.get('tab') === 'database' || window.location.hash === '#database') && !isDatabaseTopLevelActive()) {
+        els.sideTab?.click();
+      }
+      if (isDatabaseTopLevelActive()) {
+        if (!state.loadedHome) loadHomeMetrics();
+        restoreDatabaseRouteOnce();
+      }
     });
-
-    const params = new URLSearchParams(window.location.search);
-    if ((params.get('tab') === 'database' || window.location.hash === '#database') && !isDatabaseTopLevelActive()) {
-      els.sideTab?.click();
-    }
-    if (isDatabaseTopLevelActive()) {
-      if (!state.loadedHome) loadHomeMetrics();
-      restoreDatabaseRouteOnce();
-    }
   }
 
   function setupDatabaseMobileTableLabels() {
@@ -727,7 +730,7 @@
     const signupRequestId = button.dataset.dbSignupRequest;
     const signupDecision = button.dataset.dbSignupDecision;
     if (signupRequestId && (signupDecision === 'accept' || signupDecision === 'reject')) {
-      await reviewSignupRequest(signupRequestId, signupDecision);
+      await reviewSignupRequest(signupRequestId, signupDecision, button.dataset.dbSignupAccess);
       return;
     }
 
@@ -916,6 +919,11 @@
     if (action === 'users') {
       await flushOrderAutosaves();
       showUsers();
+      return;
+    }
+    if (action === 'dtf-admin') {
+      await flushOrderAutosaves();
+      showDtfAdmin();
       return;
     }
     if (action === 'stock-ordering') {
@@ -1172,6 +1180,11 @@
       return;
     }
 
+    if (route.view === 'dtf-admin') {
+      showDtfAdmin({ skipHistory: true, skipPersistence: true });
+      return;
+    }
+
     if (route.view === 'new-order') {
       showNewOrder({ skipHistory: true, skipPersistence: true });
       return;
@@ -1401,6 +1414,12 @@
     showView('users', options);
     setFooterTitle('Users');
     loadRegisteredUsers({ force: true });
+  }
+
+  function showDtfAdmin(options = {}) {
+    showView('dtf-admin', options);
+    setFooterTitle('Lami DTF');
+    window.DtfAdmin?.open?.();
   }
 
   function showReports(options = {}) {
@@ -3383,7 +3402,9 @@
 
     try {
       const data = await fetchJson('/api/database/users');
-      state.customerUsers = Array.isArray(data.users) ? data.users : [];
+      state.customerUsers = Array.isArray(data.users)
+        ? data.users.filter((user) => user.access_scope !== 'dtf_only')
+        : [];
       state.loadedCustomerUsers = true;
     } catch (err) {
       console.error('Failed to load DATABASE users', err);
@@ -3407,7 +3428,7 @@
     state.usersLoading = true;
     state.usersLoaded = false;
     if (els.usersBody) {
-      els.usersBody.innerHTML = renderStatusRow('Loading users', 4);
+      els.usersBody.innerHTML = renderStatusRow('Loading users', 5);
     }
     if (els.signupRequestsBody) {
       els.signupRequestsBody.innerHTML = renderStatusRow('Loading signup requests', 4);
@@ -3419,14 +3440,14 @@
       state.signupRequests = Array.isArray(data.signupRequests) ? data.signupRequests : [];
       state.canManageUsers = data.canManageUsers === true;
       state.registeredUsers = users;
-      state.customerUsers = users;
+      state.customerUsers = users.filter((user) => user.access_scope !== 'dtf_only');
       state.loadedCustomerUsers = true;
       state.usersLoaded = true;
       renderRegisteredUsers();
     } catch (err) {
       state.usersLoaded = false;
       if (els.usersBody) {
-        els.usersBody.innerHTML = renderStatusRow(err.message || 'Failed to load users', 4);
+        els.usersBody.innerHTML = renderStatusRow(err.message || 'Failed to load users', 5);
       }
       if (els.signupRequestsBody) {
         els.signupRequestsBody.innerHTML = renderStatusRow(err.message || 'Failed to load signup requests', 4);
@@ -3441,7 +3462,7 @@
     if (!els.usersBody) return;
     const users = state.registeredUsers || [];
     if (!users.length) {
-      els.usersBody.innerHTML = renderStatusRow('No registered users', 4);
+      els.usersBody.innerHTML = renderStatusRow('No registered users', 5);
       return;
     }
     els.usersBody.innerHTML = users.map(renderRegisteredUserRow).join('');
@@ -3454,6 +3475,7 @@
       <tr>
         <td>${escapeHtml(user.full_name || [user.first_name, user.last_name].filter(Boolean).join(' ') || '-')}</td>
         <td>${escapeHtml(user.email || '')}</td>
+        <td>${user.access_scope === 'dtf_only' ? 'Lami DTF only' : 'Full dashboard'}</td>
         <td>${escapeHtml(formatDate(user.created_at, 'long'))}</td>
         <td>${canRemove
           ? `<button class="db-user-remove-button" type="button" data-db-user-remove="${escapeAttr(user.id || '')}">Remove</button>`
@@ -3488,8 +3510,17 @@
               type="button"
               data-db-signup-request="${escapeAttr(requestId)}"
               data-db-signup-decision="accept"
+              data-db-signup-access="full"
               ${saving ? 'disabled' : ''}
             >${saving ? 'Saving...' : 'Accept'}</button>
+            <button
+              class="db-signup-review-button db-signup-accept-button"
+              type="button"
+              data-db-signup-request="${escapeAttr(requestId)}"
+              data-db-signup-decision="accept"
+              data-db-signup-access="dtf_only"
+              ${saving ? 'disabled' : ''}
+            >Lami DTF</button>
             <button
               class="db-signup-review-button db-signup-reject-button"
               type="button"
@@ -3503,13 +3534,14 @@
     }).join('');
   }
 
-  async function reviewSignupRequest(requestId, decision) {
+  async function reviewSignupRequest(requestId, decision, accessScope = 'full') {
     const id = Number.parseInt(String(requestId), 10);
     const request = (state.signupRequests || []).find((item) => Number(item.id) === id);
     if (!request || state.signupRequestSavingIds.has(id)) return;
 
     const label = request.full_name || request.email || 'this signup request';
-    const verb = decision === 'accept' ? 'Accept' : 'Reject';
+    const dtfOnly = decision === 'accept' && accessScope === 'dtf_only';
+    const verb = decision === 'accept' ? (dtfOnly ? 'Accept as Lami DTF only' : 'Accept') : 'Reject';
     if (!window.confirm(`${verb} ${label}?`)) return;
 
     state.signupRequestSavingIds.add(id);
@@ -3517,7 +3549,11 @@
     try {
       const data = await fetchJson(
         `/api/database/signup-requests/${encodeURIComponent(id)}/${decision}`,
-        { method: 'POST' }
+        {
+          method: 'POST',
+          headers: decision === 'accept' ? { 'Content-Type': 'application/json' } : undefined,
+          body: decision === 'accept' ? JSON.stringify({ accessScope: dtfOnly ? 'dtf_only' : 'full' }) : undefined,
+        }
       );
       state.signupRequests = (state.signupRequests || []).filter((item) => Number(item.id) !== id);
 
@@ -3533,7 +3569,7 @@
             { sensitivity: 'base' }
           )
         ));
-        state.customerUsers = state.registeredUsers.slice();
+        state.customerUsers = state.registeredUsers.filter((user) => user.access_scope !== 'dtf_only');
         state.loadedCustomerUsers = true;
         populateNewCustomerAccountManagers();
       }
@@ -11166,7 +11202,7 @@
     }
 
     els.mainTabs.forEach((tab) => {
-      const active = (name === 'home' || name === 'new-order' || name === 'new-customer' || name === 'new-contact' || name === 'customers' || name === 'customer' || name === 'styles' || name === 'to-invoice' || name === 'stock-ordering' || name === 'users' || name === 'reports')
+      const active = (name === 'home' || name === 'new-order' || name === 'new-customer' || name === 'new-contact' || name === 'customers' || name === 'customer' || name === 'styles' || name === 'to-invoice' || name === 'stock-ordering' || name === 'users' || name === 'reports' || name === 'dtf-admin')
         ? tab.dataset.dbGo === 'home'
         : tab.dataset.dbGo === 'outstanding';
       tab.classList.toggle('active', active);
@@ -11202,6 +11238,7 @@
     if (name === 'customer') return 'Customer';
     if (name === 'styles') return 'Styles';
     if (name === 'users') return 'Users';
+    if (name === 'dtf-admin') return 'Lami DTF';
     if (name === 'reports') return 'Analytics & Reports';
     if (name === 'to-invoice') return 'To Invoice';
     if (name === 'stock-ordering') return 'Stock Ordering';

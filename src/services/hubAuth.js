@@ -93,6 +93,7 @@ function safeUser(row) {
     last_name: row.last_name,
     full_name: fullName(row),
     can_manage_users: row.can_manage_users === true,
+    access_scope: row.access_scope === 'dtf_only' ? 'dtf_only' : 'full',
   };
 }
 
@@ -209,7 +210,7 @@ async function currentUser(req) {
   if (!token) return null;
 
   const result = await pool.query(
-    `SELECT u.id, u.email, u.first_name, u.last_name, u.can_manage_users
+    `SELECT u.id, u.email, u.first_name, u.last_name, u.can_manage_users, u.access_scope
      FROM hub_sessions s
      JOIN hub_users u ON u.id = s.user_id
      WHERE s.id = $1

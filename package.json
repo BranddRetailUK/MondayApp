@@ -13,6 +13,8 @@
     "test:ralawise-catalogue": "node --test test/ralawise-catalogue.test.js test/ralawise-line-items.test.js",
     "test:suppliers": "node --test test/supplier-integrations.test.js test/ralawise-basket.test.js test/stock-ordering-ralawise.test.js",
     "test:database-addresses": "node --test test/database-customer-addresses.test.js",
+    "test:dtf": "node --test test/dtf.test.js test/dtf-routes.test.js",
+    "preflight:dtf-cloudinary": "node scripts/preflight-dtf-cloudinary.js",
     "suppliers:ping": "node scripts/ping-supplier-apis.js"
   },
   "dependencies": {
@@ -22,6 +24,7 @@
     "dotenv": "^16.4.0",
     "express": "^4.21.2",
     "multer": "^2.0.2",
+    "pdf-lib": "^1.17.1",
     "pg": "^8.16.3",
     "qrcode": "^1.5.4",
     "xlsx": "^0.18.5"

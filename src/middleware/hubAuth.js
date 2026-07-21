@@ -20,8 +20,27 @@ function requireHubPageAuth(req, res, next) {
   return res.redirect(`/login?next=${nextPath}`);
 }
 
+function hasFullHubAccess(user) {
+  return Boolean(user) && user.access_scope !== 'dtf_only';
+}
+
+function requireHubFullApiAccess(req, res, next) {
+  if (!req.hubUser) return res.status(401).json({ error: 'Login required' });
+  if (hasFullHubAccess(req.hubUser)) return next();
+  return res.status(403).json({ error: 'Full dashboard access required' });
+}
+
+function requireHubFullPageAccess(req, res, next) {
+  if (!req.hubUser) return requireHubPageAuth(req, res, next);
+  if (hasFullHubAccess(req.hubUser)) return next();
+  return res.redirect('/?tab=dtf-uploader');
+}
+
 module.exports = {
   attachHubUser,
+  hasFullHubAccess,
   requireHubApiAuth,
+  requireHubFullApiAccess,
+  requireHubFullPageAccess,
   requireHubPageAuth,
 };

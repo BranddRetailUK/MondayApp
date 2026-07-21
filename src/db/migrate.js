@@ -2,6 +2,7 @@
 const pool = require('./pool');
 const { VERBOSE_SQL } = require('../config/env');
 const { ensureDatabaseTables } = require('./databaseSchema');
+const { ensureDtfTables } = require('./dtfSchema');
 
 async function initDb() {
   const run = async (sql) => {
@@ -82,6 +83,8 @@ async function initDb() {
   `);
   await run('CREATE INDEX IF NOT EXISTS hub_sessions_user_idx ON hub_sessions(user_id);');
   await run('CREATE INDEX IF NOT EXISTS hub_sessions_expires_idx ON hub_sessions(expires_at);');
+
+  await ensureDtfTables(pool);
 
   // Denormalized Access/MDB import tables for the dashboard DATABASE tab.
   await ensureDatabaseTables(pool);
