@@ -12,7 +12,7 @@ const {
 const { hasFullHubAccess, requireHubFullApiAccess } = require('../src/middleware/hubAuth');
 const { ensureDtfTables } = require('../src/db/dtfSchema');
 const { expectedPublicId } = require('../src/services/dtfCloudinary');
-const { defaultArtworkSize, intersects, proportionalArtworkSize, repack } = require('../public/dtf-layout');
+const { defaultArtworkSize, intersects, proportionalArtworkSize, repack, uploadRanges } = require('../public/dtf-layout');
 
 test('DTF pricing uses £14 net per sheet and 20% VAT in integer pence', () => {
   assert.deepEqual(calculateDtfPrice(3), {
@@ -67,6 +67,16 @@ test('DTF layout keeps aspect ratio, packs groups, and refuses an impossible lay
     { id: 'a', groupId: 'a', widthMm: 550, heightMm: 1000 },
     { id: 'b', groupId: 'b', widthMm: 1, heightMm: 1 },
   ], 0), null);
+});
+
+test('large DTF files are divided into contiguous Cloudinary upload ranges', () => {
+  const ranges = uploadRanges(249 * 1024 * 1024, 20 * 1024 * 1024);
+  assert.equal(ranges.length, 13);
+  assert.deepEqual(ranges[0], { start: 0, endExclusive: 20 * 1024 * 1024, end: 20 * 1024 * 1024 - 1 });
+  assert.equal(ranges.at(-1).endExclusive, 249 * 1024 * 1024);
+  for (let index = 1; index < ranges.length; index += 1) {
+    assert.equal(ranges[index].start, ranges[index - 1].endExclusive);
+  }
 });
 
 test('DTF-only users fail the full dashboard API middleware', () => {

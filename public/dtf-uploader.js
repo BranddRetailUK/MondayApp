@@ -7,6 +7,8 @@
   const MAX_BYTES = 250 * 1024 * 1024;
   const MAX_QUANTITY = 99;
   const MAX_LAYOUT_ITEMS = 80;
+  const CHUNK_UPLOAD_THRESHOLD_BYTES = 100 * 1024 * 1024;
+  const CHUNK_UPLOAD_BYTES = 20 * 1024 * 1024;
   const UNIT_PRICE_PENCE = 1400;
   const VAT_RATE = 0.2;
   const DB_NAME = 'ultimateHubDtf';
@@ -313,17 +315,9 @@
             method: 'POST',
             body: JSON.stringify({ jobId: created.job.id, fileId: serverFile.id }),
           });
-          const form = new FormData();
-          form.append('file', entry.file);
-          form.append('api_key', signed.apiKey);
-          form.append('timestamp', String(signed.timestamp));
-          form.append('signature', signed.signature);
-          form.append('public_id', signed.publicId);
-          form.append('type', signed.type);
-          form.append('overwrite', 'false');
-          const uploadResponse = await fetch(signed.uploadUrl, { method: 'POST', body: form });
-          const uploadData = await uploadResponse.json().catch(() => ({}));
-          if (!uploadResponse.ok || !uploadData.public_id) throw new Error(uploadData.error?.message || 'Cloudinary upload failed.');
+          const uploadData = await uploadSignedPdf(entry.file, signed, (percent) => {
+            setFeedback(els.uploadFeedback, `Uploading ${index + 1} of ${state.sheets.length}: ${entry.file.name} (${percent}%)`);
+          });
           await api('/api/dtf/uploads/finalize', {
             method: 'POST',
             body: JSON.stringify({ jobId: created.job.id, fileId: serverFile.id, success: true, publicId: uploadData.public_id }),
@@ -349,6 +343,36 @@
       state.busy = false;
       renderSheets();
     }
+  }
+
+  async function uploadSignedPdf(file, signed, onProgress) {
+    const chunked = file.size > CHUNK_UPLOAD_THRESHOLD_BYTES;
+    const ranges = chunked
+      ? window.DtfLayout.uploadRanges(file.size, CHUNK_UPLOAD_BYTES)
+      : [{ start: 0, endExclusive: file.size, end: file.size - 1 }];
+    const uploadId = chunked ? crypto.randomUUID() : '';
+    let completed;
+    for (const range of ranges) {
+      const form = new FormData();
+      form.append('file', file.slice(range.start, range.endExclusive, 'application/pdf'), file.name);
+      form.append('api_key', signed.apiKey);
+      form.append('timestamp', String(signed.timestamp));
+      form.append('signature', signed.signature);
+      form.append('public_id', signed.publicId);
+      form.append('type', signed.type);
+      form.append('overwrite', 'false');
+      const headers = chunked ? {
+        'X-Unique-Upload-Id': uploadId,
+        'Content-Range': `bytes ${range.start}-${range.end}/${file.size}`,
+      } : undefined;
+      const response = await fetch(signed.uploadUrl, { method: 'POST', body: form, headers });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error?.message || `Cloudinary upload failed (${response.status}).`);
+      completed = data;
+      onProgress?.(Math.round((range.endExclusive / file.size) * 100));
+    }
+    if (!completed?.public_id) throw new Error('Cloudinary did not confirm the completed upload.');
+    return completed;
   }
 
   async function addArtworkFiles(fileList) {

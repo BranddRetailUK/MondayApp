@@ -9,6 +9,7 @@ const {
   TARGET_HEIGHT_POINTS,
   TARGET_WIDTH_POINTS,
 } = require('../src/services/dtf');
+const { uploadRanges } = require('../public/dtf-layout');
 const {
   createEpsPng,
   destroyDtfAsset,
@@ -17,27 +18,45 @@ const {
   verifyDtfUpload,
 } = require('../src/services/dtfCloudinary');
 
+const CHUNK_UPLOAD_THRESHOLD_BYTES = 100 * 1024 * 1024;
+const CHUNK_UPLOAD_BYTES = 20 * 1024 * 1024;
+const LARGE_PREFLIGHT_BYTES = 249 * 1024 * 1024;
+const useLargeFile = process.argv.includes('--large');
+
 async function createTestPdf() {
   const pdf = await PDFDocument.create();
   pdf.addPage([TARGET_WIDTH_POINTS, TARGET_HEIGHT_POINTS]);
-  return Buffer.from(await pdf.save());
+  const bytes = Buffer.from(await pdf.save());
+  if (!useLargeFile) return bytes;
+  return Buffer.concat([bytes, Buffer.alloc(LARGE_PREFLIGHT_BYTES - bytes.length, 0x20)]);
 }
 
 async function uploadSignedPdf(signing, bytes) {
-  const form = new FormData();
-  form.append('file', new Blob([bytes], { type: 'application/pdf' }), 'dtf-cloudinary-preflight.pdf');
-  form.append('api_key', signing.apiKey);
-  form.append('timestamp', String(signing.timestamp));
-  form.append('signature', signing.signature);
-  form.append('public_id', signing.publicId);
-  form.append('type', signing.type);
-  form.append('overwrite', String(signing.overwrite));
-
-  const response = await fetch(signing.uploadUrl, { method: 'POST', body: form });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok || result.public_id !== signing.publicId) {
-    throw new Error(result.error?.message || `Cloudinary upload failed (${response.status}).`);
+  const file = new Blob([bytes], { type: 'application/pdf' });
+  const chunked = file.size > CHUNK_UPLOAD_THRESHOLD_BYTES;
+  const ranges = chunked
+    ? uploadRanges(file.size, CHUNK_UPLOAD_BYTES)
+    : [{ start: 0, endExclusive: file.size, end: file.size - 1 }];
+  const uploadId = chunked ? crypto.randomUUID() : '';
+  let result;
+  for (const range of ranges) {
+    const form = new FormData();
+    form.append('file', file.slice(range.start, range.endExclusive), 'dtf-cloudinary-preflight.pdf');
+    form.append('api_key', signing.apiKey);
+    form.append('timestamp', String(signing.timestamp));
+    form.append('signature', signing.signature);
+    form.append('public_id', signing.publicId);
+    form.append('type', signing.type);
+    form.append('overwrite', String(signing.overwrite));
+    const headers = chunked ? {
+      'X-Unique-Upload-Id': uploadId,
+      'Content-Range': `bytes ${range.start}-${range.end}/${file.size}`,
+    } : undefined;
+    const response = await fetch(signing.uploadUrl, { method: 'POST', body: form, headers });
+    result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error?.message || `Cloudinary upload failed (${response.status}).`);
   }
+  if (result.public_id !== signing.publicId) throw new Error('Cloudinary did not confirm the expected public id.');
   return result;
 }
 
@@ -45,12 +64,11 @@ async function main() {
   const nonce = crypto.randomInt(100000, 999999);
   const identity = { userId: 999999, jobId: nonce, fileId: nonce };
   const signing = signDtfUpload(identity);
-  let uploaded = false;
+  let cleanupConfirmed = false;
 
   try {
     const bytes = await createTestPdf();
     await uploadSignedPdf(signing, bytes);
-    uploaded = true;
 
     cloudinary.config({
       cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -83,11 +101,15 @@ async function main() {
     }
 
     const downloadUrl = signedDtfDownloadUrl(signing.publicId, 'dtf-cloudinary-preflight.pdf');
-    const download = await fetch(downloadUrl, { redirect: 'follow' });
+    const download = await fetch(downloadUrl, {
+      redirect: 'follow',
+      headers: useLargeFile ? { Range: 'bytes=0-4095' } : undefined,
+    });
     if (!download.ok || !String(download.headers.get('content-type') || '').toLowerCase().includes('pdf')) {
       throw new Error(`Authenticated PDF delivery failed (${download.status}).`);
     }
-    await download.arrayBuffer();
+    if (useLargeFile) await download.body?.cancel();
+    else await download.arrayBuffer();
 
     const eps = Buffer.from([
       '%!PS-Adobe-3.0 EPSF-3.0',
@@ -103,7 +125,7 @@ async function main() {
 
     const cleanup = await destroyDtfAsset(signing.publicId);
     if (!['ok', 'not found'].includes(cleanup?.result)) throw new Error('The preflight PDF asset could not be cleaned up.');
-    uploaded = false;
+    cleanupConfirmed = true;
 
     console.log(JSON.stringify({
       ok: true,
@@ -113,12 +135,14 @@ async function main() {
       pages: verification.pages,
       width: verification.width,
       height: verification.height,
+      bytes: verification.bytes,
+      chunkedUpload: useLargeFile,
       signedDelivery: true,
       eps300DpiPng: true,
       cleanedUp: true,
     }, null, 2));
   } finally {
-    if (uploaded) await destroyDtfAsset(signing.publicId);
+    if (!cleanupConfirmed) await destroyDtfAsset(signing.publicId);
   }
 }
 

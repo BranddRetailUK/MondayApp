@@ -15,6 +15,7 @@
     "test:database-addresses": "node --test test/database-customer-addresses.test.js",
     "test:dtf": "node --test test/dtf.test.js test/dtf-routes.test.js",
     "preflight:dtf-cloudinary": "node scripts/preflight-dtf-cloudinary.js",
+    "preflight:dtf-cloudinary:large": "node scripts/preflight-dtf-cloudinary.js --large",
     "suppliers:ping": "node scripts/ping-supplier-apis.js"
   },
   "dependencies": {

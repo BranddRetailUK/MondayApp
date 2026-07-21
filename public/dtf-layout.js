@@ -18,6 +18,17 @@
       : { widthMm: requested, heightMm: requested / ratio };
   }
 
+  function uploadRanges(totalBytes, chunkBytes) {
+    const total = Math.max(0, Math.floor(Number(totalBytes) || 0));
+    const chunk = Math.max(1, Math.floor(Number(chunkBytes) || 0));
+    const ranges = [];
+    for (let start = 0; start < total; start += chunk) {
+      const endExclusive = Math.min(total, start + chunk);
+      ranges.push({ start, endExclusive, end: endExclusive - 1 });
+    }
+    return ranges;
+  }
+
   function intersects(a, b, gap = 0) {
     return !(
       a.xMm + a.widthMm + gap <= b.xMm
@@ -63,5 +74,5 @@
     return Array.from(new Set(values.map((value) => Number(value.toFixed(4))))).sort((a, b) => a - b);
   }
 
-  return { defaultArtworkSize, findOpenPosition, intersects, proportionalArtworkSize, repack };
+  return { defaultArtworkSize, findOpenPosition, intersects, proportionalArtworkSize, repack, uploadRanges };
 });
