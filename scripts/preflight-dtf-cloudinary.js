@@ -100,13 +100,16 @@ async function main() {
       throw new Error(`${verification.error} Observed metadata: ${JSON.stringify(metadata)}`);
     }
 
-    const downloadUrl = signedDtfDownloadUrl(signing.publicId, 'dtf-cloudinary-preflight.pdf');
+    const downloadUrl = signedDtfDownloadUrl(signing.publicId, 'dtf-cloudinary-preflight.pdf', { attachment: true });
     const download = await fetch(downloadUrl, {
       redirect: 'follow',
       headers: useLargeFile ? { Range: 'bytes=0-4095' } : undefined,
     });
     if (!download.ok || !String(download.headers.get('content-type') || '').toLowerCase().includes('pdf')) {
       throw new Error(`Authenticated PDF delivery failed (${download.status}).`);
+    }
+    if (!String(download.headers.get('content-disposition') || '').toLowerCase().includes('attachment')) {
+      throw new Error('Authenticated PDF delivery did not return attachment disposition.');
     }
     if (useLargeFile) await download.body?.cancel();
     else await download.arrayBuffer();
@@ -138,6 +141,7 @@ async function main() {
       bytes: verification.bytes,
       chunkedUpload: useLargeFile,
       signedDelivery: true,
+      attachmentDelivery: true,
       eps300DpiPng: true,
       cleanedUp: true,
     }, null, 2));

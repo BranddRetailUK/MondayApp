@@ -12,7 +12,15 @@ const {
 const { hasFullHubAccess, requireHubFullApiAccess } = require('../src/middleware/hubAuth');
 const { ensureDtfTables } = require('../src/db/dtfSchema');
 const { expectedPublicId } = require('../src/services/dtfCloudinary');
-const { defaultArtworkSize, intersects, proportionalArtworkSize, repack, uploadRanges } = require('../public/dtf-layout');
+const {
+  epsBoundingBox,
+  intersects,
+  physicalArtworkSize,
+  pngResolution,
+  proportionalArtworkSize,
+  repack,
+  uploadRanges,
+} = require('../public/dtf-layout');
 
 test('DTF pricing uses £14 net per sheet and 20% VAT in integer pence', () => {
   assert.deepEqual(calculateDtfPrice(3), {
@@ -54,7 +62,6 @@ test('pdf-lib creates an exact one-page 550 x 1000mm document', async () => {
 });
 
 test('DTF layout keeps aspect ratio, packs groups, and refuses an impossible layout', () => {
-  assert.deepEqual(defaultArtworkSize(1000, 500), { widthMm: 170, heightMm: 85 });
   assert.deepEqual(proportionalArtworkSize(1000, 500, 0, 'width', 200), { widthMm: 200, heightMm: 100 });
   assert.deepEqual(proportionalArtworkSize(1000, 500, 90, 'height', 200), { widthMm: 100, heightMm: 200 });
   const packed = repack([
@@ -77,6 +84,34 @@ test('large DTF files are divided into contiguous Cloudinary upload ranges', () 
   for (let index = 1; index < ranges.length; index += 1) {
     assert.equal(ranges[index].start, ranges[index - 1].endExclusive);
   }
+});
+
+test('DTF artwork starts at source physical size instead of a normalized width', () => {
+  assert.deepEqual(physicalArtworkSize({ widthPx: 800, heightPx: 400, dpiX: 254, dpiY: 254 }), {
+    widthMm: 80,
+    heightMm: 40,
+  });
+  assert.deepEqual(physicalArtworkSize({ widthPx: 2000, heightPx: 1000, widthMm: 80, heightMm: 40 }), {
+    widthMm: 80,
+    heightMm: 40,
+  });
+});
+
+test('DTF reads PNG resolution and EPS physical bounds', () => {
+  const png = Buffer.alloc(8 + 4 + 4 + 9 + 4);
+  Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(png, 0);
+  png.writeUInt32BE(9, 8);
+  png.write('pHYs', 12, 'ascii');
+  png.writeUInt32BE(10000, 16);
+  png.writeUInt32BE(10000, 20);
+  png[24] = 1;
+  const resolution = pngResolution(png);
+  assert.ok(Math.abs(resolution.dpiX - 254) < 0.001);
+  assert.ok(Math.abs(resolution.dpiY - 254) < 0.001);
+  assert.deepEqual(epsBoundingBox('%%BoundingBox: 0 0 226.7717 113.3858'), {
+    widthPoints: 226.7717,
+    heightPoints: 113.3858,
+  });
 });
 
 test('DTF-only users fail the full dashboard API middleware', () => {

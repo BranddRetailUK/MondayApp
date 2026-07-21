@@ -98,13 +98,13 @@ async function verifyDtfUpload(input) {
   }
 }
 
-function signedDtfDownloadUrl(publicId, filename) {
+function signedDtfDownloadUrl(publicId, filename, options = {}) {
   configure();
   return cloudinary.utils.private_download_url(publicId, 'pdf', {
     resource_type: 'image',
     type: 'authenticated',
     expires_at: Math.floor(Date.now() / 1000) + 5 * 60,
-    attachment: false,
+    attachment: options.attachment === true,
     filename: String(filename || 'gang-sheet.pdf').replace(/\.pdf$/i, ''),
   });
 }

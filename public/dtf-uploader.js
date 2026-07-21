@@ -43,6 +43,7 @@
       selectedArtworkId: '',
       nextZ: 1,
       busy: false,
+      epsProcessing: false,
     };
   }
 
@@ -73,6 +74,8 @@
       artworkList: document.getElementById('dtf-artwork-list'),
       layoutCanvas: document.getElementById('dtf-layout-canvas'),
       layoutEmpty: document.getElementById('dtf-layout-empty'),
+      epsProcessing: document.getElementById('dtf-eps-processing'),
+      epsProcessingName: document.getElementById('dtf-eps-processing-name'),
       layoutFeedback: document.getElementById('dtf-layout-feedback'),
       addToOrder: document.getElementById('dtf-add-to-order'),
       adminBody: document.getElementById('db-dtf-jobs-body'),
@@ -111,6 +114,7 @@
     attachDropTarget(els.layoutCanvas, (files) => addArtworkFiles(files));
     els.artworkList.addEventListener('click', handleArtworkClick);
     els.artworkList.addEventListener('change', handleArtworkChange);
+    els.artworkList.addEventListener('keydown', handleArtworkKeydown);
     els.layoutCanvas.addEventListener('pointerdown', startPieceDrag);
     els.addToOrder.addEventListener('click', addLayoutToOrder);
     els.adminRefresh?.addEventListener('click', () => loadAdminJobs(true));
@@ -384,9 +388,13 @@
         break;
       }
       try {
+        if (isEpsFile(file)) setEpsProcessing(true, file.name);
         setFeedback(els.layoutFeedback, `Reading ${file.name}…`);
         const source = await readArtwork(file);
-        const size = defaultArtworkSize(source.widthPx, source.heightPx);
+        const size = window.DtfLayout.physicalArtworkSize(source);
+        if (size.widthMm > WIDTH_MM || size.heightMm > HEIGHT_MM) {
+          throw new Error(`${file.name} is ${formatMeasurement(size.widthMm)} × ${formatMeasurement(size.heightMm)}mm and does not fit on the sheet.`);
+        }
         const id = crypto.randomUUID();
         const item = {
           id,
@@ -398,6 +406,8 @@
           previewUrl: source.previewUrl,
           widthPx: source.widthPx,
           heightPx: source.heightPx,
+          sourceWidthMm: size.widthMm,
+          sourceHeightMm: size.heightMm,
           widthMm: size.widthMm,
           heightMm: size.heightMm,
           xMm: 0,
@@ -412,6 +422,8 @@
         setFeedback(els.layoutFeedback, '');
       } catch (error) {
         setFeedback(els.layoutFeedback, error.message || `Could not add ${file.name}.`, 'error');
+      } finally {
+        if (isEpsFile(file)) setEpsProcessing(false);
       }
     }
     renderLayout();
@@ -421,9 +433,11 @@
   async function readArtwork(file) {
     if (/\.png$/i.test(file.name) || file.type === 'image/png') {
       const dimensions = await imageDimensions(file);
-      return { sourceType: 'png', renderFile: file, previewUrl: URL.createObjectURL(file), ...dimensions };
+      const resolution = window.DtfLayout.pngResolution(new Uint8Array(await file.arrayBuffer())) || {};
+      return { sourceType: 'png', renderFile: file, previewUrl: URL.createObjectURL(file), ...dimensions, ...resolution };
     }
-    if (/\.eps$/i.test(file.name) || file.type === 'application/postscript') {
+    if (isEpsFile(file)) {
+      const boundingBox = window.DtfLayout.epsBoundingBox(await file.text());
       const form = new FormData();
       form.append('file', file);
       const response = await fetch('/api/dtf/layouts/eps-preview', { method: 'POST', credentials: 'include', body: form });
@@ -434,7 +448,11 @@
       const blob = await response.blob();
       const renderFile = new File([blob], `${file.name.replace(/\.eps$/i, '')}-300dpi.png`, { type: 'image/png' });
       const dimensions = await imageDimensions(renderFile);
-      return { sourceType: 'eps', renderFile, previewUrl: URL.createObjectURL(renderFile), ...dimensions };
+      const physical = boundingBox ? {
+        widthMm: boundingBox.widthPoints / MM_TO_POINTS,
+        heightMm: boundingBox.heightPoints / MM_TO_POINTS,
+      } : { dpiX: 300, dpiY: 300 };
+      return { sourceType: 'eps', renderFile, previewUrl: URL.createObjectURL(renderFile), ...dimensions, ...physical };
     }
     if (/\.pdf$/i.test(file.name) || file.type === 'application/pdf') {
       const pdf = await loadPdf(file);
@@ -448,13 +466,22 @@
       await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
       const blob = await new Promise((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error('PDF preview failed.')), 'image/png'));
       const renderFile = new File([blob], `${file.name.replace(/\.pdf$/i, '')}-preview.png`, { type: 'image/png' });
-      return { sourceType: 'pdf', renderFile, previewUrl: URL.createObjectURL(renderFile), widthPx: base.width, heightPx: base.height };
+      return {
+        sourceType: 'pdf',
+        renderFile,
+        previewUrl: URL.createObjectURL(renderFile),
+        widthPx: base.width,
+        heightPx: base.height,
+        widthMm: base.width / MM_TO_POINTS,
+        heightMm: base.height / MM_TO_POINTS,
+      };
     }
     throw new Error('Artwork must be PNG, EPS, or a one-page PDF.');
   }
 
   function handleArtworkClick(event) {
     const actionButton = event.target.closest('[data-art-action]');
+    if (!actionButton && event.target.closest('input, label, select, textarea')) return;
     const id = actionButton?.dataset.artId || event.target.closest('[data-art-card]')?.dataset.artCard;
     if (!id) return;
     const item = state.artworks.find((entry) => entry.id === id);
@@ -474,8 +501,15 @@
     const input = event.target;
     const groupId = input.dataset.artGroup;
     if (!groupId) return;
-    if (input.dataset.artDimension) updateArtworkDimension(groupId, input.dataset.artDimension, Number(input.value));
+    if (input.dataset.artDimension) updateArtworkDimension(groupId, input.dataset.artDimension, parseMeasurement(input.value));
     if (input.dataset.artCopies !== undefined) updateCopies(groupId, Number.parseInt(input.value, 10) || 0);
+  }
+
+  function handleArtworkKeydown(event) {
+    const input = event.target.closest('[data-art-dimension]');
+    if (!input || event.key !== 'Enter') return;
+    event.preventDefault();
+    input.blur();
   }
 
   function selectArtwork(id) {
@@ -507,8 +541,8 @@
     const parent = state.artworks.find((entry) => entry.id === groupId);
     if (!parent || !Number.isFinite(value) || value <= 0) return renderLayout();
     const requested = window.DtfLayout.proportionalArtworkSize(
-      parent.widthPx,
-      parent.heightPx,
+      parent.sourceWidthMm || parent.widthPx,
+      parent.sourceHeightMm || parent.heightPx,
       parent.rotationDeg,
       dimension,
       value
@@ -653,7 +687,7 @@
     els.layoutCanvas.classList.add(`dtf-background-${state.background.toLowerCase()}`);
     renderArtworkList();
     renderLayoutCanvas();
-    els.addToOrder.disabled = state.busy || !state.artworks.length;
+    els.addToOrder.disabled = state.busy || state.epsProcessing || !state.artworks.length;
   }
 
   function renderArtworkList() {
@@ -670,8 +704,8 @@
           <button class="dtf-art-remove" type="button" data-art-action="remove" data-art-id="${escapeAttr(group.parent.id)}" aria-label="Remove artwork">×</button>
         </div>
         <div class="dtf-art-controls">
-          <label>W <input type="number" min="1" max="550" value="${Math.round(group.parent.widthMm)}" data-art-group="${escapeAttr(group.groupId)}" data-art-dimension="width"> mm</label>
-          <label>H <input type="number" min="1" max="1000" value="${Math.round(group.parent.heightMm)}" data-art-group="${escapeAttr(group.groupId)}" data-art-dimension="height"> mm</label>
+          <label>W <input type="text" inputmode="decimal" value="${escapeAttr(formatMeasurement(group.parent.widthMm))}" data-art-group="${escapeAttr(group.groupId)}" data-art-dimension="width" aria-label="Artwork width in millimetres"> mm</label>
+          <label>H <input type="text" inputmode="decimal" value="${escapeAttr(formatMeasurement(group.parent.heightMm))}" data-art-group="${escapeAttr(group.groupId)}" data-art-dimension="height" aria-label="Artwork height in millimetres"> mm</label>
           <label>Copies <input type="number" min="0" max="79" value="${group.children.length}" data-art-group="${escapeAttr(group.groupId)}" data-art-copies></label>
           <button type="button" data-art-action="rotate-group" data-art-id="${escapeAttr(group.parent.id)}">Rotate all 90°</button>
         </div>
@@ -832,6 +866,8 @@
           renderFile: item.renderFile,
           widthPx: item.widthPx,
           heightPx: item.heightPx,
+          sourceWidthMm: item.sourceWidthMm,
+          sourceHeightMm: item.sourceHeightMm,
         })),
         items: state.artworks.map(({ id, groupId, name, widthMm, heightMm, xMm, yMm, rotationDeg, zIndex }) => ({ id, groupId, name, widthMm, heightMm, xMm, yMm, rotationDeg, zIndex })),
       });
@@ -941,7 +977,7 @@
       els.adminDetailStatus.disabled = data.job.status === 'UPLOADING';
       els.adminDetailPricing.innerHTML = `<span>${data.job.uniqueFileCount} files</span><span>${data.job.sheetQuantity} sheets</span><span>Subtotal ${money(data.job.subtotalPence)}</span><span>VAT ${money(data.job.vatPence)}</span><strong>Total ${money(data.job.totalPence)}</strong>`;
       els.adminFilesBody.innerHTML = data.files.map((file) => `
-        <tr><td>${escapeHtml(file.originalName)}</td><td>${file.quantity}</td><td>${formatBytes(file.verifiedBytes ?? file.declaredBytes)}</td><td>${escapeHtml(statusLabel(file.uploadStatus))}</td><td>${escapeHtml(file.errorMessage || '')}</td><td>${file.uploadStatus === 'UPLOADED' ? `<a class="db-blue-link" href="/api/dtf/files/${encodeURIComponent(file.id)}" target="_blank" rel="noopener">Open PDF</a>` : '—'}</td></tr>`).join('') || '<tr><td colspan="6" class="db-empty-cell">No files</td></tr>';
+        <tr><td>${escapeHtml(file.originalName)}</td><td>${file.quantity}</td><td>${formatBytes(file.verifiedBytes ?? file.declaredBytes)}</td><td>${escapeHtml(statusLabel(file.uploadStatus))}</td><td>${escapeHtml(file.errorMessage || '')}</td><td>${file.uploadStatus === 'UPLOADED' ? `<span class="db-dtf-file-actions"><a class="db-blue-link" href="/api/dtf/files/${encodeURIComponent(file.id)}" target="_blank" rel="noopener">Open PDF</a><a class="db-blue-link" href="/api/dtf/files/${encodeURIComponent(file.id)}?download=1">Download PDF</a></span>` : '—'}</td></tr>`).join('') || '<tr><td colspan="6" class="db-empty-cell">No files</td></tr>';
     } catch (error) {
       window.alert(error.message || 'Failed to load DTF job');
     }
@@ -1004,8 +1040,17 @@
     }
   }
 
-  function defaultArtworkSize(widthPx, heightPx) {
-    return window.DtfLayout.defaultArtworkSize(widthPx, heightPx);
+  function isEpsFile(file) {
+    return /\.eps$/i.test(file?.name || '') || file?.type === 'application/postscript';
+  }
+
+  function setEpsProcessing(active, filename = '') {
+    state.epsProcessing = active;
+    if (els.epsProcessing) els.epsProcessing.hidden = !active;
+    if (els.epsProcessingName) els.epsProcessingName.textContent = filename || 'Preparing preview…';
+    if (els.addArtwork) els.addArtwork.disabled = active;
+    if (els.layoutEmpty) els.layoutEmpty.disabled = active;
+    if (els.addToOrder) els.addToOrder.disabled = active || state.busy || !state.artworks.length;
   }
 
   function intersects(a, b, gap) {
@@ -1030,6 +1075,8 @@
   function formatDateTime(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? '' : new Intl.DateTimeFormat('en-GB', { dateStyle: 'short', timeStyle: 'short' }).format(date); }
   function statusLabel(value) { return String(value || '').toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()); }
   function clamp(value, min, max) { return Math.min(max, Math.max(min, Number(value) || 0)); }
+  function parseMeasurement(value) { return Number(String(value || '').trim().replace(',', '.')); }
+  function formatMeasurement(value) { return Number((Number(value) || 0).toFixed(2)).toString(); }
   function setFeedback(element, message, type = '') { element.textContent = message || ''; element.classList.toggle('error', type === 'error'); element.classList.toggle('success', type === 'success'); }
   function hexRgb(value) { const hex = String(value).replace('#', ''); return { r: Number.parseInt(hex.slice(0, 2), 16) / 255, g: Number.parseInt(hex.slice(2, 4), 16) / 255, b: Number.parseInt(hex.slice(4, 6), 16) / 255 }; }
   function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character])); }

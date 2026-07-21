@@ -3,10 +3,64 @@
   if (typeof module === 'object' && module.exports) module.exports = api;
   if (root) root.DtfLayout = api;
 })(typeof window !== 'undefined' ? window : globalThis, function () {
-  function defaultArtworkSize(widthPx, heightPx) {
-    const ratio = Math.max(1, Number(widthPx) || 1) / Math.max(1, Number(heightPx) || 1);
-    if (ratio >= 170 / 220) return { widthMm: 170, heightMm: 170 / ratio };
-    return { widthMm: 220 * ratio, heightMm: 220 };
+  function physicalArtworkSize(input, fallbackDpi = 300) {
+    const explicitWidthMm = Number(input?.widthMm);
+    const explicitHeightMm = Number(input?.heightMm);
+    if (explicitWidthMm > 0 && explicitHeightMm > 0) {
+      return { widthMm: explicitWidthMm, heightMm: explicitHeightMm };
+    }
+    const widthPx = Math.max(1, Number(input?.widthPx) || 1);
+    const heightPx = Math.max(1, Number(input?.heightPx) || 1);
+    const dpiX = Number(input?.dpiX) > 0 ? Number(input.dpiX) : fallbackDpi;
+    const dpiY = Number(input?.dpiY) > 0 ? Number(input.dpiY) : fallbackDpi;
+    return {
+      widthMm: (widthPx / dpiX) * 25.4,
+      heightMm: (heightPx / dpiY) * 25.4,
+    };
+  }
+
+  function pngResolution(bytes) {
+    const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || 0);
+    const signature = [137, 80, 78, 71, 13, 10, 26, 10];
+    if (data.length < 8 || signature.some((value, index) => data[index] !== value)) return null;
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    let offset = 8;
+    while (offset + 12 <= data.length) {
+      const length = view.getUint32(offset);
+      const dataStart = offset + 8;
+      const next = dataStart + length + 4;
+      if (next > data.length) return null;
+      const type = String.fromCharCode(data[offset + 4], data[offset + 5], data[offset + 6], data[offset + 7]);
+      if (type === 'pHYs' && length >= 9 && data[dataStart + 8] === 1) {
+        const pixelsPerMeterX = view.getUint32(dataStart);
+        const pixelsPerMeterY = view.getUint32(dataStart + 4);
+        if (pixelsPerMeterX > 0 && pixelsPerMeterY > 0) {
+          return {
+            dpiX: pixelsPerMeterX * 0.0254,
+            dpiY: pixelsPerMeterY * 0.0254,
+          };
+        }
+      }
+      if (type === 'IEND') break;
+      offset = next;
+    }
+    return null;
+  }
+
+  function epsBoundingBox(text) {
+    const source = String(text || '');
+    const number = '([-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+))';
+    for (const label of ['HiResBoundingBox', 'BoundingBox']) {
+      const expression = new RegExp(`^%%${label}:\\s*${number}\\s+${number}\\s+${number}\\s+${number}`, 'gmi');
+      let match;
+      let lastValid = null;
+      while ((match = expression.exec(source))) {
+        const [left, bottom, right, top] = match.slice(1, 5).map(Number);
+        if (right > left && top > bottom) lastValid = { widthPoints: right - left, heightPoints: top - bottom };
+      }
+      if (lastValid) return lastValid;
+    }
+    return null;
   }
 
   function proportionalArtworkSize(widthPx, heightPx, rotationDeg, dimension, value) {
@@ -74,5 +128,14 @@
     return Array.from(new Set(values.map((value) => Number(value.toFixed(4))))).sort((a, b) => a - b);
   }
 
-  return { defaultArtworkSize, findOpenPosition, intersects, proportionalArtworkSize, repack, uploadRanges };
+  return {
+    epsBoundingBox,
+    findOpenPosition,
+    intersects,
+    physicalArtworkSize,
+    pngResolution,
+    proportionalArtworkSize,
+    repack,
+    uploadRanges,
+  };
 });

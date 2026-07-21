@@ -122,6 +122,48 @@ test('signup acceptance persists the selected DTF-only access scope', async () =
   }
 });
 
+test('verified DTF files support an authorized attachment download redirect', async () => {
+  const signedCalls = [];
+  const fakePool = {
+    async query(sql) {
+      if (String(sql).includes('FROM dtf_job_files file')) {
+        return {
+          rowCount: 1,
+          rows: [{
+            original_name: 'generated-gang-sheet.pdf',
+            cloudinary_public_id: 'ultimate-hub/dtf/4/8/19',
+            upload_status: 'UPLOADED',
+            user_id: 4,
+          }],
+        };
+      }
+      throw new Error(`Unexpected pool query: ${sql}`);
+    },
+  };
+  const cloud = cloudStub({
+    signedDtfDownloadUrl: (...args) => {
+      signedCalls.push(args);
+      return 'https://example.test/signed-download.pdf';
+    },
+  });
+
+  await withDtfRouter(fakePool, cloud, async (router) => {
+    const response = fakeResponse();
+    await routeHandler(router, '/api/dtf/files/:fileId', 'get')({
+      params: { fileId: '19' },
+      query: { download: '1' },
+      hubUser: { id: 4, access_scope: 'dtf_only' },
+    }, response);
+    assert.equal(response.statusCode, 302);
+    assert.equal(response.headers.location, 'https://example.test/signed-download.pdf');
+    assert.deepEqual(signedCalls[0], [
+      'ultimate-hub/dtf/4/8/19',
+      'generated-gang-sheet.pdf',
+      { attachment: true },
+    ]);
+  });
+});
+
 async function withDtfRouter(fakePool, fakeCloud, callback) {
   const poolPath = require.resolve('../src/db/pool');
   const cloudPath = require.resolve('../src/services/dtfCloudinary');

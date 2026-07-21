@@ -261,7 +261,8 @@ router.get('/api/dtf/files/:fileId', async (req, res) => {
     if (file.upload_status !== 'UPLOADED' || !file.cloudinary_public_id) {
       return res.status(409).json({ error: 'DTF file is not available.' });
     }
-    return res.redirect(302, signedDtfDownloadUrl(file.cloudinary_public_id, file.original_name));
+    const attachment = ['1', 'true', 'download'].includes(String(req.query?.download || '').toLowerCase());
+    return res.redirect(302, signedDtfDownloadUrl(file.cloudinary_public_id, file.original_name, { attachment }));
   } catch (error) {
     return sendDtfError(res, error, 'Failed to open DTF file');
   }
