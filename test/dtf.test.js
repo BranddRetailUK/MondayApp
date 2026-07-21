@@ -76,6 +76,29 @@ test('DTF layout keeps aspect ratio, packs groups, and refuses an impossible lay
   ], 0), null);
 });
 
+test('DTF copies fill each row from left to right before wrapping down', () => {
+  const parent = { id: 'parent', groupId: 'parent', widthMm: 170, heightMm: 86 };
+  const packed = repack([
+    parent,
+    ...Array.from({ length: 5 }, (_, index) => ({
+      ...parent,
+      id: `copy-${index + 1}`,
+    })),
+  ], 10);
+
+  assert.deepEqual(
+    packed.map(({ xMm, yMm }) => ({ xMm, yMm })),
+    [
+      { xMm: 0, yMm: 0 },
+      { xMm: 180, yMm: 0 },
+      { xMm: 360, yMm: 0 },
+      { xMm: 0, yMm: 96 },
+      { xMm: 180, yMm: 96 },
+      { xMm: 360, yMm: 96 },
+    ],
+  );
+});
+
 test('large DTF files are divided into contiguous Cloudinary upload ranges', () => {
   const ranges = uploadRanges(249 * 1024 * 1024, 20 * 1024 * 1024);
   assert.equal(ranges.length, 13);

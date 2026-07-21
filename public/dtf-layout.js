@@ -94,15 +94,21 @@
 
   function findOpenPosition(placed, width, height, gap, canvasWidth = 550, canvasHeight = 1000) {
     if (width <= 0 || height <= 0 || width > canvasWidth || height > canvasHeight) return null;
-    const xs = uniqueSorted([0, ...placed.map((item) => item.xMm + item.widthMm + gap)])
-      .filter((x) => x + width <= canvasWidth + .001);
     const ys = uniqueSorted([0, ...placed.map((item) => item.yMm + item.heightMm + gap)])
       .filter((y) => y + height <= canvasHeight + .001);
     for (const yMm of ys) {
-      for (const xMm of xs) {
-        const candidate = { xMm, yMm, widthMm: width, heightMm: height };
-        if (placed.every((item) => !intersects(candidate, item, gap))) return { xMm, yMm };
+      const rowBlockers = placed
+        .filter((item) => !(
+          yMm + height + gap <= item.yMm
+          || item.yMm + item.heightMm + gap <= yMm
+        ))
+        .sort((left, right) => left.xMm - right.xMm);
+      let xMm = 0;
+      for (const blocker of rowBlockers) {
+        if (xMm + width + gap <= blocker.xMm + .001) break;
+        xMm = Math.max(xMm, blocker.xMm + blocker.widthMm + gap);
       }
+      if (xMm + width <= canvasWidth + .001) return { xMm, yMm };
     }
     return null;
   }
