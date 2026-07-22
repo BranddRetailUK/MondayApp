@@ -6,7 +6,6 @@ body.hub-auth-pending .app-container{visibility:hidden}
 .dtf-app{--dtf-purple:#7e00ff;--dtf-purple-soft:#f4ebff;max-width:1440px;margin:0 auto;padding:34px 36px 56px;font-family:'Manrope','Segoe UI',system-ui,sans-serif}
 .dtf-page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:26px}
 .dtf-page-head h1{margin:4px 0 4px;font-size:32px;line-height:1.15;color:#1c1c1c}
-.dtf-page-head p{margin:0;color:#686868;font-size:15px}
 .dtf-eyebrow{text-transform:uppercase;letter-spacing:.24em;font-size:12px;font-weight:800;color:var(--dtf-purple)}
 .dtf-mode-tabs{display:flex;gap:8px;padding:5px;border:1px solid #e9dcf8;background:#fff;border-radius:999px}
 .dtf-mode-tabs button,.dtf-background-options button{border:0;background:transparent;color:#353535;font:inherit;font-weight:750;cursor:pointer}
@@ -25,12 +24,9 @@ body.hub-auth-pending .app-container{visibility:hidden}
 .dtf-upload-icon{width:52px;height:52px;border-radius:16px;background:var(--dtf-purple-soft);color:var(--dtf-purple);display:inline-flex;align-items:center;justify-content:center;font-size:26px;font-weight:800}
 .dtf-upload-sidebar{display:flex;flex-direction:column;gap:16px}
 .dtf-upload-card,.dtf-price-card{padding:26px}
-.dtf-primary-button,.dtf-submit-button,.dtf-secondary-button{border:0;font:inherit;font-weight:800;cursor:pointer;transition:transform .15s ease,opacity .15s ease,background .15s ease}
+.dtf-primary-button,.dtf-submit-button{border:0;font:inherit;font-weight:800;cursor:pointer;transition:transform .15s ease,opacity .15s ease,background .15s ease}
 .dtf-primary-button{background:var(--dtf-purple);color:#fff;border-radius:999px;padding:13px 22px}
-.dtf-secondary-button{display:inline-flex;align-items:center;justify-content:center;background:#fff;color:#343434;border:1px solid #e8d6f8;border-radius:999px;padding:11px 17px}
 .dtf-primary-button:hover,.dtf-submit-button:hover{transform:translateY(-1px)}
-.dtf-upload-card p{color:#747474;line-height:1.65;margin:8px 0 16px}
-.dtf-card-divider{height:1px;background:#ececec;margin:24px 0}
 .dtf-sheet-list{display:flex;flex-direction:column;gap:9px;margin-top:18px;max-height:285px;overflow:auto}
 .dtf-empty-list{border:1px dashed #ddd;border-radius:20px;padding:20px;color:#777;background:#fafafa}
 .dtf-sheet-row{border:1px solid #eee2f7;border-radius:18px;padding:12px;background:#fff;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;cursor:pointer}
