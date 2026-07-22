@@ -5966,6 +5966,7 @@
           ${detailRow('Order date:', inputBox(formatDate(job.order_date, 'short')))}
           ${detailRow('Delivery:', `${inputBox(formatDate(job.delivery_date, 'short'), 'db-delivery-date-field')}<label class="db-inline-check">${renderCheck(job.customer_date_required)} Customer date</label>`)}
           ${detailRow('Invoice date:', manualInvoiceDateControl(job))}
+          ${detailRow('Invoice required:', invoiceRequiredSelect(job))}
           ${detailRow('Completion', inputBox(formatDate(job.complete_date, 'short'), 'db-completion-date-field'))}
         </div>
         ${renderOrderApprovedMark(job)}
@@ -6007,6 +6008,26 @@
       <option value="${escapeAttr(orderType)}" ${orderType === current ? 'selected' : ''}>${escapeHtml(orderType)}</option>
     `));
     return `<select class="db-order-type-select" data-db-job-field="order_type">${options.join('')}</select>`;
+  }
+
+  function invoiceRequiredSelect(job) {
+    const invoiceRequired = !invoiceNotRequired(job);
+    const locked = invoiceGenerated(job);
+    const lockedTitle = locked
+      ? 'Invoice Required cannot be changed after an invoice has been generated'
+      : '';
+    return `
+      <select
+        class="db-invoice-required-select ${locked ? 'is-invoice-locked' : ''}"
+        data-db-invoice-required="true"
+        aria-label="Invoice required"
+        ${locked ? 'disabled' : ''}
+        ${lockedTitle ? `title="${escapeAttr(lockedTitle)}"` : ''}
+      >
+        <option value="yes" ${invoiceRequired ? 'selected' : ''}>Yes</option>
+        <option value="no" ${invoiceRequired ? '' : 'selected'}>No</option>
+      </select>
+    `;
   }
 
   function paymentTermsSelect(job) {
@@ -6090,8 +6111,69 @@
       handleOrderTypeChange(event.target);
       return;
     }
+    if (event.target?.matches?.('[data-db-invoice-required]')) {
+      saveInvoiceRequiredSelection(event.target);
+      return;
+    }
     if (event.target?.matches?.('[data-db-address-select]')) {
       saveOrderAddressSelection(event.target);
+    }
+  }
+
+  async function saveInvoiceRequiredSelection(select) {
+    if (!select || select.dataset.invoiceRequiredSaving === 'true') return;
+    const sourceOrderId = Number(state.selectedJob?.source_order_id);
+    if (!Number.isFinite(sourceOrderId)) return;
+
+    const previousValue = invoiceNotRequired(state.selectedJob) ? 'no' : 'yes';
+    const requestedValue = select.value === 'no' ? 'no' : 'yes';
+    if (requestedValue === previousValue) return;
+
+    select.dataset.invoiceRequiredSaving = 'true';
+    select.classList.add('is-saving');
+    select.disabled = true;
+
+    try {
+      const data = await fetchJson(`/api/database/jobs/${encodeURIComponent(sourceOrderId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoice_required: requestedValue }),
+      });
+      state.selectedJob = { ...state.selectedJob, ...data.job };
+      updateOutstandingJob(state.selectedJob);
+
+      const toInvoiceIndex = state.toInvoiceJobs.findIndex((job) => (
+        Number(job.source_order_id) === sourceOrderId
+      ));
+      if (toInvoiceIndex >= 0) {
+        state.toInvoiceJobs[toInvoiceIndex] = {
+          ...state.toInvoiceJobs[toInvoiceIndex],
+          ...state.selectedJob,
+        };
+      }
+
+      select.value = invoiceNotRequired(state.selectedJob) ? 'no' : 'yes';
+      syncOrderDocumentButtons(state.selectedJob);
+      renderOutstandingOrders();
+      renderToInvoiceJobs();
+      hydrateOrderSelectors();
+      loadHomeMetrics();
+      if (state.toInvoiceLoaded) loadToInvoiceJobs({ force: true });
+    } catch (err) {
+      select.value = previousValue;
+      window.alert(err.message || 'Failed to update Invoice Required');
+    } finally {
+      if (!select.isConnected) return;
+      delete select.dataset.invoiceRequiredSaving;
+      select.classList.remove('is-saving');
+      const locked = invoiceGenerated(state.selectedJob);
+      select.classList.toggle('is-invoice-locked', locked);
+      select.disabled = locked;
+      if (locked) {
+        select.title = 'Invoice Required cannot be changed after an invoice has been generated';
+      } else {
+        select.removeAttribute('title');
+      }
     }
   }
 
@@ -8172,6 +8254,10 @@
     const value = job?.invoice_required;
     const clean = String(value ?? '').trim().toLowerCase();
     return value === false || value === 0 || clean === 'false' || clean === '0' || clean === 'no';
+  }
+
+  function invoiceGenerated(job) {
+    return truthy(job?.invoice_printed) || String(job?.invoice_no ?? '').trim() !== '';
   }
 
   function invoiceDocumentNo(job) {

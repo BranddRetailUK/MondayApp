@@ -3370,6 +3370,7 @@ router.put('/api/database/jobs/:id', async (req, res) => {
   const hasComments = Object.prototype.hasOwnProperty.call(payload, 'comments');
   const hasClientOrderNo = Object.prototype.hasOwnProperty.call(payload, 'client_order_no');
   const hasIsComplete = Object.prototype.hasOwnProperty.call(payload, 'is_complete');
+  const hasInvoiceRequired = Object.prototype.hasOwnProperty.call(payload, 'invoice_required');
   const hasMarkInvoiced = payload.mark_invoiced === true || payload.mark_invoiced === 'true';
   const hasManualInvoiceDate = payload.manual_invoice_date === true || payload.manual_invoice_date === 'true';
   const hasContactFields = ['contact_id', 'contact_name', 'contact_phone', 'contact_mobile', 'contact_email']
@@ -3385,7 +3386,15 @@ router.put('/api/database/jobs/:id', async (req, res) => {
     payload.order_type = orderType;
   }
 
-  if (!hasJobTitle && !hasOrderType && !hasComments && !hasClientOrderNo && !hasIsComplete && !hasMarkInvoiced && !hasContactFields && !hasAddressFields) {
+  if (hasInvoiceRequired) {
+    const invoiceRequired = invoiceRequiredValue(payload.invoice_required);
+    if (invoiceRequired === null) {
+      return res.status(400).json({ error: 'Invoice required must be Yes or No' });
+    }
+    payload.invoice_required = invoiceRequired;
+  }
+
+  if (!hasJobTitle && !hasOrderType && !hasComments && !hasClientOrderNo && !hasIsComplete && !hasInvoiceRequired && !hasMarkInvoiced && !hasContactFields && !hasAddressFields) {
     return res.status(400).json({ error: 'No supported job fields supplied' });
   }
 
@@ -3475,18 +3484,34 @@ router.put('/api/database/jobs/:id', async (req, res) => {
       values.push(toBoolean(payload.is_complete));
       updates.push(`is_complete = $${values.length}`);
     }
+    if (hasInvoiceRequired) {
+      values.push(payload.invoice_required);
+      const invoiceRequiredParam = `$${values.length}`;
+      updates.push(`closed_without_invoice = CASE
+        WHEN invoice_required IS DISTINCT FROM ${invoiceRequiredParam} THEN FALSE
+        ELSE closed_without_invoice
+      END`);
+      updates.push(`invoice_required = ${invoiceRequiredParam}`);
+    }
+
+    const generatedInvoiceGuard = hasInvoiceRequired && payload.invoice_required === false
+      ? ' AND invoice_no IS NULL AND invoice_printed IS NOT TRUE'
+      : '';
 
     const result = await pool.query(
       `UPDATE database_jobs
        SET ${updates.join(', ')},
            updated_at_source = NOW(),
            imported_at = NOW()
-       WHERE source_order_id = $1
+       WHERE source_order_id = $1${generatedInvoiceGuard}
        RETURNING *`,
       values
     );
 
     if (!result.rowCount) {
+      if (generatedInvoiceGuard) {
+        return res.status(409).json({ error: 'Invoice Required cannot be changed to No after an invoice has been generated' });
+      }
       return res.status(404).json({ error: 'Database job not found' });
     }
 
@@ -5424,6 +5449,8 @@ function orderTypeAbbreviation(orderType) {
 }
 
 function invoiceRequiredValue(value) {
+  if (value === true || value === 1) return true;
+  if (value === false || value === 0) return false;
   const clean = cleanQuery(value).toLowerCase();
   if (!clean) return null;
   if (clean === 'yes' || clean === 'true' || clean === '1') return true;

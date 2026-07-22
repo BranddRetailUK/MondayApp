@@ -5482,7 +5482,7 @@ body.modal-open{overflow:hidden}
   left:24px;
   top:18px;
   width:434px;
-  height:270px;
+  height:304px;
 }
 .db-address-box{
   left:472px;
@@ -5592,6 +5592,23 @@ body.modal-open{overflow:hidden}
   flex:0 0 82px;
   text-align:center;
 }
+.db-form-control .db-invoice-required-select{
+  width:68px;
+  flex:0 0 68px;
+}
+.db-invoice-required-select.is-saving:disabled{
+  opacity:1;
+  background:#fff;
+  color:#000;
+  -webkit-text-fill-color:#000;
+}
+.db-invoice-required-select.is-invoice-locked:disabled{
+  opacity:1;
+  background:#d5d5d5;
+  color:#777;
+  -webkit-text-fill-color:#777;
+  cursor:not-allowed;
+}
 .db-control-link{
   color:#00e!important;
   text-decoration:underline;
@@ -5641,7 +5658,7 @@ body.modal-open{overflow:hidden}
 .db-order-approved-mark{
   position:absolute;
   left:24px;
-  top:312px;
+  top:326px;
   width:180px;
   height:86px;
   display:flex;
