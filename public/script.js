@@ -122,6 +122,8 @@ let __proofModalState = {
   pdfRotation: 0,
   pdfDrag: null,
   modalLabel: 'Proof',
+  downloading: false,
+  downloadPhase: '',
   renderToken: 0
 };
 
@@ -3201,7 +3203,10 @@ function ensureProofModal() {
           <div class="proof-modal-label" id="proof-modal-label">Proof</div>
           <h3 id="proof-modal-title">Proof file</h3>
         </div>
-        <button class="proof-modal-close" id="proof-modal-close" type="button" aria-label="Close proof">×</button>
+        <div class="proof-modal-head-actions">
+          <button class="proof-modal-download" id="proof-modal-download" type="button">Download</button>
+          <button class="proof-modal-close" id="proof-modal-close" type="button" aria-label="Close proof">×</button>
+        </div>
       </div>
       <div id="proof-modal-body" class="proof-modal-body"></div>
       <div id="proof-mobile-page-controls" class="proof-mobile-page-controls" hidden>
@@ -3234,6 +3239,7 @@ function ensureProofModal() {
   modal.querySelector('[data-proof-close]').addEventListener('click', closeProofModal);
   modal.querySelector('#proof-modal-close').addEventListener('click', closeProofModal);
   modal.querySelector('#proof-modal-mobile-close').addEventListener('click', closeProofModal);
+  modal.querySelector('#proof-modal-download').addEventListener('click', downloadCurrentProofFile);
   modal.querySelector('#proof-file-prev').addEventListener('click', () => changeProofFile(-1));
   modal.querySelector('#proof-file-next').addEventListener('click', () => changeProofFile(1));
   modal.querySelector('#proof-page-prev').addEventListener('click', () => changeProofPage(-1));
@@ -3271,6 +3277,8 @@ function openProofModal(files, startIndex = 0, options = {}) {
     pdfRotation: 0,
     pdfDrag: null,
     modalLabel,
+    downloading: false,
+    downloadPhase: '',
     renderToken: __proofModalState.renderToken + 1
   };
   document.getElementById('proof-modal')?.classList.remove('hidden');
@@ -3308,6 +3316,7 @@ function getProofModalElements() {
     body: document.getElementById('proof-modal-body'),
     label: document.getElementById('proof-modal-label'),
     title: document.getElementById('proof-modal-title'),
+    download: document.getElementById('proof-modal-download'),
     filePrev: document.getElementById('proof-file-prev'),
     fileNext: document.getElementById('proof-file-next'),
     pdfTools: document.getElementById('proof-pdf-tools'),
@@ -3323,6 +3332,88 @@ function getProofModalElements() {
     mobileNext: document.getElementById('proof-page-next-mobile'),
     mobilePage: document.getElementById('proof-page-status-mobile')
   };
+}
+
+async function downloadCurrentProofFile() {
+  const state = __proofModalState;
+  if (state.downloading) return;
+
+  const file = Array.isArray(state.files) ? state.files[state.fileIndex] : null;
+  const src = buildAssetSrc(file);
+  if (!file || !src) {
+    window.alert('No download URL is available for this file.');
+    return;
+  }
+
+  const filename = proofDownloadFilename(file);
+  state.downloading = true;
+  state.downloadPhase = typeof window.showSaveFilePicker === 'function' ? 'choosing' : 'downloading';
+  updateProofPageControls();
+
+  try {
+    if (typeof window.showSaveFilePicker === 'function') {
+      const fileHandle = await window.showSaveFilePicker({ suggestedName: filename });
+      state.downloadPhase = 'downloading';
+      updateProofPageControls();
+      const blob = await fetchProofDownloadBlob(src);
+      const writable = await fileHandle.createWritable();
+      try {
+        await writable.write(blob);
+        await writable.close();
+      } catch (err) {
+        await writable.abort?.().catch(() => {});
+        throw err;
+      }
+    } else {
+      const blob = await fetchProofDownloadBlob(src);
+      downloadProofBlobWithBrowser(blob, filename);
+    }
+  } catch (err) {
+    if (err?.name !== 'AbortError') {
+      console.error('Proof file download failed', err);
+      window.alert(err?.message || 'Failed to download this file.');
+    }
+  } finally {
+    state.downloading = false;
+    state.downloadPhase = '';
+    updateProofPageControls();
+  }
+}
+
+function proofDownloadFilename(file) {
+  const rawName = normalizeCellText(file?.name || '') || 'dashboard-file';
+  const cleanName = rawName
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
+    .replace(/[. ]+$/g, '')
+    .slice(0, 180);
+  return cleanName || 'dashboard-file';
+}
+
+async function fetchProofDownloadBlob(src) {
+  let credentials = 'include';
+  try {
+    const url = new URL(src, window.location.href);
+    if (url.origin !== window.location.origin) credentials = 'omit';
+  } catch {}
+
+  const response = await fetch(src, {
+    credentials,
+    cache: 'no-store'
+  });
+  if (!response.ok) throw new Error(`File download failed (${response.status})`);
+  return response.blob();
+}
+
+function downloadProofBlobWithBrowser(blob, filename) {
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = filename;
+  link.hidden = true;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
 function setProofLoading(message) {
@@ -3642,6 +3733,7 @@ function changeProofFile(delta) {
 function updateProofPageControls(loading = false) {
   const {
     modal,
+    download,
     filePrev,
     fileNext,
     pdfTools,
@@ -3670,6 +3762,12 @@ function updateProofPageControls(loading = false) {
   const hasMultipleFiles = Array.isArray(state.files) && state.files.length > 1;
   if (modal) modal.classList.toggle('proof-modal-has-file-controls', hasMultipleFiles);
   if (modal) modal.classList.toggle('proof-modal-has-pdf-tools', showDesktopPdfTools);
+  if (download) {
+    download.disabled = state.downloading || !currentFile || !buildAssetSrc(currentFile);
+    download.textContent = state.downloadPhase === 'choosing'
+      ? 'Choose location…'
+      : (state.downloadPhase === 'downloading' ? 'Downloading…' : 'Download');
+  }
   if (pdfTools) pdfTools.hidden = !showDesktopPdfTools;
   if (zoomStatus) zoomStatus.textContent = formatProofPdfZoom(zoom);
   if (zoomOut) zoomOut.disabled = loading || !showDesktopPdfTools || zoom <= PROOF_PDF_ZOOM_MIN;
