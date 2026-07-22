@@ -5482,7 +5482,7 @@ body.modal-open{overflow:hidden}
   left:24px;
   top:18px;
   width:434px;
-  height:304px;
+  height:270px;
 }
 .db-address-box{
   left:472px;
@@ -5658,7 +5658,7 @@ body.modal-open{overflow:hidden}
 .db-order-approved-mark{
   position:absolute;
   left:24px;
-  top:326px;
+  top:312px;
   width:180px;
   height:86px;
   display:flex;

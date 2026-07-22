@@ -5967,7 +5967,6 @@
           ${detailRow('Delivery:', `${inputBox(formatDate(job.delivery_date, 'short'), 'db-delivery-date-field')}<label class="db-inline-check">${renderCheck(job.customer_date_required)} Customer date</label>`)}
           ${detailRow('Invoice date:', manualInvoiceDateControl(job))}
           ${detailRow('Invoice required:', invoiceRequiredSelect(job))}
-          ${detailRow('Completion', inputBox(formatDate(job.complete_date, 'short'), 'db-completion-date-field'))}
         </div>
         ${renderOrderApprovedMark(job)}
 
