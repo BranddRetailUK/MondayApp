@@ -70,7 +70,7 @@ test('browser DTF upload validation mirrors the flexible server page-size rule',
   assert.match(uploader, /viewport\.width <= WIDTH_MM \* MM_TO_POINTS \+ PAGE_TOLERANCE_POINTS/);
   assert.match(uploader, /viewport\.height >= MIN_UPLOAD_HEIGHT_MM \* MM_TO_POINTS - PAGE_TOLERANCE_POINTS/);
   assert.match(uploader, /viewport\.height <= MAX_UPLOAD_HEIGHT_MM \* MM_TO_POINTS \+ PAGE_TOLERANCE_POINTS/);
-  assert.match(html, /up to 550mm wide and 900–1100mm long/);
+  assert.match(html, /id="dtf-sheet-input"[^>]*accept="application\/pdf,.pdf"/);
 });
 
 test('DTF uploader keeps its simplified upload and layout presentation', () => {
@@ -79,19 +79,22 @@ test('DTF uploader keeps its simplified upload and layout presentation', () => {
   const dtfCss = fs.readFileSync(path.join(__dirname, '..', 'public', 'dtf-uploader.css'), 'utf8');
   const sharedCss = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
 
-  assert.match(html, /data-dtf-mode="layout">Create gang<\/button>/);
+  assert.match(html, /data-dtf-mode="upload">Upload Gang<\/button>/);
+  assert.match(html, /data-dtf-mode="layout">Create Gang<\/button>/);
+  assert.doesNotMatch(html, /Drop one-page PDFs/);
   assert.doesNotMatch(html, /id="dtf-preview-title"/);
   assert.doesNotMatch(uploader, /previewTitle/);
   assert.doesNotMatch(uploader, /One page · up to 550mm wide/);
   assert.match(uploader, /entry\.validation === 'valid' \? '' : `<div class="dtf-validation/);
   assert.match(html, /dtf-layout-settings-row[\s\S]*Background[\s\S]*dtf-layout-settings-divider[\s\S]*Artwork gap/);
-  assert.doesNotMatch(html, /Template preview/);
-  assert.match(html, /<div class="dtf-eyebrow">Preview<\/div>/);
+  assert.match(html, />\s*Upload PNG, EPS or PDF\s*<\/button>/);
+  assert.doesNotMatch(html, /dtf-layout-preview-head|Template preview|550mm × 1000mm/);
   assert.match(dtfCss, /\.dtf-layout-settings-divider\{[^}]*background:rgba\(126,0,255,.5\)/);
   assert.match(dtfCss, /data-dtf-background="GREY"\]\{background:#808080[^}]*color:#000/);
   assert.match(dtfCss, /data-dtf-background="DARK"\]\{background:#171717[^}]*color:#fff/);
-  assert.match(sharedCss, /\.sidebar-sub\{color:var\(--database-bg\);font-size:14\.4px;font-weight:700/);
-  assert.match(dtfCss, /\.hub-access-dtf-only \.sidebar-sub\{color:#7e00ff\}/);
+  assert.match(sharedCss, /\.sidebar-sub\{color:#a6a8ad;font-size:14\.4px;font-weight:700/);
+  assert.match(dtfCss, /\.hub-access-dtf-only \.sidebar-top\{border-bottom-color:#7e00ff\}/);
+  assert.doesNotMatch(dtfCss, /\.hub-access-dtf-only \.sidebar-sub/);
 });
 
 test('pdf-lib creates an exact one-page 550 x 1000mm document', async () => {

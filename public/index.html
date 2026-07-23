@@ -72,8 +72,8 @@
               <h1>DTF Uploader</h1>
             </div>
             <div class="dtf-mode-tabs" role="tablist" aria-label="DTF uploader sections">
-              <button class="active" type="button" data-dtf-mode="upload">Upload sheets</button>
-              <button type="button" data-dtf-mode="layout">Create gang</button>
+              <button class="active" type="button" data-dtf-mode="upload">Upload Gang</button>
+              <button type="button" data-dtf-mode="layout">Create Gang</button>
             </div>
           </div>
 
@@ -85,7 +85,6 @@
                   <div id="dtf-preview-empty" class="dtf-empty-preview">
                     <span class="dtf-upload-icon" aria-hidden="true">⇧</span>
                     <strong>Drag or upload gang sheets</strong>
-                    <span>Drop one-page PDFs up to 550mm wide and 900–1100mm long, or choose them from the upload panel.</span>
                   </div>
                 </div>
               </div>
@@ -145,17 +144,13 @@
                 <input id="dtf-artwork-input" type="file" accept="image/png,.png,.eps,application/postscript,application/pdf,.pdf" multiple hidden>
                 <button id="dtf-add-artwork" class="dtf-artwork-empty" type="button">
                   <span class="dtf-upload-icon" aria-hidden="true">⇧</span>
-                  Add PNG, EPS or one-page PDF artwork
+                  Upload PNG, EPS or PDF
                 </button>
                 <div id="dtf-artwork-list" class="dtf-artwork-list"></div>
                 <div id="dtf-layout-feedback" class="dtf-feedback" aria-live="polite"></div>
               </aside>
 
               <div class="dtf-surface dtf-layout-preview-panel">
-                <div class="dtf-layout-preview-head">
-                  <div class="dtf-eyebrow">Preview</div>
-                  <span>550mm × 1000mm</span>
-                </div>
                 <div class="dtf-layout-canvas-shell">
                   <div id="dtf-layout-canvas" class="dtf-layout-canvas dtf-background-light">
                     <button id="dtf-layout-empty" class="dtf-layout-empty" type="button">
