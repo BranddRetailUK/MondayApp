@@ -1,6 +1,8 @@
 (function () {
   const WIDTH_MM = 550;
   const HEIGHT_MM = 1000;
+  const MIN_UPLOAD_HEIGHT_MM = HEIGHT_MM - 100;
+  const MAX_UPLOAD_HEIGHT_MM = HEIGHT_MM + 100;
   const MM_TO_POINTS = 72 / 25.4;
   const PAGE_TOLERANCE_POINTS = 3;
   const MAX_FILES = 40;
@@ -190,9 +192,13 @@
       if (pdf.numPages !== 1) throw new Error('PDF must contain exactly one page.');
       const page = await pdf.getPage(1);
       const viewport = page.getViewport({ scale: 1 });
-      const widthOk = Math.abs(viewport.width - WIDTH_MM * MM_TO_POINTS) <= PAGE_TOLERANCE_POINTS;
-      const heightOk = Math.abs(viewport.height - HEIGHT_MM * MM_TO_POINTS) <= PAGE_TOLERANCE_POINTS;
-      if (!widthOk || !heightOk) throw new Error('PDF page must be 550 × 1000mm portrait.');
+      const widthOk = viewport.width > 0
+        && viewport.width <= WIDTH_MM * MM_TO_POINTS + PAGE_TOLERANCE_POINTS;
+      const heightOk = viewport.height >= MIN_UPLOAD_HEIGHT_MM * MM_TO_POINTS - PAGE_TOLERANCE_POINTS
+        && viewport.height <= MAX_UPLOAD_HEIGHT_MM * MM_TO_POINTS + PAGE_TOLERANCE_POINTS;
+      if (!widthOk || !heightOk) {
+        throw new Error('PDF page must be no wider than 550mm and between 900mm and 1100mm long.');
+      }
       entry.validation = 'valid';
       entry.error = '';
     } catch (error) {
@@ -246,7 +252,7 @@
             <button class="dtf-mini-button" type="button" data-sheet-action="plus" aria-label="Increase quantity">+</button>
             <button class="dtf-mini-button dtf-remove-button" type="button" data-sheet-action="remove" aria-label="Remove PDF">×</button>
           </div>
-          <div class="dtf-validation ${entry.validation}">${entry.validation === 'checking' ? 'Checking page size…' : entry.validation === 'valid' ? 'One 550 × 1000mm page' : escapeHtml(entry.error)}</div>
+          <div class="dtf-validation ${entry.validation}">${entry.validation === 'checking' ? 'Checking page size…' : entry.validation === 'valid' ? 'One page · up to 550mm wide · 900–1100mm long' : escapeHtml(entry.error)}</div>
         </div>`).join('');
     }
     els.send.disabled = state.busy || !state.sheets.length || state.sheets.some((entry) => entry.validation !== 'valid');

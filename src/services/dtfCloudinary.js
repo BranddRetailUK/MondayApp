@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const stream = require('stream');
 const { v2: cloudinary } = require('cloudinary');
-const { MAX_FILE_BYTES, isExpectedPdfPage } = require('./dtf');
+const { DTF_PAGE_SIZE_ERROR, MAX_FILE_BYTES, isExpectedPdfPage } = require('./dtf');
 
 const CLOUD_NAME = String(process.env.CLOUDINARY_CLOUD_NAME || '').trim();
 const API_KEY = String(process.env.CLOUDINARY_API_KEY || '').trim();
@@ -80,7 +80,7 @@ async function verifyDtfUpload(input) {
     }
     if (!isExpectedPdfPage(resource)) {
       await destroyDtfAsset(publicId);
-      return { ok: false, publicId, error: 'PDFs must contain one 550 × 1000mm portrait page.' };
+      return { ok: false, publicId, error: DTF_PAGE_SIZE_ERROR };
     }
     return {
       ok: true,

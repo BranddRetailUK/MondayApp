@@ -66,7 +66,7 @@ test('DTF finalization marks the job failed when authoritative asset validation 
     },
   };
   const cloud = cloudStub({
-    verifyDtfUpload: async () => ({ ok: false, publicId: 'ultimate-hub/dtf/4/8/19', error: 'PDFs must contain one 550 × 1000mm portrait page.' }),
+    verifyDtfUpload: async () => ({ ok: false, publicId: 'ultimate-hub/dtf/4/8/19', error: 'PDFs must contain one page no wider than 550mm and between 900mm and 1100mm long.' }),
   });
 
   await withDtfRouter(fakePool, cloud, async (router) => {
@@ -79,7 +79,7 @@ test('DTF finalization marks the job failed when authoritative asset validation 
     assert.equal(response.body.job.status, 'FAILED');
     const fileUpdate = calls.find((call) => call.text.includes('UPDATE dtf_job_files'));
     assert.equal(fileUpdate.values[1], 'FAILED');
-    assert.match(fileUpdate.values[9], /550 × 1000mm/);
+    assert.match(fileUpdate.values[9], /no wider than 550mm.*900mm and 1100mm long/);
   });
 });
 

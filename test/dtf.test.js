@@ -1,7 +1,11 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const test = require('node:test');
 const { PDFDocument } = require('pdf-lib');
 const {
+  MAX_UPLOAD_HEIGHT_POINTS,
+  MIN_UPLOAD_HEIGHT_POINTS,
   TARGET_HEIGHT_POINTS,
   TARGET_WIDTH_POINTS,
   calculateDtfPrice,
@@ -44,11 +48,29 @@ test('DTF job numbers and Cloudinary public ids are stable and scoped', () => {
   assert.equal(expectedPublicId({ userId: 3, jobId: 7, fileId: 9 }), 'ultimate-hub/dtf/3/7/9');
 });
 
-test('strict DTF page metadata allows only one 550 x 1000mm page', () => {
+test('DTF page metadata allows one page up to 550mm wide and 900-1100mm long', () => {
   assert.equal(isExpectedPdfPage({ pages: 1, width: TARGET_WIDTH_POINTS, height: TARGET_HEIGHT_POINTS }), true);
+  assert.equal(isExpectedPdfPage({ pages: 1, width: TARGET_WIDTH_POINTS / 2, height: TARGET_HEIGHT_POINTS }), true);
+  assert.equal(isExpectedPdfPage({ pages: 1, width: TARGET_WIDTH_POINTS, height: MIN_UPLOAD_HEIGHT_POINTS }), true);
+  assert.equal(isExpectedPdfPage({ pages: 1, width: TARGET_WIDTH_POINTS, height: MAX_UPLOAD_HEIGHT_POINTS }), true);
   assert.equal(isExpectedPdfPage({ pages: 2, width: TARGET_WIDTH_POINTS, height: TARGET_HEIGHT_POINTS }), false);
   assert.equal(isExpectedPdfPage({ pages: 1, width: TARGET_HEIGHT_POINTS, height: TARGET_WIDTH_POINTS }), false);
+  assert.equal(isExpectedPdfPage({ pages: 1, width: 0, height: TARGET_HEIGHT_POINTS }), false);
   assert.equal(isExpectedPdfPage({ pages: 1, width: TARGET_WIDTH_POINTS + 4, height: TARGET_HEIGHT_POINTS }), false);
+  assert.equal(isExpectedPdfPage({ pages: 1, width: TARGET_WIDTH_POINTS, height: MIN_UPLOAD_HEIGHT_POINTS - 4 }), false);
+  assert.equal(isExpectedPdfPage({ pages: 1, width: TARGET_WIDTH_POINTS, height: MAX_UPLOAD_HEIGHT_POINTS + 4 }), false);
+});
+
+test('browser DTF upload validation mirrors the flexible server page-size rule', () => {
+  const uploader = fs.readFileSync(path.join(__dirname, '..', 'public', 'dtf-uploader.js'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+
+  assert.match(uploader, /const MIN_UPLOAD_HEIGHT_MM = HEIGHT_MM - 100/);
+  assert.match(uploader, /const MAX_UPLOAD_HEIGHT_MM = HEIGHT_MM \+ 100/);
+  assert.match(uploader, /viewport\.width <= WIDTH_MM \* MM_TO_POINTS \+ PAGE_TOLERANCE_POINTS/);
+  assert.match(uploader, /viewport\.height >= MIN_UPLOAD_HEIGHT_MM \* MM_TO_POINTS - PAGE_TOLERANCE_POINTS/);
+  assert.match(uploader, /viewport\.height <= MAX_UPLOAD_HEIGHT_MM \* MM_TO_POINTS \+ PAGE_TOLERANCE_POINTS/);
+  assert.match(html, /up to 550mm wide and 900–1100mm long/);
 });
 
 test('pdf-lib creates an exact one-page 550 x 1000mm document', async () => {

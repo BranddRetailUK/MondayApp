@@ -5,10 +5,15 @@ const MAX_FILE_QUANTITY = 99;
 const MAX_FILE_BYTES = 250 * 1024 * 1024;
 const TARGET_WIDTH_MM = 550;
 const TARGET_HEIGHT_MM = 1000;
+const MIN_UPLOAD_HEIGHT_MM = TARGET_HEIGHT_MM - 100;
+const MAX_UPLOAD_HEIGHT_MM = TARGET_HEIGHT_MM + 100;
 const MM_TO_POINTS = 72 / 25.4;
 const TARGET_WIDTH_POINTS = TARGET_WIDTH_MM * MM_TO_POINTS;
 const TARGET_HEIGHT_POINTS = TARGET_HEIGHT_MM * MM_TO_POINTS;
+const MIN_UPLOAD_HEIGHT_POINTS = MIN_UPLOAD_HEIGHT_MM * MM_TO_POINTS;
+const MAX_UPLOAD_HEIGHT_POINTS = MAX_UPLOAD_HEIGHT_MM * MM_TO_POINTS;
 const PAGE_TOLERANCE_POINTS = 3;
+const DTF_PAGE_SIZE_ERROR = 'PDFs must contain one page no wider than 550mm and between 900mm and 1100mm long.';
 const ADMIN_STATUSES = new Set(['RECEIVED', 'IN_PRODUCTION', 'COMPLETED', 'FAILED']);
 
 function calculateDtfPrice(sheetQuantity) {
@@ -44,8 +49,10 @@ function isExpectedPdfPage(resource) {
   return pages === 1
     && Number.isFinite(width)
     && Number.isFinite(height)
-    && Math.abs(width - TARGET_WIDTH_POINTS) <= PAGE_TOLERANCE_POINTS
-    && Math.abs(height - TARGET_HEIGHT_POINTS) <= PAGE_TOLERANCE_POINTS;
+    && width > 0
+    && width <= TARGET_WIDTH_POINTS + PAGE_TOLERANCE_POINTS
+    && height >= MIN_UPLOAD_HEIGHT_POINTS - PAGE_TOLERANCE_POINTS
+    && height <= MAX_UPLOAD_HEIGHT_POINTS + PAGE_TOLERANCE_POINTS;
 }
 
 function safeDtfFilename(value) {
@@ -59,9 +66,14 @@ function safeDtfFilename(value) {
 
 module.exports = {
   ADMIN_STATUSES,
+  DTF_PAGE_SIZE_ERROR,
   MAX_FILE_BYTES,
   MAX_FILE_QUANTITY,
   MAX_JOB_FILES,
+  MAX_UPLOAD_HEIGHT_MM,
+  MAX_UPLOAD_HEIGHT_POINTS,
+  MIN_UPLOAD_HEIGHT_MM,
+  MIN_UPLOAD_HEIGHT_POINTS,
   PAGE_TOLERANCE_POINTS,
   TARGET_HEIGHT_MM,
   TARGET_HEIGHT_POINTS,
