@@ -91,7 +91,6 @@
 
               <aside class="dtf-upload-sidebar">
                 <div class="dtf-surface dtf-upload-card">
-                  <span class="dtf-upload-icon" aria-hidden="true">⇧</span>
                   <h2>Add gang sheet PDFs</h2>
                   <input id="dtf-sheet-input" type="file" accept="application/pdf,.pdf" multiple hidden>
                   <button id="dtf-choose-sheets" class="dtf-primary-button" type="button">Choose gang sheets</button>
@@ -102,7 +101,10 @@
 
                 <div class="dtf-surface dtf-price-card">
                   <div class="dtf-eyebrow">Price</div>
-                  <div id="dtf-total-large" class="dtf-total-large">£0.00</div>
+                  <div id="dtf-total-large" class="dtf-total-large">
+                    <span id="dtf-total-large-value">£0.00</span>
+                    <span class="dtf-total-vat">+ VAT</span>
+                  </div>
                   <dl>
                     <div><dt>Sheets</dt><dd id="dtf-sheet-count">0</dd></div>
                     <div><dt>Subtotal</dt><dd id="dtf-subtotal">£0.00</dd></div>
@@ -133,8 +135,10 @@
                     <div class="dtf-eyebrow">Artwork gap</div>
                     <div class="dtf-stepper dtf-gap-stepper">
                       <button type="button" data-dtf-gap="-1" aria-label="Decrease artwork gap">−</button>
-                      <input id="dtf-layout-gap" type="number" min="0" max="250" step="1" value="10" aria-label="Artwork gap in millimetres">
-                      <span>mm</span>
+                      <span class="dtf-gap-value">
+                        <input id="dtf-layout-gap" type="number" min="0" max="250" step="1" value="10" aria-label="Artwork gap in millimetres">
+                        <span>mm</span>
+                      </span>
                       <button type="button" data-dtf-gap="1" aria-label="Increase artwork gap">+</button>
                     </div>
                   </section>

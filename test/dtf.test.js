@@ -82,9 +82,13 @@ test('DTF uploader keeps its simplified upload and layout presentation', () => {
   assert.match(html, /data-dtf-mode="upload">Upload Gang<\/button>/);
   assert.match(html, /data-dtf-mode="layout">Create Gang<\/button>/);
   assert.doesNotMatch(html, /Drop one-page PDFs/);
+  assert.doesNotMatch(html, /dtf-upload-card">\s*<span class="dtf-upload-icon"/);
   assert.doesNotMatch(html, /id="dtf-preview-title"/);
   assert.doesNotMatch(uploader, /previewTitle/);
   assert.doesNotMatch(uploader, /One page · up to 550mm wide/);
+  assert.doesNotMatch(uploader, /dtf-sheet-meta/);
+  assert.match(uploader, /dtf-sheet-name[^]*dtf-sheet-actions/);
+  assert.match(uploader, /totalLargeValue\.textContent = money\(subtotal\)/);
   assert.match(uploader, /entry\.validation === 'valid' \? '' : `<div class="dtf-validation/);
   assert.match(html, /dtf-layout-settings-row[\s\S]*Background[\s\S]*dtf-layout-settings-divider[\s\S]*Artwork gap/);
   assert.match(html, />\s*Upload PNG, EPS or PDF\s*<\/button>/);
@@ -92,6 +96,12 @@ test('DTF uploader keeps its simplified upload and layout presentation', () => {
   assert.match(dtfCss, /\.dtf-layout-settings-divider\{[^}]*background:rgba\(126,0,255,.5\)/);
   assert.match(dtfCss, /data-dtf-background="GREY"\]\{background:#808080[^}]*color:#000/);
   assert.match(dtfCss, /data-dtf-background="DARK"\]\{background:#171717[^}]*color:#fff/);
+  assert.match(dtfCss, /\.dtf-pdf-preview\{min-height:660px[^}]*overflow:hidden/);
+  assert.doesNotMatch(dtfCss, /\.dtf-pdf-preview\{[^}]*overflow:auto/);
+  assert.match(dtfCss, /\.dtf-total-vat\{font-size:14px;color:var\(--dtf-purple\)/);
+  assert.match(dtfCss, /\.dtf-price-card dl>div\{[^}]*color:#000/);
+  assert.match(dtfCss, /\.dtf-gap-stepper\{[^}]*width:134px/);
+  assert.match(dtfCss, /\.dtf-gap-value\{[^}]*display:flex/);
   assert.match(sharedCss, /\.sidebar-sub\{color:#a6a8ad;font-size:14\.4px;font-weight:700/);
   assert.match(dtfCss, /\.hub-access-dtf-only \.sidebar-top\{border-bottom-color:#7e00ff\}/);
   assert.doesNotMatch(dtfCss, /\.hub-access-dtf-only \.sidebar-sub/);

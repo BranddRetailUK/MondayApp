@@ -177,6 +177,7 @@ body{
   stroke-width:1.8;
   stroke-linecap:round;
   stroke-linejoin:round;
+  transform:scaleX(-1);
 }
 .sidebar-dashboard-controls .btn.sidebar-logout-button:disabled{
   opacity:.55;

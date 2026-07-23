@@ -65,7 +65,7 @@
       subtotal: document.getElementById('dtf-subtotal'),
       vat: document.getElementById('dtf-vat'),
       total: document.getElementById('dtf-total'),
-      totalLarge: document.getElementById('dtf-total-large'),
+      totalLargeValue: document.getElementById('dtf-total-large-value'),
       send: document.getElementById('dtf-send-sheets'),
       uploadFeedback: document.getElementById('dtf-upload-feedback'),
       gap: document.getElementById('dtf-layout-gap'),
@@ -244,7 +244,7 @@
     } else {
       els.sheetList.innerHTML = state.sheets.map((entry) => `
         <div class="dtf-sheet-row ${entry.clientId === state.selectedSheetId ? 'active' : ''}" data-sheet-id="${escapeAttr(entry.clientId)}">
-          <div><div class="dtf-sheet-name">${escapeHtml(entry.file.name)}</div><div class="dtf-sheet-meta">${formatBytes(entry.file.size)}</div></div>
+          <div class="dtf-sheet-name">${escapeHtml(entry.file.name)}</div>
           <div class="dtf-sheet-actions">
             <button class="dtf-mini-button" type="button" data-sheet-action="minus" aria-label="Decrease quantity">−</button>
             <input class="dtf-sheet-qty" type="number" min="1" max="99" value="${entry.quantity}" data-sheet-quantity="${escapeAttr(entry.clientId)}" aria-label="Quantity">
@@ -290,7 +290,7 @@
     els.subtotal.textContent = money(subtotal);
     els.vat.textContent = money(vat);
     els.total.textContent = money(subtotal + vat);
-    els.totalLarge.textContent = money(subtotal + vat);
+    els.totalLargeValue.textContent = money(subtotal);
   }
 
   async function submitSheets() {

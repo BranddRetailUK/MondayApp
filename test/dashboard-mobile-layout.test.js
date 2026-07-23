@@ -227,7 +227,7 @@ test('sidebar uses the subtle icon-based Sign out control', () => {
   assert.match(authSession, /logoutLabel\.textContent = 'Signing out…'/);
   assert.match(authSession, /logoutLabel\.textContent = 'Sign out'/);
   assert.doesNotMatch(styles, /\.sidebar-logout-button\s*\{[^}]*background:#c62828/s);
-  assert.match(styles, /\.sidebar-logout-icon\s*\{/);
+  assert.match(styles, /\.sidebar-logout-icon\s*\{[^}]*transform:scaleX\(-1\)/s);
 });
 
 test('VISUAL upload validation blocks unsupported browser files and keeps FILES unrestricted', () => {
