@@ -1719,7 +1719,7 @@
       if (visual.design_numbers) meta.push(`Design ${visual.design_numbers}`);
       els.visualModalMeta.textContent = meta.join(' · ');
     }
-    if (els.visualModalFeedback) els.visualModalFeedback.textContent = '';
+    setDatabaseVisualModalFeedback();
 
     els.visualModalViewer.replaceChildren();
     const src = buildDatabaseAssetSrc(visual);
@@ -1760,9 +1760,10 @@
     } catch (err) {
       loadFailed = true;
       state.visualOpenJobsLoaded = false;
-      if (els.visualModalFeedback) {
-        els.visualModalFeedback.textContent = err.message || 'Open jobs could not be loaded';
-      }
+      setDatabaseVisualModalFeedback(
+        err.message || 'Open jobs could not be loaded',
+        'error'
+      );
     } finally {
       state.visualOpenJobsLoading = false;
       renderDatabaseVisualJobOptions({ error: loadFailed });
@@ -1816,9 +1817,7 @@
 
     state.visualAttachSaving = true;
     els.visualModalJob.disabled = true;
-    if (els.visualModalFeedback) {
-      els.visualModalFeedback.textContent = `Adding visual to job ${job?.order_no || targetId}…`;
-    }
+    setDatabaseVisualModalFeedback(`Adding visual to order ${job?.order_no || targetId}…`);
 
     try {
       const data = await fetchJson(
@@ -1840,19 +1839,28 @@
         state.visuals.unshift(attachedVisual);
         renderDatabaseVisuals();
       }
-      if (els.visualModalFeedback) {
-        els.visualModalFeedback.textContent = data.attached === false
-          ? `This visual is already on job ${job?.order_no || targetId}`
-          : `Visual added to job ${job?.order_no || targetId}`;
-      }
+      setDatabaseVisualModalFeedback(
+        data.attached === false
+          ? `This visual is already on order ${job?.order_no || targetId}`
+          : `✓ Visual added to order ${job?.order_no || targetId}`,
+        data.attached === false ? '' : 'success'
+      );
     } catch (err) {
-      if (els.visualModalFeedback) {
-        els.visualModalFeedback.textContent = err.message || 'Visual could not be added to this job';
-      }
+      setDatabaseVisualModalFeedback(
+        err.message || 'Visual could not be added to this order',
+        'error'
+      );
     } finally {
       state.visualAttachSaving = false;
       renderDatabaseVisualJobOptions();
     }
+  }
+
+  function setDatabaseVisualModalFeedback(message = '', type = '') {
+    if (!els.visualModalFeedback) return;
+    els.visualModalFeedback.textContent = message;
+    els.visualModalFeedback.classList.toggle('is-success', type === 'success');
+    els.visualModalFeedback.classList.toggle('is-error', type === 'error');
   }
 
   function handleDatabaseVisualModalClick(event) {

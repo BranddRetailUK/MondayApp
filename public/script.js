@@ -13,6 +13,7 @@ const ENDPOINTS = {
   testPrivateJobs: '/api/test-dashboard/private-jobs',
   testPrivateJob: (itemId) => `/api/test-dashboard/private-jobs/${encodeURIComponent(itemId)}`,
   testProofFiles: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/proof-files`,
+  testFile: (itemId, fileId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/files/${encodeURIComponent(fileId)}`,
   testScanUrl: (itemId) => `/api/test-dashboard/scan-url?jobId=${encodeURIComponent(itemId)}`,
   testQr: (data) => `/api/test-dashboard/qr?data=${encodeURIComponent(data)}`,
   testLabelPrinted: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/label-printed`,
@@ -109,6 +110,7 @@ let __statusDropdownState = null;
 let __statusUpdateInFlight = 0;
 let __testCompleteConfirmResolve = null;
 let __testRowMenuState = null;
+let __testVisualRemovalState = null;
 let __testDatePopoverState = null;
 let __testMobileJobOverviewState = null;
 let __testPrivateNameEditInFlight = 0;
@@ -388,7 +390,7 @@ function startTestBoardAutoRefresh() {
     if (document.hidden) return;
     const dashboard = document.getElementById('tab-test-dashboard');
     if (dashboard && !dashboard.classList.contains('active')) return;
-    if (isStatusDropdownOpen() || isTestRowMenuOpen() || isTestDatePopoverOpen() || isTestDashboardMobileJobOverviewOpen() || __statusUpdateInFlight > 0 || __testFileUploadsInFlight > 0 || isTestDashboardTextEditActive()) return;
+    if (isStatusDropdownOpen() || isTestRowMenuOpen() || isTestVisualRemovalModalOpen() || isTestDatePopoverOpen() || isTestDashboardMobileJobOverviewOpen() || __statusUpdateInFlight > 0 || __testFileUploadsInFlight > 0 || isTestDashboardTextEditActive()) return;
     loadTestBoard({ forceRefresh: true });
   }, BOARD_AUTO_REFRESH_MS);
 }
@@ -2346,6 +2348,7 @@ function openTestRowMenu(anchor, item) {
     itemId: String(item.id),
     itemName: normalizeCellText(item.name || ''),
     privateJob: isTestDashboardPrivateItem(item),
+    visualFiles: getTestDashboardVisualFiles(item),
   };
   const deleteButton = menu.querySelector('[data-test-row-delete-private]');
   syncTestRowMenuDeleteAction(deleteButton, __testRowMenuState.privateJob);
@@ -2367,6 +2370,26 @@ function isTestDashboardPrivateItem(item) {
   return item?.dashboard_private_job === true
     && !item?.database_job
     && isTestPrivateItemId(item?.id);
+}
+
+function getTestDashboardVisualFiles(item) {
+  const board = unwrapFirstBoard(window.__latestTestBoardPayload);
+  const proofColumn = findBoardColumnByIdOrCompactTitle(
+    board,
+    TEST_DASHBOARD_CLIENT_COLUMN_IDS.PROOF,
+    'PROOF'
+  );
+  const value = findColumnValue(item, proofColumn?.id || TEST_DASHBOARD_CLIENT_COLUMN_IDS.PROOF);
+  return getFileList(value).map(normalizeDashboardFile).filter(Boolean);
+}
+
+function testDashboardVisualFileId(file) {
+  return normalizeCellText(
+    file?.dashboardFileId
+    || file?.dashboardPrivateFileId
+    || file?.id
+    || ''
+  );
 }
 
 function positionTestRowMenu(anchor, menu) {
@@ -2402,7 +2425,12 @@ function handleTestRowMenuClick(event) {
     event.stopPropagation();
     const state = __testRowMenuState;
     closeTestRowMenu();
-    if (state?.itemId) removeTestDashboardProof(state.itemId, state.itemName);
+    if (!state?.itemId) return;
+    if (state.visualFiles?.length > 1) {
+      openTestVisualRemovalModal(state);
+    } else {
+      removeTestDashboardProof(state.itemId, state.itemName);
+    }
     return;
   }
 
@@ -2483,6 +2511,220 @@ async function removeTestDashboardProof(itemId, itemName = '') {
     await loadTestBoard({ forceRefresh: true });
   } finally {
     __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);
+  }
+}
+
+function ensureTestVisualRemovalModal() {
+  let modal = document.getElementById('test-visual-removal-modal');
+  if (modal) return modal;
+
+  modal = document.createElement('div');
+  modal.id = 'test-visual-removal-modal';
+  modal.className = 'test-visual-removal-modal';
+  modal.hidden = true;
+  modal.setAttribute('aria-hidden', 'true');
+  modal.innerHTML = `
+    <section class="test-visual-removal-shell" role="dialog" aria-modal="true" aria-labelledby="test-visual-removal-title">
+      <header class="test-visual-removal-header">
+        <div>
+          <h2 id="test-visual-removal-title">Remove visual</h2>
+          <p class="test-visual-removal-summary"></p>
+        </div>
+        <button class="test-visual-removal-close" type="button" data-test-visual-removal-close aria-label="Close visual removal">×</button>
+      </header>
+      <div class="test-visual-removal-feedback" role="status" aria-live="polite"></div>
+      <div class="test-visual-removal-grid"></div>
+      <footer class="test-visual-removal-footer">
+        <button type="button" data-test-visual-removal-close>Done</button>
+      </footer>
+    </section>
+  `;
+  modal.addEventListener('click', handleTestVisualRemovalModalClick);
+  document.addEventListener('keydown', handleTestVisualRemovalModalKeydown);
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function openTestVisualRemovalModal(options = {}) {
+  const files = Array.isArray(options.visualFiles)
+    ? options.visualFiles.map(normalizeDashboardFile).filter(Boolean)
+    : [];
+  if (!options.itemId || files.length < 2) return;
+
+  const modal = ensureTestVisualRemovalModal();
+  __testVisualRemovalState = {
+    itemId: String(options.itemId),
+    itemName: normalizeCellText(options.itemName || ''),
+    files,
+    deletingIds: new Set(),
+    feedback: '',
+    feedbackType: '',
+    opener: options.anchor || null,
+  };
+  modal.hidden = false;
+  modal.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open', 'test-visual-removal-open');
+  renderTestVisualRemovalModal();
+  window.requestAnimationFrame(() => {
+    modal.querySelector('[data-test-visual-remove-file]')?.focus();
+  });
+}
+
+function isTestVisualRemovalModalOpen() {
+  const modal = document.getElementById('test-visual-removal-modal');
+  return Boolean(modal && !modal.hidden);
+}
+
+function renderTestVisualRemovalModal() {
+  const modal = document.getElementById('test-visual-removal-modal');
+  const state = __testVisualRemovalState;
+  if (!modal || !state) return;
+
+  const summary = modal.querySelector('.test-visual-removal-summary');
+  const feedback = modal.querySelector('.test-visual-removal-feedback');
+  const grid = modal.querySelector('.test-visual-removal-grid');
+  if (summary) {
+    const label = state.itemName || `job ${state.itemId}`;
+    summary.textContent = state.files.length
+      ? `${state.files.length} visual${state.files.length === 1 ? '' : 's'} attached to ${label}`
+      : `No visuals remain on ${label}`;
+  }
+  if (feedback) {
+    feedback.textContent = state.feedback;
+    feedback.classList.toggle('success', state.feedbackType === 'success');
+    feedback.classList.toggle('error', state.feedbackType === 'error');
+  }
+  if (!grid) return;
+  grid.replaceChildren();
+
+  for (const file of state.files) {
+    const fileId = testDashboardVisualFileId(file);
+    const filename = normalizeCellText(file.name || 'Visual');
+    const deleting = state.deletingIds.has(fileId);
+    const card = document.createElement('article');
+    card.className = 'test-visual-removal-card';
+    if (deleting) card.classList.add('deleting');
+
+    const preview = document.createElement('div');
+    preview.className = 'test-visual-removal-preview';
+    const fallback = document.createElement('span');
+    fallback.className = 'test-visual-removal-fallback';
+    fallback.textContent = isPdfFile(filename, file.mime) ? 'PDF' : 'VISUAL';
+    preview.appendChild(fallback);
+
+    const thumbnailUrl = buildTestVisualRemovalThumbnailUrl(file);
+    if (thumbnailUrl) {
+      const image = document.createElement('img');
+      image.src = thumbnailUrl;
+      image.alt = filename;
+      image.loading = 'lazy';
+      image.decoding = 'async';
+      image.addEventListener('error', () => image.remove(), { once: true });
+      preview.appendChild(image);
+    }
+
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'test-visual-removal-x';
+    removeButton.dataset.testVisualRemoveFile = fileId;
+    removeButton.setAttribute('aria-label', `Remove ${filename}`);
+    removeButton.title = `Remove ${filename}`;
+    removeButton.textContent = '×';
+    removeButton.disabled = deleting || !fileId;
+
+    const name = document.createElement('div');
+    name.className = 'test-visual-removal-name';
+    name.textContent = filename;
+    name.title = filename;
+
+    card.append(preview, removeButton, name);
+    grid.appendChild(card);
+  }
+
+  if (!state.files.length) {
+    const empty = document.createElement('div');
+    empty.className = 'test-visual-removal-empty';
+    empty.textContent = 'All attached visuals have been removed.';
+    grid.appendChild(empty);
+  }
+}
+
+function buildTestVisualRemovalThumbnailUrl(file) {
+  const source = buildAssetSrc(file);
+  if (!source || !isCloudinaryDeliveryUrl(source)) return source;
+  const marker = '/upload/';
+  if (!source.includes(marker)) return source;
+  return source.replace(
+    marker,
+    `${marker}f_jpg,q_auto:eco,c_limit,w_360,h_250,pg_1/`
+  );
+}
+
+function handleTestVisualRemovalModalClick(event) {
+  const modal = document.getElementById('test-visual-removal-modal');
+  if (!modal || modal.hidden) return;
+  if (event.target === modal || event.target.closest('[data-test-visual-removal-close]')) {
+    closeTestVisualRemovalModal();
+    return;
+  }
+  const removeButton = event.target.closest('[data-test-visual-remove-file]');
+  if (removeButton && modal.contains(removeButton)) {
+    removeTestDashboardVisual(removeButton.dataset.testVisualRemoveFile);
+  }
+}
+
+function handleTestVisualRemovalModalKeydown(event) {
+  if (event.key !== 'Escape' || !isTestVisualRemovalModalOpen()) return;
+  event.preventDefault();
+  closeTestVisualRemovalModal();
+}
+
+function closeTestVisualRemovalModal() {
+  const modal = document.getElementById('test-visual-removal-modal');
+  if (modal) {
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+  }
+  document.body.classList.remove('modal-open', 'test-visual-removal-open');
+  const opener = __testVisualRemovalState?.opener;
+  __testVisualRemovalState = null;
+  opener?.focus?.({ preventScroll: true });
+}
+
+async function removeTestDashboardVisual(fileId) {
+  const state = __testVisualRemovalState;
+  const normalizedFileId = normalizeCellText(fileId);
+  const file = state?.files.find(item => testDashboardVisualFileId(item) === normalizedFileId);
+  if (!state || !file || !normalizedFileId || state.deletingIds.has(normalizedFileId)) return;
+
+  state.deletingIds.add(normalizedFileId);
+  state.feedback = `Removing ${file.name || 'visual'}…`;
+  state.feedbackType = '';
+  renderTestVisualRemovalModal();
+  __statusUpdateInFlight += 1;
+
+  try {
+    const response = await fetch(ENDPOINTS.testFile(state.itemId, normalizedFileId), {
+      method: 'DELETE',
+      credentials: 'include'
+    });
+    if (!response.ok) throw new Error(await readApiError(response));
+    if (__testVisualRemovalState === state) {
+      state.files = state.files.filter(item => testDashboardVisualFileId(item) !== normalizedFileId);
+      state.feedback = `✓ ${file.name || 'Visual'} removed`;
+      state.feedbackType = 'success';
+    }
+    await loadTestBoard({ forceRefresh: true });
+  } catch (err) {
+    console.warn('Visual removal failed', err);
+    if (__testVisualRemovalState === state) {
+      state.feedback = `Failed to remove visual: ${err.message || 'Unknown error'}`;
+      state.feedbackType = 'error';
+    }
+  } finally {
+    state.deletingIds.delete(normalizedFileId);
+    __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);
+    if (__testVisualRemovalState === state) renderTestVisualRemovalModal();
   }
 }
 

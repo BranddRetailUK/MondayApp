@@ -893,13 +893,53 @@ protectedRouter.delete('/api/test-dashboard/items/:jobId/proof-files', async (re
 });
 
 protectedRouter.delete('/api/test-dashboard/items/:jobId/files/:fileId', async (req, res) => {
-  const sourceOrderId = Number.parseInt(req.params.jobId, 10);
-  const fileId = Number.parseInt(req.params.fileId, 10);
-  if (!Number.isFinite(sourceOrderId) || !Number.isFinite(fileId)) {
+  const jobId = clean(req.params.jobId);
+  const requestedFileId = clean(req.params.fileId);
+  const privateJob = isPrivateDashboardJobId(jobId);
+  const sourceOrderId = Number.parseInt(jobId, 10);
+  const fileId = Number.parseInt(requestedFileId, 10);
+  if (!requestedFileId || (!privateJob && (!Number.isFinite(sourceOrderId) || !Number.isFinite(fileId)))) {
     return res.status(400).json({ error: 'Invalid job or file id' });
   }
 
   try {
+    if (privateJob) {
+      const job = await fetchPrivateDashboardJob(jobId);
+      if (!job) return res.status(404).json({ error: 'Private dashboard job not found' });
+
+      const columnValues = { ...(job.column_values || {}) };
+      let removedFile = null;
+      for (const [columnId, value] of Object.entries(columnValues)) {
+        const files = privateFilesFromColumnValue(value);
+        const fileIndex = files.findIndex(file => (
+          clean(file?.dashboardPrivateFileId || file?.id) === requestedFileId
+        ));
+        if (fileIndex < 0) continue;
+
+        removedFile = files[fileIndex];
+        const remainingFiles = files.filter((_file, index) => index !== fileIndex);
+        if (remainingFiles.length) {
+          columnValues[columnId] = fileColumnPayloadFromFiles({ id: columnId }, remainingFiles);
+        } else {
+          delete columnValues[columnId];
+        }
+        break;
+      }
+
+      if (!removedFile) {
+        return res.status(404).json({ error: 'Tuesday Dashboard file not found' });
+      }
+
+      await updatePrivateDashboardJob(job.id, {
+        group_id: job.group_id || TEST_DASHBOARD_GROUP_IDS.OFFICE,
+        item_name: job.item_name || '',
+        column_values: columnValues,
+        archived: Boolean(job.archived),
+      });
+      destroyPrivateFileAssets([removedFile], 'file cleanup');
+      return res.json({ ok: true, itemId: job.id, fileId: requestedFileId });
+    }
+
     const deleted = await pool.query(
       `DELETE FROM test_dashboard_files
        WHERE id = $1 AND source_order_id = $2
