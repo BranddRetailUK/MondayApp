@@ -40,7 +40,7 @@ function loadDashboardFrontend() {
   return sandbox;
 }
 
-test('dashboard grid inserts compact JOB NO and mobile retains STATUS for print groups', () => {
+test('dashboard grid starts with compact unlabelled job number and mobile retains STATUS for print groups', () => {
   const sandbox = loadDashboardFrontend();
   const result = vm.runInContext(`
     (() => {
@@ -57,15 +57,19 @@ test('dashboard grid inserts compact JOB NO and mobile retains STATUS for print 
         desktopTemplate: grid.template,
         mobileTemplate: mobile.template,
         mobileTitles: mobile.columns.map(column => column.title),
+        firstColumnKind: grid.columns[0]?.kind,
+        hasActionColumn: grid.columns.some(column => column.kind === 'actions'),
         visualSourceId: grid.columns.find(column => column.kind === 'visual')?.column?.id,
         visualUsesPreviewModal: isPreviewModalFileColumn({ title: 'VISUAL' })
       };
     })()
   `, sandbox);
 
-  assert.equal(result.desktopTemplate, '38px 64px 560px 86px 168px 88px 100px');
-  assert.equal(result.mobileTemplate, '38px 64px 240px 86px 168px 100px');
-  assert.deepEqual(Array.from(result.mobileTitles), ['', '', 'JOB TITLE', 'VISUAL', 'STATUS', 'PROOF']);
+  assert.equal(result.desktopTemplate, '64px 560px 86px 168px 88px 100px');
+  assert.equal(result.mobileTemplate, '72px 240px 86px 168px 100px');
+  assert.deepEqual(Array.from(result.mobileTitles), ['', 'JOB TITLE', 'VISUAL', 'STATUS', 'PROOF']);
+  assert.equal(result.firstColumnKind, 'jobNumber');
+  assert.equal(result.hasActionColumn, false);
   assert.equal(result.visualSourceId, 'proof');
   assert.equal(result.visualUsesPreviewModal, true);
 });

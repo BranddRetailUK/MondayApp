@@ -435,8 +435,7 @@ function renderBoard(payload, options = {}) {
       widthOverrides: groupColumnWidths,
       nameWidth: globalJobNameWidth,
       mobileNameWidth: globalMobileJobTitleWidth,
-      parentTotalColumn,
-      printWidth: context === BOARD_CONTEXT_TEST ? 116 : 82
+      parentTotalColumn
     });
     const groupKey = slugify(collectionName);
     const forceOpenGroup = context === BOARD_CONTEXT_TEST && __testGroupKeysToOpen.has(groupKey);
@@ -494,6 +493,7 @@ function renderBoard(payload, options = {}) {
 
     const tableWrap = document.createElement('div');
     tableWrap.className = 'group-content';
+    tableWrap.classList.toggle('has-packing-row-actions', isUltimatePackingUser());
 
     const grid = document.createElement('div');
     grid.className = 'board-grid';
@@ -526,6 +526,7 @@ function renderBoard(payload, options = {}) {
       row.style.setProperty('--board-cols', groupGridSpec.template);
       const subitemsOpen = uiState.openSubitems.has(itemId);
 
+      row.appendChild(buildOutsideJobActions(item));
       for (const spec of groupGridSpec.columns) {
         row.appendChild(buildItemCell(rowItem, spec, { subitemsOpen, context }));
       }
@@ -824,22 +825,14 @@ function buildDashboardGridSpec(dashboardColumns, {
   widthOverrides = new Map(),
   nameWidth = null,
   mobileNameWidth = null,
-  printWidth = 82,
   parentTotalColumn = null
 } = {}) {
   const resolvedNameWidth = nameWidth || (subitem ? 520 : 560);
   const proofColumn = subitem
     ? null
     : findDashboardColumnByCompactTitle(dashboardColumns, 'PROOF');
-  const packingUser = isUltimatePackingUser();
   const columns = [
-    subitem ? null : {
-      kind: 'actions',
-      title: '',
-      width: packingUser ? printWidth : 38,
-      mobileWidth: 38
-    },
-    subitem ? null : { kind: 'jobNumber', title: '', width: 64, mobileWidth: 64 },
+    subitem ? null : { kind: 'jobNumber', title: '', width: 64, mobileWidth: 72 },
     {
       kind: 'name',
       title: subitem ? 'Subitem' : 'JOB TITLE',
@@ -1462,9 +1455,7 @@ function rerenderBoardContext(context = BOARD_CONTEXT_TEST) {
 
 function buildItemCell(item, spec, { subitemsOpen = false, context = BOARD_CONTEXT_TEST } = {}) {
   let cell;
-  if (spec.kind === 'actions') {
-    cell = buildJobActionsCell(item, context);
-  } else if (spec.kind === 'jobNumber') {
+  if (spec.kind === 'jobNumber') {
     cell = buildJobNumberCell(item);
   } else if (spec.kind === 'name') {
     cell = buildNameCell(item, subitemsOpen, { context });
@@ -1495,22 +1486,22 @@ function buildParentTotalCell(item, spec) {
   return cell;
 }
 
-function buildJobActionsCell(item, context = BOARD_CONTEXT_TEST) {
-  const cell = document.createElement('div');
-  cell.className = 'grid-cell job-actions-cell';
+function buildOutsideJobActions(item) {
+  const actions = document.createElement('div');
+  actions.className = 'job-row-actions-outside';
   const jobTitle = item.name || '';
 
-  cell.appendChild(buildTestRowMenuButton(item));
+  actions.appendChild(buildTestRowMenuButton(item));
 
   if (isUltimatePackingUser()) {
     const printBtn = document.createElement('button');
     printBtn.textContent = 'Print';
     printBtn.className = 'job-action primary job-print-button';
     printBtn.addEventListener('click', () => printLabel(item.id, jobTitle));
-    cell.appendChild(printBtn);
+    actions.appendChild(printBtn);
   }
 
-  return cell;
+  return actions;
 }
 
 function buildVisualCell(item, proofColumn) {

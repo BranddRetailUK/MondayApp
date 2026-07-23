@@ -723,14 +723,18 @@ body{
   border-right:5px solid var(--group-accent, var(--accent));
 }
 .group-content{
+  --dashboard-row-gutter:42px;
   position:relative;
-  padding:0 0 0 42px;
+  padding:0 0 0 var(--dashboard-row-gutter);
   background:transparent;
+}
+.group-content.has-packing-row-actions{
+  --dashboard-row-gutter:116px;
 }
 .group-content::before{
   content:"";
   position:absolute;
-  left:42px;
+  left:var(--dashboard-row-gutter);
   top:0;
   bottom:0;
   width:5px;
@@ -773,6 +777,9 @@ body{
   align-items:stretch;
   width:100%;
   min-height:36px;
+}
+.job-row{
+  position:relative;
 }
 .subitem-row{grid-template-columns:var(--subitem-cols)}
 .grid-row:not(.grid-head),
@@ -900,13 +907,21 @@ body{
   outline:2px solid rgba(255,255,255,.45);
   outline-offset:1px;
 }
-.job-actions-cell{
+.job-row-actions-outside{
+  position:absolute;
+  top:0;
+  bottom:0;
+  left:calc(-1 * var(--dashboard-row-gutter, 42px));
+  z-index:3;
+  width:calc(var(--dashboard-row-gutter, 42px) - 5px);
+  min-height:36px;
+  display:flex;
+  align-items:center;
   justify-content:center;
   gap:6px;
   padding:4px;
-}
-.actions-head{
-  padding:0;
+  overflow:hidden;
+  background:#111213;
 }
 .job-number-head,
 .job-number-cell{
@@ -6733,11 +6748,13 @@ input.db-custom-line-input{
   .group-title{
     padding:8px 10px 8px 0;
   }
-  .group-content{
-    padding-left:16px;
+  .group-content,
+  .group-content.has-packing-row-actions{
+    --dashboard-row-gutter:42px;
+    padding-left:var(--dashboard-row-gutter);
   }
   .group-content::before{
-    left:16px;
+    left:var(--dashboard-row-gutter);
   }
   .group.collapsed .group-summary-row{
     margin-left:16px;
