@@ -61,7 +61,6 @@
       pdfPreview: document.getElementById('dtf-pdf-preview'),
       pdfCanvas: document.getElementById('dtf-pdf-canvas'),
       previewEmpty: document.getElementById('dtf-preview-empty'),
-      previewTitle: document.getElementById('dtf-preview-title'),
       sheetCount: document.getElementById('dtf-sheet-count'),
       subtotal: document.getElementById('dtf-subtotal'),
       vat: document.getElementById('dtf-vat'),
@@ -252,7 +251,7 @@
             <button class="dtf-mini-button" type="button" data-sheet-action="plus" aria-label="Increase quantity">+</button>
             <button class="dtf-mini-button dtf-remove-button" type="button" data-sheet-action="remove" aria-label="Remove PDF">×</button>
           </div>
-          <div class="dtf-validation ${entry.validation}">${entry.validation === 'checking' ? 'Checking page size…' : entry.validation === 'valid' ? 'One page · up to 550mm wide · 900–1100mm long' : escapeHtml(entry.error)}</div>
+          ${entry.validation === 'valid' ? '' : `<div class="dtf-validation ${entry.validation}">${entry.validation === 'checking' ? 'Checking page size…' : escapeHtml(entry.error)}</div>`}
         </div>`).join('');
     }
     els.send.disabled = state.busy || !state.sheets.length || state.sheets.some((entry) => entry.validation !== 'valid');
@@ -263,10 +262,8 @@
     if (!entry || entry.validation !== 'valid') {
       els.pdfCanvas.hidden = true;
       els.previewEmpty.hidden = false;
-      els.previewTitle.textContent = entry?.file?.name || 'Select a gang sheet to preview';
       return;
     }
-    els.previewTitle.textContent = entry.file.name;
     try {
       const pdf = await loadPdf(entry.file);
       const page = await pdf.getPage(1);

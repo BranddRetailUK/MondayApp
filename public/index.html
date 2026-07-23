@@ -73,15 +73,13 @@
             </div>
             <div class="dtf-mode-tabs" role="tablist" aria-label="DTF uploader sections">
               <button class="active" type="button" data-dtf-mode="upload">Upload sheets</button>
-              <button type="button" data-dtf-mode="layout">Create layout</button>
+              <button type="button" data-dtf-mode="layout">Create gang</button>
             </div>
           </div>
 
           <section id="dtf-upload-view" class="dtf-mode-view active" aria-label="Upload DTF gang sheets">
             <div class="dtf-upload-grid">
               <div class="dtf-surface dtf-preview-panel">
-                <div class="dtf-eyebrow">Preview</div>
-                <h2 id="dtf-preview-title">Select a gang sheet to preview</h2>
                 <div id="dtf-pdf-preview" class="dtf-pdf-preview">
                   <canvas id="dtf-pdf-canvas" hidden></canvas>
                   <div id="dtf-preview-empty" class="dtf-empty-preview">
@@ -122,20 +120,25 @@
           <section id="dtf-layout-view" class="dtf-mode-view" aria-label="Create DTF gang sheet">
             <div class="dtf-layout-grid">
               <aside class="dtf-surface dtf-layout-controls">
-                <div class="dtf-eyebrow">Layout</div>
-                <label class="dtf-control-label">Artwork gap</label>
-                <div class="dtf-stepper dtf-gap-stepper">
-                  <button type="button" data-dtf-gap="-1" aria-label="Decrease artwork gap">−</button>
-                  <input id="dtf-layout-gap" type="number" min="0" max="250" step="1" value="10" aria-label="Artwork gap in millimetres">
-                  <span>mm</span>
-                  <button type="button" data-dtf-gap="1" aria-label="Increase artwork gap">+</button>
-                </div>
-
-                <div class="dtf-eyebrow dtf-control-section">Background</div>
-                <div class="dtf-background-options" role="group" aria-label="Layout background">
-                  <button class="active" type="button" data-dtf-background="LIGHT">Light</button>
-                  <button type="button" data-dtf-background="GREY">Grey</button>
-                  <button type="button" data-dtf-background="DARK">Dark</button>
+                <div class="dtf-layout-settings-row">
+                  <section class="dtf-layout-setting">
+                    <div class="dtf-eyebrow">Background</div>
+                    <div class="dtf-background-options" role="group" aria-label="Layout background">
+                      <button class="active" type="button" data-dtf-background="LIGHT">Light</button>
+                      <button type="button" data-dtf-background="GREY">Grey</button>
+                      <button type="button" data-dtf-background="DARK">Dark</button>
+                    </div>
+                  </section>
+                  <div class="dtf-layout-settings-divider" aria-hidden="true"></div>
+                  <section class="dtf-layout-setting">
+                    <div class="dtf-eyebrow">Artwork gap</div>
+                    <div class="dtf-stepper dtf-gap-stepper">
+                      <button type="button" data-dtf-gap="-1" aria-label="Decrease artwork gap">−</button>
+                      <input id="dtf-layout-gap" type="number" min="0" max="250" step="1" value="10" aria-label="Artwork gap in millimetres">
+                      <span>mm</span>
+                      <button type="button" data-dtf-gap="1" aria-label="Increase artwork gap">+</button>
+                    </div>
+                  </section>
                 </div>
 
                 <div class="dtf-eyebrow dtf-control-section">Artwork</div>
@@ -150,7 +153,7 @@
 
               <div class="dtf-surface dtf-layout-preview-panel">
                 <div class="dtf-layout-preview-head">
-                  <div class="dtf-eyebrow">Template preview</div>
+                  <div class="dtf-eyebrow">Preview</div>
                   <span>550mm × 1000mm</span>
                 </div>
                 <div class="dtf-layout-canvas-shell">

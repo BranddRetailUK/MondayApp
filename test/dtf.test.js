@@ -73,6 +73,27 @@ test('browser DTF upload validation mirrors the flexible server page-size rule',
   assert.match(html, /up to 550mm wide and 900–1100mm long/);
 });
 
+test('DTF uploader keeps its simplified upload and layout presentation', () => {
+  const uploader = fs.readFileSync(path.join(__dirname, '..', 'public', 'dtf-uploader.js'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+  const dtfCss = fs.readFileSync(path.join(__dirname, '..', 'public', 'dtf-uploader.css'), 'utf8');
+  const sharedCss = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
+
+  assert.match(html, /data-dtf-mode="layout">Create gang<\/button>/);
+  assert.doesNotMatch(html, /id="dtf-preview-title"/);
+  assert.doesNotMatch(uploader, /previewTitle/);
+  assert.doesNotMatch(uploader, /One page · up to 550mm wide/);
+  assert.match(uploader, /entry\.validation === 'valid' \? '' : `<div class="dtf-validation/);
+  assert.match(html, /dtf-layout-settings-row[\s\S]*Background[\s\S]*dtf-layout-settings-divider[\s\S]*Artwork gap/);
+  assert.doesNotMatch(html, /Template preview/);
+  assert.match(html, /<div class="dtf-eyebrow">Preview<\/div>/);
+  assert.match(dtfCss, /\.dtf-layout-settings-divider\{[^}]*background:rgba\(126,0,255,.5\)/);
+  assert.match(dtfCss, /data-dtf-background="GREY"\]\{background:#808080[^}]*color:#000/);
+  assert.match(dtfCss, /data-dtf-background="DARK"\]\{background:#171717[^}]*color:#fff/);
+  assert.match(sharedCss, /\.sidebar-sub\{color:var\(--database-bg\);font-size:14\.4px;font-weight:700/);
+  assert.match(dtfCss, /\.hub-access-dtf-only \.sidebar-sub\{color:#7e00ff\}/);
+});
+
 test('pdf-lib creates an exact one-page 550 x 1000mm document', async () => {
   const document = await PDFDocument.create();
   document.addPage([TARGET_WIDTH_POINTS, TARGET_HEIGHT_POINTS]);
