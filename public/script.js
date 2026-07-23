@@ -38,6 +38,8 @@ const TEST_DASHBOARD_CLIENT_COLUMN_IDS = Object.freeze({
   STATUS: 'label__1'
 });
 const TEST_DASHBOARD_APPROVAL_REQUIREMENTS_MESSAGE = 'Please add design number and/or Visual Proof.';
+const TEST_DASHBOARD_VISUAL_UPLOAD_ACCEPT = '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png';
+const TEST_DASHBOARD_VISUAL_UPLOAD_ERROR = 'The VISUAL column only accepts PDF, JPEG, and PNG files.';
 const DASHBOARD_ZOOM_MIN = 0.45;
 const DASHBOARD_ZOOM_MAX = 1;
 const HIDDEN_BOARD_COLUMN_TYPES = new Set(['subtasks']);
@@ -2271,7 +2273,7 @@ function ensureTestRowMenu() {
         <button type="button" role="menuitem" data-test-row-move-group="PRE-PRODUCTION">Pre-Production</button>
       </div>
     </div>
-    <button class="test-row-action-button" type="button" role="menuitem" data-test-row-remove-proof="true">Remove Proof</button>
+    <button class="test-row-action-button danger" type="button" role="menuitem" data-test-row-remove-proof="true">REMOVE VISUAL</button>
     <button class="test-row-action-button danger" type="button" role="menuitem" data-test-row-delete-private="true" hidden>Delete</button>
   `;
   menu.addEventListener('click', handleTestRowMenuClick);
@@ -3259,6 +3261,99 @@ function renderPreviewFileButton(cell, files, index, text, column) {
   cell.appendChild(button);
 }
 
+function isTestDashboardVisualColumn(column) {
+  if (!column) return false;
+  if (String(column.id || '') === TEST_DASHBOARD_CLIENT_COLUMN_IDS.PROOF) return true;
+  const compactTitle = normalizeColumnTitle(column.title || '').replace(/[^A-Z0-9]/g, '');
+  return compactTitle === 'PROOF' || compactTitle === 'VISUAL';
+}
+
+function isAllowedTestDashboardVisualFile(file) {
+  const filename = String(file?.name || '').trim();
+  const extension = (filename.match(/\.([^.]+)$/)?.[1] || '').toLowerCase();
+  if (!['pdf', 'jpg', 'jpeg', 'png'].includes(extension)) return false;
+
+  const mime = String(file?.type || '').trim().toLowerCase();
+  return !mime ||
+    mime === 'application/octet-stream' ||
+    mime === 'application/pdf' ||
+    mime === 'image/jpeg' ||
+    mime === 'image/png';
+}
+
+function getUnsupportedTestDashboardVisualFiles(column, files) {
+  if (!isTestDashboardVisualColumn(column)) return [];
+  return (Array.isArray(files) ? files : []).filter(file => !isAllowedTestDashboardVisualFile(file));
+}
+
+function showTestDashboardFileTypeWarning(files = []) {
+  const modal = ensureTestDashboardFileTypeWarningModal();
+  const names = (Array.isArray(files) ? files : [])
+    .map(file => normalizeCellText(file?.name || ''))
+    .filter(Boolean)
+    .slice(0, 3);
+  const message = modal.querySelector('.test-dashboard-complete-confirm-message');
+  if (message) {
+    message.textContent = names.length
+      ? `${TEST_DASHBOARD_VISUAL_UPLOAD_ERROR} Unsupported: ${names.join(', ')}.`
+      : TEST_DASHBOARD_VISUAL_UPLOAD_ERROR;
+  }
+  modal.hidden = false;
+  modal.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open', 'test-dashboard-file-type-warning-open');
+  window.requestAnimationFrame(() => {
+    modal.querySelector('[data-test-dashboard-file-type-ok]')?.focus();
+  });
+}
+
+function ensureTestDashboardFileTypeWarningModal() {
+  let modal = document.getElementById('test-dashboard-file-type-warning-modal');
+  if (modal) return modal;
+
+  modal = document.createElement('div');
+  modal.id = 'test-dashboard-file-type-warning-modal';
+  modal.className = 'test-dashboard-complete-confirm-modal test-dashboard-file-type-warning-modal';
+  modal.hidden = true;
+  modal.setAttribute('aria-hidden', 'true');
+  modal.innerHTML = `
+    <div class="test-dashboard-complete-confirm-shell" role="dialog" aria-modal="true" aria-labelledby="test-dashboard-file-type-warning-title">
+      <div class="test-dashboard-complete-confirm-title" id="test-dashboard-file-type-warning-title">Unsupported file type</div>
+      <div class="test-dashboard-complete-confirm-message">${escapeHtml(TEST_DASHBOARD_VISUAL_UPLOAD_ERROR)}</div>
+      <div class="test-dashboard-complete-confirm-actions">
+        <button class="test-dashboard-complete-confirm-button confirm" type="button" data-test-dashboard-file-type-ok="true">Okay</button>
+      </div>
+    </div>
+  `;
+  modal.addEventListener('click', handleTestDashboardFileTypeWarningClick);
+  document.addEventListener('keydown', handleTestDashboardFileTypeWarningKeydown);
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function handleTestDashboardFileTypeWarningClick(event) {
+  const modal = document.getElementById('test-dashboard-file-type-warning-modal');
+  if (!modal || modal.hidden) return;
+  if (event.target === modal || event.target.closest('[data-test-dashboard-file-type-ok]')) {
+    closeTestDashboardFileTypeWarning();
+  }
+}
+
+function handleTestDashboardFileTypeWarningKeydown(event) {
+  const modal = document.getElementById('test-dashboard-file-type-warning-modal');
+  if (!modal || modal.hidden || event.key !== 'Escape') return;
+  event.preventDefault();
+  closeTestDashboardFileTypeWarning();
+}
+
+function closeTestDashboardFileTypeWarning() {
+  const modal = document.getElementById('test-dashboard-file-type-warning-modal');
+  if (modal) {
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+  }
+  document.body.classList.remove('modal-open', 'test-dashboard-file-type-warning-open');
+}
+
 function decorateTestFileDropCell(cell, entity, column, { hasFiles = false } = {}) {
   if (!cell || !entity?.id || !column?.id) return;
   const uploadKey = testFileUploadKey(entity.id, column.id);
@@ -3332,6 +3427,7 @@ async function handleTestFileDrop(event, entity, column, cell) {
 function openTestFilePicker(entity, column, cell) {
   const input = ensureTestFileUploadInput();
   __testFileUploadTarget = { entity, column, cell };
+  input.accept = isTestDashboardVisualColumn(column) ? TEST_DASHBOARD_VISUAL_UPLOAD_ACCEPT : '';
   input.value = '';
   input.click();
 }
@@ -3357,6 +3453,12 @@ async function handleTestFileInputChange(event) {
 }
 
 async function uploadTestDashboardFiles(itemId, column, files, cell) {
+  const unsupportedFiles = getUnsupportedTestDashboardVisualFiles(column, files);
+  if (unsupportedFiles.length) {
+    showTestDashboardFileTypeWarning(unsupportedFiles);
+    return;
+  }
+
   const uploadKey = testFileUploadKey(itemId, column.id);
   __testFileUploadsInFlight += 1;
   __testFileUploadingCells.add(uploadKey);

@@ -26,6 +26,12 @@ const {
   updateDatabaseJobDashboardFields,
 } = require('../services/testDashboardDbFields');
 const {
+  VISUAL_UPLOAD_ERROR,
+  isVisualProofColumn,
+  isAllowedVisualUploadFilename,
+  isAllowedVisualUploadMetadata,
+} = require('../services/testDashboardFileValidation');
+const {
   AWAITING_APPROVAL_LABEL,
   NO_STOCK_LABEL,
   STOCK_ORDERED_LABEL,
@@ -585,7 +591,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/design-column', async (req
         insertedCount: 0,
         updatedCount: 1,
         removedCount: rawValue ? 0 : 1,
-        designText: getColumnText(saved.column_values?.[column.id]),
+        designText: designDisplayTextFromRawValue(getColumnText(saved.column_values?.[column.id])),
         positions: [],
       });
     }
@@ -721,6 +727,9 @@ protectedRouter.post('/api/test-dashboard/uploads/signature', async (req, res) =
     ]);
     if (!job) return res.status(404).json({ error: privateJob ? 'Private dashboard job not found' : 'Database job not found' });
     if (!column || column.type !== 'file') return res.status(400).json({ error: 'Column is not a file/image column' });
+    if (isVisualProofColumn(column) && !isAllowedVisualUploadFilename(filename)) {
+      return res.status(400).json({ error: VISUAL_UPLOAD_ERROR });
+    }
 
     const folder = folderForColumn(column, privateJob ? `private-${job.id}` : (job.order_no || sourceOrderId));
     const publicId = publicIdForUpload({ filename, source: privateJob ? `private-${job.id}` : `job-${job.order_no || sourceOrderId}` });
@@ -752,6 +761,14 @@ protectedRouter.post('/api/test-dashboard/items/:jobId/files', async (req, res) 
     ]);
     if (!job) return res.status(404).json({ error: privateJob ? 'Private dashboard job not found' : 'Database job not found' });
     if (!column || column.type !== 'file') return res.status(400).json({ error: 'Column is not a file/image column' });
+    const originalFilename = clean(req.body?.originalFilename || req.body?.original_filename);
+    const uploadFormat = clean(req.body?.format);
+    if (
+      isVisualProofColumn(column) &&
+      !isAllowedVisualUploadMetadata({ filename: originalFilename, format: uploadFormat })
+    ) {
+      return res.status(400).json({ error: VISUAL_UPLOAD_ERROR });
+    }
 
     if (privateJob) {
       const file = privateUploadFileFromBody(req.body, column, {
@@ -807,8 +824,8 @@ protectedRouter.post('/api/test-dashboard/items/:jobId/files', async (req, res) 
         publicId,
         secureUrl,
         clean(req.body?.resourceType || req.body?.resource_type) || null,
-        clean(req.body?.format) || null,
-        clean(req.body?.originalFilename || req.body?.original_filename) || null,
+        uploadFormat || null,
+        originalFilename || null,
         nullableInt(req.body?.bytes),
         nullableInt(req.body?.width),
         nullableInt(req.body?.height),
@@ -1033,7 +1050,9 @@ function buildBoardItem({ job, state, columns, subitemColumns, lineItems, positi
   const groupId = resolveDashboardGroupId(job, state, scan);
   const typeLabel = deriveTypeLabel(job);
   const designText = designTextFromPositions(positions, job);
-  const fallbackDesignText = getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.DESIGN]);
+  const fallbackDesignText = designDisplayTextFromRawValue(
+    getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.DESIGN])
+  );
   const jobApproved = resolveJobApproved(job, stateValues);
 
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.PRIORITY, jobApproved
@@ -1094,7 +1113,15 @@ function buildPrivateBoardItem(job, columns) {
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JAQ, stateValues[TEST_DASHBOARD_COLUMN_IDS.JAQ] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JAQ), false));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS] || awaitingApprovalStatusValue(columns));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.TYPE, stateValues[TEST_DASHBOARD_COLUMN_IDS.TYPE] || null);
-  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.DESIGN, stateValues[TEST_DASHBOARD_COLUMN_IDS.DESIGN] || textValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.DESIGN), ''));
+  putIfColumn(
+    values,
+    columns,
+    TEST_DASHBOARD_COLUMN_IDS.DESIGN,
+    textValue(
+      columnById(columns, TEST_DASHBOARD_COLUMN_IDS.DESIGN),
+      designDisplayTextFromRawValue(getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.DESIGN]))
+    )
+  );
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.NOTES, stateValues[TEST_DASHBOARD_COLUMN_IDS.NOTES] || textValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.NOTES), ''));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN, stateValues[TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN), false));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JOB_OWNER, stateValues[TEST_DASHBOARD_COLUMN_IDS.JOB_OWNER] || textValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JOB_OWNER), job.created_by_name || ''));
@@ -1214,7 +1241,7 @@ async function getApprovalRequirements(job, stateValues = {}) {
     hasProofFile(job.source_order_id),
   ]);
   const designText = designTextFromPositions(positions, job) ||
-    cleanDesignColumnText(getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.DESIGN]));
+    designDisplayTextFromRawValue(getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.DESIGN]));
   const missing = [];
   if (!designText) missing.push('design');
   if (!hasProof) missing.push('proof');
@@ -1225,7 +1252,9 @@ async function getApprovalRequirements(job, stateValues = {}) {
 }
 
 function getPrivateApprovalRequirements(stateValues = {}) {
-  const designText = cleanDesignColumnText(getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.DESIGN]));
+  const designText = designDisplayTextFromRawValue(
+    getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.DESIGN])
+  );
   const proofFiles = privateFilesFromColumnValue(stateValues[TEST_DASHBOARD_COLUMN_IDS.PROOF]);
   const proofText = getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.PROOF]);
   const missing = [];
@@ -1711,6 +1740,12 @@ function designTextFromPositions(positions, job) {
   return formatDesignColumnText(designPartsFromSources(positions, job));
 }
 
+function designDisplayTextFromRawValue(value) {
+  const rawValue = cleanDesignColumnText(value);
+  if (!rawValue) return '';
+  return designTextFromPositions([{ design_ref: rawValue }], {});
+}
+
 async function backfillDashboardDesignPositions(jobs, states, positionMap, scans) {
   const candidates = [];
   const stateOnlyCleanupIds = [];
@@ -2035,10 +2070,12 @@ function addDesignReferencesFromText(parts, value) {
 function addPsgReferencesFromText(parts, value, options = {}) {
   const beforeCount = parts.psgRefs.length;
   for (const reference of extractOrderDesignReferences(value)) {
+    if (!/^PSG/i.test(reference)) continue;
     addUniqueReference(parts.psgRefs, parts.psgSeen, reference);
   }
   if (options.fallbackRaw && parts.psgRefs.length === beforeCount) {
-    for (const reference of splitReferenceList(value)) {
+    const withoutStitchReferences = displayDesignReference(value);
+    for (const reference of splitReferenceList(withoutStitchReferences)) {
       addUniqueReference(parts.psgRefs, parts.psgSeen, reference);
     }
   }
@@ -2516,5 +2553,7 @@ module.exports = {
   protectedRouter,
   ensureTestDashboardDefaults,
   buildTestDashboardBoardPayload,
+  designDisplayTextFromRawValue,
+  designTextFromPositions,
   shouldPreserveStatusAfterLabelPrint,
 };

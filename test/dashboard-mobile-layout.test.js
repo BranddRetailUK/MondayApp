@@ -142,3 +142,38 @@ test('sidebar uses the subtle icon-based Sign out control', () => {
   assert.doesNotMatch(styles, /\.sidebar-logout-button\s*\{[^}]*background:#c62828/s);
   assert.match(styles, /\.sidebar-logout-icon\s*\{/);
 });
+
+test('VISUAL upload validation blocks unsupported browser files and keeps FILES unrestricted', () => {
+  const sandbox = loadDashboardFrontend();
+  const result = vm.runInContext(`
+    (() => {
+      const visual = { id: TEST_DASHBOARD_CLIENT_COLUMN_IDS.PROOF, title: 'PROOF' };
+      const files = { id: 'files_1', title: 'FILES' };
+      const candidates = [
+        { name: 'proof.pdf', type: 'application/pdf' },
+        { name: 'photo.jpeg', type: 'image/jpeg' },
+        { name: 'preview.png', type: 'image/png' },
+        { name: 'artwork.eps', type: 'application/postscript' },
+        { name: 'transfer.pxf', type: 'application/octet-stream' }
+      ];
+      return {
+        accept: TEST_DASHBOARD_VISUAL_UPLOAD_ACCEPT,
+        visualRejected: getUnsupportedTestDashboardVisualFiles(visual, candidates).map(file => file.name),
+        filesRejected: getUnsupportedTestDashboardVisualFiles(files, candidates).map(file => file.name)
+      };
+    })()
+  `, sandbox);
+
+  assert.equal(result.accept, '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png');
+  assert.deepEqual(Array.from(result.visualRejected), ['artwork.eps', 'transfer.pxf']);
+  assert.deepEqual(Array.from(result.filesRejected), []);
+});
+
+test('row menu exposes the destructive REMOVE VISUAL action', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'public', 'script.js'), 'utf8');
+
+  assert.match(
+    source,
+    /class="test-row-action-button danger"[^>]*data-test-row-remove-proof="true">REMOVE VISUAL<\/button>/
+  );
+});
