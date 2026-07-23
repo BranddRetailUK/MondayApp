@@ -59,19 +59,25 @@ test('dashboard grid starts with compact unlabelled job number and mobile retain
         mobileTitles: mobile.columns.map(column => column.title),
         firstColumnKind: grid.columns[0]?.kind,
         hasActionColumn: grid.columns.some(column => column.kind === 'actions'),
-        visualSourceId: grid.columns.find(column => column.kind === 'visual')?.column?.id,
-        visualUsesPreviewModal: isPreviewModalFileColumn({ title: 'VISUAL' })
+        hasDuplicatedVisualColumn: grid.columns.some(column => column.kind === 'visual'),
+        proofDisplayTitle: grid.columns.find(column => column.column?.id === 'proof')?.title,
+        proofUnderlyingTitle: grid.columns.find(column => column.column?.id === 'proof')?.column?.title,
+        proofUsesPreviewModal: isPreviewModalFileColumn(
+          grid.columns.find(column => column.column?.id === 'proof')?.column
+        )
       };
     })()
   `, sandbox);
 
-  assert.equal(result.desktopTemplate, '64px 560px 86px 168px 88px 100px');
-  assert.equal(result.mobileTemplate, '72px 240px 86px 168px 100px');
-  assert.deepEqual(Array.from(result.mobileTitles), ['', 'JOB TITLE', 'VISUAL', 'STATUS', 'PROOF']);
+  assert.equal(result.desktopTemplate, '64px 560px 168px 88px 100px');
+  assert.equal(result.mobileTemplate, '72px 240px 168px 100px');
+  assert.deepEqual(Array.from(result.mobileTitles), ['', 'JOB TITLE', 'STATUS', 'VISUAL']);
   assert.equal(result.firstColumnKind, 'jobNumber');
   assert.equal(result.hasActionColumn, false);
-  assert.equal(result.visualSourceId, 'proof');
-  assert.equal(result.visualUsesPreviewModal, true);
+  assert.equal(result.hasDuplicatedVisualColumn, false);
+  assert.equal(result.proofDisplayTitle, 'VISUAL');
+  assert.equal(result.proofUnderlyingTitle, 'PROOF');
+  assert.equal(result.proofUsesPreviewModal, true);
 });
 
 test('dashboard job title uses the explicit database title without separators', () => {

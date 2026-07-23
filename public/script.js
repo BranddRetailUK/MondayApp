@@ -828,9 +828,6 @@ function buildDashboardGridSpec(dashboardColumns, {
   parentTotalColumn = null
 } = {}) {
   const resolvedNameWidth = nameWidth || (subitem ? 520 : 560);
-  const proofColumn = subitem
-    ? null
-    : findDashboardColumnByCompactTitle(dashboardColumns, 'PROOF');
   const columns = [
     subitem ? null : { kind: 'jobNumber', title: '', width: 64, mobileWidth: 72 },
     {
@@ -839,12 +836,6 @@ function buildDashboardGridSpec(dashboardColumns, {
       width: resolvedNameWidth,
       mobileWidth: mobileNameWidth || resolvedNameWidth
     },
-    !subitem && proofColumn ? {
-      kind: 'visual',
-      title: 'VISUAL',
-      width: 86,
-      column: proofColumn
-    } : null,
     !subitem && parentTotalColumn ? {
       kind: 'jobTotal',
       title: 'TOTAL',
@@ -853,7 +844,9 @@ function buildDashboardGridSpec(dashboardColumns, {
     } : null,
     ...dashboardColumns.map(column => ({
       kind: 'column',
-      title: column.title,
+      title: normalizeColumnTitle(column.title).replace(/[^A-Z0-9]/g, '') === 'PROOF'
+        ? 'VISUAL'
+        : column.title,
       width: widthOverrides.get(column.id) || getColumnWidth(column),
       column
     }))
@@ -1459,8 +1452,6 @@ function buildItemCell(item, spec, { subitemsOpen = false, context = BOARD_CONTE
     cell = buildJobNumberCell(item);
   } else if (spec.kind === 'name') {
     cell = buildNameCell(item, subitemsOpen, { context });
-  } else if (spec.kind === 'visual') {
-    cell = buildVisualCell(item, spec.column);
   } else if (spec.kind === 'jobTotal') {
     cell = buildParentTotalCell(item, spec);
   } else {
@@ -1502,17 +1493,6 @@ function buildOutsideJobActions(item) {
   }
 
   return actions;
-}
-
-function buildVisualCell(item, proofColumn) {
-  const cell = document.createElement('div');
-  cell.className = 'grid-cell dashboard-value-cell dashboard-visual-cell';
-  if (!proofColumn?.id) return cell;
-
-  const value = findColumnValue(item, proofColumn.id);
-  const visualColumn = { ...proofColumn, title: 'VISUAL' };
-  renderFileValue(cell, value, normalizeCellText(value?.text || ''), visualColumn);
-  return cell;
 }
 
 function buildJobNumberCell(item) {
