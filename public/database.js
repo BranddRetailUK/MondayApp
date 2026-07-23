@@ -14,6 +14,8 @@
   const DATABASE_PROOF_ZOOM_MIN = 0.75;
   const DATABASE_PROOF_ZOOM_MAX = 4;
   const DATABASE_PROOF_ZOOM_STEP = 0.25;
+  const DATABASE_VISUAL_PAGE_LIMIT = 30;
+  const DATABASE_VISUAL_SEARCH_DELAY = 260;
   const DATABASE_CUSTOMER_SORTS = new Set(['recent', 'active', 'az', 'za']);
   const DATABASE_STYLE_SORTS = new Set(['most-used', 'highest-price', 'lowest-price', 'az', 'za']);
   const DATABASE_REPORT_RANGES = new Set(['daily', 'weekly', 'monthly', 'yearly', 'mtd', 'ytd']);
@@ -37,6 +39,7 @@
     'customer',
     'order',
     'styles',
+    'visuals',
     'to-invoice',
     'stock-ordering',
     'users',
@@ -202,6 +205,20 @@
     selectedStyleColourKeys: new Map(),
     productStyleQuery: '',
     productStyleSort: 'most-used',
+    visuals: [],
+    visualsQuery: '',
+    visualsLoadedQuery: '',
+    visualsLoading: false,
+    visualsHasMore: true,
+    visualsNextOffset: 0,
+    visualsRequest: 0,
+    visualsError: '',
+    visualOpenJobs: [],
+    visualOpenJobsLoaded: false,
+    visualOpenJobsLoading: false,
+    activeVisual: null,
+    visualAttachSaving: false,
+    visualAttachedJobIds: new Set(),
     orderLoadToken: 0,
     orderLoadComplete: false,
     orderSearchQuery: '',
@@ -327,6 +344,7 @@
   let databaseCustomerSearchTimer = 0;
   let productSearchTimer = 0;
   let productStyleSearchTimer = 0;
+  let visualSearchTimer = 0;
   let customerSearchRequest = 0;
   let databaseCustomerRequest = 0;
   let productSearchRequest = 0;
@@ -339,10 +357,13 @@
   let orderSearchTimer = 0;
   let outstandingScrollFrame = 0;
   let productStylesScrollFrame = 0;
+  let visualsScrollFrame = 0;
   let outstandingLayoutFrame = 0;
   let databaseProofResizeFrame = 0;
   let mobileTableLabelFrame = 0;
   let mobileTableObserver = null;
+  let visualsIntersectionObserver = null;
+  let visualModalOpener = null;
   let outstandingTitleMeasureCanvas = null;
   let lineItemMeasureCanvas = null;
   let lineDrag = null;
@@ -434,6 +455,20 @@
       stylesSizeLabel: document.getElementById('db-styles-size-label'),
       stylesSizes: document.getElementById('db-styles-sizes'),
       stylesColours: document.getElementById('db-styles-colours'),
+      visualsSearch: document.getElementById('db-visuals-search'),
+      visualsSummary: document.getElementById('db-visuals-summary'),
+      visualsScroll: document.getElementById('db-visuals-scroll'),
+      visualsGrid: document.getElementById('db-visuals-grid'),
+      visualsStatus: document.getElementById('db-visuals-status'),
+      visualsLoadMore: document.getElementById('db-visuals-load-more'),
+      visualsSentinel: document.getElementById('db-visuals-sentinel'),
+      visualModal: document.getElementById('db-visual-modal'),
+      visualModalTitle: document.getElementById('db-visual-modal-title'),
+      visualModalMeta: document.getElementById('db-visual-modal-meta'),
+      visualModalViewer: document.getElementById('db-visual-modal-viewer'),
+      visualModalJob: document.getElementById('db-visual-modal-job'),
+      visualModalFeedback: document.getElementById('db-visual-modal-feedback'),
+      visualModalClose: document.getElementById('db-visual-modal-close'),
       usersTable: document.getElementById('db-users-table'),
       usersBody: document.getElementById('db-users-body'),
       signupRequestsBody: document.getElementById('db-signup-requests-body'),
@@ -497,6 +532,13 @@
     els.stylesPreviewImage?.addEventListener('error', handleProductStyleImageError);
     els.stylesImageModal?.addEventListener('click', handleProductStyleImageModalClick);
     els.stylesImageModalClose?.addEventListener('click', closeProductStyleImageModal);
+    els.visualsSearch?.addEventListener('input', handleDatabaseVisualSearchInput);
+    els.visualsScroll?.addEventListener('scroll', handleDatabaseVisualsScroll, { passive: true });
+    els.visualsGrid?.addEventListener('error', handleDatabaseVisualThumbnailError, true);
+    els.visualsLoadMore?.addEventListener('click', () => loadDatabaseVisuals({ append: true }));
+    els.visualModal?.addEventListener('click', handleDatabaseVisualModalClick);
+    els.visualModalClose?.addEventListener('click', closeDatabaseVisualModal);
+    els.visualModalJob?.addEventListener('change', attachActiveDatabaseVisual);
     els.reportsYear?.addEventListener('change', handleReportYearChange);
     els.reportsCompareMonthNameA?.addEventListener('change', handleReportComparisonInputChange);
     els.reportsCompareMonthYearA?.addEventListener('change', handleReportComparisonInputChange);
@@ -661,6 +703,7 @@
     if (!isDatabaseMobileLayout() || !isDatabaseTopLevelActive()) return;
     if (state.activeView === 'outstanding') handleOutstandingScroll();
     if (state.activeView === 'styles') handleProductStylesScroll();
+    if (state.activeView === 'visuals') handleDatabaseVisualsScroll();
   }
 
   function handleDatabaseViewportResize() {
@@ -748,6 +791,12 @@
 
     if (button.dataset.dbOrderStatsToggle !== undefined) {
       toggleOrderStatsDrawer();
+      return;
+    }
+
+    const visualId = button.dataset.dbVisualOpen;
+    if (visualId) {
+      openDatabaseVisualModal(visualId, button);
       return;
     }
 
@@ -900,6 +949,11 @@
     if (action === 'styles') {
       await flushOrderAutosaves();
       showStyles();
+      return;
+    }
+    if (action === 'visuals') {
+      await flushOrderAutosaves();
+      showVisuals();
       return;
     }
     if (action === 'reports') {
@@ -1165,6 +1219,13 @@
       return;
     }
 
+    if (route.view === 'visuals') {
+      state.visualsQuery = String(route.visualsQuery || '').trim();
+      if (els.visualsSearch) els.visualsSearch.value = state.visualsQuery;
+      showVisuals({ skipHistory: true, skipPersistence: true });
+      return;
+    }
+
     if (route.view === 'to-invoice') {
       showToInvoice({ skipHistory: true, skipPersistence: true });
       return;
@@ -1268,6 +1329,11 @@
       route.styleId = String(state.selectedStyleId || '');
       route.styleQuery = String(state.productStyleQuery || els.stylesSearch?.value || '').trim();
       route.styleSort = normalizeDatabaseStyleSort(state.productStyleSort || els.stylesSort?.value);
+      return route;
+    }
+
+    if (view === 'visuals') {
+      route.visualsQuery = String(state.visualsQuery || els.visualsSearch?.value || '').trim();
       return route;
     }
 
@@ -1384,6 +1450,424 @@
     showView('styles', options);
     setFooterTitle('Styles');
     loadProductStyles({ force: false });
+  }
+
+  function showVisuals(options = {}) {
+    if (els.visualsSearch) els.visualsSearch.value = state.visualsQuery || '';
+    showView('visuals', options);
+    setFooterTitle('Visuals');
+    ensureDatabaseVisualsObserver();
+    const queryChanged = state.visualsLoadedQuery !== String(state.visualsQuery || '').trim();
+    if (!state.visuals.length || queryChanged) {
+      loadDatabaseVisuals({ force: true });
+    } else {
+      renderDatabaseVisuals();
+    }
+  }
+
+  function handleDatabaseVisualSearchInput() {
+    window.clearTimeout(visualSearchTimer);
+    visualSearchTimer = window.setTimeout(() => {
+      state.visualsQuery = String(els.visualsSearch?.value || '').trim();
+      persistDatabaseRoute();
+      loadDatabaseVisuals({ force: true });
+    }, DATABASE_VISUAL_SEARCH_DELAY);
+  }
+
+  function resetDatabaseVisuals() {
+    state.visuals = [];
+    state.visualsHasMore = true;
+    state.visualsNextOffset = 0;
+    state.visualsLoadedQuery = '';
+    state.visualsError = '';
+    state.visualsRequest += 1;
+  }
+
+  async function loadDatabaseVisuals(options = {}) {
+    const append = options.append === true;
+    const query = String(state.visualsQuery || els.visualsSearch?.value || '').trim();
+
+    if (options.force) {
+      resetDatabaseVisuals();
+      state.visualsLoading = false;
+    }
+    if (state.visualsLoading || (append && !state.visualsHasMore)) return;
+    if (append && state.visualsLoadedQuery !== query) return;
+
+    const requestId = ++state.visualsRequest;
+    const offset = append ? state.visualsNextOffset : 0;
+    let appendedVisuals = [];
+    state.visualsLoading = true;
+    state.visualsError = '';
+    renderDatabaseVisuals({ preserveGrid: append });
+
+    try {
+      const params = new URLSearchParams({
+        limit: String(DATABASE_VISUAL_PAGE_LIMIT),
+        offset: String(offset),
+      });
+      if (query) params.set('q', query);
+      const data = await fetchJson(`/api/database/visuals?${params}`);
+      if (requestId !== state.visualsRequest) return;
+
+      const loaded = (Array.isArray(data.visuals) ? data.visuals : [])
+        .map(normalizeDatabaseVisual)
+        .filter(Boolean);
+      const seen = new Set((append ? state.visuals : []).map((visual) => (
+        String(visual.id || `${visual.source_order_id}:${visual.public_id}`)
+      )));
+      const uniqueLoaded = loaded.filter((visual) => {
+        const key = String(visual.id || `${visual.source_order_id}:${visual.public_id}`);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      appendedVisuals = append ? uniqueLoaded : [];
+      state.visuals = append ? [...state.visuals, ...uniqueLoaded] : uniqueLoaded;
+      state.visualsHasMore = data.hasMore === true;
+      state.visualsNextOffset = Number.isFinite(Number(data.nextOffset))
+        ? Number(data.nextOffset)
+        : offset + loaded.length;
+      state.visualsLoadedQuery = query;
+    } catch (err) {
+      if (requestId !== state.visualsRequest) return;
+      state.visualsHasMore = false;
+      state.visualsError = err.message || 'Visual previews could not be loaded';
+    } finally {
+      if (requestId === state.visualsRequest) {
+        state.visualsLoading = false;
+        renderDatabaseVisuals(
+          append
+            ? { append: true, visuals: appendedVisuals, preserveGrid: !appendedVisuals.length }
+            : {}
+        );
+      }
+    }
+  }
+
+  function normalizeDatabaseVisual(visual) {
+    const file = normalizeDatabaseProofFiles([visual])[0];
+    if (!file) return null;
+    return {
+      ...file,
+      id: Number(visual.id || visual.dashboardFileId),
+      source_order_id: Number(visual.source_order_id),
+      order_no: visual.order_no,
+      customer_name: String(visual.customer_name || ''),
+      job_title: String(visual.job_title || ''),
+      design_numbers: String(visual.design_numbers || ''),
+      created_at: visual.created_at || null,
+    };
+  }
+
+  function renderDatabaseVisuals(options = {}) {
+    if (!els.visualsGrid || !els.visualsStatus) return;
+    const visuals = state.visuals || [];
+    if (options.append && Array.isArray(options.visuals) && options.visuals.length) {
+      els.visualsGrid.insertAdjacentHTML('beforeend', options.visuals.map(renderDatabaseVisualCard).join(''));
+    } else if (!options.preserveGrid) {
+      els.visualsGrid.innerHTML = visuals.map(renderDatabaseVisualCard).join('');
+    }
+
+    els.visualsStatus.classList.toggle('is-error', Boolean(state.visualsError));
+    if (state.visualsError) {
+      els.visualsStatus.hidden = false;
+      els.visualsStatus.textContent = state.visualsError;
+    } else if (state.visualsLoading && !visuals.length) {
+      els.visualsStatus.hidden = false;
+      els.visualsStatus.textContent = 'Loading visual previews…';
+    } else if (!visuals.length) {
+      els.visualsStatus.hidden = false;
+      els.visualsStatus.textContent = state.visualsLoadedQuery
+        ? 'No visuals match this search'
+        : 'No job visuals have been attached yet';
+    } else if (state.visualsLoading) {
+      els.visualsStatus.hidden = false;
+      els.visualsStatus.textContent = 'Loading more visuals…';
+    } else {
+      els.visualsStatus.hidden = true;
+      els.visualsStatus.textContent = '';
+    }
+
+    if (els.visualsSummary) {
+      const label = visuals.length === 1 ? 'visual' : 'visuals';
+      els.visualsSummary.textContent = `${visuals.length} ${label} loaded${state.visualsHasMore ? ' · scroll for more' : ''}`;
+    }
+
+    const usesObserver = typeof window.IntersectionObserver === 'function';
+    if (els.visualsLoadMore) {
+      els.visualsLoadMore.hidden = usesObserver || !state.visualsHasMore || state.visualsLoading;
+    }
+    if (els.visualsSentinel) {
+      els.visualsSentinel.hidden = !state.visualsHasMore;
+    }
+  }
+
+  function renderDatabaseVisualCard(visual) {
+    const thumbnailUrl = databaseVisualThumbnailUrl(visual);
+    const isPdf = isDatabasePdfFile(visual);
+    const orderNumber = visual.order_no || visual.source_order_id || '';
+    const customer = visual.customer_name || 'Customer not recorded';
+    const design = visual.design_numbers || 'No design number';
+    const name = visual.name || 'Visual';
+    const aria = `Open ${name} from job ${orderNumber}`;
+
+    return `
+      <button
+        class="db-visual-card"
+        type="button"
+        role="listitem"
+        data-db-visual-open="${escapeAttr(visual.id)}"
+        aria-label="${escapeAttr(aria)}"
+      >
+        <span class="db-visual-card-preview${thumbnailUrl ? '' : ' is-unavailable'}">
+          ${thumbnailUrl ? `
+            <img
+              src="${escapeAttr(thumbnailUrl)}"
+              alt=""
+              loading="lazy"
+              decoding="async"
+              fetchpriority="low"
+              data-db-visual-thumbnail
+            >
+          ` : ''}
+          <span class="db-visual-card-fallback">${isPdf ? 'PDF' : 'Preview unavailable'}</span>
+          ${isPdf ? '<span class="db-visual-card-type">PDF</span>' : ''}
+        </span>
+        <span class="db-visual-card-name" title="${escapeAttr(name)}">${escapeHtml(name)}</span>
+        <span class="db-visual-card-job">Job ${escapeHtml(orderNumber)}</span>
+        <span class="db-visual-card-customer" title="${escapeAttr(customer)}">${escapeHtml(customer)}</span>
+        <span class="db-visual-card-design" title="${escapeAttr(design)}">${escapeHtml(design)}</span>
+      </button>
+    `;
+  }
+
+  function databaseVisualThumbnailUrl(visual) {
+    const original = buildDatabaseAssetSrc(visual);
+    if (!original) return '';
+    const marker = '/image/upload/';
+    const markerIndex = original.indexOf(marker);
+    if (markerIndex < 0) return isDatabasePdfFile(visual) ? '' : original;
+
+    const transform = isDatabasePdfFile(visual)
+      ? 'f_jpg,q_auto:eco,c_limit,w_420,h_420,pg_1'
+      : 'f_auto,q_auto:eco,c_limit,w_420,h_420';
+    let transformed = `${original.slice(0, markerIndex)}${marker}${transform}/${original.slice(markerIndex + marker.length)}`;
+    if (isDatabasePdfFile(visual)) {
+      transformed = transformed.replace(/\.pdf(?=([?#]|$))/i, '.jpg');
+    }
+    return transformed;
+  }
+
+  function handleDatabaseVisualThumbnailError(event) {
+    const image = event.target;
+    if (!(image instanceof HTMLImageElement) || !image.matches('[data-db-visual-thumbnail]')) return;
+    image.hidden = true;
+    image.closest('.db-visual-card-preview')?.classList.add('is-unavailable');
+  }
+
+  function ensureDatabaseVisualsObserver() {
+    if (
+      visualsIntersectionObserver
+      || typeof window.IntersectionObserver !== 'function'
+      || !els.visualsSentinel
+    ) return;
+    visualsIntersectionObserver = new window.IntersectionObserver((entries) => {
+      if (
+        entries.some((entry) => entry.isIntersecting)
+        && state.activeView === 'visuals'
+        && state.visualsHasMore
+        && !state.visualsLoading
+      ) {
+        loadDatabaseVisuals({ append: true });
+      }
+    }, { root: null, rootMargin: '400px 0px' });
+    visualsIntersectionObserver.observe(els.visualsSentinel);
+  }
+
+  function handleDatabaseVisualsScroll() {
+    if (visualsScrollFrame || state.activeView !== 'visuals') return;
+    visualsScrollFrame = window.requestAnimationFrame(() => {
+      visualsScrollFrame = 0;
+      if (!state.visualsHasMore || state.visualsLoading) return;
+
+      if (isDatabaseMobileLayout()) {
+        const top = els.visualsSentinel?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY;
+        if (top <= window.innerHeight + 400) loadDatabaseVisuals({ append: true });
+        return;
+      }
+
+      const scroll = els.visualsScroll;
+      if (scroll && scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 400) {
+        loadDatabaseVisuals({ append: true });
+      }
+    });
+  }
+
+  function openDatabaseVisualModal(visualId, opener = null) {
+    const id = Number(visualId);
+    const visual = state.visuals.find((item) => Number(item.id) === id);
+    if (!visual || !els.visualModal || !els.visualModalViewer) return;
+
+    state.activeVisual = visual;
+    state.visualAttachedJobIds = new Set();
+    visualModalOpener = opener;
+    if (els.visualModalTitle) els.visualModalTitle.textContent = visual.name || 'Visual preview';
+    if (els.visualModalMeta) {
+      const meta = [`Job ${visual.order_no || visual.source_order_id}`];
+      if (visual.customer_name) meta.push(visual.customer_name);
+      if (visual.design_numbers) meta.push(`Design ${visual.design_numbers}`);
+      els.visualModalMeta.textContent = meta.join(' · ');
+    }
+    if (els.visualModalFeedback) els.visualModalFeedback.textContent = '';
+
+    els.visualModalViewer.replaceChildren();
+    const src = buildDatabaseAssetSrc(visual);
+    if (isDatabaseImageFile(visual)) {
+      const image = document.createElement('img');
+      image.src = src;
+      image.alt = visual.name || 'Visual';
+      els.visualModalViewer.appendChild(image);
+    } else {
+      const frame = document.createElement('iframe');
+      frame.src = src;
+      frame.title = visual.name || 'Visual PDF';
+      frame.allow = 'fullscreen';
+      els.visualModalViewer.appendChild(frame);
+    }
+
+    els.visualModal.hidden = false;
+    els.visualModal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open', 'db-visual-modal-open');
+    renderDatabaseVisualJobOptions({ loading: true });
+    ensureDatabaseVisualOpenJobs({ force: true });
+    els.visualModalClose?.focus({ preventScroll: true });
+  }
+
+  async function ensureDatabaseVisualOpenJobs(options = {}) {
+    if (state.visualOpenJobsLoading || (state.visualOpenJobsLoaded && !options.force)) {
+      renderDatabaseVisualJobOptions();
+      return;
+    }
+
+    state.visualOpenJobsLoading = true;
+    renderDatabaseVisualJobOptions({ loading: true });
+    try {
+      const data = await fetchJson('/api/database/visuals/open-jobs');
+      state.visualOpenJobs = Array.isArray(data.jobs) ? data.jobs : [];
+      state.visualOpenJobsLoaded = true;
+      renderDatabaseVisualJobOptions();
+    } catch (err) {
+      state.visualOpenJobsLoaded = false;
+      if (els.visualModalFeedback) {
+        els.visualModalFeedback.textContent = err.message || 'Open jobs could not be loaded';
+      }
+      renderDatabaseVisualJobOptions({ error: true });
+    } finally {
+      state.visualOpenJobsLoading = false;
+    }
+  }
+
+  function renderDatabaseVisualJobOptions(options = {}) {
+    if (!els.visualModalJob) return;
+    const visual = state.activeVisual;
+    if (options.loading || state.visualOpenJobsLoading) {
+      els.visualModalJob.innerHTML = '<option value="">Loading open jobs…</option>';
+      els.visualModalJob.disabled = true;
+      return;
+    }
+    if (options.error) {
+      els.visualModalJob.innerHTML = '<option value="">Open jobs unavailable</option>';
+      els.visualModalJob.disabled = true;
+      return;
+    }
+
+    const jobs = state.visualOpenJobs || [];
+    const optionsHtml = jobs.map((job) => {
+      const id = Number(job.source_order_id);
+      const label = [
+        job.order_no || id,
+        job.customer_name,
+        job.job_title,
+      ].filter(Boolean).join(' — ');
+      const attached = state.visualAttachedJobIds.has(id);
+      const current = id === Number(visual?.source_order_id);
+      const suffix = current ? ' (current job)' : (attached ? ' (added)' : '');
+      return `<option value="${escapeAttr(id)}" ${current || attached ? 'disabled' : ''}>${escapeHtml(label)}${suffix}</option>`;
+    }).join('');
+
+    els.visualModalJob.innerHTML = `
+      <option value="">${jobs.length ? 'Choose a job…' : 'No open jobs'}</option>
+      ${optionsHtml}
+    `;
+    const hasSelectableJob = jobs.some((job) => {
+      const id = Number(job.source_order_id);
+      return id !== Number(visual?.source_order_id) && !state.visualAttachedJobIds.has(id);
+    });
+    els.visualModalJob.disabled = state.visualAttachSaving || !hasSelectableJob;
+  }
+
+  async function attachActiveDatabaseVisual() {
+    if (!els.visualModalJob || state.visualAttachSaving || !state.activeVisual) return;
+    const targetId = Number(els.visualModalJob.value);
+    if (!Number.isFinite(targetId)) return;
+    const job = state.visualOpenJobs.find((item) => Number(item.source_order_id) === targetId);
+
+    state.visualAttachSaving = true;
+    els.visualModalJob.disabled = true;
+    if (els.visualModalFeedback) {
+      els.visualModalFeedback.textContent = `Adding visual to job ${job?.order_no || targetId}…`;
+    }
+
+    try {
+      const data = await fetchJson(
+        `/api/database/visuals/${encodeURIComponent(state.activeVisual.id)}/attach`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source_order_id: targetId }),
+        }
+      );
+      state.visualAttachedJobIds.add(targetId);
+      const attachedVisual = normalizeDatabaseVisual(data.visual);
+      if (
+        data.attached === true
+        && attachedVisual
+        && !state.visualsQuery
+        && !state.visuals.some((visual) => Number(visual.id) === Number(attachedVisual.id))
+      ) {
+        state.visuals.unshift(attachedVisual);
+        renderDatabaseVisuals();
+      }
+      if (els.visualModalFeedback) {
+        els.visualModalFeedback.textContent = data.attached === false
+          ? `This visual is already on job ${job?.order_no || targetId}`
+          : `Visual added to job ${job?.order_no || targetId}`;
+      }
+    } catch (err) {
+      if (els.visualModalFeedback) {
+        els.visualModalFeedback.textContent = err.message || 'Visual could not be added to this job';
+      }
+    } finally {
+      state.visualAttachSaving = false;
+      renderDatabaseVisualJobOptions();
+    }
+  }
+
+  function handleDatabaseVisualModalClick(event) {
+    if (event.target === els.visualModal) closeDatabaseVisualModal();
+  }
+
+  function closeDatabaseVisualModal() {
+    if (!els.visualModal || els.visualModal.hidden) return;
+    els.visualModal.hidden = true;
+    els.visualModal.setAttribute('aria-hidden', 'true');
+    els.visualModalViewer?.replaceChildren();
+    document.body.classList.remove('modal-open', 'db-visual-modal-open');
+    state.activeVisual = null;
+    const opener = visualModalOpener;
+    visualModalOpener = null;
+    opener?.focus({ preventScroll: true });
   }
 
   function showToInvoice(options = {}) {
@@ -7673,6 +8157,10 @@
       closeRepeatOrderConfirmation();
       return;
     }
+    if (els.visualModal && !els.visualModal.hidden) {
+      closeDatabaseVisualModal();
+      return;
+    }
     if (els.stylesImageModal && !els.stylesImageModal.hidden) {
       closeProductStyleImageModal();
       return;
@@ -11277,17 +11765,20 @@
     els.stage?.classList.toggle('db-view-home', name === 'home');
     els.stage?.classList.toggle('db-view-order', name === 'order');
     els.stage?.classList.toggle('db-reports-active', name === 'reports');
+    els.stage?.classList.toggle('db-visuals-active', name === 'visuals');
     els.stage?.classList.toggle('db-new-customer-active', name === 'new-customer');
     els.root?.classList.toggle('db-reports-expanded', name === 'reports');
-    els.databaseTab?.classList.toggle('db-tall-view-active', name === 'reports');
+    els.root?.classList.toggle('db-visuals-expanded', name === 'visuals');
+    els.databaseTab?.classList.toggle('db-tall-view-active', name === 'reports' || name === 'visuals');
     els.root?.classList.toggle('db-new-customer-expanded', name === 'new-customer');
+    if (name !== 'visuals') closeDatabaseVisualModal();
     if (name !== 'order') {
       els.stage?.classList.remove('db-order-items-active');
       els.root?.classList.remove('db-order-items-expanded');
     }
 
     els.mainTabs.forEach((tab) => {
-      const active = (name === 'home' || name === 'new-order' || name === 'new-customer' || name === 'new-contact' || name === 'customers' || name === 'customer' || name === 'styles' || name === 'to-invoice' || name === 'stock-ordering' || name === 'users' || name === 'reports' || name === 'dtf-admin')
+      const active = (name === 'home' || name === 'new-order' || name === 'new-customer' || name === 'new-contact' || name === 'customers' || name === 'customer' || name === 'styles' || name === 'visuals' || name === 'to-invoice' || name === 'stock-ordering' || name === 'users' || name === 'reports' || name === 'dtf-admin')
         ? tab.dataset.dbGo === 'home'
         : tab.dataset.dbGo === 'outstanding';
       tab.classList.toggle('active', active);
@@ -11322,6 +11813,7 @@
     if (name === 'customers') return 'Customers';
     if (name === 'customer') return 'Customer';
     if (name === 'styles') return 'Styles';
+    if (name === 'visuals') return 'Visuals';
     if (name === 'users') return 'Users';
     if (name === 'dtf-admin') return 'Lami DTF';
     if (name === 'reports') return 'Analytics & Reports';

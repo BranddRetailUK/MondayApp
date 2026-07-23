@@ -40,6 +40,8 @@ const { sortSizes } = require('../../public/product-size-order');
 
 const DASHBOARD_STATUS_COLORS = buildDashboardStatusColors(STATUS_SETTINGS);
 const MAX_STOCK_ORDERING_MARK_IDS = 500;
+const DATABASE_VISUAL_PAGE_LIMIT = 30;
+const DATABASE_VISUAL_PAGE_MAX = 50;
 const RALAWISE_ADDING_STALE_MS = 10 * 60 * 1000;
 const RALAWISE_ORDER_HISTORY_LOCK_KEYS = [71060219, 1206];
 const ralawiseBasketClient = createRalawiseBasketClient();
@@ -959,6 +961,254 @@ router.get('/api/database/outstanding-counts', async (_req, res) => {
   } catch (err) {
     console.error('GET /api/database/outstanding-counts', err);
     res.status(500).json({ error: 'Failed to fetch outstanding action counts' });
+  }
+});
+
+router.get('/api/database/visuals', async (req, res) => {
+  const limit = clampInt(req.query.limit, DATABASE_VISUAL_PAGE_LIMIT, 1, DATABASE_VISUAL_PAGE_MAX);
+  const offset = clampInt(req.query.offset, 0, 0, 100000);
+  const search = cleanQuery(req.query.q).slice(0, 120);
+  const params = [TEST_DASHBOARD_COLUMN_IDS.PROOF];
+  let searchSql = '';
+
+  if (search) {
+    params.push(`%${search}%`);
+    const searchParam = params.length;
+    searchSql = `
+      AND (
+        CAST(j.order_no AS TEXT) ILIKE $${searchParam}
+        OR CAST(j.source_order_id AS TEXT) ILIKE $${searchParam}
+        OR COALESCE(j.customer_name, '') ILIKE $${searchParam}
+        OR COALESCE(j.job_title, '') ILIKE $${searchParam}
+        OR COALESCE(j.screen_numbers, '') ILIKE $${searchParam}
+        OR COALESCE(file.original_filename, '') ILIKE $${searchParam}
+        OR COALESCE(file.public_id, '') ILIKE $${searchParam}
+        OR EXISTS (
+          SELECT 1
+          FROM database_job_positions position
+          WHERE position.source_order_id = j.source_order_id
+            AND COALESCE(position.design_ref, '') ILIKE $${searchParam}
+        )
+      )`;
+  }
+
+  params.push(limit + 1, offset);
+  const limitParam = params.length - 1;
+  const offsetParam = params.length;
+
+  try {
+    const result = await pool.query(
+      `WITH selected_visuals AS MATERIALIZED (
+         SELECT file.*,
+                j.order_no,
+                j.customer_name,
+                j.job_title,
+                j.order_type,
+                j.order_type_abbr
+         FROM test_dashboard_files file
+         JOIN database_jobs j ON j.source_order_id = file.source_order_id
+         WHERE (file.column_id = $1 OR UPPER(BTRIM(file.column_title)) = 'PROOF')
+           AND NULLIF(BTRIM(file.secure_url), '') IS NOT NULL
+           ${searchSql}
+         ORDER BY COALESCE(file.created_at, file.updated_at) DESC, file.id DESC
+         LIMIT $${limitParam}
+         OFFSET $${offsetParam}
+       )
+       SELECT selected_visuals.*,
+              COALESCE((
+                SELECT STRING_AGG(
+                  DISTINCT NULLIF(BTRIM(position.design_ref), ''),
+                  ' / '
+                  ORDER BY NULLIF(BTRIM(position.design_ref), '')
+                )
+                FROM database_job_positions position
+                WHERE position.source_order_id = selected_visuals.source_order_id
+              ), '') AS design_numbers
+       FROM selected_visuals
+       ORDER BY COALESCE(created_at, updated_at) DESC, id DESC`,
+      params
+    );
+
+    const rows = result.rows.slice(0, limit);
+    res.json({
+      visuals: rows.map(databaseVisualToApi),
+      hasMore: result.rows.length > limit,
+      nextOffset: offset + rows.length,
+      limit,
+      offset,
+      query: search,
+    });
+  } catch (err) {
+    console.error('GET /api/database/visuals', err);
+    res.status(500).json({ error: 'Failed to fetch database visuals' });
+  }
+});
+
+router.get('/api/database/visuals/open-jobs', async (_req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT source_order_id,
+              order_no,
+              customer_name,
+              job_title,
+              order_type,
+              order_type_abbr
+       FROM database_jobs
+       WHERE is_complete IS NOT TRUE
+         AND NOT (
+           COALESCE(UPPER(BTRIM(dashboard_status)), '') = 'COMPLETED'
+           AND (
+             invoice_printed IS TRUE
+             OR pf_invoice_printed IS TRUE
+             OR (invoice_required IS FALSE AND closed_without_invoice IS TRUE)
+           )
+         )
+         AND (
+           (
+             LOWER(COALESCE(order_type, '') || ' ' || COALESCE(order_type_abbr, '')) LIKE '%print%'
+             OR LOWER(COALESCE(order_type, '') || ' ' || COALESCE(order_type_abbr, '')) LIKE '%embro%'
+             OR UPPER(BTRIM(COALESCE(order_type_abbr, ''))) IN ('P', 'E', 'PE', 'EP')
+           )
+           AND LOWER(COALESCE(order_type, '') || ' ' || COALESCE(order_type_abbr, '')) NOT LIKE '%gift%'
+           AND UPPER(BTRIM(COALESCE(order_type_abbr, ''))) <> 'G'
+         )
+       ORDER BY order_no DESC, source_order_id DESC`
+    );
+
+    res.json({ jobs: result.rows });
+  } catch (err) {
+    console.error('GET /api/database/visuals/open-jobs', err);
+    res.status(500).json({ error: 'Failed to fetch open visual jobs' });
+  }
+});
+
+router.post('/api/database/visuals/:fileId/attach', async (req, res) => {
+  const fileId = nullableInt(req.params.fileId);
+  const targetSourceOrderId = nullableInt(req.body?.source_order_id || req.body?.sourceOrderId);
+  if (!fileId || !targetSourceOrderId) {
+    return res.status(400).json({ error: 'A visual and target job are required' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const [sourceResult, targetResult] = await Promise.all([
+      client.query(
+        `SELECT *
+         FROM test_dashboard_files
+         WHERE id = $1
+           AND (column_id = $2 OR UPPER(BTRIM(column_title)) = 'PROOF')
+         FOR SHARE`,
+        [fileId, TEST_DASHBOARD_COLUMN_IDS.PROOF]
+      ),
+      client.query(
+        `SELECT job.*,
+                COALESCE((
+                  SELECT STRING_AGG(
+                    DISTINCT NULLIF(BTRIM(position.design_ref), ''),
+                    ' / '
+                    ORDER BY NULLIF(BTRIM(position.design_ref), '')
+                  )
+                  FROM database_job_positions position
+                  WHERE position.source_order_id = job.source_order_id
+                ), '') AS design_numbers
+         FROM database_jobs job
+         WHERE job.source_order_id = $1
+         FOR UPDATE`,
+        [targetSourceOrderId]
+      ),
+    ]);
+
+    if (!sourceResult.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Visual not found' });
+    }
+    if (!targetResult.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Target job not found' });
+    }
+
+    const targetJob = targetResult.rows[0];
+    if (!isOpenDatabaseVisualJob(targetJob)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: 'Select an open Printing, Embroidery, or Print + Emb job',
+      });
+    }
+
+    const sourceFile = sourceResult.rows[0];
+    const actorName = req.hubUser ? fullName(req.hubUser) : '';
+    const inserted = await client.query(
+      `INSERT INTO test_dashboard_files (
+         source_order_id,
+         column_id,
+         column_title,
+         public_id,
+         secure_url,
+         resource_type,
+         format,
+         original_filename,
+         bytes,
+         width,
+         height,
+         metadata,
+         created_by_user_id,
+         created_by_name,
+         created_at,
+         updated_at
+       ) VALUES ($1,$2,'PROOF',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),NOW())
+       ON CONFLICT (source_order_id, public_id) DO NOTHING
+       RETURNING *`,
+      [
+        targetJob.source_order_id,
+        TEST_DASHBOARD_COLUMN_IDS.PROOF,
+        sourceFile.public_id,
+        sourceFile.secure_url,
+        sourceFile.resource_type,
+        sourceFile.format,
+        sourceFile.original_filename,
+        sourceFile.bytes,
+        sourceFile.width,
+        sourceFile.height,
+        sourceFile.metadata || {},
+        req.hubUser?.id || null,
+        actorName || null,
+      ]
+    );
+
+    let attachedFile = inserted.rows[0];
+    if (!attachedFile) {
+      const existing = await client.query(
+        `SELECT *
+         FROM test_dashboard_files
+         WHERE source_order_id = $1
+           AND public_id = $2
+         LIMIT 1`,
+        [targetJob.source_order_id, sourceFile.public_id]
+      );
+      attachedFile = existing.rows[0] || sourceFile;
+    }
+
+    await client.query('COMMIT');
+    res.status(inserted.rowCount ? 201 : 200).json({
+      attached: Boolean(inserted.rowCount),
+      visual: databaseVisualToApi({
+        ...attachedFile,
+        order_no: targetJob.order_no,
+        customer_name: targetJob.customer_name,
+        job_title: targetJob.job_title,
+        order_type: targetJob.order_type,
+        order_type_abbr: targetJob.order_type_abbr,
+        design_numbers: targetJob.design_numbers || '',
+      }),
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('POST /api/database/visuals/:fileId/attach', err);
+    res.status(500).json({ error: 'Failed to attach visual to job' });
+  } finally {
+    client.release();
   }
 });
 
@@ -4971,11 +5221,47 @@ function databaseProofFileToApi(row) {
   };
 }
 
+function databaseVisualToApi(row) {
+  return {
+    ...databaseProofFileToApi(row),
+    order_no: row.order_no,
+    customer_name: row.customer_name || '',
+    job_title: row.job_title || '',
+    order_type: row.order_type || '',
+    order_type_abbr: row.order_type_abbr || '',
+    design_numbers: row.design_numbers || '',
+    created_at: row.created_at || null,
+    updated_at: row.updated_at || null,
+  };
+}
+
 function mimeFromDatabaseProofFile(row, name) {
   const format = cleanQuery(row.format).toLowerCase();
   if (format === 'pdf' || /\.pdf$/i.test(name || '')) return 'application/pdf';
   if (row.resource_type === 'image' && format) return `image/${format === 'jpg' ? 'jpeg' : format}`;
   return '';
+}
+
+function isOpenDatabaseVisualJob(job) {
+  if (!job || job.is_complete === true) return false;
+
+  const orderType = normalizeDatabaseOrderType(job.order_type);
+  const abbreviation = cleanQuery(job.order_type_abbr).toUpperCase();
+  const eligibleType = (
+    orderType === 'Printing'
+    || orderType === 'Embroidery'
+    || orderType === 'Print + Emb'
+    || ['P', 'E', 'PE', 'EP'].includes(abbreviation)
+  ) && orderType !== 'Business Gifts' && abbreviation !== 'G';
+  if (!eligibleType) return false;
+
+  const completed = cleanQuery(job.dashboard_status).toUpperCase() === 'COMPLETED';
+  const finalized = (
+    job.invoice_printed === true
+    || job.pf_invoice_printed === true
+    || (job.invoice_required === false && job.closed_without_invoice === true)
+  );
+  return !(completed && finalized);
 }
 
 function cleanQuery(value) {
