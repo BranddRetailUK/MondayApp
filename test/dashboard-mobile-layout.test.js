@@ -46,7 +46,8 @@ test('dashboard grid inserts compact JOB NO and mobile retains STATUS for print 
     (() => {
       const grid = buildDashboardGridSpec([
         { id: 'status', title: 'STATUS', type: 'status' },
-        { id: 'type', title: 'TYPE', type: 'status' }
+        { id: 'type', title: 'TYPE', type: 'status' },
+        { id: 'proof', title: 'PROOF', type: 'file' }
       ], {
         nameWidth: 560,
         mobileNameWidth: 240
@@ -55,14 +56,18 @@ test('dashboard grid inserts compact JOB NO and mobile retains STATUS for print 
       return {
         desktopTemplate: grid.template,
         mobileTemplate: mobile.template,
-        mobileTitles: mobile.columns.map(column => column.title)
+        mobileTitles: mobile.columns.map(column => column.title),
+        visualSourceId: grid.columns.find(column => column.kind === 'visual')?.column?.id,
+        visualUsesPreviewModal: isPreviewModalFileColumn({ title: 'VISUAL' })
       };
     })()
   `, sandbox);
 
-  assert.equal(result.desktopTemplate, '64px 560px 168px 88px');
-  assert.equal(result.mobileTemplate, '64px 240px 168px');
-  assert.deepEqual(Array.from(result.mobileTitles), ['JOB NO', 'JOB TITLE', 'STATUS']);
+  assert.equal(result.desktopTemplate, '38px 64px 560px 86px 168px 88px 100px');
+  assert.equal(result.mobileTemplate, '38px 64px 240px 86px 168px 100px');
+  assert.deepEqual(Array.from(result.mobileTitles), ['', '', 'JOB TITLE', 'VISUAL', 'STATUS', 'PROOF']);
+  assert.equal(result.visualSourceId, 'proof');
+  assert.equal(result.visualUsesPreviewModal, true);
 });
 
 test('dashboard job title uses the explicit database title without separators', () => {

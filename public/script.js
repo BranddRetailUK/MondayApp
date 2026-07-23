@@ -120,9 +120,12 @@ let __proofModalState = {
   pageNumber: 1,
   pageCount: 1,
   pdf: null,
+  previewKind: '',
   pdfZoom: 1,
   pdfRotation: 0,
   pdfDrag: null,
+  pdfPinch: null,
+  pdfTouchPan: null,
   modalLabel: 'Proof',
   downloading: false,
   downloadPhase: '',
@@ -415,9 +418,7 @@ function renderBoard(payload, options = {}) {
   const boardSortPlan = getBoardSortPlan(boardColumns);
   const dueDateColumn = getDueDateColumn(boardColumns);
   const allBoardItems = getAllBoardItems(board.groups || []);
-  const globalJobNameWidth = buildJobNameColumnWidth(allBoardItems) + (
-    context === BOARD_CONTEXT_TEST && !isUltimatePackingUser() ? 37 : 0
-  );
+  const globalJobNameWidth = buildJobNameColumnWidth(allBoardItems);
   const globalMobileJobTitleWidth = buildMobileJobTitleColumnWidth(allBoardItems);
   const parentTotalColumn = buildParentTotalColumnSpec(allBoardItems, subitemColumns);
   const zoomLayer = document.createElement('div');
@@ -827,17 +828,30 @@ function buildDashboardGridSpec(dashboardColumns, {
   parentTotalColumn = null
 } = {}) {
   const resolvedNameWidth = nameWidth || (subitem ? 520 : 560);
+  const proofColumn = subitem
+    ? null
+    : findDashboardColumnByCompactTitle(dashboardColumns, 'PROOF');
+  const packingUser = isUltimatePackingUser();
   const columns = [
-    subitem || !isUltimatePackingUser()
-      ? null
-      : { kind: 'print', title: 'LABEL', width: printWidth },
-    subitem ? null : { kind: 'jobNumber', title: 'JOB NO', width: 64, mobileWidth: 64 },
+    subitem ? null : {
+      kind: 'actions',
+      title: '',
+      width: packingUser ? printWidth : 38,
+      mobileWidth: 38
+    },
+    subitem ? null : { kind: 'jobNumber', title: '', width: 64, mobileWidth: 64 },
     {
       kind: 'name',
       title: subitem ? 'Subitem' : 'JOB TITLE',
       width: resolvedNameWidth,
       mobileWidth: mobileNameWidth || resolvedNameWidth
     },
+    !subitem && proofColumn ? {
+      kind: 'visual',
+      title: 'VISUAL',
+      width: 86,
+      column: proofColumn
+    } : null,
     !subitem && parentTotalColumn ? {
       kind: 'jobTotal',
       title: 'TOTAL',
@@ -881,7 +895,6 @@ function getMobileGridColumnWidth(column) {
 function getMobileVisibleGridColumns(columns, groupName) {
   const hidePrintEmbroideryColumns = shouldHidePrintEmbroideryMobileColumns(groupName);
   return (Array.isArray(columns) ? columns : []).filter(column => {
-    if (column.kind === 'print') return false;
     return !hidePrintEmbroideryColumns || !isPrintEmbroideryMobileHiddenColumn(column);
   });
 }
@@ -1449,12 +1462,14 @@ function rerenderBoardContext(context = BOARD_CONTEXT_TEST) {
 
 function buildItemCell(item, spec, { subitemsOpen = false, context = BOARD_CONTEXT_TEST } = {}) {
   let cell;
-  if (spec.kind === 'print') {
-    cell = buildPrintCell(item, context);
+  if (spec.kind === 'actions') {
+    cell = buildJobActionsCell(item, context);
   } else if (spec.kind === 'jobNumber') {
     cell = buildJobNumberCell(item);
   } else if (spec.kind === 'name') {
     cell = buildNameCell(item, subitemsOpen, { context });
+  } else if (spec.kind === 'visual') {
+    cell = buildVisualCell(item, spec.column);
   } else if (spec.kind === 'jobTotal') {
     cell = buildParentTotalCell(item, spec);
   } else {
@@ -1465,7 +1480,6 @@ function buildItemCell(item, spec, { subitemsOpen = false, context = BOARD_CONTE
 }
 
 function buildSubitemCell(subitem, spec, { context = BOARD_CONTEXT_TEST } = {}) {
-  if (spec.kind === 'print') return buildBlankCell('print-cell');
   if (spec.kind === 'name') return buildSubitemNameCell(subitem);
   return buildColumnValueCell(subitem, spec.column, { subitem: true, context });
 }
@@ -1481,19 +1495,32 @@ function buildParentTotalCell(item, spec) {
   return cell;
 }
 
-function buildPrintCell(item, context = BOARD_CONTEXT_TEST) {
+function buildJobActionsCell(item, context = BOARD_CONTEXT_TEST) {
   const cell = document.createElement('div');
-  cell.className = 'grid-cell print-cell';
+  cell.className = 'grid-cell job-actions-cell';
   const jobTitle = item.name || '';
 
   cell.appendChild(buildTestRowMenuButton(item));
 
-  const printBtn = document.createElement('button');
-  printBtn.textContent = 'Print';
-  printBtn.className = 'job-action primary';
-  printBtn.addEventListener('click', () => printLabel(item.id, jobTitle));
-  cell.appendChild(printBtn);
+  if (isUltimatePackingUser()) {
+    const printBtn = document.createElement('button');
+    printBtn.textContent = 'Print';
+    printBtn.className = 'job-action primary job-print-button';
+    printBtn.addEventListener('click', () => printLabel(item.id, jobTitle));
+    cell.appendChild(printBtn);
+  }
 
+  return cell;
+}
+
+function buildVisualCell(item, proofColumn) {
+  const cell = document.createElement('div');
+  cell.className = 'grid-cell dashboard-value-cell dashboard-visual-cell';
+  if (!proofColumn?.id) return cell;
+
+  const value = findColumnValue(item, proofColumn.id);
+  const visualColumn = { ...proofColumn, title: 'VISUAL' };
+  renderFileValue(cell, value, normalizeCellText(value?.text || ''), visualColumn);
   return cell;
 }
 
@@ -1546,10 +1573,6 @@ function buildNameCell(item, initiallyOpen = false, { context = BOARD_CONTEXT_TE
   }
   const titleWrap = document.createElement('div');
   titleWrap.className = 'title-wrap';
-
-  if (context === BOARD_CONTEXT_TEST && !isUltimatePackingUser()) {
-    titleWrap.appendChild(buildTestRowMenuButton(item));
-  }
 
   if (subitems.length > 0) {
     const rowToggle = document.createElement('button');
@@ -1651,7 +1674,7 @@ function ensureTestDashboardMobileJobOverview() {
       <header class="test-dashboard-mobile-job-head">
         <div class="test-dashboard-mobile-job-heading">
           <span class="test-dashboard-mobile-job-eyebrow">JOB OVERVIEW</span>
-          <h2 id="test-dashboard-mobile-job-title" data-test-mobile-job-title>Job</h2>
+          <button class="test-dashboard-mobile-job-order-link" id="test-dashboard-mobile-job-title" type="button" data-test-mobile-job-title>Job</button>
         </div>
         <button class="test-dashboard-mobile-job-close" type="button" data-test-mobile-job-close aria-label="Close job overview">×</button>
       </header>
@@ -1710,7 +1733,21 @@ function renderTestDashboardMobileJobOverview(payload = window.__latestTestBoard
     .filter(subitem => !isDashboardTotalSubitem(subitem));
 
   const title = modal.querySelector('[data-test-mobile-job-title]');
-  if (title) title.textContent = orderNumber ? `JOB ${orderNumber}` : 'PRIVATE JOB';
+  if (title) {
+    const linkedOrder = Boolean(orderNumber && item?.database_job?.source_order_id);
+    title.textContent = orderNumber || 'PRIVATE JOB';
+    title.disabled = !linkedOrder;
+    title.setAttribute(
+      'aria-label',
+      linkedOrder ? `Open DATABASE order ${orderNumber}` : 'Private dashboard job'
+    );
+    title.onclick = linkedOrder
+      ? (event) => {
+          event.preventDefault();
+          openTestDashboardDatabaseOrder(item);
+        }
+      : null;
+  }
 
   const content = modal.querySelector('[data-test-mobile-job-content]');
   if (content) {
@@ -3218,7 +3255,8 @@ function renderFileValue(cell, value, text, column) {
 function isPreviewModalFileColumn(column) {
   const normalized = normalizeColumnTitle(column?.title || '');
   const compact = normalized.replace(/[^A-Z0-9]/g, '');
-  return compact === 'PROOF' ||
+  return compact === 'VISUAL' ||
+    compact === 'PROOF' ||
     compact === 'FILE' ||
     compact === 'FILES' ||
     compact === 'IMAGE' ||
@@ -3573,6 +3611,10 @@ function ensureProofModal() {
   modal.querySelector('#proof-modal-body').addEventListener('pointermove', handleProofPdfPointerMove);
   modal.querySelector('#proof-modal-body').addEventListener('pointerup', handleProofPdfPointerEnd);
   modal.querySelector('#proof-modal-body').addEventListener('pointercancel', handleProofPdfPointerEnd);
+  modal.querySelector('#proof-modal-body').addEventListener('touchstart', handleProofPreviewTouchStart, { passive: false });
+  modal.querySelector('#proof-modal-body').addEventListener('touchmove', handleProofPreviewTouchMove, { passive: false });
+  modal.querySelector('#proof-modal-body').addEventListener('touchend', handleProofPreviewTouchEnd, { passive: false });
+  modal.querySelector('#proof-modal-body').addEventListener('touchcancel', handleProofPreviewTouchEnd, { passive: false });
   window.addEventListener('resize', handleProofModalViewportChange);
   document.addEventListener('keydown', handleProofModalKeydown);
   return modal;
@@ -3593,9 +3635,12 @@ function openProofModal(files, startIndex = 0, options = {}) {
     pageNumber: 1,
     pageCount: 1,
     pdf: null,
+    previewKind: '',
     pdfZoom: 1,
     pdfRotation: 0,
     pdfDrag: null,
+    pdfPinch: null,
+    pdfTouchPan: null,
     modalLabel,
     downloading: false,
     downloadPhase: '',
@@ -3610,7 +3655,10 @@ function closeProofModal() {
   const modal = document.getElementById('proof-modal');
   if (modal) modal.classList.add('hidden');
   __proofModalState.pdf = null;
+  __proofModalState.previewKind = '';
   __proofModalState.pdfDrag = null;
+  __proofModalState.pdfPinch = null;
+  __proofModalState.pdfTouchPan = null;
   __proofModalState.renderToken += 1;
   resetProofPdfBodyState();
   const anotherModalOpen = document.querySelector('.modal:not(.hidden)');
@@ -3758,9 +3806,12 @@ async function renderProofModalFile() {
   state.pageNumber = 1;
   state.pageCount = 1;
   state.pdf = null;
+  state.previewKind = '';
   state.pdfZoom = 1;
   state.pdfRotation = 0;
   state.pdfDrag = null;
+  state.pdfPinch = null;
+  state.pdfTouchPan = null;
   resetProofPdfBodyState();
   updateProofPageControls();
 
@@ -3797,6 +3848,7 @@ async function renderProofPdf(file, token) {
     const pdf = await loadingTask.promise;
     if (token !== __proofModalState.renderToken) return;
     __proofModalState.pdf = pdf;
+    __proofModalState.previewKind = 'pdf';
     __proofModalState.pageCount = Math.max(1, pdf.numPages || 1);
     __proofModalState.pageNumber = 1;
     await renderProofPdfPage();
@@ -3845,12 +3897,19 @@ function renderProofImage(file, token) {
   const { body } = getProofModalElements();
   if (!body || token !== __proofModalState.renderToken) return;
   resetProofPdfBodyState(body);
+  __proofModalState.previewKind = 'image';
   const img = document.createElement('img');
   img.className = 'proof-modal-image';
   img.src = buildAssetSrc(file);
   img.alt = file.name || 'Proof image';
+  const stage = document.createElement('div');
+  stage.className = 'proof-image-stage';
+  stage.appendChild(img);
   body.innerHTML = '';
-  body.appendChild(img);
+  body.classList.add('proof-image-body');
+  body.appendChild(stage);
+  applyProofImageZoom(body);
+  updateProofPdfPanState(body);
   updateProofPageControls();
 }
 
@@ -3858,6 +3917,7 @@ function renderProofNativeViewer(file, token, note = '') {
   const { body } = getProofModalElements();
   if (!body || token !== __proofModalState.renderToken) return;
   resetProofPdfBodyState(body);
+  __proofModalState.previewKind = 'native';
   const src = buildAssetSrc(file, { stripPdfUi: isPdfFile(file.name, file.mime) });
   body.innerHTML = '';
   if (note) {
@@ -3897,18 +3957,44 @@ function isProofDesktopView() {
 
 function resetProofPdfBodyState(body = document.getElementById('proof-modal-body')) {
   __proofModalState.pdfDrag = null;
+  __proofModalState.pdfPinch = null;
+  __proofModalState.pdfTouchPan = null;
   if (!body) return;
-  body.classList.remove('proof-pdf-body', 'proof-pdf-pan-enabled', 'proof-pdf-dragging');
+  const stage = body.querySelector('.proof-pdf-stage, .proof-image-stage');
+  if (stage) {
+    stage.style.transform = '';
+    stage.style.transformOrigin = '';
+  }
+  body.classList.remove(
+    'proof-pdf-body',
+    'proof-image-body',
+    'proof-pdf-pan-enabled',
+    'proof-pdf-dragging',
+    'proof-preview-pinching'
+  );
 }
 
 function updateProofPdfPanState(body = document.getElementById('proof-modal-body')) {
   if (!body) return;
-  const enabled = !!__proofModalState.pdf && normalizeProofPdfZoom(__proofModalState.pdfZoom) > 1 && isProofDesktopView();
+  const enabled = isProofZoomablePreview() && normalizeProofPdfZoom(__proofModalState.pdfZoom) > 1;
   body.classList.toggle('proof-pdf-pan-enabled', enabled);
   if (!enabled) {
     __proofModalState.pdfDrag = null;
+    __proofModalState.pdfTouchPan = null;
     body.classList.remove('proof-pdf-dragging');
   }
+}
+
+function isProofZoomablePreview() {
+  return Boolean(__proofModalState.pdf || __proofModalState.previewKind === 'image');
+}
+
+function applyProofImageZoom(body = document.getElementById('proof-modal-body')) {
+  if (!body || __proofModalState.previewKind !== 'image') return;
+  const stage = body.querySelector('.proof-image-stage');
+  if (!stage) return;
+  const zoom = normalizeProofPdfZoom(__proofModalState.pdfZoom);
+  stage.style.width = `${zoom * 100}%`;
 }
 
 function getProofPdfScrollPosition(body) {
@@ -3933,11 +4019,19 @@ function restoreProofPdfScrollPosition(body, position = { x: 0.5, y: 0 }) {
 
 function changeProofZoom(delta) {
   const state = __proofModalState;
-  if (!state.pdf || !isProofDesktopView()) return;
+  if (!isProofZoomablePreview()) return;
   const nextZoom = normalizeProofPdfZoom(normalizeProofPdfZoom(state.pdfZoom) + delta);
   if (nextZoom === normalizeProofPdfZoom(state.pdfZoom)) return;
   state.pdfZoom = nextZoom;
   state.pdfDrag = null;
+  state.pdfTouchPan = null;
+  if (state.previewKind === 'image') {
+    const { body } = getProofModalElements();
+    applyProofImageZoom(body);
+    updateProofPdfPanState(body);
+    updateProofPageControls(false);
+    return;
+  }
   state.renderToken += 1;
   renderProofPdfPage().catch((err) => {
     console.error('Proof PDF zoom render failed', err);
@@ -3961,12 +4055,17 @@ function handleProofModalViewportChange() {
   const { modal, body } = getProofModalElements();
   if (!modal || modal.classList.contains('hidden')) return;
   const state = __proofModalState;
-  if (!state.pdf) {
+  if (!isProofZoomablePreview()) {
     updateProofPageControls();
     return;
   }
-  if (!isProofDesktopView() && (normalizeProofPdfZoom(state.pdfZoom) !== 1 || state.pdfRotation !== 0)) {
-    state.pdfZoom = 1;
+  if (state.previewKind === 'image') {
+    applyProofImageZoom(body);
+    updateProofPdfPanState(body);
+    updateProofPageControls();
+    return;
+  }
+  if (!isProofDesktopView() && state.pdfRotation !== 0) {
     state.pdfRotation = 0;
     state.pdfDrag = null;
     state.renderToken += 1;
@@ -3982,7 +4081,8 @@ function handleProofModalViewportChange() {
 
 function handleProofPdfPointerDown(event) {
   const state = __proofModalState;
-  if (!state.pdf || normalizeProofPdfZoom(state.pdfZoom) <= 1 || !isProofDesktopView()) return;
+  if (!isProofZoomablePreview() || normalizeProofPdfZoom(state.pdfZoom) <= 1) return;
+  if (event.pointerType === 'touch') return;
   if (event.button !== undefined && event.button !== 0) return;
   const { body } = getProofModalElements();
   if (!body || !body.classList.contains('proof-pdf-body')) return;
@@ -4022,6 +4122,114 @@ function handleProofPdfPointerEnd(event) {
     body.releasePointerCapture?.(event.pointerId);
   }
   state.pdfDrag = null;
+}
+
+function handleProofPreviewTouchStart(event) {
+  const state = __proofModalState;
+  const { body } = getProofModalElements();
+  if (!body || !isProofZoomablePreview()) return;
+
+  if (event.touches.length >= 2) {
+    const distance = getTouchDistance(event.touches);
+    if (!distance) return;
+    state.pdfTouchPan = null;
+    state.pdfPinch = {
+      startDistance: distance,
+      startZoom: normalizeProofPdfZoom(state.pdfZoom),
+      nextZoom: normalizeProofPdfZoom(state.pdfZoom)
+    };
+    body.classList.add('proof-preview-pinching');
+    event.preventDefault();
+    return;
+  }
+
+  if (event.touches.length === 1 && normalizeProofPdfZoom(state.pdfZoom) > 1) {
+    const touch = event.touches[0];
+    state.pdfTouchPan = {
+      startX: touch.clientX,
+      startY: touch.clientY,
+      scrollLeft: body.scrollLeft,
+      scrollTop: body.scrollTop
+    };
+    event.preventDefault();
+  }
+}
+
+function handleProofPreviewTouchMove(event) {
+  const state = __proofModalState;
+  const { body } = getProofModalElements();
+  if (!body || !isProofZoomablePreview()) return;
+
+  if (state.pdfPinch && event.touches.length >= 2) {
+    const distance = getTouchDistance(event.touches);
+    if (!distance) return;
+    const nextZoom = normalizeProofPdfZoom(
+      state.pdfPinch.startZoom * (distance / state.pdfPinch.startDistance)
+    );
+    state.pdfPinch.nextZoom = nextZoom;
+    const stage = getProofPreviewStage(body);
+    if (stage) {
+      const first = event.touches[0];
+      const second = event.touches[1];
+      const midpointX = (first.clientX + second.clientX) / 2;
+      const midpointY = (first.clientY + second.clientY) / 2;
+      const stageRect = stage.getBoundingClientRect();
+      stage.style.transformOrigin = `${midpointX - stageRect.left}px ${midpointY - stageRect.top}px`;
+      stage.style.transform = `scale(${nextZoom / state.pdfPinch.startZoom})`;
+    }
+    event.preventDefault();
+    return;
+  }
+
+  if (state.pdfTouchPan && event.touches.length === 1) {
+    const touch = event.touches[0];
+    body.scrollLeft = state.pdfTouchPan.scrollLeft - (touch.clientX - state.pdfTouchPan.startX);
+    body.scrollTop = state.pdfTouchPan.scrollTop - (touch.clientY - state.pdfTouchPan.startY);
+    event.preventDefault();
+  }
+}
+
+function handleProofPreviewTouchEnd(event) {
+  const state = __proofModalState;
+  const { body } = getProofModalElements();
+  if (!body) return;
+
+  if (state.pdfPinch && event.touches.length < 2) {
+    const nextZoom = normalizeProofPdfZoom(state.pdfPinch.nextZoom);
+    const changed = nextZoom !== normalizeProofPdfZoom(state.pdfZoom);
+    const stage = getProofPreviewStage(body);
+    if (stage) {
+      stage.style.transform = '';
+      stage.style.transformOrigin = '';
+    }
+    state.pdfPinch = null;
+    state.pdfTouchPan = null;
+    body.classList.remove('proof-preview-pinching');
+    if (changed) {
+      state.pdfZoom = nextZoom;
+      if (state.previewKind === 'image') {
+        applyProofImageZoom(body);
+        updateProofPdfPanState(body);
+        updateProofPageControls(false);
+      } else if (state.pdf) {
+        state.renderToken += 1;
+        renderProofPdfPage().catch((err) => {
+          console.error('Proof PDF pinch zoom render failed', err);
+          updateProofPageControls(false);
+        });
+      }
+    }
+    event.preventDefault();
+    return;
+  }
+
+  if (event.touches.length === 0) {
+    state.pdfTouchPan = null;
+  }
+}
+
+function getProofPreviewStage(body = document.getElementById('proof-modal-body')) {
+  return body?.querySelector('.proof-pdf-stage, .proof-image-stage') || null;
 }
 
 function changeProofPage(delta) {

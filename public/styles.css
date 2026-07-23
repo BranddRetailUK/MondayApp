@@ -900,7 +900,14 @@ body{
   outline:2px solid rgba(255,255,255,.45);
   outline-offset:1px;
 }
-.print-cell{justify-content:center;gap:6px}
+.job-actions-cell{
+  justify-content:center;
+  gap:6px;
+  padding:4px;
+}
+.actions-head{
+  padding:0;
+}
 .job-number-head,
 .job-number-cell{
   justify-content:center;
@@ -1344,14 +1351,35 @@ body.test-dashboard-mobile-job-open{
   font-weight:900;
   letter-spacing:.11em;
 }
-.test-dashboard-mobile-job-head h2{
+.test-dashboard-mobile-job-order-link{
+  appearance:none;
+  display:block;
   margin:2px 0 0;
+  padding:0;
   overflow:hidden;
-  color:#fff;
+  border:0;
+  background:transparent;
+  color:#579bfc;
+  font-family:inherit;
   font-size:18px;
+  font-weight:900;
   line-height:22px;
+  text-align:left;
   text-overflow:ellipsis;
+  text-decoration:underline;
   white-space:nowrap;
+  cursor:pointer;
+}
+.test-dashboard-mobile-job-order-link:disabled{
+  color:#fff;
+  text-decoration:none;
+  cursor:default;
+}
+.test-dashboard-mobile-job-order-link:hover:not(:disabled),
+.test-dashboard-mobile-job-order-link:focus-visible{
+  color:#81b8ff;
+  outline:2px solid rgba(87,155,252,.55);
+  outline-offset:2px;
 }
 .test-dashboard-mobile-job-close{
   width:42px;
@@ -1983,18 +2011,32 @@ body.modal-open{overflow:hidden}
   padding:16px;
   background:#111213;
 }
-.proof-modal-body.proof-pdf-body{
+.proof-modal-body.proof-pdf-body,
+.proof-modal-body.proof-image-body{
   display:block;
 }
 .proof-modal-body.proof-pdf-pan-enabled{
   cursor:grab;
+  touch-action:none;
+  overscroll-behavior:contain;
 }
 .proof-modal-body.proof-pdf-dragging{
   cursor:grabbing;
   user-select:none;
 }
+.proof-modal-body.proof-preview-pinching{
+  touch-action:none;
+}
 .proof-pdf-stage{
   width:max-content;
+  min-width:100%;
+  min-height:100%;
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
+}
+.proof-image-stage{
+  width:100%;
   min-width:100%;
   min-height:100%;
   display:flex;
@@ -2012,8 +2054,9 @@ body.modal-open{overflow:hidden}
   max-width:none;
 }
 .proof-modal-image{
-  max-width:100%;
-  max-height:100%;
+  width:100%;
+  max-width:none;
+  max-height:none;
   object-fit:contain;
 }
 .proof-modal-viewer{
@@ -6658,8 +6701,7 @@ input.db-custom-line-input{
   .grid-row{
     grid-template-columns:var(--mobile-board-cols, var(--board-cols));
   }
-  .print-head,
-  .print-cell{
+  .job-print-button{
     display:none;
   }
   .test-mobile-job-overview-trigger{
