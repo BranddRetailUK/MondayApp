@@ -492,7 +492,6 @@ function renderBoard(payload, options = {}) {
 
     const tableWrap = document.createElement('div');
     tableWrap.className = 'group-content';
-    tableWrap.classList.toggle('has-packing-row-actions', isUltimatePackingUser());
 
     const grid = document.createElement('div');
     grid.className = 'board-grid';
@@ -533,6 +532,7 @@ function renderBoard(payload, options = {}) {
       if (subitems.length > 0) {
         const subitemGridSpec = buildDashboardGridSpec(subitemColumns, {
           subitem: true,
+          brandWidth: buildSubitemBrandColumnWidth(subitems),
           nameWidth: buildSubitemNameColumnWidth(subitems),
           widthOverrides: buildSubitemColumnWidthOverrides(subitemColumns, subitems)
         });
@@ -821,13 +821,32 @@ function normalizeColumns(columns) {
 function buildDashboardGridSpec(dashboardColumns, {
   subitem = false,
   widthOverrides = new Map(),
+  brandWidth = 140,
   nameWidth = null,
   mobileNameWidth = null,
   parentTotalColumn = null
 } = {}) {
   const resolvedNameWidth = nameWidth || (subitem ? 520 : 560);
+  const subitemCodeColumn = subitem
+    ? dashboardColumns.find(column => normalizeColumnTitle(column.title) === 'CODE')
+    : null;
+  const trailingDashboardColumns = subitemCodeColumn
+    ? dashboardColumns.filter(column => column.id !== subitemCodeColumn.id)
+    : dashboardColumns;
   const columns = [
+    !subitem && isUltimatePackingUser()
+      ? { kind: 'print', title: 'LABEL', width: 82 }
+      : null,
     subitem ? null : { kind: 'jobNumber', title: '', width: 64, mobileWidth: 72 },
+    subitemCodeColumn
+      ? {
+          kind: 'column',
+          title: subitemCodeColumn.title,
+          width: widthOverrides.get(subitemCodeColumn.id) || getColumnWidth(subitemCodeColumn),
+          column: subitemCodeColumn
+        }
+      : null,
+    subitem ? { kind: 'brand', title: 'BRAND', width: brandWidth } : null,
     {
       kind: 'name',
       title: subitem ? 'Subitem' : 'JOB TITLE',
@@ -840,7 +859,7 @@ function buildDashboardGridSpec(dashboardColumns, {
       width: parentTotalColumn.width,
       qtyColumn: parentTotalColumn.qtyColumn
     } : null,
-    ...dashboardColumns.map(column => ({
+    ...trailingDashboardColumns.map(column => ({
       kind: 'column',
       title: normalizeColumnTitle(column.title).replace(/[^A-Z0-9]/g, '') === 'PROOF'
         ? 'VISUAL'
@@ -879,6 +898,7 @@ function getMobileGridColumnWidth(column) {
 function getMobileVisibleGridColumns(columns, groupName) {
   const hidePrintEmbroideryColumns = shouldHidePrintEmbroideryMobileColumns(groupName);
   return (Array.isArray(columns) ? columns : []).filter(column => {
+    if (column.kind === 'print') return false;
     return !hidePrintEmbroideryColumns || !isPrintEmbroideryMobileHiddenColumn(column);
   });
 }
@@ -1229,6 +1249,16 @@ function buildSubitemNameColumnWidth(subitems) {
   return Math.max(180, Math.ceil(max + 28));
 }
 
+function buildSubitemBrandColumnWidth(subitems) {
+  let max = measureBoardTextWidth('BRAND', "700 13px Manrope, 'Segoe UI', system-ui, sans-serif");
+  for (const subitem of (Array.isArray(subitems) ? subitems : [])) {
+    const text = normalizeCellText(subitem?.brand || '');
+    if (!text) continue;
+    max = Math.max(max, measureBoardTextWidth(text));
+  }
+  return Math.max(112, Math.min(220, Math.ceil(max + 30)));
+}
+
 function buildSubitemColumnWidthOverrides(columns, subitems) {
   const overrides = new Map();
   for (const column of (Array.isArray(columns) ? columns : [])) {
@@ -1425,7 +1455,9 @@ function rerenderBoardContext(context = BOARD_CONTEXT_TEST) {
 
 function buildItemCell(item, spec, { subitemsOpen = false, context = BOARD_CONTEXT_TEST } = {}) {
   let cell;
-  if (spec.kind === 'jobNumber') {
+  if (spec.kind === 'print') {
+    cell = buildPrintLabelCell(item);
+  } else if (spec.kind === 'jobNumber') {
     cell = buildJobNumberCell(item);
   } else if (spec.kind === 'name') {
     cell = buildNameCell(item, subitemsOpen, { context });
@@ -1439,6 +1471,7 @@ function buildItemCell(item, spec, { subitemsOpen = false, context = BOARD_CONTE
 }
 
 function buildSubitemCell(subitem, spec, { context = BOARD_CONTEXT_TEST } = {}) {
+  if (spec.kind === 'brand') return buildSubitemBrandCell(subitem);
   if (spec.kind === 'name') return buildSubitemNameCell(subitem);
   return buildColumnValueCell(subitem, spec.column, { subitem: true, context });
 }
@@ -1457,19 +1490,22 @@ function buildParentTotalCell(item, spec) {
 function buildOutsideJobActions(item) {
   const actions = document.createElement('div');
   actions.className = 'job-row-actions-outside';
-  const jobTitle = item.name || '';
 
   actions.appendChild(buildTestRowMenuButton(item));
 
-  if (isUltimatePackingUser()) {
-    const printBtn = document.createElement('button');
-    printBtn.textContent = 'Print';
-    printBtn.className = 'job-action primary job-print-button';
-    printBtn.addEventListener('click', () => printLabel(item.id, jobTitle));
-    actions.appendChild(printBtn);
-  }
-
   return actions;
+}
+
+function buildPrintLabelCell(item) {
+  const cell = document.createElement('div');
+  cell.className = 'grid-cell job-print-cell';
+  const printBtn = document.createElement('button');
+  printBtn.type = 'button';
+  printBtn.textContent = 'Print';
+  printBtn.className = 'job-action primary job-print-button';
+  printBtn.addEventListener('click', () => printLabel(item.id, item.name || ''));
+  cell.appendChild(printBtn);
+  return cell;
 }
 
 function buildJobNumberCell(item) {
@@ -1981,6 +2017,17 @@ function buildSubitemNameCell(subitem) {
   title.textContent = subitem.name || '';
   wrap.appendChild(title);
   cell.appendChild(wrap);
+  return cell;
+}
+
+function buildSubitemBrandCell(subitem) {
+  const cell = document.createElement('div');
+  cell.className = 'grid-cell dashboard-value-cell subitem-value-cell subitem-brand-cell';
+  const brand = normalizeCellText(subitem?.brand || '');
+  if (brand) {
+    cell.title = brand;
+    renderPlainTextValue(cell, brand);
+  }
   return cell;
 }
 

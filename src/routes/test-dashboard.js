@@ -1171,6 +1171,7 @@ function buildSubitem(line, columns) {
   return {
     id: String(line.source_order_item_id),
     name: line.line_description || line.style_name || line.style_code || `Line ${line.source_order_item_id}`,
+    brand: clean(line.product_brand),
     column_values: values,
   };
 }
@@ -1546,10 +1547,27 @@ async function fetchLineItemMap(sourceOrderIds) {
   const map = new Map();
   if (!sourceOrderIds.length) return map;
   const result = await pool.query(
-    `SELECT *
-     FROM database_job_line_items
-     WHERE source_order_id = ANY($1::int[])
-     ORDER BY source_order_id, COALESCE(line_sort_order, source_order_item_id), source_order_item_id`,
+    `SELECT li.*,
+            COALESCE(
+              NULLIF(BTRIM(catalog_style.brand), ''),
+              NULLIF(BTRIM(legacy_style.brand), '')
+            ) AS product_brand
+     FROM database_job_line_items li
+     LEFT JOIN database_products product
+       ON product.source_product_id = li.source_product_id
+     LEFT JOIN database_ralawise_catalog_variants catalog_variant
+       ON catalog_variant.id = COALESCE(
+         li.ralawise_catalog_variant_id,
+         product.ralawise_catalog_variant_id
+       )
+     LEFT JOIN database_ralawise_catalog_styles catalog_style
+       ON catalog_style.id = catalog_variant.style_id
+     LEFT JOIN database_ralawise_catalog_styles legacy_style
+       ON legacy_style.database_product_style_id = COALESCE(li.style_id, product.style_id)
+     WHERE li.source_order_id = ANY($1::int[])
+     ORDER BY li.source_order_id,
+              COALESCE(li.line_sort_order, li.source_order_item_id),
+              li.source_order_item_id`,
     [sourceOrderIds]
   );
   for (const row of result.rows) {
@@ -2553,6 +2571,7 @@ module.exports = {
   protectedRouter,
   ensureTestDashboardDefaults,
   buildTestDashboardBoardPayload,
+  buildSubitem,
   designDisplayTextFromRawValue,
   designTextFromPositions,
   shouldPreserveStatusAfterLabelPrint,

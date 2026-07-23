@@ -80,6 +80,75 @@ test('dashboard grid starts with compact unlabelled job number and mobile retain
   assert.equal(result.proofUsesPreviewModal, true);
 });
 
+test('Ultimate Packing gets a leftmost desktop LABEL column while mobile starts with job number', () => {
+  const sandbox = loadDashboardFrontend();
+  const result = vm.runInContext(`
+    (() => {
+      window.ultimateHubUser = { full_name: 'Ultimate Packing' };
+      const grid = buildDashboardGridSpec([
+        { id: 'status', title: 'STATUS', type: 'status' }
+      ], {
+        nameWidth: 560,
+        mobileNameWidth: 240
+      });
+      const mobile = buildMobileGridSpecForGroup(grid, 'PRINT');
+      return {
+        desktopKinds: grid.columns.map(column => column.kind),
+        desktopTitles: grid.columns.map(column => column.title),
+        desktopTemplate: grid.template,
+        mobileKinds: mobile.columns.map(column => column.kind),
+        mobileTemplate: mobile.template
+      };
+    })()
+  `, sandbox);
+
+  assert.deepEqual(Array.from(result.desktopKinds), ['print', 'jobNumber', 'name', 'column']);
+  assert.deepEqual(Array.from(result.desktopTitles), ['LABEL', '', 'JOB TITLE', 'STATUS']);
+  assert.equal(result.desktopTemplate, '82px 64px 560px 168px');
+  assert.deepEqual(Array.from(result.mobileKinds), ['jobNumber', 'name', 'column']);
+  assert.equal(result.mobileTemplate, '72px 240px 168px');
+});
+
+test('dashboard subitems start with CODE, BRAND, and Subitem without duplicating CODE', () => {
+  const sandbox = loadDashboardFrontend();
+  const result = vm.runInContext(`
+    (() => {
+      const code = { id: 'code', title: 'CODE', type: 'text' };
+      const grid = buildDashboardGridSpec([
+        { id: 'size', title: 'SIZE', type: 'text' },
+        { id: 'qty', title: 'QTY', type: 'text' },
+        code,
+        { id: 'colour', title: 'COLOUR', type: 'text' }
+      ], {
+        subitem: true,
+        brandWidth: 126,
+        nameWidth: 240,
+        widthOverrides: new Map([['code', 84]])
+      });
+      return {
+        kinds: grid.columns.map(column => column.kind),
+        titles: grid.columns.map(column => column.title),
+        columnIds: grid.columns.map(column => column.column?.id || null),
+        template: grid.template
+      };
+    })()
+  `, sandbox);
+
+  assert.deepEqual(
+    Array.from(result.kinds),
+    ['column', 'brand', 'name', 'column', 'column', 'column']
+  );
+  assert.deepEqual(
+    Array.from(result.titles),
+    ['CODE', 'BRAND', 'Subitem', 'SIZE', 'QTY', 'COLOUR']
+  );
+  assert.deepEqual(
+    Array.from(result.columnIds),
+    ['code', null, null, 'size', 'qty', 'colour']
+  );
+  assert.equal(result.template, '84px 126px 240px 220px 80px 158px');
+});
+
 test('dashboard job title and customer eyebrow use explicit database values without separators', () => {
   const sandbox = loadDashboardFrontend();
   const values = vm.runInContext(`

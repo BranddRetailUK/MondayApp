@@ -732,9 +732,6 @@ body{
   padding:0 0 0 var(--dashboard-row-gutter);
   background:transparent;
 }
-.group-content.has-packing-row-actions{
-  --dashboard-row-gutter:116px;
-}
 .group-content::before{
   content:"";
   position:absolute;
@@ -917,6 +914,10 @@ body{
   padding:4px;
   overflow:hidden;
   background:#111213;
+}
+.job-print-cell{
+  justify-content:center;
+  padding:4px 6px;
 }
 .job-number-head,
 .job-number-cell{
@@ -1920,6 +1921,9 @@ body.test-dashboard-mobile-job-open{
 .subitem-total-row .dashboard-text-input,
 .subitem-total-row .dashboard-plain-text{
   font-weight:900;
+}
+.subitem-brand-cell .dashboard-plain-text{
+  font-weight:700;
 }
 .subitem-row.sub-row::before{
   content:"";
@@ -6740,9 +6744,6 @@ input.db-custom-line-input{
   .grid-row{
     grid-template-columns:var(--mobile-board-cols, var(--board-cols));
   }
-  .job-print-button{
-    display:none;
-  }
   .test-mobile-job-overview-trigger{
     cursor:pointer;
     touch-action:manipulation;
@@ -6772,8 +6773,7 @@ input.db-custom-line-input{
   .group-title{
     padding:8px 10px 8px 0;
   }
-  .group-content,
-  .group-content.has-packing-row-actions{
+  .group-content{
     --dashboard-row-gutter:42px;
     padding-left:var(--dashboard-row-gutter);
   }
