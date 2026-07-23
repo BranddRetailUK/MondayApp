@@ -91,3 +91,13 @@ test('dashboard job title uses the explicit database title without separators', 
 
   assert.equal(title, 'Actual job title');
 });
+
+test('dashboard priority row highlights and their toggle remain disabled', () => {
+  const script = fs.readFileSync(path.join(__dirname, '..', 'public', 'script.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
+
+  assert.doesNotMatch(script, /priority-due-(?:urgent|soon)/);
+  assert.doesNotMatch(script, /setPriorityHighlightsEnabled|addPriorityHighlightUI/);
+  assert.doesNotMatch(styles, /\.job-row\.priority-due-/);
+  assert.doesNotMatch(styles, /\.priority-highlight-toggle/);
+});

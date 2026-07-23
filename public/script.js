@@ -25,7 +25,6 @@ const MOBILE_NAV_MEDIA = '(max-width: 720px), (max-width: 960px) and (max-height
 const PROOF_PDF_ZOOM_MIN = 0.5;
 const PROOF_PDF_ZOOM_MAX = 3;
 const PROOF_PDF_ZOOM_STEP = 0.25;
-const PRIORITY_HIGHLIGHT_STORAGE_KEY = 'ultimateHub.priorityHighlights';
 const DASHBOARD_TAB_NAMES = ['database', 'test-dashboard', 'dtf-uploader'];
 const BOARD_AUTO_REFRESH_MS = 1000;
 const BOARD_CONTEXT_TEST = 'test-dashboard';
@@ -102,7 +101,6 @@ let __testCheckboxOptimisticSeq = 0;
 let __testDesignEditInFlight = 0;
 let __testTextEditInFlight = 0;
 let __boardSortState = null;
-let __priorityHighlightsEnabled = localStorage.getItem(PRIORITY_HIGHLIGHT_STORAGE_KEY) !== '0';
 let __dashboardZoom = 1;
 let __dashboardPinchState = null;
 let __statusDropdownState = null;
@@ -416,7 +414,6 @@ function renderBoard(payload, options = {}) {
   const mobileClosedGroupWidth = buildMobileClosedGroupSummaryWidth(board.groups || []);
   boardDiv.style.setProperty('--mobile-closed-group-width', `${mobileClosedGroupWidth}px`);
   const boardSortPlan = getBoardSortPlan(boardColumns);
-  const dueDateColumn = getDueDateColumn(boardColumns);
   const allBoardItems = getAllBoardItems(board.groups || []);
   const globalJobNameWidth = buildJobNameColumnWidth(allBoardItems);
   const globalMobileJobTitleWidth = buildMobileJobTitleColumnWidth(allBoardItems);
@@ -521,8 +518,6 @@ function renderBoard(payload, options = {}) {
       const row = document.createElement('div');
       row.dataset.itemId = itemId;
       row.className = 'grid-row job-row';
-      const duePriorityClass = __priorityHighlightsEnabled ? getDuePriorityClass(item, dueDateColumn) : '';
-      if (duePriorityClass) row.classList.add(duePriorityClass);
       row.style.setProperty('--board-cols', groupGridSpec.template);
       const subitemsOpen = uiState.openSubitems.has(itemId);
 
@@ -951,34 +946,6 @@ function isDateColumn(column) {
 
 function getDueDateColumn(columns) {
   return (columns || []).find(isDateColumn) || null;
-}
-
-function getDuePriorityClass(item, dueDateColumn) {
-  if (!dueDateColumn) return '';
-  const value = findColumnValue(item, dueDateColumn.id);
-  const dueDate = parseDueDate(value, normalizeCellText(value?.text || ''));
-  if (!dueDate) return '';
-
-  const daysUntilDue = getLocalDayDiff(new Date(), dueDate);
-  if (daysUntilDue <= 1) return 'priority-due-urgent';
-  if (daysUntilDue <= 3) return 'priority-due-soon';
-  return '';
-}
-
-function parseDueDate(value, text) {
-  const parsed = parseJsonMaybe(value?.value);
-  const candidates = [
-    parsed?.date,
-    parsed?.to,
-    parsed?.from,
-    text
-  ].filter(Boolean);
-
-  for (const candidate of candidates) {
-    const date = parseLocalDate(candidate);
-    if (date) return date;
-  }
-  return null;
 }
 
 function parseLocalDate(raw) {
@@ -4736,7 +4703,12 @@ function addSerialScannerUI() {
     bar.appendChild(btn);
   }
 
-  addPriorityHighlightUI();
+  const logoutBtn = document.getElementById('logoutButton');
+  if (bar && btn?.parentElement === bar && logoutBtn?.parentElement === bar && btn.nextElementSibling !== logoutBtn) {
+    bar.insertBefore(btn, logoutBtn);
+  }
+
+  document.getElementById('priorityHighlightBtn')?.remove();
   document.getElementById('scanPill')?.remove();
 }
 
@@ -4751,51 +4723,6 @@ function refreshPackingControlVisibility() {
   addSerialScannerUI();
   rerenderBoardContext(BOARD_CONTEXT_TEST);
 }
-
-function addPriorityHighlightUI() {
-  const bar = document.getElementById('sidebarDashboardControls') || document.getElementById('labels-toolbar');
-  if (!bar) return;
-
-  let btn = document.getElementById('priorityHighlightBtn');
-  if (!btn) {
-    btn = document.createElement('button');
-    btn.id = 'priorityHighlightBtn';
-    btn.type = 'button';
-    btn.className = 'btn priority-highlight-toggle';
-    btn.addEventListener('click', () => {
-      setPriorityHighlightsEnabled(!__priorityHighlightsEnabled);
-    });
-  }
-
-  const scannerBtn = document.getElementById('connectScannerBtn');
-  if (scannerBtn?.parentElement === bar && btn.previousElementSibling !== scannerBtn) {
-    scannerBtn.insertAdjacentElement('afterend', btn);
-  } else if (btn.parentElement !== bar) {
-    bar.appendChild(btn);
-  }
-
-  const logoutBtn = document.getElementById('logoutButton');
-  if (logoutBtn?.parentElement === bar && logoutBtn.previousElementSibling !== btn) {
-    btn.insertAdjacentElement('afterend', logoutBtn);
-  }
-  updatePriorityHighlightButton(btn);
-}
-
-function setPriorityHighlightsEnabled(enabled) {
-  __priorityHighlightsEnabled = Boolean(enabled);
-  localStorage.setItem(PRIORITY_HIGHLIGHT_STORAGE_KEY, __priorityHighlightsEnabled ? '1' : '0');
-  updatePriorityHighlightButton();
-  rerenderBoardContext(BOARD_CONTEXT_TEST);
-}
-
-function updatePriorityHighlightButton(btn = document.getElementById('priorityHighlightBtn')) {
-  if (!btn) return;
-  btn.classList.toggle('active', __priorityHighlightsEnabled);
-  btn.setAttribute('aria-pressed', __priorityHighlightsEnabled ? 'true' : 'false');
-  btn.textContent = __priorityHighlightsEnabled ? 'Priority highlights On' : 'Priority highlights Off';
-  btn.title = __priorityHighlightsEnabled ? 'Turn priority row highlights off' : 'Turn priority row highlights on';
-}
-
 
 function attachSerialEvents() {
   if (!('serial' in navigator)) return;
