@@ -149,17 +149,37 @@ body{
   padding:10px 12px;
 }
 .sidebar-dashboard-controls .btn.sidebar-logout-button{
-  background:#c62828;
-  border-color:#ef5350;
-  color:#fff;
+  min-height:38px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  background:rgba(255,255,255,.035);
+  border-color:#3c3e43;
+  color:#c9ccd3;
+  font-size:13px;
+  font-weight:700;
 }
 .sidebar-dashboard-controls .btn.sidebar-logout-button:hover,
 .sidebar-dashboard-controls .btn.sidebar-logout-button:focus-visible{
-  background:#e53935;
-  outline:none;
+  background:#25272a;
+  border-color:#5a5d64;
+  color:#fff;
+  outline:2px solid rgba(255,255,255,.12);
+  outline-offset:1px;
+}
+.sidebar-logout-icon{
+  width:17px;
+  height:17px;
+  flex:0 0 17px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.8;
+  stroke-linecap:round;
+  stroke-linejoin:round;
 }
 .sidebar-dashboard-controls .btn.sidebar-logout-button:disabled{
-  opacity:.7;
+  opacity:.55;
   cursor:wait;
 }
 .app-container.sidebar-collapsed .sidebar{
@@ -1023,6 +1043,33 @@ body{
   max-height:22px;
   overflow:hidden;
 }
+.job-title-wrap.has-customer-eyebrow{
+  height:auto;
+  min-height:34px;
+  max-height:none;
+}
+.job-title-copy{
+  min-width:0;
+  flex:1 1 auto;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  gap:1px;
+  overflow:hidden;
+}
+.job-customer-eyebrow{
+  display:block;
+  min-width:0;
+  overflow:hidden;
+  color:var(--group-accent, var(--accent));
+  font-size:12px;
+  font-weight:800;
+  line-height:14px;
+  letter-spacing:.35px;
+  text-overflow:ellipsis;
+  text-transform:uppercase;
+  white-space:nowrap;
+}
 .job-title,
 .subitem-title{
   display:block;
@@ -1035,7 +1082,10 @@ body{
   white-space:nowrap;
   min-width:0;
 }
-.job-title{font-weight:700}
+.job-title{
+  width:100%;
+  font-weight:700;
+}
 .test-dashboard-job-number-link{
   appearance:none;
   border:0;

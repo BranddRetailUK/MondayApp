@@ -41,7 +41,14 @@
         </ul>
       </div>
       <div id="sidebarDashboardControls" class="sidebar-dashboard-controls" aria-label="Dashboard controls">
-        <button id="logoutButton" class="btn sidebar-logout-button" type="button">Log out</button>
+        <button id="logoutButton" class="btn sidebar-logout-button" type="button" aria-label="Sign out">
+          <svg class="sidebar-logout-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <path d="m16 17 5-5-5-5"></path>
+            <path d="M21 12H9"></path>
+          </svg>
+          <span data-logout-label>Sign out</span>
+        </button>
       </div>
     </nav>
 

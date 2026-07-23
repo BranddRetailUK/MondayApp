@@ -1189,6 +1189,13 @@ function getDashboardItemJobTitle(item) {
   return normalizeCellText(parseTitle(item?.name || '').jobTitle || item?.name || '');
 }
 
+function getDashboardItemCustomerName(item) {
+  const databaseCustomer = normalizeCellText(item?.database_job?.customer_name || '');
+  if (databaseCustomer) return databaseCustomer;
+  if (item?.dashboard_private_job) return '';
+  return normalizeCellText(parseTitle(item?.name || '').customerName || '');
+}
+
 function buildGroupSummaryTitleWidth(groups) {
   let max = 0;
   for (const group of (Array.isArray(groups) ? groups : [])) {
@@ -1511,7 +1518,7 @@ function buildNameCell(item, initiallyOpen = false, { context = BOARD_CONTEXT_TE
     });
   }
   const titleWrap = document.createElement('div');
-  titleWrap.className = 'title-wrap';
+  titleWrap.className = 'title-wrap job-title-wrap';
 
   if (subitems.length > 0) {
     const rowToggle = document.createElement('button');
@@ -1533,6 +1540,20 @@ function buildNameCell(item, initiallyOpen = false, { context = BOARD_CONTEXT_TE
     titleWrap.appendChild(spacer);
   }
 
+  const titleCopy = document.createElement('span');
+  titleCopy.className = 'job-title-copy';
+  const customerName = context === BOARD_CONTEXT_TEST
+    ? getDashboardItemCustomerName(item)
+    : normalizeCellText(parseTitle(item?.name || '').customerName || '');
+  if (customerName) {
+    titleWrap.classList.add('has-customer-eyebrow');
+    const customerEyebrow = document.createElement('span');
+    customerEyebrow.className = 'job-customer-eyebrow';
+    customerEyebrow.textContent = customerName;
+    customerEyebrow.title = customerName;
+    titleCopy.appendChild(customerEyebrow);
+  }
+
   const titleSpan = document.createElement('span');
   titleSpan.className = 'job-title';
   if (context === BOARD_CONTEXT_TEST && item?.dashboard_private_job) {
@@ -1542,7 +1563,8 @@ function buildNameCell(item, initiallyOpen = false, { context = BOARD_CONTEXT_TE
   } else {
     titleSpan.textContent = item.name || '';
   }
-  titleWrap.appendChild(titleSpan);
+  titleCopy.appendChild(titleSpan);
+  titleWrap.appendChild(titleCopy);
 
   if (subitems.length > 0) {
     const badge = document.createElement('span');

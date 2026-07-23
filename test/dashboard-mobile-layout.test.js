@@ -80,16 +80,34 @@ test('dashboard grid starts with compact unlabelled job number and mobile retain
   assert.equal(result.proofUsesPreviewModal, true);
 });
 
-test('dashboard job title uses the explicit database title without separators', () => {
+test('dashboard job title and customer eyebrow use explicit database values without separators', () => {
   const sandbox = loadDashboardFrontend();
-  const title = vm.runInContext(`
-    getDashboardItemJobTitle({
-      name: '51179 - Example Customer - Combined fallback title',
-      database_job: { job_title: 'Actual job title' }
-    })
+  const values = vm.runInContext(`
+    (() => {
+      const item = {
+        name: '51179 - Example Customer - Combined fallback title',
+        database_job: {
+          customer_name: 'Actual Customer',
+          job_title: 'Actual job title'
+        }
+      };
+      return {
+        customer: getDashboardItemCustomerName(item),
+        title: getDashboardItemJobTitle(item)
+      };
+    })()
   `, sandbox);
 
-  assert.equal(title, 'Actual job title');
+  assert.equal(values.customer, 'Actual Customer');
+  assert.equal(values.title, 'Actual job title');
+});
+
+test('dashboard customer eyebrow is smaller and inherits the group accent', () => {
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
+
+  assert.match(styles, /\.job-customer-eyebrow\s*\{[^}]*color:var\(--group-accent, var\(--accent\)\)/s);
+  assert.match(styles, /\.job-customer-eyebrow\s*\{[^}]*font-size:12px/s);
+  assert.match(styles, /\.job-title,\s*\.subitem-title\s*\{[^}]*font-size:14px/s);
 });
 
 test('dashboard priority row highlights and their toggle remain disabled', () => {
@@ -109,4 +127,18 @@ test('parent dashboard grids end at the final file column', () => {
   assert.match(script, /grid\.style\.width = `\$\{groupGridSpec\.minWidth\}px`/);
   assert.match(styles, /\.board-grid\s*>\s*\.grid-row\s*>\s*\.grid-cell:last-child\s*\{[^}]*border-right:1px solid #55565a/s);
   assert.match(styles, /width:var\(--mobile-board-min-width\)!important/);
+});
+
+test('sidebar uses the subtle icon-based Sign out control', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+  const authSession = fs.readFileSync(path.join(__dirname, '..', 'public', 'auth-session.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
+
+  assert.match(html, /id="logoutButton"[^>]*aria-label="Sign out"/);
+  assert.match(html, /class="sidebar-logout-icon"/);
+  assert.match(html, /data-logout-label>Sign out</);
+  assert.match(authSession, /logoutLabel\.textContent = 'Signing out…'/);
+  assert.match(authSession, /logoutLabel\.textContent = 'Sign out'/);
+  assert.doesNotMatch(styles, /\.sidebar-logout-button\s*\{[^}]*background:#c62828/s);
+  assert.match(styles, /\.sidebar-logout-icon\s*\{/);
 });

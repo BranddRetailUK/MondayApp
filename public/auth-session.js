@@ -1,5 +1,6 @@
 (function () {
   const logoutButton = document.getElementById('logoutButton');
+  const logoutLabel = logoutButton?.querySelector('[data-logout-label]');
   logoutButton?.addEventListener('click', logout);
 
   window.ultimateHubUser = null;
@@ -49,7 +50,7 @@
     if (!logoutButton || logoutButton.disabled) return;
 
     logoutButton.disabled = true;
-    logoutButton.textContent = 'Logging out...';
+    if (logoutLabel) logoutLabel.textContent = 'Signing out…';
 
     try {
       const response = await fetch('/api/auth/logout', {
@@ -62,7 +63,7 @@
     } catch (err) {
       console.error('POST /api/auth/logout', err);
       logoutButton.disabled = false;
-      logoutButton.textContent = 'Log out';
+      if (logoutLabel) logoutLabel.textContent = 'Sign out';
       window.alert('Could not log out. Please try again.');
     }
   }
