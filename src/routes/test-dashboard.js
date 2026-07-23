@@ -1071,6 +1071,8 @@ function buildBoardItem({ job, state, columns, subitemColumns, lineItems, positi
     database_job: {
       source_order_id: job.source_order_id,
       order_no: job.order_no,
+      customer_name: job.customer_name || '',
+      job_title: job.job_title || job.order_type || '',
       customer_date_required: Boolean(job.customer_date_required),
     },
     column_values: Array.from(values.values()).filter(Boolean),

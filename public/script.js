@@ -35,7 +35,8 @@ const TEST_DASHBOARD_CLIENT_COLUMN_IDS = Object.freeze({
   PRIORITY: 'priority_mkn8p46c',
   DATE: 'date_mksx422k',
   DESIGN: 'text_mkmesygk',
-  PROOF: 'file_mky43tg9'
+  PROOF: 'file_mky43tg9',
+  STATUS: 'label__1'
 });
 const TEST_DASHBOARD_APPROVAL_REQUIREMENTS_MESSAGE = 'Please add design number and/or Visual Proof.';
 const DASHBOARD_ZOOM_MIN = 0.45;
@@ -53,11 +54,11 @@ const HIDDEN_BOARD_COLUMN_TITLES = new Set([
   'JOBOWNER',
 ]);
 const HIDDEN_SUBITEM_COLUMN_TITLES = new Set(['CHECK IN', 'TEXT']);
+const MOBILE_HIDDEN_DASHBOARD_GROUP_TITLES = new Set(['HOLD', 'OFFICE', 'PRE-PRODUCTION']);
 const MOBILE_PRINT_EMBROIDERY_HIDDEN_COLUMN_TITLES = new Set([
   'TRANS',
   'TRAN',
   'JAQ',
-  'STATUS',
   'TYPE',
   'IMAGE',
   'IMAGES',
@@ -109,6 +110,7 @@ let __statusUpdateInFlight = 0;
 let __testCompleteConfirmResolve = null;
 let __testRowMenuState = null;
 let __testDatePopoverState = null;
+let __testMobileJobOverviewState = null;
 let __testPrivateNameEditInFlight = 0;
 let __pendingPrivateJobFocusId = '';
 const __testGroupKeysToOpen = new Set();
@@ -170,6 +172,7 @@ function ensureSidebarToggle() {
       return;
     }
 
+    closeTestDashboardMobileJobOverview();
     const collapsed = localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === '1';
     applyDashboardZoom(1);
     setSidebarCollapsed(collapsed, { persist: false });
@@ -382,7 +385,7 @@ function startTestBoardAutoRefresh() {
     if (document.hidden) return;
     const dashboard = document.getElementById('tab-test-dashboard');
     if (dashboard && !dashboard.classList.contains('active')) return;
-    if (isStatusDropdownOpen() || isTestRowMenuOpen() || isTestDatePopoverOpen() || __statusUpdateInFlight > 0 || __testFileUploadsInFlight > 0 || isTestDashboardTextEditActive()) return;
+    if (isStatusDropdownOpen() || isTestRowMenuOpen() || isTestDatePopoverOpen() || isTestDashboardMobileJobOverviewOpen() || __statusUpdateInFlight > 0 || __testFileUploadsInFlight > 0 || isTestDashboardTextEditActive()) return;
     loadTestBoard({ forceRefresh: true });
   }, BOARD_AUTO_REFRESH_MS);
 }
@@ -415,6 +418,7 @@ function renderBoard(payload, options = {}) {
   const globalJobNameWidth = buildJobNameColumnWidth(allBoardItems) + (
     context === BOARD_CONTEXT_TEST && !isUltimatePackingUser() ? 37 : 0
   );
+  const globalMobileJobTitleWidth = buildMobileJobTitleColumnWidth(allBoardItems);
   const parentTotalColumn = buildParentTotalColumnSpec(allBoardItems, subitemColumns);
   const zoomLayer = document.createElement('div');
   zoomLayer.className = 'dashboard-zoom-layer';
@@ -429,6 +433,7 @@ function renderBoard(payload, options = {}) {
       subitem: false,
       widthOverrides: groupColumnWidths,
       nameWidth: globalJobNameWidth,
+      mobileNameWidth: globalMobileJobTitleWidth,
       parentTotalColumn,
       printWidth: context === BOARD_CONTEXT_TEST ? 116 : 82
     });
@@ -444,6 +449,9 @@ function renderBoard(payload, options = {}) {
     groupWrap.className = 'group';
     groupWrap.dataset.groupKey = groupKey;
     if (isCollapsed) groupWrap.classList.add('collapsed');
+    if (MOBILE_HIDDEN_DASHBOARD_GROUP_TITLES.has(normalizeColumnTitle(collectionName))) {
+      groupWrap.classList.add('mobile-hidden-dashboard-group');
+    }
     if (shouldHidePrintEmbroideryMobileColumns(collectionName)) {
       groupWrap.classList.add('mobile-print-embroidery-hidden-columns');
     }
@@ -568,6 +576,8 @@ function renderBoard(payload, options = {}) {
 
     zoomLayer.appendChild(groupWrap);
   }
+
+  syncTestDashboardMobileJobOverview(payload);
 }
 
 function collectBoardUiState(boardDiv) {
@@ -808,12 +818,26 @@ function normalizeColumns(columns) {
     .filter(column => column.id);
 }
 
-function buildDashboardGridSpec(dashboardColumns, { subitem = false, widthOverrides = new Map(), nameWidth = null, printWidth = 82, parentTotalColumn = null } = {}) {
+function buildDashboardGridSpec(dashboardColumns, {
+  subitem = false,
+  widthOverrides = new Map(),
+  nameWidth = null,
+  mobileNameWidth = null,
+  printWidth = 82,
+  parentTotalColumn = null
+} = {}) {
+  const resolvedNameWidth = nameWidth || (subitem ? 520 : 560);
   const columns = [
     subitem || !isUltimatePackingUser()
       ? null
       : { kind: 'print', title: 'LABEL', width: printWidth },
-    { kind: 'name', title: subitem ? 'Subitem' : 'JOB TITLE', width: nameWidth || (subitem ? 520 : 560) },
+    subitem ? null : { kind: 'jobNumber', title: 'JOB NO', width: 64, mobileWidth: 64 },
+    {
+      kind: 'name',
+      title: subitem ? 'Subitem' : 'JOB TITLE',
+      width: resolvedNameWidth,
+      mobileWidth: mobileNameWidth || resolvedNameWidth
+    },
     !subitem && parentTotalColumn ? {
       kind: 'jobTotal',
       title: 'TOTAL',
@@ -827,15 +851,16 @@ function buildDashboardGridSpec(dashboardColumns, { subitem = false, widthOverri
       column
     }))
   ].filter(Boolean);
-  const minWidth = columns.reduce((sum, column) => sum + column.width, 0);
+  const desktopColumns = columns;
+  const minWidth = desktopColumns.reduce((sum, column) => sum + column.width, 0);
   const mobileColumns = columns.filter(column => column.kind !== 'print');
-  const mobileMinWidth = mobileColumns.reduce((sum, column) => sum + column.width, 0);
+  const mobileMinWidth = mobileColumns.reduce((sum, column) => sum + getMobileGridColumnWidth(column), 0);
   return {
     columns,
     minWidth,
     mobileMinWidth,
-    mobileTemplate: mobileColumns.map(column => `${column.width}px`).join(' '),
-    template: columns.map(column => `${column.width}px`).join(' ')
+    mobileTemplate: mobileColumns.map(column => `${getMobileGridColumnWidth(column)}px`).join(' '),
+    template: desktopColumns.map(column => `${column.width}px`).join(' ')
   };
 }
 
@@ -843,9 +868,14 @@ function buildMobileGridSpecForGroup(gridSpec, groupName) {
   const mobileColumns = getMobileVisibleGridColumns(gridSpec?.columns || [], groupName);
   return {
     columns: mobileColumns,
-    minWidth: mobileColumns.reduce((sum, column) => sum + column.width, 0),
-    template: mobileColumns.map(column => `${column.width}px`).join(' ')
+    minWidth: mobileColumns.reduce((sum, column) => sum + getMobileGridColumnWidth(column), 0),
+    template: mobileColumns.map(column => `${getMobileGridColumnWidth(column)}px`).join(' ')
   };
+}
+
+function getMobileGridColumnWidth(column) {
+  const width = Number(column?.mobileWidth ?? column?.width);
+  return Number.isFinite(width) && width >= 0 ? width : 0;
 }
 
 function getMobileVisibleGridColumns(columns, groupName) {
@@ -1166,13 +1196,30 @@ function getAllBoardItems(groups) {
 function buildJobNameColumnWidth(items) {
   let max = measureBoardTextWidth('JOB', "700 13px Manrope, 'Segoe UI', system-ui, sans-serif");
   for (const item of (Array.isArray(items) ? items : [])) {
-    const text = normalizeCellText(item?.name || '');
+    const text = getDashboardItemJobTitle(item);
     if (!text) continue;
     const subitems = Array.isArray(item?.subitems) ? item.subitems : [];
     const subitemBadgeWidth = subitems.length > 0 ? measureSubitemCountBadgeWidth(subitems.length) : 0;
     max = Math.max(max, measureBoardTextWidth(text) + subitemBadgeWidth);
   }
   return Math.max(220, Math.ceil(max + 66));
+}
+
+function buildMobileJobTitleColumnWidth(items) {
+  let max = measureBoardTextWidth('JOB TITLE', "700 13px Manrope, 'Segoe UI', system-ui, sans-serif");
+  for (const item of (Array.isArray(items) ? items : [])) {
+    const text = getDashboardItemJobTitle(item);
+    if (!text) continue;
+    max = Math.max(max, measureBoardTextWidth(text));
+  }
+  return Math.min(320, Math.max(190, Math.ceil(max + 38)));
+}
+
+function getDashboardItemJobTitle(item) {
+  const databaseTitle = normalizeCellText(item?.database_job?.job_title || '');
+  if (databaseTitle) return databaseTitle;
+  if (item?.dashboard_private_job) return normalizeCellText(item?.name || '');
+  return normalizeCellText(parseTitle(item?.name || '').jobTitle || item?.name || '');
 }
 
 function buildGroupSummaryTitleWidth(groups) {
@@ -1347,6 +1394,7 @@ function measureBoardTextWidth(text, font = "14px Manrope, 'Segoe UI', system-ui
 function buildHeaderCell(spec, { sortable = false, context = BOARD_CONTEXT_TEST } = {}) {
   const cell = document.createElement('div');
   cell.className = `grid-cell head ${spec.kind}-head`;
+  if (spec.kind === 'jobNumber') cell.classList.add('job-number-head');
   applyPrintEmbroideryMobileHiddenCellClass(cell, spec);
   const title = document.createElement('span');
   title.className = 'column-title-text';
@@ -1403,6 +1451,8 @@ function buildItemCell(item, spec, { subitemsOpen = false, context = BOARD_CONTE
   let cell;
   if (spec.kind === 'print') {
     cell = buildPrintCell(item, context);
+  } else if (spec.kind === 'jobNumber') {
+    cell = buildJobNumberCell(item);
   } else if (spec.kind === 'name') {
     cell = buildNameCell(item, subitemsOpen, { context });
   } else if (spec.kind === 'jobTotal') {
@@ -1447,11 +1497,53 @@ function buildPrintCell(item, context = BOARD_CONTEXT_TEST) {
   return cell;
 }
 
+function buildJobNumberCell(item) {
+  const cell = document.createElement('div');
+  cell.className = 'grid-cell job-number-cell';
+  const parsed = parseTitle(item?.name || '');
+  const jobNumber = normalizeCellText(item?.database_job?.order_no || parsed.orderNumber || '');
+  if (!jobNumber || item?.dashboard_private_job) {
+    const empty = document.createElement('span');
+    empty.className = 'job-number-empty';
+    empty.textContent = '—';
+    cell.appendChild(empty);
+    return cell;
+  }
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'test-dashboard-job-number-link job-number-link';
+  button.textContent = jobNumber;
+  button.setAttribute('aria-label', `Open DATABASE order ${jobNumber}`);
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openTestDashboardDatabaseOrder(item);
+  });
+  cell.appendChild(button);
+  return cell;
+}
+
 function buildNameCell(item, initiallyOpen = false, { context = BOARD_CONTEXT_TEST } = {}) {
   const itemId = String(item.id);
   const subitems = Array.isArray(item.subitems) ? item.subitems : [];
   const cell = document.createElement('div');
   cell.className = 'grid-cell job-cell title-cell';
+  if (context === BOARD_CONTEXT_TEST && isMobileNavLayout()) {
+    cell.classList.add('test-mobile-job-overview-trigger');
+    cell.tabIndex = 0;
+    cell.setAttribute('role', 'button');
+    cell.setAttribute('aria-haspopup', 'dialog');
+    cell.setAttribute('aria-label', `Open job overview for ${normalizeCellText(item.name || itemId)}`);
+    cell.addEventListener('click', () => {
+      openTestDashboardMobileJobOverview(item, cell);
+    });
+    cell.addEventListener('keydown', (event) => {
+      if (event.target !== cell || (event.key !== 'Enter' && event.key !== ' ')) return;
+      event.preventDefault();
+      openTestDashboardMobileJobOverview(item, cell);
+    });
+  }
   const titleWrap = document.createElement('div');
   titleWrap.className = 'title-wrap';
 
@@ -1484,7 +1576,7 @@ function buildNameCell(item, initiallyOpen = false, { context = BOARD_CONTEXT_TE
   if (context === BOARD_CONTEXT_TEST && item?.dashboard_private_job) {
     renderTestPrivateJobNameInput(titleSpan, item);
   } else if (context === BOARD_CONTEXT_TEST) {
-    renderTestDashboardJobTitle(titleSpan, item);
+    titleSpan.textContent = getDashboardItemJobTitle(item);
   } else {
     titleSpan.textContent = item.name || '';
   }
@@ -1523,26 +1615,272 @@ function getDashboardSubitemBadgeCount(subitems) {
   return lineCount || sourceSubitems.length;
 }
 
-function renderTestDashboardJobTitle(container, item) {
-  const title = String(item?.name || '');
-  const parts = splitLeadingTestDashboardJobNumber(title, item);
-  if (!parts.jobNumber) {
-    container.textContent = title;
+function openTestDashboardMobileJobOverview(item, opener = null) {
+  if (!isMobileNavLayout() || !item?.id) return;
+  closeStatusDropdown();
+  closeTestRowMenu();
+  closeTestDatePopover();
+  closeMobileNav();
+
+  const modal = ensureTestDashboardMobileJobOverview();
+  __testMobileJobOverviewState = {
+    itemId: String(item.id),
+    linesOpen: false,
+    opener,
+  };
+  renderTestDashboardMobileJobOverview(window.__latestTestBoardPayload);
+  modal.hidden = false;
+  modal.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('test-dashboard-mobile-job-open');
+  window.requestAnimationFrame(() => {
+    modal.querySelector('[data-test-mobile-job-close]')?.focus();
+  });
+}
+
+function ensureTestDashboardMobileJobOverview() {
+  let modal = document.getElementById('test-dashboard-mobile-job-overview');
+  if (modal) return modal;
+
+  modal = document.createElement('div');
+  modal.id = 'test-dashboard-mobile-job-overview';
+  modal.className = 'test-dashboard-mobile-job-modal';
+  modal.hidden = true;
+  modal.setAttribute('aria-hidden', 'true');
+  modal.innerHTML = `
+    <section class="test-dashboard-mobile-job-shell" role="dialog" aria-modal="true" aria-labelledby="test-dashboard-mobile-job-title">
+      <header class="test-dashboard-mobile-job-head">
+        <div class="test-dashboard-mobile-job-heading">
+          <span class="test-dashboard-mobile-job-eyebrow">JOB OVERVIEW</span>
+          <h2 id="test-dashboard-mobile-job-title" data-test-mobile-job-title>Job</h2>
+        </div>
+        <button class="test-dashboard-mobile-job-close" type="button" data-test-mobile-job-close aria-label="Close job overview">×</button>
+      </header>
+      <div class="test-dashboard-mobile-job-content" data-test-mobile-job-content></div>
+      <button class="test-dashboard-mobile-job-status" type="button" data-test-mobile-job-status aria-haspopup="menu">
+        <span class="test-dashboard-mobile-job-status-label">STATUS</span>
+        <span class="test-dashboard-mobile-job-status-value" data-test-mobile-job-status-value>Set status</span>
+      </button>
+    </section>
+  `;
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal || event.target.closest('[data-test-mobile-job-close]')) {
+      closeTestDashboardMobileJobOverview();
+    }
+  });
+  document.addEventListener('keydown', handleTestDashboardMobileJobOverviewKeydown);
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function renderTestDashboardMobileJobOverview(payload = window.__latestTestBoardPayload) {
+  const state = __testMobileJobOverviewState;
+  const modal = document.getElementById('test-dashboard-mobile-job-overview');
+  if (!state?.itemId || !modal) return;
+
+  const board = unwrapFirstBoard(payload);
+  const item = findBoardPayloadItem(payload, state.itemId);
+  if (!board || !item) {
+    closeTestDashboardMobileJobOverview();
     return;
   }
 
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'test-dashboard-job-number-link';
-  button.textContent = parts.jobNumber;
-  button.setAttribute('aria-label', `Open DATABASE order ${parts.jobNumber}`);
-  button.addEventListener('click', (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    openTestDashboardDatabaseOrder(item);
+  const parsedTitle = parseTitle(item.name || '');
+  const databaseJob = item.database_job || {};
+  const orderNumber = normalizeCellText(databaseJob.order_no || parsedTitle.orderNumber || '');
+  const customerName = normalizeCellText(databaseJob.customer_name || parsedTitle.customerName || '');
+  const jobTitle = normalizeCellText(databaseJob.job_title || parsedTitle.jobTitle || item.name || '');
+  const designColumn = findBoardColumnByIdOrCompactTitle(
+    board,
+    TEST_DASHBOARD_CLIENT_COLUMN_IDS.DESIGN,
+    'DESPSG'
+  );
+  const designNumbers = designColumn
+    ? normalizeCellText(findColumnValue(item, designColumn.id)?.text || '')
+    : '';
+  const statusColumn = findBoardColumnByIdOrCompactTitle(
+    board,
+    TEST_DASHBOARD_CLIENT_COLUMN_IDS.STATUS,
+    'STATUS'
+  );
+  const statusValue = statusColumn ? findColumnValue(item, statusColumn.id) : null;
+  const statusText = normalizeCellText(statusValue?.text || '');
+  const quantityColumn = findSubitemQuantityColumn(board.subitemColumns || []);
+  const garmentTotal = getDashboardParentTotalText(item, quantityColumn) || '0';
+  const lineItems = (Array.isArray(item.subitems) ? item.subitems : [])
+    .filter(subitem => !isDashboardTotalSubitem(subitem));
+
+  const title = modal.querySelector('[data-test-mobile-job-title]');
+  if (title) title.textContent = orderNumber ? `JOB ${orderNumber}` : 'PRIVATE JOB';
+
+  const content = modal.querySelector('[data-test-mobile-job-content]');
+  if (content) {
+    const overview = document.createElement('div');
+    overview.className = 'test-dashboard-mobile-job-fields';
+    overview.appendChild(buildTestDashboardMobileJobField('CUSTOMER', customerName || '—'));
+    overview.appendChild(buildTestDashboardMobileJobField('JOB TITLE', jobTitle || '—'));
+    overview.appendChild(buildTestDashboardMobileJobField('DESIGN NUMBERS', designNumbers || '—'));
+    overview.appendChild(buildTestDashboardMobileJobField('GARMENT TOTAL', garmentTotal, { strong: true }));
+
+    const lineSection = document.createElement('section');
+    lineSection.className = 'test-dashboard-mobile-job-lines';
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'test-dashboard-mobile-job-lines-toggle';
+    toggle.disabled = lineItems.length === 0;
+    toggle.setAttribute('aria-expanded', state.linesOpen ? 'true' : 'false');
+    toggle.innerHTML = `
+      <span>LINE ITEMS <span class="test-dashboard-mobile-job-lines-count">${lineItems.length}</span></span>
+      <span class="test-dashboard-mobile-job-lines-arrow" aria-hidden="true"></span>
+    `;
+    toggle.addEventListener('click', () => {
+      if (!__testMobileJobOverviewState) return;
+      __testMobileJobOverviewState.linesOpen = !__testMobileJobOverviewState.linesOpen;
+      renderTestDashboardMobileJobOverview(window.__latestTestBoardPayload);
+    });
+    lineSection.appendChild(toggle);
+
+    const lineList = document.createElement('div');
+    lineList.className = 'test-dashboard-mobile-job-line-list';
+    lineList.hidden = !state.linesOpen;
+    if (lineItems.length) {
+      lineItems.forEach((lineItem, index) => {
+        lineList.appendChild(buildTestDashboardMobileLineItem(
+          lineItem,
+          board.subitemColumns || [],
+          index
+        ));
+      });
+    } else {
+      const empty = document.createElement('div');
+      empty.className = 'test-dashboard-mobile-job-lines-empty';
+      empty.textContent = 'No garment line items';
+      lineList.appendChild(empty);
+    }
+    lineSection.appendChild(lineList);
+
+    content.replaceChildren(overview, lineSection);
+  }
+
+  const statusButton = modal.querySelector('[data-test-mobile-job-status]');
+  const statusLabel = modal.querySelector('[data-test-mobile-job-status-value]');
+  if (statusLabel) statusLabel.textContent = statusText || 'SET STATUS';
+  if (statusButton) {
+    const editable = Boolean(statusColumn?.id && getStatusOptions(statusColumn).length);
+    statusButton.disabled = !editable;
+    statusButton.style.backgroundColor = statusText && statusColumn
+      ? resolveStatusColor(statusColumn, statusValue, statusText)
+      : '#7f879e';
+    statusButton.setAttribute(
+      'aria-label',
+      statusText ? `Change job status from ${statusText}` : 'Set job status'
+    );
+    statusButton.onclick = editable
+      ? (event) => {
+          event.preventDefault();
+          openStatusDropdown({
+            anchor: statusButton,
+            item,
+            column: statusColumn,
+            currentText: statusText,
+            context: BOARD_CONTEXT_TEST,
+          });
+        }
+      : null;
+  }
+}
+
+function buildTestDashboardMobileJobField(label, value, { strong = false } = {}) {
+  const row = document.createElement('div');
+  row.className = 'test-dashboard-mobile-job-field';
+  if (strong) row.classList.add('strong');
+
+  const labelEl = document.createElement('span');
+  labelEl.className = 'test-dashboard-mobile-job-field-label';
+  labelEl.textContent = label;
+  const valueEl = document.createElement('span');
+  valueEl.className = 'test-dashboard-mobile-job-field-value';
+  valueEl.textContent = value;
+  row.append(labelEl, valueEl);
+  return row;
+}
+
+function buildTestDashboardMobileLineItem(lineItem, columns, index) {
+  const card = document.createElement('article');
+  card.className = 'test-dashboard-mobile-job-line';
+
+  const title = document.createElement('div');
+  title.className = 'test-dashboard-mobile-job-line-title';
+  title.textContent = normalizeCellText(lineItem?.name || '') || `Line item ${index + 1}`;
+  card.appendChild(title);
+
+  const values = document.createElement('div');
+  values.className = 'test-dashboard-mobile-job-line-values';
+  [
+    ['CODE', 'CODE'],
+    ['COLOUR', 'COLOUR'],
+    ['SIZE', 'SIZE'],
+    ['QTY', 'QTY'],
+  ].forEach(([label, compactTitle]) => {
+    const column = findDashboardColumnByCompactTitle(columns, compactTitle);
+    const value = column ? normalizeCellText(findColumnValue(lineItem, column.id)?.text || '') : '';
+    const field = document.createElement('span');
+    field.className = 'test-dashboard-mobile-job-line-value';
+    const fieldLabel = document.createElement('span');
+    fieldLabel.textContent = label;
+    const fieldValue = document.createElement('strong');
+    fieldValue.textContent = value || '—';
+    field.append(fieldLabel, fieldValue);
+    values.appendChild(field);
   });
-  container.appendChild(button);
-  container.appendChild(document.createTextNode(parts.rest));
+  card.appendChild(values);
+  return card;
+}
+
+function findDashboardColumnByCompactTitle(columns, compactTitle) {
+  const wanted = normalizeColumnTitle(compactTitle).replace(/[^A-Z0-9]/g, '');
+  return (Array.isArray(columns) ? columns : []).find(column => {
+    const candidate = normalizeColumnTitle(column?.title || '').replace(/[^A-Z0-9]/g, '');
+    if (candidate === wanted) return true;
+    return wanted === 'COLOUR' && candidate === 'COLOR';
+  }) || null;
+}
+
+function syncTestDashboardMobileJobOverview(payload = window.__latestTestBoardPayload) {
+  if (!isTestDashboardMobileJobOverviewOpen()) return;
+  renderTestDashboardMobileJobOverview(payload);
+}
+
+function isTestDashboardMobileJobOverviewOpen() {
+  const modal = document.getElementById('test-dashboard-mobile-job-overview');
+  return Boolean(__testMobileJobOverviewState?.itemId && modal && !modal.hidden);
+}
+
+function handleTestDashboardMobileJobOverviewKeydown(event) {
+  if (event.key !== 'Escape' || !isTestDashboardMobileJobOverviewOpen()) return;
+  if (isStatusDropdownOpen()) return;
+  const confirmModal = document.getElementById('test-dashboard-complete-confirm-modal');
+  if (confirmModal && !confirmModal.hidden) return;
+  event.preventDefault();
+  closeTestDashboardMobileJobOverview();
+}
+
+function closeTestDashboardMobileJobOverview({ restoreFocus = true } = {}) {
+  const modal = document.getElementById('test-dashboard-mobile-job-overview');
+  if (!modal && !__testMobileJobOverviewState) return;
+
+  const opener = __testMobileJobOverviewState?.opener;
+  if (modal) {
+    if (__statusDropdownState?.anchor && modal.contains(__statusDropdownState.anchor)) {
+      closeStatusDropdown();
+    }
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+  }
+  __testMobileJobOverviewState = null;
+  document.body.classList.remove('test-dashboard-mobile-job-open');
+  if (restoreFocus && opener?.isConnected) {
+    window.requestAnimationFrame(() => opener.focus());
+  }
 }
 
 function renderTestPrivateJobNameInput(container, item) {
@@ -1612,24 +1950,6 @@ async function saveTestPrivateJobName(input, item) {
     input.disabled = false;
     input.classList.remove('saving');
   }
-}
-
-function splitLeadingTestDashboardJobNumber(title, item) {
-  const text = String(title || '');
-  const orderNo = normalizeCellText(item?.database_job?.order_no || '');
-  if (orderNo && text.startsWith(orderNo)) {
-    return {
-      jobNumber: orderNo,
-      rest: text.slice(orderNo.length),
-    };
-  }
-
-  const match = text.match(/^(\d{4,6})(?=\s*(?:-|$))/);
-  if (!match) return { jobNumber: '', rest: text };
-  return {
-    jobNumber: match[1],
-    rest: text.slice(match[1].length),
-  };
 }
 
 function openTestDashboardDatabaseOrder(item) {
@@ -4486,6 +4806,8 @@ function activateDashboardTab(target) {
   setStoredDashboardTab(activeTab);
   if (activeTab === 'test-dashboard') {
     loadTestBoard({ forceRefresh: true });
+  } else {
+    closeTestDashboardMobileJobOverview({ restoreFocus: false });
   }
   closeMobileNav();
 }
