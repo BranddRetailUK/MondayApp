@@ -780,6 +780,9 @@ body{
   overflow:hidden;
 }
 .grid-cell:last-child{border-right:none}
+.board-grid > .grid-row > .grid-cell:last-child{
+  border-right:1px solid #55565a;
+}
 .grid-head .grid-cell,
 .sub-head .grid-cell{
   min-height:34px;
@@ -6681,6 +6684,7 @@ input.db-custom-line-input{
     overflow:visible;
   }
   .board-grid{
+    width:var(--mobile-board-min-width)!important;
     min-width:var(--mobile-board-min-width)!important;
   }
   .grid-row{

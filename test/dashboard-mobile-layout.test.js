@@ -101,3 +101,12 @@ test('dashboard priority row highlights and their toggle remain disabled', () =>
   assert.doesNotMatch(styles, /\.job-row\.priority-due-/);
   assert.doesNotMatch(styles, /\.priority-highlight-toggle/);
 });
+
+test('parent dashboard grids end at the final file column', () => {
+  const script = fs.readFileSync(path.join(__dirname, '..', 'public', 'script.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
+
+  assert.match(script, /grid\.style\.width = `\$\{groupGridSpec\.minWidth\}px`/);
+  assert.match(styles, /\.board-grid\s*>\s*\.grid-row\s*>\s*\.grid-cell:last-child\s*\{[^}]*border-right:1px solid #55565a/s);
+  assert.match(styles, /width:var\(--mobile-board-min-width\)!important/);
+});

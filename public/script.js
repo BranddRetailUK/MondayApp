@@ -498,6 +498,7 @@ function renderBoard(payload, options = {}) {
     grid.style.setProperty('--board-cols', groupGridSpec.template);
     grid.style.setProperty('--mobile-board-cols', mobileGridSpec.template);
     grid.style.setProperty('--mobile-board-min-width', `${mobileGridSpec.minWidth}px`);
+    grid.style.width = `${groupGridSpec.minWidth}px`;
     grid.style.minWidth = `${groupGridSpec.minWidth}px`;
 
     const headRow = document.createElement('div');
