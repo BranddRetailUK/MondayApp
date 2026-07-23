@@ -179,6 +179,15 @@ test('dashboard customer eyebrow is smaller and inherits the group accent', () =
   assert.match(styles, /\.job-title,\s*\.subitem-title\s*\{[^}]*font-size:14px/s);
 });
 
+test('dashboard job numbers use the DATABASE light-blue colour', () => {
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
+
+  assert.match(
+    styles,
+    /\.test-dashboard-job-number-link\s*\{[^}]*color:var\(--database-bg, #8ec7e3\)/s
+  );
+});
+
 test('dashboard priority row highlights and their toggle remain disabled', () => {
   const script = fs.readFileSync(path.join(__dirname, '..', 'public', 'script.js'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');

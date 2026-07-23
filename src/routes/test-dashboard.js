@@ -26,6 +26,9 @@ const {
   updateDatabaseJobDashboardFields,
 } = require('../services/testDashboardDbFields');
 const {
+  resolveAuditedProductStyleAlias,
+} = require('../services/productStyleAliases');
+const {
   VISUAL_UPLOAD_ERROR,
   isVisualProofColumn,
   isAllowedVisualUploadFilename,
@@ -1176,6 +1179,25 @@ function buildSubitem(line, columns) {
   };
 }
 
+function auditedAliasStyleCodeForLine(line) {
+  for (const candidate of [
+    line?.style_code,
+    line?.alt_style_code,
+    line?.supplier_style_code,
+  ]) {
+    const styleCode = resolveAuditedProductStyleAlias(candidate);
+    if (styleCode) return styleCode;
+  }
+  return '';
+}
+
+function lineItemBrandWithAuditedAliasFallback(line, aliasBrandMap) {
+  const directBrand = clean(line?.product_brand);
+  if (directBrand) return directBrand;
+  const styleCode = auditedAliasStyleCodeForLine(line);
+  return styleCode ? clean(aliasBrandMap?.get(styleCode)) : '';
+}
+
 function customerDateValue(job, columns) {
   if (!isTruthyDatabaseValue(job?.customer_date_required)) return null;
   return dateValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.DATE), job?.delivery_date);
@@ -1570,11 +1592,36 @@ async function fetchLineItemMap(sourceOrderIds) {
               li.source_order_item_id`,
     [sourceOrderIds]
   );
+  const aliasBrandMap = await fetchAuditedAliasBrandMap(result.rows);
   for (const row of result.rows) {
+    row.product_brand = lineItemBrandWithAuditedAliasFallback(row, aliasBrandMap);
     if (!map.has(row.source_order_id)) map.set(row.source_order_id, []);
     map.get(row.source_order_id).push(row);
   }
   return map;
+}
+
+async function fetchAuditedAliasBrandMap(lines) {
+  const styleCodes = Array.from(new Set(
+    (Array.isArray(lines) ? lines : [])
+      .filter(line => !clean(line?.product_brand))
+      .map(auditedAliasStyleCodeForLine)
+      .filter(Boolean)
+  ));
+  if (!styleCodes.length) return new Map();
+
+  const result = await pool.query(
+    `SELECT UPPER(BTRIM(style_code)) AS style_code,
+            NULLIF(BTRIM(brand), '') AS brand
+     FROM database_ralawise_catalog_styles
+     WHERE UPPER(BTRIM(style_code)) = ANY($1::text[])`,
+    [styleCodes]
+  );
+  return new Map(
+    result.rows
+      .filter(row => clean(row.brand))
+      .map(row => [clean(row.style_code).toUpperCase(), clean(row.brand)])
+  );
 }
 
 async function fetchPositionMap(sourceOrderIds) {
@@ -2572,6 +2619,8 @@ module.exports = {
   ensureTestDashboardDefaults,
   buildTestDashboardBoardPayload,
   buildSubitem,
+  auditedAliasStyleCodeForLine,
+  lineItemBrandWithAuditedAliasFallback,
   designDisplayTextFromRawValue,
   designTextFromPositions,
   shouldPreserveStatusAfterLabelPrint,

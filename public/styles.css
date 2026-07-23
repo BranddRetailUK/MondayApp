@@ -1091,7 +1091,7 @@ body{
   appearance:none;
   border:0;
   background:transparent;
-  color:#579bfc;
+  color:var(--database-bg, #8ec7e3);
   font:inherit;
   font-weight:800;
   line-height:inherit;
