@@ -165,6 +165,10 @@ test('DATABASE Visuals UI uses active navigation, five/two-column grids, lazy pr
   assert.match(script, /loading="lazy"/);
   assert.match(script, /new window\.IntersectionObserver/);
   assert.match(script, /f_jpg,q_auto:eco,c_limit,w_420,h_420,pg_1/);
+  assert.match(
+    script,
+    /finally\s*\{\s*state\.visualOpenJobsLoading = false;\s*renderDatabaseVisualJobOptions\(\{ error: loadFailed \}\);/
+  );
   assert.match(styles, /\.db-visuals-grid\s*\{[\s\S]*grid-template-columns:repeat\(5,/);
   assert.match(styles, /@media \(max-width: 720px\)[\s\S]*\.db-visuals-grid\s*\{[\s\S]*grid-template-columns:repeat\(2,/);
   assert.match(styles, /\.db-visual-modal\s*\{[\s\S]*position:fixed;[\s\S]*inset:0;/);

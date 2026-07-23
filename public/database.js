@@ -1752,19 +1752,20 @@
 
     state.visualOpenJobsLoading = true;
     renderDatabaseVisualJobOptions({ loading: true });
+    let loadFailed = false;
     try {
       const data = await fetchJson('/api/database/visuals/open-jobs');
       state.visualOpenJobs = Array.isArray(data.jobs) ? data.jobs : [];
       state.visualOpenJobsLoaded = true;
-      renderDatabaseVisualJobOptions();
     } catch (err) {
+      loadFailed = true;
       state.visualOpenJobsLoaded = false;
       if (els.visualModalFeedback) {
         els.visualModalFeedback.textContent = err.message || 'Open jobs could not be loaded';
       }
-      renderDatabaseVisualJobOptions({ error: true });
     } finally {
       state.visualOpenJobsLoading = false;
+      renderDatabaseVisualJobOptions({ error: loadFailed });
     }
   }
 
