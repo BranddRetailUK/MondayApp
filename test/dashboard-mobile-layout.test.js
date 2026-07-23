@@ -188,6 +188,15 @@ test('dashboard job numbers use the DATABASE light-blue colour', () => {
   );
 });
 
+test('dashboard job titles omit the line-item count while retaining the TOTAL column', () => {
+  const script = fs.readFileSync(path.join(__dirname, '..', 'public', 'script.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
+
+  assert.doesNotMatch(script, /subitem-count-badge|getDashboardSubitemBadgeCount|measureSubitemCountBadgeWidth/);
+  assert.doesNotMatch(styles, /\.subitem-count-badge\s*\{/);
+  assert.match(script, /kind:\s*'jobTotal',\s*title:\s*'TOTAL'/);
+});
+
 test('dashboard priority row highlights and their toggle remain disabled', () => {
   const script = fs.readFileSync(path.join(__dirname, '..', 'public', 'script.js'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');

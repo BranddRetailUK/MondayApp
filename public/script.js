@@ -1189,9 +1189,7 @@ function buildJobNameColumnWidth(items) {
   for (const item of (Array.isArray(items) ? items : [])) {
     const text = getDashboardItemJobTitle(item);
     if (!text) continue;
-    const subitems = Array.isArray(item?.subitems) ? item.subitems : [];
-    const subitemBadgeWidth = subitems.length > 0 ? measureSubitemCountBadgeWidth(subitems.length) : 0;
-    max = Math.max(max, measureBoardTextWidth(text) + subitemBadgeWidth);
+    max = Math.max(max, measureBoardTextWidth(text));
   }
   return Math.max(220, Math.ceil(max + 66));
 }
@@ -1368,11 +1366,6 @@ function isPerJobSubitemWidthColumn(title) {
     normalized === 'CODE' ||
     normalized === 'COLOUR' ||
     normalized === 'COLOR';
-}
-
-function measureSubitemCountBadgeWidth(count) {
-  const textWidth = measureBoardTextWidth(String(count), "11px Manrope, 'Segoe UI', system-ui, sans-serif");
-  return Math.max(18, Math.ceil(textWidth + 10)) + 9;
 }
 
 function getMaxColumnTextWidth(items, columnId, font = "14px Manrope, 'Segoe UI', system-ui, sans-serif") {
@@ -1606,13 +1599,6 @@ function buildNameCell(item, initiallyOpen = false, { context = BOARD_CONTEXT_TE
   titleCopy.appendChild(titleSpan);
   titleWrap.appendChild(titleCopy);
 
-  if (subitems.length > 0) {
-    const badge = document.createElement('span');
-    badge.className = 'subitem-count-badge';
-    badge.textContent = String(getDashboardSubitemBadgeCount(subitems));
-    titleWrap.appendChild(badge);
-  }
-
   cell.appendChild(titleWrap);
   return cell;
 }
@@ -1631,12 +1617,6 @@ function buildTestRowMenuButton(item) {
     openTestRowMenu(menuBtn, item);
   });
   return menuBtn;
-}
-
-function getDashboardSubitemBadgeCount(subitems) {
-  const sourceSubitems = Array.isArray(subitems) ? subitems : [];
-  const lineCount = sourceSubitems.filter(subitem => !isDashboardTotalSubitem(subitem)).length;
-  return lineCount || sourceSubitems.length;
 }
 
 function openTestDashboardMobileJobOverview(item, opener = null) {
