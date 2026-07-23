@@ -4337,9 +4337,9 @@ body.modal-open{overflow:hidden}
 #db-users-table th:nth-child(4){width:78px;text-align:center}
 #db-users-table td:nth-child(4){text-align:center}
 #db-signup-requests-table th:nth-child(1){width:190px}
-#db-signup-requests-table th:nth-child(2){width:auto}
+#db-signup-requests-table th:nth-child(2){width:420px}
 #db-signup-requests-table th:nth-child(3){width:118px}
-#db-signup-requests-table th:nth-child(4){width:170px;text-align:center}
+#db-signup-requests-table th:nth-child(4){width:224px;text-align:center}
 #db-signup-requests-table td:nth-child(4){text-align:center}
 .db-signup-review-cell{
   white-space:nowrap;
