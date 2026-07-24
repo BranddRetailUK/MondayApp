@@ -36,6 +36,7 @@ const {
   dashboardSplitBranchCompleted,
   dashboardSplitBranchGroupId,
   dashboardSplitBranchStatus,
+  dashboardSplitMissingTicks,
   parseSplitDashboardItemId,
   resolveDashboardSplitState,
   splitDashboardItemId,
@@ -76,6 +77,7 @@ const EDITABLE_STATUS_TITLES = new Set(['STATUS', 'PRIORITY']);
 const EDITABLE_TEXT_TITLES = new Set(['NOTES']);
 const DEFAULT_OFFICE_GROUP_ID = TEST_DASHBOARD_GROUP_IDS.OFFICE;
 const APPROVAL_REQUIREMENTS_MESSAGE = 'Please add design number and/or Visual Proof.';
+const SPLIT_JOB_TICKS_REQUIRED_MESSAGE = 'Tick both TRANS and JAQ before continuing.';
 const DESIGN_POSITION_LOCK_KEY = 71060217;
 const STITCH_REFERENCE_LABEL = String.raw`(?:STITCH[\s._/-]*COUNT|STITCHES?|S[\s._/-]*T(?:[\s._/-]*(?:S|C))?)`;
 const PSG_REFERENCE_PATTERN = new RegExp(
@@ -374,6 +376,23 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
       selectedOption = findStatusOption(column, requestedLabel);
       if (!selectedOption) {
         return res.status(400).json({ error: 'Status label is not configured on that Tuesday Dashboard column' });
+      }
+    }
+
+    if (
+      !privateJob &&
+      !splitItem &&
+      normalizeColumnTitle(column.title) === 'STATUS' &&
+      normalizeColumnTitle(requestedLabel) === DASHBOARD_SPLIT_READY_STATUS &&
+      deriveJobCategory(job) === 'print_embroidery'
+    ) {
+      const missingTicks = dashboardSplitMissingTicks(job, columnValues);
+      if (missingTicks.length) {
+        return res.status(400).json({
+          error: SPLIT_JOB_TICKS_REQUIRED_MESSAGE,
+          code: 'split_job_ticks_required',
+          missing: missingTicks,
+        });
       }
     }
 

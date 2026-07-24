@@ -34,11 +34,15 @@ const TEST_DASHBOARD_CLIENT_COLUMN_IDS = Object.freeze({
   JOB: 'checkbox1__1',
   PRIORITY: 'priority_mkn8p46c',
   DATE: 'date_mksx422k',
+  TRANS: 'checkbox_mkm9ah5x',
+  JAQ: 'checkbox_mkm99bjn',
   DESIGN: 'text_mkmesygk',
   PROOF: 'file_mky43tg9',
-  STATUS: 'label__1'
+  STATUS: 'label__1',
+  TYPE: 'project_status'
 });
 const TEST_DASHBOARD_APPROVAL_REQUIREMENTS_MESSAGE = 'Please add design number and/or Visual Proof.';
+const TEST_DASHBOARD_SPLIT_TICKS_REQUIRED_MESSAGE = 'Tick both TRANS and JAQ before continuing.';
 const TEST_DASHBOARD_VISUAL_UPLOAD_ACCEPT = '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png';
 const TEST_DASHBOARD_VISUAL_UPLOAD_ERROR = 'The VISUAL column only accepts PDF, JPEG, and PNG files.';
 const DASHBOARD_ZOOM_MIN = 0.45;
@@ -2929,6 +2933,14 @@ async function selectStatusOption(option) {
   const context = state.context || BOARD_CONTEXT_TEST;
   closeStatusDropdown();
 
+  if (shouldBlockTestDashboardSplitReadyStatus(state, option)) {
+    showTestDashboardApprovalWarning(
+      TEST_DASHBOARD_SPLIT_TICKS_REQUIRED_MESSAGE,
+      'Split job blocked'
+    );
+    return;
+  }
+
   if (shouldConfirmTestDashboardCompletedStatus(state, option)) {
     const confirmed = await confirmTestDashboardCompletedStatus(state);
     if (!confirmed) return;
@@ -2955,10 +2967,44 @@ async function selectStatusOption(option) {
   } catch (err) {
     console.warn('Status update failed', err);
     await loadBoardForContext(context, { forceRefresh: true });
-    alert(`Failed to update ${state.columnTitle || 'status'}: ${err.message || 'Unknown error'}`);
+    if (isTestSplitTicksRequirementsMessage(err.message)) {
+      showTestDashboardApprovalWarning(
+        TEST_DASHBOARD_SPLIT_TICKS_REQUIRED_MESSAGE,
+        'Split job blocked'
+      );
+    } else {
+      alert(`Failed to update ${state.columnTitle || 'status'}: ${err.message || 'Unknown error'}`);
+    }
   } finally {
     __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);
   }
+}
+
+function shouldBlockTestDashboardSplitReadyStatus(state, option) {
+  if (
+    state?.context !== BOARD_CONTEXT_TEST ||
+    normalizeColumnTitle(state.columnTitle) !== 'STATUS' ||
+    option?.clear ||
+    normalizeColumnTitle(option?.label) !== 'READY TO PRINT'
+  ) {
+    return false;
+  }
+
+  const payload = window.__latestTestBoardPayload;
+  const item = findBoardPayloadItem(payload, state.itemId);
+  if (!item?.database_job || item?.dashboard_split_job) return false;
+  const typeText = normalizeColumnTitle(
+    findColumnValue(item, TEST_DASHBOARD_CLIENT_COLUMN_IDS.TYPE)?.text || ''
+  );
+  if (!typeText.includes('PRINT') || !typeText.includes('EMB')) return false;
+
+  return !isCheckedValue(findColumnValue(item, TEST_DASHBOARD_CLIENT_COLUMN_IDS.TRANS)) ||
+    !isCheckedValue(findColumnValue(item, TEST_DASHBOARD_CLIENT_COLUMN_IDS.JAQ));
+}
+
+function isTestSplitTicksRequirementsMessage(message) {
+  return String(message || '').trim().toLowerCase() ===
+    TEST_DASHBOARD_SPLIT_TICKS_REQUIRED_MESSAGE.toLowerCase();
 }
 
 function shouldConfirmTestDashboardCompletedStatus(state, option) {
@@ -3053,9 +3099,14 @@ function closeTestDashboardCompleteConfirm(confirmed) {
   if (resolve) resolve(Boolean(confirmed));
 }
 
-function showTestDashboardApprovalWarning(message = TEST_DASHBOARD_APPROVAL_REQUIREMENTS_MESSAGE) {
+function showTestDashboardApprovalWarning(
+  message = TEST_DASHBOARD_APPROVAL_REQUIREMENTS_MESSAGE,
+  title = 'Approval blocked'
+) {
   const modal = ensureTestDashboardApprovalWarningModal();
+  const titleEl = modal.querySelector('.test-dashboard-complete-confirm-title');
   const messageEl = modal.querySelector('.test-dashboard-complete-confirm-message');
+  if (titleEl) titleEl.textContent = title;
   if (messageEl) messageEl.textContent = message;
   modal.hidden = false;
   modal.setAttribute('aria-hidden', 'false');

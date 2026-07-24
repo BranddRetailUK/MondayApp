@@ -15,6 +15,8 @@ const {
   dashboardSplitBranchCompleted,
   dashboardSplitBranchGroupId,
   dashboardSplitBranchStatus,
+  dashboardSplitMissingTicks,
+  dashboardSplitTickState,
   defaultDashboardSplitState,
   parseSplitDashboardItemId,
   resolveDashboardSplitState,
@@ -81,6 +83,33 @@ test('activates a dashboard split only for ready Print + Emb jobs with TRANS and
       values
     ),
     false
+  );
+});
+
+test('reports the exact missing production ticks before READY TO PRINT', () => {
+  const values = checkedSplitValues();
+  assert.deepEqual(dashboardSplitMissingTicks(readyPrintEmbJob(), values), []);
+  assert.deepEqual(
+    dashboardSplitMissingTicks(readyPrintEmbJob(), {
+      ...values,
+      [TEST_DASHBOARD_COLUMN_IDS.TRANS]: checkbox(TEST_DASHBOARD_COLUMN_IDS.TRANS, false),
+    }),
+    ['TRANS']
+  );
+  assert.deepEqual(
+    dashboardSplitMissingTicks(readyPrintEmbJob(), {
+      ...values,
+      [TEST_DASHBOARD_COLUMN_IDS.JAQ]: checkbox(TEST_DASHBOARD_COLUMN_IDS.JAQ, false),
+    }),
+    ['JAQ']
+  );
+  assert.deepEqual(
+    dashboardSplitTickState(readyPrintEmbJob(), {
+      ...values,
+      [TEST_DASHBOARD_COLUMN_IDS.TRANS]: checkbox(TEST_DASHBOARD_COLUMN_IDS.TRANS, false),
+      [TEST_DASHBOARD_COLUMN_IDS.JAQ]: checkbox(TEST_DASHBOARD_COLUMN_IDS.JAQ, false),
+    }),
+    { trans: false, jaq: false }
   );
 });
 

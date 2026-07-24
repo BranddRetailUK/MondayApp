@@ -77,6 +77,27 @@ function effectiveDashboardCheckboxChecked(value, fallback = false) {
   return saved === null ? Boolean(fallback) : saved;
 }
 
+function dashboardSplitTickState(job, columnValues = {}) {
+  return {
+    trans: effectiveDashboardCheckboxChecked(
+      columnValues[TEST_DASHBOARD_COLUMN_IDS.TRANS],
+      false
+    ),
+    jaq: effectiveDashboardCheckboxChecked(
+      columnValues[TEST_DASHBOARD_COLUMN_IDS.JAQ],
+      Boolean(job?.has_screens || clean(job?.screen_numbers))
+    ),
+  };
+}
+
+function dashboardSplitMissingTicks(job, columnValues = {}) {
+  const ticks = dashboardSplitTickState(job, columnValues);
+  return [
+    ...(ticks.trans ? [] : ['TRANS']),
+    ...(ticks.jaq ? [] : ['JAQ']),
+  ];
+}
+
 function dashboardSplitActivationReady(job, columnValues = {}) {
   if (deriveJobCategory(job) !== 'print_embroidery') return false;
   const status = normalizeColumnTitle(
@@ -84,15 +105,7 @@ function dashboardSplitActivationReady(job, columnValues = {}) {
   );
   if (status !== DASHBOARD_SPLIT_READY_STATUS) return false;
 
-  const transferChecked = effectiveDashboardCheckboxChecked(
-    columnValues[TEST_DASHBOARD_COLUMN_IDS.TRANS],
-    false
-  );
-  const jaqChecked = effectiveDashboardCheckboxChecked(
-    columnValues[TEST_DASHBOARD_COLUMN_IDS.JAQ],
-    Boolean(job?.has_screens || clean(job?.screen_numbers))
-  );
-  return transferChecked && jaqChecked;
+  return dashboardSplitMissingTicks(job, columnValues).length === 0;
 }
 
 function resolveDashboardSplitState(job, columnValues = {}) {
@@ -159,6 +172,8 @@ module.exports = {
   dashboardSplitBranchCompleted,
   dashboardSplitBranchGroupId,
   dashboardSplitBranchStatus,
+  dashboardSplitMissingTicks,
+  dashboardSplitTickState,
   defaultDashboardSplitState,
   normalizeDashboardSplitState,
   parseSplitDashboardItemId,

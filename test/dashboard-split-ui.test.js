@@ -19,3 +19,22 @@ test('uses a green full-row highlight for a completed split branch', () => {
     /\.job-row\.dashboard-split-branch-completed \.grid-cell\s*\{[^}]*background:rgba\(0,200,117,.22\)/s
   );
 });
+
+test('blocks READY TO PRINT and shows the tick warning modal until both ticks are set', () => {
+  assert.match(
+    script,
+    /TEST_DASHBOARD_SPLIT_TICKS_REQUIRED_MESSAGE = 'Tick both TRANS and JAQ before continuing\.'/s
+  );
+  assert.match(script, /shouldBlockTestDashboardSplitReadyStatus\(state, option\)/);
+  assert.match(script, /showTestDashboardApprovalWarning\(\s*TEST_DASHBOARD_SPLIT_TICKS_REQUIRED_MESSAGE,\s*'Split job blocked'/s);
+  assert.match(script, /data-test-dashboard-approval-ok="true">Okay</);
+});
+
+test('the API independently rejects split readiness when either tick is missing', () => {
+  const route = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'routes', 'test-dashboard.js'),
+    'utf8'
+  );
+  assert.match(route, /code:\s*'split_job_ticks_required'/);
+  assert.match(route, /missing:\s*missingTicks/);
+});
