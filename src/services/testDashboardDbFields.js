@@ -114,6 +114,7 @@ async function updateDatabaseJobDashboardFields(db, sourceOrderId, labels = {}, 
 }
 
 module.exports = {
+  checkboxIsChecked,
   dashboardFieldLabelsFromValues,
   inferJobApproved,
   jobApprovedFromColumnValues,

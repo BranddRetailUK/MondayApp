@@ -522,6 +522,12 @@ function renderBoard(payload, options = {}) {
       const row = document.createElement('div');
       row.dataset.itemId = itemId;
       row.className = 'grid-row job-row';
+      if (context === BOARD_CONTEXT_TEST && item?.dashboard_split_job) {
+        row.classList.add('dashboard-split-job-row');
+      }
+      if (context === BOARD_CONTEXT_TEST && item?.dashboard_split_completed) {
+        row.classList.add('dashboard-split-branch-completed');
+      }
       row.style.setProperty('--board-cols', groupGridSpec.template);
       const subitemsOpen = uiState.openSubitems.has(itemId);
 
@@ -1598,6 +1604,12 @@ function buildNameCell(item, initiallyOpen = false, { context = BOARD_CONTEXT_TE
   }
   titleCopy.appendChild(titleSpan);
   titleWrap.appendChild(titleCopy);
+  if (context === BOARD_CONTEXT_TEST && item?.dashboard_split_job) {
+    const splitPill = document.createElement('span');
+    splitPill.className = 'dashboard-split-job-pill';
+    splitPill.textContent = 'SPLIT JOB';
+    titleWrap.appendChild(splitPill);
+  }
 
   cell.appendChild(titleWrap);
   return cell;
@@ -3295,6 +3307,14 @@ function updateCachedBoardStatusValue(itemId, columnId, option, context = BOARD_
   value.value = option.clear
     ? JSON.stringify({})
     : JSON.stringify({ index: normalizeStatusOptionIndex(option.index) });
+  if (
+    context === BOARD_CONTEXT_TEST &&
+    item.dashboard_split_job &&
+    columnId === TEST_DASHBOARD_CLIENT_COLUMN_IDS.STATUS
+  ) {
+    item.dashboard_split_completed = !option.clear &&
+      normalizeColumnTitle(option.label) === 'COMPLETED';
+  }
 }
 
 function updateCachedBoardCheckboxValue(itemId, columnId, checked) {

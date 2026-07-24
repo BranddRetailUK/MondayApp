@@ -29,6 +29,19 @@ const {
   resolveAuditedProductStyleAlias,
 } = require('../services/productStyleAliases');
 const {
+  DASHBOARD_SPLIT_STATE_KEY,
+  DASHBOARD_SPLIT_BRANCHES,
+  DASHBOARD_SPLIT_READY_STATUS,
+  DASHBOARD_SPLIT_COMPLETED_STATUS,
+  dashboardSplitBranchCompleted,
+  dashboardSplitBranchGroupId,
+  dashboardSplitBranchStatus,
+  parseSplitDashboardItemId,
+  resolveDashboardSplitState,
+  splitDashboardItemId,
+  transitionDashboardSplitBranchStatus,
+} = require('../services/dashboardSplitJobs');
+const {
   VISUAL_UPLOAD_ERROR,
   isVisualProofColumn,
   isAllowedVisualUploadFilename,
@@ -195,6 +208,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/group', async (req, res) =
     const statusLabel = statusLabelForMoveGroup(groupId);
     const state = privateJob ? job : await fetchJobState(job.source_order_id);
     const columnValues = { ...(state?.column_values || {}) };
+    if (!privateJob) delete columnValues[DASHBOARD_SPLIT_STATE_KEY];
     const jobApproved = privateJob
       ? jobApprovedFromColumnValues(columnValues) === true
       : resolveJobApproved(job, columnValues);
@@ -312,7 +326,8 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/date-column', async (req, 
 protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req, res) => {
   const jobId = clean(req.params.jobId);
   const privateJob = isPrivateDashboardJobId(jobId);
-  const sourceOrderId = Number.parseInt(jobId, 10);
+  const splitItem = privateJob ? null : parseSplitDashboardItemId(jobId);
+  const sourceOrderId = splitItem?.sourceOrderId ?? Number.parseInt(jobId, 10);
   if (!privateJob && !Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
   const columnId = clean(req.body?.columnId);
   const requestedLabel = clean(req.body?.label);
@@ -337,6 +352,18 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
 
     const state = privateJob ? job : await fetchJobState(sourceOrderId);
     const columnValues = { ...(state?.column_values || {}) };
+    let selectedOption = null;
+    if (
+      !privateJob &&
+      !splitItem &&
+      normalizeColumnTitle(column.title) === 'STATUS' &&
+      normalizeColumnTitle(requestedLabel) === DASHBOARD_SPLIT_COMPLETED_STATUS &&
+      resolveDashboardSplitState(job, columnValues)
+    ) {
+      return res.status(409).json({
+        error: 'Complete the Print and Embroidery split rows separately',
+      });
+    }
 
     if (clearRequested) {
       if (normalizeColumnTitle(column.title) !== 'PRIORITY') {
@@ -344,11 +371,32 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
       }
       delete columnValues[columnId];
     } else {
-      const option = findStatusOption(column, requestedLabel);
-      if (!option) {
+      selectedOption = findStatusOption(column, requestedLabel);
+      if (!selectedOption) {
         return res.status(400).json({ error: 'Status label is not configured on that Tuesday Dashboard column' });
       }
-      columnValues[columnId] = statusValue(column, option.label, option.index);
+    }
+
+    if (
+      splitItem &&
+      normalizeColumnTitle(column.title) === 'STATUS' &&
+      !clearRequested
+    ) {
+      const result = await updateDashboardSplitBranchStatus({
+        job,
+        columns,
+        column,
+        branch: splitItem.branch,
+        selectedOption,
+      });
+      if (!result) {
+        return res.status(409).json({ error: 'This split job is no longer active' });
+      }
+      return res.json(result);
+    }
+
+    if (selectedOption) {
+      columnValues[columnId] = statusValue(column, selectedOption.label, selectedOption.index);
     }
 
     const nextState = privateJob
@@ -367,6 +415,17 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
         changedLabel: clearRequested ? '' : requestedLabel,
         clearRequested,
       });
+    if (!privateJob && normalizeColumnTitle(column.title) === 'STATUS' && !clearRequested) {
+      if (normalizeColumnTitle(requestedLabel) === DASHBOARD_SPLIT_READY_STATUS) {
+        const splitState = resolveDashboardSplitState(
+          { ...job, dashboard_status: requestedLabel },
+          nextState.column_values
+        );
+        if (splitState) nextState.column_values[DASHBOARD_SPLIT_STATE_KEY] = splitState;
+      } else {
+        delete nextState.column_values[DASHBOARD_SPLIT_STATE_KEY];
+      }
+    }
 
     const saved = privateJob
       ? await updatePrivateDashboardJob(job.id, nextState)
@@ -423,6 +482,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (r
     let databaseJob = null;
 
     if (isApprovalCheckbox) {
+      if (!privateJob) delete columnValues[DASHBOARD_SPLIT_STATE_KEY];
       if (checked) {
         const requirements = privateJob
           ? getPrivateApprovalRequirements(columnValues)
@@ -629,7 +689,8 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/design-column', async (req
 protectedRouter.post('/api/test-dashboard/items/:jobId/label-printed', async (req, res) => {
   const jobId = clean(req.params.jobId);
   const privateJob = isPrivateDashboardJobId(jobId);
-  const sourceOrderId = Number.parseInt(jobId, 10);
+  const splitItem = privateJob ? null : parseSplitDashboardItemId(jobId);
+  const sourceOrderId = splitItem?.sourceOrderId ?? Number.parseInt(jobId, 10);
   if (!privateJob && !Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
 
   try {
@@ -679,7 +740,12 @@ protectedRouter.post('/api/test-dashboard/items/:jobId/label-printed', async (re
     res.json({
       ok: true,
       itemId: privateJob ? job.id : String(job.source_order_id),
-      scanUrl: privateJob ? '' : buildTestDashboardScanUrl(req, job.source_order_id),
+      scanUrl: privateJob
+        ? ''
+        : buildTestDashboardScanUrl(
+          req,
+          splitItem ? splitDashboardItemId(job.source_order_id, splitItem.branch) : job.source_order_id
+        ),
       previousStatus,
       status: statusPreserved ? previousStatus : CHECKED_IN_LABEL,
       statusUpdated: !statusPreserved,
@@ -1007,7 +1073,7 @@ async function buildTestDashboardBoardPayload() {
     const state = states.get(job.source_order_id) || null;
     const scan = scans.get(String(job.source_order_id)) || null;
     if (!shouldRenderDashboardJob(job, state, scan)) continue;
-    const item = buildBoardItem({
+    const itemArgs = {
       job,
       state,
       columns,
@@ -1016,7 +1082,24 @@ async function buildTestDashboardBoardPayload() {
       positions: positions.get(job.source_order_id) || [],
       files: files.get(job.source_order_id) || new Map(),
       scan,
-    });
+    };
+    const splitState = resolveDashboardSplitState(job, state?.column_values || {});
+    if (splitState) {
+      const baseItem = buildBoardItem(itemArgs);
+      for (const branch of DASHBOARD_SPLIT_BRANCHES) {
+        const splitItem = buildDashboardSplitBoardItem({
+          item: baseItem,
+          splitState,
+          branch,
+          columns,
+        });
+        const splitGroupId = dashboardSplitBranchGroupId(branch);
+        if (!grouped.has(splitGroupId)) grouped.set(splitGroupId, []);
+        grouped.get(splitGroupId).push(splitItem);
+      }
+      continue;
+    }
+    const item = buildBoardItem(itemArgs);
     const groupId = resolveDashboardGroupId(job, state, scan);
     if (!grouped.has(groupId)) grouped.set(groupId, []);
     grouped.get(groupId).push(item);
@@ -1141,6 +1224,34 @@ function buildBoardItem({ job, state, columns, subitemColumns, lineItems, positi
     subitems: lineItems
       .filter(isDashboardVisibleLineItem)
       .map(line => buildSubitem(line, subitemColumns)),
+  };
+}
+
+function buildDashboardSplitBoardItem({ item, splitState, branch, columns }) {
+  const statusColumn = columnById(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS);
+  const branchStatus = dashboardSplitBranchStatus(splitState, branch);
+  const branchStatusValue = statusValueByLabel(
+    columns,
+    TEST_DASHBOARD_COLUMN_IDS.STATUS,
+    branchStatus
+  ) || (statusColumn ? statusValue(statusColumn, branchStatus, null) : null);
+  const columnValues = (item.column_values || [])
+    .filter(value => value?.id !== TEST_DASHBOARD_COLUMN_IDS.STATUS);
+  if (branchStatusValue) columnValues.push(branchStatusValue);
+
+  const groupId = dashboardSplitBranchGroupId(branch);
+  return {
+    ...item,
+    id: splitDashboardItemId(item.database_job?.source_order_id || item.id, branch),
+    group: {
+      id: groupId,
+      title: '',
+      color: null,
+    },
+    dashboard_split_job: true,
+    dashboard_split_branch: branch,
+    dashboard_split_completed: dashboardSplitBranchCompleted(splitState, branch),
+    column_values: columnValues,
   };
 }
 
@@ -1594,6 +1705,128 @@ async function fetchJobState(sourceOrderId) {
   return result.rows[0] || null;
 }
 
+async function updateDashboardSplitBranchStatus({
+  job,
+  columns,
+  column,
+  branch,
+  selectedOption,
+  markCheckedIn = false,
+}) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const jobResult = await client.query(
+      `SELECT *
+       FROM database_jobs
+       WHERE source_order_id = $1
+       FOR UPDATE`,
+      [job.source_order_id]
+    );
+    const stateResult = await client.query(
+      `SELECT *
+       FROM test_dashboard_job_state
+       WHERE source_order_id = $1
+       FOR UPDATE`,
+      [job.source_order_id]
+    );
+    const currentJob = jobResult.rows[0] || job;
+    const currentState = stateResult.rows[0] || null;
+    const columnValues = { ...(currentState?.column_values || {}) };
+    if (markCheckedIn) {
+      const checkedColumn = columnById(columns, TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN);
+      if (checkedColumn) {
+        columnValues[TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN] = checkboxValue(checkedColumn, true);
+      }
+    }
+    const splitState = resolveDashboardSplitState(currentJob, columnValues);
+    if (!splitState) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    const transition = transitionDashboardSplitBranchStatus(
+      splitState,
+      branch,
+      selectedOption.label
+    );
+    if (!transition) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    let nextState;
+    if (transition.allCompleted) {
+      delete columnValues[DASHBOARD_SPLIT_STATE_KEY];
+      columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS] = statusValue(
+        column,
+        selectedOption.label,
+        selectedOption.index
+      );
+      nextState = applyDashboardAutomations({
+        job: currentJob,
+        currentState,
+        column,
+        columnValues,
+        changedLabel: DASHBOARD_SPLIT_COMPLETED_STATUS,
+        clearRequested: false,
+      });
+    } else {
+      columnValues[DASHBOARD_SPLIT_STATE_KEY] = transition.splitState;
+      const readyStatus = statusValueByLabel(
+        columns,
+        TEST_DASHBOARD_COLUMN_IDS.STATUS,
+        DASHBOARD_SPLIT_READY_STATUS
+      );
+      if (readyStatus) columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS] = readyStatus;
+      nextState = {
+        group_id: currentState?.group_id || resolveDashboardGroupId(
+          { ...currentJob, dashboard_status: DASHBOARD_SPLIT_READY_STATUS },
+          currentState,
+          null
+        ),
+        item_name: currentState?.item_name || formatJobName(currentJob),
+        column_values: columnValues,
+        archived: false,
+      };
+    }
+
+    const saved = await upsertJobState(currentJob.source_order_id, nextState, client);
+    const databaseJob = await updateDatabaseJobDashboardFields(
+      client,
+      currentJob.source_order_id,
+      { status: transition.aggregateStatus }
+    );
+    await client.query('COMMIT');
+
+    return {
+      ok: true,
+      itemId: transition.allCompleted
+        ? String(currentJob.source_order_id)
+        : splitDashboardItemId(currentJob.source_order_id, branch),
+      columnId: column.id,
+      columnTitle: column.title,
+      label: selectedOption.label,
+      cleared: false,
+      groupId: transition.allCompleted
+        ? saved.group_id
+        : dashboardSplitBranchGroupId(branch),
+      archived: saved.archived,
+      splitJob: !transition.allCompleted,
+      splitBranch: branch,
+      splitBranchCompleted: transition.branchCompleted,
+      splitResolved: transition.allCompleted,
+      aggregateStatus: transition.aggregateStatus,
+      databaseJob,
+    };
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 async function fetchStateMap(sourceOrderIds) {
   const map = new Map();
   if (!sourceOrderIds.length) return map;
@@ -1712,8 +1945,8 @@ async function fetchScanMap(sourceOrderIds) {
   return map;
 }
 
-async function upsertJobState(sourceOrderId, state) {
-  const result = await pool.query(
+async function upsertJobState(sourceOrderId, state, db = pool) {
+  const result = await db.query(
     `INSERT INTO test_dashboard_job_state (
        source_order_id,
        group_id,
@@ -1761,15 +1994,42 @@ function applyPrivateDashboardAutomations(args) {
 }
 
 async function recordTestDashboardScan(jobId) {
-  const sourceOrderId = Number.parseInt(jobId, 10);
+  const splitItem = parseSplitDashboardItemId(jobId);
+  const sourceOrderId = splitItem?.sourceOrderId ?? Number.parseInt(jobId, 10);
   if (!Number.isFinite(sourceOrderId)) throw new Error('Invalid Tuesday Dashboard job id');
   await ensureTestDashboardDefaults(pool);
   const job = await fetchDashboardJob(sourceOrderId);
   if (!job) throw new Error('Database job not found');
 
-  const result = await advanceScan(String(job.source_order_id));
   const columns = await fetchDashboardColumns(false);
   const state = await fetchJobState(job.source_order_id);
+  const currentSplitState = resolveDashboardSplitState(job, state?.column_values || {});
+  if (currentSplitState && !splitItem) {
+    throw new Error('Use the Print or Embroidery split-job label for this scan');
+  }
+
+  const scanItemId = splitItem
+    ? splitDashboardItemId(job.source_order_id, splitItem.branch)
+    : String(job.source_order_id);
+  const result = await advanceScan(scanItemId);
+  if (splitItem && currentSplitState) {
+    const statusColumn = columnById(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS);
+    const selectedOption = findStatusOption(statusColumn, result.status);
+    if (!statusColumn || !selectedOption) {
+      throw new Error(`Tuesday Dashboard status is not configured for ${result.status}`);
+    }
+    const updated = await updateDashboardSplitBranchStatus({
+      job,
+      columns,
+      column: statusColumn,
+      branch: splitItem.branch,
+      selectedOption,
+      markCheckedIn: result.scan_count >= 1,
+    });
+    if (!updated) throw new Error('This split job is no longer active');
+    return result;
+  }
+
   const columnValues = { ...(state?.column_values || {}) };
   const statusColumn = columnById(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS);
   const checkedColumn = columnById(columns, TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN);
@@ -2658,6 +2918,7 @@ module.exports = {
   protectedRouter,
   ensureTestDashboardDefaults,
   buildTestDashboardBoardPayload,
+  buildDashboardSplitBoardItem,
   buildSubitem,
   auditedAliasStyleCodeForLine,
   lineItemBrandWithAuditedAliasFallback,

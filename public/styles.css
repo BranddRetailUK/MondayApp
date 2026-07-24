@@ -874,6 +874,12 @@ body{
 }
 .job-row:hover .grid-cell,
 .sub-row:hover .grid-cell{background:#303133}
+.job-row.dashboard-split-branch-completed .grid-cell{
+  background:rgba(0,200,117,.22);
+}
+.job-row.dashboard-split-branch-completed:hover .grid-cell{
+  background:rgba(0,200,117,.29);
+}
 .dashboard-check-tick{
   display:inline-flex;
   align-items:center;
@@ -1087,6 +1093,22 @@ body{
 .job-title{
   width:100%;
   font-weight:700;
+}
+.dashboard-split-job-pill{
+  flex:0 0 auto;
+  display:inline-flex;
+  align-items:center;
+  min-height:18px;
+  margin-left:auto;
+  border-radius:999px;
+  padding:2px 7px;
+  background:#00c875;
+  color:#073d28;
+  font-size:9px;
+  font-weight:900;
+  line-height:1;
+  letter-spacing:.35px;
+  white-space:nowrap;
 }
 .test-dashboard-job-number-link{
   appearance:none;
