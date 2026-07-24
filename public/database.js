@@ -248,6 +248,7 @@
     selectedCustomerOverview: null,
     selectedCustomerPageOverview: null,
     selectedCustomerOrders: [],
+    customerOrderQuery: '',
     selectedCustomerContacts: [],
     selectedCustomerAddresses: [],
     selectedCustomerDesignNumbers: [],
@@ -370,6 +371,7 @@
   let databaseRouteRestored = false;
   let restoringDatabaseRoute = false;
   const lineTextScrollAnimations = new WeakMap();
+  let invoiceCompletionModalOpener = null;
 
   document.addEventListener('DOMContentLoaded', initDatabaseHub);
 
@@ -424,6 +426,7 @@
       customerTabs: Array.from(document.querySelectorAll('.db-customer-tab')),
       customerPanels: Array.from(document.querySelectorAll('.db-customer-panel')),
       customerOrdersBody: document.getElementById('db-customer-orders-body'),
+      customerOrdersSearch: document.getElementById('db-customer-orders-search'),
       customerContactsBody: document.getElementById('db-customer-contacts-body'),
       customerAddressesBody: document.getElementById('db-customer-addresses-body'),
       customerDesignNumbersBody: document.getElementById('db-customer-design-numbers-body'),
@@ -552,6 +555,7 @@
     els.customersBody.addEventListener('keydown', handleDatabaseCustomerRowKeydown);
     els.customerOrdersBody.addEventListener('click', handleCustomerOrderRowClick);
     els.customerOrdersBody.addEventListener('keydown', handleCustomerOrderRowKeydown);
+    els.customerOrdersSearch?.addEventListener('input', handleCustomerOrderSearchInput);
     els.customerDesignNumbersBody?.addEventListener('click', handleCustomerOrderRowClick);
     els.customerDesignNumbersBody?.addEventListener('keydown', handleCustomerOrderRowKeydown);
     els.customerContactsBody.addEventListener('input', handleCustomerContactInput);
@@ -1755,7 +1759,11 @@
     let loadFailed = false;
     try {
       const data = await fetchJson('/api/database/visuals/open-jobs');
-      state.visualOpenJobs = Array.isArray(data.jobs) ? data.jobs : [];
+      state.visualOpenJobs = (Array.isArray(data.jobs) ? data.jobs : [])
+        .filter((job) => (
+          String(job.dashboard_status || '').trim().toUpperCase() !== 'COMPLETED'
+          && String(job.group_title || '').trim().toUpperCase() !== 'COMPLETED'
+        ));
       state.visualOpenJobsLoaded = true;
     } catch (err) {
       loadFailed = true;
@@ -1785,17 +1793,44 @@
     }
 
     const jobs = state.visualOpenJobs || [];
-    const optionsHtml = jobs.map((job) => {
-      const id = Number(job.source_order_id);
-      const label = [
-        job.order_no || id,
-        job.customer_name,
-        job.job_title,
-      ].filter(Boolean).join(' — ');
-      const attached = state.visualAttachedJobIds.has(id);
-      const current = id === Number(visual?.source_order_id);
-      const suffix = current ? ' (current job)' : (attached ? ' (added)' : '');
-      return `<option value="${escapeAttr(id)}" ${current || attached ? 'disabled' : ''}>${escapeHtml(label)}${suffix}</option>`;
+    const groupedJobs = [];
+    const groupsByKey = new Map();
+    jobs.forEach((job) => {
+      const key = String(job.group_id || job.group_title || 'other');
+      let group = groupsByKey.get(key);
+      if (!group) {
+        group = {
+          title: String(job.group_title || 'OTHER'),
+          color: databaseVisualGroupColor(job.group_color),
+          jobs: [],
+        };
+        groupsByKey.set(key, group);
+        groupedJobs.push(group);
+      }
+      group.jobs.push(job);
+    });
+    const optionsHtml = groupedJobs.map((group) => {
+      const tint = databaseVisualGroupTint(group.color);
+      const jobOptions = group.jobs.map((job) => {
+        const id = Number(job.source_order_id);
+        const label = [
+          job.order_no || id,
+          job.customer_name,
+          job.job_title,
+        ].filter(Boolean).join(' — ');
+        const attached = state.visualAttachedJobIds.has(id);
+        const current = id === Number(visual?.source_order_id);
+        const suffix = current ? ' (current job)' : (attached ? ' (added)' : '');
+        return `<option
+          value="${escapeAttr(id)}"
+          style="background-color:${escapeAttr(tint)}"
+          ${current || attached ? 'disabled' : ''}
+        >${escapeHtml(label)}${suffix}</option>`;
+      }).join('');
+      return `<optgroup
+        label="${escapeAttr(group.title)}"
+        style="background-color:${escapeAttr(tint)}"
+      >${jobOptions}</optgroup>`;
     }).join('');
 
     els.visualModalJob.innerHTML = `
@@ -1807,6 +1842,22 @@
       return id !== Number(visual?.source_order_id) && !state.visualAttachedJobIds.has(id);
     });
     els.visualModalJob.disabled = state.visualAttachSaving || !hasSelectableJob;
+  }
+
+  function databaseVisualGroupColor(value) {
+    const color = String(value || '').trim();
+    return /^#[0-9a-f]{6}$/i.test(color) ? color : '#8ec7e3';
+  }
+
+  function databaseVisualGroupTint(value) {
+    const color = databaseVisualGroupColor(value);
+    const red = Number.parseInt(color.slice(1, 3), 16);
+    const green = Number.parseInt(color.slice(3, 5), 16);
+    const blue = Number.parseInt(color.slice(5, 7), 16);
+    const mix = (channel) => Math.round(255 - ((255 - channel) * 0.22));
+    return `#${[mix(red), mix(green), mix(blue)]
+      .map((channel) => channel.toString(16).padStart(2, '0'))
+      .join('')}`;
   }
 
   async function attachActiveDatabaseVisual() {
@@ -3450,6 +3501,15 @@
   }
 
   async function handleDatabaseCustomerRowClick(event) {
+    const orderButton = event.target.closest('[data-db-customer-order-open]');
+    if (orderButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      await flushOrderAutosaves();
+      openOrder(orderButton.dataset.dbCustomerOrderOpen, 'details');
+      return;
+    }
+
     const row = event.target.closest('tr[data-customer-key]');
     if (!row) return;
     await flushOrderAutosaves();
@@ -3458,6 +3518,7 @@
 
   async function handleDatabaseCustomerRowKeydown(event) {
     if (event.key !== 'Enter') return;
+    if (event.target.closest('[data-db-customer-order-open]')) return;
     const row = event.target.closest('tr[data-customer-key]');
     if (!row) return;
     await flushOrderAutosaves();
@@ -3493,6 +3554,11 @@
     if (!row) return;
     await flushOrderAutosaves();
     openOrder(row.dataset.jobId, 'details');
+  }
+
+  function handleCustomerOrderSearchInput() {
+    state.customerOrderQuery = String(els.customerOrdersSearch?.value || '').trim();
+    renderCustomerOrders();
   }
 
   function openRepeatOrderConfirmation(sourceOrderId) {
@@ -3794,6 +3860,7 @@
 
   function renderDatabaseCustomers() {
     const customers = state.databaseCustomers || [];
+    setDatabaseCustomerLatestOrderColumnWidth(customers);
     if (!customers.length) {
       els.customersBody.innerHTML = renderStatusRow('No matching customers', 8);
       return;
@@ -3804,11 +3871,22 @@
 
   function renderDatabaseCustomerRow(customer, index) {
     const customerKey = customerKeyForRecord(customer);
+    const latestSourceOrderId = customer.latest_source_order_id || '';
+    const latestOrderNumber = customer.latest_order_no || '';
     return `
       <tr class="db-customer-row" data-customer-key="${escapeAttr(customerKey)}" tabindex="0">
         <td class="db-row-selector">${index === 0 ? '&#9654;' : ''}</td>
         <td class="db-customer-link">${escapeHtml(customer.business_name || '')}</td>
-        <td class="db-order-link">${escapeHtml(customer.latest_order_no || '')}</td>
+        <td class="db-order-link">${
+          latestSourceOrderId && latestOrderNumber
+            ? `<button
+                class="db-customer-latest-order-button"
+                type="button"
+                data-db-customer-order-open="${escapeAttr(latestSourceOrderId)}"
+                aria-label="Open order ${escapeAttr(latestOrderNumber)}"
+              >${escapeHtml(latestOrderNumber)}</button>`
+            : ''
+        }</td>
         <td>${escapeHtml(customer.latest_job_title || '')}</td>
         <td>${escapeHtml(formatDate(customer.latest_order_date, 'long'))}</td>
         <td>${escapeHtml(customer.contact_name || '')}</td>
@@ -3816,6 +3894,18 @@
         <td>${escapeHtml(formatNumber(customer.order_count || 0))}</td>
       </tr>
     `;
+  }
+
+  function setDatabaseCustomerLatestOrderColumnWidth(customers) {
+    const table = els.customersBody?.closest('table');
+    if (!table) return;
+    const longestOrderNumber = (customers || []).reduce((longest, customer) => (
+      Math.max(longest, String(customer?.latest_order_no || '').length)
+    ), 0);
+    table.style.setProperty(
+      '--db-customers-latest-order-width',
+      `${Math.max(6, longestOrderNumber + 2)}ch`
+    );
   }
 
   async function openCustomer(customerKey, tab, options = {}) {
@@ -3851,9 +3941,14 @@
     state.selectedCustomerDetail = null;
     state.selectedCustomerPageOverview = null;
     state.selectedCustomerOrders = [];
+    state.customerOrderQuery = '';
     state.selectedCustomerContacts = [];
     state.selectedCustomerAddresses = [];
     state.selectedCustomerDesignNumbers = [];
+    if (els.customerOrdersSearch) {
+      els.customerOrdersSearch.value = '';
+      els.customerOrdersSearch.disabled = true;
+    }
     els.customerName.value = 'Loading...';
     els.customerCode.value = '';
     setCustomerAccountManagerOptions(null, true);
@@ -3870,6 +3965,7 @@
     els.customerName.value = 'Customer unavailable';
     els.customerCode.value = '';
     state.selectedCustomerPageOverview = null;
+    if (els.customerOrdersSearch) els.customerOrdersSearch.disabled = true;
     setCustomerAccountManagerOptions(null, true);
     renderCustomerHeaderStats();
     els.customerOrdersBody.innerHTML = renderStatusRow(message, 11);
@@ -3883,6 +3979,7 @@
     els.customerName.value = customer.business_name || '';
     els.customerCode.value = customer.customer_code || '';
     setCustomerAccountManagerOptions(customer, false);
+    if (els.customerOrdersSearch) els.customerOrdersSearch.disabled = false;
     renderCustomerHeaderStats();
     renderCustomerOrders();
     renderCustomerContacts();
@@ -4161,7 +4258,46 @@
       return;
     }
 
-    els.customerOrdersBody.innerHTML = orders.map(renderCustomerOrderRow).join('');
+    const query = normalizeCustomerOrderSearchValue(state.customerOrderQuery);
+    const matchingOrders = query
+      ? orders.filter((order) => customerOrderMatchesSearch(order, query))
+      : orders;
+    if (!matchingOrders.length) {
+      els.customerOrdersBody.innerHTML = renderStatusRow('No customer orders match this search', 11);
+      return;
+    }
+
+    els.customerOrdersBody.innerHTML = matchingOrders.map(renderCustomerOrderRow).join('');
+  }
+
+  function customerOrderMatchesSearch(order, query) {
+    const relatedDesigns = (state.selectedCustomerDesignNumbers || [])
+      .filter((design) => Number(design.source_order_id) === Number(order.source_order_id))
+      .flatMap((design) => [design.design_ref, design.psg_numbers]);
+    const searchableValues = [
+      order.source_order_id,
+      order.order_no,
+      order.invoice_no,
+      order.client_order_no,
+      order.order_type,
+      order.order_type_abbr,
+      order.contact_name,
+      order.customer_name,
+      order.customer_code,
+      order.job_title,
+      order.order_taken_by,
+      order.order_owner_name,
+      order.dashboard_status,
+      formatDate(order.order_date, 'long'),
+      formatDate(order.complete_date, 'long'),
+      ...relatedDesigns,
+    ];
+    const haystack = normalizeCustomerOrderSearchValue(searchableValues.filter(Boolean).join(' '));
+    return query.split(/\s+/).every((term) => haystack.includes(term));
+  }
+
+  function normalizeCustomerOrderSearchValue(value) {
+    return String(value || '').trim().toLocaleLowerCase('en-GB');
   }
 
   function renderCustomerOrderRow(order, index) {
@@ -7313,6 +7449,11 @@
     if (!state.selectedJob?.source_order_id && !state.selectedJob?.order_no) return;
 
     const documentType = databaseDocumentType(type);
+    if (documentType === 'invoice' && !isJobCompletedForInvoice(state.selectedJob)) {
+      openInvoiceCompletionModal();
+      return;
+    }
+
     const existingInvoicePreview = documentType === 'invoice' && options.skipInvoiceMark && state.selectedJob?.invoice_no;
     if (documentType === 'invoice' && invoiceNotRequired(state.selectedJob) && !existingInvoicePreview) return;
 
@@ -7329,6 +7470,10 @@
         generatedAt = validDateOrNow(invoicedJob?.invoice_date || invoicedJob?.complete_date || invoicedJob?.dashboard_status_updated_at);
       } catch (err) {
         console.error('Invoice mark failed', err);
+        if (err.message === 'This job is not yet completed') {
+          openInvoiceCompletionModal();
+          return;
+        }
         alert(err.message || 'Failed to mark order invoiced');
         return;
       }
@@ -8085,6 +8230,63 @@
     return legacyInputDateToIso(value);
   }
 
+  function isJobCompletedForInvoice(job) {
+    return normalizeDashboardStatusLabel(job?.dashboard_status) === 'COMPLETED';
+  }
+
+  function openInvoiceCompletionModal() {
+    const modal = ensureInvoiceCompletionModal();
+    invoiceCompletionModalOpener = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open', 'db-invoice-completion-open');
+
+    window.requestAnimationFrame(() => {
+      modal.querySelector('[data-db-invoice-completion-okay]')?.focus();
+    });
+  }
+
+  function ensureInvoiceCompletionModal() {
+    let modal = document.getElementById('db-invoice-completion-modal');
+    if (modal) return modal;
+
+    modal = document.createElement('div');
+    modal.id = 'db-invoice-completion-modal';
+    modal.className = 'db-invoice-completion-modal';
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    modal.innerHTML = `
+      <div class="db-invoice-completion-shell" role="dialog" aria-modal="true" aria-labelledby="db-invoice-completion-title">
+        <div class="db-invoice-completion-title" id="db-invoice-completion-title">Invoice</div>
+        <div class="db-invoice-completion-message">This job is not yet completed</div>
+        <div class="db-invoice-completion-actions">
+          <button class="db-invoice-completion-okay" type="button" data-db-invoice-completion-okay>Okay</button>
+        </div>
+      </div>
+    `;
+    modal.addEventListener('click', handleInvoiceCompletionModalClick);
+    document.body.appendChild(modal);
+    return modal;
+  }
+
+  function handleInvoiceCompletionModalClick(event) {
+    const button = event.target.closest('[data-db-invoice-completion-okay]');
+    if (!button) return;
+    closeInvoiceCompletionModal();
+  }
+
+  function closeInvoiceCompletionModal() {
+    const modal = document.getElementById('db-invoice-completion-modal');
+    if (!modal || modal.hidden) return;
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('modal-open', 'db-invoice-completion-open');
+    invoiceCompletionModalOpener?.focus?.();
+    invoiceCompletionModalOpener = null;
+  }
+
   function ensureOrderAckModal() {
     let modal = document.getElementById('db-order-ack-modal');
     if (modal) return modal;
@@ -8156,6 +8358,11 @@
 
   function handleOrderAckKeydown(event) {
     if (event.key !== 'Escape') return;
+    const invoiceCompletionModal = document.getElementById('db-invoice-completion-modal');
+    if (invoiceCompletionModal && !invoiceCompletionModal.hidden) {
+      closeInvoiceCompletionModal();
+      return;
+    }
     const noInvoiceCloseModal = document.getElementById('db-no-invoice-close-modal');
     if (noInvoiceCloseModal && !noInvoiceCloseModal.hidden) {
       closeNoInvoiceCloseConfirmation();

@@ -113,19 +113,80 @@ test('attaching a gallery visual reuses its Cloudinary metadata on an eligible o
   }
 });
 
-test('visual modal jobs endpoint is limited to open print and embroidery work', async () => {
-  const jobs = [{
-    source_order_id: 7002,
-    order_no: 52002,
+test('visual modal jobs follow dashboard group order and exclude completed status or group rows', async () => {
+  const baseJob = {
     customer_name: 'Open Customer',
-    job_title: 'Open Print Job',
     order_type: 'Printing',
     order_type_abbr: 'P',
-  }];
+    is_complete: false,
+    dashboard_type: 'PRINT',
+    invoice_printed: false,
+    pf_invoice_printed: false,
+    invoice_required: true,
+    closed_without_invoice: false,
+    dashboard_column_values: {},
+    dashboard_archived: false,
+  };
+  const jobs = [
+    {
+      ...baseJob,
+      source_order_id: 7005,
+      order_no: 52005,
+      job_title: 'Completed Status',
+      dashboard_status: 'COMPLETED',
+      proof_approved: true,
+      dashboard_group_id: 'new_group43041',
+    },
+    {
+      ...baseJob,
+      source_order_id: 7004,
+      order_no: 52004,
+      job_title: 'Completed Group',
+      dashboard_status: 'IN PRODUCTION',
+      proof_approved: true,
+      dashboard_group_id: 'new_group43041',
+    },
+    {
+      ...baseJob,
+      source_order_id: 7003,
+      order_no: 52003,
+      job_title: 'Pre-production Job',
+      dashboard_status: 'NO STOCK',
+      proof_approved: true,
+      dashboard_group_id: 'new_group56764__1',
+    },
+    {
+      ...baseJob,
+      source_order_id: 7002,
+      order_no: 52002,
+      job_title: 'Office Job',
+      dashboard_status: 'AWAITING APPROVAL',
+      proof_approved: false,
+      dashboard_group_id: 'new_group_mkmdezbp',
+    },
+    {
+      ...baseJob,
+      source_order_id: 7001,
+      order_no: 52001,
+      job_title: 'Hold Job',
+      dashboard_status: 'HOLD',
+      proof_approved: false,
+      dashboard_group_id: 'group_mkv26kq5',
+    },
+  ];
+  const groups = [
+    { id: 'group_mkv26kq5', title: 'HOLD', color: '#bb3354', sort_order: 1 },
+    { id: 'new_group_mkmdezbp', title: 'OFFICE', color: '#df2f4a', sort_order: 2 },
+    { id: 'new_group56764__1', title: 'PRE-PRODUCTION', color: '#0471f7', sort_order: 3 },
+    { id: 'new_group43041', title: 'COMPLETED', color: '#00c875', sort_order: 4 },
+  ];
   const { router, calls, restore } = loadDatabaseRouter({
     async query(sql) {
-      if (sql.includes('FROM database_jobs') && sql.includes('ORDER BY order_no DESC')) {
+      if (sql.includes('FROM database_jobs job') && sql.includes('ORDER BY job.order_no DESC')) {
         return { rowCount: jobs.length, rows: jobs };
+      }
+      if (sql.includes('FROM test_dashboard_groups')) {
+        return { rowCount: groups.length, rows: groups };
       }
       return { rowCount: 0, rows: [] };
     },
@@ -137,13 +198,23 @@ test('visual modal jobs endpoint is limited to open print and embroidery work', 
     await route.route.stack[0].handle({}, response);
 
     assert.equal(response.statusCode, 200);
-    assert.deepEqual(response.body.jobs, jobs);
-    const query = calls.find(({ text }) => text.includes('ORDER BY order_no DESC'));
+    assert.deepEqual(
+      response.body.jobs.map((job) => [job.source_order_id, job.group_title, job.group_color]),
+      [
+        [7001, 'HOLD', '#bb3354'],
+        [7002, 'OFFICE', '#df2f4a'],
+        [7003, 'PRE-PRODUCTION', '#0471f7'],
+      ]
+    );
+    const query = calls.find(({ text }) => text.includes('ORDER BY job.order_no DESC'));
     assert.ok(query);
-    assert.match(query.text, /is_complete IS NOT TRUE/);
+    assert.match(query.text, /job\.is_complete IS NOT TRUE/);
+    assert.match(query.text, /LEFT JOIN test_dashboard_job_state state/);
     assert.match(query.text, /IN \('P', 'E', 'PE', 'EP'\)/);
     assert.match(query.text, /NOT LIKE '%gift%'/);
-    assert.match(query.text, /closed_without_invoice IS TRUE/);
+    assert.match(query.text, /job\.closed_without_invoice IS TRUE/);
+    const groupQuery = calls.find(({ text }) => text.includes('FROM test_dashboard_groups'));
+    assert.match(groupQuery.text, /COALESCE\(sort_order, 999999\)/);
   } finally {
     restore();
   }
@@ -165,6 +236,8 @@ test('DATABASE Visuals UI uses active navigation, five/two-column grids, lazy pr
   assert.match(script, /loading="lazy"/);
   assert.match(script, /new window\.IntersectionObserver/);
   assert.match(script, /f_jpg,q_auto:eco,c_limit,w_420,h_420,pg_1/);
+  assert.match(script, /databaseVisualGroupTint/);
+  assert.match(script, /<optgroup/);
   assert.match(
     script,
     /finally\s*\{\s*state\.visualOpenJobsLoading = false;\s*renderDatabaseVisualJobOptions\(\{ error: loadFailed \}\);/
@@ -172,6 +245,7 @@ test('DATABASE Visuals UI uses active navigation, five/two-column grids, lazy pr
   assert.match(styles, /\.db-visuals-grid\s*\{[\s\S]*grid-template-columns:repeat\(5,/);
   assert.match(styles, /@media \(max-width: 720px\)[\s\S]*\.db-visuals-grid\s*\{[\s\S]*grid-template-columns:repeat\(2,/);
   assert.match(styles, /\.db-visual-modal\s*\{[\s\S]*position:fixed;[\s\S]*inset:0;/);
+  assert.match(styles, /\.db-visual-modal-job-control option\s*\{/);
 });
 
 function visualRow(id) {

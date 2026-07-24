@@ -20,12 +20,15 @@ const {
   STOCK_ORDERED_LABEL,
   awaitingApprovalStatusValue,
   formatDashboardJobName,
+  getColumnText,
+  resolveDashboardGroupId,
   resolveJobApproved,
   stockOrderedGroupIdForJob,
   stockOrderedStatusValue,
 } = require('../services/dashboardAutomation');
 const {
   TEST_DASHBOARD_COLUMN_IDS,
+  TEST_DASHBOARD_GROUPS,
   TEST_DASHBOARD_GROUP_IDS,
   STATUS_SETTINGS,
   normalizeColumnTitle,
@@ -1046,36 +1049,97 @@ router.get('/api/database/visuals', async (req, res) => {
 
 router.get('/api/database/visuals/open-jobs', async (_req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT source_order_id,
-              order_no,
-              customer_name,
-              job_title,
-              order_type,
-              order_type_abbr
-       FROM database_jobs
-       WHERE is_complete IS NOT TRUE
+    const [result, groupResult] = await Promise.all([
+      pool.query(
+        `SELECT job.source_order_id,
+                job.order_no,
+                job.customer_name,
+                job.job_title,
+                job.order_type,
+                job.order_type_abbr,
+                job.is_complete,
+                job.dashboard_status,
+                job.dashboard_type,
+                job.proof_approved,
+                job.invoice_printed,
+                job.pf_invoice_printed,
+                job.invoice_required,
+                job.closed_without_invoice,
+                state.group_id AS dashboard_group_id,
+                state.column_values AS dashboard_column_values,
+                state.archived AS dashboard_archived
+         FROM database_jobs job
+         LEFT JOIN test_dashboard_job_state state
+           ON state.source_order_id = job.source_order_id
+         WHERE job.is_complete IS NOT TRUE
          AND NOT (
-           COALESCE(UPPER(BTRIM(dashboard_status)), '') = 'COMPLETED'
+           COALESCE(UPPER(BTRIM(job.dashboard_status)), '') = 'COMPLETED'
            AND (
-             invoice_printed IS TRUE
-             OR pf_invoice_printed IS TRUE
-             OR (invoice_required IS FALSE AND closed_without_invoice IS TRUE)
+             job.invoice_printed IS TRUE
+             OR job.pf_invoice_printed IS TRUE
+             OR (job.invoice_required IS FALSE AND job.closed_without_invoice IS TRUE)
            )
          )
          AND (
            (
-             LOWER(COALESCE(order_type, '') || ' ' || COALESCE(order_type_abbr, '')) LIKE '%print%'
-             OR LOWER(COALESCE(order_type, '') || ' ' || COALESCE(order_type_abbr, '')) LIKE '%embro%'
-             OR UPPER(BTRIM(COALESCE(order_type_abbr, ''))) IN ('P', 'E', 'PE', 'EP')
+             LOWER(COALESCE(job.order_type, '') || ' ' || COALESCE(job.order_type_abbr, '')) LIKE '%print%'
+             OR LOWER(COALESCE(job.order_type, '') || ' ' || COALESCE(job.order_type_abbr, '')) LIKE '%embro%'
+             OR UPPER(BTRIM(COALESCE(job.order_type_abbr, ''))) IN ('P', 'E', 'PE', 'EP')
            )
-           AND LOWER(COALESCE(order_type, '') || ' ' || COALESCE(order_type_abbr, '')) NOT LIKE '%gift%'
-           AND UPPER(BTRIM(COALESCE(order_type_abbr, ''))) <> 'G'
+           AND LOWER(COALESCE(job.order_type, '') || ' ' || COALESCE(job.order_type_abbr, '')) NOT LIKE '%gift%'
+           AND UPPER(BTRIM(COALESCE(job.order_type_abbr, ''))) <> 'G'
          )
-       ORDER BY order_no DESC, source_order_id DESC`
-    );
+         ORDER BY job.order_no DESC, job.source_order_id DESC`
+      ),
+      pool.query(
+        `SELECT id, title, color, position, sort_order
+         FROM test_dashboard_groups
+         ORDER BY COALESCE(sort_order, 999999), position NULLS LAST, title`
+      ),
+    ]);
 
-    res.json({ jobs: result.rows });
+    const groups = groupResult.rows.length ? groupResult.rows : TEST_DASHBOARD_GROUPS;
+    const groupById = new Map(groups.map((group, index) => [
+      group.id,
+      {
+        id: group.id,
+        title: group.title,
+        color: group.color,
+        order: index,
+      },
+    ]));
+    const fallbackGroup = groupById.get(TEST_DASHBOARD_GROUP_IDS.OFFICE) || {
+      id: TEST_DASHBOARD_GROUP_IDS.OFFICE,
+      title: 'OFFICE',
+      color: '#df2f4a',
+      order: groups.length,
+    };
+    const jobs = result.rows
+      .filter(isOpenDatabaseVisualJob)
+      .map((job) => {
+        const resolvedGroupId = databaseVisualJobGroupId(job);
+        const group = groupById.get(resolvedGroupId) || fallbackGroup;
+        return {
+          source_order_id: job.source_order_id,
+          order_no: job.order_no,
+          customer_name: job.customer_name,
+          job_title: job.job_title,
+          order_type: job.order_type,
+          order_type_abbr: job.order_type_abbr,
+          dashboard_status: databaseVisualJobStatus(job),
+          group_id: group.id,
+          group_title: group.title,
+          group_color: group.color,
+          group_order: group.order,
+        };
+      })
+      .sort((left, right) => (
+        Number(left.group_order) - Number(right.group_order)
+        || Number(right.order_no || 0) - Number(left.order_no || 0)
+        || Number(right.source_order_id || 0) - Number(left.source_order_id || 0)
+      ));
+
+    res.json({ jobs });
   } catch (err) {
     console.error('GET /api/database/visuals/open-jobs', err);
     res.status(500).json({ error: 'Failed to fetch open visual jobs' });
@@ -1104,6 +1168,9 @@ router.post('/api/database/visuals/:fileId/attach', async (req, res) => {
       ),
       client.query(
         `SELECT job.*,
+                state.group_id AS dashboard_group_id,
+                state.column_values AS dashboard_column_values,
+                state.archived AS dashboard_archived,
                 COALESCE((
                   SELECT STRING_AGG(
                     DISTINCT NULLIF(BTRIM(position.design_ref), ''),
@@ -1114,8 +1181,10 @@ router.post('/api/database/visuals/:fileId/attach', async (req, res) => {
                   WHERE position.source_order_id = job.source_order_id
                 ), '') AS design_numbers
          FROM database_jobs job
+         LEFT JOIN test_dashboard_job_state state
+           ON state.source_order_id = job.source_order_id
          WHERE job.source_order_id = $1
-         FOR UPDATE`,
+         FOR UPDATE OF job`,
         [targetSourceOrderId]
       ),
     ]);
@@ -3672,6 +3741,20 @@ router.put('/api/database/jobs/:id', async (req, res) => {
         return res.status(404).json({ error: 'Database job not found' });
       }
 
+      const completion = await client.query(
+        `SELECT dashboard_status
+         FROM database_jobs
+         WHERE source_order_id = $1`,
+        [job.source_order_id]
+      );
+      if (normalizeColumnTitle(completion.rows[0]?.dashboard_status) !== 'COMPLETED') {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: 'This job is not yet completed',
+          code: 'job_not_completed',
+        });
+      }
+
       const values = [job.source_order_id];
       const updates = [];
       appendDatabaseJobUpdates(payload, values, updates);
@@ -5255,13 +5338,29 @@ function isOpenDatabaseVisualJob(job) {
   ) && orderType !== 'Business Gifts' && abbreviation !== 'G';
   if (!eligibleType) return false;
 
-  const completed = cleanQuery(job.dashboard_status).toUpperCase() === 'COMPLETED';
-  const finalized = (
-    job.invoice_printed === true
-    || job.pf_invoice_printed === true
-    || (job.invoice_required === false && job.closed_without_invoice === true)
+  if (job.dashboard_archived === true) return false;
+  if (databaseVisualJobStatus(job) === 'COMPLETED') return false;
+  if (job.dashboard_group_id === TEST_DASHBOARD_GROUP_IDS.COMPLETED) return false;
+  return databaseVisualJobGroupId(job) !== TEST_DASHBOARD_GROUP_IDS.COMPLETED;
+}
+
+function databaseVisualJobState(job) {
+  return {
+    group_id: job?.dashboard_group_id || null,
+    column_values: job?.dashboard_column_values || {},
+    archived: job?.dashboard_archived === true,
+  };
+}
+
+function databaseVisualJobStatus(job) {
+  return normalizeColumnTitle(
+    job?.dashboard_status
+    || getColumnText(job?.dashboard_column_values?.[TEST_DASHBOARD_COLUMN_IDS.STATUS])
   );
-  return !(completed && finalized);
+}
+
+function databaseVisualJobGroupId(job) {
+  return resolveDashboardGroupId(job, databaseVisualJobState(job), null);
 }
 
 function cleanQuery(value) {

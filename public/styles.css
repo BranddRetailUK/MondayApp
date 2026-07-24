@@ -4232,6 +4232,14 @@ body.modal-open{overflow:hidden}
   color:#000;
   font:12px Arial, Helvetica, sans-serif;
 }
+.db-visual-modal-job-control optgroup{
+  color:#111;
+  font-weight:700;
+}
+.db-visual-modal-job-control option{
+  color:#111;
+  font-weight:400;
+}
 .db-visual-modal-close{
   position:absolute;
   top:20px;
@@ -4388,7 +4396,11 @@ body.modal-open{overflow:hidden}
   background:#f08080;
 }
 #db-customers-table th:nth-child(2){width:250px}
-#db-customers-table th:nth-child(3){width:88px}
+#db-customers-table th:nth-child(3){
+  width:var(--db-customers-latest-order-width, 7ch);
+  white-space:normal;
+  line-height:12px;
+}
 #db-customers-table th:nth-child(4){width:auto}
 #db-customers-table th:nth-child(5){width:88px}
 #db-customers-table th:nth-child(6){width:150px}
@@ -4541,6 +4553,53 @@ body.modal-open{overflow:hidden}
   color:#777;
   cursor:wait;
 }
+.db-invoice-completion-modal{
+  position:fixed;
+  inset:0;
+  z-index:3600;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:rgba(0,0,0,.35);
+}
+.db-invoice-completion-modal[hidden]{
+  display:none;
+}
+.db-invoice-completion-shell{
+  width:310px;
+  border:2px outset #fff;
+  background:#e9e9e9;
+  color:#000;
+  font:12px Arial, Helvetica, sans-serif;
+  box-shadow:3px 4px 0 rgba(0,0,0,.35);
+}
+.db-invoice-completion-title{
+  padding:6px 8px;
+  background:#858585;
+  color:#fff;
+  font-weight:700;
+}
+.db-invoice-completion-message{
+  min-height:30px;
+  padding:18px 12px 8px;
+  text-align:center;
+  font-size:13px;
+}
+.db-invoice-completion-actions{
+  display:flex;
+  justify-content:center;
+  padding:8px 12px 12px;
+}
+.db-invoice-completion-okay{
+  min-width:70px;
+  height:24px;
+  border:2px outset #fff;
+  border-radius:0;
+  background:#eee;
+  color:#000;
+  font:12px Arial, Helvetica, sans-serif;
+  cursor:pointer;
+}
 #db-customer-design-numbers-table th:nth-child(2){width:74px}
 #db-customer-design-numbers-table th:nth-child(3){width:var(--db-design-number-column-width, 120px)}
 #db-customer-design-numbers-table th:nth-child(4){width:var(--db-psg-stitch-column-width, 150px)}
@@ -4661,6 +4720,18 @@ body.modal-open{overflow:hidden}
 .db-invoice-number-button{
   color:#00e;
   text-decoration:underline;
+}
+.db-customer-latest-order-button{
+  width:100%;
+  min-width:0;
+  padding:0;
+  border:0;
+  background:transparent;
+  color:inherit;
+  font:inherit;
+  text-align:left;
+  text-decoration:inherit;
+  cursor:pointer;
 }
 .db-invoice-number-button{
   width:100%;
@@ -6013,6 +6084,29 @@ body.modal-open{overflow:hidden}
 #db-customer-design-numbers-panel .db-customer-table-frame{
   overflow-y:auto;
   overflow-x:hidden;
+}
+#db-customer-orders-panel.active{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+#db-customer-orders-panel .db-customer-table-frame{
+  height:auto;
+  min-height:0;
+  flex:1 1 auto;
+}
+.db-customer-orders-search{
+  flex:0 0 24px;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  font:12px Arial, Helvetica, sans-serif;
+}
+.db-customer-orders-search input{
+  width:280px;
+  height:22px;
+  appearance:none;
 }
 #db-customer-orders-panel .db-customer-gray-fill,
 #db-customer-design-numbers-panel .db-customer-gray-fill{
@@ -7733,6 +7827,13 @@ input.db-custom-line-input{
     height:340px;
     overflow:auto;
   }
+  .db-customer-orders-search{
+    flex-basis:auto;
+  }
+  .db-customer-orders-search input{
+    width:min(280px, 66vw);
+    height:30px;
+  }
   #db-customer-orders-panel .db-customer-table-frame,
   #db-customer-design-numbers-panel .db-customer-table-frame{
     overflow:auto;
@@ -8163,6 +8264,17 @@ input.db-custom-line-input{
   }
   .db-customer-panel{
     min-height:0;
+  }
+  #db-customer-orders-panel.active{
+    display:flex;
+  }
+  .db-customer-orders-search{
+    width:100%;
+    display:grid;
+    grid-template-columns:auto minmax(0, 1fr);
+  }
+  .db-customer-orders-search input{
+    width:100%;
   }
   .db-contact-cards-scroll{
     height:auto;
