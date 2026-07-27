@@ -1216,9 +1216,10 @@ function buildMobileJobTitleColumnWidth(items) {
 
 function getDashboardItemJobTitle(item) {
   const databaseTitle = normalizeCellText(item?.database_job?.job_title || '');
-  if (databaseTitle) return databaseTitle;
-  if (item?.dashboard_private_job) return normalizeCellText(item?.name || '');
-  return normalizeCellText(parseTitle(item?.name || '').jobTitle || item?.name || '');
+  const rawTitle = databaseTitle || (item?.dashboard_private_job
+    ? normalizeCellText(item?.name || '')
+    : normalizeCellText(parseTitle(item?.name || '').jobTitle || item?.name || ''));
+  return hideDashboardCustomerNameFromJobTitle(rawTitle, getDashboardItemCustomerName(item));
 }
 
 function getDashboardItemCustomerName(item) {
@@ -1226,6 +1227,30 @@ function getDashboardItemCustomerName(item) {
   if (databaseCustomer) return databaseCustomer;
   if (item?.dashboard_private_job) return '';
   return normalizeCellText(parseTitle(item?.name || '').customerName || '');
+}
+
+function hideDashboardCustomerNameFromJobTitle(jobTitle, customerName) {
+  const normalizedTitle = normalizeCellText(jobTitle);
+  const normalizedCustomer = normalizeCellText(customerName);
+  if (!normalizedTitle || !normalizedCustomer) return normalizedTitle;
+
+  const escapedCustomer = normalizedCustomer
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\s+/g, '\\s+');
+  const exactCustomerPattern = new RegExp(
+    `(^|[^\\p{L}\\p{N}'’])${escapedCustomer}(?=$|[^\\p{L}\\p{N}'’])`,
+    'giu'
+  );
+  const displayTitle = normalizedTitle
+    .replace(exactCustomerPattern, (_match, leadingBoundary) => leadingBoundary)
+    .replace(/\(\s*\)|\[\s*\]|\{\s*\}/g, ' ')
+    .replace(/(?:\s*[-–—|/]\s*){2,}/g, ' - ')
+    .replace(/([,;:])(?:\s*[,;:])+/g, '$1');
+
+  return normalizeCellText(displayTitle)
+    .replace(/^(?:[-–—,:;|/]\s*)+/, '')
+    .replace(/(?:\s*[-–—,:;|/])+$/, '')
+    .trim();
 }
 
 function buildGroupSummaryTitleWidth(groups) {
@@ -1707,8 +1732,8 @@ function renderTestDashboardMobileJobOverview(payload = window.__latestTestBoard
   const parsedTitle = parseTitle(item.name || '');
   const databaseJob = item.database_job || {};
   const orderNumber = normalizeCellText(databaseJob.order_no || parsedTitle.orderNumber || '');
-  const customerName = normalizeCellText(databaseJob.customer_name || parsedTitle.customerName || '');
-  const jobTitle = normalizeCellText(databaseJob.job_title || parsedTitle.jobTitle || item.name || '');
+  const customerName = getDashboardItemCustomerName(item);
+  const jobTitle = getDashboardItemJobTitle(item);
   const designColumn = findBoardColumnByIdOrCompactTitle(
     board,
     TEST_DASHBOARD_CLIENT_COLUMN_IDS.DESIGN,

@@ -171,6 +171,54 @@ test('dashboard job title and customer eyebrow use explicit database values with
   assert.equal(values.title, 'Actual job title');
 });
 
+test('dashboard hides exact customer-name matches from job titles without changing partial matches', () => {
+  const sandbox = loadDashboardFrontend();
+  const values = vm.runInContext(`
+    (() => ({
+      prefixed: getDashboardItemJobTitle({
+        database_job: {
+          customer_name: 'The Grove',
+          job_title: 'The Grove Uniform'
+        }
+      }),
+      caseInsensitive: getDashboardItemJobTitle({
+        database_job: {
+          customer_name: 'The Grove',
+          job_title: 'Summer - THE GROVE - Uniform'
+        }
+      }),
+      fallback: getDashboardItemJobTitle({
+        name: '51179 - The Grove - the grove Uniform'
+      }),
+      regexCharacters: getDashboardItemJobTitle({
+        database_job: {
+          customer_name: 'A+B (UK)',
+          job_title: 'A+B (UK) Uniform'
+        }
+      }),
+      partialWord: getDashboardItemJobTitle({
+        database_job: {
+          customer_name: 'The Grove',
+          job_title: 'The Groves Uniform'
+        }
+      }),
+      possessive: getDashboardItemJobTitle({
+        database_job: {
+          customer_name: 'The Grove',
+          job_title: "The Grove's Uniform"
+        }
+      })
+    }))()
+  `, sandbox);
+
+  assert.equal(values.prefixed, 'Uniform');
+  assert.equal(values.caseInsensitive, 'Summer - Uniform');
+  assert.equal(values.fallback, 'Uniform');
+  assert.equal(values.regexCharacters, 'Uniform');
+  assert.equal(values.partialWord, 'The Groves Uniform');
+  assert.equal(values.possessive, "The Grove's Uniform");
+});
+
 test('dashboard customer eyebrow is smaller and inherits the group accent', () => {
   const styles = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
 
