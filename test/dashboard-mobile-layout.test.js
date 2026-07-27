@@ -181,6 +181,12 @@ test('dashboard hides exact customer-name matches from job titles without changi
           job_title: 'The Grove Uniform'
         }
       }),
+      adjacentHyphen: getDashboardItemJobTitle({
+        database_job: {
+          customer_name: 'Grant J Bates',
+          job_title: 'Grant J Bates - Cotton Shoppers'
+        }
+      }),
       caseInsensitive: getDashboardItemJobTitle({
         database_job: {
           customer_name: 'The Grove',
@@ -212,6 +218,7 @@ test('dashboard hides exact customer-name matches from job titles without changi
   `, sandbox);
 
   assert.equal(values.prefixed, 'Uniform');
+  assert.equal(values.adjacentHyphen, 'Cotton Shoppers');
   assert.equal(values.caseInsensitive, 'Summer - Uniform');
   assert.equal(values.fallback, 'Uniform');
   assert.equal(values.regexCharacters, 'Uniform');
