@@ -287,6 +287,71 @@ test('dashboard customer eyebrow is smaller and inherits the group accent', () =
   assert.match(styles, /\.job-title,\s*\.subitem-title\s*\{[^}]*font-size:14px/s);
 });
 
+test('overflowing dashboard job titles scroll to their final letter on hover and snap back', () => {
+  const sandbox = loadDashboardFrontend();
+  const result = vm.runInContext(`
+    (() => {
+      let nextFrame = null;
+      let frameRequests = 0;
+      const classes = new Set();
+      window.performance = { now: () => 100 };
+      window.requestAnimationFrame = (callback) => {
+        nextFrame = callback;
+        frameRequests += 1;
+        return frameRequests;
+      };
+      window.cancelAnimationFrame = () => {};
+      const title = {
+        scrollWidth: 320,
+        clientWidth: 120,
+        scrollLeft: 0,
+        isConnected: true,
+        classList: {
+          add(value) { classes.add(value); },
+          remove(value) { classes.delete(value); }
+        }
+      };
+
+      startDashboardJobTitleHoverScroll(title);
+      const started = classes.has('dashboard-job-title-scrolling');
+      nextFrame(20000);
+      const stoppedAt = title.scrollLeft;
+      stopDashboardJobTitleHoverScroll(title);
+
+      const shortTitle = {
+        scrollWidth: 120,
+        clientWidth: 120,
+        scrollLeft: 0,
+        isConnected: true,
+        classList: {
+          add(value) { classes.add(value); },
+          remove(value) { classes.delete(value); }
+        }
+      };
+      const framesBeforeShortTitle = frameRequests;
+      startDashboardJobTitleHoverScroll(shortTitle);
+
+      return {
+        started,
+        stoppedAt,
+        snappedBackTo: title.scrollLeft,
+        activeAfterLeave: classes.has('dashboard-job-title-scrolling'),
+        shortTitleAnimated: frameRequests !== framesBeforeShortTitle
+      };
+    })()
+  `, sandbox);
+  const script = fs.readFileSync(path.join(__dirname, '..', 'public', 'script.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
+
+  assert.equal(result.started, true);
+  assert.equal(result.stoppedAt, 200);
+  assert.equal(result.snappedBackTo, 0);
+  assert.equal(result.activeAfterLeave, false);
+  assert.equal(result.shortTitleAnimated, false);
+  assert.match(script, /enableDashboardJobTitleHoverScroll\(titleSpan\)/);
+  assert.match(styles, /\.job-title\.dashboard-job-title-scrolling\s*\{[^}]*text-overflow:clip/s);
+});
+
 test('dashboard job numbers use the DATABASE light-blue colour', () => {
   const styles = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
 

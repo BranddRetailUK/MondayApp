@@ -120,6 +120,7 @@ let __testMobileJobOverviewState = null;
 let __testPrivateNameEditInFlight = 0;
 let __pendingPrivateJobFocusId = '';
 const __testGroupKeysToOpen = new Set();
+const __dashboardJobTitleScrollAnimations = new WeakMap();
 let __proofModalState = {
   files: [],
   fileIndex: 0,
@@ -1666,6 +1667,9 @@ function buildNameCell(item, initiallyOpen = false, { context = BOARD_CONTEXT_TE
   } else {
     titleSpan.textContent = item.name || '';
   }
+  if (!(context === BOARD_CONTEXT_TEST && item?.dashboard_private_job)) {
+    enableDashboardJobTitleHoverScroll(titleSpan);
+  }
   titleCopy.appendChild(titleSpan);
   titleWrap.appendChild(titleCopy);
   if (context === BOARD_CONTEXT_TEST && item?.dashboard_split_job) {
@@ -1677,6 +1681,55 @@ function buildNameCell(item, initiallyOpen = false, { context = BOARD_CONTEXT_TE
 
   cell.appendChild(titleWrap);
   return cell;
+}
+
+function enableDashboardJobTitleHoverScroll(titleElement) {
+  titleElement.addEventListener('mouseenter', () => {
+    startDashboardJobTitleHoverScroll(titleElement);
+  });
+  titleElement.addEventListener('mouseleave', () => {
+    stopDashboardJobTitleHoverScroll(titleElement);
+  });
+}
+
+function startDashboardJobTitleHoverScroll(titleElement) {
+  stopDashboardJobTitleHoverScroll(titleElement);
+  const maxScroll = Math.ceil(titleElement.scrollWidth - titleElement.clientWidth);
+  if (maxScroll <= 1) return;
+
+  titleElement.classList.add('dashboard-job-title-scrolling');
+  const delayMs = 250;
+  const durationMs = Math.max(1600, Math.min(8000, maxScroll * 30));
+  const startAt = window.performance.now() + delayMs;
+  const animation = { frame: 0 };
+
+  const tick = (now) => {
+    if (!titleElement.isConnected) {
+      __dashboardJobTitleScrollAnimations.delete(titleElement);
+      return;
+    }
+    if (now < startAt) {
+      animation.frame = window.requestAnimationFrame(tick);
+      return;
+    }
+
+    const progress = Math.min((now - startAt) / durationMs, 1);
+    titleElement.scrollLeft = Math.round(maxScroll * progress);
+    if (progress < 1) {
+      animation.frame = window.requestAnimationFrame(tick);
+    }
+  };
+
+  animation.frame = window.requestAnimationFrame(tick);
+  __dashboardJobTitleScrollAnimations.set(titleElement, animation);
+}
+
+function stopDashboardJobTitleHoverScroll(titleElement) {
+  const animation = __dashboardJobTitleScrollAnimations.get(titleElement);
+  if (animation) window.cancelAnimationFrame(animation.frame);
+  __dashboardJobTitleScrollAnimations.delete(titleElement);
+  titleElement.classList.remove('dashboard-job-title-scrolling');
+  titleElement.scrollLeft = 0;
 }
 
 function buildTestRowMenuButton(item) {

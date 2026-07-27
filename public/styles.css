@@ -1094,6 +1094,9 @@ body{
   width:100%;
   font-weight:700;
 }
+.job-title.dashboard-job-title-scrolling{
+  text-overflow:clip;
+}
 .dashboard-split-job-pill{
   flex:0 0 auto;
   display:inline-flex;
