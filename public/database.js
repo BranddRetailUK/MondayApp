@@ -14,6 +14,9 @@
   const DATABASE_PROOF_ZOOM_MIN = 0.75;
   const DATABASE_PROOF_ZOOM_MAX = 4;
   const DATABASE_PROOF_ZOOM_STEP = 0.25;
+  const DATABASE_VISUAL_UPLOAD_ACCEPT = '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png';
+  const DATABASE_VISUAL_UPLOAD_ERROR = 'The VISUAL tab only accepts PDF, JPEG, and PNG files.';
+  const DATABASE_VISUAL_PROOF_COLUMN_ID = 'file_mky43tg9';
   const DATABASE_VISUAL_PAGE_LIMIT = 30;
   const DATABASE_VISUAL_SEARCH_DELAY = 260;
   const DATABASE_CUSTOMER_SORTS = new Set(['recent', 'active', 'az', 'za']);
@@ -219,6 +222,7 @@
     activeVisual: null,
     visualAttachSaving: false,
     visualAttachedJobIds: new Set(),
+    visualModalAllowsAttach: false,
     orderLoadToken: 0,
     orderLoadComplete: false,
     orderSearchQuery: '',
@@ -267,6 +271,7 @@
     selectedLineItems: [],
     selectedPositions: [],
     selectedProofFiles: [],
+    proofUploads: new Map(),
     proofViewer: {
       fileIndex: 0,
       pageNumber: 1,
@@ -490,6 +495,7 @@
       itemsPanel: document.getElementById('db-order-items-panel'),
       designPanel: document.getElementById('db-order-design-panel'),
       proofPanel: document.getElementById('db-order-proof-panel'),
+      proofUploadInput: document.getElementById('db-order-proof-upload-input'),
       newOrderForm: document.getElementById('db-new-order-form'),
       newOrderAccept: document.getElementById('db-new-order-accept'),
       newOrderCancel: document.getElementById('db-new-order-cancel'),
@@ -614,6 +620,8 @@
     els.proofPanel?.addEventListener('touchmove', handleDatabaseProofTouchMove, { passive: false });
     els.proofPanel?.addEventListener('touchend', handleDatabaseProofTouchEnd, { passive: false });
     els.proofPanel?.addEventListener('touchcancel', handleDatabaseProofTouchEnd, { passive: false });
+    els.proofPanel?.addEventListener('error', handleDatabaseVisualThumbnailError, true);
+    els.proofUploadInput?.addEventListener('change', handleDatabaseProofUploadSelection);
     document.addEventListener('pointermove', handleLineDragPointerMove);
     document.addEventListener('pointerup', handleLineDragPointerUp);
     document.addEventListener('pointercancel', handleLineDragPointerUp);
@@ -798,6 +806,12 @@
       return;
     }
 
+    const giftVisualIndex = button.dataset.dbGiftVisualOpen;
+    if (giftVisualIndex !== undefined) {
+      openBusinessGiftVisualModal(giftVisualIndex, button);
+      return;
+    }
+
     const visualId = button.dataset.dbVisualOpen;
     if (visualId) {
       openDatabaseVisualModal(visualId, button);
@@ -867,6 +881,11 @@
     if (button.id === 'db-home-button') {
       await flushOrderAutosaves();
       goBackDatabaseView();
+      return;
+    }
+
+    if (button.dataset.dbProofUpload !== undefined) {
+      openDatabaseProofUploadPicker();
       return;
     }
 
@@ -1607,7 +1626,7 @@
     }
   }
 
-  function renderDatabaseVisualCard(visual) {
+  function renderDatabaseVisualCard(visual, options = {}) {
     const thumbnailUrl = databaseVisualThumbnailUrl(visual);
     const isPdf = isDatabasePdfFile(visual);
     const orderNumber = visual.order_no || visual.source_order_id || '';
@@ -1615,13 +1634,15 @@
     const design = visual.design_numbers || 'No design number';
     const name = visual.name || 'Visual';
     const aria = `Open ${name} from job ${orderNumber}`;
+    const openAttribute = options.openAttribute || 'data-db-visual-open';
+    const openValue = options.openValue ?? visual.id;
 
     return `
       <button
         class="db-visual-card"
         type="button"
         role="listitem"
-        data-db-visual-open="${escapeAttr(visual.id)}"
+        ${openAttribute}="${escapeAttr(openValue)}"
         aria-label="${escapeAttr(aria)}"
       >
         <span class="db-visual-card-preview${thumbnailUrl ? '' : ' is-unavailable'}">
@@ -1712,9 +1733,25 @@
     const id = Number(visualId);
     const visual = state.visuals.find((item) => Number(item.id) === id);
     if (!visual || !els.visualModal || !els.visualModalViewer) return;
+    openDatabaseVisualPreviewModal(visual, opener, { allowAttach: true });
+  }
 
+  function openBusinessGiftVisualModal(fileIndex, opener = null) {
+    if (!isBusinessGiftOrder(state.selectedJob)) return;
+    const index = Number.parseInt(fileIndex, 10);
+    const file = state.selectedProofFiles[index];
+    if (!file) return;
+    openDatabaseVisualPreviewModal(businessGiftVisualFromFile(file), opener, {
+      allowAttach: false,
+    });
+  }
+
+  function openDatabaseVisualPreviewModal(visual, opener = null, options = {}) {
+    if (!visual || !els.visualModal || !els.visualModalViewer) return;
+    const allowAttach = options.allowAttach === true;
     state.activeVisual = visual;
     state.visualAttachedJobIds = new Set();
+    state.visualModalAllowsAttach = allowAttach;
     visualModalOpener = opener;
     if (els.visualModalTitle) els.visualModalTitle.textContent = visual.name || 'Visual preview';
     if (els.visualModalMeta) {
@@ -1724,6 +1761,9 @@
       els.visualModalMeta.textContent = meta.join(' · ');
     }
     setDatabaseVisualModalFeedback();
+    const jobControl = els.visualModalJob?.closest('.db-visual-modal-job-control');
+    if (jobControl) jobControl.hidden = !allowAttach;
+    if (els.visualModalFeedback) els.visualModalFeedback.hidden = !allowAttach;
 
     els.visualModalViewer.replaceChildren();
     const src = buildDatabaseAssetSrc(visual);
@@ -1742,9 +1782,12 @@
 
     els.visualModal.hidden = false;
     els.visualModal.setAttribute('aria-hidden', 'false');
+    els.visualModal.classList.toggle('is-preview-only', !allowAttach);
     document.body.classList.add('modal-open', 'db-visual-modal-open');
-    renderDatabaseVisualJobOptions({ loading: true });
-    ensureDatabaseVisualOpenJobs({ force: true });
+    if (allowAttach) {
+      renderDatabaseVisualJobOptions({ loading: true });
+      ensureDatabaseVisualOpenJobs({ force: true });
+    }
     els.visualModalClose?.focus({ preventScroll: true });
   }
 
@@ -1861,7 +1904,12 @@
   }
 
   async function attachActiveDatabaseVisual() {
-    if (!els.visualModalJob || state.visualAttachSaving || !state.activeVisual) return;
+    if (
+      !state.visualModalAllowsAttach
+      || !els.visualModalJob
+      || state.visualAttachSaving
+      || !state.activeVisual
+    ) return;
     const targetId = Number(els.visualModalJob.value);
     if (!Number.isFinite(targetId)) return;
     const job = state.visualOpenJobs.find((item) => Number(item.source_order_id) === targetId);
@@ -1923,8 +1971,10 @@
     els.visualModal.hidden = true;
     els.visualModal.setAttribute('aria-hidden', 'true');
     els.visualModalViewer?.replaceChildren();
+    els.visualModal.classList.remove('is-preview-only');
     document.body.classList.remove('modal-open', 'db-visual-modal-open');
     state.activeVisual = null;
+    state.visualModalAllowsAttach = false;
     const opener = visualModalOpener;
     visualModalOpener = null;
     opener?.focus({ preventScroll: true });
@@ -7019,12 +7069,52 @@
     if (!els.proofPanel) return;
     const files = state.selectedProofFiles || [];
     const viewer = state.proofViewer || {};
+    const upload = currentDatabaseProofUpload();
     const fileIndex = clampNumber(viewer.fileIndex, 0, Math.max(0, files.length - 1));
     const currentFile = files[fileIndex];
     const hasMultiple = files.length > 1;
     const fileCount = files.length ? `${fileIndex + 1} of ${files.length}` : '';
+    const uploadButton = renderDatabaseProofUploadButton(upload);
+    const uploadMessage = renderDatabaseProofUploadMessage(upload);
+
+    if (!files.length) {
+      els.proofPanel.innerHTML = `
+        <div class="db-proof-empty">
+          <div class="db-proof-empty-actions">
+            ${uploadButton}
+            ${uploadMessage}
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    if (isBusinessGiftOrder(state.selectedJob)) {
+      els.proofPanel.innerHTML = `
+        <div class="db-proof-upload-row">
+          ${uploadMessage}
+          ${uploadButton}
+        </div>
+        <div class="db-gift-proof-grid-shell">
+          <div class="db-visuals-grid db-gift-proof-grid" role="list">
+            ${files.map((file, index) => renderDatabaseVisualCard(
+              businessGiftVisualFromFile(file),
+              {
+                openAttribute: 'data-db-gift-visual-open',
+                openValue: index,
+              }
+            )).join('')}
+          </div>
+        </div>
+      `;
+      return;
+    }
 
     els.proofPanel.innerHTML = `
+      <div class="db-proof-upload-row">
+        ${uploadMessage}
+        ${uploadButton}
+      </div>
       <div class="db-proof-layout">
         <button class="db-proof-file-arrow db-proof-file-arrow-left" type="button" data-db-proof-file="-1" aria-label="Previous proof file" ${hasMultiple ? '' : 'hidden'} ${fileIndex <= 0 ? 'disabled' : ''}>‹</button>
         <div class="db-proof-frame">
@@ -7056,6 +7146,249 @@
     `;
 
     if (state.activeOrderTab === 'proof') queueRenderDatabaseProofFile();
+  }
+
+  function businessGiftVisualFromFile(file) {
+    const job = state.selectedJob || {};
+    const designNumbers = unique(
+      (state.selectedPositions || [])
+        .map((position) => String(position?.design_ref || '').trim())
+        .filter(Boolean)
+    ).join(' / ');
+    return {
+      ...file,
+      order_no: job.order_no,
+      source_order_id: job.source_order_id,
+      customer_name: job.customer_name || '',
+      job_title: job.job_title || '',
+      design_numbers: designNumbers,
+    };
+  }
+
+  function renderDatabaseProofUploadButton(upload) {
+    const inFlight = upload?.inFlight === true;
+    const label = inFlight
+      ? `Uploading ${Math.max(1, upload.current || 1)} of ${Math.max(1, upload.total || 1)}…`
+      : 'Upload Files';
+    return `
+      <button
+        class="db-toolbar-button db-blue-link db-proof-upload-button"
+        type="button"
+        data-db-proof-upload
+        ${inFlight ? 'disabled' : ''}
+      >${escapeHtml(label)}</button>
+    `;
+  }
+
+  function renderDatabaseProofUploadMessage(upload) {
+    const message = upload?.error || upload?.message || '';
+    if (!message) return '<span class="db-proof-upload-message" role="status" aria-live="polite"></span>';
+    return `
+      <span
+        class="db-proof-upload-message${upload?.error ? ' is-error' : ' is-success'}"
+        role="status"
+        aria-live="polite"
+      >${escapeHtml(message)}</span>
+    `;
+  }
+
+  function currentDatabaseProofUpload() {
+    return databaseProofUploadForJob(state.selectedJob?.source_order_id);
+  }
+
+  function databaseProofUploadForJob(sourceOrderId, options = {}) {
+    const key = String(sourceOrderId || '');
+    if (!key) return null;
+    let upload = state.proofUploads.get(key);
+    if (!upload && options.create) {
+      upload = {
+        inFlight: false,
+        current: 0,
+        total: 0,
+        message: '',
+        error: '',
+      };
+      state.proofUploads.set(key, upload);
+    }
+    return upload || null;
+  }
+
+  function openDatabaseProofUploadPicker() {
+    const sourceOrderId = Number(state.selectedJob?.source_order_id);
+    const upload = databaseProofUploadForJob(sourceOrderId);
+    if (!Number.isFinite(sourceOrderId) || upload?.inFlight || !els.proofUploadInput) return;
+    els.proofUploadInput.accept = DATABASE_VISUAL_UPLOAD_ACCEPT;
+    els.proofUploadInput.value = '';
+    els.proofUploadInput.click();
+  }
+
+  async function handleDatabaseProofUploadSelection(event) {
+    const files = Array.from(event.target?.files || []).filter(Boolean);
+    if (event.target) event.target.value = '';
+    if (!files.length) return;
+
+    const sourceOrderId = Number(state.selectedJob?.source_order_id);
+    if (!Number.isFinite(sourceOrderId)) return;
+    const unsupported = files.filter((file) => !isAllowedDatabaseVisualUpload(file));
+    const upload = databaseProofUploadForJob(sourceOrderId, { create: true });
+    if (unsupported.length) {
+      upload.error = DATABASE_VISUAL_UPLOAD_ERROR;
+      upload.message = '';
+      syncDatabaseProofUploadUi(sourceOrderId);
+      return;
+    }
+
+    upload.inFlight = true;
+    upload.current = 1;
+    upload.total = files.length;
+    upload.message = '';
+    upload.error = '';
+    syncDatabaseProofUploadUi(sourceOrderId);
+
+    const savedFiles = [];
+    const failures = [];
+    for (let index = 0; index < files.length; index += 1) {
+      upload.current = index + 1;
+      syncDatabaseProofUploadUi(sourceOrderId);
+      try {
+        const saved = await uploadDatabaseProofFile(sourceOrderId, files[index]);
+        if (saved) savedFiles.push(saved);
+      } catch (err) {
+        console.warn('DATABASE visual upload failed', err);
+        failures.push(`${files[index].name || 'File'}: ${err.message || 'Upload failed'}`);
+      }
+    }
+
+    upload.inFlight = false;
+    upload.current = 0;
+    upload.total = 0;
+    upload.message = savedFiles.length
+      ? `${savedFiles.length} ${savedFiles.length === 1 ? 'file' : 'files'} uploaded`
+      : '';
+    const failureMessage = failures.length
+      ? `${failures.length} ${failures.length === 1 ? 'file failed' : 'files failed'}: ${failures.join(' · ')}`
+      : '';
+    upload.error = failureMessage
+      ? [upload.message, failureMessage].filter(Boolean).join(' · ')
+      : '';
+
+    if (
+      savedFiles.length
+      && Number(state.selectedJob?.source_order_id) === sourceOrderId
+    ) {
+      const firstNewFileIndex = state.selectedProofFiles.length;
+      state.selectedProofFiles = [...state.selectedProofFiles, ...savedFiles];
+      state.proofViewer.fileIndex = firstNewFileIndex;
+      state.proofViewer.pageNumber = 1;
+      state.proofViewer.pageCount = 1;
+      state.proofViewer.pdf = null;
+      state.proofViewer.pdfZoom = 1;
+      state.proofViewer.pdfPinch = null;
+      state.proofViewer.renderToken += 1;
+      renderProofPanel();
+      queueRenderDatabaseProofFile();
+      return;
+    }
+
+    syncDatabaseProofUploadUi(sourceOrderId);
+  }
+
+  function isAllowedDatabaseVisualUpload(file) {
+    return /\.(pdf|jpe?g|png)$/i.test(String(file?.name || '').trim());
+  }
+
+  async function uploadDatabaseProofFile(sourceOrderId, file) {
+    const signature = await fetchJson('/api/test-dashboard/uploads/signature', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jobId: sourceOrderId,
+        columnId: DATABASE_VISUAL_PROOF_COLUMN_ID,
+        filename: file.name || 'file',
+      }),
+    });
+    if (!signature?.uploadUrl || !signature?.signature || !signature?.apiKey) {
+      throw new Error('Upload signature response was incomplete');
+    }
+
+    const form = new FormData();
+    form.append('file', file);
+    form.append('api_key', signature.apiKey);
+    form.append('timestamp', signature.timestamp);
+    form.append('signature', signature.signature);
+    form.append('folder', signature.folder);
+    form.append('public_id', signature.publicId);
+    if (signature.format) form.append('format', signature.format);
+
+    const uploadResponse = await fetch(signature.uploadUrl, {
+      method: 'POST',
+      body: form,
+    });
+    const uploadJson = await uploadResponse.json().catch(() => ({}));
+    if (!uploadResponse.ok) {
+      throw new Error(databaseCloudinaryUploadError(uploadJson?.error?.message, uploadResponse.status));
+    }
+
+    const originalFilename = file.name || uploadJson.original_filename || uploadJson.public_id || 'file';
+    const uploadedFile = normalizeDatabaseProofFiles([{
+      name: originalFilename,
+      url: uploadJson.secure_url,
+      secure_url: uploadJson.secure_url,
+      format: uploadJson.format,
+      resource_type: uploadJson.resource_type,
+    }])[0];
+    const secureUrl = isDatabasePdfFile(uploadedFile)
+      ? buildDatabaseAssetSrc(uploadedFile)
+      : uploadJson.secure_url;
+    const savedFormat = /\.pdf$/i.test(originalFilename) ? 'pdf' : uploadJson.format;
+    const saved = await fetchJson(`/api/test-dashboard/items/${encodeURIComponent(sourceOrderId)}/files`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        columnId: DATABASE_VISUAL_PROOF_COLUMN_ID,
+        publicId: uploadJson.public_id,
+        secureUrl,
+        resourceType: uploadJson.resource_type,
+        format: savedFormat,
+        originalFilename,
+        bytes: uploadJson.bytes || file.size || null,
+        width: uploadJson.width || null,
+        height: uploadJson.height || null,
+        metadata: {
+          upload_source: 'database_order_visual_tab',
+          column_title: 'PROOF',
+        },
+      }),
+    });
+    return normalizeDatabaseProofFiles([saved.file])[0] || null;
+  }
+
+  function databaseCloudinaryUploadError(message, status) {
+    const clean = String(message || '').trim();
+    if (/invalid cloud_name|cloud_name mismatch/i.test(clean)) {
+      return 'Cloudinary cloud name/API key mismatch. Check the configured Cloudinary product environment.';
+    }
+    return clean || `Cloudinary upload failed (${status})`;
+  }
+
+  function syncDatabaseProofUploadUi(sourceOrderId) {
+    if (Number(state.selectedJob?.source_order_id) !== Number(sourceOrderId)) return;
+    const upload = databaseProofUploadForJob(sourceOrderId);
+    const button = els.proofPanel?.querySelector('[data-db-proof-upload]');
+    const message = els.proofPanel?.querySelector('.db-proof-upload-message');
+    if (!button || !message) {
+      renderProofPanel();
+      return;
+    }
+
+    const inFlight = upload?.inFlight === true;
+    button.disabled = inFlight;
+    button.textContent = inFlight
+      ? `Uploading ${Math.max(1, upload.current || 1)} of ${Math.max(1, upload.total || 1)}…`
+      : 'Upload Files';
+    message.classList.toggle('is-error', Boolean(upload?.error));
+    message.classList.toggle('is-success', !upload?.error && Boolean(upload?.message));
+    message.textContent = upload?.error || upload?.message || '';
   }
 
   function normalizeDatabaseProofFiles(files) {
@@ -7100,11 +7433,13 @@
   }
 
   function queueRenderDatabaseProofFile() {
+    if (isBusinessGiftOrder(state.selectedJob)) return;
     if (!els.proofPanel?.classList.contains('active')) return;
     window.requestAnimationFrame(() => renderDatabaseProofFile());
   }
 
   async function renderDatabaseProofFile() {
+    if (isBusinessGiftOrder(state.selectedJob)) return;
     if (!els.proofPanel?.classList.contains('active')) return;
     const files = state.selectedProofFiles || [];
     const viewer = state.proofViewer;

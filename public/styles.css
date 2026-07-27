@@ -4243,6 +4243,10 @@ body.modal-open{overflow:hidden}
   color:#111;
   font-weight:400;
 }
+.db-visual-modal-job-control[hidden],
+.db-visual-modal-feedback[hidden]{
+  display:none;
+}
 .db-visual-modal-close{
   position:absolute;
   top:20px;
@@ -5879,6 +5883,64 @@ body.modal-open{overflow:hidden}
   gap:8px;
   padding:14px 16px;
   background:#92cdea;
+}
+.db-proof-upload-row{
+  min-height:47px;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:10px;
+  padding:10px 16px 0;
+  background:#92cdea;
+}
+.db-proof-upload-button{
+  flex:0 0 auto;
+  min-width:112px;
+  height:31px;
+  font-weight:700;
+}
+.db-proof-upload-button:disabled{
+  color:#777;
+  cursor:not-allowed;
+}
+.db-proof-upload-message{
+  min-width:0;
+  color:#263746;
+  font:700 11px Arial, Helvetica, sans-serif;
+  text-align:right;
+}
+.db-proof-upload-message.is-success{
+  color:#146c2e;
+}
+.db-proof-upload-message.is-error{
+  color:#9d1010;
+}
+.db-proof-empty{
+  height:clamp(620px, calc(100vh - 260px), 900px);
+  min-height:447px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+  background:#92cdea;
+}
+.db-proof-empty-actions{
+  max-width:520px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:10px;
+}
+.db-proof-empty .db-proof-upload-message{
+  text-align:center;
+}
+.db-gift-proof-grid-shell{
+  height:clamp(620px, calc(100vh - 305px), 860px);
+  overflow:auto;
+  padding:14px 16px 20px;
+  border-top:1px solid rgba(255, 255, 255, .75);
+  background:#c5dceb;
+  scrollbar-gutter:stable;
 }
 .db-proof-frame{
   min-width:0;
@@ -8509,6 +8571,37 @@ input.db-custom-line-input{
     grid-template-columns:1fr 1fr;
     gap:8px;
     padding:8px 0 0;
+  }
+  .db-proof-upload-row{
+    min-height:0;
+    align-items:stretch;
+    flex-direction:column-reverse;
+    padding:8px 0 0;
+  }
+  .db-proof-upload-button{
+    align-self:flex-end;
+    min-width:132px;
+    min-height:44px;
+  }
+  .db-proof-upload-message{
+    text-align:right;
+  }
+  .db-proof-empty{
+    height:min(72dvh, 680px);
+    min-height:360px;
+    padding:16px;
+    border-radius:8px;
+  }
+  .db-proof-empty .db-proof-upload-button{
+    align-self:center;
+  }
+  .db-gift-proof-grid-shell{
+    height:auto;
+    min-height:360px;
+    overflow:visible;
+    padding:8px 0 16px;
+    border-top:0;
+    background:transparent;
   }
   .db-proof-frame{
     grid-column:1 / -1;

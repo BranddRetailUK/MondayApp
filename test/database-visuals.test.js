@@ -248,6 +248,45 @@ test('DATABASE Visuals UI uses active navigation, five/two-column grids, lazy pr
   assert.match(styles, /\.db-visual-modal-job-control option\s*\{/);
 });
 
+test('order VISUAL tab uploads multiple supported files through the shared dashboard proof path', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+  const script = fs.readFileSync(path.join(__dirname, '..', 'public', 'database.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
+
+  assert.match(
+    html,
+    /id="db-order-proof-upload-input"[\s\S]*accept="\.pdf,\.jpg,\.jpeg,\.png,application\/pdf,image\/jpeg,image\/png"[\s\S]*multiple/
+  );
+  assert.match(script, /data-db-proof-upload/);
+  assert.match(script, /'\/api\/test-dashboard\/uploads\/signature'/);
+  assert.match(script, /`\/api\/test-dashboard\/items\/\$\{encodeURIComponent\(sourceOrderId\)\}\/files`/);
+  assert.match(script, /columnId:\s*DATABASE_VISUAL_PROOF_COLUMN_ID/);
+  assert.match(script, /upload_source:\s*'database_order_visual_tab'/);
+  assert.match(script, /for \(let index = 0; index < files\.length; index \+= 1\)/);
+  assert.match(styles, /\.db-proof-empty\s*\{[\s\S]*align-items:center;[\s\S]*justify-content:center;/);
+  assert.match(styles, /\.db-proof-upload-row\s*\{[\s\S]*justify-content:flex-end;/);
+});
+
+test('Business Gifts order VISUAL tab uses the gallery grid and preview-only modal', () => {
+  const script = fs.readFileSync(path.join(__dirname, '..', 'public', 'database.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
+
+  assert.match(
+    script,
+    /if \(isBusinessGiftOrder\(state\.selectedJob\)\) \{[\s\S]*class="db-visuals-grid db-gift-proof-grid"/
+  );
+  assert.match(script, /openAttribute:\s*'data-db-gift-visual-open'/);
+  assert.match(script, /openBusinessGiftVisualModal\(giftVisualIndex, button\)/);
+  assert.match(
+    script,
+    /openDatabaseVisualPreviewModal\(businessGiftVisualFromFile\(file\), opener, \{[\s\S]*allowAttach: false/
+  );
+  assert.match(script, /jobControl\.hidden = !allowAttach/);
+  assert.match(script, /if \(isBusinessGiftOrder\(state\.selectedJob\)\) return;/);
+  assert.match(styles, /\.db-gift-proof-grid-shell\s*\{/);
+  assert.match(styles, /\.db-visual-modal-job-control\[hidden\]/);
+});
+
 function visualRow(id) {
   return {
     id,
