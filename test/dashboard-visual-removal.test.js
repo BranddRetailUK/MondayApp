@@ -141,6 +141,60 @@ test('individual file deletion removes one visual from a private dashboard job',
   }
 });
 
+test('individual file deletion removes the exact database-order visual and cleans its unreferenced asset', async () => {
+  const sourceOrderId = 8801;
+  const fileId = 91;
+  const deletedFile = {
+    id: fileId,
+    source_order_id: sourceOrderId,
+    public_id: 'ultimate-hub/test-dashboard/proof/58801/gift-visual',
+    resource_type: 'image',
+    original_filename: 'gift-visual.pdf',
+  };
+  const queries = [];
+  const destroyed = [];
+  const { router, restore } = loadTestDashboardRouter({
+    async query(sql, values = []) {
+      queries.push({ sql, values });
+      if (sql.includes('DELETE FROM test_dashboard_files')) {
+        return { rowCount: 1, rows: [deletedFile] };
+      }
+      if (sql.includes('SELECT DISTINCT public_id')) {
+        return { rowCount: 0, rows: [] };
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    },
+  }, {
+    async destroyAsset(publicId, resourceType) {
+      destroyed.push({ publicId, resourceType });
+    },
+  });
+
+  try {
+    const route = findRoute(
+      router,
+      '/api/test-dashboard/items/:jobId/files/:fileId',
+      'delete'
+    );
+    const response = createResponse();
+    await route.route.stack[0].handle({
+      params: { jobId: String(sourceOrderId), fileId: String(fileId) },
+    }, response);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.body, { ok: true, fileId });
+    const deletion = queries.find(({ sql }) => sql.includes('DELETE FROM test_dashboard_files'));
+    assert.deepEqual(deletion.values, [fileId, sourceOrderId]);
+    assert.deepEqual(destroyed, [{
+      publicId: deletedFile.public_id,
+      resourceType: deletedFile.resource_type,
+    }]);
+  } finally {
+    restore();
+  }
+});
+
 function loadDashboardFrontend() {
   const source = fs.readFileSync(path.join(__dirname, '..', 'public', 'script.js'), 'utf8');
   const mediaQuery = {

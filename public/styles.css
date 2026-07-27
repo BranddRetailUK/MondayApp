@@ -4244,8 +4244,27 @@ body.modal-open{overflow:hidden}
   font-weight:400;
 }
 .db-visual-modal-job-control[hidden],
-.db-visual-modal-feedback[hidden]{
+.db-visual-modal-feedback[hidden],
+.db-visual-modal-delete[hidden]{
   display:none;
+}
+.db-visual-modal-delete{
+  flex:0 0 auto;
+  min-width:100px;
+  height:34px;
+  padding:0 14px;
+  border:2px outset #fff;
+  border-radius:0;
+  background:#c40000;
+  color:#fff;
+  font:700 12px Arial, Helvetica, sans-serif;
+  cursor:pointer;
+}
+.db-visual-modal-delete:hover,
+.db-visual-modal-delete:focus-visible{
+  background:#e00000;
+  outline:2px solid #111;
+  outline-offset:2px;
 }
 .db-visual-modal-close{
   position:absolute;
@@ -4298,6 +4317,81 @@ body.modal-open{overflow:hidden}
 .db-visual-modal-viewer img{
   object-fit:contain;
   background:#1f2428;
+}
+.db-visual-delete-confirm-modal{
+  position:fixed;
+  inset:0;
+  z-index:10080;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:16px;
+  background:rgba(0, 0, 0, .52);
+  box-sizing:border-box;
+}
+.db-visual-delete-confirm-modal,
+.db-visual-delete-confirm-modal *{
+  box-sizing:border-box;
+}
+.db-visual-delete-confirm-modal[hidden]{
+  display:none;
+}
+.db-visual-delete-confirm-shell{
+  width:min(360px, 100%);
+  border:2px outset #fff;
+  background:#e9e9e9;
+  color:#000;
+  font:12px Arial, Helvetica, sans-serif;
+  box-shadow:3px 4px 0 rgba(0, 0, 0, .45);
+}
+.db-visual-delete-confirm-title{
+  padding:7px 9px;
+  background:#858585;
+  color:#fff;
+  font-weight:700;
+}
+.db-visual-delete-confirm-message{
+  min-height:52px;
+  padding:17px 14px 8px;
+  overflow-wrap:anywhere;
+  text-align:center;
+  font-size:13px;
+}
+.db-visual-delete-confirm-error{
+  min-height:20px;
+  padding:0 14px;
+  color:#c40000;
+  text-align:center;
+}
+.db-visual-delete-confirm-actions{
+  display:flex;
+  justify-content:center;
+  gap:12px;
+  padding:8px 14px 14px;
+}
+.db-visual-delete-confirm-button,
+.db-visual-delete-cancel-button{
+  min-width:82px;
+  height:28px;
+  border:2px outset #fff;
+  border-radius:0;
+  background:#eee;
+  color:#000;
+  font:12px Arial, Helvetica, sans-serif;
+  cursor:pointer;
+}
+.db-visual-delete-confirm-button{
+  background:#c40000;
+  color:#fff;
+  font-weight:700;
+}
+.db-visual-delete-confirm-button:disabled,
+.db-visual-delete-cancel-button:disabled{
+  color:#777;
+  cursor:wait;
+}
+.db-visual-delete-confirm-button:disabled{
+  background:#d6a0a0;
 }
 .db-styles-chip{
   max-width:100%;
@@ -5934,7 +6028,7 @@ body.modal-open{overflow:hidden}
 .db-proof-empty .db-proof-upload-message{
   text-align:center;
 }
-.db-gift-proof-grid-shell{
+.db-order-proof-grid-shell{
   height:clamp(620px, calc(100vh - 305px), 860px);
   overflow:auto;
   padding:14px 16px 20px;
@@ -8595,7 +8689,7 @@ input.db-custom-line-input{
   .db-proof-empty .db-proof-upload-button{
     align-self:center;
   }
-  .db-gift-proof-grid-shell{
+  .db-order-proof-grid-shell{
     height:auto;
     min-height:360px;
     overflow:visible;
@@ -8764,6 +8858,10 @@ input.db-custom-line-input{
   .db-visual-modal-job-control select{
     min-height:44px;
     font-size:16px;
+  }
+  .db-visual-modal-delete{
+    width:100%;
+    min-height:44px;
   }
   .db-visual-modal-close{
     top:max(8px, env(safe-area-inset-top));

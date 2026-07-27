@@ -1050,10 +1050,29 @@
             <option value="">Choose a job…</option>
           </select>
         </label>
+        <button id="db-visual-modal-delete" class="db-visual-modal-delete" type="button" hidden>Delete file</button>
         <button id="db-visual-modal-close" class="db-visual-modal-close" type="button" aria-label="Close visual preview">&#215;</button>
       </div>
       <div id="db-visual-modal-feedback" class="db-visual-modal-feedback" role="status" aria-live="polite"></div>
       <div id="db-visual-modal-viewer" class="db-visual-modal-viewer"></div>
+    </div>
+  </div>
+
+  <div id="db-visual-delete-confirm-modal" class="db-visual-delete-confirm-modal" hidden aria-hidden="true">
+    <div
+      class="db-visual-delete-confirm-shell"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="db-visual-delete-confirm-title"
+      aria-describedby="db-visual-delete-confirm-message"
+    >
+      <div id="db-visual-delete-confirm-title" class="db-visual-delete-confirm-title">Are you sure?</div>
+      <div id="db-visual-delete-confirm-message" class="db-visual-delete-confirm-message">Delete this visual file?</div>
+      <div id="db-visual-delete-confirm-error" class="db-visual-delete-confirm-error" role="status" aria-live="polite"></div>
+      <div class="db-visual-delete-confirm-actions">
+        <button class="db-visual-delete-confirm-button" type="button" data-db-visual-delete-confirm>Delete</button>
+        <button class="db-visual-delete-cancel-button" type="button" data-db-visual-delete-cancel>Cancel</button>
+      </div>
     </div>
   </div>
 </body>

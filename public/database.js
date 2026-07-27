@@ -223,6 +223,8 @@
     visualAttachSaving: false,
     visualAttachedJobIds: new Set(),
     visualModalAllowsAttach: false,
+    visualDeleteTarget: null,
+    visualDeleteSaving: false,
     orderLoadToken: 0,
     orderLoadComplete: false,
     orderSearchQuery: '',
@@ -476,7 +478,13 @@
       visualModalViewer: document.getElementById('db-visual-modal-viewer'),
       visualModalJob: document.getElementById('db-visual-modal-job'),
       visualModalFeedback: document.getElementById('db-visual-modal-feedback'),
+      visualModalDelete: document.getElementById('db-visual-modal-delete'),
       visualModalClose: document.getElementById('db-visual-modal-close'),
+      visualDeleteConfirmModal: document.getElementById('db-visual-delete-confirm-modal'),
+      visualDeleteConfirmMessage: document.getElementById('db-visual-delete-confirm-message'),
+      visualDeleteConfirmError: document.getElementById('db-visual-delete-confirm-error'),
+      visualDeleteConfirmButton: document.querySelector('[data-db-visual-delete-confirm]'),
+      visualDeleteCancelButton: document.querySelector('[data-db-visual-delete-cancel]'),
       usersTable: document.getElementById('db-users-table'),
       usersBody: document.getElementById('db-users-body'),
       signupRequestsBody: document.getElementById('db-signup-requests-body'),
@@ -546,8 +554,10 @@
     els.visualsGrid?.addEventListener('error', handleDatabaseVisualThumbnailError, true);
     els.visualsLoadMore?.addEventListener('click', () => loadDatabaseVisuals({ append: true }));
     els.visualModal?.addEventListener('click', handleDatabaseVisualModalClick);
+    els.visualModalDelete?.addEventListener('click', openDatabaseVisualDeleteConfirmation);
     els.visualModalClose?.addEventListener('click', closeDatabaseVisualModal);
     els.visualModalJob?.addEventListener('change', attachActiveDatabaseVisual);
+    els.visualDeleteConfirmModal?.addEventListener('click', handleDatabaseVisualDeleteConfirmationClick);
     els.reportsYear?.addEventListener('change', handleReportYearChange);
     els.reportsCompareMonthNameA?.addEventListener('change', handleReportComparisonInputChange);
     els.reportsCompareMonthYearA?.addEventListener('change', handleReportComparisonInputChange);
@@ -806,9 +816,9 @@
       return;
     }
 
-    const giftVisualIndex = button.dataset.dbGiftVisualOpen;
-    if (giftVisualIndex !== undefined) {
-      openBusinessGiftVisualModal(giftVisualIndex, button);
+    const orderVisualIndex = button.dataset.dbOrderVisualOpen;
+    if (orderVisualIndex !== undefined) {
+      openOrderVisualModal(orderVisualIndex, button);
       return;
     }
 
@@ -1736,12 +1746,11 @@
     openDatabaseVisualPreviewModal(visual, opener, { allowAttach: true });
   }
 
-  function openBusinessGiftVisualModal(fileIndex, opener = null) {
-    if (!isBusinessGiftOrder(state.selectedJob)) return;
+  function openOrderVisualModal(fileIndex, opener = null) {
     const index = Number.parseInt(fileIndex, 10);
     const file = state.selectedProofFiles[index];
     if (!file) return;
-    openDatabaseVisualPreviewModal(businessGiftVisualFromFile(file), opener, {
+    openDatabaseVisualPreviewModal(orderVisualFromFile(file), opener, {
       allowAttach: false,
     });
   }
@@ -1764,6 +1773,15 @@
     const jobControl = els.visualModalJob?.closest('.db-visual-modal-job-control');
     if (jobControl) jobControl.hidden = !allowAttach;
     if (els.visualModalFeedback) els.visualModalFeedback.hidden = !allowAttach;
+    if (els.visualModalDelete) {
+      const sourceOrderId = Number(visual.source_order_id || state.selectedJob?.source_order_id);
+      els.visualModalDelete.hidden = (
+        allowAttach
+        || !databaseVisualFileId(visual)
+        || !Number.isSafeInteger(sourceOrderId)
+        || sourceOrderId <= 0
+      );
+    }
 
     els.visualModalViewer.replaceChildren();
     const src = buildDatabaseAssetSrc(visual);
@@ -1966,18 +1984,141 @@
     if (event.target === els.visualModal) closeDatabaseVisualModal();
   }
 
-  function closeDatabaseVisualModal() {
+  function databaseVisualFileId(visual) {
+    const fileId = Number(visual?.dashboardFileId || visual?.id);
+    return Number.isSafeInteger(fileId) && fileId > 0 ? fileId : null;
+  }
+
+  function openDatabaseVisualDeleteConfirmation() {
+    if (
+      state.visualModalAllowsAttach
+      || state.visualDeleteSaving
+      || !state.activeVisual
+      || !els.visualDeleteConfirmModal
+    ) return;
+
+    const fileId = databaseVisualFileId(state.activeVisual);
+    const sourceOrderId = Number(
+      state.activeVisual.source_order_id || state.selectedJob?.source_order_id
+    );
+    if (!fileId || !Number.isSafeInteger(sourceOrderId) || sourceOrderId <= 0) return;
+
+    const name = String(state.activeVisual.name || 'this visual file').trim();
+    state.visualDeleteTarget = { fileId, sourceOrderId, name };
+    if (els.visualDeleteConfirmMessage) {
+      els.visualDeleteConfirmMessage.textContent = `Delete “${name}”? This cannot be undone.`;
+    }
+    setDatabaseVisualDeleteSaving(false);
+    els.visualDeleteConfirmModal.hidden = false;
+    els.visualDeleteConfirmModal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('db-visual-delete-confirm-open');
+    window.requestAnimationFrame(() => {
+      els.visualDeleteCancelButton?.focus({ preventScroll: true });
+    });
+  }
+
+  function handleDatabaseVisualDeleteConfirmationClick(event) {
+    if (!els.visualDeleteConfirmModal || els.visualDeleteConfirmModal.hidden) return;
+    if (event.target === els.visualDeleteConfirmModal) {
+      closeDatabaseVisualDeleteConfirmation();
+      return;
+    }
+
+    const button = event.target.closest('button');
+    if (!button || !els.visualDeleteConfirmModal.contains(button)) return;
+    if (button.dataset.dbVisualDeleteCancel !== undefined) {
+      closeDatabaseVisualDeleteConfirmation();
+      return;
+    }
+    if (button.dataset.dbVisualDeleteConfirm !== undefined) {
+      deleteActiveOrderVisual();
+    }
+  }
+
+  async function deleteActiveOrderVisual() {
+    const target = state.visualDeleteTarget;
+    if (!target || state.visualDeleteSaving) return;
+
+    state.visualDeleteSaving = true;
+    setDatabaseVisualDeleteSaving(true);
+    try {
+      await fetchJson(
+        `/api/test-dashboard/items/${encodeURIComponent(target.sourceOrderId)}/files/${encodeURIComponent(target.fileId)}`,
+        { method: 'DELETE' }
+      );
+
+      const selectedOrderIsTarget = (
+        Number(state.selectedJob?.source_order_id) === target.sourceOrderId
+      );
+      if (selectedOrderIsTarget) {
+        state.selectedProofFiles = (state.selectedProofFiles || []).filter((file) => (
+          databaseVisualFileId(file) !== target.fileId
+        ));
+        resetDatabaseProofViewerState();
+      }
+      state.visuals = (state.visuals || []).filter((visual) => (
+        databaseVisualFileId(visual) !== target.fileId
+        || Number(visual.source_order_id) !== target.sourceOrderId
+      ));
+
+      state.visualDeleteSaving = false;
+      closeDatabaseVisualDeleteConfirmation({ restoreFocus: false });
+      closeDatabaseVisualModal({ restoreFocus: false });
+      if (selectedOrderIsTarget) {
+        renderProofPanel();
+        window.requestAnimationFrame(() => {
+          els.proofPanel?.querySelector('[data-db-order-visual-open], [data-db-proof-upload]')
+            ?.focus({ preventScroll: true });
+        });
+      }
+      if (state.activeView === 'visuals') renderDatabaseVisuals();
+    } catch (err) {
+      state.visualDeleteSaving = false;
+      setDatabaseVisualDeleteSaving(false, err.message || 'Visual file could not be deleted');
+      console.error('Database visual delete failed', err);
+    }
+  }
+
+  function setDatabaseVisualDeleteSaving(saving, errorMessage = '') {
+    if (els.visualDeleteConfirmButton) {
+      els.visualDeleteConfirmButton.disabled = saving;
+      els.visualDeleteConfirmButton.textContent = saving ? 'Deleting…' : 'Delete';
+    }
+    if (els.visualDeleteCancelButton) els.visualDeleteCancelButton.disabled = saving;
+    if (els.visualDeleteConfirmError) els.visualDeleteConfirmError.textContent = errorMessage;
+  }
+
+  function closeDatabaseVisualDeleteConfirmation(options = {}) {
+    if (
+      !els.visualDeleteConfirmModal
+      || (state.visualDeleteSaving && options.force !== true)
+    ) return;
+    const wasOpen = !els.visualDeleteConfirmModal.hidden;
+    els.visualDeleteConfirmModal.hidden = true;
+    els.visualDeleteConfirmModal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('db-visual-delete-confirm-open');
+    state.visualDeleteTarget = null;
+    state.visualDeleteSaving = false;
+    setDatabaseVisualDeleteSaving(false);
+    if (wasOpen && options.restoreFocus !== false) {
+      els.visualModalDelete?.focus({ preventScroll: true });
+    }
+  }
+
+  function closeDatabaseVisualModal(options = {}) {
     if (!els.visualModal || els.visualModal.hidden) return;
+    closeDatabaseVisualDeleteConfirmation({ restoreFocus: false, force: true });
     els.visualModal.hidden = true;
     els.visualModal.setAttribute('aria-hidden', 'true');
     els.visualModalViewer?.replaceChildren();
     els.visualModal.classList.remove('is-preview-only');
+    if (els.visualModalDelete) els.visualModalDelete.hidden = true;
     document.body.classList.remove('modal-open', 'db-visual-modal-open');
     state.activeVisual = null;
     state.visualModalAllowsAttach = false;
     const opener = visualModalOpener;
     visualModalOpener = null;
-    opener?.focus({ preventScroll: true });
+    if (options.restoreFocus !== false) opener?.focus({ preventScroll: true });
   }
 
   function showToInvoice(options = {}) {
@@ -6628,7 +6769,6 @@
       panel?.classList.toggle('active', key === state.activeOrderTab);
     });
     syncOrderItemsExpansion();
-    if (state.activeOrderTab === 'proof') queueRenderDatabaseProofFile();
     if (!options.skipPersistence) persistDatabaseRoute();
   }
 
@@ -7068,12 +7208,7 @@
   function renderProofPanel() {
     if (!els.proofPanel) return;
     const files = state.selectedProofFiles || [];
-    const viewer = state.proofViewer || {};
     const upload = currentDatabaseProofUpload();
-    const fileIndex = clampNumber(viewer.fileIndex, 0, Math.max(0, files.length - 1));
-    const currentFile = files[fileIndex];
-    const hasMultiple = files.length > 1;
-    const fileCount = files.length ? `${fileIndex + 1} of ${files.length}` : '';
     const uploadButton = renderDatabaseProofUploadButton(upload);
     const uploadMessage = renderDatabaseProofUploadMessage(upload);
 
@@ -7089,66 +7224,26 @@
       return;
     }
 
-    if (isBusinessGiftOrder(state.selectedJob)) {
-      els.proofPanel.innerHTML = `
-        <div class="db-proof-upload-row">
-          ${uploadMessage}
-          ${uploadButton}
-        </div>
-        <div class="db-gift-proof-grid-shell">
-          <div class="db-visuals-grid db-gift-proof-grid" role="list">
-            ${files.map((file, index) => renderDatabaseVisualCard(
-              businessGiftVisualFromFile(file),
-              {
-                openAttribute: 'data-db-gift-visual-open',
-                openValue: index,
-              }
-            )).join('')}
-          </div>
-        </div>
-      `;
-      return;
-    }
-
     els.proofPanel.innerHTML = `
       <div class="db-proof-upload-row">
         ${uploadMessage}
         ${uploadButton}
       </div>
-      <div class="db-proof-layout">
-        <button class="db-proof-file-arrow db-proof-file-arrow-left" type="button" data-db-proof-file="-1" aria-label="Previous proof file" ${hasMultiple ? '' : 'hidden'} ${fileIndex <= 0 ? 'disabled' : ''}>‹</button>
-        <div class="db-proof-frame">
-          <div class="db-proof-toolbar">
-            <div class="db-proof-file-meta">
-              <span>Visual:</span>
-              <input class="db-legacy-input db-proof-name-field" aria-label="Visual filename" readonly value="${escapeAttr(currentFile?.name || '')}">
-              <span class="db-proof-file-count">${escapeHtml(fileCount)}</span>
-            </div>
-            <div class="db-proof-zoom-controls" data-db-proof-zoom-controls hidden aria-label="PDF zoom controls">
-              <button class="db-proof-zoom-button" type="button" data-db-proof-zoom="-${DATABASE_PROOF_ZOOM_STEP}" aria-label="Zoom out">−</button>
-              <span class="db-proof-zoom-status" data-db-proof-zoom-status aria-live="polite">100%</span>
-              <button class="db-proof-zoom-button" type="button" data-db-proof-zoom="${DATABASE_PROOF_ZOOM_STEP}" aria-label="Zoom in">+</button>
-              <button class="db-proof-fit-button" type="button" data-db-proof-fit aria-label="Fit PDF to screen">Fit</button>
-              <span class="db-proof-gesture-hint">Pinch to zoom · drag to move</span>
-            </div>
-          </div>
-          <div class="db-proof-viewer" data-db-proof-viewer>
-            <div class="db-panel-message">${files.length ? 'Loading proof file' : 'No proof PDFs attached in the Tuesday Dashboard proof column'}</div>
-          </div>
-          <div class="db-proof-page-controls" data-db-proof-page-controls hidden>
-            <button class="db-small-button" type="button" data-db-proof-page="-1">‹</button>
-            <span data-db-proof-page-status>Page 1 / 1</span>
-            <button class="db-small-button" type="button" data-db-proof-page="1">›</button>
-          </div>
+      <div class="db-order-proof-grid-shell">
+        <div class="db-visuals-grid db-order-proof-grid" role="list">
+          ${files.map((file, index) => renderDatabaseVisualCard(
+            orderVisualFromFile(file),
+            {
+              openAttribute: 'data-db-order-visual-open',
+              openValue: index,
+            }
+          )).join('')}
         </div>
-        <button class="db-proof-file-arrow db-proof-file-arrow-right" type="button" data-db-proof-file="1" aria-label="Next proof file" ${hasMultiple ? '' : 'hidden'} ${fileIndex >= files.length - 1 ? 'disabled' : ''}>›</button>
       </div>
     `;
-
-    if (state.activeOrderTab === 'proof') queueRenderDatabaseProofFile();
   }
 
-  function businessGiftVisualFromFile(file) {
+  function orderVisualFromFile(file) {
     const job = state.selectedJob || {};
     const designNumbers = unique(
       (state.selectedPositions || [])
@@ -7286,7 +7381,6 @@
       state.proofViewer.pdfPinch = null;
       state.proofViewer.renderToken += 1;
       renderProofPanel();
-      queueRenderDatabaseProofFile();
       return;
     }
 
@@ -8706,6 +8800,10 @@
     const repeatOrderModal = document.getElementById('db-repeat-order-modal');
     if (repeatOrderModal && !repeatOrderModal.hidden) {
       closeRepeatOrderConfirmation();
+      return;
+    }
+    if (els.visualDeleteConfirmModal && !els.visualDeleteConfirmModal.hidden) {
+      closeDatabaseVisualDeleteConfirmation();
       return;
     }
     if (els.visualModal && !els.visualModal.hidden) {

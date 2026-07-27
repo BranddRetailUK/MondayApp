@@ -267,24 +267,32 @@ test('order VISUAL tab uploads multiple supported files through the shared dashb
   assert.match(styles, /\.db-proof-upload-row\s*\{[\s\S]*justify-content:flex-end;/);
 });
 
-test('Business Gifts order VISUAL tab uses the gallery grid and preview-only modal', () => {
+test('every order VISUAL tab uses the gallery modal with confirmed file deletion', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(__dirname, '..', 'public', 'database.js'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
 
+  assert.match(html, /id="db-visual-modal-delete"[^>]+hidden>Delete file<\/button>/);
+  assert.match(html, /id="db-visual-delete-confirm-title"[^>]*>Are you sure\?<\/div>/);
+  assert.match(html, /data-db-visual-delete-confirm>Delete<\/button>/);
+  assert.match(script, /class="db-visuals-grid db-order-proof-grid"/);
+  assert.match(script, /openAttribute:\s*'data-db-order-visual-open'/);
+  assert.match(script, /openOrderVisualModal\(orderVisualIndex, button\)/);
   assert.match(
     script,
-    /if \(isBusinessGiftOrder\(state\.selectedJob\)\) \{[\s\S]*class="db-visuals-grid db-gift-proof-grid"/
-  );
-  assert.match(script, /openAttribute:\s*'data-db-gift-visual-open'/);
-  assert.match(script, /openBusinessGiftVisualModal\(giftVisualIndex, button\)/);
-  assert.match(
-    script,
-    /openDatabaseVisualPreviewModal\(businessGiftVisualFromFile\(file\), opener, \{[\s\S]*allowAttach: false/
+    /openDatabaseVisualPreviewModal\(orderVisualFromFile\(file\), opener, \{[\s\S]*allowAttach: false/
   );
   assert.match(script, /jobControl\.hidden = !allowAttach/);
-  assert.match(script, /if \(isBusinessGiftOrder\(state\.selectedJob\)\) return;/);
-  assert.match(styles, /\.db-gift-proof-grid-shell\s*\{/);
+  assert.match(script, /els\.visualModalDelete\.hidden = \([\s\S]*allowAttach/);
+  assert.match(script, /Delete “\$\{name\}”\? This cannot be undone\./);
+  assert.match(
+    script,
+    /`\/api\/test-dashboard\/items\/\$\{encodeURIComponent\(target\.sourceOrderId\)\}\/files\/\$\{encodeURIComponent\(target\.fileId\)\}`/
+  );
+  assert.match(script, /\{ method: 'DELETE' \}/);
+  assert.match(styles, /\.db-order-proof-grid-shell\s*\{/);
   assert.match(styles, /\.db-visual-modal-job-control\[hidden\]/);
+  assert.match(styles, /\.db-visual-delete-confirm-modal\s*\{[\s\S]*z-index:10080;/);
 });
 
 function visualRow(id) {
