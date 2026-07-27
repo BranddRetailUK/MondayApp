@@ -15,7 +15,6 @@ const ENDPOINTS = {
   testProofFiles: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/proof-files`,
   testFile: (itemId, fileId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/files/${encodeURIComponent(fileId)}`,
   testScanUrl: (itemId) => `/api/test-dashboard/scan-url?jobId=${encodeURIComponent(itemId)}`,
-  testQr: (data) => `/api/test-dashboard/qr?data=${encodeURIComponent(data)}`,
   testLabelPrinted: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/label-printed`,
   testUploadSignature: '/api/test-dashboard/uploads/signature',
   testFiles: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/files`
@@ -1569,7 +1568,7 @@ function buildPrintLabelCell(item) {
   printBtn.type = 'button';
   printBtn.textContent = 'Print';
   printBtn.className = 'job-action primary job-print-button';
-  printBtn.addEventListener('click', () => printLabel(item.id, item.name || ''));
+  printBtn.addEventListener('click', () => printLabel(item));
   cell.appendChild(printBtn);
   return cell;
 }
@@ -5143,9 +5142,17 @@ function isTestPrivateItemId(value) {
 
 // --------------------------- PRINT LABEL ---------------------------
 
-async function printLabel(itemId, rawTitle) {
-  const { orderNumber, customerName, jobTitle } = parseTitle(rawTitle);
-  let scanUrl = '';
+async function printLabel(item) {
+  const itemId = item?.id;
+  const parsed = parseTitle(item?.name || '');
+  const orderNumber = normalizeCellText(item?.database_job?.order_no || parsed.orderNumber || '');
+  const customerName = normalizeCellText(item?.database_job?.customer_name || parsed.customerName || '');
+  const jobTitle = normalizeCellText(item?.database_job?.job_title || parsed.jobTitle || '');
+  const buildLabelDocument = window.LabelLayout?.buildLabelDocument;
+  if (typeof buildLabelDocument !== 'function') {
+    alert('Label could not be printed: Label layout is unavailable');
+    return;
+  }
   __statusUpdateInFlight += 1;
   try {
     const response = await fetch(ENDPOINTS.testLabelPrinted(itemId), {
@@ -5155,8 +5162,7 @@ async function printLabel(itemId, rawTitle) {
       body: '{}'
     });
     if (!response.ok) throw new Error(await readApiError(response));
-    const result = await response.json();
-    scanUrl = result.scanUrl || '';
+    await response.json();
     loadTestBoard({ forceRefresh: true });
   } catch (err) {
     alert(`Label could not be printed: ${err.message || 'Failed to prepare the label'}`);
@@ -5164,93 +5170,7 @@ async function printLabel(itemId, rawTitle) {
   } finally {
     __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);
   }
-  const qrImg = scanUrl ? `<img class="qr" src="${ENDPOINTS.testQr(scanUrl)}" alt="QR">` : '';
-  const blocks = [
-    { head: 'JOB NUMBER', value: orderNumber, ratio: 0.62, maxSize: 96 },
-    { head: 'CUSTOMER', value: customerName, ratio: 0.46, maxSize: 54 },
-    { head: 'JOB TITLE', value: jobTitle, ratio: 0.50, maxSize: 54 }
-  ];
-  const body = `
-    <!doctype html>
-    <html>
-    <head>
-      <meta charset="utf-8" />
-      <title>Shipping Label</title>
-      <style>
-        @media print { 
-          @page { size: 4in 6in; margin: 0; } 
-          html,body { width: 4in; height: 6in; margin: 0; padding: 0; }
-        }
-        html,body { width: 4in; height: 6in; margin: 0; padding: 0; overflow: hidden; }
-        .wrap { box-sizing: border-box; width: 4in; height: 6in; padding: 0.15in; display: flex; flex-direction: column; justify-content: space-between; }
-        .content { flex: 1 1 auto; overflow: hidden; }
-        .block { margin: 0 0 0.25in 0; }
-        .head { font-family: Arial, sans-serif; font-size: 14pt; font-weight: 800; margin: 0 0 6px 0; }
-        .value { font-family: Arial, sans-serif; font-weight: 900; margin: 0; white-space: nowrap; overflow: hidden; width: 100%; line-height: 1.05; }
-        .qr-container { flex: 0 0 auto; display: flex; justify-content: center; align-items: center; height: 1.6in; }
-        .qr { width: 1.4in; height: 1.4in; }
-      </style>
-    </head>
-    <body>
-      <div class="wrap">
-        <div class="content">
-          ${blocks.map(b=>`
-            <div class="block">
-              <div class="head">${escapeHtml(b.head)}</div>
-              <div class="value" data-ratio="${b.ratio}" data-max-size="${b.maxSize}">${escapeHtml(b.value)}</div>
-            </div>
-          `).join('')}
-        </div>
-        <div class="qr-container">${qrImg}</div>
-      </div>
-      <script>
-        (function(){
-          function fit(el, ratio, min, max){
-            var parent = el.parentElement;
-            var w = parent.clientWidth || parent.getBoundingClientRect().width;
-            var cap = max > 0 ? max : Number.POSITIVE_INFINITY;
-            var size = Math.min(cap, Math.max(min, Math.floor(w * ratio)));
-            el.style.fontSize = size + 'px';
-            var guard = 0;
-            while ((el.scrollWidth > parent.clientWidth) && size > min && guard < 200){
-              size -= 1;
-              el.style.fontSize = size + 'px';
-              guard++;
-            }
-          }
-          Array.prototype.slice.call(document.querySelectorAll('.value')).forEach(function(v){
-            var ratio = parseFloat(v.getAttribute('data-ratio')) || 0.4;
-            var max = parseFloat(v.getAttribute('data-max-size')) || 0;
-            fit(v, ratio, 10, max);
-          });
-          var closeTimer = null;
-          var printed = false;
-          function closeAfterPrint(){
-            if (closeTimer) return;
-            closeTimer = setTimeout(function(){
-              try { window.close(); } catch (e) {}
-            }, 250);
-          }
-          function startPrint(){
-            if (printed) return;
-            printed = true;
-            window.addEventListener('afterprint', closeAfterPrint, { once: true });
-            window.addEventListener('focus', function(){
-              if (printed) closeAfterPrint();
-            }, { once: true });
-            window.print();
-          }
-          const qr = document.querySelector('.qr');
-          if (qr) {
-            qr.addEventListener('load', () => { setTimeout(startPrint, 150); });
-          } else {
-            setTimeout(startPrint, 150);
-          }
-        })();
-      </script>
-    </body>
-    </html>
-  `;
+  const body = buildLabelDocument({ orderNumber, customerName, jobTitle });
 
   let win = null;
   try { win = window.open('', '', 'width=480,height=760'); } catch {}

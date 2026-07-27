@@ -1,6 +1,5 @@
 const express = require('express');
 const crypto = require('crypto');
-const QRCode = require('qrcode');
 const pool = require('../db/pool');
 const { fullName } = require('../services/hubAuth');
 const { signPayload, advanceScan } = require('../services/scanner');
@@ -98,26 +97,6 @@ protectedRouter.get('/api/test-dashboard/board', async (_req, res) => {
   } catch (err) {
     console.error('GET /api/test-dashboard/board', err);
     res.status(500).json({ error: 'Failed to fetch Tuesday Dashboard board' });
-  }
-});
-
-protectedRouter.get('/api/test-dashboard/qr', async (req, res) => {
-  try {
-    const data = clean(req.query.data);
-    if (!data) return res.status(400).send('Missing ?data= payload');
-    const size = Math.max(128, Math.min(1024, Number.parseInt(req.query.size || '384', 10) || 384));
-    const margin = Math.max(0, Math.min(4, Number.parseInt(req.query.margin || '0', 10) || 0));
-    const buffer = await QRCode.toBuffer(data, {
-      width: size,
-      margin,
-      errorCorrectionLevel: 'M',
-    });
-    res.set('Content-Type', 'image/png');
-    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-    return res.send(buffer);
-  } catch (err) {
-    console.error('GET /api/test-dashboard/qr', err);
-    return res.status(400).send('Invalid QR data');
   }
 });
 
@@ -759,12 +738,6 @@ protectedRouter.post('/api/test-dashboard/items/:jobId/label-printed', async (re
     res.json({
       ok: true,
       itemId: privateJob ? job.id : String(job.source_order_id),
-      scanUrl: privateJob
-        ? ''
-        : buildTestDashboardScanUrl(
-          req,
-          splitItem ? splitDashboardItemId(job.source_order_id, splitItem.branch) : job.source_order_id
-        ),
       previousStatus,
       status: statusPreserved ? previousStatus : CHECKED_IN_LABEL,
       statusUpdated: !statusPreserved,

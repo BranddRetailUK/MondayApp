@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Label layout preview</title>
+  <script src="../public/label-layout.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #e8edf2;
+      color: #17202a;
+      font-family: Arial, sans-serif;
+    }
+    h1 {
+      margin: 0 0 18px;
+      font-size: 22px;
+    }
+    .samples {
+      display: flex;
+      gap: 24px;
+      align-items: flex-start;
+    }
+    .sample {
+      margin: 0;
+    }
+    figcaption {
+      margin: 0 0 8px;
+      font-size: 15px;
+      font-weight: 700;
+    }
+    iframe {
+      display: block;
+      width: 386px;
+      height: 578px;
+      border: 1px solid #aeb8c2;
+      background: #fff;
+      box-shadow: 0 4px 14px rgb(23 32 42 / 15%);
+    }
+  </style>
+</head>
+<body>
+  <h1>4 × 6in label layout — QR removed</h1>
+  <main class="samples" aria-label="Short and long label examples">
+    <figure class="sample">
+      <figcaption>Short customer and job title</figcaption>
+      <iframe id="short-label" title="Short customer and job title label"></iframe>
+    </figure>
+    <figure class="sample">
+      <figcaption>Long customer and job title</figcaption>
+      <iframe id="long-label" title="Long customer and job title label"></iframe>
+    </figure>
+  </main>
+  <script>
+    const samples = {
+      'short-label': {
+        orderNumber: '51234',
+        customerName: 'Acme Ltd',
+        jobTitle: 'Staff Hoodies',
+      },
+      'long-label': {
+        orderNumber: '51235',
+        customerName: 'Hertfordshire Community Sports Partnership',
+        jobTitle: 'Embroidered Volunteer Jackets for the Summer Community Festival',
+      },
+    };
+
+    Object.entries(samples).forEach(([id, label]) => {
+      document.getElementById(id).srcdoc = LabelLayout.buildLabelDocument(label, { autoPrint: false });
+    });
+  </script>
+</body>
+</html>
