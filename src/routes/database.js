@@ -938,14 +938,7 @@ router.get('/api/database/outstanding-counts', async (_req, res) => {
         END AS category
         FROM database_jobs
         WHERE is_complete IS NOT TRUE
-          AND NOT (
-            COALESCE(UPPER(TRIM(dashboard_status)), '') = 'COMPLETED'
-            AND (
-              invoice_printed IS TRUE
-              OR pf_invoice_printed IS TRUE
-              OR (invoice_required IS FALSE AND closed_without_invoice IS TRUE)
-            )
-          )
+          AND COALESCE(UPPER(TRIM(dashboard_status)), '') <> 'COMPLETED'
       )
       SELECT
         (COUNT(*) FILTER (WHERE category = 'print'))::int AS printing,
