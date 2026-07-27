@@ -187,6 +187,24 @@ test('dashboard hides exact customer-name matches from job titles without changi
           job_title: 'Grant J Bates - Cotton Shoppers'
         }
       }),
+      longestCustomerPrefix: getDashboardItemJobTitle({
+        database_job: {
+          customer_name: 'Tree Monkey Tree Care Limited',
+          job_title: 'Tree Monkey Tree Hi Vis Vests'
+        }
+      }),
+      twoWordCustomerPrefix: getDashboardItemJobTitle({
+        database_job: {
+          customer_name: 'Tree Monkey Tree Care Limited',
+          job_title: 'tree monkey Hi Vis Vests'
+        }
+      }),
+      singleWordCustomerPrefix: getDashboardItemJobTitle({
+        database_job: {
+          customer_name: 'Tree Monkey Tree Care Limited',
+          job_title: 'Tree Hi Vis Vests'
+        }
+      }),
       caseInsensitive: getDashboardItemJobTitle({
         database_job: {
           customer_name: 'The Grove',
@@ -219,6 +237,9 @@ test('dashboard hides exact customer-name matches from job titles without changi
 
   assert.equal(values.prefixed, 'Uniform');
   assert.equal(values.adjacentHyphen, 'Cotton Shoppers');
+  assert.equal(values.longestCustomerPrefix, 'Hi Vis Vests');
+  assert.equal(values.twoWordCustomerPrefix, 'Hi Vis Vests');
+  assert.equal(values.singleWordCustomerPrefix, 'Tree Hi Vis Vests');
   assert.equal(values.caseInsensitive, 'Summer - Uniform');
   assert.equal(values.fallback, 'Uniform');
   assert.equal(values.regexCharacters, 'Uniform');

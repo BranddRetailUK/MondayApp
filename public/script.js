@@ -1234,15 +1234,31 @@ function hideDashboardCustomerNameFromJobTitle(jobTitle, customerName) {
   const normalizedCustomer = normalizeCellText(customerName);
   if (!normalizedTitle || !normalizedCustomer) return normalizedTitle;
 
-  const escapedCustomer = normalizedCustomer
-    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    .replace(/\s+/g, '\\s+');
-  const exactCustomerPattern = new RegExp(
-    `(^|[^\\p{L}\\p{N}'’])${escapedCustomer}(?=$|[^\\p{L}\\p{N}'’])`,
-    'giu'
-  );
-  const displayTitle = normalizedTitle
-    .replace(exactCustomerPattern, (_match, leadingBoundary) => leadingBoundary)
+  const customerWords = normalizedCustomer.split(' ');
+  const customerCandidates = [normalizedCustomer];
+  for (let wordCount = customerWords.length - 1; wordCount >= 2; wordCount -= 1) {
+    customerCandidates.push(customerWords.slice(0, wordCount).join(' '));
+  }
+
+  let displayTitle = normalizedTitle;
+  for (const candidate of customerCandidates) {
+    const escapedCandidate = candidate
+      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      .replace(/\s+/g, '\\s+');
+    const exactCandidatePattern = new RegExp(
+      `(^|[^\\p{L}\\p{N}'’])${escapedCandidate}(?=$|[^\\p{L}\\p{N}'’])`,
+      'giu'
+    );
+    const candidateRemoved = normalizedTitle.replace(
+      exactCandidatePattern,
+      (_match, leadingBoundary) => leadingBoundary
+    );
+    if (candidateRemoved === normalizedTitle) continue;
+    displayTitle = candidateRemoved;
+    break;
+  }
+
+  displayTitle = displayTitle
     .replace(/\(\s*\)|\[\s*\]|\{\s*\}/g, ' ')
     .replace(/(?:\s*[-–—|/]\s*){2,}/g, ' - ')
     .replace(/([,;:])(?:\s*[,;:])+/g, '$1');
