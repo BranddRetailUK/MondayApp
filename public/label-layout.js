@@ -129,7 +129,7 @@
               var styles = window.getComputedStyle(el);
               var lineHeight = parseFloat(styles.lineHeight) || (parseFloat(styles.fontSize) * 1.05);
               var widthFits = el.scrollWidth <= (el.clientWidth + 1);
-              var heightFits = el.scrollHeight <= ((lineHeight * maxLines) + 2);
+              var heightFits = maxLines === 1 || el.scrollHeight <= ((lineHeight * maxLines) + 2);
               return widthFits && heightFits;
             }
             function fit(el){

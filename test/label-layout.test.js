@@ -21,6 +21,7 @@ test('label layout renders no QR and gives customer and job title two whole-word
   assert.match(html, /gap:\s*0\.32in/);
   assert.match(html, /text-align:\s*center/);
   assert.match(html, /\.block-job-title\s*\{\s*margin-top:\s*0\.08in/);
+  assert.match(html, /heightFits = maxLines === 1 \|\| el\.scrollHeight/);
   assert.doesNotMatch(html, /setTimeout\(startPrint,\s*150\)/);
 });
 
