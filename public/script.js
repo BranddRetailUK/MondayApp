@@ -1219,14 +1219,33 @@ function getDashboardItemJobTitle(item) {
   const rawTitle = databaseTitle || (item?.dashboard_private_job
     ? normalizeCellText(item?.name || '')
     : normalizeCellText(parseTitle(item?.name || '').jobTitle || item?.name || ''));
-  return hideDashboardCustomerNameFromJobTitle(rawTitle, getDashboardItemCustomerName(item));
+  return hideDashboardCustomerNameFromJobTitle(rawTitle, getDashboardItemRawCustomerName(item));
 }
 
-function getDashboardItemCustomerName(item) {
+function getDashboardItemRawCustomerName(item) {
   const databaseCustomer = normalizeCellText(item?.database_job?.customer_name || '');
   if (databaseCustomer) return databaseCustomer;
   if (item?.dashboard_private_job) return '';
   return normalizeCellText(parseTitle(item?.name || '').customerName || '');
+}
+
+function getDashboardItemCustomerName(item) {
+  return hideDashboardCustomerCompanyWords(getDashboardItemRawCustomerName(item));
+}
+
+function hideDashboardCustomerCompanyWords(customerName) {
+  const normalizedCustomer = normalizeCellText(customerName);
+  if (!normalizedCustomer) return '';
+
+  const companyWordPattern = /(^|[^\p{L}\p{N}'’])(?:LIMITED|LTD)(?=$|[^\p{L}\p{N}'’])/giu;
+  const displayCustomer = normalizedCustomer
+    .replace(companyWordPattern, (_match, leadingBoundary) => leadingBoundary)
+    .replace(/\(\s*\)|\[\s*\]|\{\s*\}/g, ' ');
+
+  return normalizeCellText(displayCustomer)
+    .replace(/^(?:[-–—,.:;|/]\s*)+/, '')
+    .replace(/(?:\s*[-–—,.:;|/])+$/, '')
+    .trim();
 }
 
 function hideDashboardCustomerNameFromJobTitle(jobTitle, customerName) {

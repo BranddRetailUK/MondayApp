@@ -171,6 +171,38 @@ test('dashboard job title and customer eyebrow use explicit database values with
   assert.equal(values.title, 'Actual job title');
 });
 
+test('dashboard customer eyebrow hides standalone Limited and Ltd case-insensitively', () => {
+  const sandbox = loadDashboardFrontend();
+  const values = vm.runInContext(`
+    (() => ({
+      limited: getDashboardItemCustomerName({
+        database_job: { customer_name: 'Tree Monkey Tree Care limited' }
+      }),
+      ltd: getDashboardItemCustomerName({
+        database_job: { customer_name: 'Grant J Bates LtD.' }
+      }),
+      parsedFallback: getDashboardItemCustomerName({
+        name: '51179 - Example LIMITED - Uniform'
+      }),
+      partialWord: getDashboardItemCustomerName({
+        database_job: { customer_name: 'Limitedness Clothing' }
+      }),
+      titleStillUsesFullCustomer: getDashboardItemJobTitle({
+        database_job: {
+          customer_name: 'Acme Limited',
+          job_title: 'Acme Limited Uniform'
+        }
+      })
+    }))()
+  `, sandbox);
+
+  assert.equal(values.limited, 'Tree Monkey Tree Care');
+  assert.equal(values.ltd, 'Grant J Bates');
+  assert.equal(values.parsedFallback, 'Example');
+  assert.equal(values.partialWord, 'Limitedness Clothing');
+  assert.equal(values.titleStillUsesFullCustomer, 'Uniform');
+});
+
 test('dashboard hides exact customer-name matches from job titles without changing partial matches', () => {
   const sandbox = loadDashboardFrontend();
   const values = vm.runInContext(`
