@@ -65,11 +65,15 @@
             flex-direction: column;
             justify-content: flex-start;
             gap: 0.32in;
+            text-align: center;
             overflow: visible;
           }
           .block {
             flex: 0 0 auto;
             min-width: 0;
+          }
+          .block-job-title {
+            margin-top: 0.08in;
           }
           .head {
             margin: 0 0 6px;
