@@ -92,15 +92,15 @@ test('invoice tables reserve 15mm for numeric columns and widen descriptions', (
   );
   assert.match(
     styles,
-    /\.db-order-doc-page-invoice \.db-invoice-total-lines\{\s*grid-column:2 \/ -1;\s*\}/
+    /\.db-order-doc-page-invoice \.db-invoice-total-lines\{\s*grid-column:2 \/ -1;\s*grid-template-columns:46mm minmax\(15mm, max-content\);\s*justify-content:start;\s*\}/
   );
   assert.match(
     styles,
-    /\.db-order-doc-page-invoice \.db-invoice-total-row\{\s*grid-template-columns:46mm minmax\(15mm, max-content\);\s*justify-content:start;\s*\}/
+    /\.db-order-doc-page-invoice \.db-invoice-total-row\{\s*display:contents;\s*\}/
   );
   assert.match(
     styles,
-    /\.db-invoice-total-row strong\{[\s\S]*min-width:15mm;[\s\S]*white-space:nowrap;/
+    /\.db-invoice-total-row strong\{[\s\S]*min-width:15mm;[\s\S]*justify-content:flex-end;[\s\S]*text-align:right;[\s\S]*white-space:nowrap;/
   );
 });
 

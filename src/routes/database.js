@@ -3856,6 +3856,76 @@ router.put('/api/database/jobs/:id', async (req, res) => {
   }
 });
 
+router.delete('/api/database/jobs/:id', async (req, res) => {
+  const id = Number.parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: 'Invalid job id' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const selected = await client.query(
+      `SELECT source_order_id, order_no, invoice_no, invoice_printed
+       FROM database_jobs
+       WHERE source_order_id = $1 OR order_no = $1
+       ORDER BY CASE WHEN source_order_id = $1 THEN 0 ELSE 1 END
+       LIMIT 1
+       FOR UPDATE`,
+      [id]
+    );
+    const job = selected.rows[0];
+    if (!job) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Database job not found' });
+    }
+
+    if (job.invoice_no !== null || job.invoice_printed === true) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Invoiced orders cannot be deleted',
+        code: 'job_already_invoiced',
+      });
+    }
+
+    const sourceOrderId = job.source_order_id;
+    const scanItemIds = [
+      String(sourceOrderId),
+      `${sourceOrderId}__split_print`,
+      `${sourceOrderId}__split_embroidery`,
+    ];
+
+    await client.query('DELETE FROM database_ralawise_basket_lines WHERE source_order_id = $1', [sourceOrderId]);
+    await client.query('DELETE FROM database_ralawise_basket_jobs WHERE source_order_id = $1', [sourceOrderId]);
+    await client.query('DELETE FROM job_scan_events WHERE item_id = ANY($1::text[])', [scanItemIds]);
+    await client.query('DELETE FROM job_scans WHERE item_id = ANY($1::text[])', [scanItemIds]);
+    await client.query('DELETE FROM test_dashboard_files WHERE source_order_id = $1', [sourceOrderId]);
+    await client.query('DELETE FROM test_dashboard_job_state WHERE source_order_id = $1', [sourceOrderId]);
+    await client.query('DELETE FROM database_job_positions WHERE source_order_id = $1', [sourceOrderId]);
+    await client.query('DELETE FROM database_job_line_items WHERE source_order_id = $1', [sourceOrderId]);
+    const deleted = await client.query(
+      `DELETE FROM database_jobs
+       WHERE source_order_id = $1
+       RETURNING source_order_id, order_no`,
+      [sourceOrderId]
+    );
+
+    if (!deleted.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Database job not found' });
+    }
+
+    await client.query('COMMIT');
+    return res.json({ deleted: deleted.rows[0] });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('DELETE /api/database/jobs/:id', err);
+    return res.status(500).json({ error: 'Failed to delete database job' });
+  } finally {
+    client.release();
+  }
+});
+
 router.put('/api/database/jobs/:id/positions', async (req, res) => {
   const id = Number.parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) {

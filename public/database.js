@@ -321,6 +321,8 @@
     designDeleteSaving: false,
     closeOrderTarget: null,
     closeOrderSaving: false,
+    orderDeleteTarget: null,
+    orderDeleteSaving: false,
     repeatOrderTarget: null,
     repeatOrderSaving: false,
     noInvoiceCloseTarget: null,
@@ -862,6 +864,12 @@
     if (button.dataset.dbNoInvoiceClose) {
       await flushOrderAutosaves();
       openNoInvoiceCloseConfirmation();
+      return;
+    }
+
+    if (button.dataset.dbDeleteOrder) {
+      await flushOrderAutosaves();
+      openOrderDeleteConfirmation();
       return;
     }
 
@@ -4012,6 +4020,165 @@
     state.noInvoiceCloseTarget = null;
   }
 
+  function openOrderDeleteConfirmation() {
+    const sourceOrderId = Number(state.selectedJob?.source_order_id);
+    if (!Number.isFinite(sourceOrderId) || invoiceGenerated(state.selectedJob) || state.orderDeleteSaving) return;
+
+    state.orderDeleteTarget = {
+      sourceOrderId,
+      label: state.selectedJob?.order_no || state.selectedJob?.job_title || sourceOrderId,
+    };
+    const modal = ensureOrderDeleteModal();
+    const message = modal.querySelector('.db-line-delete-message');
+    const error = modal.querySelector('.db-line-delete-error');
+    if (message) {
+      message.textContent = `Delete order ${state.orderDeleteTarget.label}? This permanently deletes its line items, design numbers and dashboard data.`;
+    }
+    if (error) error.textContent = '';
+    setOrderDeleteModalSaving(false);
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open', 'db-order-delete-open');
+
+    window.requestAnimationFrame(() => {
+      modal.querySelector('[data-db-order-delete-cancel]')?.focus();
+    });
+  }
+
+  function ensureOrderDeleteModal() {
+    let modal = document.getElementById('db-order-delete-modal');
+    if (modal) return modal;
+
+    modal = document.createElement('div');
+    modal.id = 'db-order-delete-modal';
+    modal.className = 'db-line-delete-modal db-order-delete-modal';
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    modal.innerHTML = `
+      <div class="db-line-delete-shell" role="dialog" aria-modal="true" aria-labelledby="db-order-delete-title">
+        <div class="db-line-delete-title" id="db-order-delete-title">Are you sure?</div>
+        <div class="db-line-delete-message">Delete this order?</div>
+        <div class="db-line-delete-error" aria-live="polite"></div>
+        <div class="db-line-delete-actions">
+          <button class="db-line-delete-confirm db-order-delete-confirm" type="button" data-db-order-delete-confirm>Delete</button>
+          <button class="db-line-delete-cancel" type="button" data-db-order-delete-cancel>No</button>
+        </div>
+      </div>
+    `;
+    modal.addEventListener('click', handleOrderDeleteModalClick);
+    document.body.appendChild(modal);
+    return modal;
+  }
+
+  function handleOrderDeleteModalClick(event) {
+    const modal = document.getElementById('db-order-delete-modal');
+    if (!modal || modal.hidden || state.orderDeleteSaving) return;
+
+    if (event.target === modal || event.target.closest('[data-db-order-delete-cancel]')) {
+      closeOrderDeleteConfirmation();
+      return;
+    }
+
+    if (event.target.closest('[data-db-order-delete-confirm]')) confirmDeleteOrder();
+  }
+
+  async function confirmDeleteOrder() {
+    const target = state.orderDeleteTarget;
+    if (!target || state.orderDeleteSaving) return;
+
+    state.orderDeleteSaving = true;
+    setOrderDeleteModalSaving(true);
+
+    try {
+      await fetchJson(`/api/database/jobs/${encodeURIComponent(target.sourceOrderId)}`, {
+        method: 'DELETE',
+      });
+      removeDeletedOrderFromState(target.sourceOrderId);
+      state.orderDeleteSaving = false;
+      closeOrderDeleteConfirmation();
+
+      showView('outstanding', { skipHistory: true });
+      setFooterTitle(state.orderMode === 'all' ? 'All Orders' : 'Open Orders');
+      syncOrderSearchVisibility();
+      renderOutstandingOrders();
+      hydrateOrderSelectors();
+      syncOrderDocumentButtons(null);
+      refreshDashboardAfterOrderDelete();
+
+      await Promise.all([
+        loadOutstandingOrders({ force: true }),
+        loadHomeMetrics(),
+        state.toInvoiceLoaded ? loadToInvoiceJobs({ force: true }) : Promise.resolve(),
+        state.stockOrderingLoaded ? loadStockOrderingJobs({ force: true }) : Promise.resolve(),
+      ]);
+    } catch (err) {
+      state.orderDeleteSaving = false;
+      setOrderDeleteModalSaving(false, err.message || 'Failed to delete order');
+      console.error('Order delete failed', err);
+    }
+  }
+
+  function removeDeletedOrderFromState(sourceOrderId) {
+    const id = Number(sourceOrderId);
+    const withoutOrder = (rows) => (rows || []).filter((row) => Number(row?.source_order_id) !== id);
+    state.outstandingJobs = withoutOrder(state.outstandingJobs);
+    state.toInvoiceJobs = withoutOrder(state.toInvoiceJobs);
+    state.stockOrderingJobs = withoutOrder(state.stockOrderingJobs);
+    state.visuals = withoutOrder(state.visuals);
+    state.visualOpenJobs = withoutOrder(state.visualOpenJobs);
+    state.selectedCustomerOrders = withoutOrder(state.selectedCustomerOrders);
+    state.selectedCustomerDesignNumbers = withoutOrder(state.selectedCustomerDesignNumbers);
+    state.stockOrderingSelectedIds.delete(id);
+    state.stockOrderingExpandedIds.delete(id);
+    state.stockOrderingRalawiseAddingIds.delete(id);
+    state.proofUploads.delete(String(id));
+    state.loadedCustomers = false;
+    state.visualOpenJobsLoaded = false;
+    state.selectedJob = null;
+    state.selectedLineItems = [];
+    state.selectedPositions = [];
+    state.selectedProofFiles = [];
+    state.selectedCustomerOverview = null;
+    state.orderCustomerDetail = null;
+    resetDatabaseProofViewerState();
+    resetLineDraftState();
+    resetCustomLineDraftState();
+    resetLineOrderAutosaveState();
+    resetDesignAutosaveState();
+    resetJobAutosaveState();
+  }
+
+  function setOrderDeleteModalSaving(saving, errorMessage = '') {
+    const modal = document.getElementById('db-order-delete-modal');
+    if (!modal) return;
+    const confirm = modal.querySelector('[data-db-order-delete-confirm]');
+    const cancel = modal.querySelector('[data-db-order-delete-cancel]');
+    const error = modal.querySelector('.db-line-delete-error');
+    if (confirm) {
+      confirm.disabled = saving;
+      confirm.textContent = saving ? 'Deleting...' : 'Delete';
+    }
+    if (cancel) cancel.disabled = saving;
+    if (error) error.textContent = errorMessage;
+  }
+
+  function closeOrderDeleteConfirmation() {
+    if (state.orderDeleteSaving) return;
+    const modal = document.getElementById('db-order-delete-modal');
+    if (!modal) return;
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('modal-open', 'db-order-delete-open');
+    state.orderDeleteTarget = null;
+  }
+
+  function refreshDashboardAfterOrderDelete() {
+    if (!window.__latestTestBoardPayload || typeof window.loadTestBoard !== 'function') return;
+    window.loadTestBoard({ forceRefresh: true }).catch((err) => {
+      console.warn('Tuesday Dashboard refresh after order deletion failed', err);
+    });
+  }
+
   async function loadDatabaseCustomers(options = {}) {
     const query = els.customersSearch.value.trim();
     const sort = normalizeDatabaseCustomerSort(els.customersSort?.value || state.databaseCustomerSort);
@@ -6802,7 +6969,25 @@
             <textarea data-db-job-field="comments">${escapeHtml(job.comments || '')}</textarea>
           </div>
         </div>
+
+        <div class="db-order-delete-actions">
+          ${orderDeleteButton(job)}
+        </div>
       </div>
+    `;
+  }
+
+  function orderDeleteButton(job) {
+    const locked = invoiceGenerated(job);
+    const title = locked ? 'Invoiced orders cannot be deleted' : 'Delete this order';
+    return `
+      <button
+        class="db-order-delete-button"
+        type="button"
+        data-db-delete-order="true"
+        title="${escapeAttr(title)}"
+        ${locked ? 'disabled' : ''}
+      >Delete order</button>
     `;
   }
 
@@ -8813,6 +8998,11 @@
     }
     if (els.stylesImageModal && !els.stylesImageModal.hidden) {
       closeProductStyleImageModal();
+      return;
+    }
+    const orderDeleteModal = document.getElementById('db-order-delete-modal');
+    if (orderDeleteModal && !orderDeleteModal.hidden) {
+      closeOrderDeleteConfirmation();
       return;
     }
     const deleteModal = document.getElementById('db-line-delete-modal');
