@@ -69,6 +69,13 @@ function stockOrderedStatusValue() {
   return dashboardStatusValue(STOCK_ORDERED_LABEL, STATUS_INDEX_FALLBACKS[STOCK_ORDERED_LABEL]);
 }
 
+function statusLabelForApprovedPreProduction(currentStatus) {
+  const normalizedStatus = normalizeColumnTitle(currentStatus);
+  if (isStockOrderedStatus(normalizedStatus)) return STOCK_ORDERED_LABEL;
+  if (normalizedStatus === CHECKED_IN_LABEL) return CHECKED_IN_LABEL;
+  return NO_STOCK_LABEL;
+}
+
 function resolveJobApproved(job, stateValues = {}) {
   const columnValues = stateValues?.column_values || stateValues || {};
   const savedJobApproved = jobApprovedFromColumnValues(columnValues);
@@ -329,10 +336,14 @@ function stockOrderedGroupIdForJob(job) {
   return sanitizeUnapprovedDashboardGroupId(currentGroupId, resolveJobApproved(job, columnValues) === true);
 }
 
-function statusLabelForMoveGroup(groupId) {
+function statusLabelForMoveGroup(groupId, currentStatus = '') {
   if (groupId === TEST_DASHBOARD_GROUP_IDS.HOLD) return HOLD_LABEL;
   if (groupId === TEST_DASHBOARD_GROUP_IDS.OFFICE) return AWAITING_APPROVAL_LABEL;
-  if (groupId === TEST_DASHBOARD_GROUP_IDS.PRE_PRODUCTION) return NO_STOCK_LABEL;
+  if (groupId === TEST_DASHBOARD_GROUP_IDS.PRE_PRODUCTION) {
+    return normalizeColumnTitle(currentStatus) === CHECKED_IN_LABEL
+      ? CHECKED_IN_LABEL
+      : NO_STOCK_LABEL;
+  }
   return '';
 }
 
@@ -379,6 +390,7 @@ module.exports = {
   resolveJobApproved,
   resolvePrivateDashboardGroupId,
   sanitizeUnapprovedDashboardGroupId,
+  statusLabelForApprovedPreProduction,
   statusLabelForMoveGroup,
   stockOrderedGroupIdForJob,
   stockOrderedStatusValue,

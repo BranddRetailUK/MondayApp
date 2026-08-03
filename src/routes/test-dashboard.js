@@ -49,7 +49,6 @@ const {
 } = require('../services/testDashboardFileValidation');
 const {
   AWAITING_APPROVAL_LABEL,
-  NO_STOCK_LABEL,
   STOCK_ORDERED_LABEL,
   PRE_PRODUCTION_LABEL,
   READY_TO_PRINT_LABEL,
@@ -61,11 +60,11 @@ const {
   deriveTypeLabel,
   getColumnText,
   isAllowedUnapprovedManualStatus,
-  isStockOrderedStatus,
   normalizeStatusLookupLabel,
   resolveDashboardGroupId,
   resolveJobApproved,
   resolvePrivateDashboardGroupId,
+  statusLabelForApprovedPreProduction,
   statusLabelForMoveGroup,
 } = require('../services/dashboardAutomation');
 
@@ -186,9 +185,12 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/group', async (req, res) =
     ]);
     if (!job) return res.status(404).json({ error: privateJob ? 'Private dashboard job not found' : 'Database job not found' });
 
-    const statusLabel = statusLabelForMoveGroup(groupId);
     const state = privateJob ? job : await fetchJobState(job.source_order_id);
     const columnValues = { ...(state?.column_values || {}) };
+    const currentStatus = privateJob
+      ? getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS])
+      : (job.dashboard_status || getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]));
+    const statusLabel = statusLabelForMoveGroup(groupId, currentStatus);
     if (!privateJob) delete columnValues[DASHBOARD_SPLIT_STATE_KEY];
     const jobApproved = privateJob
       ? jobApprovedFromColumnValues(columnValues) === true
@@ -1386,10 +1388,7 @@ function applyApprovedDashboardColumnValues(columns, columnValues, job = {}) {
   const dueDate = dateValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.DATE), addDaysFromTodayIso(14));
   if (dueDate) columnValues[TEST_DASHBOARD_COLUMN_IDS.DATE] = dueDate;
 
-  const currentStatus = normalizeColumnTitle(
-    job?.dashboard_status || getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS])
-  );
-  const nextStatusLabel = isStockOrderedStatus(currentStatus) ? STOCK_ORDERED_LABEL : NO_STOCK_LABEL;
+  const nextStatusLabel = approvedDashboardStatusLabel(job, columnValues);
   const status = statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, nextStatusLabel);
   if (status) columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS] = status;
 }
@@ -1398,7 +1397,7 @@ function approvedDashboardStatusLabel(job = {}, columnValues = {}) {
   const statusText = normalizeColumnTitle(
     job?.dashboard_status || getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS])
   );
-  return isStockOrderedStatus(statusText) ? STOCK_ORDERED_LABEL : NO_STOCK_LABEL;
+  return statusLabelForApprovedPreProduction(statusText);
 }
 
 async function getApprovalRequirements(job, stateValues = {}) {
