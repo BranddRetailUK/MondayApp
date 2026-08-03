@@ -33,6 +33,42 @@ test('invoice delivery addresses use comma-separated text instead of stacked lin
   );
 });
 
+test('order acknowledgement delivery addresses use the widened comma-separated row', () => {
+  const acknowledgementHeader = sourceFunction(
+    database,
+    'function renderOrderAckPageHeader',
+    'function renderOrderAckPageContent'
+  );
+
+  assert.match(
+    acknowledgementHeader,
+    /orderAckMetaRow\('Delivery address:', orderDocumentAddressText\(deliveryDisplay\)\)/
+  );
+  assert.doesNotMatch(
+    acknowledgementHeader,
+    /renderOrderDocumentStackedAddressValue\(deliveryDisplay\)/
+  );
+  assert.match(
+    styles,
+    /\.db-order-ack-meta\{\s*margin-left:13\.5mm;\s*width:147mm;\s*\}/
+  );
+  assert.match(
+    styles,
+    /\.db-order-ack-letter\{\s*width:153mm;\s*margin:7mm 0 0 7\.5mm;/
+  );
+});
+
+test('delivery note recipient addresses use comma-separated text', () => {
+  const deliveryNoteRenderer = sourceFunction(
+    database,
+    'function renderDeliveryNoteDocument',
+    'function renderOrderDocumentPage'
+  );
+
+  assert.match(deliveryNoteRenderer, /stackedAddress: false/);
+  assert.doesNotMatch(deliveryNoteRenderer, /stackedAddress: true/);
+});
+
 test('invoice tables reserve 15mm for numeric columns and widen descriptions', () => {
   assert.match(
     styles,
@@ -49,6 +85,14 @@ test('invoice tables reserve 15mm for numeric columns and widen descriptions', (
   assert.match(
     styles,
     /\.db-invoice-items-business-gift th:nth-child\(n\+2\)\{width:15mm\}/
+  );
+  assert.match(
+    styles,
+    /\.db-order-doc-page-invoice \.db-invoice-summary\{\s*grid-template-columns:62mm 46mm 15mm 1fr;\s*\}/
+  );
+  assert.match(
+    styles,
+    /\.db-order-doc-page-invoice \.db-invoice-total-row\{\s*grid-template-columns:46mm 15mm;\s*\}/
   );
 });
 

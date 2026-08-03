@@ -5191,7 +5191,7 @@ body.modal-open{overflow:hidden}
 }
 .db-order-ack-meta{
   margin-left:13.5mm;
-  width:82mm;
+  width:147mm;
 }
 .db-order-ack-meta-row{
   display:grid;
@@ -5212,8 +5212,8 @@ body.modal-open{overflow:hidden}
   line-height:1.22;
 }
 .db-order-ack-letter{
-  margin:7mm 0 0 13.5mm;
-  max-width:160mm;
+  width:153mm;
+  margin:7mm 0 0 7.5mm;
   font-size:14px;
 }
 .db-order-ack-letter p{
@@ -5530,6 +5530,12 @@ body.modal-open{overflow:hidden}
   display:grid;
   grid-template-columns:44mm 18mm;
   align-items:stretch;
+}
+.db-order-doc-page-invoice .db-invoice-summary{
+  grid-template-columns:62mm 46mm 15mm 1fr;
+}
+.db-order-doc-page-invoice .db-invoice-total-row{
+  grid-template-columns:46mm 15mm;
 }
 .db-invoice-total-row span{
   padding:1.1mm 1.2mm 1.1mm 0;

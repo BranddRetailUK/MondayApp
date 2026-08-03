@@ -9492,7 +9492,7 @@
         ${orderAckMetaRow('Order date:', formatDate(job.order_date, 'full'))}
         ${orderAckMetaRow('Order taken by:', takenByLabel(job))}
         ${orderAckMetaRow('Order value:', formatCurrency(totals.gross))}
-        ${orderAckMetaRow('Delivery address:', renderOrderDocumentStackedAddressValue(deliveryDisplay), { html: true, stacked: true })}
+        ${orderAckMetaRow('Delivery address:', orderDocumentAddressText(deliveryDisplay))}
       </section>
 
       <section class="db-order-ack-letter">
@@ -9569,7 +9569,7 @@
       job,
       items,
       addressLines,
-      stackedAddress: true,
+      stackedAddress: false,
       showSignature: true,
       metaRows: [
         { label: 'Invoice No', value: invoiceDocumentNo(job) },
@@ -10488,14 +10488,6 @@
       .filter(Boolean)
       .map((line) => `<div>${escapeHtml(line)}</div>`)
       .join('');
-  }
-
-  function renderOrderDocumentStackedAddressValue(lines) {
-    return (lines || [])
-      .map((line) => String(line || '').trim())
-      .filter(Boolean)
-      .map(escapeHtml)
-      .join('<br>');
   }
 
   function splitOrderAckAddress(value) {
