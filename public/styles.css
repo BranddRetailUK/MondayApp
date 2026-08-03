@@ -5394,6 +5394,10 @@ body.modal-open{overflow:hidden}
 .db-order-doc-meta-wrap:not(.has-signature){
   grid-template-columns:106mm;
 }
+.db-order-doc-page-invoice .db-order-doc-meta-wrap:not(.has-signature),
+.db-order-doc-page-pro-forma .db-order-doc-meta-wrap:not(.has-signature){
+  grid-template-columns:153mm;
+}
 .db-order-doc-meta .db-order-ack-meta-row{
   grid-template-columns:30mm 1fr;
   gap:3mm;
@@ -5443,25 +5447,25 @@ body.modal-open{overflow:hidden}
   text-align:left;
   font-weight:700;
 }
-.db-invoice-items th:nth-child(1){width:17mm}
-.db-invoice-items th:nth-child(3){width:13mm}
-.db-invoice-items th:nth-child(4){width:18mm}
-.db-invoice-items th:nth-child(5){width:10mm}
-.db-invoice-items th:nth-child(6){width:16mm}
-.db-invoice-items th:nth-child(7){width:18mm}
-.db-invoice-items th:nth-child(8){width:17mm}
-.db-invoice-items th:nth-child(9){width:12mm}
-.db-invoice-items td:nth-child(n+5),
-.db-invoice-items th:nth-child(n+5){
+.db-invoice-items:not(.db-invoice-items-business-gift) th:nth-child(1){width:14mm}
+.db-invoice-items:not(.db-invoice-items-business-gift) th:nth-child(2){width:42mm}
+.db-invoice-items:not(.db-invoice-items-business-gift) th:nth-child(3){width:9mm}
+.db-invoice-items:not(.db-invoice-items-business-gift) th:nth-child(4){width:13mm}
+.db-invoice-items:not(.db-invoice-items-business-gift) th:nth-child(n+5){width:15mm}
+.db-invoice-items:not(.db-invoice-items-business-gift) td:nth-child(n+5),
+.db-invoice-items:not(.db-invoice-items-business-gift) th:nth-child(n+5){
   text-align:right;
   padding-left:0.55mm;
   padding-right:0.55mm;
 }
-.db-invoice-items-business-gift th:nth-child(2){width:8mm}
-.db-invoice-items-business-gift th:nth-child(3){width:13mm}
-.db-invoice-items-business-gift th:nth-child(4){width:14.5mm}
-.db-invoice-items-business-gift th:nth-child(5){width:13.5mm}
-.db-invoice-items-business-gift th:nth-child(6){width:10mm}
+.db-invoice-items:not(.db-invoice-items-business-gift) td:nth-child(2),
+.db-invoice-items-business-gift td:nth-child(1){
+  white-space:normal;
+  overflow-wrap:break-word;
+  line-height:1.2;
+}
+.db-invoice-items-business-gift th:nth-child(1){width:78mm}
+.db-invoice-items-business-gift th:nth-child(n+2){width:15mm}
 .db-invoice-items-business-gift td:nth-child(n+2),
 .db-invoice-items-business-gift th:nth-child(n+2){
   text-align:right;

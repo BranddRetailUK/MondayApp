@@ -9546,7 +9546,7 @@
         { label: 'VAT No.:', value: ULTIMATE_VAT_NUMBER },
         { label: 'Invoice date:', value: formatDate(generatedAt, 'full') },
         { label: 'Payment terms:', value: job.payment_terms || '' },
-        { label: 'Delivery address:', value: renderOrderDocumentStackedAddressValue(deliveryDisplay), html: true, stacked: true },
+        { label: 'Delivery address:', value: orderDocumentAddressText(deliveryDisplay) },
       ],
     };
     const pages = buildOrderDocumentPages({
@@ -9928,7 +9928,7 @@
       }
       return maxWrappedLineCount([
         [orderDocumentItemCode(item), 14],
-        [description, 27],
+        [description, 35],
         [item.size || '', 9],
         [item.colour || '', 14],
         [formatNumber(orderAckQuantity(item)), 8],
