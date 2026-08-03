@@ -7878,7 +7878,7 @@
     if (!state.selectedJob?.source_order_id && !state.selectedJob?.order_no) return;
 
     const documentType = databaseDocumentType(type);
-    if (documentType === 'invoice' && !isJobCompletedForInvoice(state.selectedJob)) {
+    if (documentType === 'invoice' && !isJobInvoiceStatusEligible(state.selectedJob)) {
       openInvoiceCompletionModal();
       return;
     }
@@ -8659,8 +8659,9 @@
     return legacyInputDateToIso(value);
   }
 
-  function isJobCompletedForInvoice(job) {
-    return normalizeDashboardStatusLabel(job?.dashboard_status) === 'COMPLETED';
+  function isJobInvoiceStatusEligible(job) {
+    return categoryForJob(job) === 'gifts'
+      || normalizeDashboardStatusLabel(job?.dashboard_status) === 'COMPLETED';
   }
 
   function openInvoiceCompletionModal() {

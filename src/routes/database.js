@@ -3735,12 +3735,16 @@ router.put('/api/database/jobs/:id', async (req, res) => {
       }
 
       const completion = await client.query(
-        `SELECT dashboard_status
+        `SELECT dashboard_status, order_type, order_type_abbr
          FROM database_jobs
          WHERE source_order_id = $1`,
         [job.source_order_id]
       );
-      if (normalizeColumnTitle(completion.rows[0]?.dashboard_status) !== 'COMPLETED') {
+      const currentJob = completion.rows[0] || {};
+      if (
+        !isBusinessGiftDatabaseOrder(currentJob)
+        && normalizeColumnTitle(currentJob.dashboard_status) !== 'COMPLETED'
+      ) {
         await client.query('ROLLBACK');
         return res.status(409).json({
           error: 'This job is not yet completed',
@@ -5815,6 +5819,11 @@ function normalizeDatabaseOrderType(value) {
   if (isEmbroidery) return 'Embroidery';
   if (isPrint) return 'Printing';
   return null;
+}
+
+function isBusinessGiftDatabaseOrder(job) {
+  return normalizeDatabaseOrderType(job?.order_type) === 'Business Gifts'
+    || cleanQuery(job?.order_type_abbr).toUpperCase() === 'G';
 }
 
 function orderTypeAbbreviation(orderType) {

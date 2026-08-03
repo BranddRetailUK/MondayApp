@@ -35,6 +35,30 @@ test('invoice generation proceeds after the job is dashboard-completed', async (
   assert.ok(result.queries.some(query => query.text === 'COMMIT'));
 });
 
+test('invoice generation allows a Business Gift job before dashboard completion', async () => {
+  const result = await exerciseInvoiceRoute('', {
+    order_type: 'Business Gifts',
+    order_type_abbr: '',
+  });
+
+  assert.equal(result.response.statusCode, 200);
+  assert.equal(result.response.body.job.invoice_no, 52002);
+  assert.equal(result.response.body.job.invoice_printed, true);
+  assert.ok(result.queries.some(query => query.text.includes('WITH next_invoice AS')));
+  assert.ok(result.queries.some(query => query.text === 'COMMIT'));
+});
+
+test('invoice generation recognizes the legacy Business Gift abbreviation', async () => {
+  const result = await exerciseInvoiceRoute('AWAITING APPROVAL', {
+    order_type: '',
+    order_type_abbr: ' g ',
+  });
+
+  assert.equal(result.response.statusCode, 200);
+  assert.ok(result.queries.some(query => query.text.includes('WITH next_invoice AS')));
+  assert.ok(result.queries.some(query => query.text === 'COMMIT'));
+});
+
 test('invoice UI blocks the request and PDF modal behind the requested Okay message', () => {
   const database = fs.readFileSync(
     path.join(__dirname, '..', 'public', 'database.js'),
@@ -44,21 +68,25 @@ test('invoice UI blocks the request and PDF modal behind the requested Okay mess
 
   assert.match(
     flow,
-    /if \(documentType === 'invoice' && !isJobCompletedForInvoice\(state\.selectedJob\)\) \{\s+openInvoiceCompletionModal\(\);\s+return;\s+\}/
+    /if \(documentType === 'invoice' && !isJobInvoiceStatusEligible\(state\.selectedJob\)\) \{\s+openInvoiceCompletionModal\(\);\s+return;\s+\}/
   );
   assert.ok(
-    flow.indexOf('isJobCompletedForInvoice') < flow.indexOf('markSelectedJobInvoiced'),
+    flow.indexOf('isJobInvoiceStatusEligible') < flow.indexOf('markSelectedJobInvoiced'),
     'the UI guard must run before the invoice request'
   );
   assert.ok(
-    flow.indexOf('isJobCompletedForInvoice') < flow.indexOf('ensureOrderAckModal'),
+    flow.indexOf('isJobInvoiceStatusEligible') < flow.indexOf('ensureOrderAckModal'),
     'the UI guard must run before the invoice PDF modal'
+  );
+  assert.match(
+    database,
+    /function isJobInvoiceStatusEligible\(job\) \{\s+return categoryForJob\(job\) === 'gifts'\s+\|\| normalizeDashboardStatusLabel\(job\?\.dashboard_status\) === 'COMPLETED';\s+\}/
   );
   assert.match(database, /This job is not yet completed/);
   assert.match(database, /data-db-invoice-completion-okay>Okay<\/button>/);
 });
 
-async function exerciseInvoiceRoute(dashboardStatus) {
+async function exerciseInvoiceRoute(dashboardStatus, jobOverrides = {}) {
   const poolPath = require.resolve('../src/db/pool');
   const routePath = require.resolve('../src/routes/database');
   const originalPoolModule = require.cache[poolPath];
@@ -74,7 +102,12 @@ async function exerciseInvoiceRoute(dashboardStatus) {
       if (text.includes('SELECT dashboard_status')) {
         return {
           rowCount: 1,
-          rows: [{ dashboard_status: dashboardStatus }],
+          rows: [{
+            dashboard_status: dashboardStatus,
+            order_type: 'Printing',
+            order_type_abbr: 'P',
+            ...jobOverrides,
+          }],
         };
       }
       if (text.includes('WITH next_invoice AS')) {
