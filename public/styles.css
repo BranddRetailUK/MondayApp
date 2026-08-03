@@ -5534,8 +5534,12 @@ body.modal-open{overflow:hidden}
 .db-order-doc-page-invoice .db-invoice-summary{
   grid-template-columns:62mm 46mm 15mm 1fr;
 }
+.db-order-doc-page-invoice .db-invoice-total-lines{
+  grid-column:2 / -1;
+}
 .db-order-doc-page-invoice .db-invoice-total-row{
-  grid-template-columns:46mm 15mm;
+  grid-template-columns:46mm minmax(15mm, max-content);
+  justify-content:start;
 }
 .db-invoice-total-row span{
   padding:1.1mm 1.2mm 1.1mm 0;
@@ -5545,6 +5549,7 @@ body.modal-open{overflow:hidden}
 }
 .db-invoice-total-row strong{
   min-height:5.2mm;
+  min-width:15mm;
   box-sizing:border-box;
   display:flex;
   align-items:center;
@@ -5553,6 +5558,7 @@ body.modal-open{overflow:hidden}
   padding:1mm 0.55mm;
   font-size:10.5px;
   font-weight:800;
+  white-space:nowrap;
 }
 .db-pro-forma-vat-warning{
   width:153mm;
