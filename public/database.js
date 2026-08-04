@@ -809,7 +809,7 @@
 
     const stockRalawiseId = button.dataset.dbStockRalawise;
     if (stockRalawiseId) {
-      await addStockOrderingJobToRalawise(stockRalawiseId);
+      await syncStockOrderingJobToRalawise(stockRalawiseId);
       return;
     }
 
@@ -5562,23 +5562,35 @@
       business_name: job.customer_name,
     });
     const ralawise = job.ralawiseBasket || {};
-    const adding = state.stockOrderingRalawiseAddingIds.has(sourceOrderId) || ralawise.busy;
+    const syncing = state.stockOrderingRalawiseAddingIds.has(sourceOrderId) || ralawise.busy;
+    const needsUpdate = ralawise.alreadyBasketed && ralawise.needsUpdate;
+    const basketInSync = ralawise.alreadyBasketed && !needsUpdate;
     const unresolvedCount = Array.isArray(ralawise.unresolved) ? ralawise.unresolved.length : 0;
-    const buttonLabel = adding
-      ? 'Adding...'
-      : ralawise.alreadyBasketed
-        ? 'Added to basket'
-        : unresolvedCount
+    const buttonLabel = syncing
+      ? ralawise.alreadyBasketed ? 'Updating...' : 'Adding...'
+      : needsUpdate
+        ? unresolvedCount
           ? 'Needs SKU'
-          : ralawise.status === 'failed'
-            ? 'Retry Ralawise'
-            : 'Add to Ralawise';
+          : ralawise.syncStatus === 'failed'
+            ? 'Retry update'
+            : 'Update basket'
+        : ralawise.alreadyBasketed
+          ? 'Added to basket'
+          : unresolvedCount
+            ? 'Needs SKU'
+            : ralawise.status === 'failed'
+              ? 'Retry Ralawise'
+              : 'Add to Ralawise';
     const buttonTitle = unresolvedCount
       ? `${formatNumber(unresolvedCount)} product line${unresolvedCount === 1 ? '' : 's'} need an exact live Ralawise colour/size SKU`
-      : ralawise.error || '';
-    const ralawiseDisabled = adding || ralawise.alreadyBasketed || !ralawise.eligible;
+      : ralawise.error || (needsUpdate
+        ? 'The saved order items have changed since this job was added to Ralawise'
+        : '');
+    const ralawiseDisabled = syncing || (ralawise.alreadyBasketed
+      ? !needsUpdate || !ralawise.updateEligible
+      : !ralawise.eligible);
     return `
-      <tr class="db-stock-ordering-row${ralawise.alreadyBasketed ? ' is-ralawise-basketed' : ''}" data-stock-order-id="${escapeAttr(sourceOrderId)}" tabindex="0">
+      <tr class="db-stock-ordering-row${basketInSync ? ' is-ralawise-basketed' : ''}" data-stock-order-id="${escapeAttr(sourceOrderId)}" tabindex="0">
         <td class="db-row-selector">
           <input
             class="db-stock-ordering-check"
@@ -5608,7 +5620,7 @@
         <td>${escapeHtml(formatNumber(stockOrderingQuantity(job)))}</td>
         <td class="db-stock-ralawise-cell">
           <button
-            class="db-stock-ralawise-button${ralawise.alreadyBasketed ? ' is-basketed' : ''}"
+            class="db-stock-ralawise-button${basketInSync ? ' is-basketed' : ''}"
             type="button"
             data-db-stock-ralawise="${escapeAttr(sourceOrderId)}"
             ${ralawiseDisabled ? 'disabled' : ''}
@@ -5743,16 +5755,20 @@
     renderStockOrderingJobs();
   }
 
-  async function addStockOrderingJobToRalawise(sourceOrderId) {
+  async function syncStockOrderingJobToRalawise(sourceOrderId) {
     const id = String(sourceOrderId || '');
     if (!id || state.stockOrderingRalawiseAddingIds.has(id)) return;
     const job = (state.stockOrderingJobs || []).find((item) => String(item.source_order_id || '') === id);
     if (!job) return;
+    const isUpdate = Boolean(job.ralawiseBasket?.alreadyBasketed && job.ralawiseBasket?.needsUpdate);
+    const endpoint = isUpdate
+      ? `/api/database/stock-ordering/${encodeURIComponent(id)}/ralawise-basket/update`
+      : `/api/database/stock-ordering/${encodeURIComponent(id)}/ralawise-basket`;
 
     state.stockOrderingRalawiseAddingIds.add(id);
     renderStockOrderingJobs();
     try {
-      const data = await fetchJson(`/api/database/stock-ordering/${encodeURIComponent(id)}/ralawise-basket`, {
+      const data = await fetchJson(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: '{}',
@@ -5763,6 +5779,10 @@
         eligible: false,
         busy: false,
         alreadyBasketed: true,
+        needsUpdate: false,
+        updateEligible: false,
+        syncStatus: 'in_sync',
+        revision: Number(data.revision || job.ralawiseBasket?.revision || 1),
         basketUrl: data.basketUrl || job.ralawiseBasket?.basketUrl || null,
         stockWarnings: Array.isArray(data.stockWarnings) ? data.stockWarnings : [],
         error: null,
@@ -5772,17 +5792,21 @@
       if (warnings.length) {
         const unavailable = warnings.filter((warning) => warning.out_of_stock).length;
         alert(
-          `Order ${job.order_no || id} was added to the Ralawise basket. `
+          `Order ${job.order_no || id} was ${isUpdate ? 'updated in' : 'added to'} the Ralawise basket. `
           + `Ralawise reported ${formatNumber(warnings.length)} stock warning${warnings.length === 1 ? '' : 's'}`
           + `${unavailable ? `, including ${formatNumber(unavailable)} out of stock` : ''}.`
         );
       }
     } catch (err) {
-      alert(err.message || 'Failed to add this job to Ralawise');
+      const fallback = isUpdate
+        ? 'Failed to update this job in the Ralawise basket'
+        : 'Failed to add this job to Ralawise';
+      alert(err.message || fallback);
       const current = (state.stockOrderingJobs || []).find((item) => String(item.source_order_id || '') === id);
       if (current?.ralawiseBasket) {
-        current.ralawiseBasket.status = 'failed';
-        current.ralawiseBasket.error = err.message || 'Failed to add this job to Ralawise';
+        if (isUpdate) current.ralawiseBasket.syncStatus = 'failed';
+        else current.ralawiseBasket.status = 'failed';
+        current.ralawiseBasket.error = err.message || fallback;
       }
     } finally {
       state.stockOrderingRalawiseAddingIds.delete(id);

@@ -5,9 +5,11 @@ const {
   CookieJar,
   applyReferences,
   buildStockWarnings,
+  basketSnapshotsMatch,
   createRalawiseBasketClient,
   extractRequestVerificationToken,
   normalizeBasketItems,
+  normalizedBasketSnapshot,
   parseRalawiseOrderDetailLines,
   splitSetCookieHeader,
 } = require('../src/integrations/ralawiseBasket');
@@ -49,6 +51,23 @@ test('normalizeBasketItems groups only matching code and reference pairs', () =>
     { Code: 'GD001BLACL', Qty: 5, SetQuantity: false, OrderLineRef: '12345' },
     { Code: 'GD001BLACL', Qty: 1, SetQuantity: false, OrderLineRef: '67890' },
   ]);
+});
+
+test('normalized basket snapshots compare exact SKU, reference, and aggregate quantity', () => {
+  const raw = [
+    { Code: 'one', Qty: 1, OLRef: 'JOB-10' },
+    { Code: 'ONE', Qty: 2, OrderLineRef: 'JOB-10' },
+    { Code: 'TWO', Qty: 4, OLRef: 'OTHER' },
+  ];
+  const expected = [{ code: 'ONE', quantity: 3, reference: 'JOB-10' }];
+
+  assert.deepEqual(normalizedBasketSnapshot(raw, 'JOB-10'), [
+    { code: 'ONE', quantity: 3, reference: 'JOB-10' },
+  ]);
+  assert.equal(basketSnapshotsMatch(raw, expected, 'JOB-10'), true);
+  assert.equal(basketSnapshotsMatch(raw, [
+    { code: 'ONE', quantity: 2, reference: 'JOB-10' },
+  ], 'JOB-10'), false);
 });
 
 test('applyReferences does not attach a job reference to an existing unreferenced basket line', () => {
@@ -233,4 +252,173 @@ test('addItems signs in, adds grouped quantities, updates references, and return
   assert.equal(result.total_quantity, 3);
   assert.equal(result.updated_reference_count, 1);
   assert.equal(result.stock_warnings[0].allocated_quantity, 2);
+});
+
+test('updateItems changes the quantity only after the live basket matches its audit', async () => {
+  const calls = [];
+  const queued = [
+    response('<input name="__RequestVerificationToken" value="login-token">'),
+    response({ Success: true }),
+    response('<input name="__RequestVerificationToken" value="basket-token">'),
+    response({ Success: true, Data: {
+      OrderRef: 'BASKET-1',
+      Items: [{ Code: 'ONE', Qty: 2, OLRef: 'JOB-10' }],
+    } }),
+    response({ Success: true }),
+    response({ Success: true, Data: {
+      OrderRef: 'BASKET-1',
+      Items: [{ Code: 'ONE', Qty: 3, OLRef: 'JOB-10' }],
+    } }),
+  ];
+  const client = createRalawiseBasketClient({
+    config: {
+      RALAWISE_SHOP_BASE_URL: 'https://shop.ralawise.com',
+      RALAWISE_USER: 'buyer@example.test',
+      RALAWISE_PASSWORD: 'secret',
+      RALAWISE_REQUEST_TIMEOUT_MS: 5000,
+    },
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      const next = queued.shift();
+      assert.ok(next, `Unexpected fetch call to ${url}`);
+      return next;
+    },
+  });
+
+  const result = await client.updateItems(
+    [{ code: 'ONE', quantity: 2, reference: 'JOB-10' }],
+    [{ code: 'ONE', quantity: 3, reference: 'JOB-10' }],
+    { reference: 'JOB-10' }
+  );
+
+  assert.equal(queued.length, 0);
+  assert.equal(new URL(calls[4].url).pathname, '/services/cart/updateBasket');
+  assert.equal(JSON.parse(calls[4].options.body).UpdateCartDtos[0].Qty, 3);
+  assert.equal(result.total_quantity, 3);
+});
+
+test('updateItems replaces a SKU and reapplies the job reference', async () => {
+  const calls = [];
+  const queued = [
+    response('<input name="__RequestVerificationToken" value="login-token">'),
+    response({ Success: true }),
+    response('<input name="__RequestVerificationToken" value="basket-token">'),
+    response({ Success: true, Data: {
+      OrderRef: 'BASKET-1',
+      Items: [{ Code: 'OLD', Qty: 2, OLRef: 'JOB-10' }],
+    } }),
+    response({ Success: true }),
+    response({ Success: true, Data: { OrderRef: 'BASKET-1', Items: [] } }),
+    response({ Success: true, Items: [{ Code: 'NEW', Quantity: 2, AllocatedQuantity: 2 }] }),
+    response({ Success: true, Data: {
+      OrderRef: 'BASKET-1',
+      Items: [{ Code: 'NEW', Qty: 2, OLRef: '' }],
+    } }),
+    response({ Success: true }),
+    response({ Success: true, Data: {
+      OrderRef: 'BASKET-1',
+      Items: [{ Code: 'NEW', Qty: 2, OLRef: 'JOB-10' }],
+    } }),
+  ];
+  const client = createRalawiseBasketClient({
+    config: {
+      RALAWISE_SHOP_BASE_URL: 'https://shop.ralawise.com',
+      RALAWISE_USER: 'buyer@example.test',
+      RALAWISE_PASSWORD: 'secret',
+      RALAWISE_REQUEST_TIMEOUT_MS: 5000,
+    },
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      const next = queued.shift();
+      assert.ok(next, `Unexpected fetch call to ${url}`);
+      return next;
+    },
+  });
+
+  const result = await client.updateItems(
+    [{ code: 'OLD', quantity: 2, reference: 'JOB-10' }],
+    [{ code: 'NEW', quantity: 2, reference: 'JOB-10' }],
+    { reference: 'JOB-10' }
+  );
+
+  assert.equal(queued.length, 0);
+  assert.equal(new URL(calls[6].url).pathname, '/services/cart/AddMultiItemsToCart');
+  assert.equal(new URL(calls[8].url).pathname, '/services/cart/updateBasket');
+  assert.equal(JSON.parse(calls[8].options.body).UpdateCartDtos[0].OLRef, 'JOB-10');
+  assert.deepEqual(result.items, [{ code: 'NEW', quantity: 2, reference: 'JOB-10' }]);
+});
+
+test('updateItems refuses to mutate a manually changed or already-ordered live basket', async () => {
+  const calls = [];
+  const queued = [
+    response('<input name="__RequestVerificationToken" value="login-token">'),
+    response({ Success: true }),
+    response('<input name="__RequestVerificationToken" value="basket-token">'),
+    response({ Success: true, Data: {
+      OrderRef: 'BASKET-1',
+      Items: [{ Code: 'MANUAL', Qty: 2, OLRef: 'JOB-10' }],
+    } }),
+  ];
+  const client = createRalawiseBasketClient({
+    config: {
+      RALAWISE_SHOP_BASE_URL: 'https://shop.ralawise.com',
+      RALAWISE_USER: 'buyer@example.test',
+      RALAWISE_PASSWORD: 'secret',
+      RALAWISE_REQUEST_TIMEOUT_MS: 5000,
+    },
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      const next = queued.shift();
+      assert.ok(next, `Unexpected fetch call to ${url}`);
+      return next;
+    },
+  });
+
+  await assert.rejects(client.updateItems(
+    [{ code: 'OLD', quantity: 2, reference: 'JOB-10' }],
+    [{ code: 'NEW', quantity: 2, reference: 'JOB-10' }],
+    { reference: 'JOB-10' }
+  ), (error) => error.code === 'basket_drift' && error.status === 409);
+  assert.equal(queued.length, 0);
+  assert.equal(calls.length, 4);
+  assert.equal(calls.filter((call) => call.options.method === 'POST').length, 1);
+});
+
+test('updateItems reports a potentially partial supplier mutation when replacement fails', async () => {
+  const queued = [
+    response('<input name="__RequestVerificationToken" value="login-token">'),
+    response({ Success: true }),
+    response('<input name="__RequestVerificationToken" value="basket-token">'),
+    response({ Success: true, Data: {
+      OrderRef: 'BASKET-1',
+      Items: [{ Code: 'OLD', Qty: 2, OLRef: 'JOB-10' }],
+    } }),
+    response({ Success: true }),
+    response({ Success: true, Data: { OrderRef: 'BASKET-1', Items: [] } }),
+    response({ Success: false, Message: 'Replacement unavailable' }),
+  ];
+  const client = createRalawiseBasketClient({
+    config: {
+      RALAWISE_SHOP_BASE_URL: 'https://shop.ralawise.com',
+      RALAWISE_USER: 'buyer@example.test',
+      RALAWISE_PASSWORD: 'secret',
+      RALAWISE_REQUEST_TIMEOUT_MS: 5000,
+    },
+    fetchImpl: async (url) => {
+      const next = queued.shift();
+      assert.ok(next, `Unexpected fetch call to ${url}`);
+      return next;
+    },
+  });
+
+  await assert.rejects(client.updateItems(
+    [{ code: 'OLD', quantity: 2, reference: 'JOB-10' }],
+    [{ code: 'NEW', quantity: 2, reference: 'JOB-10' }],
+    { reference: 'JOB-10' }
+  ), (error) => (
+    error.code === 'basket_update_partial'
+    && error.status === 409
+    && /before checkout/i.test(error.message)
+  ));
+  assert.equal(queued.length, 0);
 });

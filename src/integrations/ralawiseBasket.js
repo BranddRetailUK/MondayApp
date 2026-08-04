@@ -337,6 +337,8 @@ function normalizeBasketItems(items) {
       || item?.OrderLineRef
       || item?.orderLineRef
       || item?.lineReference
+      || item?.OLRef
+      || item?.olRef
     ).slice(0, 15);
     if (!code || quantity < 1) return;
     const key = `${code}\n${reference}`;
@@ -346,6 +348,35 @@ function normalizeBasketItems(items) {
     grouped.set(key, groupedItem);
   });
   return Array.from(grouped.values());
+}
+
+function normalizedBasketSnapshot(items, reference = '') {
+  const normalizedReference = trimText(reference).slice(0, 15);
+  return normalizeBasketItems(items)
+    .map((item) => ({
+      code: basketCode(item),
+      quantity: basketQuantity(item),
+      reference: basketReference(item),
+    }))
+    .filter((item) => item.code && item.quantity > 0 && (
+      !normalizedReference || item.reference === normalizedReference
+    ))
+    .sort((left, right) => (
+      left.reference.localeCompare(right.reference)
+      || left.code.localeCompare(right.code)
+      || left.quantity - right.quantity
+    ));
+}
+
+function basketSnapshotsMatch(left, right, reference = '') {
+  const normalizedLeft = normalizedBasketSnapshot(left, reference);
+  const normalizedRight = normalizedBasketSnapshot(right, reference);
+  return normalizedLeft.length === normalizedRight.length
+    && normalizedLeft.every((item, index) => (
+      item.code === normalizedRight[index].code
+      && item.quantity === normalizedRight[index].quantity
+      && item.reference === normalizedRight[index].reference
+    ));
 }
 
 function responseItems(data) {
@@ -572,6 +603,172 @@ function createRalawiseBasketClient(options = {}) {
     };
   }
 
+  async function postBasketUpdate(context, token, cart, items, failureMessage) {
+    const response = await request(context, '/services/cart/updateBasket', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-XSRF-Token': token,
+        RequestVerificationToken: token,
+        epilanguage: 'en-GB',
+        Referer: `${baseUrl}/basket-page/`,
+      },
+      body: JSON.stringify({
+        OrderReference: trimText(cart?.OrderRef || cart?.orderRef),
+        UpdateCartDtos: items,
+      }),
+    });
+    const data = await responseJson(response, failureMessage);
+    if (data?.Success === false) {
+      throw new RalawiseBasketError(failureMessage, {
+        code: 'basket_update_failed',
+        upstreamMessage: trimText(data?.Message || data?.Reason),
+      });
+    }
+    return data;
+  }
+
+  async function updateItems(expectedItems, desiredItems, options = {}) {
+    const reference = trimText(options.reference).slice(0, 15);
+    if (!reference) {
+      throw new RalawiseBasketError('A Ralawise basket line reference is required.', {
+        code: 'missing_reference',
+        status: 400,
+      });
+    }
+    const expected = normalizedBasketSnapshot(expectedItems, reference);
+    const desired = normalizedBasketSnapshot(desiredItems, reference);
+    const context = await authenticatedContext();
+    const token = await loadPageToken(context);
+    let cart = await loadCart(context);
+    let cartItems = Array.isArray(cart?.Items) ? cart.Items : [];
+    const actual = normalizedBasketSnapshot(cartItems, reference);
+    if (!basketSnapshotsMatch(actual, expected, reference)) {
+      throw new RalawiseBasketError(
+        'The Ralawise basket no longer matches what UltimateHub added. It may have been changed or ordered, so no update was made.',
+        {
+          code: 'basket_drift',
+          status: 409,
+          expectedItems: expected,
+          actualItems: actual,
+        }
+      );
+    }
+
+    let mutationAttempted = false;
+    try {
+      const desiredByCode = new Map(desired.map((item) => [item.code, item.quantity]));
+      const assignedCodes = new Set();
+      let changedExisting = false;
+      for (const item of cartItems) {
+        if (basketReference(item) !== reference) continue;
+        const code = basketCode(item);
+        const quantity = assignedCodes.has(code) ? 0 : (desiredByCode.get(code) || 0);
+        assignedCodes.add(code);
+        if (basketQuantity(item) !== quantity) changedExisting = true;
+        item.Qty = quantity;
+      }
+      if (changedExisting) {
+        mutationAttempted = true;
+        await postBasketUpdate(
+          context,
+          token,
+          cart,
+          cartItems,
+          'Failed to update the Ralawise basket quantities.'
+        );
+        cart = await loadCart(context);
+        cartItems = Array.isArray(cart?.Items) ? cart.Items : [];
+      }
+
+      const currentAfterUpdate = normalizedBasketSnapshot(cartItems, reference);
+      const currentByCode = new Map(currentAfterUpdate.map((item) => [item.code, item.quantity]));
+      const hasUnexpectedQuantity = currentAfterUpdate.some((item) => (
+        item.quantity > (desiredByCode.get(item.code) || 0)
+      ));
+      if (hasUnexpectedQuantity) {
+        throw new RalawiseBasketError('Ralawise did not accept the requested basket quantity changes.', {
+          code: 'basket_update_unverified',
+        });
+      }
+
+      const missingItems = desired
+        .map((item) => ({
+          code: item.code,
+          quantity: item.quantity - (currentByCode.get(item.code) || 0),
+          reference,
+        }))
+        .filter((item) => item.quantity > 0);
+      let stockWarnings = [];
+      if (missingItems.length) {
+        const payload = normalizeBasketItems(missingItems);
+        mutationAttempted = true;
+        const addResponse = await request(context, '/services/cart/AddMultiItemsToCart', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'X-XSRF-Token': token,
+            RequestVerificationToken: token,
+            epilanguage: 'en-GB',
+            Referer: `${baseUrl}/`,
+          },
+          body: JSON.stringify(payload),
+        });
+        const addData = await responseJson(addResponse, 'Failed to add replacement products to the Ralawise basket.');
+        if (!addData?.Success) {
+          throw new RalawiseBasketError('Failed to add replacement products to the Ralawise basket.', {
+            code: 'basket_update_failed',
+            upstreamMessage: trimText(addData?.Message || addData?.ErrorMessage || addData?.Reason),
+          });
+        }
+        stockWarnings = buildStockWarnings(addData);
+        const beforeAddItems = cartItems;
+        cart = await loadCart(context);
+        cartItems = Array.isArray(cart?.Items) ? cart.Items : [];
+        const references = applyReferences(cartItems, payload, beforeAddItems);
+        if (references.updated_count > 0) {
+          mutationAttempted = true;
+          await postBasketUpdate(
+            context,
+            token,
+            cart,
+            cartItems,
+            'Failed to update the replacement-product references in the Ralawise basket.'
+          );
+          cart = await loadCart(context);
+          cartItems = Array.isArray(cart?.Items) ? cart.Items : [];
+        }
+      }
+
+      const verifiedItems = normalizedBasketSnapshot(cartItems, reference);
+      if (!basketSnapshotsMatch(verifiedItems, desired, reference)) {
+        throw new RalawiseBasketError('Ralawise did not return the expected basket after the update.', {
+          code: 'basket_update_unverified',
+        });
+      }
+      return {
+        success: true,
+        basket_url: `${baseUrl}/basket-page/`,
+        reference,
+        previous_items: expected,
+        items: verifiedItems,
+        item_count: verifiedItems.length,
+        total_quantity: verifiedItems.reduce((sum, item) => sum + item.quantity, 0),
+        stock_warnings: stockWarnings,
+      };
+    } catch (error) {
+      if (!mutationAttempted) throw error;
+      throw new RalawiseBasketError(
+        'Ralawise may have partially updated this basket but did not return a verified final result. Review this job in Ralawise before checkout.',
+        {
+          code: 'basket_update_partial',
+          status: 409,
+          cause: error,
+        }
+      );
+    }
+  }
+
   async function fetchOrderHistoryPage(context, options = {}) {
     const page = positiveInt(options.page, 1, 1000);
     const size = positiveInt(options.size, DEFAULT_ORDER_HISTORY_SIZE, 100);
@@ -748,7 +945,7 @@ function createRalawiseBasketClient(options = {}) {
     };
   }
 
-  return { addItems, getPlacedOrders, getSnapshot };
+  return { addItems, getPlacedOrders, getSnapshot, updateItems };
 }
 
 module.exports = {
@@ -756,10 +953,12 @@ module.exports = {
   DEFAULT_SHOP_BASE_URL,
   RalawiseBasketError,
   applyReferences,
+  basketSnapshotsMatch,
   buildStockWarnings,
   createRalawiseBasketClient,
   extractRequestVerificationToken,
   normalizeBasketItems,
+  normalizedBasketSnapshot,
   normalizePlacedOrderRecord,
   parseRalawiseOrderDetailLines,
   splitSetCookieHeader,

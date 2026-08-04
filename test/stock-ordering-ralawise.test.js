@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  basketAuditMatchesPlan,
   basketContainsPlan,
   buildJobBasketPlan,
   matchBasketedJobToPlacedOrders,
@@ -104,6 +105,39 @@ test('buildJobBasketPlan accepts decimal Ralawise child SKUs', () => {
   }]);
 });
 
+test('buildJobBasketPlan allows an empty plan only when clearing an existing basket allocation', () => {
+  const job = { source_order_id: 10, order_no: 56789 };
+
+  assert.equal(buildJobBasketPlan(job, []).eligible, false);
+  assert.equal(buildJobBasketPlan(job, [], { allowEmpty: true }).eligible, true);
+});
+
+test('basketAuditMatchesPlan detects added, removed, changed-SKU, and changed-quantity lines', () => {
+  const audit = [
+    { source_order_item_id: 1, ralawise_sku: 'ONE', quantity: 2 },
+    { source_order_item_id: 2, ralawise_sku: 'TWO', quantity: 1 },
+  ];
+  const matchingPlan = { lines: [
+    { source_order_item_id: 2, ralawise_sku: 'TWO', quantity: 1 },
+    { source_order_item_id: 1, ralawise_sku: 'ONE', quantity: 2 },
+  ] };
+
+  assert.equal(basketAuditMatchesPlan(audit, matchingPlan), true);
+  assert.equal(basketAuditMatchesPlan(audit, { lines: matchingPlan.lines.slice(0, 1) }), false);
+  assert.equal(basketAuditMatchesPlan(audit, { lines: [
+    ...matchingPlan.lines,
+    { source_order_item_id: 3, ralawise_sku: 'THREE', quantity: 1 },
+  ] }), false);
+  assert.equal(basketAuditMatchesPlan(audit, { lines: [
+    { ...matchingPlan.lines[0], ralawise_sku: 'REPLACEMENT' },
+    matchingPlan.lines[1],
+  ] }), false);
+  assert.equal(basketAuditMatchesPlan(audit, { lines: [
+    { ...matchingPlan.lines[0], quantity: 4 },
+    matchingPlan.lines[1],
+  ] }), false);
+});
+
 test('basketContainsPlan requires the exact SKU, reference, and requested quantity', () => {
   const plan = {
     reference: '56789',
@@ -124,6 +158,11 @@ test('basketContainsPlan requires the exact SKU, reference, and requested quanti
   assert.equal(basketContainsPlan([
     { code: 'ONE', reference: '56789', quantity: 1 },
     { code: 'TWO', reference: '56789', quantity: 1 },
+  ], plan), false);
+  assert.equal(basketContainsPlan([
+    { code: 'ONE', reference: '56789', quantity: 2 },
+    { code: 'TWO', reference: '56789', quantity: 1 },
+    { code: 'THREE', reference: '56789', quantity: 1 },
   ], plan), false);
 });
 

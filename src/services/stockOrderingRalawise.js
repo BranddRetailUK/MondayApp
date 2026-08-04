@@ -42,7 +42,7 @@ function exactRalawiseSku(line) {
   return /^[A-Z0-9._/-]{1,30}$/.test(sku) ? sku : '';
 }
 
-function buildJobBasketPlan(job, lineItems) {
+function buildJobBasketPlan(job, lineItems, options = {}) {
   const reference = (
     trimText(job?.customer_name)
     || trimText(job?.order_no || job?.source_order_id)
@@ -83,7 +83,7 @@ function buildJobBasketPlan(job, lineItems) {
     grouped.set(sku, current);
   });
 
-  if (!productLines.length) {
+  if (!productLines.length && options.allowEmpty !== true) {
     unresolved.push({ reason: 'Job has no product line items to add' });
   }
 
@@ -95,8 +95,29 @@ function buildJobBasketPlan(job, lineItems) {
     lines: resolvedLines,
     items: Array.from(grouped.values()),
     total_quantity: resolvedLines.reduce((sum, line) => sum + line.quantity, 0),
-    eligible: productLines.length > 0 && unresolved.length === 0,
+    eligible: (productLines.length > 0 || options.allowEmpty === true) && unresolved.length === 0,
   };
+}
+
+function basketAuditMatchesPlan(auditLines, plan) {
+  const normalize = (line) => ({
+    source_order_item_id: Number(line?.source_order_item_id),
+    ralawise_sku: exactRalawiseSku(line),
+    quantity: positiveQuantity(line?.quantity),
+  });
+  const compare = (left, right) => (
+    left.source_order_item_id - right.source_order_item_id
+    || left.ralawise_sku.localeCompare(right.ralawise_sku)
+    || left.quantity - right.quantity
+  );
+  const audited = (Array.isArray(auditLines) ? auditLines : []).map(normalize).sort(compare);
+  const current = (Array.isArray(plan?.lines) ? plan.lines : []).map(normalize).sort(compare);
+  if (audited.length !== current.length) return false;
+  return audited.every((line, index) => (
+    line.source_order_item_id === current[index].source_order_item_id
+    && line.ralawise_sku === current[index].ralawise_sku
+    && line.quantity === current[index].quantity
+  ));
 }
 
 function basketContainsPlan(basketItems, plan) {
@@ -111,8 +132,10 @@ function basketContainsPlan(basketItems, plan) {
     const key = `${code}\n${reference}`;
     quantities.set(key, (quantities.get(key) || 0) + quantity);
   });
-  return plan.items.every((item) => (
-    (quantities.get(`${item.code}\n${plan.reference}`) || 0) >= item.quantity
+  const referencedItems = Array.from(quantities.entries())
+    .filter(([key]) => key.endsWith(`\n${plan.reference}`));
+  return referencedItems.length === plan.items.length && plan.items.every((item) => (
+    (quantities.get(`${item.code}\n${plan.reference}`) || 0) === item.quantity
   ));
 }
 
@@ -216,6 +239,7 @@ function publicBasketError(error) {
 
 module.exports = {
   StockOrderingRalawiseError,
+  basketAuditMatchesPlan,
   basketContainsPlan,
   buildJobBasketPlan,
   exactRalawiseSku,

@@ -23,6 +23,11 @@ async function createStockOrderingBasketTables(db) {
       basketed_at TIMESTAMPTZ,
       ordered_at TIMESTAMPTZ,
       last_checked_at TIMESTAMPTZ,
+      basket_sync_status TEXT NOT NULL DEFAULT 'in_sync',
+      basket_sync_error TEXT,
+      basket_sync_started_at TIMESTAMPTZ,
+      basket_updated_at TIMESTAMPTZ,
+      basket_revision INTEGER NOT NULL DEFAULT 1,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT database_ralawise_basket_jobs_status_check
@@ -41,6 +46,11 @@ async function createStockOrderingBasketTables(db) {
   await db.query('ALTER TABLE database_ralawise_basket_jobs ADD COLUMN IF NOT EXISTS order_url TEXT;');
   await db.query('ALTER TABLE database_ralawise_basket_jobs ADD COLUMN IF NOT EXISTS ordered_at TIMESTAMPTZ;');
   await db.query('ALTER TABLE database_ralawise_basket_jobs ADD COLUMN IF NOT EXISTS last_checked_at TIMESTAMPTZ;');
+  await db.query("ALTER TABLE database_ralawise_basket_jobs ADD COLUMN IF NOT EXISTS basket_sync_status TEXT NOT NULL DEFAULT 'in_sync';");
+  await db.query('ALTER TABLE database_ralawise_basket_jobs ADD COLUMN IF NOT EXISTS basket_sync_error TEXT;');
+  await db.query('ALTER TABLE database_ralawise_basket_jobs ADD COLUMN IF NOT EXISTS basket_sync_started_at TIMESTAMPTZ;');
+  await db.query('ALTER TABLE database_ralawise_basket_jobs ADD COLUMN IF NOT EXISTS basket_updated_at TIMESTAMPTZ;');
+  await db.query('ALTER TABLE database_ralawise_basket_jobs ADD COLUMN IF NOT EXISTS basket_revision INTEGER NOT NULL DEFAULT 1;');
   await db.query('ALTER TABLE database_ralawise_basket_jobs DROP CONSTRAINT IF EXISTS database_ralawise_basket_jobs_status_check;');
   await db.query(`
     ALTER TABLE database_ralawise_basket_jobs
