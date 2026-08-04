@@ -59,7 +59,6 @@ const HIDDEN_BOARD_COLUMN_TITLES = new Set([
   'JOBOWNER',
 ]);
 const HIDDEN_SUBITEM_COLUMN_TITLES = new Set(['CHECK IN', 'TEXT']);
-const MOBILE_HIDDEN_DASHBOARD_GROUP_TITLES = new Set(['HOLD', 'OFFICE', 'PRE-PRODUCTION']);
 const MOBILE_PRINT_EMBROIDERY_HIDDEN_COLUMN_TITLES = new Set([
   'TRANS',
   'TRAN',
@@ -102,6 +101,7 @@ let __testFileUploadInput = null;
 let __testFileUploadTarget = null;
 let __testFileUploadsInFlight = 0;
 const __testFileUploadingCells = new Set();
+const __testFileCellScrollPositions = new Map();
 const __testCheckboxOptimisticValues = new Map();
 let __testCheckboxOptimisticSeq = 0;
 let __testDesignEditInFlight = 0;
@@ -454,9 +454,6 @@ function renderBoard(payload, options = {}) {
     groupWrap.className = 'group';
     groupWrap.dataset.groupKey = groupKey;
     if (isCollapsed) groupWrap.classList.add('collapsed');
-    if (MOBILE_HIDDEN_DASHBOARD_GROUP_TITLES.has(normalizeColumnTitle(collectionName))) {
-      groupWrap.classList.add('mobile-hidden-dashboard-group');
-    }
     if (shouldHidePrintEmbroideryMobileColumns(collectionName)) {
       groupWrap.classList.add('mobile-print-embroidery-hidden-columns');
     }
@@ -3814,10 +3811,29 @@ function decorateTestFileDropCell(cell, entity, column, { hasFiles = false } = {
   cell.classList.toggle('uploading', uploading);
   cell.title = cell.title || `${hasFiles ? 'Drop another' : 'Drop or click to upload'} ${column.title || 'file'}`;
   renderTestFileUploadAffordance(cell, entity, column, { uploading, hasFiles });
+  preserveTestFileCellScrollPosition(cell, uploadKey);
   cell.addEventListener('dragenter', handleTestFileDragEnter);
   cell.addEventListener('dragover', handleTestFileDragOver);
   cell.addEventListener('dragleave', handleTestFileDragLeave);
   cell.addEventListener('drop', (event) => handleTestFileDrop(event, entity, column, cell));
+}
+
+function preserveTestFileCellScrollPosition(cell, uploadKey) {
+  if (!cell || !uploadKey) return;
+  cell.addEventListener('scroll', () => {
+    const scrollLeft = Number(cell.scrollLeft);
+    if (Number.isFinite(scrollLeft)) {
+      __testFileCellScrollPositions.set(uploadKey, Math.max(0, scrollLeft));
+    }
+  }, { passive: true });
+
+  const savedScrollLeft = Number(__testFileCellScrollPositions.get(uploadKey));
+  if (!Number.isFinite(savedScrollLeft) || savedScrollLeft <= 0) return;
+  window.requestAnimationFrame(() => {
+    if (!cell.isConnected) return;
+    const maxScrollLeft = Math.max(0, cell.scrollWidth - cell.clientWidth);
+    cell.scrollLeft = Math.min(savedScrollLeft, maxScrollLeft);
+  });
 }
 
 function renderTestFileUploadAffordance(cell, entity, column, { uploading = false, hasFiles = false } = {}) {

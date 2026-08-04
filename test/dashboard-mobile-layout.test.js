@@ -80,6 +80,58 @@ test('dashboard grid starts with compact unlabelled job number and mobile retain
   assert.equal(result.proofUsesPreviewModal, true);
 });
 
+test('mobile dashboard shows every group and keeps file-strip scrolling in place', () => {
+  const script = fs.readFileSync(path.join(__dirname, '..', 'public', 'script.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
+
+  assert.doesNotMatch(script, /MOBILE_HIDDEN_DASHBOARD_GROUP_TITLES|mobile-hidden-dashboard-group/);
+  assert.doesNotMatch(styles, /\.mobile-hidden-dashboard-group\s*\{/);
+  assert.match(styles, /\.dashboard-file-cell\s*\{[^}]*justify-content:flex-start/s);
+  assert.match(styles, /\.dashboard-file-cell\s*\{[^}]*overflow-x:auto/s);
+  assert.match(styles, /\.dashboard-file-cell\s*\{[^}]*overscroll-behavior-x:contain/s);
+  assert.match(styles, /\.dashboard-file-cell\s*\{[^}]*scroll-snap-type:none/s);
+  assert.match(styles, /\.dashboard-file-cell\s*\{[^}]*touch-action:pan-x pan-y/s);
+  assert.match(styles, /\.dashboard-file-cell\s*\{[^}]*-webkit-overflow-scrolling:touch/s);
+  assert.match(script, /const __testFileCellScrollPositions = new Map\(\);/);
+  assert.match(script, /preserveTestFileCellScrollPosition\(cell, uploadKey\);/);
+  assert.match(script, /cell\.scrollLeft = Math\.min\(savedScrollLeft, maxScrollLeft\);/);
+});
+
+test('dashboard file-strip offset survives a board rerender', () => {
+  const sandbox = loadDashboardFrontend();
+  const result = vm.runInContext(`
+    (() => {
+      let restoreFrame = null;
+      window.requestAnimationFrame = (callback) => {
+        restoreFrame = callback;
+        return 1;
+      };
+      let scrollHandler = null;
+      const originalCell = {
+        scrollLeft: 46,
+        addEventListener(type, handler) {
+          if (type === 'scroll') scrollHandler = handler;
+        }
+      };
+      preserveTestFileCellScrollPosition(originalCell, 'job:proof');
+      scrollHandler();
+
+      const replacementCell = {
+        scrollLeft: 0,
+        scrollWidth: 180,
+        clientWidth: 100,
+        isConnected: true,
+        addEventListener() {}
+      };
+      preserveTestFileCellScrollPosition(replacementCell, 'job:proof');
+      restoreFrame();
+      return replacementCell.scrollLeft;
+    })()
+  `, sandbox);
+
+  assert.equal(result, 46);
+});
+
 test('Ultimate Packing gets a leftmost desktop LABEL column while mobile starts with job number', () => {
   const sandbox = loadDashboardFrontend();
   const result = vm.runInContext(`

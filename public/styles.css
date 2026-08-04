@@ -1830,8 +1830,14 @@ body.test-dashboard-mobile-job-open{
 }
 .dashboard-file-cell{
   gap:6px;
+  justify-content:flex-start;
   overflow-x:auto;
+  overscroll-behavior-x:contain;
+  scroll-behavior:auto;
+  scroll-snap-type:none;
   scrollbar-width:none;
+  touch-action:pan-x pan-y;
+  -webkit-overflow-scrolling:touch;
 }
 .dashboard-file-cell::-webkit-scrollbar{
   display:none;
@@ -7363,9 +7369,6 @@ input.db-custom-line-input{
   }
   body.test-dashboard-mobile-job-open .mobile-nav-toggle{
     display:none!important;
-  }
-  .mobile-hidden-dashboard-group{
-    display:none;
   }
   .mobile-print-embroidery-hidden-columns .board-grid > .grid-row > .mobile-print-embroidery-hidden-cell{
     display:none;
