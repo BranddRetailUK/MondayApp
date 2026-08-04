@@ -11145,7 +11145,7 @@
 
     const sourceOrderId = state.selectedJob?.source_order_id;
     Promise.all(missing.map((styleId) => loadStyleVariants(styleId))).then(() => {
-      if (sourceOrderId !== state.selectedJob?.source_order_id || state.activeOrderTab !== 'items') return;
+      if (sourceOrderId !== state.selectedJob?.source_order_id) return;
       renderItemsPanel();
     }).catch((err) => {
       console.warn('Stock variant preload failed', err);
