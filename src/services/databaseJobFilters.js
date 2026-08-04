@@ -145,7 +145,7 @@ function buildJobFilters(query = {}) {
   if (status === 'open') {
     where.push('j.is_complete IS NOT TRUE');
     where.push(`NOT (
-      COALESCE(UPPER(TRIM(j.dashboard_status)), '') = 'COMPLETED'
+      COALESCE(UPPER(TRIM(j.dashboard_status)), '') IN ('COMPLETED', 'INVOICED')
       AND (
         j.invoice_printed IS TRUE
         OR j.pf_invoice_printed IS TRUE

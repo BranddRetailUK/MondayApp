@@ -3803,7 +3803,7 @@ body.modal-open{overflow:hidden}
   min-width:854px;
 }
 #db-outstanding-table.db-all-orders-mode{
-  min-width:952px;
+  min-width:824px;
 }
 #db-outstanding-table th:nth-child(2){width:68px}
 #db-outstanding-table th:nth-child(3),
@@ -3822,9 +3822,12 @@ body.modal-open{overflow:hidden}
 #db-outstanding-table th:nth-child(7){width:var(--db-outstanding-taken-by-width, 54px)}
 #db-outstanding-table th:nth-child(8){width:88px}
 #db-outstanding-table th:nth-child(9){width:82px}
-#db-outstanding-table th:nth-child(10){
+#db-outstanding-table th.db-open-orders-status-column{
   width:128px;
   text-align:center;
+}
+#db-outstanding-table.db-all-orders-mode th.db-open-orders-status-column{
+  display:none;
 }
 #db-outstanding-table td.db-dashboard-status-cell{
   padding:0;
@@ -7790,7 +7793,7 @@ input.db-custom-line-input{
     min-width:854px;
   }
   #db-outstanding-table.db-all-orders-mode{
-    min-width:952px;
+    min-width:824px;
   }
   #db-stock-ordering-table{
     min-width:860px;

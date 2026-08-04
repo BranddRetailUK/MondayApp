@@ -63,9 +63,13 @@ test('To Invoice includes completed no-invoice jobs until they are explicitly cl
   assert.doesNotMatch(filters.whereSql, /j\.invoice_required IS NOT FALSE/);
 });
 
-test('open jobs treat an eligible no-invoice closure as finalized', () => {
+test('open jobs treat completed or invoiced no-invoice closures as finalized', () => {
   const filters = buildJobFilters({ status: 'open' });
 
+  assert.match(
+    filters.whereSql,
+    /dashboard_status\)\), ''\) IN \('COMPLETED', 'INVOICED'\)/
+  );
   assert.match(
     filters.whereSql,
     /j\.invoice_required IS FALSE AND j\.closed_without_invoice IS TRUE/

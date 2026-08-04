@@ -1,4 +1,6 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const test = require('node:test');
 
 test('Close Order finalizes an invoice-not-required job without creating invoice data', async () => {
@@ -26,6 +28,21 @@ test('Close Order rejects jobs that require an invoice', async () => {
   assert.match(result.response.body.error, /only available when an invoice is not required/i);
   assert.ok(result.queries.includes('ROLLBACK'));
   assert.equal(result.queries.includes('COMMIT'), false);
+});
+
+test('Close Order removes finalized COMPLETED and INVOICED jobs from the browser Open Orders state', () => {
+  const database = fs.readFileSync(
+    path.join(__dirname, '..', 'public', 'database.js'),
+    'utf8'
+  );
+  const start = database.indexOf('function shouldRemoveFromOpenOrders');
+  const end = database.indexOf('function selectedManualInvoiceDate', start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+
+  const removalRule = database.slice(start, end);
+  assert.match(removalRule, /status === 'COMPLETED' \|\| status === 'INVOICED'/);
+  assert.match(removalRule, /invoiceNotRequired\(job\) && truthy\(job\.closed_without_invoice\)/);
 });
 
 async function exerciseCloseRoute(invoiceRequired) {

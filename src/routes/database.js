@@ -938,7 +938,7 @@ router.get('/api/database/outstanding-counts', async (_req, res) => {
         END AS category
         FROM database_jobs
         WHERE is_complete IS NOT TRUE
-          AND COALESCE(UPPER(TRIM(dashboard_status)), '') <> 'COMPLETED'
+          AND COALESCE(UPPER(TRIM(dashboard_status)), '') NOT IN ('COMPLETED', 'INVOICED')
       )
       SELECT
         (COUNT(*) FILTER (WHERE category = 'print'))::int AS printing,
@@ -5248,7 +5248,7 @@ async function fetchCustomerOverview(db, job) {
               COUNT(*) FILTER (
                 WHERE cj.is_complete IS NOT TRUE
                   AND NOT (
-                    COALESCE(UPPER(TRIM(cj.dashboard_status)), '') = 'COMPLETED'
+                    COALESCE(UPPER(TRIM(cj.dashboard_status)), '') IN ('COMPLETED', 'INVOICED')
                     AND (
                       cj.invoice_printed IS TRUE
                       OR cj.pf_invoice_printed IS TRUE

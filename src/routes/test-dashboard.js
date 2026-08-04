@@ -1147,7 +1147,10 @@ function isDashboardJobFinalized(job) {
 }
 
 function isDashboardJobCompleted(job, statusText = '') {
-  return Boolean(job?.is_complete || normalizeColumnTitle(statusText) === 'COMPLETED');
+  return Boolean(
+    job?.is_complete
+    || ['COMPLETED', 'INVOICED'].includes(normalizeColumnTitle(statusText))
+  );
 }
 
 function hasDashboardIdentity(job, state, scan) {

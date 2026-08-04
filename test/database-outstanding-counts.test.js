@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-test('home outstanding counts exclude dashboard-completed jobs before invoicing', async () => {
+test('home outstanding counts exclude dashboard-completed and invoiced jobs', async () => {
   const poolPath = require.resolve('../src/db/pool');
   const routePath = require.resolve('../src/routes/database');
   const originalPoolModule = require.cache[poolPath];
@@ -49,7 +49,7 @@ test('home outstanding counts exclude dashboard-completed jobs before invoicing'
     assert.equal(queries.length, 1);
     assert.match(
       queries[0].text,
-      /COALESCE\(UPPER\(TRIM\(dashboard_status\)\), ''\) <> 'COMPLETED'/
+      /COALESCE\(UPPER\(TRIM\(dashboard_status\)\), ''\) NOT IN \('COMPLETED', 'INVOICED'\)/
     );
     assert.doesNotMatch(queries[0].text, /invoice_printed|pf_invoice_printed|closed_without_invoice/);
   } finally {

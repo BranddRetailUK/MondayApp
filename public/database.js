@@ -53,7 +53,7 @@
   const DATABASE_ORDER_TABS = new Set(['details', 'items', 'design', 'proof']);
   const DATABASE_CUSTOMER_TABS = new Set(['orders', 'contacts', 'addresses', 'quotations', 'design-numbers']);
   const OUTSTANDING_TABLE_COLUMN_COUNT = 9;
-  const OUTSTANDING_ALL_TABLE_COLUMN_COUNT = 10;
+  const OUTSTANDING_ALL_TABLE_COLUMN_COUNT = 9;
   const OUTSTANDING_INVOICE_COLUMN_WIDTH = 98;
   const TO_INVOICE_TABLE_COLUMN_COUNT = 7;
   const STYLE_TABLE_COLUMN_COUNT = 5;
@@ -62,7 +62,7 @@
   const OUTSTANDING_STATUS_COLUMN_WIDTH = 128;
   const OUTSTANDING_TAKEN_BY_COLUMN_MIN_WIDTH = 54;
   const OUTSTANDING_TAKEN_BY_CELL_EXTRA_WIDTH = 12;
-  const OUTSTANDING_TABLE_FIXED_BASE_WIDTH = 19 + 68 + 198 + 36 + 88 + 82 + OUTSTANDING_STATUS_COLUMN_WIDTH;
+  const OUTSTANDING_TABLE_FIXED_BASE_WIDTH = 19 + 68 + 198 + 36 + 88 + 82;
   const STOCK_ORDERING_TABLE_COLUMN_COUNT = 9;
   const STOCK_ORDERED_STATUS_LABEL = 'STOCK ORDERED';
   const OUTSTANDING_TITLE_COLUMN_MIN_WIDTH = 170;
@@ -6617,7 +6617,7 @@
   function outstandingTableFixedWidth(takenByWidth = OUTSTANDING_TAKEN_BY_COLUMN_MIN_WIDTH) {
     return OUTSTANDING_TABLE_FIXED_BASE_WIDTH
       + takenByWidth
-      + (state.orderMode === 'all' ? OUTSTANDING_INVOICE_COLUMN_WIDTH : 0);
+      + (state.orderMode === 'all' ? OUTSTANDING_INVOICE_COLUMN_WIDTH : OUTSTANDING_STATUS_COLUMN_WIDTH);
   }
 
   function measureOutstandingTitleWidth(table, jobs = []) {
@@ -6707,7 +6707,8 @@
   function renderOutstandingRow(job) {
     const selected = state.selectedJob && Number(state.selectedJob.source_order_id) === Number(job.source_order_id);
     const statusLabel = outstandingDashboardStatusLabel(job);
-    const statusCompleted = normalizeDashboardStatusLabel(statusLabel) === 'COMPLETED';
+    const statusCompleted = state.orderMode !== 'all'
+      && normalizeDashboardStatusLabel(statusLabel) === 'COMPLETED';
     return `
       <tr class="db-outstanding-row ${selected ? 'selected' : ''} ${statusCompleted ? 'db-dashboard-status-completed' : ''}" data-job-id="${escapeAttr(job.source_order_id)}" tabindex="0">
         <td class="db-row-selector">${selected ? '&#9654;' : ''}</td>
@@ -6719,7 +6720,7 @@
         <td>${escapeHtml(outstandingTakenByFirstName(job))}</td>
         <td>${escapeHtml(formatDate(job.order_date, 'long'))}</td>
         <td>${escapeHtml(outstandingDeliveryLabel(job))}</td>
-        ${renderOutstandingStatusCell(statusLabel)}
+        ${state.orderMode === 'all' ? '' : renderOutstandingStatusCell(statusLabel)}
       </tr>
     `;
   }
@@ -8827,7 +8828,7 @@
     if (!job) return false;
     if (truthy(job.is_complete)) return true;
     const status = normalizeDashboardStatusLabel(job.dashboard_status);
-    return status === 'COMPLETED' && Boolean(
+    return (status === 'COMPLETED' || status === 'INVOICED') && Boolean(
       job.invoice_printed
       || job.pf_invoice_printed
       || (invoiceNotRequired(job) && truthy(job.closed_without_invoice))
