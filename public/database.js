@@ -89,6 +89,7 @@
   const ORDER_ACK_COMMENTS_LINE_MM = 4.2;
   const ORDER_ACK_COMMENTS_CHARS_PER_LINE = 95;
   const ORDER_DOC_PAGE_CONTENT_MAX_MM = 140;
+  const ORDER_DOC_CONTINUATION_PAGE_CONTENT_MAX_MM = 220;
   const ORDER_DOC_TABLE_TOP_MM = 5;
   const ORDER_DOC_TABLE_HEADER_MM = 5.5;
   const ORDER_DOC_EMPTY_ROW_MM = 10;
@@ -8409,20 +8410,19 @@
     const isOrderPage = page.type === 'orders';
     return `
       <section class="db-order-ack-page db-outstanding-report-page db-financial-report-page" aria-label="${escapeAttr(snapshot.title)} page ${pageIndex + 1}">
-        <header class="db-outstanding-report-header db-financial-report-header">
-          <div>
-            <h1>${escapeHtml(snapshot.title.toUpperCase())}</h1>
-            ${continued ? '<span>CONTINUED</span>' : ''}
-          </div>
+        <header class="db-outstanding-report-header db-financial-report-header${continued ? ' db-document-continuation-header' : ''}">
+          ${continued ? '' : `<div><h1>${escapeHtml(snapshot.title.toUpperCase())}</h1></div>`}
           <img class="db-order-ack-logo" src="${escapeAttr(ORDER_ACK_LOGO_URL)}" alt="Ultimate logo" crossorigin="anonymous">
         </header>
         <section class="db-outstanding-report-content db-financial-report-content">
-          <div class="db-financial-report-meta">
-            <div><strong>Period:</strong> ${escapeHtml(snapshot.rangeDescription)}</div>
-            <div><strong>Dates:</strong> ${escapeHtml(snapshot.periodDates || '-')}</div>
-            <div><strong>Generated:</strong> ${escapeHtml(formatDate(snapshot.generatedAt, 'full'))}</div>
-            <div><strong>Page:</strong> ${escapeHtml(`${pageIndex + 1} of ${pageCount}`)}</div>
-          </div>
+          ${continued ? '' : `
+            <div class="db-financial-report-meta">
+              <div><strong>Period:</strong> ${escapeHtml(snapshot.rangeDescription)}</div>
+              <div><strong>Dates:</strong> ${escapeHtml(snapshot.periodDates || '-')}</div>
+              <div><strong>Generated:</strong> ${escapeHtml(formatDate(snapshot.generatedAt, 'full'))}</div>
+              <div><strong>Page:</strong> ${escapeHtml(`${pageIndex + 1} of ${pageCount}`)}</div>
+            </div>
+          `}
           ${pageIndex === 0 ? renderFinancialReportSummary(snapshot.summary) : ''}
           ${isOrderPage
             ? renderFinancialReportOrders(page.rows, snapshot.orders.length)
@@ -8580,10 +8580,11 @@
   }
 
   function renderStockOrderingPage(snapshot, page, pageIndex) {
+    const continued = pageIndex > 0;
     return `
       <section class="db-order-ack-page db-outstanding-report-page db-stock-ordering-report-page" aria-label="${escapeAttr(snapshot.title)} page ${pageIndex + 1}">
-        <header class="db-outstanding-report-header">
-          <h1>${escapeHtml(snapshot.title.toUpperCase())}</h1>
+        <header class="db-outstanding-report-header${continued ? ' db-document-continuation-header' : ''}">
+          ${continued ? '' : `<h1>${escapeHtml(snapshot.title.toUpperCase())}</h1>`}
           <img class="db-order-ack-logo" src="${escapeAttr(ORDER_ACK_LOGO_URL)}" alt="Ultimate logo" crossorigin="anonymous">
         </header>
         <section class="db-outstanding-report-content db-stock-ordering-report-content">
@@ -8714,10 +8715,11 @@
   }
 
   function renderOutstandingReportPage(snapshot, page, pageIndex) {
+    const continued = pageIndex > 0;
     return `
       <section class="db-order-ack-page db-outstanding-report-page" aria-label="${escapeAttr(snapshot.title)} page ${pageIndex + 1}">
-        <header class="db-outstanding-report-header">
-          <h1>${escapeHtml(snapshot.title.toUpperCase())}</h1>
+        <header class="db-outstanding-report-header${continued ? ' db-document-continuation-header' : ''}">
+          ${continued ? '' : `<h1>${escapeHtml(snapshot.title.toUpperCase())}</h1>`}
           <img class="db-order-ack-logo" src="${escapeAttr(ORDER_ACK_LOGO_URL)}" alt="Ultimate logo" crossorigin="anonymous">
         </header>
         <section class="db-outstanding-report-content">
@@ -9682,7 +9684,7 @@
     const isFirstPage = pageIndex === 0;
     return `
       <section class="db-order-ack-page ${isFirstPage ? 'db-order-ack-page-first' : 'db-order-ack-page-continued'}" aria-label="Order acknowledgement page ${pageIndex + 1}">
-        ${isFirstPage ? renderOrderAckPageHeader(context) : ''}
+        ${isFirstPage ? renderOrderAckPageHeader(context) : renderDocumentContinuationHeader()}
         <section class="db-order-ack-page-content">
           ${renderOrderAckPageContent(pageContent, context)}
         </section>
@@ -9784,7 +9786,7 @@
       job,
       items,
       addressLines,
-      stackedAddress: false,
+      stackedAddress: true,
       showSignature: true,
       metaRows: [
         { label: 'Invoice No', value: invoiceDocumentNo(job) },
@@ -9803,9 +9805,12 @@
   }
 
   function renderOrderDocumentPage(context, pageContent, pageIndex) {
+    const isFirstPage = pageIndex === 0;
     return `
-      <section class="db-order-ack-page db-order-doc-page db-order-doc-page-${escapeAttr(context.type)}" aria-label="${escapeAttr(context.title)} page ${pageIndex + 1}">
-        ${renderOrderDocumentPageHeader(context)}
+      <section class="db-order-ack-page db-order-doc-page db-order-doc-page-${escapeAttr(context.type)} ${isFirstPage ? 'db-order-doc-page-first' : 'db-order-doc-page-continued'}" aria-label="${escapeAttr(context.title)} page ${pageIndex + 1}">
+        ${isFirstPage
+          ? renderOrderDocumentPageHeader(context)
+          : renderDocumentContinuationHeader('db-order-doc-header')}
         <section class="db-order-doc-page-content">
           ${renderOrderDocumentPageContent(context, pageContent)}
         </section>
@@ -9839,6 +9844,17 @@
         <span>Job title:</span>
         <strong>${escapeHtml(context.job?.job_title || '')}</strong>
       </section>
+    `;
+  }
+
+  function renderDocumentContinuationHeader(additionalClass = '') {
+    const classes = ['db-order-ack-header', 'db-document-continuation-header', additionalClass]
+      .filter(Boolean)
+      .join(' ');
+    return `
+      <header class="${escapeAttr(classes)}">
+        <img class="db-order-ack-logo" src="${escapeAttr(ORDER_ACK_LOGO_URL)}" alt="Ultimate logo" crossorigin="anonymous">
+      </header>
     `;
   }
 
@@ -10044,7 +10060,12 @@
     const pages = [];
     let page = emptyOrderDocumentPageContent();
     let usedMm = 0;
-    const contentMaxMm = ORDER_DOC_PAGE_CONTENT_MAX_MM - ORDER_DOC_PAGE_SPLIT_BUFFER_MM;
+    const currentPageContentMaxMm = () => (
+      (pages.length === 0
+        ? ORDER_DOC_PAGE_CONTENT_MAX_MM
+        : ORDER_DOC_CONTINUATION_PAGE_CONTENT_MAX_MM)
+      - ORDER_DOC_PAGE_SPLIT_BUFFER_MM
+    );
 
     const pushPage = () => {
       pages.push(page);
@@ -10052,7 +10073,7 @@
       usedMm = 0;
     };
     const ensureSpace = (heightMm) => {
-      if (usedMm > 0 && usedMm + heightMm > contentMaxMm) pushPage();
+      if (usedMm > 0 && usedMm + heightMm > currentPageContentMaxMm()) pushPage();
     };
 
     const itemEntries = orderDocumentItemEntries(items, { documentType, businessGift });

@@ -58,15 +58,93 @@ test('order acknowledgement delivery addresses use the widened comma-separated r
   );
 });
 
-test('delivery note recipient addresses use comma-separated text', () => {
+test('delivery note recipient addresses use stacked lines without changing invoice delivery metadata', () => {
   const deliveryNoteRenderer = sourceFunction(
     database,
     'function renderDeliveryNoteDocument',
     'function renderOrderDocumentPage'
   );
 
-  assert.match(deliveryNoteRenderer, /stackedAddress: false/);
-  assert.doesNotMatch(deliveryNoteRenderer, /stackedAddress: true/);
+  assert.match(deliveryNoteRenderer, /stackedAddress: true/);
+  assert.doesNotMatch(deliveryNoteRenderer, /stackedAddress: false/);
+});
+
+test('multi-page order PDFs render full details once and use logo-only continuation headers', () => {
+  const acknowledgementPage = sourceFunction(
+    database,
+    'function renderOrderAckPage',
+    'function renderOrderAckPageHeader'
+  );
+  const documentPage = sourceFunction(
+    database,
+    'function renderOrderDocumentPage',
+    'function orderDocumentFooterUrl'
+  );
+  const continuationHeader = sourceFunction(
+    database,
+    'function renderDocumentContinuationHeader',
+    'function renderOrderDocumentPageContent'
+  );
+
+  assert.match(
+    acknowledgementPage,
+    /isFirstPage \? renderOrderAckPageHeader\(context\) : renderDocumentContinuationHeader\(\)/
+  );
+  assert.match(
+    documentPage,
+    /isFirstPage[\s\S]*renderOrderDocumentPageHeader\(context\)[\s\S]*renderDocumentContinuationHeader\('db-order-doc-header'\)/
+  );
+  assert.match(documentPage, /db-order-doc-page-first/);
+  assert.match(documentPage, /db-order-doc-page-continued/);
+  assert.match(continuationHeader, /db-order-ack-logo/);
+  assert.doesNotMatch(continuationHeader, /context\.title|context\.metaRows|Job title/);
+  assert.match(
+    styles,
+    /\.db-order-doc-page-continued \.db-order-doc-page-content\{\s*height:220mm;/
+  );
+});
+
+test('order PDF pagination uses the reclaimed continuation-page content area', () => {
+  const paginator = sourceFunction(
+    database,
+    'function buildOrderDocumentPages',
+    'function emptyOrderDocumentPageContent'
+  );
+
+  assert.match(database, /const ORDER_DOC_CONTINUATION_PAGE_CONTENT_MAX_MM = 220;/);
+  assert.match(
+    paginator,
+    /pages\.length === 0[\s\S]*ORDER_DOC_PAGE_CONTENT_MAX_MM[\s\S]*ORDER_DOC_CONTINUATION_PAGE_CONTENT_MAX_MM/
+  );
+  assert.match(paginator, /usedMm \+ heightMm > currentPageContentMaxMm\(\)/);
+});
+
+test('multi-page reports retain only the logo in continuation headers', () => {
+  const financialPage = sourceFunction(
+    database,
+    'function renderFinancialReportPage',
+    'function renderFinancialReportSummary'
+  );
+  const stockPage = sourceFunction(
+    database,
+    'function renderStockOrderingPage',
+    'function renderStockOrderingReportTable'
+  );
+  const outstandingPage = sourceFunction(
+    database,
+    'function renderOutstandingReportPage',
+    'function renderOutstandingReportSection'
+  );
+
+  assert.match(financialPage, /continued \? '' : `<div><h1>/);
+  assert.match(financialPage, /continued \? '' : `[\s\S]*db-financial-report-meta/);
+  assert.match(stockPage, /continued \? '' : `<h1>/);
+  assert.match(outstandingPage, /continued \? '' : `<h1>/);
+  for (const renderer of [financialPage, stockPage, outstandingPage]) {
+    assert.match(renderer, /db-document-continuation-header/);
+    assert.match(renderer, /db-order-ack-logo/);
+    assert.match(renderer, /db-order-ack-footer/);
+  }
 });
 
 test('invoice tables reserve 15mm for numeric columns and widen descriptions', () => {

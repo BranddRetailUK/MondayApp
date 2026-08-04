@@ -5170,6 +5170,10 @@ body.modal-open{overflow:hidden}
 .db-order-ack-page-continued .db-order-ack-page-content{
   height:220mm;
 }
+.db-order-ack-header.db-document-continuation-header,
+.db-outstanding-report-header.db-document-continuation-header{
+  min-height:20mm;
+}
 .db-order-ack-header{
   min-height:42mm;
   display:flex;
@@ -5374,6 +5378,9 @@ body.modal-open{overflow:hidden}
 .db-order-doc-page-content{
   height:140mm;
   overflow:hidden;
+}
+.db-order-doc-page-continued .db-order-doc-page-content{
+  height:220mm;
 }
 .db-order-doc-header{
   min-height:34mm;
