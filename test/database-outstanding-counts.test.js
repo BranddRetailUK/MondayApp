@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-test('home outstanding counts exclude dashboard-completed and invoiced jobs', async () => {
+test('home outstanding counts exclude dashboard-completed jobs and invoiced Business Gifts', async () => {
   const poolPath = require.resolve('../src/db/pool');
   const routePath = require.resolve('../src/routes/database');
   const originalPoolModule = require.cache[poolPath];
@@ -51,7 +51,11 @@ test('home outstanding counts exclude dashboard-completed and invoiced jobs', as
       queries[0].text,
       /COALESCE\(UPPER\(TRIM\(dashboard_status\)\), ''\) NOT IN \('COMPLETED', 'INVOICED'\)/
     );
-    assert.doesNotMatch(queries[0].text, /invoice_printed|pf_invoice_printed|closed_without_invoice/);
+    assert.match(
+      queries[0].text,
+      /WHERE NOT \(category = 'gifts' AND invoice_printed IS TRUE\)/
+    );
+    assert.doesNotMatch(queries[0].text, /pf_invoice_printed|closed_without_invoice/);
   } finally {
     delete require.cache[routePath];
     if (originalPoolModule) require.cache[poolPath] = originalPoolModule;

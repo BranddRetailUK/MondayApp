@@ -86,6 +86,23 @@ test('invoice UI blocks the request and PDF modal behind the requested Okay mess
   assert.match(database, /data-db-invoice-completion-okay>Okay<\/button>/);
 });
 
+test('invoice UI immediately removes invoiced Business Gifts from Open Orders', () => {
+  const database = fs.readFileSync(
+    path.join(__dirname, '..', 'public', 'database.js'),
+    'utf8'
+  );
+  const removalRule = sourceFunction(
+    database,
+    'function shouldRemoveFromOpenOrders',
+    'function selectedManualInvoiceDate'
+  );
+
+  assert.match(
+    removalRule,
+    /categoryForJob\(job\) === 'gifts' && truthy\(job\.invoice_printed\)/
+  );
+});
+
 async function exerciseInvoiceRoute(dashboardStatus, jobOverrides = {}) {
   const poolPath = require.resolve('../src/db/pool');
   const routePath = require.resolve('../src/routes/database');

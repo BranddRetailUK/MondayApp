@@ -973,7 +973,8 @@ router.get('/api/database/outstanding-counts', async (_req, res) => {
             OR LOWER(COALESCE(order_type_abbr, '')) = 'p'
             THEN 'print'
           ELSE 'other'
-        END AS category
+        END AS category,
+        invoice_printed
         FROM database_jobs
         WHERE is_complete IS NOT TRUE
           AND COALESCE(UPPER(TRIM(dashboard_status)), '') NOT IN ('COMPLETED', 'INVOICED')
@@ -984,6 +985,7 @@ router.get('/api/database/outstanding-counts', async (_req, res) => {
         (COUNT(*) FILTER (WHERE category = 'gifts'))::int AS business_gifts,
         (COUNT(*))::int AS total
       FROM categorized
+      WHERE NOT (category = 'gifts' AND invoice_printed IS TRUE)
     `);
 
     res.json(result.rows[0] || {

@@ -145,11 +145,20 @@ function buildJobFilters(query = {}) {
   if (status === 'open') {
     where.push('j.is_complete IS NOT TRUE');
     where.push(`NOT (
-      COALESCE(UPPER(TRIM(j.dashboard_status)), '') IN ('COMPLETED', 'INVOICED')
-      AND (
-        j.invoice_printed IS TRUE
-        OR j.pf_invoice_printed IS TRUE
-        OR (j.invoice_required IS FALSE AND j.closed_without_invoice IS TRUE)
+      (
+        (
+          LOWER(COALESCE(j.order_type, '') || ' ' || COALESCE(j.order_type_abbr, '')) LIKE '%gift%'
+          OR UPPER(BTRIM(COALESCE(j.order_type_abbr, ''))) = 'G'
+        )
+        AND j.invoice_printed IS TRUE
+      )
+      OR (
+        COALESCE(UPPER(TRIM(j.dashboard_status)), '') IN ('COMPLETED', 'INVOICED')
+        AND (
+          j.invoice_printed IS TRUE
+          OR j.pf_invoice_printed IS TRUE
+          OR (j.invoice_required IS FALSE AND j.closed_without_invoice IS TRUE)
+        )
       )
     )`);
   } else if (status === 'complete' || status === 'completed') {

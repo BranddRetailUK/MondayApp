@@ -75,3 +75,18 @@ test('open jobs treat completed or invoiced no-invoice closures as finalized', (
     /j\.invoice_required IS FALSE AND j\.closed_without_invoice IS TRUE/
   );
 });
+
+test('open jobs exclude invoiced Business Gifts without requiring a dashboard status', () => {
+  const filters = buildJobFilters({ status: 'open' });
+
+  assert.match(filters.whereSql, /COALESCE\(j\.order_type, ''\).*LIKE '%gift%'/s);
+  assert.match(filters.whereSql, /BTRIM\(COALESCE\(j\.order_type_abbr, ''\)\).* = 'G'/s);
+  assert.match(filters.whereSql, /AND j\.invoice_printed IS TRUE/);
+  assert.doesNotMatch(filters.whereSql, /invoice_no IS NOT NULL/);
+});
+
+test('All Orders does not apply the invoiced Business Gift exclusion', () => {
+  const filters = buildJobFilters({});
+
+  assert.equal(filters.whereSql, '');
+});

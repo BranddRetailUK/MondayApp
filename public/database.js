@@ -8853,6 +8853,7 @@
   function shouldRemoveFromOpenOrders(job) {
     if (!job) return false;
     if (truthy(job.is_complete)) return true;
+    if (categoryForJob(job) === 'gifts' && truthy(job.invoice_printed)) return true;
     const status = normalizeDashboardStatusLabel(job.dashboard_status);
     return (status === 'COMPLETED' || status === 'INVOICED') && Boolean(
       job.invoice_printed
