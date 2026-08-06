@@ -1356,6 +1356,67 @@ body{
   outline:2px solid rgba(255,255,255,.42);
   outline-offset:2px;
 }
+.label-quantity-shell{
+  width:min(380px, calc(100vw - 32px));
+}
+.label-quantity-body{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:12px;
+  padding:18px 16px 16px;
+}
+.label-quantity-body label{
+  color:#f1f2f4;
+  font-size:15px;
+  font-weight:800;
+}
+.label-quantity-control{
+  display:grid;
+  grid-template-columns:40px 88px 40px;
+  gap:8px;
+  align-items:center;
+}
+.label-quantity-control button,
+.label-quantity-control input{
+  box-sizing:border-box;
+  height:40px;
+  border:1px solid #5a5d66;
+  border-radius:4px;
+  font-family:inherit;
+  font-size:18px;
+  font-weight:800;
+  text-align:center;
+}
+.label-quantity-control button{
+  background:#3b3d42;
+  color:#fff;
+  cursor:pointer;
+}
+.label-quantity-control input{
+  width:88px;
+  appearance:textfield;
+  background:#fff;
+  color:#202124;
+}
+.label-quantity-control input::-webkit-inner-spin-button,
+.label-quantity-control input::-webkit-outer-spin-button{
+  margin:0;
+  appearance:none;
+}
+.label-quantity-control button:hover,
+.label-quantity-control button:focus-visible,
+.label-quantity-control input:focus-visible{
+  outline:2px solid #8ec7e3;
+  outline-offset:2px;
+}
+.label-quantity-help{
+  max-width:300px;
+  color:#bfc1c7;
+  font-size:12px;
+  line-height:1.4;
+  text-align:center;
+}
 body.test-dashboard-mobile-job-open{
   overflow:hidden;
 }

@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { buildLabelDocument } = require('../public/label-layout');
+const { buildLabelDocument, normalizeLabelQuantity } = require('../public/label-layout');
 
 test('label layout renders no QR and gives customer and job title two whole-word lines', () => {
   const html = buildLabelDocument({
@@ -22,6 +22,7 @@ test('label layout renders no QR and gives customer and job title two whole-word
   assert.match(html, /text-align:\s*center/);
   assert.match(html, /\.block-job-title\s*\{\s*margin-top:\s*0\.08in/);
   assert.match(html, /heightFits = maxLines === 1 \|\| el\.scrollHeight/);
+  assert.match(html, /class="label-count">1 of 1<\/div>/);
   assert.doesNotMatch(html, /setTimeout\(startPrint,\s*150\)/);
 });
 
@@ -38,9 +39,36 @@ test('label layout keeps the job number on one line and escapes printed values',
   assert.match(html, /\.word\s*\{\s*white-space:\s*nowrap/);
 });
 
-test('production label document starts printing after text fitting', () => {
+test('label layout creates one numbered 4 by 6 page for every requested label', () => {
   const html = buildLabelDocument({
     orderNumber: '51236',
+    customerName: 'Acme',
+    jobTitle: 'Staff Hoodies',
+  }, { autoPrint: false, quantity: 3 });
+
+  assert.equal((html.match(/data-label-page="\d+"/g) || []).length, 3);
+  assert.match(html, /data-label-page="1"/);
+  assert.match(html, /data-label-page="2"/);
+  assert.match(html, /data-label-page="3"/);
+  assert.match(html, /class="label-count">1 of 3<\/div>/);
+  assert.match(html, /class="label-count">2 of 3<\/div>/);
+  assert.match(html, /class="label-count">3 of 3<\/div>/);
+  assert.equal((html.match(/>JOB TITLE<\/div>/g) || []).length, 3);
+  assert.match(html, /\.label-page \{ break-after: page; page-break-after: always; \}/);
+  assert.match(html, /\.label-page-last \{ break-after: auto; page-break-after: auto; \}/);
+  assert.doesNotMatch(html, /setTimeout\(startPrint,\s*150\)/);
+});
+
+test('label quantities are whole numbers limited to 1 through 99', () => {
+  assert.equal(normalizeLabelQuantity(undefined), 1);
+  assert.equal(normalizeLabelQuantity(0), 1);
+  assert.equal(normalizeLabelQuantity(3.8), 3);
+  assert.equal(normalizeLabelQuantity(100), 99);
+});
+
+test('production label document starts printing after text fitting', () => {
+  const html = buildLabelDocument({
+    orderNumber: '51237',
     customerName: 'Acme',
     jobTitle: 'Staff Hoodies',
   });

@@ -112,6 +112,8 @@ let __dashboardPinchState = null;
 let __statusDropdownState = null;
 let __statusUpdateInFlight = 0;
 let __testCompleteConfirmResolve = null;
+let __labelQuantityResolve = null;
+let __labelQuantityReturnFocus = null;
 let __testRowMenuState = null;
 let __testVisualRemovalState = null;
 let __testDatePopoverState = null;
@@ -1565,7 +1567,7 @@ function buildPrintLabelCell(item) {
   printBtn.type = 'button';
   printBtn.textContent = 'Print';
   printBtn.className = 'job-action primary job-print-button';
-  printBtn.addEventListener('click', () => printLabel(item));
+  printBtn.addEventListener('click', () => printLabel(item, printBtn));
   cell.appendChild(printBtn);
   return cell;
 }
@@ -5158,7 +5160,132 @@ function isTestPrivateItemId(value) {
 
 // --------------------------- PRINT LABEL ---------------------------
 
-async function printLabel(item) {
+function requestLabelQuantity(trigger) {
+  if (__labelQuantityResolve) closeLabelQuantityModal(null);
+
+  const modal = ensureLabelQuantityModal();
+  const input = modal.querySelector('[data-label-quantity-input]');
+  if (input) input.value = '1';
+  __labelQuantityReturnFocus = trigger || document.activeElement;
+  modal.hidden = false;
+  modal.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open', 'label-quantity-open');
+
+  window.requestAnimationFrame(() => {
+    input?.focus();
+    try { input?.select(); } catch {}
+  });
+
+  return new Promise((resolve) => {
+    __labelQuantityResolve = resolve;
+  });
+}
+
+function ensureLabelQuantityModal() {
+  let modal = document.getElementById('label-quantity-modal');
+  if (modal) return modal;
+
+  modal = document.createElement('div');
+  modal.id = 'label-quantity-modal';
+  modal.className = 'test-dashboard-complete-confirm-modal label-quantity-modal';
+  modal.hidden = true;
+  modal.setAttribute('aria-hidden', 'true');
+  modal.innerHTML = `
+    <form class="test-dashboard-complete-confirm-shell label-quantity-shell" data-label-quantity-form role="dialog" aria-modal="true" aria-labelledby="label-quantity-title">
+      <div class="test-dashboard-complete-confirm-title" id="label-quantity-title">Print labels</div>
+      <div class="label-quantity-body">
+        <label for="label-quantity-input">How many labels?</label>
+        <div class="label-quantity-control">
+          <button type="button" data-label-quantity-decrement aria-label="Remove one label">−</button>
+          <input id="label-quantity-input" data-label-quantity-input type="number" inputmode="numeric" min="1" max="99" step="1" value="1" required>
+          <button type="button" data-label-quantity-increment aria-label="Add one label">+</button>
+        </div>
+        <div class="label-quantity-help">Labels will be numbered automatically. Keep Copies set to 1 in the print dialog.</div>
+      </div>
+      <div class="test-dashboard-complete-confirm-actions">
+        <button class="test-dashboard-complete-confirm-button cancel" type="button" data-label-quantity-cancel>Cancel</button>
+        <button class="test-dashboard-complete-confirm-button confirm" type="submit">Continue</button>
+      </div>
+    </form>
+  `;
+  modal.addEventListener('click', handleLabelQuantityClick);
+  modal.querySelector('[data-label-quantity-form]')?.addEventListener('submit', handleLabelQuantitySubmit);
+  document.addEventListener('keydown', handleLabelQuantityKeydown);
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function readLabelQuantity(modal) {
+  const input = modal?.querySelector('[data-label-quantity-input]');
+  const quantity = Number(input?.value);
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 99) {
+    input?.setCustomValidity('Enter a quantity from 1 to 99.');
+    input?.reportValidity();
+    return null;
+  }
+  input.setCustomValidity('');
+  return quantity;
+}
+
+function changeLabelQuantity(modal, change) {
+  const input = modal?.querySelector('[data-label-quantity-input]');
+  if (!input) return;
+  const current = Number.isInteger(Number(input.value)) ? Number(input.value) : 1;
+  input.value = String(Math.min(99, Math.max(1, current + change)));
+  input.setCustomValidity('');
+  input.focus();
+}
+
+function handleLabelQuantityClick(event) {
+  const modal = document.getElementById('label-quantity-modal');
+  if (!modal || modal.hidden) return;
+  if (event.target === modal || event.target.closest('[data-label-quantity-cancel]')) {
+    closeLabelQuantityModal(null);
+    return;
+  }
+  if (event.target.closest('[data-label-quantity-decrement]')) {
+    changeLabelQuantity(modal, -1);
+  } else if (event.target.closest('[data-label-quantity-increment]')) {
+    changeLabelQuantity(modal, 1);
+  }
+}
+
+function handleLabelQuantitySubmit(event) {
+  event.preventDefault();
+  const modal = document.getElementById('label-quantity-modal');
+  const quantity = readLabelQuantity(modal);
+  if (quantity !== null) closeLabelQuantityModal(quantity);
+}
+
+function handleLabelQuantityKeydown(event) {
+  const modal = document.getElementById('label-quantity-modal');
+  if (!modal || modal.hidden || event.key !== 'Escape') return;
+  event.preventDefault();
+  closeLabelQuantityModal(null);
+}
+
+function closeLabelQuantityModal(quantity) {
+  const modal = document.getElementById('label-quantity-modal');
+  if (modal) {
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+  }
+  document.body.classList.remove('modal-open', 'label-quantity-open');
+
+  const resolve = __labelQuantityResolve;
+  const returnFocus = __labelQuantityReturnFocus;
+  __labelQuantityResolve = null;
+  __labelQuantityReturnFocus = null;
+  if (resolve) resolve(quantity);
+  if (returnFocus?.isConnected) {
+    window.requestAnimationFrame(() => returnFocus.focus());
+  }
+}
+
+async function printLabel(item, trigger) {
+  const quantity = await requestLabelQuantity(trigger);
+  if (!quantity) return;
+
   const itemId = item?.id;
   const parsed = parseTitle(item?.name || '');
   const orderNumber = normalizeCellText(item?.database_job?.order_no || parsed.orderNumber || '');
@@ -5169,6 +5296,14 @@ async function printLabel(item) {
     alert('Label could not be printed: Label layout is unavailable');
     return;
   }
+
+  let win = null;
+  try { win = window.open('', '', 'width=480,height=760'); } catch {}
+  if (!win || !win.document) {
+    alert('Label could not be printed: Allow popups for this site and try again');
+    return;
+  }
+
   __statusUpdateInFlight += 1;
   try {
     const response = await fetch(ENDPOINTS.testLabelPrinted(itemId), {
@@ -5181,16 +5316,15 @@ async function printLabel(item) {
     await response.json();
     loadTestBoard({ forceRefresh: true });
   } catch (err) {
+    try { win.close(); } catch {}
     alert(`Label could not be printed: ${err.message || 'Failed to prepare the label'}`);
     return;
   } finally {
     __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);
   }
-  const body = buildLabelDocument({ orderNumber, customerName, jobTitle });
+  const body = buildLabelDocument({ orderNumber, customerName, jobTitle }, { quantity });
 
-  let win = null;
-  try { win = window.open('', '', 'width=480,height=760'); } catch {}
-  if (win && win.document) {
+  if (!win.closed && win.document) {
     win.document.open();
     win.document.write(body);
     win.document.close();

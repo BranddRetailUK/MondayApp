@@ -21,16 +21,44 @@
       .join(' ');
   }
 
+  function normalizeLabelQuantity(value) {
+    const quantity = Number(value);
+    if (!Number.isFinite(quantity)) return 1;
+    return Math.min(99, Math.max(1, Math.trunc(quantity)));
+  }
+
   function buildLabelDocument(label = {}, options = {}) {
     const orderNumber = String(label.orderNumber || '').trim();
     const customerName = String(label.customerName || '').trim();
     const jobTitle = String(label.jobTitle || '').trim();
     const autoPrint = options.autoPrint !== false;
+    const quantity = normalizeLabelQuantity(options.quantity);
     const blocks = [
       { className: 'job-number', head: 'JOB NUMBER', value: orderNumber, ratio: 0.62, maxSize: 96, maxLines: 1 },
       { className: 'customer', head: 'CUSTOMER', value: customerName, ratio: 0.46, maxSize: 54, maxLines: 2, singleLineFloor: 34 },
       { className: 'job-title', head: 'JOB TITLE', value: jobTitle, ratio: 0.50, maxSize: 54, maxLines: 2, singleLineFloor: 34 },
     ];
+    const pages = Array.from({ length: quantity }, (_, index) => `
+      <div class="label-page${index === quantity - 1 ? ' label-page-last' : ''}" data-label-page="${index + 1}">
+        <div class="wrap">
+          <div class="content">
+            ${blocks.map((block) => `
+              <div class="block block-${block.className}">
+                <div class="head">${escapeHtml(block.head)}</div>
+                <div
+                  class="value"
+                  data-ratio="${block.ratio}"
+                  data-max-size="${block.maxSize}"
+                  data-max-lines="${block.maxLines}"
+                  ${block.singleLineFloor ? `data-single-line-floor="${block.singleLineFloor}"` : ''}
+                >${block.maxLines > 1 ? renderWholeWords(block.value) : escapeHtml(block.value)}</div>
+              </div>
+            `).join('')}
+            <div class="label-count">${index + 1} of ${quantity}</div>
+          </div>
+        </div>
+      </div>
+    `).join('');
 
     return `
       <!doctype html>
@@ -41,13 +69,23 @@
         <style>
           @media print {
             @page { size: 4in 6in; margin: 0; }
-            html, body { width: 4in; height: 6in; margin: 0; padding: 0; }
+            html, body { width: 4in; margin: 0; padding: 0; }
+            .label-page { break-after: page; page-break-after: always; }
+            .label-page-last { break-after: auto; page-break-after: auto; }
           }
           html, body {
             width: 4in;
-            height: 6in;
             margin: 0;
             padding: 0;
+            background: #fff;
+          }
+          body {
+            overflow-x: hidden;
+          }
+          .label-page {
+            box-sizing: border-box;
+            width: 4in;
+            height: 6in;
             overflow: hidden;
             background: #fff;
           }
@@ -104,25 +142,17 @@
           .word {
             white-space: nowrap;
           }
+          .label-count {
+            margin-top: -0.08in;
+            font-family: Arial, sans-serif;
+            font-size: 22pt;
+            font-weight: 900;
+            line-height: 1;
+          }
         </style>
       </head>
       <body>
-        <div class="wrap">
-          <div class="content">
-            ${blocks.map((block) => `
-              <div class="block block-${block.className}">
-                <div class="head">${escapeHtml(block.head)}</div>
-                <div
-                  class="value"
-                  data-ratio="${block.ratio}"
-                  data-max-size="${block.maxSize}"
-                  data-max-lines="${block.maxLines}"
-                  ${block.singleLineFloor ? `data-single-line-floor="${block.singleLineFloor}"` : ''}
-                >${block.maxLines > 1 ? renderWholeWords(block.value) : escapeHtml(block.value)}</div>
-              </div>
-            `).join('')}
-          </div>
-        </div>
+        ${pages}
         <script>
           (function(){
             function fits(el, maxLines){
@@ -198,5 +228,6 @@
 
   return {
     buildLabelDocument,
+    normalizeLabelQuantity,
   };
 }));
