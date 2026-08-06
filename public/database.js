@@ -2979,6 +2979,7 @@
     const delivery = addDays(today, 14);
     document.getElementById('db-new-order-date').value = formatLegacyInputDate(today);
     document.getElementById('db-new-delivery-date').value = formatLegacyInputDate(delivery);
+    document.getElementById('db-new-payment-terms').value = 'Account';
     updateNewOrderTakenBy();
     els.newOrderStatus.textContent = '';
     els.newOrderStatus.dataset.tone = '';
@@ -3302,7 +3303,7 @@
   function populateContactSelect(select, contacts) {
     if (!select) return;
     const current = select.value;
-    const options = ['<option value=""></option>'];
+    const options = [];
     contacts.forEach((contact, index) => {
       const value = contactOptionValue(contact, index);
       options.push(`
@@ -3322,7 +3323,7 @@
   function populateAddressSelect(select, addresses, preferredAddress = '') {
     if (!select) return;
     const current = preferredAddress || select.value;
-    const options = addresses.length ? [] : ['<option value=""></option>'];
+    const options = [];
     addresses.forEach((address, index) => {
       options.push(`
         <option
