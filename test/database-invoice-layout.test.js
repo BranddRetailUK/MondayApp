@@ -58,6 +58,28 @@ test('order acknowledgement delivery addresses use the widened comma-separated r
   );
 });
 
+test('order acknowledgements exclude internal lines from items and totals', () => {
+  const acknowledgementRenderer = sourceFunction(
+    database,
+    'function renderOrderAcknowledgementPage',
+    'function renderOrderAckPage'
+  );
+  const documentLineFilter = sourceFunction(
+    database,
+    'function orderDocumentLineItems',
+    'function isInvoiceLikeDocumentType'
+  );
+
+  assert.match(
+    acknowledgementRenderer,
+    /const items = orderDocumentLineItems\('order-ack'\);[\s\S]*const totals = orderAckTotals\(items\);/
+  );
+  assert.match(
+    documentLineFilter,
+    /const items = orderAckLineItems\(\)\.filter\(\(item\) => !truthy\(item\.is_internal\)\);/
+  );
+});
+
 test('delivery note recipient addresses use stacked lines without changing invoice delivery metadata', () => {
   const deliveryNoteRenderer = sourceFunction(
     database,

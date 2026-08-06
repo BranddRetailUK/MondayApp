@@ -5173,7 +5173,6 @@ function requestLabelQuantity(trigger) {
 
   window.requestAnimationFrame(() => {
     input?.focus();
-    try { input?.select(); } catch {}
   });
 
   return new Promise((resolve) => {

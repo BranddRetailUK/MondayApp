@@ -9663,7 +9663,7 @@
 
   function renderOrderAcknowledgementPage() {
     const job = state.selectedJob || {};
-    const items = orderAckLineItems();
+    const items = orderDocumentLineItems('order-ack');
     const totals = orderAckTotals(items);
     const invoiceLines = orderAckAddressLines(job.invoice_address, job.customer_name);
     const deliveryLines = String(job.delivery_address || '').trim()
@@ -10279,13 +10279,9 @@
   }
 
   function orderDocumentLineItems(type) {
-    const items = orderAckLineItems();
-    if (isInvoiceLikeDocumentType(type)) return items.filter((item) => !truthy(item.is_internal));
+    const items = orderAckLineItems().filter((item) => !truthy(item.is_internal));
     if (type === 'delivery-note') {
-      return items.filter((item) => (
-        !truthy(item.is_internal)
-        && !truthy(item.is_non_deliverable)
-      ));
+      return items.filter((item) => !truthy(item.is_non_deliverable));
     }
     return items;
   }
