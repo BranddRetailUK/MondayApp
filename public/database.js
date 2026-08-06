@@ -119,6 +119,11 @@
   const FINANCIAL_REPORT_ORDER_TITLE_CHARS_PER_LINE = 34;
   const ORDER_TYPE_OPTIONS = ['Business Gifts', 'Printing', 'Print + Emb', 'Embroidery'];
   const PAYMENT_TERM_OPTIONS = ['Account', 'COD', 'Pro Forma'];
+  const NEW_ORDER_UNSELECTED_DROPDOWN_IDS = [
+    'db-new-order-type',
+    'db-new-delivery-method',
+    'db-new-invoice-required',
+  ];
   const NEW_ORDER_REQUIRED_FIELDS = [
     { name: 'customer_name', label: 'Customer' },
     { name: 'contact_name', label: 'Contact' },
@@ -2963,7 +2968,7 @@
     const name = currentUserFullName();
     if (!name) return;
     select.innerHTML = `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`;
-    select.value = name;
+    select.selectedIndex = -1;
   }
 
   function resetNewOrderForm() {
@@ -2979,6 +2984,9 @@
     const delivery = addDays(today, 14);
     document.getElementById('db-new-order-date').value = formatLegacyInputDate(today);
     document.getElementById('db-new-delivery-date').value = formatLegacyInputDate(delivery);
+    NEW_ORDER_UNSELECTED_DROPDOWN_IDS.forEach((id) => {
+      document.getElementById(id).selectedIndex = -1;
+    });
     document.getElementById('db-new-payment-terms').value = 'Account';
     updateNewOrderTakenBy();
     els.newOrderStatus.textContent = '';
@@ -3259,13 +3267,11 @@
     populateContactSelect(els.newContactInput, newOrderContactChoices(fallback.contactName));
     populateAddressSelect(
       els.newDeliveryAddress,
-      newOrderAddressChoices('delivery', fallback.deliveryAddress),
-      fallback.deliveryAddress
+      newOrderAddressChoices('delivery', fallback.deliveryAddress)
     );
     populateAddressSelect(
       els.newInvoiceAddress,
-      newOrderAddressChoices('invoice', fallback.invoiceAddress),
-      fallback.invoiceAddress
+      newOrderAddressChoices('invoice', fallback.invoiceAddress)
     );
   }
 
@@ -3315,14 +3321,16 @@
     });
     select.innerHTML = options.join('');
     select.dataset.contactChoices = JSON.stringify(contacts);
-    select.value = contacts.some((contact, index) => contactOptionValue(contact, index) === current)
-      ? current
-      : (contacts.length ? contactOptionValue(contacts[0], 0) : '');
+    if (contacts.some((contact, index) => contactOptionValue(contact, index) === current)) {
+      select.value = current;
+    } else {
+      select.selectedIndex = -1;
+    }
   }
 
-  function populateAddressSelect(select, addresses, preferredAddress = '') {
+  function populateAddressSelect(select, addresses) {
     if (!select) return;
-    const current = preferredAddress || select.value;
+    const current = select.value;
     const options = [];
     addresses.forEach((address, index) => {
       options.push(`
@@ -3336,7 +3344,11 @@
     select.dataset.addressChoices = JSON.stringify(addresses);
     const normalizedCurrent = normalizeOrderAckText(current);
     const matching = addresses.find((address) => normalizeOrderAckText(address.address) === normalizedCurrent);
-    select.value = matching?.address || addresses[0]?.address || '';
+    if (matching) {
+      select.value = matching.address;
+    } else {
+      select.selectedIndex = -1;
+    }
   }
 
   function selectedNewOrderContact() {
