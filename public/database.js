@@ -6714,10 +6714,18 @@
     return sourceJobs.filter((job) => {
       const category = categoryForJob(job);
       if (active === 'all') return true;
-      if (active === 'ready') return isReady(job);
-      if (active === 'not-ready') return !isReady(job);
+      if (active === 'ready' || active === 'not-ready') {
+        return matchesOutstandingApprovalFilter(job, active);
+      }
       return category === active;
     });
+  }
+
+  function matchesOutstandingApprovalFilter(job, filter) {
+    const status = normalizeDashboardStatusLabel(job?.dashboard_status);
+    if (status === 'COMPLETED' || status === 'INVOICED') return false;
+    const approved = truthy(job?.proof_approved);
+    return filter === 'ready' ? approved : !approved;
   }
 
   function compareJobs(a, b) {
@@ -12897,14 +12905,6 @@
     if (normalized === 'Embroidery') return 'E';
     if (normalized === 'Printing') return 'P';
     return '';
-  }
-
-  function isReady(job) {
-    return truthy(job.has_artwork)
-      || truthy(job.has_screens)
-      || Boolean(job.screen_numbers)
-      || truthy(job.has_shirts)
-      || truthy(job.is_printed);
   }
 
   function isStockItem(item) {

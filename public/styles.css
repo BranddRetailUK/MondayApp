@@ -4914,6 +4914,9 @@ body.modal-open{overflow:hidden}
   padding:3px;
   gap:0;
 }
+.db-filter-buttons .db-filter-separator-after{
+  margin-right:8px;
+}
 .db-toolbar-button{
   min-width:68px;
   height:37px;
@@ -8443,6 +8446,9 @@ input.db-custom-line-input{
     width:100%;
     min-width:0;
     white-space:normal;
+  }
+  .db-filter-buttons .db-filter-separator-after{
+    margin-right:0;
   }
   .db-filter-buttons .db-toolbar-button:last-child{
     grid-column:1 / -1;
