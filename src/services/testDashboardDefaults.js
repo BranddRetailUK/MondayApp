@@ -120,8 +120,9 @@ const TEST_DASHBOARD_SUBITEM_COLUMNS = [
   { id: 'text_mkr31cjs', title: 'QTY', type: 'text', settings_str: '', position: 3 },
   { id: 'text_mkvdj3cd', title: 'CODE', type: 'text', settings_str: '', position: 4 },
   { id: 'text_mkxdv9nk', title: 'COLOUR', type: 'text', settings_str: '', position: 5 },
-  { id: 'boolean_mkxwf1e1', title: 'CHECK IN', type: 'checkbox', settings_str: '', position: 6 },
-  { id: 'text_mky2xarj', title: 'Text', type: 'text', settings_str: '', position: 7 },
+  { id: 'text_item_reference', title: 'REF', type: 'text', settings_str: '', position: 6 },
+  { id: 'boolean_mkxwf1e1', title: 'CHECK IN', type: 'checkbox', settings_str: '', position: 7 },
+  { id: 'text_mky2xarj', title: 'Text', type: 'text', settings_str: '', position: 8 },
 ];
 
 const TEST_DASHBOARD_COLUMN_IDS = Object.freeze({

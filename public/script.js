@@ -944,6 +944,7 @@ function getColumnWidth(column) {
   if (title === 'NOTES' || title === 'TEXT') return 320;
   if (title === 'DES/PSG') return 122;
   if (title === 'COLOUR' || title === 'COLOR') return 158;
+  if (title === 'REF') return 220;
   if (title === 'CODE') return 142;
   if (title === 'QTY') return 80;
   if (title === 'SIZE') return 220;
@@ -1339,7 +1340,8 @@ function buildSubitemColumnWidthOverrides(columns, subitems) {
       if (!text) continue;
       max = Math.max(max, measureBoardTextWidth(text));
     }
-    overrides.set(column.id, Math.max(74, Math.ceil(max + 30)));
+    const maximum = normalizeColumnTitle(column.title) === 'REF' ? 320 : Number.POSITIVE_INFINITY;
+    overrides.set(column.id, Math.min(maximum, Math.max(74, Math.ceil(max + 30))));
   }
   return overrides;
 }
@@ -1434,7 +1436,8 @@ function isPerJobSubitemWidthColumn(title) {
   return normalized === 'SIZE' ||
     normalized === 'CODE' ||
     normalized === 'COLOUR' ||
-    normalized === 'COLOR';
+    normalized === 'COLOR' ||
+    normalized === 'REF';
 }
 
 function getMaxColumnTextWidth(items, columnId, font = "14px Manrope, 'Segoe UI', system-ui, sans-serif") {
@@ -1963,6 +1966,7 @@ function buildTestDashboardMobileLineItem(lineItem, columns, index) {
   [
     ['CODE', 'CODE'],
     ['COLOUR', 'COLOUR'],
+    ['REF', 'REF'],
     ['SIZE', 'SIZE'],
     ['QTY', 'QTY'],
   ].forEach(([label, compactTitle]) => {

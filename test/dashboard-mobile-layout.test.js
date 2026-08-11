@@ -170,7 +170,8 @@ test('dashboard subitems start with CODE, BRAND, and Subitem without duplicating
         { id: 'size', title: 'SIZE', type: 'text' },
         { id: 'qty', title: 'QTY', type: 'text' },
         code,
-        { id: 'colour', title: 'COLOUR', type: 'text' }
+        { id: 'colour', title: 'COLOUR', type: 'text' },
+        { id: 'ref', title: 'REF', type: 'text' }
       ], {
         subitem: true,
         brandWidth: 126,
@@ -188,17 +189,17 @@ test('dashboard subitems start with CODE, BRAND, and Subitem without duplicating
 
   assert.deepEqual(
     Array.from(result.kinds),
-    ['column', 'brand', 'name', 'column', 'column', 'column']
+    ['column', 'brand', 'name', 'column', 'column', 'column', 'column']
   );
   assert.deepEqual(
     Array.from(result.titles),
-    ['CODE', 'BRAND', 'Subitem', 'SIZE', 'QTY', 'COLOUR']
+    ['CODE', 'BRAND', 'Subitem', 'SIZE', 'QTY', 'COLOUR', 'REF']
   );
   assert.deepEqual(
     Array.from(result.columnIds),
-    ['code', null, null, 'size', 'qty', 'colour']
+    ['code', null, null, 'size', 'qty', 'colour', 'ref']
   );
-  assert.equal(result.template, '84px 126px 240px 220px 80px 158px');
+  assert.equal(result.template, '84px 126px 240px 220px 80px 158px 220px');
 });
 
 test('dashboard job title and customer eyebrow use explicit database values without separators', () => {

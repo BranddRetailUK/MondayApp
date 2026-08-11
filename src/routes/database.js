@@ -3776,6 +3776,7 @@ router.post('/api/database/jobs/:id/repeat', async (req, res) => {
            supplier_colour_code,
            supplier_size_code,
            catalogue_status,
+           item_reference,
            catalogue_synced_at
          )
          SELECT
@@ -3811,6 +3812,7 @@ router.post('/api/database/jobs/:id/repeat', async (req, res) => {
            source_lines.supplier_colour_code,
            source_lines.supplier_size_code,
            source_lines.catalogue_status,
+           source_lines.item_reference,
            source_lines.catalogue_synced_at
          FROM source_lines
          CROSS JOIN allocation`,
@@ -5024,6 +5026,7 @@ router.post('/api/database/jobs/:id/line-items', async (req, res) => {
 
   const unitPrice = nullableNumber(req.body?.unit_price);
   const vatRate = nullableNumber(req.body?.vat_rate);
+  const itemReference = cleanNullable(req.body?.item_reference);
 
   const client = await pool.connect();
   try {
@@ -5108,13 +5111,14 @@ router.post('/api/database/jobs/:id/line-items', async (req, res) => {
          supplier_colour_code,
          supplier_size_code,
          catalogue_status,
+         item_reference,
          catalogue_synced_at,
          created_at_source,
          updated_at_source
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9,
          FALSE, FALSE, $10, $11, $12, $13, $14, $15, $16, $17,
-         $18, $19, $20, $21, $22, $23, $24, $25,
+         $18, $19, $20, $21, $22, $23, $24, $25, $26,
          CASE WHEN $20::bigint IS NULL THEN NULL ELSE NOW() END,
          NOW(), NOW()
        )`,
@@ -5144,6 +5148,7 @@ router.post('/api/database/jobs/:id/line-items', async (req, res) => {
         productRow.supplier_colour_code || null,
         productRow.supplier_size_code || null,
         productRow.catalogue_status || null,
+        itemReference,
       ]
     );
 
@@ -5999,7 +6004,15 @@ function buildLineItemUpdate(payload) {
     if (!hasOwn(payload, 'line_description')) addField('line_description', styleName);
   }
 
-  const textFields = ['style_code', 'alt_style_code', 'colour', 'size', 'line_description', 'supplier_name'];
+  const textFields = [
+    'style_code',
+    'alt_style_code',
+    'colour',
+    'size',
+    'line_description',
+    'supplier_name',
+    'item_reference',
+  ];
   for (const field of textFields) {
     if (hasOwn(payload, field)) addField(field, cleanNullable(payload[field]));
   }

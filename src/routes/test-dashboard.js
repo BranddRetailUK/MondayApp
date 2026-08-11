@@ -1318,6 +1318,7 @@ function buildSubitem(line, columns) {
     textValue(columnByTitle(columns, 'QTY'), line.quantity == null ? '' : String(line.quantity)),
     textValue(columnByTitle(columns, 'CODE'), line.style_code || line.alt_style_code || ''),
     textValue(columnByTitle(columns, 'COLOUR'), line.colour || ''),
+    textValue(columnByTitle(columns, 'REF'), line.item_reference || ''),
   ].filter(Boolean);
   return {
     id: String(line.source_order_item_id),
@@ -1478,10 +1479,57 @@ async function ensureTestDashboardDefaults(db) {
   for (const column of TEST_DASHBOARD_SUBITEM_COLUMNS) {
     await upsertColumnDefault(db, column, true);
   }
+  await migrateItemReferenceSubitemColumnPosition(db);
   await migrateStockOrderedStatusLabel(db);
   await removePreProductionStatusOption(db);
   await migrateAwaitingApprovalStatusColor(db);
   await migratePreProductionGroupColor(db);
+}
+
+async function migrateItemReferenceSubitemColumnPosition(db) {
+  await db.query(
+    `WITH positions AS (
+       SELECT MAX(position) FILTER (WHERE id = $1)::int AS colour_position,
+              MAX(position) FILTER (WHERE id = $2)::int AS reference_position
+       FROM test_dashboard_columns
+       WHERE is_subitem = TRUE
+     ),
+     target AS (
+       SELECT colour_position + 1 AS target_position,
+              reference_position,
+              colour_position IS NOT NULL
+                AND (
+                  reference_position IS DISTINCT FROM colour_position + 1
+                  OR EXISTS (
+                    SELECT 1
+                    FROM test_dashboard_columns duplicate
+                    WHERE duplicate.is_subitem = TRUE
+                      AND duplicate.id <> $2
+                      AND duplicate.position = colour_position + 1
+                  )
+                ) AS needs_migration
+       FROM positions
+     ),
+     shifted AS (
+       UPDATE test_dashboard_columns column_to_shift
+       SET position = column_to_shift.position + 1,
+           updated_at = NOW()
+       FROM target
+       WHERE target.needs_migration
+         AND column_to_shift.is_subitem = TRUE
+         AND column_to_shift.id <> $2
+         AND column_to_shift.position >= target.target_position
+       RETURNING column_to_shift.id
+     )
+     UPDATE test_dashboard_columns reference_column
+     SET position = target.target_position,
+         updated_at = NOW()
+     FROM target
+     WHERE target.needs_migration
+       AND reference_column.id = $2
+       AND reference_column.is_subitem = TRUE`,
+    ['text_mkxdv9nk', 'text_item_reference']
+  );
 }
 
 async function upsertColumnDefault(db, column, isSubitem) {

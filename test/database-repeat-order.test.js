@@ -46,6 +46,7 @@ test('Repeat Order copies every line type with blank quantities and resets job w
   );
   assert.equal(repeatedLineFields.get('quantity'), 'NULL');
   assert.equal(repeatedLineFields.get('supplier_order_id'), 'NULL');
+  assert.equal(repeatedLineFields.get('item_reference'), 'source_lines.item_reference');
   assert.match(lineInsert, /WHERE li\.source_order_id = \$1/);
   assert.doesNotMatch(lineInsert, /is_non_deliverable\s+IS|is_internal\s+IS/);
 

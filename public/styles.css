@@ -6783,14 +6783,15 @@ body.modal-open{overflow:hidden}
   border:1px solid #000;
   background:#858585;
 }
-.db-items-table th:nth-child(3){width:67px}
-.db-items-table th:nth-child(4){width:421px}
-.db-items-table th:nth-child(5){width:108px}
-.db-items-table th:nth-child(6){width:80px}
+.db-items-table th:nth-child(3){width:62px}
+.db-items-table th:nth-child(4){width:244px}
+.db-items-table th:nth-child(5){width:114px}
+.db-items-table th:nth-child(6){width:92px}
 .db-items-table th:nth-child(7),
-.db-items-table th:nth-child(8){width:68px}
-.db-items-table th:nth-child(9){width:52px}
-.db-items-table th:nth-child(10){width:66px}
+.db-items-table th:nth-child(8){width:60px}
+.db-items-table th:nth-child(9){width:48px}
+.db-items-table th:nth-child(10){width:56px}
+.db-items-table th:nth-child(11){width:192px}
 .db-items-table td:nth-child(7),
 .db-items-table td:nth-child(8),
 .db-items-table td:nth-child(9),
@@ -7207,7 +7208,14 @@ input.db-custom-line-input{
 .db-nonstock-table input[data-custom-line-field="supplier_name"]{
   cursor:text;
 }
-.db-nonstock-table .db-line-text-scrolling{
+.db-items-table input[data-line-item-field="style_code"],
+.db-items-table input[data-line-item-field="style_name"],
+.db-items-table input[data-line-item-field="item_reference"],
+.db-items-table input[data-line-input="itemReference"]{
+  cursor:text;
+}
+.db-nonstock-table .db-line-text-scrolling,
+.db-items-table .db-line-text-scrolling{
   caret-color:transparent;
 }
 .db-gray-fill td{

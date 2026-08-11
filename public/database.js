@@ -7283,7 +7283,7 @@
     const suppliers = unique(items.map((item) => item.supplier_name).filter(Boolean)).join(', ');
 
     const stockRows = [
-      stockItems.length ? stockItems.map(renderStockRow).join('') : (state.lineDraft ? '' : renderItemEmptyRow(10)),
+      stockItems.length ? stockItems.map(renderStockRow).join('') : (state.lineDraft ? '' : renderItemEmptyRow(11)),
       state.lineDraft ? renderLineDraftRow() : renderAddLineButtonRow(),
     ].join('');
 
@@ -7303,6 +7303,7 @@
                 <th>Price:</th>
                 <th>Qty:</th>
                 <th>VAT:</th>
+                <th>Ref:</th>
               </tr>
             </thead>
             <tbody>${stockRows}</tbody>
@@ -10787,6 +10788,7 @@
         <td>${renderLineItemInput(item, 'unit_price', 'db-line-money')}</td>
         <td>${renderLineItemInput(item, 'quantity', 'db-line-qty')}</td>
         <td>${renderLineItemInput(item, 'vatPercent', 'db-line-vat')}</td>
+        <td>${renderLineItemInput(item, 'item_reference', 'db-line-ref')}</td>
       </tr>
     `;
   }
@@ -10875,7 +10877,7 @@
   function renderAddLineButtonRow() {
     return `
       <tr class="db-add-line-button-row">
-        <td colspan="10">
+        <td colspan="11">
           <button class="db-add-line-button" type="button" data-db-line-action="add">Add line</button>
         </td>
       </tr>
@@ -10901,8 +10903,9 @@
         <td><input class="db-line-input db-line-money" data-line-input="unitPrice" value="${escapeAttr(draft.unitPrice)}"></td>
         <td><input class="db-line-input db-line-qty" data-line-input="quantity" inputmode="numeric" value="${escapeAttr(draft.quantity)}"></td>
         <td><input class="db-line-input db-line-vat" data-line-input="vatPercent" inputmode="decimal" value="${escapeAttr(draft.vatPercent)}"></td>
+        <td><input class="db-line-input db-line-ref" data-line-input="itemReference" value="${escapeAttr(draft.itemReference)}"></td>
       </tr>
-      ${status ? `<tr class="db-add-line-status-row"><td colspan="10">${escapeHtml(status)}</td></tr>` : ''}
+      ${status ? `<tr class="db-add-line-status-row"><td colspan="11">${escapeHtml(status)}</td></tr>` : ''}
     `;
   }
 
@@ -10973,6 +10976,7 @@
       unitPrice: '',
       quantity: '1',
       vatPercent: '20.00',
+      itemReference: '',
       loadingVariants: false,
       saving: false,
       error: '',
@@ -11100,6 +11104,7 @@
       && !draft.productId
       && !draft.variants?.length
       && !String(draft.unitPrice || '').trim()
+      && !String(draft.itemReference || '').trim()
       && isDefaultDraftValue(draft.quantity, '1')
       && isDefaultDraftValue(draft.vatPercent, '20.00');
   }
@@ -11601,6 +11606,7 @@
           quantity: lineInteger(draft.quantity, 1),
           unit_price: lineNumber(draft.unitPrice),
           vat_rate: lineVatRate(draft.vatPercent),
+          item_reference: String(draft.itemReference || '').trim() || null,
         }),
       });
 
@@ -11699,7 +11705,7 @@
     if (field === 'vatPercent') return { vat_rate: lineVatRate(value) };
     if (field === 'quantity') return { quantity: lineInteger(value, 1) };
     if (field === 'unit_cost' || field === 'unit_price') return { [field]: lineNumber(value) };
-    if (['style_code', 'alt_style_code', 'style_name', 'colour', 'size', 'line_description', 'supplier_name'].includes(field)) {
+    if (['style_code', 'alt_style_code', 'style_name', 'colour', 'size', 'line_description', 'supplier_name', 'item_reference'].includes(field)) {
       return { [field]: String(value || '').trim() };
     }
     return null;
@@ -11726,9 +11732,17 @@
 
   function isLineTextHoverInput(input) {
     if (!input?.matches?.('input')) return false;
-    if (!input.closest('.db-nonstock-table')) return false;
-    const field = input.dataset.lineItemField || input.dataset.customLineField;
-    return field === 'line_description' || field === 'supplier_name';
+    const field = input.dataset.lineItemField || input.dataset.customLineField || input.dataset.lineInput;
+    if (input.closest('.db-nonstock-table')) {
+      return field === 'line_description' || field === 'supplier_name';
+    }
+    if (input.closest('.db-items-table')) {
+      return field === 'style_code'
+        || field === 'style_name'
+        || field === 'item_reference'
+        || field === 'itemReference';
+    }
+    return false;
   }
 
   function startLineTextHoverScroll(input) {

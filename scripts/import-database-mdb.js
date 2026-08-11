@@ -177,6 +177,7 @@ const CANONICAL_LINE_FIELD_COLUMNS = [
   'supplier_size_code',
   'catalogue_status',
   'catalogue_synced_at',
+  'item_reference',
 ];
 
 const LINE_COLUMNS = [
@@ -1592,6 +1593,7 @@ async function fetchCanonicalLineFieldSnapshot(client) {
     SELECT source_order_item_id, ${CANONICAL_LINE_FIELD_COLUMNS.join(', ')}
     FROM database_job_line_items
     WHERE ralawise_catalog_variant_id IS NOT NULL
+       OR item_reference IS NOT NULL
   `);
   return result.rows;
 }
@@ -1608,7 +1610,8 @@ async function restoreCanonicalLineFieldSnapshot(client, rows) {
           supplier_colour_code = x.supplier_colour_code,
           supplier_size_code = x.supplier_size_code,
           catalogue_status = x.catalogue_status,
-          catalogue_synced_at = x.catalogue_synced_at
+          catalogue_synced_at = x.catalogue_synced_at,
+          item_reference = x.item_reference
       FROM jsonb_to_recordset($1::jsonb) AS x(
         source_order_item_id integer,
         legacy_source_product_id integer,
@@ -1618,7 +1621,8 @@ async function restoreCanonicalLineFieldSnapshot(client, rows) {
         supplier_colour_code text,
         supplier_size_code text,
         catalogue_status text,
-        catalogue_synced_at timestamp
+        catalogue_synced_at timestamp,
+        item_reference text
       )
       WHERE li.source_order_item_id = x.source_order_item_id
     `, [JSON.stringify(batch)]);

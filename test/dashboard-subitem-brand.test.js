@@ -21,6 +21,7 @@ test('dashboard subitems expose resolved product brand alongside existing values
     colour: 'Black',
     size: 'XL',
     quantity: 12,
+    item_reference: 'Black Tour T-Shirt',
   }, TEST_DASHBOARD_SUBITEM_COLUMNS);
 
   assert.equal(subitem.brand, 'Gildan');
@@ -28,6 +29,10 @@ test('dashboard subitems expose resolved product brand alongside existing values
   assert.equal(
     subitem.column_values.find(value => value.id === 'text_mkvdj3cd')?.text,
     'GD005'
+  );
+  assert.equal(
+    subitem.column_values.find(value => value.id === 'text_item_reference')?.text,
+    'Black Tour T-Shirt'
   );
 });
 
@@ -83,4 +88,16 @@ test('dashboard fetches catalogue brands only for audited alias targets', () => 
 
   assert.match(source, /const aliasBrandMap = await fetchAuditedAliasBrandMap\(result\.rows\)/);
   assert.match(source, /WHERE UPPER\(BTRIM\(style_code\)\) = ANY\(\$1::text\[\]\)/);
+});
+
+test('dashboard default migration keeps REF immediately after COLOUR for existing installs', () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'routes', 'test-dashboard.js'),
+    'utf8'
+  );
+
+  assert.match(source, /migrateItemReferenceSubitemColumnPosition/);
+  assert.match(source, /colour_position \+ 1 AS target_position/);
+  assert.match(source, /column_to_shift\.position >= target\.target_position/);
+  assert.match(source, /reference_column\.id = \$2/);
 });
