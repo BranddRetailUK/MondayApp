@@ -33,6 +33,10 @@ function normalizedCatalogStatus(line) {
   ).toLowerCase();
 }
 
+function allowsNonLiveRalawiseSku(line) {
+  return line?.ralawise_allow_non_live === true;
+}
+
 function exactRalawiseSku(line) {
   const sku = trimText(
     line?.ralawise_sku
@@ -56,9 +60,12 @@ function buildJobBasketPlan(job, lineItems, options = {}) {
     const sku = exactRalawiseSku(line);
     const quantity = positiveQuantity(line?.quantity);
     const status = normalizedCatalogStatus(line);
+    const nonLiveOverride = allowsNonLiveRalawiseSku(line);
     let reason = '';
     if (!sku) reason = 'Exact Ralawise colour/size SKU is missing';
-    else if (status === 'discontinued' || status === 'inactive') reason = 'Ralawise SKU is not live';
+    else if ((status === 'discontinued' || status === 'inactive') && !nonLiveOverride) {
+      reason = 'Ralawise SKU is not live';
+    }
     else if (!quantity) reason = 'Quantity must be greater than zero';
     if (reason) {
       unresolved.push({
@@ -239,6 +246,7 @@ function publicBasketError(error) {
 
 module.exports = {
   StockOrderingRalawiseError,
+  allowsNonLiveRalawiseSku,
   basketAuditMatchesPlan,
   basketContainsPlan,
   buildJobBasketPlan,

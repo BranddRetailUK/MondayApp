@@ -85,6 +85,25 @@ test('buildJobBasketPlan rejects discontinued SKUs', () => {
   assert.match(plan.unresolved[0].reason, /not live/);
 });
 
+test('buildJobBasketPlan accepts an explicitly approved non-live exact SKU', () => {
+  const plan = buildJobBasketPlan({ source_order_id: 50463, order_no: 51216 }, [
+    {
+      source_order_item_id: 1,
+      source_product_id: -90014,
+      ralawise_sku: 'TD01BSPRDXS',
+      ralawise_catalog_status: 'Discontinued',
+      ralawise_allow_non_live: true,
+      quantity: 2,
+    },
+  ]);
+
+  assert.equal(plan.eligible, true);
+  assert.equal(plan.unresolved.length, 0);
+  assert.deepEqual(plan.items, [
+    { code: 'TD01BSPRDXS', quantity: 2, reference: '51216' },
+  ]);
+});
+
 test('buildJobBasketPlan accepts decimal Ralawise child SKUs', () => {
   const plan = buildJobBasketPlan(
     { source_order_id: 50416, order_no: 51169 },

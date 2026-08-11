@@ -6110,6 +6110,7 @@ function appendLineItemRalawiseVariantUpdate(update, variantRow) {
   addLineItemUpdateField(update, 'supplier_colour_code', variantRow.supplier_colour_code);
   addLineItemUpdateField(update, 'supplier_size_code', variantRow.supplier_size_code);
   addLineItemUpdateField(update, 'catalogue_status', variantRow.catalogue_status);
+  addLineItemUpdateField(update, 'ralawise_allow_non_live', false);
   update.assignments.push('catalogue_synced_at = NOW()');
 }
 

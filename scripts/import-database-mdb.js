@@ -178,6 +178,7 @@ const CANONICAL_LINE_FIELD_COLUMNS = [
   'catalogue_status',
   'catalogue_synced_at',
   'item_reference',
+  'ralawise_allow_non_live',
 ];
 
 const LINE_COLUMNS = [
@@ -1611,7 +1612,8 @@ async function restoreCanonicalLineFieldSnapshot(client, rows) {
           supplier_size_code = x.supplier_size_code,
           catalogue_status = x.catalogue_status,
           catalogue_synced_at = x.catalogue_synced_at,
-          item_reference = x.item_reference
+          item_reference = x.item_reference,
+          ralawise_allow_non_live = x.ralawise_allow_non_live
       FROM jsonb_to_recordset($1::jsonb) AS x(
         source_order_item_id integer,
         legacy_source_product_id integer,
@@ -1622,7 +1624,8 @@ async function restoreCanonicalLineFieldSnapshot(client, rows) {
         supplier_size_code text,
         catalogue_status text,
         catalogue_synced_at timestamp,
-        item_reference text
+        item_reference text,
+        ralawise_allow_non_live boolean
       )
       WHERE li.source_order_item_id = x.source_order_item_id
     `, [JSON.stringify(batch)]);

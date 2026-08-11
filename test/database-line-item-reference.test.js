@@ -46,3 +46,14 @@ test('local item references survive repeats and replace-mode MDB restoration', (
   assert.match(importer, /ralawise_catalog_variant_id IS NOT NULL\s+OR item_reference IS NOT NULL/);
   assert.match(importer, /item_reference = x\.item_reference/);
 });
+
+test('reviewed non-live Ralawise exceptions are scoped and survive MDB restoration', () => {
+  const schema = read('src/db/databaseSchema.js');
+  const routes = read('src/routes/database.js');
+  const importer = read('scripts/import-database-mdb.js');
+
+  assert.match(schema, /ralawise_allow_non_live BOOLEAN NOT NULL DEFAULT FALSE/);
+  assert.match(routes, /addLineItemUpdateField\(update, 'ralawise_allow_non_live', false\)/);
+  assert.match(importer, /'item_reference',\s+'ralawise_allow_non_live'/);
+  assert.match(importer, /ralawise_allow_non_live = x\.ralawise_allow_non_live/);
+});
