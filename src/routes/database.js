@@ -4897,6 +4897,21 @@ router.get('/api/database/products/styles/:styleId/variants', async (req, res) =
   if (!Number.isFinite(styleId)) {
     return res.status(400).json({ error: 'Invalid style id' });
   }
+  const sourceOrderId = nullableInt(req.query.sourceOrderId);
+  const params = [styleId];
+  const visibilitySql = sourceOrderId
+    ? `AND (
+         v.is_active IS TRUE
+         OR EXISTS (
+           SELECT 1
+           FROM database_job_line_items line_items
+           WHERE line_items.source_order_id = $2
+             AND line_items.ralawise_catalog_variant_id = v.id
+             AND line_items.ralawise_allow_non_live IS TRUE
+         )
+       )`
+    : 'AND v.is_active IS TRUE';
+  if (sourceOrderId) params.push(sourceOrderId);
 
   try {
     const result = await pool.query(
@@ -4934,12 +4949,12 @@ router.get('/api/database/products/styles/:styleId/variants', async (req, res) =
        JOIN database_ralawise_catalog_styles s ON s.id = v.style_id
        JOIN database_ralawise_catalog_colours c ON c.id = v.colour_id
        WHERE s.id = $1
-         AND v.is_active IS TRUE
+         ${visibilitySql}
        ORDER BY LOWER(COALESCE(c.colour_name, '')) ASC,
                 c.id ASC,
                 LOWER(COALESCE(v.size_name, '')) ASC,
                 v.sku_code ASC`,
-      [styleId]
+      params
     );
 
     if (!result.rowCount) {

@@ -11222,12 +11222,18 @@
   }
 
   async function loadStyleVariants(styleId) {
-    const key = styleVariantCacheKey(styleId);
+    const sourceOrderId = Number.parseInt(state.selectedJob?.source_order_id, 10);
+    const key = styleVariantCacheKey(styleId, sourceOrderId);
     if (!key) return [];
     if (state.productVariantCache.has(key)) return getCachedStyleVariants(styleId);
     if (state.productVariantLoading.has(key)) return state.productVariantLoading.get(key);
 
-    const promise = fetchJson(`/api/database/products/styles/${encodeURIComponent(styleId)}/variants`)
+    const params = new URLSearchParams();
+    if (Number.isFinite(sourceOrderId)) params.set('sourceOrderId', String(sourceOrderId));
+    const query = params.toString();
+    const promise = fetchJson(
+      `/api/database/products/styles/${encodeURIComponent(styleId)}/variants${query ? `?${query}` : ''}`
+    )
       .then((data) => {
         const variants = Array.isArray(data.products) ? data.products : [];
         state.productVariantCache.set(key, variants);
@@ -11249,9 +11255,11 @@
     return state.productVariantCache.get(styleVariantCacheKey(styleId)) || [];
   }
 
-  function styleVariantCacheKey(styleId) {
+  function styleVariantCacheKey(styleId, sourceOrderId = state.selectedJob?.source_order_id) {
     const numeric = Number.parseInt(styleId, 10);
-    return Number.isFinite(numeric) ? String(numeric) : '';
+    if (!Number.isFinite(numeric)) return '';
+    const numericSourceOrderId = Number.parseInt(sourceOrderId, 10);
+    return `${Number.isFinite(numericSourceOrderId) ? numericSourceOrderId : 'catalogue'}:${numeric}`;
   }
 
   async function searchProducts(field, query) {

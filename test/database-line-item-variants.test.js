@@ -24,6 +24,21 @@ test('saved stock dropdowns derive their options from the cached full style resp
   );
   assert.match(
     script,
-    /fetchJson\(`\/api\/database\/products\/styles\/\$\{encodeURIComponent\(styleId\)\}\/variants`\)/
+    /params\.set\('sourceOrderId', String\(sourceOrderId\)\)[\s\S]*?\/products\/styles\/\$\{encodeURIComponent\(styleId\)\}\/variants/
   );
+});
+
+test('saved reviewed non-live variants are rehydrated only for their owning order', () => {
+  const routes = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'database.js'), 'utf8');
+  const script = fs.readFileSync(path.join(__dirname, '..', 'public', 'database.js'), 'utf8');
+  const variantRoute = routes.match(
+    /router\.get\('\/api\/database\/products\/styles\/:styleId\/variants'[\s\S]*?\n\}\);/
+  )?.[0] || '';
+
+  assert.match(variantRoute, /const sourceOrderId = nullableInt\(req\.query\.sourceOrderId\)/);
+  assert.match(variantRoute, /v\.is_active IS TRUE[\s\S]*?line_items\.source_order_id = \$2/);
+  assert.match(variantRoute, /line_items\.ralawise_catalog_variant_id = v\.id/);
+  assert.match(variantRoute, /line_items\.ralawise_allow_non_live IS TRUE/);
+  assert.match(script, /styleVariantCacheKey\(styleId, sourceOrderId\)/);
+  assert.match(script, /numericSourceOrderId[\s\S]*?'catalogue'/);
 });
