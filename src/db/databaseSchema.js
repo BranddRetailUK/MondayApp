@@ -680,6 +680,49 @@ async function ensureTestDashboardTables(db) {
   `);
 
   await db.query(`
+    CREATE TABLE IF NOT EXISTS database_job_status_updates (
+      id BIGSERIAL PRIMARY KEY,
+      source_order_id INTEGER NOT NULL REFERENCES database_jobs(source_order_id) ON DELETE CASCADE,
+      previous_status TEXT,
+      status TEXT NOT NULL,
+      changed_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await db.query(`
+    CREATE OR REPLACE FUNCTION record_database_job_status_update()
+    RETURNS TRIGGER AS $$
+    BEGIN
+      IF current_setting('ultimate_hub.skip_status_activity', TRUE) IS DISTINCT FROM 'on'
+         AND NULLIF(BTRIM(COALESCE(NEW.dashboard_status, '')), '') IS NOT NULL THEN
+        INSERT INTO database_job_status_updates (
+          source_order_id,
+          previous_status,
+          status,
+          changed_at
+        ) VALUES (
+          NEW.source_order_id,
+          NULLIF(BTRIM(COALESCE(OLD.dashboard_status, '')), ''),
+          BTRIM(NEW.dashboard_status),
+          COALESCE(NEW.dashboard_status_updated_at, NOW())
+        )
+        ON CONFLICT (source_order_id, status, changed_at) DO NOTHING;
+      END IF;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
+
+  await db.query('DROP TRIGGER IF EXISTS database_jobs_status_update_activity ON database_jobs;');
+  await db.query(`
+    CREATE TRIGGER database_jobs_status_update_activity
+    AFTER UPDATE OF dashboard_status ON database_jobs
+    FOR EACH ROW
+    WHEN (NEW.dashboard_status IS DISTINCT FROM OLD.dashboard_status)
+    EXECUTE FUNCTION record_database_job_status_update();
+  `);
+
+  await db.query(`
     CREATE TABLE IF NOT EXISTS test_dashboard_files (
       id SERIAL PRIMARY KEY,
       source_order_id INTEGER NOT NULL REFERENCES database_jobs(source_order_id) ON DELETE CASCADE,
@@ -746,12 +789,36 @@ async function ensureTestDashboardTables(db) {
 
   await db.query('CREATE INDEX IF NOT EXISTS test_dashboard_columns_position_idx ON test_dashboard_columns(is_subitem, position);');
   await db.query('CREATE INDEX IF NOT EXISTS test_dashboard_job_state_group_idx ON test_dashboard_job_state(group_id);');
+  await db.query('CREATE UNIQUE INDEX IF NOT EXISTS database_job_status_updates_transition_idx ON database_job_status_updates(source_order_id, status, changed_at);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_job_status_updates_changed_idx ON database_job_status_updates(changed_at DESC, id DESC);');
   await db.query('CREATE INDEX IF NOT EXISTS test_dashboard_files_job_column_idx ON test_dashboard_files(source_order_id, column_id);');
   await db.query('CREATE INDEX IF NOT EXISTS test_dashboard_files_column_created_idx ON test_dashboard_files(column_id, created_at DESC, id DESC);');
   await db.query("CREATE INDEX IF NOT EXISTS test_dashboard_files_title_created_idx ON test_dashboard_files(UPPER(BTRIM(column_title)), created_at DESC, id DESC);");
   await db.query('DROP INDEX IF EXISTS test_dashboard_files_public_id_idx;');
   await db.query('CREATE UNIQUE INDEX IF NOT EXISTS test_dashboard_files_job_public_id_idx ON test_dashboard_files(source_order_id, public_id);');
   await db.query('CREATE INDEX IF NOT EXISTS test_dashboard_private_jobs_group_idx ON test_dashboard_private_jobs(group_id);');
+
+  await db.query(`
+    INSERT INTO database_job_status_updates (
+      source_order_id,
+      previous_status,
+      status,
+      changed_at
+    )
+    SELECT j.source_order_id,
+           NULL,
+           BTRIM(j.dashboard_status),
+           j.dashboard_status_updated_at
+    FROM database_jobs j
+    WHERE NULLIF(BTRIM(COALESCE(j.dashboard_status, '')), '') IS NOT NULL
+      AND j.dashboard_status_updated_at IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM database_job_status_updates activity
+        WHERE activity.source_order_id = j.source_order_id
+      )
+    ON CONFLICT (source_order_id, status, changed_at) DO NOTHING;
+  `);
 }
 
 module.exports = { ensureDatabaseTables, ensureTestDashboardTables };

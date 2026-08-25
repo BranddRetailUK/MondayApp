@@ -1132,6 +1132,12 @@ async function importSnapshot(snapshot, options) {
       preservedDashboardJobFields = await fetchDashboardJobFieldSnapshot(client);
       preservedCanonicalProductFields = await fetchCanonicalProductFieldSnapshot(client);
       preservedCanonicalLineFields = await fetchCanonicalLineFieldSnapshot(client);
+      await client.query(`
+        CREATE TEMP TABLE database_job_status_updates_import_snapshot
+        ON COMMIT DROP
+        AS SELECT id, source_order_id, previous_status, status, changed_at
+           FROM database_job_status_updates
+      `);
       await client.query('DELETE FROM database_job_positions');
       await client.query('DELETE FROM database_job_line_items');
       await client.query('DELETE FROM database_jobs');
@@ -1192,7 +1198,27 @@ async function importSnapshot(snapshot, options) {
     }
     if (preservedDashboardJobFields.length) {
       console.log(`[database-import] Restoring ${preservedDashboardJobFields.length} dashboard job status rows`);
+      await client.query("SELECT set_config('ultimate_hub.skip_status_activity', 'on', true)");
       await restoreDashboardJobFieldSnapshot(client, preservedDashboardJobFields);
+    }
+    if (options.replaceExisting) {
+      await client.query(`
+        INSERT INTO database_job_status_updates (
+          id,
+          source_order_id,
+          previous_status,
+          status,
+          changed_at
+        )
+        SELECT snapshot.id,
+               snapshot.source_order_id,
+               snapshot.previous_status,
+               snapshot.status,
+               snapshot.changed_at
+        FROM database_job_status_updates_import_snapshot snapshot
+        JOIN database_jobs job ON job.source_order_id = snapshot.source_order_id
+        ON CONFLICT (source_order_id, status, changed_at) DO NOTHING
+      `);
     }
 
     console.log(`[database-import] Writing ${snapshot.lineItems.length} line items`);

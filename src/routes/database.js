@@ -46,6 +46,8 @@ const DASHBOARD_STATUS_COLORS = buildDashboardStatusColors(STATUS_SETTINGS);
 const MAX_STOCK_ORDERING_MARK_IDS = 500;
 const DATABASE_VISUAL_PAGE_LIMIT = 30;
 const DATABASE_VISUAL_PAGE_MAX = 50;
+const DATABASE_STATUS_UPDATE_LIMIT = 100;
+const DATABASE_STATUS_UPDATE_MAX = 250;
 const RALAWISE_ADDING_STALE_MS = 10 * 60 * 1000;
 const RALAWISE_ORDER_HISTORY_LOCK_KEYS = [71060219, 1206];
 const STOCK_ORDERING_CLOSED_STATUSES = new Set([
@@ -997,6 +999,43 @@ router.get('/api/database/outstanding-counts', async (_req, res) => {
   } catch (err) {
     console.error('GET /api/database/outstanding-counts', err);
     res.status(500).json({ error: 'Failed to fetch outstanding action counts' });
+  }
+});
+
+router.get('/api/database/status-updates', async (req, res) => {
+  const limit = clampInt(
+    req.query?.limit,
+    DATABASE_STATUS_UPDATE_LIMIT,
+    1,
+    DATABASE_STATUS_UPDATE_MAX
+  );
+
+  try {
+    const result = await pool.query(
+      `SELECT activity.id,
+              activity.source_order_id,
+              activity.previous_status,
+              activity.status,
+              activity.changed_at,
+              job.order_no,
+              job.customer_name,
+              job.job_title
+       FROM database_job_status_updates activity
+       JOIN database_jobs job ON job.source_order_id = activity.source_order_id
+       ORDER BY activity.changed_at DESC, activity.id DESC
+       LIMIT $1`,
+      [limit]
+    );
+
+    res.json({
+      updates: result.rows.map((update) => ({
+        ...update,
+        statusColor: DASHBOARD_STATUS_COLORS[normalizeColumnTitle(update.status)] || '#000000',
+      })),
+    });
+  } catch (err) {
+    console.error('GET /api/database/status-updates', err);
+    res.status(500).json({ error: 'Failed to fetch dashboard status updates' });
   }
 });
 
@@ -4272,6 +4311,7 @@ router.delete('/api/database/jobs/:id', async (req, res) => {
     await client.query('DELETE FROM database_ralawise_basket_jobs WHERE source_order_id = $1', [sourceOrderId]);
     await client.query('DELETE FROM job_scan_events WHERE item_id = ANY($1::text[])', [scanItemIds]);
     await client.query('DELETE FROM job_scans WHERE item_id = ANY($1::text[])', [scanItemIds]);
+    await client.query('DELETE FROM database_job_status_updates WHERE source_order_id = $1', [sourceOrderId]);
     await client.query('DELETE FROM test_dashboard_files WHERE source_order_id = $1', [sourceOrderId]);
     await client.query('DELETE FROM test_dashboard_job_state WHERE source_order_id = $1', [sourceOrderId]);
     await client.query('DELETE FROM database_job_positions WHERE source_order_id = $1', [sourceOrderId]);

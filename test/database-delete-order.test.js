@@ -16,6 +16,7 @@ test('DELETE job removes the order and all order-owned database records', async 
     'database_ralawise_basket_jobs',
     'job_scan_events',
     'job_scans',
+    'database_job_status_updates',
     'test_dashboard_files',
     'test_dashboard_job_state',
     'database_job_positions',

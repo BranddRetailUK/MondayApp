@@ -19,6 +19,8 @@
   const DATABASE_VISUAL_PROOF_COLUMN_ID = 'file_mky43tg9';
   const DATABASE_VISUAL_PAGE_LIMIT = 30;
   const DATABASE_VISUAL_SEARCH_DELAY = 260;
+  const DATABASE_STATUS_UPDATES_LIMIT = 100;
+  const DATABASE_STATUS_UPDATES_POLL_MS = 5000;
   const DATABASE_CUSTOMER_SORTS = new Set(['recent', 'active', 'az', 'za']);
   const DATABASE_STYLE_SORTS = new Set(['most-used', 'highest-price', 'lowest-price', 'az', 'za']);
   const DATABASE_REPORT_RANGES = new Set(['daily', 'weekly', 'monthly', 'yearly', 'mtd', 'ytd']);
@@ -184,6 +186,10 @@
 
   const state = {
     loadedHome: false,
+    homeStatusUpdates: [],
+    homeStatusUpdatesLoaded: false,
+    homeStatusUpdatesLoading: false,
+    homeStatusUpdatesSignature: '',
     loadingOrders: false,
     orderMode: 'open',
     loadedOrderMode: '',
@@ -402,6 +408,7 @@
       homeCountPrinting: document.getElementById('db-count-printing'),
       homeCountEmbroidery: document.getElementById('db-count-embroidery'),
       homeCountGifts: document.getElementById('db-count-gifts'),
+      homeStatusUpdates: document.getElementById('db-status-updates-list'),
       reportsPeriod: document.getElementById('db-reports-period'),
       stockOrderingHomeButton: document.querySelector('[data-db-action="stock-ordering"]'),
       usersHomeButton: document.querySelector('[data-db-action="users"]'),
@@ -667,6 +674,7 @@
       els.sideTab.addEventListener('click', () => {
         if (!window.ultimateHubUser || window.ultimateHubUser.access_scope === 'dtf_only') return;
         if (!state.loadedHome) loadHomeMetrics();
+        else if (state.activeView === 'home') loadHomeStatusUpdates();
         restoreDatabaseRouteOnce();
       });
     }
@@ -686,6 +694,16 @@
         restoreDatabaseRouteOnce();
       }
     });
+
+    window.setInterval(() => {
+      if (
+        document.visibilityState === 'visible'
+        && isDatabaseTopLevelActive()
+        && state.activeView === 'home'
+      ) {
+        loadHomeStatusUpdates();
+      }
+    }, DATABASE_STATUS_UPDATES_POLL_MS);
   }
 
   function setupDatabaseMobileTableLabels() {
@@ -1435,12 +1453,12 @@
 
   async function loadHomeMetrics() {
     state.loadedHome = true;
-    try {
-      const data = await fetchJson('/api/database/outstanding-counts');
-      setHomeCounts(data);
-    } catch {
-      setHomeCounts({ printing: '!', embroidery: '!', business_gifts: '!' });
-    }
+    await Promise.all([
+      fetchJson('/api/database/outstanding-counts')
+        .then(setHomeCounts)
+        .catch(() => setHomeCounts({ printing: '!', embroidery: '!', business_gifts: '!' })),
+      loadHomeStatusUpdates(),
+    ]);
   }
 
   function setHomeCounts(counts) {
@@ -1449,10 +1467,81 @@
     els.homeCountGifts.textContent = formatNumber(counts.business_gifts ?? counts.gifts ?? 0);
   }
 
+  async function loadHomeStatusUpdates() {
+    if (state.homeStatusUpdatesLoading || !els.homeStatusUpdates) return;
+    state.homeStatusUpdatesLoading = true;
+    els.homeStatusUpdates.setAttribute('aria-busy', 'true');
+
+    try {
+      const data = await fetchJson(`/api/database/status-updates?limit=${DATABASE_STATUS_UPDATES_LIMIT}`);
+      const updates = Array.isArray(data.updates) ? data.updates : [];
+      const signature = JSON.stringify(updates.map((update) => [
+        update.id,
+        update.status,
+        update.changed_at,
+        update.customer_name,
+        update.job_title,
+        update.statusColor,
+      ]));
+      if (!state.homeStatusUpdatesLoaded || signature !== state.homeStatusUpdatesSignature) {
+        state.homeStatusUpdates = updates;
+        state.homeStatusUpdatesSignature = signature;
+        renderHomeStatusUpdates();
+      }
+      state.homeStatusUpdatesLoaded = true;
+    } catch (err) {
+      if (!state.homeStatusUpdatesLoaded) {
+        els.homeStatusUpdates.innerHTML = '<div class="db-status-updates-empty">Status updates are unavailable.</div>';
+      }
+      console.error('Status updates failed', err);
+    } finally {
+      state.homeStatusUpdatesLoading = false;
+      els.homeStatusUpdates.setAttribute('aria-busy', 'false');
+    }
+  }
+
+  function renderHomeStatusUpdates() {
+    if (!els.homeStatusUpdates) return;
+    if (!state.homeStatusUpdates.length) {
+      els.homeStatusUpdates.innerHTML = '<div class="db-status-updates-empty">No status updates yet.</div>';
+      return;
+    }
+
+    els.homeStatusUpdates.innerHTML = state.homeStatusUpdates
+      .map(renderHomeStatusUpdate)
+      .join('');
+  }
+
+  function renderHomeStatusUpdate(update) {
+    const customer = String(update?.customer_name || '').trim();
+    const jobTitle = String(update?.job_title || '').trim();
+    const orderNumber = String(update?.order_no || update?.source_order_id || '').trim();
+    const identity = [customer, jobTitle].filter(Boolean).join(' — ') || `Order ${orderNumber}`;
+    const status = String(update?.status || '').trim();
+    const normalizedStatus = normalizeDashboardStatusLabel(status);
+    const checkedIn = normalizedStatus === 'CHECKED IN';
+    const connector = checkedIn ? 'has been' : 'is now';
+    const statusText = `${(status || 'updated').toLowerCase()}.`;
+    const statusColor = /^#[0-9a-f]{6}$/i.test(String(update?.statusColor || ''))
+      ? update.statusColor
+      : '#000000';
+    const timestamp = formatDateTime(update?.changed_at);
+
+    return `
+      <article class="db-status-update" title="${escapeAttr(timestamp)}">
+        <span class="db-status-update-job">${escapeHtml(identity)}</span>
+        <span class="db-status-update-connector"> ${connector} </span>
+        <span class="db-status-update-status" style="color:${escapeAttr(statusColor)}">${escapeHtml(statusText)}</span>
+      </article>
+    `;
+  }
+
   function showHome(options = {}) {
     showView('home', options);
     state.activeOrderTab = 'details';
     setFooterTitle('Main Menu');
+    if (state.loadedHome) loadHomeStatusUpdates();
+    else loadHomeMetrics();
   }
 
   function showNewOrder(options = {}) {
