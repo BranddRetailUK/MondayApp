@@ -14,16 +14,41 @@ test('status update API returns newest dashboard transitions with dashboard colo
     async query(sql, values = []) {
       queries.push({ text: sql, values });
       return {
-        rows: [{
-          id: 41,
-          source_order_id: 8001,
-          previous_status: 'CHECKED IN',
-          status: 'COMPLETED',
-          changed_at: '2026-08-25T09:30:00.000Z',
-          order_no: 8101,
-          customer_name: 'Example Customer',
-          job_title: 'Team Hoodies',
-        }],
+        rows: [
+          {
+            id: 43,
+            source_order_id: 8001,
+            event_type: 'invoiced',
+            previous_status: null,
+            status: 'INVOICED',
+            changed_at: '2026-08-25T09:32:00.000Z',
+            order_no: 8101,
+            customer_name: 'Example Customer',
+            job_title: 'Team Hoodies',
+          },
+          {
+            id: 42,
+            source_order_id: 8001,
+            event_type: 'approved',
+            previous_status: null,
+            status: 'APPROVED',
+            changed_at: '2026-08-25T09:31:00.000Z',
+            order_no: 8101,
+            customer_name: 'Example Customer',
+            job_title: 'Team Hoodies',
+          },
+          {
+            id: 41,
+            source_order_id: 8001,
+            event_type: 'status',
+            previous_status: 'CHECKED IN',
+            status: 'COMPLETED',
+            changed_at: '2026-08-25T09:30:00.000Z',
+            order_no: 8101,
+            customer_name: 'Example Customer',
+            job_title: 'Team Hoodies',
+          },
+        ],
       };
     },
   };
@@ -48,8 +73,11 @@ test('status update API returns newest dashboard transitions with dashboard colo
     await route.route.stack[0].handle({ query: { limit: '25' } }, response);
 
     assert.equal(response.statusCode, 200);
-    assert.equal(response.body.updates.length, 1);
-    assert.equal(response.body.updates[0].statusColor, '#00c875');
+    assert.equal(response.body.updates.length, 3);
+    assert.deepEqual(
+      response.body.updates.map(update => update.statusColor),
+      ['#ff007f', '#00c875', '#00c875']
+    );
     assert.deepEqual(queries[0].values, [25]);
     assert.match(queries[0].text, /ORDER BY activity\.changed_at DESC, activity\.id DESC/);
     assert.match(queries[0].text, /JOIN database_jobs job/);
@@ -60,15 +88,16 @@ test('status update API returns newest dashboard transitions with dashboard colo
   }
 });
 
-test('database schema records only real status transitions and preserves import history', () => {
+test('database schema records status and approval events and preserves import history', () => {
   const schema = fs.readFileSync(path.join(root, 'src', 'db', 'databaseSchema.js'), 'utf8');
   const importer = fs.readFileSync(path.join(root, 'scripts', 'import-database-mdb.js'), 'utf8');
 
   assert.match(schema, /CREATE TABLE IF NOT EXISTS database_job_status_updates/);
-  assert.match(schema, /AFTER UPDATE OF dashboard_status ON database_jobs/);
-  assert.match(schema, /WHEN \(NEW\.dashboard_status IS DISTINCT FROM OLD\.dashboard_status\)/);
+  assert.match(schema, /AFTER UPDATE OF dashboard_status, proof_approved ON database_jobs/);
+  assert.match(schema, /NEW\.proof_approved IS TRUE AND OLD\.proof_approved IS NOT TRUE/);
+  assert.match(schema, /'approved',[\s\S]*'APPROVED'/);
   assert.match(schema, /current_setting\('ultimate_hub\.skip_status_activity', TRUE\) IS DISTINCT FROM 'on'/);
-  assert.match(schema, /ON CONFLICT \(source_order_id, status, changed_at\) DO NOTHING/);
+  assert.match(schema, /ON CONFLICT \(source_order_id, event_type, status, changed_at\) DO NOTHING/);
   assert.match(schema, /NOT EXISTS \([\s\S]*activity\.source_order_id = j\.source_order_id/);
   assert.match(importer, /set_config\('ultimate_hub\.skip_status_activity', 'on', true\)/);
   assert.match(
@@ -79,7 +108,7 @@ test('database schema records only real status transitions and preserves import 
   assert.match(importer, /FROM database_job_status_updates_import_snapshot snapshot/);
 });
 
-test('database home renders a retro scrollable newest-first status feed', () => {
+test('database home renders a compact retro scrollable newest-first status feed', () => {
   const index = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
   const styles = fs.readFileSync(path.join(root, 'public', 'styles.css'), 'utf8');
   const database = fs.readFileSync(path.join(root, 'public', 'database.js'), 'utf8');
@@ -88,13 +117,21 @@ test('database home renders a retro scrollable newest-first status feed', () => 
   const rightMenu = index.indexOf('class="db-menu-column db-menu-right"');
 
   assert.ok(openOrders < statusFeed && statusFeed < rightMenu);
-  assert.match(styles, /\.db-status-updates\{[\s\S]*top:228px;[\s\S]*width:360px;[\s\S]*height:167px;[\s\S]*background:#fff;/);
+  assert.doesNotMatch(index, /id="db-status-updates-title"/);
+  assert.match(styles, /\.db-outstanding-actions\{[\s\S]*top:116px;/);
+  assert.match(styles, /\.db-status-updates\{[\s\S]*top:212px;[\s\S]*width:400px;[\s\S]*height:183px;[\s\S]*margin-left:-200px;/);
+  assert.match(styles, /\.db-status-updates\{[\s\S]*background:#fff;[\s\S]*font:10px Arial/);
   assert.match(styles, /\.db-status-updates-list\{[\s\S]*overflow-y:auto;[\s\S]*background:#fff;/);
+  assert.match(styles, /\.db-status-update\{[\s\S]*text-overflow:ellipsis;[\s\S]*white-space:nowrap;/);
   assert.match(styles, /\.db-status-update-job\{[\s\S]*color:#000;[\s\S]*font-weight:700;/);
   assert.match(styles, /\.db-status-update-connector\{[\s\S]*color:#000;[\s\S]*font-weight:400;/);
   assert.match(database, /const identity = \[customer, jobTitle\]\.filter\(Boolean\)\.join\(' — '\)/);
-  assert.match(database, /const checkedIn = normalizedStatus === 'CHECKED IN';/);
-  assert.match(database, /const connector = checkedIn \? 'has been' : 'is now';/);
+  assert.match(database, /const checkedIn = eventType === 'status' && normalizedStatus === 'CHECKED IN';/);
+  assert.match(database, /let connector = completedAction \|\| checkedIn \? 'has been' : 'is now';/);
+  assert.match(database, /normalizedStatus === 'AWAITING APPROVAL'\) connector = 'is';/);
+  assert.match(database, /normalizedStatus === 'STOCK ORDERED'\) connector = 'has had';/);
+  assert.match(database, /normalizedStatus === 'NO STOCK'\) connector = 'has';/);
+  assert.match(database, /\(status \|\| 'UPDATED'\)\.toUpperCase\(\)/);
   assert.match(database, /DATABASE_STATUS_UPDATES_POLL_MS = 5000/);
   assert.match(database, /\/api\/database\/status-updates\?limit=/);
 });

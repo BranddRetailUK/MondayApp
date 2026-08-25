@@ -683,30 +683,54 @@ async function ensureTestDashboardTables(db) {
     CREATE TABLE IF NOT EXISTS database_job_status_updates (
       id BIGSERIAL PRIMARY KEY,
       source_order_id INTEGER NOT NULL REFERENCES database_jobs(source_order_id) ON DELETE CASCADE,
+      event_type TEXT NOT NULL DEFAULT 'status',
       previous_status TEXT,
       status TEXT NOT NULL,
       changed_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
   `);
 
+  await db.query("ALTER TABLE database_job_status_updates ADD COLUMN IF NOT EXISTS event_type TEXT NOT NULL DEFAULT 'status';");
+
   await db.query(`
     CREATE OR REPLACE FUNCTION record_database_job_status_update()
     RETURNS TRIGGER AS $$
     BEGIN
-      IF current_setting('ultimate_hub.skip_status_activity', TRUE) IS DISTINCT FROM 'on'
-         AND NULLIF(BTRIM(COALESCE(NEW.dashboard_status, '')), '') IS NOT NULL THEN
-        INSERT INTO database_job_status_updates (
-          source_order_id,
-          previous_status,
-          status,
-          changed_at
-        ) VALUES (
-          NEW.source_order_id,
-          NULLIF(BTRIM(COALESCE(OLD.dashboard_status, '')), ''),
-          BTRIM(NEW.dashboard_status),
-          COALESCE(NEW.dashboard_status_updated_at, NOW())
-        )
-        ON CONFLICT (source_order_id, status, changed_at) DO NOTHING;
+      IF current_setting('ultimate_hub.skip_status_activity', TRUE) IS DISTINCT FROM 'on' THEN
+        IF NEW.dashboard_status IS DISTINCT FROM OLD.dashboard_status
+           AND NULLIF(BTRIM(COALESCE(NEW.dashboard_status, '')), '') IS NOT NULL THEN
+          INSERT INTO database_job_status_updates (
+            source_order_id,
+            event_type,
+            previous_status,
+            status,
+            changed_at
+          ) VALUES (
+            NEW.source_order_id,
+            'status',
+            NULLIF(BTRIM(COALESCE(OLD.dashboard_status, '')), ''),
+            BTRIM(NEW.dashboard_status),
+            COALESCE(NEW.dashboard_status_updated_at, NOW())
+          )
+          ON CONFLICT (source_order_id, event_type, status, changed_at) DO NOTHING;
+        END IF;
+
+        IF NEW.proof_approved IS TRUE AND OLD.proof_approved IS NOT TRUE THEN
+          INSERT INTO database_job_status_updates (
+            source_order_id,
+            event_type,
+            previous_status,
+            status,
+            changed_at
+          ) VALUES (
+            NEW.source_order_id,
+            'approved',
+            NULL,
+            'APPROVED',
+            COALESCE(NEW.proof_approved_at, NOW())
+          )
+          ON CONFLICT (source_order_id, event_type, status, changed_at) DO NOTHING;
+        END IF;
       END IF;
       RETURN NEW;
     END;
@@ -716,9 +740,12 @@ async function ensureTestDashboardTables(db) {
   await db.query('DROP TRIGGER IF EXISTS database_jobs_status_update_activity ON database_jobs;');
   await db.query(`
     CREATE TRIGGER database_jobs_status_update_activity
-    AFTER UPDATE OF dashboard_status ON database_jobs
+    AFTER UPDATE OF dashboard_status, proof_approved ON database_jobs
     FOR EACH ROW
-    WHEN (NEW.dashboard_status IS DISTINCT FROM OLD.dashboard_status)
+    WHEN (
+      NEW.dashboard_status IS DISTINCT FROM OLD.dashboard_status
+      OR (NEW.proof_approved IS TRUE AND OLD.proof_approved IS NOT TRUE)
+    )
     EXECUTE FUNCTION record_database_job_status_update();
   `);
 
@@ -789,7 +816,8 @@ async function ensureTestDashboardTables(db) {
 
   await db.query('CREATE INDEX IF NOT EXISTS test_dashboard_columns_position_idx ON test_dashboard_columns(is_subitem, position);');
   await db.query('CREATE INDEX IF NOT EXISTS test_dashboard_job_state_group_idx ON test_dashboard_job_state(group_id);');
-  await db.query('CREATE UNIQUE INDEX IF NOT EXISTS database_job_status_updates_transition_idx ON database_job_status_updates(source_order_id, status, changed_at);');
+  await db.query('DROP INDEX IF EXISTS database_job_status_updates_transition_idx;');
+  await db.query('CREATE UNIQUE INDEX IF NOT EXISTS database_job_status_updates_event_idx ON database_job_status_updates(source_order_id, event_type, status, changed_at);');
   await db.query('CREATE INDEX IF NOT EXISTS database_job_status_updates_changed_idx ON database_job_status_updates(changed_at DESC, id DESC);');
   await db.query('CREATE INDEX IF NOT EXISTS test_dashboard_files_job_column_idx ON test_dashboard_files(source_order_id, column_id);');
   await db.query('CREATE INDEX IF NOT EXISTS test_dashboard_files_column_created_idx ON test_dashboard_files(column_id, created_at DESC, id DESC);');
@@ -801,11 +829,13 @@ async function ensureTestDashboardTables(db) {
   await db.query(`
     INSERT INTO database_job_status_updates (
       source_order_id,
+      event_type,
       previous_status,
       status,
       changed_at
     )
     SELECT j.source_order_id,
+           'status',
            NULL,
            BTRIM(j.dashboard_status),
            j.dashboard_status_updated_at
@@ -817,7 +847,7 @@ async function ensureTestDashboardTables(db) {
         FROM database_job_status_updates activity
         WHERE activity.source_order_id = j.source_order_id
       )
-    ON CONFLICT (source_order_id, status, changed_at) DO NOTHING;
+    ON CONFLICT (source_order_id, event_type, status, changed_at) DO NOTHING;
   `);
 }
 

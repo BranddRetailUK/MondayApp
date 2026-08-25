@@ -48,6 +48,7 @@ const DATABASE_VISUAL_PAGE_LIMIT = 30;
 const DATABASE_VISUAL_PAGE_MAX = 50;
 const DATABASE_STATUS_UPDATE_LIMIT = 100;
 const DATABASE_STATUS_UPDATE_MAX = 250;
+const DASHBOARD_APPROVAL_COLOR = '#00c875';
 const RALAWISE_ADDING_STALE_MS = 10 * 60 * 1000;
 const RALAWISE_ORDER_HISTORY_LOCK_KEYS = [71060219, 1206];
 const STOCK_ORDERING_CLOSED_STATUSES = new Set([
@@ -1014,6 +1015,7 @@ router.get('/api/database/status-updates', async (req, res) => {
     const result = await pool.query(
       `SELECT activity.id,
               activity.source_order_id,
+              activity.event_type,
               activity.previous_status,
               activity.status,
               activity.changed_at,
@@ -1030,7 +1032,9 @@ router.get('/api/database/status-updates', async (req, res) => {
     res.json({
       updates: result.rows.map((update) => ({
         ...update,
-        statusColor: DASHBOARD_STATUS_COLORS[normalizeColumnTitle(update.status)] || '#000000',
+        statusColor: update.event_type === 'approved'
+          ? DASHBOARD_APPROVAL_COLOR
+          : (DASHBOARD_STATUS_COLORS[normalizeColumnTitle(update.status)] || '#000000'),
       })),
     });
   } catch (err) {
@@ -4147,7 +4151,10 @@ router.put('/api/database/jobs/:id', async (req, res) => {
       }
 
       const completion = await client.query(
-        `SELECT dashboard_status, order_type, order_type_abbr
+        `SELECT dashboard_status,
+                order_type,
+                order_type_abbr,
+                invoice_printed
          FROM database_jobs
          WHERE source_order_id = $1`,
         [job.source_order_id]
@@ -4200,6 +4207,19 @@ router.put('/api/database/jobs/:id', async (req, res) => {
 
       if (hasOrderType) {
         await clearDashboardTypeOverride(client, job.source_order_id);
+      }
+
+      if (currentJob.invoice_printed !== true) {
+        await client.query(
+          `INSERT INTO database_job_status_updates (
+             source_order_id,
+             event_type,
+             previous_status,
+             status,
+             changed_at
+           ) VALUES ($1, 'invoiced', NULL, 'INVOICED', NOW())`,
+          [job.source_order_id]
+        );
       }
 
       await client.query('COMMIT');

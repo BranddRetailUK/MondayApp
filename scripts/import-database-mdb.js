@@ -1135,7 +1135,7 @@ async function importSnapshot(snapshot, options) {
       await client.query(`
         CREATE TEMP TABLE database_job_status_updates_import_snapshot
         ON COMMIT DROP
-        AS SELECT id, source_order_id, previous_status, status, changed_at
+        AS SELECT id, source_order_id, event_type, previous_status, status, changed_at
            FROM database_job_status_updates
       `);
       await client.query('DELETE FROM database_job_positions');
@@ -1206,18 +1206,20 @@ async function importSnapshot(snapshot, options) {
         INSERT INTO database_job_status_updates (
           id,
           source_order_id,
+          event_type,
           previous_status,
           status,
           changed_at
         )
         SELECT snapshot.id,
                snapshot.source_order_id,
+               snapshot.event_type,
                snapshot.previous_status,
                snapshot.status,
                snapshot.changed_at
         FROM database_job_status_updates_import_snapshot snapshot
         JOIN database_jobs job ON job.source_order_id = snapshot.source_order_id
-        ON CONFLICT (source_order_id, status, changed_at) DO NOTHING
+        ON CONFLICT (source_order_id, event_type, status, changed_at) DO NOTHING
       `);
     }
 

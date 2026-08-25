@@ -29,10 +29,44 @@ test('invoice generation proceeds after the job is dashboard-completed', async (
   const invoiceIndex = result.queries.findIndex(query => (
     query.text.includes('WITH next_invoice AS')
   ));
+  const activityIndex = result.queries.findIndex(query => (
+    query.text.includes('INSERT INTO database_job_status_updates')
+  ));
+  const commitIndex = result.queries.findIndex(query => query.text === 'COMMIT');
   assert.notEqual(completionIndex, -1);
   assert.notEqual(invoiceIndex, -1);
+  assert.notEqual(activityIndex, -1);
   assert.ok(completionIndex < invoiceIndex, 'completion must be checked before invoice allocation');
+  assert.ok(invoiceIndex < activityIndex, 'the invoiced event must follow the invoice update');
+  assert.ok(activityIndex < commitIndex, 'the invoice and event must commit together');
+  assert.match(result.queries[activityIndex].text, /'invoiced'/);
+  assert.match(result.queries[activityIndex].text, /'INVOICED'/);
+});
+
+test('repeat invoice clicks do not create duplicate invoiced activity', async () => {
+  const result = await exerciseInvoiceRoute('COMPLETED', {
+    invoice_no: 52001,
+    invoice_printed: true,
+  });
+
+  assert.equal(result.response.statusCode, 200);
+  assert.equal(
+    result.queries.some(query => query.text.includes('INSERT INTO database_job_status_updates')),
+    false
+  );
   assert.ok(result.queries.some(query => query.text === 'COMMIT'));
+});
+
+test('first invoice click records activity when a legacy invoice number already exists', async () => {
+  const result = await exerciseInvoiceRoute('COMPLETED', {
+    invoice_no: 52001,
+    invoice_printed: false,
+  });
+
+  assert.equal(result.response.statusCode, 200);
+  assert.ok(
+    result.queries.some(query => query.text.includes('INSERT INTO database_job_status_updates'))
+  );
 });
 
 test('invoice generation allows a Business Gift job before dashboard completion', async () => {

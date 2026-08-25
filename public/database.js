@@ -1477,6 +1477,7 @@
       const updates = Array.isArray(data.updates) ? data.updates : [];
       const signature = JSON.stringify(updates.map((update) => [
         update.id,
+        update.event_type,
         update.status,
         update.changed_at,
         update.customer_name,
@@ -1519,16 +1520,22 @@
     const identity = [customer, jobTitle].filter(Boolean).join(' — ') || `Order ${orderNumber}`;
     const status = String(update?.status || '').trim();
     const normalizedStatus = normalizeDashboardStatusLabel(status);
-    const checkedIn = normalizedStatus === 'CHECKED IN';
-    const connector = checkedIn ? 'has been' : 'is now';
-    const statusText = `${(status || 'updated').toLowerCase()}.`;
+    const eventType = String(update?.event_type || 'status').trim().toLowerCase();
+    const completedAction = eventType === 'approved' || eventType === 'invoiced';
+    const checkedIn = eventType === 'status' && normalizedStatus === 'CHECKED IN';
+    let connector = completedAction || checkedIn ? 'has been' : 'is now';
+    if (eventType === 'status' && normalizedStatus === 'AWAITING APPROVAL') connector = 'is';
+    if (eventType === 'status' && normalizedStatus === 'STOCK ORDERED') connector = 'has had';
+    if (eventType === 'status' && normalizedStatus === 'NO STOCK') connector = 'has';
+    const statusText = `${(status || 'UPDATED').toUpperCase()}.`;
     const statusColor = /^#[0-9a-f]{6}$/i.test(String(update?.statusColor || ''))
       ? update.statusColor
       : '#000000';
     const timestamp = formatDateTime(update?.changed_at);
+    const fullUpdate = `${identity} ${connector} ${statusText}`;
 
     return `
-      <article class="db-status-update" title="${escapeAttr(timestamp)}">
+      <article class="db-status-update" title="${escapeAttr(`${fullUpdate} — ${timestamp}`)}">
         <span class="db-status-update-job">${escapeHtml(identity)}</span>
         <span class="db-status-update-connector"> ${connector} </span>
         <span class="db-status-update-status" style="color:${escapeAttr(statusColor)}">${escapeHtml(statusText)}</span>
