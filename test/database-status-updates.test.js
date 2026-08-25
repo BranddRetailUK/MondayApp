@@ -81,6 +81,9 @@ test('status update API returns newest dashboard transitions with dashboard colo
     assert.deepEqual(queries[0].values, [25]);
     assert.match(queries[0].text, /ORDER BY activity\.changed_at DESC, activity\.id DESC/);
     assert.match(queries[0].text, /JOIN database_jobs job/);
+    assert.match(queries[0].text, /job\.order_owner_user_id/);
+    assert.match(queries[0].text, /job\.order_owner_name/);
+    assert.match(queries[0].text, /job\.order_taken_by/);
   } finally {
     delete require.cache[routePath];
     if (originalPoolModule) require.cache[poolPath] = originalPoolModule;
@@ -120,7 +123,11 @@ test('database home renders a compact retro scrollable newest-first status feed'
 
   assert.ok(openOrders < statusFeed && statusFeed < rightMenu);
   assert.doesNotMatch(index, /id="db-status-updates-title"/);
-  assert.match(styles, /\.db-outstanding-actions\{[\s\S]*top:90px;/);
+  assert.match(styles, /\.db-outstanding-actions\{[\s\S]*top:84px;/);
+  assert.match(index, /data-db-action="toggle-home-logs"[\s\S]*aria-controls="db-status-updates-panel"[\s\S]*>Hide logs<\/button>/);
+  assert.match(index, /id="db-status-updates-panel" class="db-status-updates"/);
+  assert.match(styles, /\.db-home-logs-toggle\{[\s\S]*top:184px;[\s\S]*width:76px;[\s\S]*height:18px;[\s\S]*font:10px Arial/);
+  assert.match(styles, /\.db-status-updates\[hidden\]\{[\s\S]*display:none;/);
   assert.match(styles, /\.db-status-updates\{[\s\S]*top:212px;[\s\S]*width:400px;[\s\S]*height:183px;[\s\S]*margin-left:-200px;/);
   assert.match(styles, /\.db-status-updates\{[\s\S]*background:#fff;[\s\S]*font:10px Arial/);
   assert.match(styles, /\.db-status-updates-list\{[\s\S]*overflow-y:auto;[\s\S]*background:#fff;/);
@@ -132,6 +139,7 @@ test('database home renders a compact retro scrollable newest-first status feed'
   assert.match(styles, /\.db-status-update-job-number\{[\s\S]*color:#2f6f8f;[\s\S]*font-weight:800;/);
   assert.match(styles, /\.db-status-update-job-title\{[\s\S]*color:#000;[\s\S]*font-weight:700;/);
   assert.match(styles, /\.db-status-update-connector\{[\s\S]*color:#000;[\s\S]*font-weight:400;/);
+  assert.match(styles, /\.db-status-update-status\{[\s\S]*font-weight:900;/);
   assert.doesNotMatch(renderer, /customer_name/);
   assert.match(database, /homeStatusUpdateShades: new Map\(\)/);
   assert.match(shadeRenderer, /findIndex\(key => state\.homeStatusUpdateShades\.has\(key\)\)/);
@@ -151,7 +159,41 @@ test('database home renders a compact retro scrollable newest-first status feed'
   assert.match(database, /\/api\/database\/status-updates\?limit=/);
   assert.match(database, /homeStatusUpdates\?\.addEventListener\('click', handleHomeStatusUpdateClick\)/);
   assert.match(database, /homeStatusUpdates\?\.addEventListener\('keydown', handleHomeStatusUpdateKeydown\)/);
+  assert.match(database, /homeLogsVisible: true/);
+  assert.match(database, /function toggleHomeLogs\(\)/);
+  assert.match(database, /els\.homeStatusPanel\.hidden = !visible/);
+  assert.match(database, /visible \? 'Hide logs' : 'Show logs'/);
   assert.match(database, /openOrder\(sourceOrderId, 'details'\);/);
+});
+
+test('Logs button opens the larger restorable Logs activity table', () => {
+  const index = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
+  const styles = fs.readFileSync(path.join(root, 'public', 'styles.css'), 'utf8');
+  const database = fs.readFileSync(path.join(root, 'public', 'database.js'), 'utf8');
+  const logsMarkup = sourceBetween(index, 'id="db-logs-view"', '</section>');
+  const logsRenderer = sourceBetween(database, 'function renderLogsUpdate', 'function handleLogsRowClick');
+
+  assert.match(index, /class="db-raised-button db-blue-link"[^>]*data-db-action="logs">Logs<\/button>/);
+  assert.match(logsMarkup, /class="db-logs-heading">Logs/);
+  assert.match(logsMarkup, /<th>Timestamp<\/th>[\s\S]*<th>Job number<\/th>[\s\S]*<th>Customer<\/th>[\s\S]*<th>Job title<\/th>[\s\S]*<th>Job owner<\/th>[\s\S]*<th>Update<\/th>/);
+  assert.match(styles, /\.db-logs-table-frame\{[\s\S]*height:486px;[\s\S]*background:#fff;/);
+  assert.match(styles, /#db-logs-table \.db-logs-row\.is-light,[\s\S]*background:#fff;/);
+  assert.match(styles, /#db-logs-table \.db-logs-row\.is-dark,[\s\S]*background:#f4f4f4;/);
+  assert.match(styles, /\.db-logs-status\{[\s\S]*font-weight:900;/);
+  assert.match(database, /DATABASE_LOGS_LIMIT = 250/);
+  assert.match(database, /if \(route\.view === 'logs'\)[\s\S]*showLogs\(\{ skipHistory: true, skipPersistence: true \}\)/);
+  assert.match(database, /function showLogs\(options = \{\}\)[\s\S]*loadLogsUpdates\(\)/);
+  assert.match(database, /state\.activeView === 'logs'\) loadLogsUpdates\(\)/);
+  assert.match(logsRenderer, /class="db-logs-row is-\$\{shade === 'dark' \? 'dark' : 'light'\}" data-db-logs-job="\$\{escapeAttr\(sourceOrderId\)\}" role="link" tabindex="0"/);
+  assert.match(logsRenderer, /class="db-logs-timestamp"/);
+  assert.match(logsRenderer, /class="db-logs-job-number"/);
+  assert.match(logsRenderer, /class="db-logs-customer"/);
+  assert.match(logsRenderer, /class="db-logs-job-title"/);
+  assert.match(logsRenderer, /class="db-logs-owner"/);
+  assert.match(logsRenderer, /class="db-logs-status" style="color:/);
+  assert.match(database, /logsBody\?\.addEventListener\('click', handleLogsRowClick\)/);
+  assert.match(database, /logsBody\?\.addEventListener\('keydown', handleLogsRowKeydown\)/);
+  assert.match(database, /row\?\.dataset\.dbLogsJob/);
 });
 
 function sourceBetween(source, startMarker, endMarker) {

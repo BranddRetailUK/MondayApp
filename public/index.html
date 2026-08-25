@@ -217,7 +217,15 @@
                 </div>
               </div>
 
-              <section class="db-status-updates" aria-label="Status updates">
+              <button
+                class="db-home-logs-toggle"
+                type="button"
+                data-db-action="toggle-home-logs"
+                aria-controls="db-status-updates-panel"
+                aria-expanded="true"
+              >Hide logs</button>
+
+              <section id="db-status-updates-panel" class="db-status-updates" aria-label="Status updates">
                 <div
                   class="db-status-updates-list"
                   id="db-status-updates-list"
@@ -233,7 +241,7 @@
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="users" disabled>Users</button>
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="dtf-admin">Lami DTF</button>
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="visuals">Visuals</button>
-                <button class="db-raised-button" type="button" data-db-action="placeholder">Error log</button>
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="logs">Logs</button>
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="reports" disabled>Reports</button>
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="to-invoice" disabled>To Invoice</button>
               </div>
@@ -257,6 +265,27 @@
                 <div id="db-visuals-status" class="db-visuals-status" role="status" aria-live="polite">Open Visuals to load previews</div>
                 <button id="db-visuals-load-more" class="db-toolbar-button db-blue-link db-visuals-load-more" type="button" hidden>Load more</button>
                 <div id="db-visuals-sentinel" class="db-visuals-sentinel" aria-hidden="true"></div>
+              </div>
+            </section>
+
+            <section id="db-logs-view" class="db-view db-logs-view" aria-label="Logs">
+              <div class="db-logs-heading">Logs</div>
+              <div class="db-table-frame db-logs-table-frame">
+                <table id="db-logs-table" class="db-legacy-table db-mobile-card-table">
+                  <thead>
+                    <tr>
+                      <th>Timestamp</th>
+                      <th>Job number</th>
+                      <th>Customer</th>
+                      <th>Job title</th>
+                      <th>Job owner</th>
+                      <th>Update</th>
+                    </tr>
+                  </thead>
+                  <tbody id="db-logs-body">
+                    <tr><td colspan="6" class="db-empty-cell">Loading logs</td></tr>
+                  </tbody>
+                </table>
               </div>
             </section>
 

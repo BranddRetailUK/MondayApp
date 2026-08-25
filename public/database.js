@@ -20,6 +20,7 @@
   const DATABASE_VISUAL_PAGE_LIMIT = 30;
   const DATABASE_VISUAL_SEARCH_DELAY = 260;
   const DATABASE_STATUS_UPDATES_LIMIT = 100;
+  const DATABASE_LOGS_LIMIT = 250;
   const DATABASE_STATUS_UPDATES_POLL_MS = 5000;
   const DATABASE_CUSTOMER_SORTS = new Set(['recent', 'active', 'az', 'za']);
   const DATABASE_STYLE_SORTS = new Set(['most-used', 'highest-price', 'lowest-price', 'az', 'za']);
@@ -38,6 +39,7 @@
   const DATABASE_REPORT_METRIC_KEYS = new Set(Object.keys(DATABASE_REPORT_METRICS));
   const DATABASE_RESTORABLE_VIEWS = new Set([
     'home',
+    'logs',
     'reports',
     'outstanding',
     'customers',
@@ -191,6 +193,12 @@
     homeStatusUpdatesLoading: false,
     homeStatusUpdatesSignature: '',
     homeStatusUpdateShades: new Map(),
+    homeLogsVisible: true,
+    logsUpdates: [],
+    logsUpdatesLoaded: false,
+    logsUpdatesLoading: false,
+    logsUpdatesSignature: '',
+    logsUpdateShades: new Map(),
     loadingOrders: false,
     orderMode: 'open',
     loadedOrderMode: '',
@@ -409,7 +417,10 @@
       homeCountPrinting: document.getElementById('db-count-printing'),
       homeCountEmbroidery: document.getElementById('db-count-embroidery'),
       homeCountGifts: document.getElementById('db-count-gifts'),
+      homeLogsToggle: document.querySelector('[data-db-action="toggle-home-logs"]'),
+      homeStatusPanel: document.getElementById('db-status-updates-panel'),
       homeStatusUpdates: document.getElementById('db-status-updates-list'),
+      logsBody: document.getElementById('db-logs-body'),
       reportsPeriod: document.getElementById('db-reports-period'),
       stockOrderingHomeButton: document.querySelector('[data-db-action="stock-ordering"]'),
       usersHomeButton: document.querySelector('[data-db-action="users"]'),
@@ -544,10 +555,13 @@
     if (!els.root) return;
     els.stage?.classList.add('db-view-home');
     setupDatabaseMobileTableLabels();
+    syncHomeLogsVisibility();
 
     els.root.addEventListener('click', handleRootClick);
     els.homeStatusUpdates?.addEventListener('click', handleHomeStatusUpdateClick);
     els.homeStatusUpdates?.addEventListener('keydown', handleHomeStatusUpdateKeydown);
+    els.logsBody?.addEventListener('click', handleLogsRowClick);
+    els.logsBody?.addEventListener('keydown', handleLogsRowKeydown);
     els.outstandingBody.addEventListener('click', handleOutstandingRowClick);
     els.outstandingBody.addEventListener('keydown', handleOutstandingRowKeydown);
     els.toInvoiceBody?.addEventListener('click', handleToInvoiceRowClick);
@@ -702,9 +716,9 @@
       if (
         document.visibilityState === 'visible'
         && isDatabaseTopLevelActive()
-        && state.activeView === 'home'
       ) {
-        loadHomeStatusUpdates();
+        if (state.activeView === 'home') loadHomeStatusUpdates();
+        if (state.activeView === 'logs') loadLogsUpdates();
       }
     }, DATABASE_STATUS_UPDATES_POLL_MS);
   }
@@ -984,6 +998,10 @@
     }
 
     const action = button.dataset.dbAction;
+    if (action === 'toggle-home-logs') {
+      toggleHomeLogs();
+      return;
+    }
     if (action === 'new-order') {
       await flushOrderAutosaves();
       showNewOrder();
@@ -1022,6 +1040,11 @@
     if (action === 'visuals') {
       await flushOrderAutosaves();
       showVisuals();
+      return;
+    }
+    if (action === 'logs') {
+      await flushOrderAutosaves();
+      showLogs();
       return;
     }
     if (action === 'reports') {
@@ -1251,6 +1274,11 @@
       syncOutstandingFilterButtons();
       syncOrderSearchVisibility();
       loadOutstandingOrders({ force: false });
+      return;
+    }
+
+    if (route.view === 'logs') {
+      showLogs({ skipHistory: true, skipPersistence: true });
       return;
     }
 
@@ -1539,11 +1567,7 @@
     return updates.map((update, index) => ({ update, shade: shades[index] }));
   }
 
-  function renderHomeStatusUpdate(update, shade = 'light') {
-    const jobTitle = String(update?.job_title || '').trim();
-    const jobNumber = String(update?.order_no || update?.source_order_id || '').trim();
-    const sourceOrderId = String(update?.source_order_id || '').trim();
-    const identity = [jobNumber, jobTitle].filter(Boolean).join(' ') || 'Job';
+  function statusUpdatePresentation(update) {
     const status = String(update?.status || '').trim();
     const normalizedStatus = normalizeDashboardStatusLabel(status);
     const eventType = String(update?.event_type || 'status').trim().toLowerCase();
@@ -1553,10 +1577,22 @@
     if (eventType === 'status' && normalizedStatus === 'AWAITING APPROVAL') connector = 'is';
     if (eventType === 'status' && normalizedStatus === 'STOCK ORDERED') connector = 'has had';
     if (eventType === 'status' && normalizedStatus === 'NO STOCK') connector = 'has';
-    const statusText = `${(status || 'UPDATED').toUpperCase()}.`;
-    const statusColor = /^#[0-9a-f]{6}$/i.test(String(update?.statusColor || ''))
-      ? update.statusColor
-      : '#000000';
+
+    return {
+      connector,
+      statusText: `${(status || 'UPDATED').toUpperCase()}.`,
+      statusColor: /^#[0-9a-f]{6}$/i.test(String(update?.statusColor || ''))
+        ? update.statusColor
+        : '#000000',
+    };
+  }
+
+  function renderHomeStatusUpdate(update, shade = 'light') {
+    const jobTitle = String(update?.job_title || '').trim();
+    const jobNumber = String(update?.order_no || update?.source_order_id || '').trim();
+    const sourceOrderId = String(update?.source_order_id || '').trim();
+    const identity = [jobNumber, jobTitle].filter(Boolean).join(' ') || 'Job';
+    const { connector, statusText, statusColor } = statusUpdatePresentation(update);
     const timestamp = formatDateTime(update?.changed_at);
     const fullUpdate = `${identity} ${connector} ${statusText}`;
 
@@ -1587,12 +1623,145 @@
     openOrder(sourceOrderId, 'details');
   }
 
+  function toggleHomeLogs() {
+    state.homeLogsVisible = !state.homeLogsVisible;
+    syncHomeLogsVisibility();
+  }
+
+  function syncHomeLogsVisibility() {
+    const visible = state.homeLogsVisible !== false;
+    if (els.homeStatusPanel) els.homeStatusPanel.hidden = !visible;
+    if (els.homeLogsToggle) {
+      els.homeLogsToggle.textContent = visible ? 'Hide logs' : 'Show logs';
+      els.homeLogsToggle.setAttribute('aria-expanded', String(visible));
+    }
+  }
+
   function showHome(options = {}) {
     showView('home', options);
     state.activeOrderTab = 'details';
     setFooterTitle('Main Menu');
     if (state.loadedHome) loadHomeStatusUpdates();
     else loadHomeMetrics();
+  }
+
+  function showLogs(options = {}) {
+    showView('logs', options);
+    setFooterTitle('Logs');
+    loadLogsUpdates();
+  }
+
+  async function loadLogsUpdates() {
+    if (state.logsUpdatesLoading || !els.logsBody) return;
+    state.logsUpdatesLoading = true;
+
+    try {
+      const data = await fetchJson(`/api/database/status-updates?limit=${DATABASE_LOGS_LIMIT}`);
+      const updates = Array.isArray(data.updates) ? data.updates : [];
+      const signature = JSON.stringify(updates.map((update) => [
+        update.id,
+        update.event_type,
+        update.status,
+        update.changed_at,
+        update.order_no,
+        update.customer_name,
+        update.job_title,
+        update.order_owner_user_id,
+        update.order_owner_name,
+        update.order_taken_by,
+        update.trace_staff_id,
+        update.statusColor,
+      ]));
+
+      if (!state.logsUpdatesLoaded || signature !== state.logsUpdatesSignature) {
+        state.logsUpdates = updates;
+        state.logsUpdatesSignature = signature;
+        renderLogsUpdates();
+      }
+      state.logsUpdatesLoaded = true;
+    } catch (err) {
+      if (!state.logsUpdatesLoaded) {
+        els.logsBody.innerHTML = '<tr><td colspan="6" class="db-empty-cell">Logs are unavailable.</td></tr>';
+      }
+      console.error('Logs updates failed', err);
+    } finally {
+      state.logsUpdatesLoading = false;
+    }
+  }
+
+  function renderLogsUpdates() {
+    if (!els.logsBody) return;
+    if (!state.logsUpdates.length) {
+      els.logsBody.innerHTML = '<tr><td colspan="6" class="db-empty-cell">No logs yet.</td></tr>';
+      return;
+    }
+
+    els.logsBody.innerHTML = shadeLogsUpdates(state.logsUpdates)
+      .map(({ update, shade }) => renderLogsUpdate(update, shade))
+      .join('');
+  }
+
+  function shadeLogsUpdates(updates) {
+    const keys = updates.map((update, index) => String(update?.id || `logs-update-${index}`));
+    const shades = new Array(updates.length);
+    let anchorIndex = keys.findIndex(key => state.logsUpdateShades.has(key));
+
+    if (anchorIndex === -1) {
+      anchorIndex = Math.max(0, updates.length - 1);
+      shades[anchorIndex] = 'light';
+    } else {
+      shades[anchorIndex] = state.logsUpdateShades.get(keys[anchorIndex]);
+    }
+
+    for (let index = anchorIndex - 1; index >= 0; index -= 1) {
+      shades[index] = shades[index + 1] === 'dark' ? 'light' : 'dark';
+    }
+    for (let index = anchorIndex + 1; index < updates.length; index += 1) {
+      shades[index] = shades[index - 1] === 'dark' ? 'light' : 'dark';
+    }
+
+    state.logsUpdateShades = new Map(keys.map((key, index) => [key, shades[index]]));
+    return updates.map((update, index) => ({ update, shade: shades[index] }));
+  }
+
+  function renderLogsUpdate(update, shade = 'light') {
+    const sourceOrderId = String(update?.source_order_id || '').trim();
+    const jobNumber = String(update?.order_no || update?.source_order_id || '').trim();
+    const customer = String(update?.customer_name || '').trim();
+    const jobTitle = String(update?.job_title || '').trim();
+    const jobOwner = jobOwnerLabel(update);
+    const timestamp = formatDateTime(update?.changed_at);
+    const { connector, statusText, statusColor } = statusUpdatePresentation(update);
+    const identity = [jobNumber, jobTitle].filter(Boolean).join(' ') || 'Job';
+
+    return `
+      <tr class="db-logs-row is-${shade === 'dark' ? 'dark' : 'light'}" data-db-logs-job="${escapeAttr(sourceOrderId)}" role="link" tabindex="0" aria-label="${escapeAttr(`Open order ${identity}`)}">
+        <td class="db-logs-timestamp">${escapeHtml(timestamp)}</td>
+        <td class="db-logs-job-number">${escapeHtml(jobNumber)}</td>
+        <td class="db-logs-customer">${escapeHtml(customer)}</td>
+        <td class="db-logs-job-title">${escapeHtml(jobTitle)}</td>
+        <td class="db-logs-owner">${escapeHtml(jobOwner)}</td>
+        <td class="db-logs-update"><span class="db-logs-connector">${escapeHtml(connector)} </span><span class="db-logs-status" style="color:${escapeAttr(statusColor)}">${escapeHtml(statusText)}</span></td>
+      </tr>
+    `;
+  }
+
+  function handleLogsRowClick(event) {
+    openLogsRow(event.target.closest('[data-db-logs-job]'));
+  }
+
+  function handleLogsRowKeydown(event) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const row = event.target.closest('[data-db-logs-job]');
+    if (!row) return;
+    event.preventDefault();
+    openLogsRow(row);
+  }
+
+  function openLogsRow(row) {
+    const sourceOrderId = Number.parseInt(row?.dataset.dbLogsJob, 10);
+    if (!Number.isFinite(sourceOrderId)) return;
+    openOrder(sourceOrderId, 'details');
   }
 
   function showNewOrder(options = {}) {
@@ -12836,7 +13005,7 @@
     }
 
     els.mainTabs.forEach((tab) => {
-      const active = (name === 'home' || name === 'new-order' || name === 'new-customer' || name === 'new-contact' || name === 'customers' || name === 'customer' || name === 'styles' || name === 'visuals' || name === 'to-invoice' || name === 'stock-ordering' || name === 'users' || name === 'reports' || name === 'dtf-admin')
+      const active = (name === 'home' || name === 'new-order' || name === 'new-customer' || name === 'new-contact' || name === 'customers' || name === 'customer' || name === 'styles' || name === 'visuals' || name === 'logs' || name === 'to-invoice' || name === 'stock-ordering' || name === 'users' || name === 'reports' || name === 'dtf-admin')
         ? tab.dataset.dbGo === 'home'
         : tab.dataset.dbGo === 'outstanding';
       tab.classList.toggle('active', active);
@@ -12872,6 +13041,7 @@
     if (name === 'customer') return 'Customer';
     if (name === 'styles') return 'Styles';
     if (name === 'visuals') return 'Visuals';
+    if (name === 'logs') return 'Logs';
     if (name === 'users') return 'Users';
     if (name === 'dtf-admin') return 'Lami DTF';
     if (name === 'reports') return 'Analytics & Reports';

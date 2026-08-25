@@ -1021,7 +1021,11 @@ router.get('/api/database/status-updates', async (req, res) => {
               activity.changed_at,
               job.order_no,
               job.customer_name,
-              job.job_title
+              job.job_title,
+              job.order_owner_user_id,
+              job.order_owner_name,
+              job.order_taken_by,
+              job.trace_staff_id
        FROM database_job_status_updates activity
        JOIN database_jobs job ON job.source_order_id = activity.source_order_id
        ORDER BY activity.changed_at DESC, activity.id DESC
