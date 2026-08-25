@@ -190,6 +190,7 @@
     homeStatusUpdatesLoaded: false,
     homeStatusUpdatesLoading: false,
     homeStatusUpdatesSignature: '',
+    homeStatusUpdateShades: new Map(),
     loadingOrders: false,
     orderMode: 'open',
     loadedOrderMode: '',
@@ -1510,12 +1511,35 @@
       return;
     }
 
-    els.homeStatusUpdates.innerHTML = state.homeStatusUpdates
-      .map(renderHomeStatusUpdate)
+    els.homeStatusUpdates.innerHTML = shadeHomeStatusUpdates(state.homeStatusUpdates)
+      .map(({ update, shade }) => renderHomeStatusUpdate(update, shade))
       .join('');
   }
 
-  function renderHomeStatusUpdate(update) {
+  function shadeHomeStatusUpdates(updates) {
+    const keys = updates.map((update, index) => String(update?.id || `update-${index}`));
+    const shades = new Array(updates.length);
+    let anchorIndex = keys.findIndex(key => state.homeStatusUpdateShades.has(key));
+
+    if (anchorIndex === -1) {
+      anchorIndex = Math.max(0, updates.length - 1);
+      shades[anchorIndex] = 'light';
+    } else {
+      shades[anchorIndex] = state.homeStatusUpdateShades.get(keys[anchorIndex]);
+    }
+
+    for (let index = anchorIndex - 1; index >= 0; index -= 1) {
+      shades[index] = shades[index + 1] === 'dark' ? 'light' : 'dark';
+    }
+    for (let index = anchorIndex + 1; index < updates.length; index += 1) {
+      shades[index] = shades[index - 1] === 'dark' ? 'light' : 'dark';
+    }
+
+    state.homeStatusUpdateShades = new Map(keys.map((key, index) => [key, shades[index]]));
+    return updates.map((update, index) => ({ update, shade: shades[index] }));
+  }
+
+  function renderHomeStatusUpdate(update, shade = 'light') {
     const jobTitle = String(update?.job_title || '').trim();
     const jobNumber = String(update?.order_no || update?.source_order_id || '').trim();
     const sourceOrderId = String(update?.source_order_id || '').trim();
@@ -1537,7 +1561,7 @@
     const fullUpdate = `${identity} ${connector} ${statusText}`;
 
     return `
-      <article class="db-status-update" data-db-status-job="${escapeAttr(sourceOrderId)}" role="link" tabindex="0" aria-label="${escapeAttr(`Open order ${identity}`)}" title="${escapeAttr(`${fullUpdate} — ${timestamp}`)}">
+      <article class="db-status-update is-${shade === 'dark' ? 'dark' : 'light'}" data-db-status-job="${escapeAttr(sourceOrderId)}" role="link" tabindex="0" aria-label="${escapeAttr(`Open order ${identity}`)}" title="${escapeAttr(`${fullUpdate} — ${timestamp}`)}">
         ${jobNumber ? `<span class="db-status-update-job-number">${escapeHtml(jobNumber)}</span>` : ''}${jobTitle ? `<span class="db-status-update-job-title">${jobNumber ? ' ' : ''}${escapeHtml(jobTitle)}</span>` : ''}
         <span class="db-status-update-connector"> ${connector} </span>
         <span class="db-status-update-status" style="color:${escapeAttr(statusColor)}">${escapeHtml(statusText)}</span>

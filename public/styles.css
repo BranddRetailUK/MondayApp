@@ -2735,7 +2735,7 @@ body.modal-open{overflow:hidden}
 .db-outstanding-actions{
   position:absolute;
   left:50%;
-  top:116px;
+  top:90px;
   width:330px;
   height:88px;
   margin-left:-165px;
@@ -2804,16 +2804,7 @@ body.modal-open{overflow:hidden}
   overflow-x:hidden;
   overflow-y:auto;
   scrollbar-gutter:stable;
-  background-color:#fff;
-  background-image:repeating-linear-gradient(
-    to bottom,
-    #fff 0,
-    #fff 23px,
-    #f4f4f4 23px,
-    #f4f4f4 46px
-  );
-  background-attachment:scroll;
-  background-position:0 0;
+  background:#fff;
 }
 .db-status-update{
   height:23px;
@@ -2825,9 +2816,14 @@ body.modal-open{overflow:hidden}
   line-height:1.2;
   text-overflow:ellipsis;
   white-space:nowrap;
-  background:transparent;
   cursor:pointer;
   outline:none;
+}
+.db-status-update.is-light{
+  background:#fff;
+}
+.db-status-update.is-dark{
+  background:#f4f4f4;
 }
 .db-status-update:hover,
 .db-status-update:focus-visible{
