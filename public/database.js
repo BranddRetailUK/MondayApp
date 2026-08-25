@@ -1514,10 +1514,9 @@
   }
 
   function renderHomeStatusUpdate(update) {
-    const customer = String(update?.customer_name || '').trim();
     const jobTitle = String(update?.job_title || '').trim();
-    const orderNumber = String(update?.order_no || update?.source_order_id || '').trim();
-    const identity = [customer, jobTitle].filter(Boolean).join(' — ') || `Order ${orderNumber}`;
+    const jobNumber = String(update?.order_no || update?.source_order_id || '').trim();
+    const identity = [jobNumber, jobTitle].filter(Boolean).join(' ') || 'Job';
     const status = String(update?.status || '').trim();
     const normalizedStatus = normalizeDashboardStatusLabel(status);
     const eventType = String(update?.event_type || 'status').trim().toLowerCase();
@@ -1536,7 +1535,7 @@
 
     return `
       <article class="db-status-update" title="${escapeAttr(`${fullUpdate} — ${timestamp}`)}">
-        <span class="db-status-update-job">${escapeHtml(identity)}</span>
+        ${jobNumber ? `<span class="db-status-update-job-number">${escapeHtml(jobNumber)}</span>` : ''}${jobTitle ? `<span class="db-status-update-job-title">${jobNumber ? ' ' : ''}${escapeHtml(jobTitle)}</span>` : ''}
         <span class="db-status-update-connector"> ${connector} </span>
         <span class="db-status-update-status" style="color:${escapeAttr(statusColor)}">${escapeHtml(statusText)}</span>
       </article>

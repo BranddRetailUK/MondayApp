@@ -112,6 +112,7 @@ test('database home renders a compact retro scrollable newest-first status feed'
   const index = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
   const styles = fs.readFileSync(path.join(root, 'public', 'styles.css'), 'utf8');
   const database = fs.readFileSync(path.join(root, 'public', 'database.js'), 'utf8');
+  const renderer = sourceBetween(database, 'function renderHomeStatusUpdate', 'function showHome');
   const openOrders = index.indexOf('class="db-outstanding-actions"');
   const statusFeed = index.indexOf('class="db-status-updates"');
   const rightMenu = index.indexOf('class="db-menu-column db-menu-right"');
@@ -121,11 +122,15 @@ test('database home renders a compact retro scrollable newest-first status feed'
   assert.match(styles, /\.db-outstanding-actions\{[\s\S]*top:116px;/);
   assert.match(styles, /\.db-status-updates\{[\s\S]*top:212px;[\s\S]*width:400px;[\s\S]*height:183px;[\s\S]*margin-left:-200px;/);
   assert.match(styles, /\.db-status-updates\{[\s\S]*background:#fff;[\s\S]*font:10px Arial/);
-  assert.match(styles, /\.db-status-updates-list\{[\s\S]*overflow-y:auto;[\s\S]*background:#fff;/);
-  assert.match(styles, /\.db-status-update\{[\s\S]*text-overflow:ellipsis;[\s\S]*white-space:nowrap;/);
-  assert.match(styles, /\.db-status-update-job\{[\s\S]*color:#000;[\s\S]*font-weight:700;/);
+  assert.match(styles, /\.db-status-updates-list\{[\s\S]*overflow-y:auto;[\s\S]*background-image:repeating-linear-gradient\([\s\S]*#fff 23px,[\s\S]*#f4f4f4 23px,[\s\S]*#f4f4f4 46px[\s\S]*background-attachment:scroll;/);
+  assert.match(styles, /\.db-status-update\{[\s\S]*height:23px;[\s\S]*text-overflow:ellipsis;[\s\S]*white-space:nowrap;[\s\S]*background:transparent;/);
+  assert.match(styles, /\.db-status-update-job-number\{[\s\S]*color:var\(--database-bg, #8ec7e3\);[\s\S]*font-weight:800;/);
+  assert.match(styles, /\.db-status-update-job-title\{[\s\S]*color:#000;[\s\S]*font-weight:700;/);
   assert.match(styles, /\.db-status-update-connector\{[\s\S]*color:#000;[\s\S]*font-weight:400;/);
-  assert.match(database, /const identity = \[customer, jobTitle\]\.filter\(Boolean\)\.join\(' — '\)/);
+  assert.doesNotMatch(renderer, /customer_name/);
+  assert.match(renderer, /const jobNumber = String\(update\?\.order_no \|\| update\?\.source_order_id \|\| ''\)\.trim\(\);/);
+  assert.match(renderer, /const identity = \[jobNumber, jobTitle\]\.filter\(Boolean\)\.join\(' '\)/);
+  assert.match(renderer, /class="db-status-update-job-number"/);
   assert.match(database, /const checkedIn = eventType === 'status' && normalizedStatus === 'CHECKED IN';/);
   assert.match(database, /let connector = completedAction \|\| checkedIn \? 'has been' : 'is now';/);
   assert.match(database, /normalizedStatus === 'AWAITING APPROVAL'\) connector = 'is';/);
