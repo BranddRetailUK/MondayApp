@@ -191,6 +191,7 @@ test('Logs button opens the larger restorable Logs activity table', () => {
   assert.match(logsRenderer, /class="db-logs-job-title"/);
   assert.match(logsRenderer, /class="db-logs-owner"/);
   assert.match(logsRenderer, /class="db-logs-status" style="color:/);
+  assert.doesNotMatch(logsRenderer, /db-logs-connector/);
   assert.match(database, /logsBody\?\.addEventListener\('click', handleLogsRowClick\)/);
   assert.match(database, /logsBody\?\.addEventListener\('keydown', handleLogsRowKeydown\)/);
   assert.match(database, /row\?\.dataset\.dbLogsJob/);

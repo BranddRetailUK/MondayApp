@@ -1731,7 +1731,7 @@
     const jobTitle = String(update?.job_title || '').trim();
     const jobOwner = jobOwnerLabel(update);
     const timestamp = formatDateTime(update?.changed_at);
-    const { connector, statusText, statusColor } = statusUpdatePresentation(update);
+    const { statusText, statusColor } = statusUpdatePresentation(update);
     const identity = [jobNumber, jobTitle].filter(Boolean).join(' ') || 'Job';
 
     return `
@@ -1741,7 +1741,7 @@
         <td class="db-logs-customer">${escapeHtml(customer)}</td>
         <td class="db-logs-job-title">${escapeHtml(jobTitle)}</td>
         <td class="db-logs-owner">${escapeHtml(jobOwner)}</td>
-        <td class="db-logs-update"><span class="db-logs-connector">${escapeHtml(connector)} </span><span class="db-logs-status" style="color:${escapeAttr(statusColor)}">${escapeHtml(statusText)}</span></td>
+        <td class="db-logs-update"><span class="db-logs-status" style="color:${escapeAttr(statusColor)}">${escapeHtml(statusText)}</span></td>
       </tr>
     `;
   }
