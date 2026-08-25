@@ -545,6 +545,8 @@
     setupDatabaseMobileTableLabels();
 
     els.root.addEventListener('click', handleRootClick);
+    els.homeStatusUpdates?.addEventListener('click', handleHomeStatusUpdateClick);
+    els.homeStatusUpdates?.addEventListener('keydown', handleHomeStatusUpdateKeydown);
     els.outstandingBody.addEventListener('click', handleOutstandingRowClick);
     els.outstandingBody.addEventListener('keydown', handleOutstandingRowKeydown);
     els.toInvoiceBody?.addEventListener('click', handleToInvoiceRowClick);
@@ -1516,6 +1518,7 @@
   function renderHomeStatusUpdate(update) {
     const jobTitle = String(update?.job_title || '').trim();
     const jobNumber = String(update?.order_no || update?.source_order_id || '').trim();
+    const sourceOrderId = String(update?.source_order_id || '').trim();
     const identity = [jobNumber, jobTitle].filter(Boolean).join(' ') || 'Job';
     const status = String(update?.status || '').trim();
     const normalizedStatus = normalizeDashboardStatusLabel(status);
@@ -1534,12 +1537,30 @@
     const fullUpdate = `${identity} ${connector} ${statusText}`;
 
     return `
-      <article class="db-status-update" title="${escapeAttr(`${fullUpdate} — ${timestamp}`)}">
+      <article class="db-status-update" data-db-status-job="${escapeAttr(sourceOrderId)}" role="link" tabindex="0" aria-label="${escapeAttr(`Open order ${identity}`)}" title="${escapeAttr(`${fullUpdate} — ${timestamp}`)}">
         ${jobNumber ? `<span class="db-status-update-job-number">${escapeHtml(jobNumber)}</span>` : ''}${jobTitle ? `<span class="db-status-update-job-title">${jobNumber ? ' ' : ''}${escapeHtml(jobTitle)}</span>` : ''}
         <span class="db-status-update-connector"> ${connector} </span>
         <span class="db-status-update-status" style="color:${escapeAttr(statusColor)}">${escapeHtml(statusText)}</span>
       </article>
     `;
+  }
+
+  function handleHomeStatusUpdateClick(event) {
+    openHomeStatusUpdate(event.target.closest('[data-db-status-job]'));
+  }
+
+  function handleHomeStatusUpdateKeydown(event) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const row = event.target.closest('[data-db-status-job]');
+    if (!row) return;
+    event.preventDefault();
+    openHomeStatusUpdate(row);
+  }
+
+  function openHomeStatusUpdate(row) {
+    const sourceOrderId = Number.parseInt(row?.dataset.dbStatusJob, 10);
+    if (!Number.isFinite(sourceOrderId)) return;
+    openOrder(sourceOrderId, 'details');
   }
 
   function showHome(options = {}) {
