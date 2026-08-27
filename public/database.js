@@ -9471,6 +9471,7 @@
   }
 
   function isJobInvoiceStatusEligible(job) {
+    if (!job) return false;
     return categoryForJob(job) === 'gifts'
       || normalizeDashboardStatusLabel(job?.dashboard_status) === 'COMPLETED';
   }

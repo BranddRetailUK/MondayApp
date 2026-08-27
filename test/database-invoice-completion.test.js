@@ -130,10 +130,24 @@ test('invoice UI blocks the request and PDF modal behind the requested Okay mess
   );
   assert.match(
     database,
-    /function isJobInvoiceStatusEligible\(job\) \{\s+return categoryForJob\(job\) === 'gifts'\s+\|\| normalizeDashboardStatusLabel\(job\?\.dashboard_status\) === 'COMPLETED';\s+\}/
+    /function isJobInvoiceStatusEligible\(job\) \{\s+if \(!job\) return false;\s+return categoryForJob\(job\) === 'gifts'\s+\|\| normalizeDashboardStatusLabel\(job\?\.dashboard_status\) === 'COMPLETED';\s+\}/
   );
   assert.match(database, /This job is not yet completed/);
   assert.match(database, /data-db-invoice-completion-okay>Okay<\/button>/);
+});
+
+test('pre-completion invoice controls remain safe while Order Info is loading', () => {
+  const database = fs.readFileSync(
+    path.join(__dirname, '..', 'public', 'database.js'),
+    'utf8'
+  );
+  const loadingFlow = sourceFunction(database, 'function setOrderLoading', 'function renderOrderError');
+
+  assert.match(loadingFlow, /syncOrderDocumentButtons\(null\)/);
+  assert.match(
+    database,
+    /function isJobInvoiceStatusEligible\(job\) \{\s+if \(!job\) return false;/
+  );
 });
 
 test('order info exposes a separate pre-completion invoice action', () => {
