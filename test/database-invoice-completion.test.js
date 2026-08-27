@@ -43,6 +43,22 @@ test('invoice generation proceeds after the job is dashboard-completed', async (
   assert.match(result.queries[activityIndex].text, /'INVOICED'/);
 });
 
+test('pre-completion invoice bypasses completion without changing dashboard status', async () => {
+  const result = await exerciseInvoiceRoute('READY TO PRINT', {}, {
+    mark_invoiced: true,
+    pre_completion_invoice: true,
+  });
+
+  assert.equal(result.response.statusCode, 200);
+  assert.equal(result.response.body.job.invoice_no, 52002);
+  assert.equal(result.response.body.job.invoice_printed, true);
+  assert.equal(result.response.body.job.dashboard_status, 'READY TO PRINT');
+  const invoiceUpdate = result.queries.find(query => query.text.includes('WITH next_invoice AS'));
+  assert.ok(invoiceUpdate, 'expected invoice allocation');
+  assert.doesNotMatch(invoiceUpdate.text, /dashboard_status\s*=/);
+  assert.ok(result.queries.some(query => query.text === 'COMMIT'));
+});
+
 test('repeat invoice clicks do not create duplicate invoiced activity', async () => {
   const result = await exerciseInvoiceRoute('COMPLETED', {
     invoice_no: 52001,
@@ -102,7 +118,7 @@ test('invoice UI blocks the request and PDF modal behind the requested Okay mess
 
   assert.match(
     flow,
-    /if \(documentType === 'invoice' && !existingInvoicePreview && !isJobInvoiceStatusEligible\(state\.selectedJob\)\) \{\s+openInvoiceCompletionModal\(\);\s+return;\s+\}/
+    /documentType === 'invoice'[\s\S]+&& !preCompletionInvoice[\s\S]+&& !existingInvoicePreview[\s\S]+&& !isJobInvoiceStatusEligible\(state\.selectedJob\)/
   );
   assert.ok(
     flow.indexOf('isJobInvoiceStatusEligible') < flow.indexOf('markSelectedJobInvoiced'),
@@ -120,6 +136,36 @@ test('invoice UI blocks the request and PDF modal behind the requested Okay mess
   assert.match(database, /data-db-invoice-completion-okay>Okay<\/button>/);
 });
 
+test('order info exposes a separate pre-completion invoice action', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+  const database = fs.readFileSync(path.join(__dirname, '..', 'public', 'database.js'), 'utf8');
+
+  assert.match(
+    html,
+    /data-db-document="invoice">Invoice<\/button>\s*<button[^>]+data-db-pre-completion-invoice="true">Pre-Completion<br>Invoice<\/button>/
+  );
+  assert.match(database, /openDatabaseDocument\('invoice', \{ preCompletionInvoice: true \}\)/);
+  assert.match(database, /payload\.pre_completion_invoice = true/);
+  assert.match(database, /invoiceGenerated\(job\)[\s\S]+isJobInvoiceStatusEligible\(job\)/);
+});
+
+test('pre-completion invoice remains on dashboard until ordinary completion', () => {
+  const dashboardRoute = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'routes', 'test-dashboard.js'),
+    'utf8'
+  );
+  const visibilityRule = sourceFunction(
+    dashboardRoute,
+    'function shouldRenderDashboardJob',
+    'function isDashboardJobFinalized'
+  );
+
+  assert.match(
+    visibilityRule,
+    /\(statusText === 'INVOICED' \|\| statusText === 'COMPLETED'\)[\s\S]+&& isDashboardJobCompleted\(job, statusText\)[\s\S]+&& isDashboardJobFinalized\(job\)/
+  );
+});
+
 test('invoice UI opens an existing legacy invoice without requiring a dashboard completion state', () => {
   const database = fs.readFileSync(
     path.join(__dirname, '..', 'public', 'database.js'),
@@ -131,7 +177,10 @@ test('invoice UI opens an existing legacy invoice without requiring a dashboard 
     flow,
     /const existingInvoicePreview = documentType === 'invoice' && state\.selectedJob\?\.invoice_no;/
   );
-  assert.match(flow, /documentType === 'invoice' && !existingInvoicePreview && !isJobInvoiceStatusEligible/);
+  assert.match(
+    flow,
+    /documentType === 'invoice'[\s\S]+&& !preCompletionInvoice[\s\S]+&& !existingInvoicePreview[\s\S]+&& !isJobInvoiceStatusEligible/
+  );
   assert.match(
     flow,
     /if \(existingInvoicePreview\)[\s\S]*state\.selectedJob\?\.invoice_date[\s\S]*state\.selectedJob\?\.complete_date/
@@ -155,7 +204,11 @@ test('invoice UI immediately removes invoiced Business Gifts from Open Orders', 
   );
 });
 
-async function exerciseInvoiceRoute(dashboardStatus, jobOverrides = {}) {
+async function exerciseInvoiceRoute(
+  dashboardStatus,
+  jobOverrides = {},
+  requestBody = { mark_invoiced: true }
+) {
   const poolPath = require.resolve('../src/db/pool');
   const routePath = require.resolve('../src/routes/database');
   const originalPoolModule = require.cache[poolPath];
@@ -185,7 +238,7 @@ async function exerciseInvoiceRoute(dashboardStatus, jobOverrides = {}) {
           rows: [{
             source_order_id: 8001,
             order_no: 8101,
-            dashboard_status: 'COMPLETED',
+            dashboard_status: dashboardStatus,
             invoice_no: 52002,
             invoice_printed: true,
           }],
@@ -223,7 +276,7 @@ async function exerciseInvoiceRoute(dashboardStatus, jobOverrides = {}) {
     const response = createResponse();
     await route.route.stack[0].handle({
       params: { id: '8001' },
-      body: { mark_invoiced: true },
+      body: requestBody,
     }, response);
     return { response, queries };
   } finally {

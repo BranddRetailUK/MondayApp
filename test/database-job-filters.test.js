@@ -67,6 +67,13 @@ test('To Invoice includes completed no-invoice jobs until they are explicitly cl
   assert.doesNotMatch(filters.whereSql, /j\.invoice_required IS NOT FALSE/);
 });
 
+test('To Invoice excludes an existing pre-completion invoice after later completion', () => {
+  const filters = buildJobFilters({ status: 'to-invoice' });
+
+  assert.match(filters.whereSql, /dashboard_status/);
+  assert.match(filters.whereSql, /j\.invoice_printed IS NOT TRUE/);
+});
+
 test('open jobs treat completed or invoiced no-invoice closures as finalized', () => {
   const filters = buildJobFilters({ status: 'open' });
 

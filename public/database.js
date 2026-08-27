@@ -1100,6 +1100,11 @@
     }
 
     const documentType = button.dataset.dbDocument || (button.dataset.dbOrderAck ? 'order-ack' : '');
+    if (button.dataset.dbPreCompletionInvoice) {
+      await flushOrderAutosaves();
+      await openDatabaseDocument('invoice', { preCompletionInvoice: true });
+      return;
+    }
     if (documentType) {
       await flushOrderAutosaves();
       await openDatabaseDocument(documentType);
@@ -8675,8 +8680,14 @@
     if (!state.selectedJob?.source_order_id && !state.selectedJob?.order_no) return;
 
     const documentType = databaseDocumentType(type);
+    const preCompletionInvoice = documentType === 'invoice' && options.preCompletionInvoice === true;
     const existingInvoicePreview = documentType === 'invoice' && state.selectedJob?.invoice_no;
-    if (documentType === 'invoice' && !existingInvoicePreview && !isJobInvoiceStatusEligible(state.selectedJob)) {
+    if (
+      documentType === 'invoice'
+      && !preCompletionInvoice
+      && !existingInvoicePreview
+      && !isJobInvoiceStatusEligible(state.selectedJob)
+    ) {
       openInvoiceCompletionModal();
       return;
     }
@@ -8692,7 +8703,7 @@
       );
     } else if (documentType === 'invoice') {
       try {
-        const invoicedJob = await markSelectedJobInvoiced();
+        const invoicedJob = await markSelectedJobInvoiced({ preCompletionInvoice });
         generatedAt = validDateOrNow(invoicedJob?.invoice_date || invoicedJob?.complete_date || invoicedJob?.dashboard_status_updated_at);
       } catch (err) {
         console.error('Invoice mark failed', err);
@@ -9395,11 +9406,12 @@
     }
   }
 
-  async function markSelectedJobInvoiced() {
+  async function markSelectedJobInvoiced(options = {}) {
     if (!state.selectedJob?.source_order_id) return state.selectedJob;
 
     const sourceOrderId = Number(state.selectedJob.source_order_id);
     const payload = { mark_invoiced: true };
+    if (options.preCompletionInvoice === true) payload.pre_completion_invoice = true;
     const manualInvoiceDate = selectedManualInvoiceDate();
     if (manualInvoiceDate) {
       payload.manual_invoice_date = true;
@@ -10177,6 +10189,25 @@
         button.removeAttribute('title');
       }
     });
+
+    const preCompletionInvoiceButton = document.querySelector('[data-db-pre-completion-invoice]');
+    if (preCompletionInvoiceButton) {
+      const noSelectedJob = !job || (!job.source_order_id && !job.order_no);
+      const unavailable = noSelectedJob
+        || invoiceNotRequired(job)
+        || invoiceGenerated(job)
+        || isJobInvoiceStatusEligible(job);
+      preCompletionInvoiceButton.disabled = unavailable;
+      if (invoiceNotRequired(job)) {
+        preCompletionInvoiceButton.title = 'Invoice not required for this job';
+      } else if (invoiceGenerated(job)) {
+        preCompletionInvoiceButton.title = 'This invoice has already been generated';
+      } else if (isJobInvoiceStatusEligible(job)) {
+        preCompletionInvoiceButton.title = 'Use Invoice for a completed job';
+      } else {
+        preCompletionInvoiceButton.removeAttribute('title');
+      }
+    }
 
     const closeOrderButton = document.querySelector('[data-db-no-invoice-close]');
     if (closeOrderButton) {

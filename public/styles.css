@@ -5329,6 +5329,10 @@ body.modal-open{overflow:hidden}
   padding:0 2px;
   line-height:15px;
 }
+.db-pre-completion-invoice-button{
+  flex-basis:96px;
+  width:96px;
+}
 .db-doc-button:disabled{
   background:#d6d6d6;
   color:#777;
@@ -8428,11 +8432,11 @@ input.db-custom-line-input{
   .db-document-buttons{
     grid-column:1 / -1;
     display:grid;
-    grid-template-columns:repeat(4, minmax(0, 1fr));
+    grid-template-columns:repeat(5, minmax(0, 1fr));
     gap:4px;
   }
   .db-document-buttons.has-no-invoice-close{
-    grid-template-columns:repeat(5, minmax(0, 1fr));
+    grid-template-columns:repeat(6, minmax(0, 1fr));
   }
   .db-doc-button{
     width:auto;

@@ -4282,6 +4282,7 @@ router.put('/api/database/jobs/:id', async (req, res) => {
   const hasIsComplete = Object.prototype.hasOwnProperty.call(payload, 'is_complete');
   const hasInvoiceRequired = Object.prototype.hasOwnProperty.call(payload, 'invoice_required');
   const hasMarkInvoiced = payload.mark_invoiced === true || payload.mark_invoiced === 'true';
+  const hasPreCompletionInvoice = payload.pre_completion_invoice === true || payload.pre_completion_invoice === 'true';
   const hasManualInvoiceDate = payload.manual_invoice_date === true || payload.manual_invoice_date === 'true';
   const hasContactFields = ['contact_id', 'contact_name', 'contact_phone', 'contact_mobile', 'contact_email']
     .some((field) => Object.prototype.hasOwnProperty.call(payload, field));
@@ -4343,7 +4344,8 @@ router.put('/api/database/jobs/:id', async (req, res) => {
       );
       const currentJob = completion.rows[0] || {};
       if (
-        !isBusinessGiftDatabaseOrder(currentJob)
+        !hasPreCompletionInvoice
+        && !isBusinessGiftDatabaseOrder(currentJob)
         && normalizeColumnTitle(currentJob.dashboard_status) !== 'COMPLETED'
       ) {
         await client.query('ROLLBACK');
