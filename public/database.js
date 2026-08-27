@@ -609,6 +609,7 @@
     els.customerContactsBody.addEventListener('input', handleCustomerContactInput);
     els.customerContactsBody.addEventListener('focusout', handleCustomerContactFocusOut);
     els.customerAddressesBody.addEventListener('input', handleCustomerAddressInput);
+    els.customerAddressesBody.addEventListener('change', handleCustomerAddressChange);
     els.customerAddressesBody.addEventListener('focusout', handleCustomerAddressFocusOut);
     els.customersSearch.addEventListener('input', handleDatabaseCustomerSearchInput);
     els.customersSort?.addEventListener('change', handleDatabaseCustomerSortChange);
@@ -1015,6 +1016,11 @@
     if (action === 'add-contact') {
       await flushOrderAutosaves();
       showNewContact();
+      return;
+    }
+    if (action === 'add-address') {
+      await flushCustomerAddressAutosave();
+      openAddCustomerAddressModal();
       return;
     }
     if (action === 'open-orders') {
@@ -3757,6 +3763,8 @@
       source_address_id: address?.source_address_id || null,
       address_type: address?.address_type || '',
       address: String(addressText || '').trim(),
+      is_default_invoice: truthy(address?.is_default_invoice),
+      is_default_delivery: truthy(address?.is_default_delivery),
     };
   }
 
@@ -3774,7 +3782,9 @@
 
   function customerAddressChoicesForRole(detail, role, fallbackAddress = '') {
     const addresses = customerAddressChoices(detail);
-    const matchingAddresses = addresses.filter((address) => customerAddressHasRole(address, role));
+    const matchingAddresses = addresses
+      .filter((address) => customerAddressHasRole(address, role))
+      .sort((left, right) => Number(customerAddressIsDefault(right, role)) - Number(customerAddressIsDefault(left, role)));
     const genericAddresses = addresses.filter((address) => {
       const type = String(address?.address_type || '').trim().toLowerCase();
       return !type || type === 'address';
@@ -4935,7 +4945,7 @@
   function renderCustomerOrders() {
     const orders = state.selectedCustomerOrders || [];
     if (!orders.length) {
-      els.customerOrdersBody.innerHTML = renderStatusRow('No orders recorded for this customer', 11);
+      els.customerOrdersBody.innerHTML = renderStatusRow('No orders recorded for this customer', 10);
       return;
     }
 
@@ -4944,7 +4954,7 @@
       ? orders.filter((order) => customerOrderMatchesSearch(order, query))
       : orders;
     if (!matchingOrders.length) {
-      els.customerOrdersBody.innerHTML = renderStatusRow('No customer orders match this search', 11);
+      els.customerOrdersBody.innerHTML = renderStatusRow('No customer orders match this search', 10);
       return;
     }
 
@@ -4970,6 +4980,7 @@
       order.order_owner_name,
       order.dashboard_status,
       formatDate(order.order_date, 'long'),
+      formatDate(order.invoice_date, 'long'),
       formatDate(order.complete_date, 'long'),
       ...relatedDesigns,
     ];
@@ -4990,10 +5001,9 @@
         <td>${escapeHtml(order.client_order_no || '')}</td>
         <td class="db-type-cell db-type-${categoryForJob(order)}">${escapeHtml(typeAbbr(order))}</td>
         <td>${escapeHtml(order.contact_name || '')}</td>
-        <td>${escapeHtml(order.job_title || '')}</td>
-        <td>${escapeHtml(outstandingTakenByFirstName(order))}</td>
+        <td class="db-customer-job-title-cell">${escapeHtml(order.job_title || '')}</td>
         <td>${escapeHtml(formatDate(order.order_date, 'long'))}</td>
-        <td>${escapeHtml(formatDate(order.complete_date, 'long'))}</td>
+        <td>${escapeHtml(formatDate(order.invoice_date || order.complete_date, 'long'))}</td>
         <td class="db-repeat-order-cell">
           <button
             class="db-repeat-order-button"
@@ -5359,24 +5369,36 @@
 
   function renderCustomerAddresses() {
     const addresses = state.selectedCustomerAddresses || [];
-    const invoiceAddress = defaultCustomerAddress(addresses, 'invoice');
-    const deliveryAddress = defaultCustomerAddress(addresses, 'delivery') || blankCustomerAddress('As Per Order');
-
     els.customerAddressesBody.innerHTML = `
       <div class="db-customer-address-columns">
-        ${renderCustomerAddressBox('Invoice address (default):', invoiceAddress, 'invoice')}
-        ${renderCustomerAddressBox('Delivery address (default):', deliveryAddress, 'delivery')}
+        ${renderCustomerAddressColumn('Invoice addresses:', addresses, 'invoice')}
+        ${renderCustomerAddressColumn('Delivery addresses:', addresses, 'delivery')}
+      </div>
+      <div class="db-customer-address-actions-panel">
+        <button class="db-toolbar-button db-address-add-button" type="button" data-db-action="add-address">Add Address</button>
       </div>
     `;
     hydrateCustomerAddressAutosaveSignature();
   }
 
-  function defaultCustomerAddress(addresses, role) {
-    const normalizedRole = String(role || '').toLowerCase();
-    const matches = (addresses || []).filter((address) => customerAddressHasRole(address, normalizedRole));
-    if (matches.length) return matches[0];
-    if (normalizedRole === 'invoice') return (addresses || [])[0] || blankCustomerAddress('');
-    return null;
+  function renderCustomerAddressColumn(title, addresses, role) {
+    const matching = (addresses || [])
+      .map((address, index) => ({ address, index }))
+      .filter(({ address }) => customerAddressHasRole(address, role))
+      .sort((left, right) => (
+        Number(customerAddressIsDefault(right.address, role))
+        - Number(customerAddressIsDefault(left.address, role))
+      ));
+    return `
+      <section class="db-customer-address-column" data-customer-address-role="${escapeAttr(role)}">
+        <h3>${escapeHtml(title)}</h3>
+        <div class="db-customer-address-cards-scroll">
+          ${matching.length
+            ? matching.map(({ address, index }) => renderCustomerAddressCard(address, role, index)).join('')
+            : `<div class="db-panel-message">No ${escapeHtml(role)} addresses recorded</div>`}
+        </div>
+      </section>
+    `;
   }
 
   function customerAddressHasRole(address, role) {
@@ -5386,38 +5408,40 @@
     return false;
   }
 
-  function blankCustomerAddress(line1) {
-    return {
-      address_line1: line1 || '',
-      address_line2: '',
-      address_line3: '',
-      address_line4: '',
-      address_line5: '',
-      postcode: '',
-      phone: '',
-      fax: '',
-      created_at_source: null,
-      updated_at_source: null,
-      updated_by: null,
-    };
+  function customerAddressIsDefault(address, role) {
+    return role === 'delivery'
+      ? truthy(address?.is_default_delivery)
+      : truthy(address?.is_default_invoice);
   }
 
-  function renderCustomerAddressBox(title, address, role) {
-    const fields = customerAddressFields(address || blankCustomerAddress(''));
+  function renderCustomerAddressCard(address, role, index) {
+    const fields = customerAddressFields(address || {});
+    const savedAddressId = address?.saved_address_id || address?.address_row_id || '';
     return `
-      <section class="db-customer-address-box" data-customer-address-role="${escapeAttr(role)}">
-        <h3>${escapeHtml(title)}</h3>
-        <div class="db-customer-address-inner">
-          ${customerAddressInputRow('Address 1:', fields.address_line1, 'address_line1')}
-          ${customerAddressInputRow('Address 2:', fields.address_line2, 'address_line2')}
-          ${customerAddressInputRow('Address 3:', fields.address_line3, 'address_line3')}
-          ${customerAddressInputRow('Address 4:', fields.address_line4, 'address_line4')}
-          ${customerAddressInputRow('Address 5:', fields.address_line5, 'address_line5')}
-          ${customerAddressInputRow('Postcode:', fields.postcode, 'postcode', 'postcode')}
-          ${customerAddressInputRow('Tel:', fields.phone, 'phone', 'tel')}
-          ${customerAddressInputRow('Fax:', fields.fax, 'fax', 'tel')}
-        </div>
-      </section>
+      <article
+        class="db-customer-address-card"
+        data-customer-address-card="true"
+        data-customer-address-index="${escapeAttr(index)}"
+        data-customer-address-role="${escapeAttr(role)}"
+        data-saved-address-id="${escapeAttr(savedAddressId)}"
+      >
+        <label class="db-customer-address-default">
+          <input
+            type="checkbox"
+            data-customer-address-default="${escapeAttr(role)}"
+            ${customerAddressIsDefault(address, role) ? 'checked' : ''}
+          >
+          <span>Set as default</span>
+        </label>
+        ${customerAddressInputRow('Address 1:', fields.address_line1, 'address_line1')}
+        ${customerAddressInputRow('Address 2:', fields.address_line2, 'address_line2')}
+        ${customerAddressInputRow('Address 3:', fields.address_line3, 'address_line3')}
+        ${customerAddressInputRow('Address 4:', fields.address_line4, 'address_line4')}
+        ${customerAddressInputRow('Address 5:', fields.address_line5, 'address_line5')}
+        ${customerAddressInputRow('Postcode:', fields.postcode, 'postcode', 'postcode')}
+        ${customerAddressInputRow('Tel:', fields.phone, 'phone', 'tel')}
+        ${customerAddressInputRow('Fax:', fields.fax, 'fax', 'tel')}
+      </article>
     `;
   }
 
@@ -5452,7 +5476,11 @@
     state.customerAddressDirty = false;
     state.customerAddressSaving = false;
     state.customerAddressSaveQueued = false;
-    state.customerAddressLastSavedSignature = customerAddressSignature(collectCustomerAddressPayloadFromDom());
+    state.customerAddressLastSavedSignature = '{}';
+    els.customerAddressesBody?.querySelectorAll('[data-customer-address-card]').forEach((card) => {
+      card.dataset.savedSignature = customerAddressSignature(customerAddressPayloadFromCard(card));
+      delete card.dataset.addressDirty;
+    });
     els.customerAddressesBody?.classList.remove('db-customer-addresses-dirty', 'db-customer-addresses-saving', 'db-customer-addresses-error');
   }
 
@@ -5467,25 +5495,53 @@
   function handleCustomerAddressInput(event) {
     const input = event.target.closest('[data-customer-address-field]');
     if (!input) return;
-
+    const card = input.closest('[data-customer-address-card]');
+    if (!card) return;
+    card.dataset.addressDirty = 'true';
     state.customerAddressDirty = true;
     els.customerAddressesBody?.classList.add('db-customer-addresses-dirty');
     els.customerAddressesBody?.classList.remove('db-customer-addresses-error');
     scheduleCustomerAddressAutosave();
   }
 
+  function handleCustomerAddressChange(event) {
+    const checkbox = event.target.closest('[data-customer-address-default]');
+    if (!checkbox) return;
+    if (!checkbox.checked) {
+      checkbox.checked = true;
+      return;
+    }
+
+    const role = checkbox.dataset.customerAddressDefault;
+    (state.selectedCustomerAddresses || []).forEach((address) => {
+      address[role === 'delivery' ? 'is_default_delivery' : 'is_default_invoice'] = false;
+    });
+    els.customerAddressesBody?.querySelectorAll(`[data-customer-address-default="${role}"]`).forEach((candidate) => {
+      if (candidate !== checkbox) candidate.checked = false;
+    });
+    const card = checkbox.closest('[data-customer-address-card]');
+    if (!card) return;
+    const index = Number.parseInt(card.dataset.customerAddressIndex, 10);
+    if (Number.isFinite(index) && state.selectedCustomerAddresses[index]) {
+      state.selectedCustomerAddresses[index][role === 'delivery' ? 'is_default_delivery' : 'is_default_invoice'] = true;
+    }
+    card.dataset.addressDirty = 'true';
+    state.customerAddressDirty = true;
+    flushCustomerAddressAutosave();
+  }
+
   function handleCustomerAddressFocusOut(event) {
     const input = event.target.closest('[data-customer-address-field]');
     if (!input) return;
-    const panel = input.closest('[data-customer-address-role]');
-    if (!panel) return;
+    const card = input.closest('[data-customer-address-card]');
+    if (!card) return;
 
     const nextTarget = event.relatedTarget;
-    if (nextTarget && panel.contains(nextTarget)) return;
+    if (nextTarget && card.contains(nextTarget)) return;
 
     window.setTimeout(() => {
-      if (!panel.isConnected || panel.matches(':focus-within')) return;
-      normalizeCustomerAddressPanel(panel);
+      if (!card.isConnected || card.matches(':focus-within')) return;
+      normalizeCustomerAddressPanel(card);
       flushCustomerAddressAutosave();
     }, 0);
   }
@@ -5501,9 +5557,10 @@
     clearTimeout(customerAddressAutosaveTimer);
     if (!state.customerAddressDirty) return true;
 
-    const payload = collectCustomerAddressPayloadFromDom();
-    const signature = customerAddressSignature(payload);
-    if (signature === state.customerAddressLastSavedSignature) {
+    const dirtyCards = Array.from(
+      els.customerAddressesBody?.querySelectorAll('[data-customer-address-card][data-address-dirty="true"]') || []
+    );
+    if (!dirtyCards.length) {
       state.customerAddressDirty = false;
       els.customerAddressesBody?.classList.remove('db-customer-addresses-dirty', 'db-customer-addresses-error');
       return true;
@@ -5518,22 +5575,15 @@
     if (!customerKey) return false;
 
     state.customerAddressSaving = true;
-    let saveSucceeded = false;
     els.customerAddressesBody?.classList.add('db-customer-addresses-saving');
 
     try {
-      const data = await fetchJson(`/api/database/customers/${encodeURIComponent(customerKey)}/addresses`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        keepalive: Boolean(options.keepalive),
-      });
-      state.selectedCustomerDetail = { ...state.selectedCustomerDetail, ...(data.customer || {}) };
-      if (Array.isArray(data.addresses)) state.selectedCustomerAddresses = data.addresses;
-      state.customerAddressLastSavedSignature = signature;
-      state.customerAddressDirty = customerAddressSignature(collectCustomerAddressPayloadFromDom()) !== signature;
-      saveSucceeded = true;
-      updateCustomerHeaderFields();
+      for (const card of dirtyCards) {
+        await saveCustomerAddressCard(card, customerKey, options);
+      }
+      state.customerAddressDirty = Boolean(
+        els.customerAddressesBody?.querySelector('[data-customer-address-card][data-address-dirty="true"]')
+      );
       els.customerAddressesBody?.classList.toggle('db-customer-addresses-dirty', state.customerAddressDirty);
       els.customerAddressesBody?.classList.remove('db-customer-addresses-error');
       return true;
@@ -5545,11 +5595,168 @@
     } finally {
       state.customerAddressSaving = false;
       els.customerAddressesBody?.classList.remove('db-customer-addresses-saving');
-      if (state.customerAddressSaveQueued || (saveSucceeded && state.customerAddressDirty)) {
+      if (state.customerAddressSaveQueued || state.customerAddressDirty) {
         state.customerAddressSaveQueued = false;
         scheduleCustomerAddressAutosave();
       }
     }
+  }
+
+  async function saveCustomerAddressCard(card, customerKey, options = {}) {
+    if (!card?.isConnected || card.dataset.addressDirty !== 'true') return;
+    const payload = customerAddressPayloadFromCard(card);
+    const signature = customerAddressSignature(payload);
+    if (signature === card.dataset.savedSignature) {
+      delete card.dataset.addressDirty;
+      return;
+    }
+    if (!payload.address_line1) throw new Error('Address 1 is required');
+
+    const savedAddressId = Number.parseInt(card.dataset.savedAddressId, 10);
+    const endpoint = Number.isFinite(savedAddressId)
+      ? `/api/database/customers/${encodeURIComponent(customerKey)}/addresses/${encodeURIComponent(savedAddressId)}`
+      : `/api/database/customers/${encodeURIComponent(customerKey)}/addresses`;
+    const data = await fetchJson(endpoint, {
+      method: Number.isFinite(savedAddressId) ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      keepalive: Boolean(options.keepalive),
+    });
+    const saved = data.address || {};
+    const index = Number.parseInt(card.dataset.customerAddressIndex, 10);
+    if (Number.isFinite(index) && state.selectedCustomerAddresses[index]) {
+      state.selectedCustomerAddresses[index] = {
+        ...state.selectedCustomerAddresses[index],
+        ...saved,
+        ...customerAddressFields(saved),
+      };
+    }
+    const nextSavedAddressId = saved.saved_address_id || saved.address_row_id || savedAddressId || '';
+    els.customerAddressesBody?.querySelectorAll(`[data-customer-address-card][data-customer-address-index="${index}"]`).forEach((matchingCard) => {
+      matchingCard.dataset.savedAddressId = nextSavedAddressId;
+      if (matchingCard === card || matchingCard.dataset.addressDirty === 'true') return;
+      const fields = customerAddressFields(saved);
+      Object.entries(fields).forEach(([field, value]) => {
+        const input = matchingCard.querySelector(`[data-customer-address-field="${field}"]`);
+        if (input) input.value = value || '';
+      });
+      matchingCard.dataset.savedSignature = customerAddressSignature(customerAddressPayloadFromCard(matchingCard));
+    });
+    card.dataset.savedAddressId = nextSavedAddressId;
+    card.dataset.savedSignature = customerAddressSignature(customerAddressPayloadFromCard(card));
+    delete card.dataset.addressDirty;
+  }
+
+  function openAddCustomerAddressModal() {
+    const modal = ensureAddCustomerAddressModal();
+    const form = modal.querySelector('form');
+    form?.reset();
+    const invoice = form?.querySelector('[name="use_for_invoice"]');
+    const delivery = form?.querySelector('[name="use_for_delivery"]');
+    if (invoice) invoice.checked = true;
+    if (delivery) delivery.checked = true;
+    const status = modal.querySelector('.db-add-address-status');
+    if (status) status.textContent = '';
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open', 'db-add-address-open');
+    window.requestAnimationFrame(() => form?.querySelector('[data-customer-address-field="address_line1"]')?.focus());
+  }
+
+  function ensureAddCustomerAddressModal() {
+    let modal = document.getElementById('db-add-address-modal');
+    if (modal) return modal;
+
+    modal = document.createElement('div');
+    modal.id = 'db-add-address-modal';
+    modal.className = 'db-add-address-modal';
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    modal.innerHTML = `
+      <form class="db-add-address-shell" aria-labelledby="db-add-address-title">
+        <div class="db-add-address-title" id="db-add-address-title">Add Address</div>
+        <div class="db-add-address-role-row">
+          <label><input type="checkbox" name="use_for_invoice" checked> Invoice address</label>
+          <label><input type="checkbox" name="use_for_delivery" checked> Delivery address</label>
+        </div>
+        <div class="db-add-address-fields">
+          ${customerAddressInputRow('Address 1:', '', 'address_line1')}
+          ${customerAddressInputRow('Address 2:', '', 'address_line2')}
+          ${customerAddressInputRow('Address 3:', '', 'address_line3')}
+          ${customerAddressInputRow('Address 4:', '', 'address_line4')}
+          ${customerAddressInputRow('Address 5:', '', 'address_line5')}
+          ${customerAddressInputRow('Postcode:', '', 'postcode', 'postcode')}
+          ${customerAddressInputRow('Tel:', '', 'phone', 'tel')}
+          ${customerAddressInputRow('Fax:', '', 'fax', 'tel')}
+        </div>
+        <div class="db-add-address-status" aria-live="polite"></div>
+        <div class="db-add-address-actions">
+          <button type="submit">Add Address</button>
+          <button type="button" data-db-add-address-cancel>Cancel</button>
+        </div>
+      </form>
+    `;
+    modal.addEventListener('click', (event) => {
+      if (event.target === modal || event.target.closest('[data-db-add-address-cancel]')) {
+        closeAddCustomerAddressModal();
+      }
+    });
+    modal.querySelector('form')?.addEventListener('submit', submitNewCustomerAddress);
+    document.body.appendChild(modal);
+    return modal;
+  }
+
+  async function submitNewCustomerAddress(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const modal = form.closest('.db-add-address-modal');
+    const status = modal?.querySelector('.db-add-address-status');
+    const customerKey = state.selectedCustomerDetail?.customer_key;
+    if (!customerKey || form.dataset.submitting === 'true') return;
+
+    const fields = customerAddressPanelFields(form);
+    const payload = {
+      ...fields,
+      use_for_invoice: Boolean(form.elements.use_for_invoice.checked),
+      use_for_delivery: Boolean(form.elements.use_for_delivery.checked),
+      is_default_invoice: false,
+      is_default_delivery: false,
+    };
+    if (!payload.address_line1) {
+      if (status) status.textContent = 'Address 1 is required';
+      return;
+    }
+    if (!payload.use_for_invoice && !payload.use_for_delivery) {
+      if (status) status.textContent = 'Choose Invoice address, Delivery address, or both';
+      return;
+    }
+
+    form.dataset.submitting = 'true';
+    form.querySelectorAll('button').forEach((button) => { button.disabled = true; });
+    if (status) status.textContent = 'Adding address...';
+    try {
+      const data = await fetchJson(`/api/database/customers/${encodeURIComponent(customerKey)}/addresses`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (data.address) state.selectedCustomerAddresses = [...state.selectedCustomerAddresses, data.address];
+      closeAddCustomerAddressModal();
+      renderCustomerAddresses();
+    } catch (err) {
+      if (status) status.textContent = err.message || 'Failed to add address';
+    } finally {
+      delete form.dataset.submitting;
+      form.querySelectorAll('button').forEach((button) => { button.disabled = false; });
+    }
+  }
+
+  function closeAddCustomerAddressModal() {
+    const modal = document.getElementById('db-add-address-modal');
+    if (!modal || modal.hidden) return;
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('modal-open', 'db-add-address-open');
   }
 
   function updateCustomerHeaderFields() {
@@ -5559,20 +5766,25 @@
     renderCustomerHeaderStats();
   }
 
-  function collectCustomerAddressPayloadFromDom() {
-    return ['invoice', 'delivery'].reduce((payload, role) => {
-      const panel = els.customerAddressesBody?.querySelector(`[data-customer-address-role="${role}"]`);
-      const fields = customerAddressPanelFields(panel);
-      payload[`${role}_address_line1`] = fields.address_line1;
-      payload[`${role}_address_line2`] = fields.address_line2;
-      payload[`${role}_address_line3`] = fields.address_line3;
-      payload[`${role}_address_line4`] = fields.address_line4;
-      payload[`${role}_address_line5`] = fields.address_line5;
-      payload[`${role}_postcode`] = fields.postcode;
-      payload[`${role}_phone`] = fields.phone;
-      payload[`${role}_fax`] = fields.fax;
-      return payload;
-    }, {});
+  function customerAddressPayloadFromCard(card) {
+    const fields = customerAddressPanelFields(card);
+    const index = Number.parseInt(card?.dataset.customerAddressIndex, 10);
+    const address = Number.isFinite(index) ? state.selectedCustomerAddresses[index] || {} : {};
+    const type = String(address.address_type || '').toLowerCase();
+    const role = card?.dataset.customerAddressRole === 'delivery' ? 'delivery' : 'invoice';
+    const useForInvoice = type.includes('invoice') || type.includes('inv') || role === 'invoice';
+    const useForDelivery = type.includes('delivery') || type.includes('deliver') || role === 'delivery';
+    return {
+      ...fields,
+      use_for_invoice: useForInvoice,
+      use_for_delivery: useForDelivery,
+      is_default_invoice: Boolean(
+        els.customerAddressesBody?.querySelector(`[data-customer-address-card][data-customer-address-index="${index}"] [data-customer-address-default="invoice"]:checked`)
+      ),
+      is_default_delivery: Boolean(
+        els.customerAddressesBody?.querySelector(`[data-customer-address-card][data-customer-address-index="${index}"] [data-customer-address-default="delivery"]:checked`)
+      ),
+    };
   }
 
   function customerAddressPanelFields(panel) {
@@ -7301,7 +7513,7 @@
       <div class="db-details-layout">
         <div class="db-detail-box db-customer-box">
           ${detailRow('Customer:', `${customerOpenButton(job)}<input class="db-legacy-input db-code-input" readonly value="${escapeAttr(job.customer_code || '')}">`)}
-          ${detailRow('Contact:', inputBox(job.contact_name))}
+          ${detailRow('Contact:', orderContactSelect(job))}
           ${detailRow('Order type:', orderTypeSelect(job))}
           ${detailRow('Taken by:', inputBox(takenByLabel(job)))}
           ${detailRow('Delivery:', inputBox(job.delivery_method))}
@@ -7472,6 +7684,10 @@
     }
     if (event.target?.matches?.('[data-db-invoice-required]')) {
       saveInvoiceRequiredSelection(event.target);
+      return;
+    }
+    if (event.target?.matches?.('[data-db-contact-select]')) {
+      saveOrderContactSelection(event.target);
       return;
     }
     if (event.target?.matches?.('[data-db-address-select]')) {
@@ -8420,16 +8636,16 @@
     if (!state.selectedJob?.source_order_id && !state.selectedJob?.order_no) return;
 
     const documentType = databaseDocumentType(type);
-    if (documentType === 'invoice' && !isJobInvoiceStatusEligible(state.selectedJob)) {
+    const existingInvoicePreview = documentType === 'invoice' && state.selectedJob?.invoice_no;
+    if (documentType === 'invoice' && !existingInvoicePreview && !isJobInvoiceStatusEligible(state.selectedJob)) {
       openInvoiceCompletionModal();
       return;
     }
 
-    const existingInvoicePreview = documentType === 'invoice' && options.skipInvoiceMark && state.selectedJob?.invoice_no;
     if (documentType === 'invoice' && invoiceNotRequired(state.selectedJob) && !existingInvoicePreview) return;
 
     let generatedAt = new Date();
-    if (documentType === 'invoice' && options.skipInvoiceMark) {
+    if (existingInvoicePreview) {
       generatedAt = validDateOrNow(
         state.selectedJob?.invoice_date
         || state.selectedJob?.complete_date
@@ -13106,6 +13322,66 @@
         data-address-choices="${escapeAttr(JSON.stringify(addresses))}"
       >${options.join('')}</select>
     `;
+  }
+
+  function orderContactSelect(job) {
+    const contacts = dedupeContacts([
+      ...(state.orderCustomerDetail?.contacts || []).map(normalizeCustomerContact),
+      normalizeCustomerContact(job || {}),
+    ].filter((contact) => contact.contact_name || contact.contact_email || contact.contact_phone || contact.contact_mobile));
+    const selectedIndex = contacts.findIndex((contact) => (
+      (contact.contact_id && Number(contact.contact_id) === Number(job?.contact_id))
+      || (
+        normalizeOrderAckText(contact.contact_name) === normalizeOrderAckText(job?.contact_name)
+        && normalizeOrderAckText(contact.contact_email) === normalizeOrderAckText(job?.contact_email)
+      )
+    ));
+    return `
+      <select
+        class="db-contact-select"
+        data-db-contact-select="true"
+        data-contact-choices="${escapeAttr(JSON.stringify(contacts))}"
+      >
+        ${contacts.map((contact, index) => `
+          <option value="${escapeAttr(index)}" data-contact-index="${escapeAttr(index)}" ${index === selectedIndex ? 'selected' : ''}>
+            ${escapeHtml(contactOptionLabel(contact))}
+          </option>
+        `).join('')}
+      </select>
+    `;
+  }
+
+  async function saveOrderContactSelection(select) {
+    if (!select || select.dataset.contactSaving === 'true') return;
+    const sourceOrderId = Number(state.selectedJob?.source_order_id);
+    const contact = selectedContactFromSelect(select);
+    if (!Number.isFinite(sourceOrderId) || !contact) return;
+
+    select.dataset.contactSaving = 'true';
+    select.disabled = true;
+    try {
+      const data = await fetchJson(`/api/database/jobs/${encodeURIComponent(sourceOrderId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contact_id: contact.contact_id || null,
+          contact_name: contact.contact_name || '',
+          contact_phone: contact.contact_phone || '',
+          contact_mobile: contact.contact_mobile || '',
+          contact_email: contact.contact_email || '',
+        }),
+      });
+      state.selectedJob = { ...state.selectedJob, ...data.job };
+      updateOutstandingJob(state.selectedJob);
+      state.jobLastSavedSignature = jobSignature(state.selectedJob);
+      renderOutstandingOrders();
+    } catch (err) {
+      window.alert(`Failed to update contact: ${err.message || 'Unknown error'}`);
+      renderDetailsPanel();
+    } finally {
+      delete select.dataset.contactSaving;
+      if (select.isConnected) select.disabled = false;
+    }
   }
 
   function selectBox(value, className = '') {

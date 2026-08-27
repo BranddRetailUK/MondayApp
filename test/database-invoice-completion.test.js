@@ -102,7 +102,7 @@ test('invoice UI blocks the request and PDF modal behind the requested Okay mess
 
   assert.match(
     flow,
-    /if \(documentType === 'invoice' && !isJobInvoiceStatusEligible\(state\.selectedJob\)\) \{\s+openInvoiceCompletionModal\(\);\s+return;\s+\}/
+    /if \(documentType === 'invoice' && !existingInvoicePreview && !isJobInvoiceStatusEligible\(state\.selectedJob\)\) \{\s+openInvoiceCompletionModal\(\);\s+return;\s+\}/
   );
   assert.ok(
     flow.indexOf('isJobInvoiceStatusEligible') < flow.indexOf('markSelectedJobInvoiced'),
@@ -118,6 +118,24 @@ test('invoice UI blocks the request and PDF modal behind the requested Okay mess
   );
   assert.match(database, /This job is not yet completed/);
   assert.match(database, /data-db-invoice-completion-okay>Okay<\/button>/);
+});
+
+test('invoice UI opens an existing legacy invoice without requiring a dashboard completion state', () => {
+  const database = fs.readFileSync(
+    path.join(__dirname, '..', 'public', 'database.js'),
+    'utf8'
+  );
+  const flow = sourceFunction(database, 'async function openDatabaseDocument', 'function openOutstandingReportDocument');
+
+  assert.match(
+    flow,
+    /const existingInvoicePreview = documentType === 'invoice' && state\.selectedJob\?\.invoice_no;/
+  );
+  assert.match(flow, /documentType === 'invoice' && !existingInvoicePreview && !isJobInvoiceStatusEligible/);
+  assert.match(
+    flow,
+    /if \(existingInvoicePreview\)[\s\S]*state\.selectedJob\?\.invoice_date[\s\S]*state\.selectedJob\?\.complete_date/
+  );
 });
 
 test('invoice UI immediately removes invoiced Business Gifts from Open Orders', () => {

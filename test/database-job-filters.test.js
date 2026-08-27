@@ -11,6 +11,10 @@ test('All Jobs search uses the real imported address columns', () => {
   assert.match(filters.whereSql, /a_search\.address_line1 ILIKE \$1/);
   assert.match(filters.whereSql, /a_search\.address_line5 ILIKE \$1/);
   assert.match(filters.whereSql, /a_search\.postcode ILIKE \$1/);
+  assert.match(filters.whereSql, /sa_search\.address_line1 ILIKE \$1/);
+  assert.match(filters.whereSql, /sa_search\.address_line5 ILIKE \$1/);
+  assert.match(filters.whereSql, /sa_search\.postcode ILIKE \$1/);
+  assert.match(filters.whereSql, /FROM database_customer_saved_addresses sa_search/);
   assert.doesNotMatch(filters.whereSql, /a_search\.address ILIKE/);
 });
 

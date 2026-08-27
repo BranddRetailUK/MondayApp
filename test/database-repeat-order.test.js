@@ -36,6 +36,7 @@ test('Repeat Order copies every line type with blank quantities and resets job w
   assert.equal(repeatedJobFields.get('proof_approved'), 'FALSE');
   assert.equal(repeatedJobFields.get('proof_approved_at'), 'NULL');
   assert.equal(repeatedJobFields.get('order_date'), 'CURRENT_TIMESTAMP');
+  assert.equal(repeatedJobFields.get('delivery_date'), "CURRENT_TIMESTAMP + INTERVAL '14 days'");
 
   const lineInsert = result.queries.find(query => query.includes('INSERT INTO database_job_line_items'));
   assert.ok(lineInsert, 'expected line items to be copied for Yes');

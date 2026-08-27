@@ -19,4 +19,16 @@ test('customer orders have a customer-scoped bottom search and latest orders ope
   assert.match(script, /--db-customers-latest-order-width/);
   assert.match(styles, /#db-customers-table th:nth-child\(3\)\s*\{[\s\S]+--db-customers-latest-order-width/);
   assert.match(styles, /#db-customer-orders-panel\.active\s*\{[\s\S]+flex-direction:column/);
+  assert.doesNotMatch(
+    html.match(/id="db-customer-orders-table"[\s\S]*?<\/table>/)?.[0] || '',
+    /Taken by:/
+  );
+  assert.match(styles, /#db-customer-orders-table th:nth-child\(3\)\{width:58px\}/);
+  assert.match(styles, /\.db-customer-job-title-cell\{\s*min-width:220px;/);
+  assert.match(script, /formatDate\(order\.invoice_date \|\| order\.complete_date, 'long'\)/);
+  assert.match(script, /function orderContactSelect[\s\S]*state\.orderCustomerDetail\?\.contacts/);
+  assert.match(script, /data-db-contact-select/);
+  assert.match(script, /function renderCustomerAddressColumn/);
+  assert.match(script, />Add Address<\/button>/);
+  assert.match(script, /data-customer-address-default/);
 });

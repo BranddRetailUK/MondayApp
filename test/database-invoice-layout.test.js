@@ -80,6 +80,14 @@ test('order acknowledgements exclude internal lines from items and totals', () =
   );
 });
 
+test('order acknowledgement totals align their value boxes below the Total column', () => {
+  assert.match(
+    styles,
+    /\.db-order-ack-summary-row\{\s*display:grid;\s*grid-template-columns:1fr 22mm 37mm;/
+  );
+  assert.match(styles, /\.db-order-ack-items th:nth-child\(4\)/);
+});
+
 test('delivery note recipient addresses use stacked lines without changing invoice delivery metadata', () => {
   const deliveryNoteRenderer = sourceFunction(
     database,

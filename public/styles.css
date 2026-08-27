@@ -4752,16 +4752,18 @@ body.modal-open{overflow:hidden}
 #db-customers-table th:nth-child(8){width:58px;text-align:center}
 #db-customers-table td:nth-child(8){text-align:center}
 #db-customer-orders-table th:nth-child(2){width:58px}
-#db-customer-orders-table th:nth-child(3){width:88px}
+#db-customer-orders-table th:nth-child(3){width:58px}
 #db-customer-orders-table th:nth-child(4){width:118px}
 #db-customer-orders-table th:nth-child(5){width:32px;text-align:center}
-#db-customer-orders-table th:nth-child(6){width:122px}
-#db-customer-orders-table th:nth-child(7){width:auto}
-#db-customer-orders-table th:nth-child(8){width:68px}
+#db-customer-orders-table th:nth-child(6){width:110px}
+#db-customer-orders-table th:nth-child(7){width:auto;min-width:220px}
+#db-customer-orders-table th:nth-child(8){width:82px}
 #db-customer-orders-table th:nth-child(9){width:82px}
-#db-customer-orders-table th:nth-child(10){width:82px}
-#db-customer-orders-table th:nth-child(11){width:90px}
+#db-customer-orders-table th:nth-child(10){width:90px}
 #db-customer-orders-table td:nth-child(5){text-align:center}
+.db-customer-job-title-cell{
+  min-width:220px;
+}
 .db-repeat-order-cell{
   text-align:right;
   white-space:nowrap;
@@ -5546,7 +5548,7 @@ body.modal-open{overflow:hidden}
 }
 .db-order-ack-summary-row{
   display:grid;
-  grid-template-columns:1fr 37mm;
+  grid-template-columns:1fr 22mm 37mm;
   break-inside:avoid;
   page-break-inside:avoid;
 }
@@ -6639,25 +6641,60 @@ body.modal-open{overflow:hidden}
   height:37px;
 }
 .db-customer-addresses-layout{
-  position:relative;
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) 170px;
+  gap:18px;
   height:100%;
 }
 .db-customer-address-columns{
   display:grid;
   grid-template-columns:1fr 1fr;
-  gap:36px;
-  padding:26px 34px 0;
+  gap:12px;
+  min-width:0;
 }
-.db-customer-address-box h3{
+.db-customer-address-column{
+  display:flex;
+  min-width:0;
+  min-height:0;
+  flex-direction:column;
+}
+.db-customer-address-column h3{
   margin:0 0 5px;
   color:#000;
   font:12px Arial, Helvetica, sans-serif;
 }
-.db-customer-address-inner{
-  height:214px;
+.db-customer-address-cards-scroll{
+  flex:1 1 auto;
+  min-height:0;
+  padding:8px;
+  overflow-y:auto;
+  overflow-x:hidden;
   border:1px solid #000;
   background:#c6def5;
-  padding:17px 14px 8px;
+}
+.db-customer-address-card{
+  margin-bottom:10px;
+  padding:7px 10px 9px;
+  border:1px solid #000;
+  background:#c6def5;
+}
+.db-customer-address-card:last-child{
+  margin-bottom:0;
+}
+.db-customer-address-default{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:5px;
+  min-height:20px;
+  margin-bottom:2px;
+  color:#000;
+  font:12px Arial, Helvetica, sans-serif;
+}
+.db-customer-address-default input{
+  width:14px;
+  height:14px;
+  margin:0;
 }
 .db-customer-address-row{
   display:grid;
@@ -6692,6 +6729,81 @@ body.modal-open{overflow:hidden}
 }
 .db-customer-address-row-tel input{
   width:170px;
+}
+.db-customer-address-actions-panel{
+  position:relative;
+  height:100%;
+}
+.db-address-add-button{
+  position:absolute;
+  left:0;
+  bottom:14px;
+  width:150px;
+  height:37px;
+}
+.db-add-address-modal{
+  position:fixed;
+  inset:0;
+  z-index:1250;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:rgba(0,0,0,.35);
+}
+.db-add-address-modal[hidden]{
+  display:none;
+}
+.db-add-address-shell{
+  width:430px;
+  border:2px outset #fff;
+  background:#e9e9e9;
+  color:#000;
+  font:12px Arial, Helvetica, sans-serif;
+  box-shadow:3px 4px 0 rgba(0,0,0,.35);
+}
+.db-add-address-title{
+  padding:6px 8px;
+  background:#858585;
+  color:#fff;
+  font-weight:700;
+}
+.db-add-address-role-row{
+  display:flex;
+  justify-content:center;
+  gap:28px;
+  padding:12px 14px 5px;
+}
+.db-add-address-role-row label{
+  display:flex;
+  align-items:center;
+  gap:5px;
+}
+.db-add-address-fields{
+  padding:7px 30px;
+}
+.db-add-address-fields .db-customer-address-row{
+  grid-template-columns:86px minmax(0, 1fr);
+}
+.db-add-address-status{
+  min-height:17px;
+  padding:0 18px;
+  color:#d00000;
+  text-align:center;
+}
+.db-add-address-actions{
+  display:flex;
+  justify-content:center;
+  gap:12px;
+  padding:7px 12px 13px;
+}
+.db-add-address-actions button{
+  min-width:94px;
+  height:24px;
+  border:2px outset #fff;
+  border-radius:0;
+  background:#eee;
+  color:#000;
+  font:12px Arial, Helvetica, sans-serif;
 }
 .db-panel-message{
   padding:24px;
@@ -8476,13 +8588,25 @@ input.db-custom-line-input{
     gap:3px;
     margin-bottom:7px;
   }
+  .db-customer-addresses-layout,
   .db-customer-address-columns{
     grid-template-columns:1fr;
     gap:12px;
     padding:0;
   }
-  .db-customer-address-inner{
+  .db-customer-address-cards-scroll{
     height:auto;
+    max-height:none;
+    overflow:visible;
+  }
+  .db-customer-address-actions-panel{
+    height:auto;
+    min-height:48px;
+  }
+  .db-address-add-button{
+    position:static;
+    width:100%;
+    height:36px;
   }
   .db-customer-address-row{
     grid-template-columns:86px minmax(0, 1fr);
@@ -8490,6 +8614,11 @@ input.db-custom-line-input{
   .db-customer-address-row-postcode input,
   .db-customer-address-row-tel input{
     width:100%;
+  }
+  .db-add-address-shell{
+    width:min(430px, calc(100vw - 24px));
+    max-height:calc(100vh - 24px);
+    overflow:auto;
   }
 
   /* Mobile DATABASE app shell: one page scroller, touch controls, and card lists. */

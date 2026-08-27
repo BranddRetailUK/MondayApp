@@ -35,6 +35,14 @@ function buildJobFilters(query = {}) {
       OR a_search.address_line5 ILIKE ${ref}
       OR a_search.postcode ILIKE ${ref}
     )`;
+    const savedAddressSearchSql = `(
+      sa_search.address_line1 ILIKE ${ref}
+      OR sa_search.address_line2 ILIKE ${ref}
+      OR sa_search.address_line3 ILIKE ${ref}
+      OR sa_search.address_line4 ILIKE ${ref}
+      OR sa_search.address_line5 ILIKE ${ref}
+      OR sa_search.postcode ILIKE ${ref}
+    )`;
     const contactSearchSql = `(
       c_search.contact_name ILIKE ${ref}
       OR c_search.contact_first_name ILIKE ${ref}
@@ -93,6 +101,18 @@ function buildJobFilters(query = {}) {
         FROM database_customer_addresses a_search
         WHERE a_search.source_address_id IS NOT NULL
           AND ${addressSearchSql}
+      )
+      OR j.customer_id IN (
+        SELECT sa_search.customer_id
+        FROM database_customer_saved_addresses sa_search
+        WHERE sa_search.customer_id IS NOT NULL
+          AND ${savedAddressSearchSql}
+      )
+      OR LOWER(j.customer_name) IN (
+        SELECT LOWER(sa_search.customer_name)
+        FROM database_customer_saved_addresses sa_search
+        WHERE NULLIF(BTRIM(sa_search.customer_name), '') IS NOT NULL
+          AND ${savedAddressSearchSql}
       )
       OR j.customer_id IN (
         SELECT c_search.customer_id

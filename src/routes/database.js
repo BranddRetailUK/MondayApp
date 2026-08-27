@@ -2805,13 +2805,23 @@ router.get('/api/database/customers/:key', async (req, res) => {
       customer_name: overviewCustomerName,
     };
 
-    const [manualContactRows, designNumberRows, customerOverview] = await Promise.all([
+    const [manualContactRows, savedAddressRows, designNumberRows, customerOverview] = await Promise.all([
       fetchManualCustomerContacts(customerKey, profile, orders),
+      fetchSavedCustomerAddresses(customerKey, profile, orders),
       fetchCustomerDesignNumbers(orders),
       fetchCustomerOverview(pool, overviewCustomer),
     ]);
 
-    res.json(buildCustomerDetail(customerKey, orders, addressRows, profile, manualContactRows, designNumberRows, customerOverview));
+    res.json(buildCustomerDetail(
+      customerKey,
+      orders,
+      addressRows,
+      profile,
+      manualContactRows,
+      designNumberRows,
+      customerOverview,
+      savedAddressRows
+    ));
   } catch (err) {
     console.error('GET /api/database/customers/:key', err);
     res.status(500).json({ error: 'Failed to fetch database customer detail' });
@@ -3072,6 +3082,174 @@ router.put('/api/database/customers/:key/addresses', async (req, res) => {
   } catch (err) {
     console.error('PUT /api/database/customers/:key/addresses', err);
     res.status(500).json({ error: 'Failed to update database customer addresses' });
+  }
+});
+
+router.post('/api/database/customers/:key/addresses', async (req, res) => {
+  const customerKey = parseCustomerKey(req.params.key);
+  if (!customerKey) {
+    return res.status(400).json({ error: 'Invalid customer key' });
+  }
+
+  const address = normalizedSavedCustomerAddress(req.body || {});
+  if (!address.hasAddress) {
+    return res.status(400).json({ error: 'Address 1 is required' });
+  }
+  if (!address.useForInvoice && !address.useForDelivery) {
+    return res.status(400).json({ error: 'Choose Invoice, Delivery, or both for this address' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const context = await resolveCustomerAddressContext(client, customerKey);
+    if (!context) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Database customer not found' });
+    }
+
+    const actorName = req.hubUser ? fullName(req.hubUser) : null;
+    const inserted = await client.query(
+      `INSERT INTO database_customer_saved_addresses (
+         customer_id,
+         profile_id,
+         customer_name,
+         use_for_invoice,
+         use_for_delivery,
+         is_default_invoice,
+         is_default_delivery,
+         address_line1,
+         address_line2,
+         address_line3,
+         address_line4,
+         address_line5,
+         postcode,
+         phone,
+         fax,
+         created_by_user_id,
+         created_by_name,
+         updated_by_user_id,
+         updated_by_name,
+         created_at_source,
+         updated_at_source,
+         imported_at
+       ) VALUES (
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$16,$17,NOW(),NOW(),NOW()
+       )
+       RETURNING *`,
+      [
+        context.customer_id,
+        context.profile_id,
+        context.customer_name,
+        address.useForInvoice,
+        address.useForDelivery,
+        address.isDefaultInvoice,
+        address.isDefaultDelivery,
+        address.line1,
+        address.line2,
+        address.line3,
+        address.line4,
+        address.line5,
+        address.postcode,
+        address.phone,
+        address.fax,
+        req.hubUser?.id || null,
+        actorName,
+      ]
+    );
+
+    await clearOtherSavedAddressDefaults(client, context, inserted.rows[0]);
+    await client.query('COMMIT');
+    return res.status(201).json({ address: savedCustomerAddressToAddress(inserted.rows[0]) });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('POST /api/database/customers/:key/addresses', err);
+    return res.status(500).json({ error: 'Failed to add database customer address' });
+  } finally {
+    client.release();
+  }
+});
+
+router.put('/api/database/customers/:key/addresses/:addressId', async (req, res) => {
+  const customerKey = parseCustomerKey(req.params.key);
+  const addressId = Number.parseInt(req.params.addressId, 10);
+  if (!customerKey || !Number.isFinite(addressId)) {
+    return res.status(400).json({ error: 'Invalid customer address' });
+  }
+
+  const address = normalizedSavedCustomerAddress(req.body || {});
+  if (!address.hasAddress) {
+    return res.status(400).json({ error: 'Address 1 is required' });
+  }
+  if (!address.useForInvoice && !address.useForDelivery) {
+    return res.status(400).json({ error: 'Choose Invoice, Delivery, or both for this address' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const context = await resolveCustomerAddressContext(client, customerKey);
+    if (!context) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Database customer not found' });
+    }
+    const scope = customerSavedAddressScopeClause(context, 16);
+    const actorName = req.hubUser ? fullName(req.hubUser) : null;
+    const updated = await client.query(
+      `UPDATE database_customer_saved_addresses
+       SET use_for_invoice = $2,
+           use_for_delivery = $3,
+           is_default_invoice = $4,
+           is_default_delivery = $5,
+           address_line1 = $6,
+           address_line2 = $7,
+           address_line3 = $8,
+           address_line4 = $9,
+           address_line5 = $10,
+           postcode = $11,
+           phone = $12,
+           fax = $13,
+           updated_by_user_id = $14,
+           updated_by_name = $15,
+           updated_at_source = NOW(),
+           imported_at = NOW()
+       WHERE id = $1
+         AND (${scope.clause})
+       RETURNING *`,
+      [
+        addressId,
+        address.useForInvoice,
+        address.useForDelivery,
+        address.isDefaultInvoice,
+        address.isDefaultDelivery,
+        address.line1,
+        address.line2,
+        address.line3,
+        address.line4,
+        address.line5,
+        address.postcode,
+        address.phone,
+        address.fax,
+        req.hubUser?.id || null,
+        actorName,
+        ...scope.params,
+      ]
+    );
+
+    if (!updated.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Database customer address not found' });
+    }
+
+    await clearOtherSavedAddressDefaults(client, context, updated.rows[0]);
+    await client.query('COMMIT');
+    return res.json({ address: savedCustomerAddressToAddress(updated.rows[0]) });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('PUT /api/database/customers/:key/addresses/:addressId', err);
+    return res.status(500).json({ error: 'Failed to update database customer address' });
+  } finally {
+    client.release();
   }
 });
 
@@ -3732,7 +3910,7 @@ router.post('/api/database/jobs/:id/repeat', async (req, res) => {
          FALSE,
          NULL,
          FALSE,
-         source.delivery_date,
+         CURRENT_TIMESTAMP + INTERVAL '14 days',
          TRUE,
          FALSE,
          FALSE,
@@ -6472,7 +6650,7 @@ async function latestCustomerOrderForKey(customerKey, profile = null) {
   return result.rows[0] || null;
 }
 
-function buildCustomerDetail(customerKey, orders, addressRows = [], profile = null, manualContactRows = [], designNumberRows = [], customerOverview = null) {
+function buildCustomerDetail(customerKey, orders, addressRows = [], profile = null, manualContactRows = [], designNumberRows = [], customerOverview = null, savedAddressRows = []) {
   const latest = orders[0] || {};
   const businessName = cleanNullable(profile?.customer_name) || firstNonEmpty(orders, 'customer_name');
   const customerId = isFiniteDatabaseValue(profile?.customer_id) ? Number(profile.customer_id) : firstFinite(orders, 'customer_id');
@@ -6501,7 +6679,7 @@ function buildCustomerDetail(customerKey, orders, addressRows = [], profile = nu
     },
     orders,
     contacts: groupedContacts(orders, profile, manualContactRows),
-    addresses: groupedAddresses(orders, addressRows, profile),
+    addresses: groupedAddresses(orders, addressRows, profile, savedAddressRows),
     designNumbers: designNumberRows,
     customerOverview,
   };
@@ -6575,6 +6753,22 @@ async function fetchManualCustomerContacts(customerKey, profile, orders) {
     params
   );
 
+  return result.rows;
+}
+
+async function fetchSavedCustomerAddresses(customerKey, profile, orders) {
+  const context = customerAddressContextFromRecords(customerKey, profile, orders);
+  const scope = customerSavedAddressScopeClause(context, 1);
+  if (!scope.clause) return [];
+
+  const result = await pool.query(
+    `SELECT *
+     FROM database_customer_saved_addresses
+     WHERE ${scope.clause}
+     ORDER BY COALESCE(updated_at_source, created_at_source) DESC NULLS LAST,
+              id DESC`,
+    scope.params
+  );
   return result.rows;
 }
 
@@ -6854,6 +7048,119 @@ async function resolveCustomerContactContext(customerKey) {
   };
 }
 
+function customerAddressContextFromRecords(customerKey, profile, orders = []) {
+  return {
+    profile_id: isFiniteDatabaseValue(profile?.id) ? Number(profile.id) : null,
+    customer_id: isFiniteDatabaseValue(profile?.customer_id)
+      ? Number(profile.customer_id)
+      : firstFinite(orders, 'customer_id'),
+    customer_name: cleanNullable(profile?.customer_name)
+      || firstNonEmpty(orders, 'customer_name')
+      || (customerKey?.type === 'name' ? customerKey.value : null),
+  };
+}
+
+async function resolveCustomerAddressContext(db, customerKey) {
+  if (!customerKey) return null;
+
+  if (customerKey.type === 'profile') {
+    const result = await db.query(
+      `SELECT id, customer_id, customer_name
+       FROM database_customer_profiles
+       WHERE id = $1
+       LIMIT 1`,
+      [customerKey.value]
+    );
+    if (!result.rowCount) return null;
+    return {
+      profile_id: Number(result.rows[0].id),
+      customer_id: isFiniteDatabaseValue(result.rows[0].customer_id) ? Number(result.rows[0].customer_id) : null,
+      customer_name: result.rows[0].customer_name,
+    };
+  }
+
+  const profileWhere = customerKey.type === 'id'
+    ? 'customer_id = $1'
+    : 'LOWER(customer_name) = LOWER($1)';
+  const profileResult = await db.query(
+    `SELECT id, customer_id, customer_name
+     FROM database_customer_profiles
+     WHERE ${profileWhere}
+     ORDER BY updated_at_source DESC NULLS LAST, id DESC
+     LIMIT 1`,
+    [customerKey.value]
+  );
+  if (profileResult.rowCount) {
+    return {
+      profile_id: Number(profileResult.rows[0].id),
+      customer_id: isFiniteDatabaseValue(profileResult.rows[0].customer_id) ? Number(profileResult.rows[0].customer_id) : null,
+      customer_name: profileResult.rows[0].customer_name,
+    };
+  }
+
+  const jobWhere = customerKey.type === 'id'
+    ? 'customer_id = $1'
+    : 'LOWER(customer_name) = LOWER($1)';
+  const jobResult = await db.query(
+    `SELECT customer_id, customer_name
+     FROM database_jobs
+     WHERE ${jobWhere}
+       AND NULLIF(BTRIM(customer_name), '') IS NOT NULL
+     ORDER BY COALESCE(order_date, updated_at_source, created_at_source) DESC NULLS LAST,
+              order_no DESC NULLS LAST
+     LIMIT 1`,
+    [customerKey.value]
+  );
+  if (!jobResult.rowCount) return null;
+  return {
+    profile_id: null,
+    customer_id: isFiniteDatabaseValue(jobResult.rows[0].customer_id) ? Number(jobResult.rows[0].customer_id) : null,
+    customer_name: jobResult.rows[0].customer_name,
+  };
+}
+
+function customerSavedAddressScopeClause(context, startIndex) {
+  const clauses = [];
+  const params = [];
+
+  if (isFiniteDatabaseValue(context?.profile_id)) {
+    params.push(Number(context.profile_id));
+    clauses.push(`profile_id = $${startIndex + params.length - 1}`);
+  }
+  if (isFiniteDatabaseValue(context?.customer_id)) {
+    params.push(Number(context.customer_id));
+    clauses.push(`customer_id = $${startIndex + params.length - 1}`);
+  }
+  const customerName = cleanNullable(context?.customer_name);
+  if (customerName) {
+    params.push(customerName);
+    clauses.push(`LOWER(customer_name) = LOWER($${startIndex + params.length - 1})`);
+  }
+
+  return { clause: clauses.join(' OR '), params };
+}
+
+async function clearOtherSavedAddressDefaults(db, context, savedAddress) {
+  const defaults = [
+    ['is_default_invoice', savedAddress.is_default_invoice],
+    ['is_default_delivery', savedAddress.is_default_delivery],
+  ];
+  for (const [column, enabled] of defaults) {
+    if (!enabled) continue;
+    const scope = customerSavedAddressScopeClause(context, 2);
+    await db.query(
+      `UPDATE database_customer_saved_addresses
+       SET ${column} = FALSE,
+           updated_at_source = NOW(),
+           imported_at = NOW()
+       WHERE id <> $1
+         AND ${column} IS TRUE
+         AND (${scope.clause})`,
+      [savedAddress.id, ...scope.params]
+    );
+  }
+}
+
 function contactScopeClause(context, startIndex) {
   const clauses = [];
   const params = [];
@@ -7020,8 +7327,12 @@ function groupedContacts(orders, profile = null, manualContactRows = []) {
   });
 }
 
-function groupedAddresses(orders, addressRows = [], profile = null) {
+function groupedAddresses(orders, addressRows = [], profile = null, savedAddressRows = []) {
   const addresses = new Map();
+
+  for (const address of savedAddressRows || []) {
+    addSavedCustomerAddress(addresses, address);
+  }
 
   if (profile) {
     addProfileAddress(addresses, profile, 'invoice');
@@ -7041,11 +7352,35 @@ function groupedAddresses(orders, addressRows = [], profile = null) {
     }
   }
 
-  return Array.from(addresses.values()).sort((a, b) => {
+  const savedInvoiceDefault = Array.from(addresses.values()).some((address) => address.is_default_invoice);
+  const savedDeliveryDefault = Array.from(addresses.values()).some((address) => address.is_default_delivery);
+  const profileInvoiceKey = normalizedAddressKey(customerProfileAddressFields(profile, 'invoice').address);
+  const profileDeliveryKey = normalizedAddressKey(customerProfileAddressFields(profile, 'delivery').address);
+
+  return Array.from(addresses.entries()).map(([key, address]) => ({
+    ...address,
+    is_default_invoice: Boolean(
+      address.is_default_invoice
+      || (!savedInvoiceDefault && profileInvoiceKey && key === profileInvoiceKey)
+    ),
+    is_default_delivery: Boolean(
+      address.is_default_delivery
+      || (!savedDeliveryDefault && profileDeliveryKey && key === profileDeliveryKey)
+    ),
+  })).sort((a, b) => {
+    const byDefault = Number(Boolean(b.is_default_invoice || b.is_default_delivery))
+      - Number(Boolean(a.is_default_invoice || a.is_default_delivery));
+    if (byDefault) return byDefault;
     const byDate = dateTime(b.last_seen_at) - dateTime(a.last_seen_at);
     if (byDate) return byDate;
     return a.address.localeCompare(b.address, 'en', { sensitivity: 'base' });
   });
+}
+
+function addSavedCustomerAddress(addresses, addressRow) {
+  const normalized = savedCustomerAddressToAddress(addressRow);
+  if (!normalized.address) return;
+  addresses.set(normalizedAddressKey(normalized.address), normalized);
 }
 
 function addProfileAddress(addresses, profile, role) {
@@ -7248,6 +7583,80 @@ function normalizedCustomerAddress(payload, prefix) {
     postcode: normalized.postcode,
     phone,
     fax,
+  };
+}
+
+function normalizedSavedCustomerAddress(payload) {
+  const normalized = normalizedUkPostcodeAddressParts(
+    [1, 2, 3, 4, 5].map((index) => cleanNullable(payload?.[`address_line${index}`])),
+    cleanNullable(payload?.postcode)
+  );
+  const type = cleanQuery(payload?.address_type).toLowerCase();
+  const useForInvoice = hasOwn(payload || {}, 'use_for_invoice')
+    ? toBoolean(payload.use_for_invoice)
+    : (type.includes('invoice') || type.includes('inv'));
+  const useForDelivery = hasOwn(payload || {}, 'use_for_delivery')
+    ? toBoolean(payload.use_for_delivery)
+    : (type.includes('delivery') || type.includes('deliver'));
+
+  return {
+    line1: normalized.lines[0],
+    line2: normalized.lines[1],
+    line3: normalized.lines[2],
+    line4: normalized.lines[3],
+    line5: normalized.lines[4],
+    postcode: normalized.postcode,
+    phone: cleanNullable(payload?.phone),
+    fax: cleanNullable(payload?.fax),
+    useForInvoice,
+    useForDelivery,
+    isDefaultInvoice: useForInvoice && toBoolean(payload?.is_default_invoice),
+    isDefaultDelivery: useForDelivery && toBoolean(payload?.is_default_delivery),
+    hasAddress: Boolean(normalized.lines[0]),
+  };
+}
+
+function savedCustomerAddressToAddress(address) {
+  const useForInvoice = Boolean(address?.use_for_invoice);
+  const useForDelivery = Boolean(address?.use_for_delivery);
+  const addressType = [
+    useForInvoice ? 'Invoice' : '',
+    useForDelivery ? 'Delivery' : '',
+  ].filter(Boolean).join(' / ') || 'Address';
+  const formatted = [
+    address?.address_line1,
+    address?.address_line2,
+    address?.address_line3,
+    address?.address_line4,
+    address?.address_line5,
+    address?.postcode,
+  ].map(cleanQuery).filter(Boolean).join(', ');
+
+  return {
+    saved_address_id: address?.id || null,
+    address_row_id: address?.id || null,
+    source_address_id: null,
+    address_type: addressType,
+    address: formatted,
+    address_line1: address?.address_line1 || null,
+    address_line2: address?.address_line2 || null,
+    address_line3: address?.address_line3 || null,
+    address_line4: address?.address_line4 || null,
+    address_line5: address?.address_line5 || null,
+    postcode: address?.postcode || null,
+    phone: address?.phone || null,
+    fax: address?.fax || null,
+    mobile: null,
+    is_default_invoice: Boolean(address?.is_default_invoice),
+    is_default_delivery: Boolean(address?.is_default_delivery),
+    created_at_source: address?.created_at_source || null,
+    updated_at_source: address?.updated_at_source || null,
+    updated_by: address?.updated_by_name || null,
+    latest_order_no: null,
+    latest_source_order_id: null,
+    order_count: 0,
+    first_seen_at: address?.created_at_source || null,
+    last_seen_at: address?.updated_at_source || address?.created_at_source || null,
   };
 }
 

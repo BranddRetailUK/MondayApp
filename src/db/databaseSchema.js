@@ -261,6 +261,57 @@ async function ensureDatabaseTables(db) {
   await db.query('ALTER TABLE database_customer_addresses ADD COLUMN IF NOT EXISTS imported_at TIMESTAMP NOT NULL DEFAULT NOW();');
 
   await db.query(`
+    CREATE TABLE IF NOT EXISTS database_customer_saved_addresses (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER,
+      profile_id INTEGER,
+      customer_name TEXT NOT NULL,
+      use_for_invoice BOOLEAN NOT NULL DEFAULT TRUE,
+      use_for_delivery BOOLEAN NOT NULL DEFAULT TRUE,
+      is_default_invoice BOOLEAN NOT NULL DEFAULT FALSE,
+      is_default_delivery BOOLEAN NOT NULL DEFAULT FALSE,
+      address_line1 TEXT,
+      address_line2 TEXT,
+      address_line3 TEXT,
+      address_line4 TEXT,
+      address_line5 TEXT,
+      postcode TEXT,
+      phone TEXT,
+      fax TEXT,
+      created_by_user_id INTEGER,
+      created_by_name TEXT,
+      updated_by_user_id INTEGER,
+      updated_by_name TEXT,
+      created_at_source TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at_source TIMESTAMP NOT NULL DEFAULT NOW(),
+      imported_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS customer_id INTEGER;');
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS profile_id INTEGER;');
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS customer_name TEXT;');
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS use_for_invoice BOOLEAN NOT NULL DEFAULT TRUE;');
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS use_for_delivery BOOLEAN NOT NULL DEFAULT TRUE;');
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS is_default_invoice BOOLEAN NOT NULL DEFAULT FALSE;');
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS is_default_delivery BOOLEAN NOT NULL DEFAULT FALSE;');
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS address_line1 TEXT;');
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS address_line2 TEXT;');
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS address_line3 TEXT;');
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS address_line4 TEXT;');
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS address_line5 TEXT;');
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS postcode TEXT;');
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS phone TEXT;');
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS fax TEXT;');
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS created_by_user_id INTEGER;');
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS created_by_name TEXT;');
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS updated_by_user_id INTEGER;');
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS updated_by_name TEXT;');
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS created_at_source TIMESTAMP NOT NULL DEFAULT NOW();');
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS updated_at_source TIMESTAMP NOT NULL DEFAULT NOW();');
+  await db.query('ALTER TABLE database_customer_saved_addresses ADD COLUMN IF NOT EXISTS imported_at TIMESTAMP NOT NULL DEFAULT NOW();');
+
+  await db.query(`
     CREATE TABLE IF NOT EXISTS database_job_line_items (
       id SERIAL PRIMARY KEY,
       source_order_item_id INTEGER NOT NULL UNIQUE,
@@ -609,6 +660,9 @@ async function ensureDatabaseTables(db) {
   await db.query('CREATE INDEX IF NOT EXISTS database_customer_contacts_name_idx ON database_customer_contacts(LOWER(customer_name));');
   await db.query('CREATE UNIQUE INDEX IF NOT EXISTS database_customer_addresses_source_address_idx ON database_customer_addresses(source_address_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_customer_addresses_customer_idx ON database_customer_addresses(customer_id);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_customer_saved_addresses_customer_idx ON database_customer_saved_addresses(customer_id);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_customer_saved_addresses_profile_idx ON database_customer_saved_addresses(profile_id);');
+  await db.query('CREATE INDEX IF NOT EXISTS database_customer_saved_addresses_name_idx ON database_customer_saved_addresses(LOWER(customer_name));');
   await db.query('CREATE INDEX IF NOT EXISTS database_job_line_items_order_idx ON database_job_line_items(source_order_id);');
   await db.query('CREATE INDEX IF NOT EXISTS database_job_line_items_sort_idx ON database_job_line_items(source_order_id, line_sort_order);');
   await db.query('CREATE INDEX IF NOT EXISTS database_job_line_items_ralawise_variant_idx ON database_job_line_items(ralawise_catalog_variant_id);');
