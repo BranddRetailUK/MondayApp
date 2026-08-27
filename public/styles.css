@@ -6642,11 +6642,13 @@ body.modal-open{overflow:hidden}
 }
 .db-customer-addresses-layout{
   display:grid;
-  grid-template-columns:minmax(0, 1fr) 170px;
+  grid-template-areas:"columns actions";
+  grid-template-columns:minmax(0, 1fr) 150px;
   gap:18px;
   height:100%;
 }
 .db-customer-address-columns{
+  grid-area:columns;
   display:grid;
   grid-template-columns:1fr 1fr;
   gap:12px;
@@ -6666,20 +6668,65 @@ body.modal-open{overflow:hidden}
 .db-customer-address-cards-scroll{
   flex:1 1 auto;
   min-height:0;
-  padding:8px;
+  padding:0 3px 3px 0;
   overflow-y:auto;
   overflow-x:hidden;
-  border:1px solid #000;
-  background:#c6def5;
 }
 .db-customer-address-card{
-  margin-bottom:10px;
-  padding:7px 10px 9px;
+  margin-bottom:8px;
+  padding:0;
   border:1px solid #000;
   background:#c6def5;
 }
 .db-customer-address-card:last-child{
   margin-bottom:0;
+}
+.db-customer-address-summary{
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) auto;
+  align-items:center;
+  gap:8px;
+  min-height:34px;
+  padding:5px 8px 5px 27px;
+  position:relative;
+  cursor:pointer;
+  color:#000;
+  font:12px Arial, Helvetica, sans-serif;
+  list-style:none;
+  background:#d9eafb;
+}
+.db-customer-address-summary::-webkit-details-marker{
+  display:none;
+}
+.db-customer-address-summary::before{
+  content:'\25B6';
+  position:absolute;
+  left:9px;
+  top:50%;
+  transform:translateY(-50%);
+  font-size:10px;
+}
+.db-customer-address-card[open] > .db-customer-address-summary{
+  border-bottom:1px solid #000;
+  background:#d0e4f7;
+  font-weight:700;
+}
+.db-customer-address-card[open] > .db-customer-address-summary::before{
+  content:'\25BC';
+}
+.db-customer-address-summary-text{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.db-customer-address-summary-default{
+  padding:2px 6px;
+  border:1px solid #737373;
+  background:#fff;
+  font-weight:400;
+}
+.db-customer-address-card-body{
+  padding:7px 10px 9px;
 }
 .db-customer-address-default{
   display:flex;
@@ -6731,14 +6778,12 @@ body.modal-open{overflow:hidden}
   width:170px;
 }
 .db-customer-address-actions-panel{
-  position:relative;
+  grid-area:actions;
+  padding-top:19px;
   height:100%;
 }
 .db-address-add-button{
-  position:absolute;
-  left:0;
-  bottom:14px;
-  width:150px;
+  width:100%;
   height:37px;
 }
 .db-add-address-modal{
@@ -8594,6 +8639,11 @@ input.db-custom-line-input{
     gap:12px;
     padding:0;
   }
+  .db-customer-addresses-layout{
+    grid-template-areas:
+      "actions"
+      "columns";
+  }
   .db-customer-address-cards-scroll{
     height:auto;
     max-height:none;
@@ -8601,7 +8651,8 @@ input.db-custom-line-input{
   }
   .db-customer-address-actions-panel{
     height:auto;
-    min-height:48px;
+    min-height:36px;
+    padding-top:0;
   }
   .db-address-add-button{
     position:static;

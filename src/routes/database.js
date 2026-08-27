@@ -7357,7 +7357,7 @@ function groupedAddresses(orders, addressRows = [], profile = null, savedAddress
   const profileInvoiceKey = normalizedAddressKey(customerProfileAddressFields(profile, 'invoice').address);
   const profileDeliveryKey = normalizedAddressKey(customerProfileAddressFields(profile, 'delivery').address);
 
-  return Array.from(addresses.entries()).map(([key, address]) => ({
+  const grouped = Array.from(addresses.entries()).map(([key, address]) => ({
     ...address,
     is_default_invoice: Boolean(
       address.is_default_invoice
@@ -7367,7 +7367,12 @@ function groupedAddresses(orders, addressRows = [], profile = null, savedAddress
       address.is_default_delivery
       || (!savedDeliveryDefault && profileDeliveryKey && key === profileDeliveryKey)
     ),
-  })).sort((a, b) => {
+  }));
+
+  ensureCustomerAddressDefault(grouped, 'invoice');
+  ensureCustomerAddressDefault(grouped, 'delivery');
+
+  return grouped.sort((a, b) => {
     const byDefault = Number(Boolean(b.is_default_invoice || b.is_default_delivery))
       - Number(Boolean(a.is_default_invoice || a.is_default_delivery));
     if (byDefault) return byDefault;
@@ -7375,6 +7380,26 @@ function groupedAddresses(orders, addressRows = [], profile = null, savedAddress
     if (byDate) return byDate;
     return a.address.localeCompare(b.address, 'en', { sensitivity: 'base' });
   });
+}
+
+function ensureCustomerAddressDefault(addresses, role) {
+  const defaultField = role === 'delivery' ? 'is_default_delivery' : 'is_default_invoice';
+  if ((addresses || []).some((address) => address[defaultField])) return;
+
+  const fallback = (addresses || [])
+    .filter((address) => customerAddressSupportsRole(address, role))
+    .sort((a, b) => {
+      const byDate = dateTime(b.last_seen_at) - dateTime(a.last_seen_at);
+      if (byDate) return byDate;
+      return cleanQuery(a.address).localeCompare(cleanQuery(b.address), 'en', { sensitivity: 'base' });
+    })[0];
+  if (fallback) fallback[defaultField] = true;
+}
+
+function customerAddressSupportsRole(address, role) {
+  const type = cleanQuery(address?.address_type).toLowerCase();
+  if (role === 'delivery') return type.includes('delivery') || type.includes('deliver');
+  return type.includes('invoice') || type.includes('inv');
 }
 
 function addSavedCustomerAddress(addresses, addressRow) {

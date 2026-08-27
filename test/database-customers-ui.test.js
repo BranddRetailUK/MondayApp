@@ -7,6 +7,7 @@ test('customer orders have a customer-scoped bottom search and latest orders ope
   const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(__dirname, '..', 'public', 'database.js'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
+  const routes = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'database.js'), 'utf8');
 
   assert.match(
     html,
@@ -31,4 +32,13 @@ test('customer orders have a customer-scoped bottom search and latest orders ope
   assert.match(script, /function renderCustomerAddressColumn/);
   assert.match(script, />Add Address<\/button>/);
   assert.match(script, /data-customer-address-default/);
+  assert.match(script, /renderCustomerAddressCard\(address, role, index, position === 0\)/);
+  assert.match(script, /<details[\s\S]+class="db-customer-address-card"[\s\S]+\$\{startsOpen \? 'open' : ''\}/);
+  assert.match(script, /customerAddressRerenderAfterSave = true/);
+  assert.match(script, /function customerAddressSummary/);
+  assert.match(script, /is_default_invoice:[\s\S]+!addresses\.some\(\(address\) => customerAddressHasRole\(address, 'invoice'\)\)/);
+  assert.match(routes, /function ensureCustomerAddressDefault/);
+  assert.match(styles, /grid-template-areas:"columns actions"/);
+  assert.match(styles, /\.db-customer-address-summary/);
+  assert.match(styles, /\.db-customer-address-card\[open\]/);
 });

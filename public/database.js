@@ -334,6 +334,7 @@
     customerAddressDirty: false,
     customerAddressSaving: false,
     customerAddressSaveQueued: false,
+    customerAddressRerenderAfterSave: false,
     customerAddressLastSavedSignature: '{}',
     customLineDraft: null,
     lineDeleteTarget: null,
@@ -5370,12 +5371,12 @@
   function renderCustomerAddresses() {
     const addresses = state.selectedCustomerAddresses || [];
     els.customerAddressesBody.innerHTML = `
+      <div class="db-customer-address-actions-panel">
+        <button class="db-toolbar-button db-address-add-button" type="button" data-db-action="add-address">Add Address</button>
+      </div>
       <div class="db-customer-address-columns">
         ${renderCustomerAddressColumn('Invoice addresses:', addresses, 'invoice')}
         ${renderCustomerAddressColumn('Delivery addresses:', addresses, 'delivery')}
-      </div>
-      <div class="db-customer-address-actions-panel">
-        <button class="db-toolbar-button db-address-add-button" type="button" data-db-action="add-address">Add Address</button>
       </div>
     `;
     hydrateCustomerAddressAutosaveSignature();
@@ -5394,7 +5395,9 @@
         <h3>${escapeHtml(title)}</h3>
         <div class="db-customer-address-cards-scroll">
           ${matching.length
-            ? matching.map(({ address, index }) => renderCustomerAddressCard(address, role, index)).join('')
+            ? matching.map(({ address, index }, position) => (
+              renderCustomerAddressCard(address, role, index, position === 0)
+            )).join('')
             : `<div class="db-panel-message">No ${escapeHtml(role)} addresses recorded</div>`}
         </div>
       </section>
@@ -5414,34 +5417,43 @@
       : truthy(address?.is_default_invoice);
   }
 
-  function renderCustomerAddressCard(address, role, index) {
+  function renderCustomerAddressCard(address, role, index, startsOpen = false) {
     const fields = customerAddressFields(address || {});
     const savedAddressId = address?.saved_address_id || address?.address_row_id || '';
+    const isDefault = customerAddressIsDefault(address, role);
+    const summary = customerAddressSummary(fields);
     return `
-      <article
+      <details
         class="db-customer-address-card"
         data-customer-address-card="true"
         data-customer-address-index="${escapeAttr(index)}"
         data-customer-address-role="${escapeAttr(role)}"
         data-saved-address-id="${escapeAttr(savedAddressId)}"
+        ${startsOpen ? 'open' : ''}
       >
-        <label class="db-customer-address-default">
-          <input
-            type="checkbox"
-            data-customer-address-default="${escapeAttr(role)}"
-            ${customerAddressIsDefault(address, role) ? 'checked' : ''}
-          >
-          <span>Set as default</span>
-        </label>
-        ${customerAddressInputRow('Address 1:', fields.address_line1, 'address_line1')}
-        ${customerAddressInputRow('Address 2:', fields.address_line2, 'address_line2')}
-        ${customerAddressInputRow('Address 3:', fields.address_line3, 'address_line3')}
-        ${customerAddressInputRow('Address 4:', fields.address_line4, 'address_line4')}
-        ${customerAddressInputRow('Address 5:', fields.address_line5, 'address_line5')}
-        ${customerAddressInputRow('Postcode:', fields.postcode, 'postcode', 'postcode')}
-        ${customerAddressInputRow('Tel:', fields.phone, 'phone', 'tel')}
-        ${customerAddressInputRow('Fax:', fields.fax, 'fax', 'tel')}
-      </article>
+        <summary class="db-customer-address-summary">
+          <span class="db-customer-address-summary-text" title="${escapeAttr(summary)}">${escapeHtml(summary)}</span>
+          ${isDefault ? '<span class="db-customer-address-summary-default">Default</span>' : ''}
+        </summary>
+        <div class="db-customer-address-card-body">
+          <label class="db-customer-address-default">
+            <input
+              type="checkbox"
+              data-customer-address-default="${escapeAttr(role)}"
+              ${isDefault ? 'checked' : ''}
+            >
+            <span>Set as default</span>
+          </label>
+          ${customerAddressInputRow('Address 1:', fields.address_line1, 'address_line1')}
+          ${customerAddressInputRow('Address 2:', fields.address_line2, 'address_line2')}
+          ${customerAddressInputRow('Address 3:', fields.address_line3, 'address_line3')}
+          ${customerAddressInputRow('Address 4:', fields.address_line4, 'address_line4')}
+          ${customerAddressInputRow('Address 5:', fields.address_line5, 'address_line5')}
+          ${customerAddressInputRow('Postcode:', fields.postcode, 'postcode', 'postcode')}
+          ${customerAddressInputRow('Tel:', fields.phone, 'phone', 'tel')}
+          ${customerAddressInputRow('Fax:', fields.fax, 'fax', 'tel')}
+        </div>
+      </details>
     `;
   }
 
@@ -5452,6 +5464,17 @@
         <input data-customer-address-field="${escapeAttr(field)}" value="${escapeAttr(value || '')}" autocomplete="off">
       </label>
     `;
+  }
+
+  function customerAddressSummary(fields) {
+    return [
+      fields?.address_line1,
+      fields?.address_line2,
+      fields?.address_line3,
+      fields?.address_line4,
+      fields?.address_line5,
+      fields?.postcode,
+    ].filter(Boolean).join(', ') || 'Address details';
   }
 
   function customerAddressFields(address) {
@@ -5476,6 +5499,7 @@
     state.customerAddressDirty = false;
     state.customerAddressSaving = false;
     state.customerAddressSaveQueued = false;
+    state.customerAddressRerenderAfterSave = false;
     state.customerAddressLastSavedSignature = '{}';
     els.customerAddressesBody?.querySelectorAll('[data-customer-address-card]').forEach((card) => {
       card.dataset.savedSignature = customerAddressSignature(customerAddressPayloadFromCard(card));
@@ -5489,6 +5513,7 @@
     state.customerAddressDirty = false;
     state.customerAddressSaving = false;
     state.customerAddressSaveQueued = false;
+    state.customerAddressRerenderAfterSave = false;
     state.customerAddressLastSavedSignature = '{}';
   }
 
@@ -5499,6 +5524,12 @@
     if (!card) return;
     card.dataset.addressDirty = 'true';
     state.customerAddressDirty = true;
+    const summary = customerAddressSummary(customerAddressPanelFields(card));
+    const summaryElement = card.querySelector('.db-customer-address-summary-text');
+    if (summaryElement) {
+      summaryElement.textContent = summary;
+      summaryElement.title = summary;
+    }
     els.customerAddressesBody?.classList.add('db-customer-addresses-dirty');
     els.customerAddressesBody?.classList.remove('db-customer-addresses-error');
     scheduleCustomerAddressAutosave();
@@ -5527,6 +5558,7 @@
     }
     card.dataset.addressDirty = 'true';
     state.customerAddressDirty = true;
+    state.customerAddressRerenderAfterSave = true;
     flushCustomerAddressAutosave();
   }
 
@@ -5598,6 +5630,9 @@
       if (state.customerAddressSaveQueued || state.customerAddressDirty) {
         state.customerAddressSaveQueued = false;
         scheduleCustomerAddressAutosave();
+      } else if (state.customerAddressRerenderAfterSave) {
+        state.customerAddressRerenderAfterSave = false;
+        renderCustomerAddresses();
       }
     }
   }
@@ -5715,12 +5750,19 @@
     if (!customerKey || form.dataset.submitting === 'true') return;
 
     const fields = customerAddressPanelFields(form);
+    const addresses = state.selectedCustomerAddresses || [];
     const payload = {
       ...fields,
       use_for_invoice: Boolean(form.elements.use_for_invoice.checked),
       use_for_delivery: Boolean(form.elements.use_for_delivery.checked),
-      is_default_invoice: false,
-      is_default_delivery: false,
+      is_default_invoice: Boolean(
+        form.elements.use_for_invoice.checked
+        && !addresses.some((address) => customerAddressHasRole(address, 'invoice'))
+      ),
+      is_default_delivery: Boolean(
+        form.elements.use_for_delivery.checked
+        && !addresses.some((address) => customerAddressHasRole(address, 'delivery'))
+      ),
     };
     if (!payload.address_line1) {
       if (status) status.textContent = 'Address 1 is required';
