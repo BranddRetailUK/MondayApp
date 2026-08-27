@@ -32,8 +32,9 @@ test('customer orders have a customer-scoped bottom search and latest orders ope
   assert.match(script, /function renderCustomerAddressColumn/);
   assert.match(script, />Add Address<\/button>/);
   assert.match(script, /data-customer-address-default/);
-  assert.match(script, /renderCustomerAddressCard\(address, role, index, position === 0\)/);
-  assert.match(script, /<details[\s\S]+class="db-customer-address-card"[\s\S]+\$\{startsOpen \? 'open' : ''\}/);
+  assert.match(script, /matching\.map\(\(\{ address, index \}\) => renderCustomerAddressCard\(address, role, index\)\)/);
+  assert.match(script, /<details[\s\S]+class="db-customer-address-card"/);
+  assert.doesNotMatch(script, /startsOpen \? 'open'/);
   assert.match(script, /customerAddressRerenderAfterSave = true/);
   assert.match(script, /function customerAddressSummary/);
   assert.match(script, /is_default_invoice:[\s\S]+!addresses\.some\(\(address\) => customerAddressHasRole\(address, 'invoice'\)\)/);

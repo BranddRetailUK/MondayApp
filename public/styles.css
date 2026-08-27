@@ -1356,6 +1356,33 @@ body{
   outline:2px solid rgba(255,255,255,.42);
   outline-offset:2px;
 }
+.test-dashboard-completion-block-warning-modal .test-dashboard-complete-confirm-shell{
+  display:flex;
+  flex-direction:column;
+  width:50vw;
+  min-height:50vh;
+}
+.test-dashboard-completion-block-warning-modal .test-dashboard-complete-confirm-title{
+  font-size:20px;
+}
+.test-dashboard-completion-block-warning-modal .test-dashboard-complete-confirm-message{
+  display:flex;
+  flex:1 1 auto;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  font-size:32px;
+  font-weight:900;
+}
+@media (max-width:720px){
+  .test-dashboard-completion-block-warning-modal .test-dashboard-complete-confirm-shell{
+    width:calc(100vw - 24px);
+    min-height:50vh;
+  }
+  .test-dashboard-completion-block-warning-modal .test-dashboard-complete-confirm-message{
+    font-size:24px;
+  }
+}
 .label-quantity-shell{
   width:min(380px, calc(100vw - 32px));
 }

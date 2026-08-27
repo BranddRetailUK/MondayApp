@@ -48,6 +48,10 @@ const {
   isAllowedVisualUploadMetadata,
 } = require('../services/testDashboardFileValidation');
 const {
+  DASHBOARD_COMPLETION_BLOCK_MESSAGE,
+  isDashboardCompletionBlocked,
+} = require('../services/dashboardCompletionGuard');
+const {
   AWAITING_APPROVAL_LABEL,
   STOCK_ORDERED_LABEL,
   PRE_PRODUCTION_LABEL,
@@ -331,6 +335,17 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
     }
     if (!EDITABLE_STATUS_TITLES.has(normalizeColumnTitle(column.title))) {
       return res.status(400).json({ error: 'Only Tuesday Dashboard STATUS and PRIORITY columns can be updated' });
+    }
+    if (isDashboardCompletionBlocked({
+      user: req.hubUser,
+      columnTitle: column.title,
+      label: requestedLabel,
+      clearRequested,
+    })) {
+      return res.status(403).json({
+        error: DASHBOARD_COMPLETION_BLOCK_MESSAGE,
+        code: 'dashboard_completed_status_blocked',
+      });
     }
 
     const state = privateJob ? job : await fetchJobState(sourceOrderId);

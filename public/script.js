@@ -44,6 +44,9 @@ const TEST_DASHBOARD_APPROVAL_REQUIREMENTS_MESSAGE = 'Please add design number a
 const TEST_DASHBOARD_SPLIT_TICKS_REQUIRED_MESSAGE = 'Tick both TRANS and JAQ before continuing.';
 const TEST_DASHBOARD_VISUAL_UPLOAD_ACCEPT = '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png';
 const TEST_DASHBOARD_VISUAL_UPLOAD_ERROR = 'The VISUAL column only accepts PDF, JPEG, and PNG files.';
+const DASHBOARD_COMPLETION_BLOCK_EMAILS = new Set(['melvyn@ultimatepromotions.co.uk']);
+const DASHBOARD_COMPLETION_BLOCK_NAMES = new Set(['ultimate production']);
+const DASHBOARD_COMPLETION_BLOCK_MESSAGE = 'LEAVE IT ALONE MELVYN';
 const DASHBOARD_ZOOM_MIN = 0.45;
 const DASHBOARD_ZOOM_MAX = 1;
 const HIDDEN_BOARD_COLUMN_TYPES = new Set(['subtasks']);
@@ -3048,6 +3051,14 @@ async function selectStatusOption(option) {
   const context = state.context || BOARD_CONTEXT_TEST;
   closeStatusDropdown();
 
+  if (shouldBlockDashboardCompletion(state, option)) {
+    showTestDashboardApprovalWarning(
+      DASHBOARD_COMPLETION_BLOCK_MESSAGE,
+      'Status blocked'
+    );
+    return;
+  }
+
   if (shouldBlockTestDashboardSplitReadyStatus(state, option)) {
     showTestDashboardApprovalWarning(
       TEST_DASHBOARD_SPLIT_TICKS_REQUIRED_MESSAGE,
@@ -3082,7 +3093,12 @@ async function selectStatusOption(option) {
   } catch (err) {
     console.warn('Status update failed', err);
     await loadBoardForContext(context, { forceRefresh: true });
-    if (isTestSplitTicksRequirementsMessage(err.message)) {
+    if (isDashboardCompletionBlockMessage(err.message)) {
+      showTestDashboardApprovalWarning(
+        DASHBOARD_COMPLETION_BLOCK_MESSAGE,
+        'Status blocked'
+      );
+    } else if (isTestSplitTicksRequirementsMessage(err.message)) {
       showTestDashboardApprovalWarning(
         TEST_DASHBOARD_SPLIT_TICKS_REQUIRED_MESSAGE,
         'Split job blocked'
@@ -3093,6 +3109,27 @@ async function selectStatusOption(option) {
   } finally {
     __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);
   }
+}
+
+function shouldBlockDashboardCompletion(state, option, user = window.ultimateHubUser) {
+  return isDashboardCompletionBlockedUser(user)
+    && state?.context === BOARD_CONTEXT_TEST
+    && normalizeColumnTitle(state.columnTitle) === 'STATUS'
+    && !option?.clear
+    && normalizeColumnTitle(option?.label) === 'COMPLETED';
+}
+
+function isDashboardCompletionBlockedUser(user) {
+  const email = String(user?.email || '').trim().toLowerCase();
+  const name = String(
+    user?.full_name || [user?.first_name, user?.last_name].filter(Boolean).join(' ')
+  ).trim().replace(/\s+/g, ' ').toLowerCase();
+  return DASHBOARD_COMPLETION_BLOCK_EMAILS.has(email)
+    || DASHBOARD_COMPLETION_BLOCK_NAMES.has(name);
+}
+
+function isDashboardCompletionBlockMessage(message) {
+  return String(message || '').trim().toUpperCase() === DASHBOARD_COMPLETION_BLOCK_MESSAGE;
 }
 
 function shouldBlockTestDashboardSplitReadyStatus(state, option) {
@@ -3221,6 +3258,10 @@ function showTestDashboardApprovalWarning(
   const modal = ensureTestDashboardApprovalWarningModal();
   const titleEl = modal.querySelector('.test-dashboard-complete-confirm-title');
   const messageEl = modal.querySelector('.test-dashboard-complete-confirm-message');
+  modal.classList.toggle(
+    'test-dashboard-completion-block-warning-modal',
+    message === DASHBOARD_COMPLETION_BLOCK_MESSAGE
+  );
   if (titleEl) titleEl.textContent = title;
   if (messageEl) messageEl.textContent = message;
   modal.hidden = false;
@@ -3275,6 +3316,7 @@ function closeTestDashboardApprovalWarning() {
   if (modal) {
     modal.hidden = true;
     modal.setAttribute('aria-hidden', 'true');
+    modal.classList.remove('test-dashboard-completion-block-warning-modal');
   }
   document.body.classList.remove('modal-open', 'test-dashboard-approval-warning-open');
 }

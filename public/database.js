@@ -5395,9 +5395,7 @@
         <h3>${escapeHtml(title)}</h3>
         <div class="db-customer-address-cards-scroll">
           ${matching.length
-            ? matching.map(({ address, index }, position) => (
-              renderCustomerAddressCard(address, role, index, position === 0)
-            )).join('')
+            ? matching.map(({ address, index }) => renderCustomerAddressCard(address, role, index)).join('')
             : `<div class="db-panel-message">No ${escapeHtml(role)} addresses recorded</div>`}
         </div>
       </section>
@@ -5417,7 +5415,7 @@
       : truthy(address?.is_default_invoice);
   }
 
-  function renderCustomerAddressCard(address, role, index, startsOpen = false) {
+  function renderCustomerAddressCard(address, role, index) {
     const fields = customerAddressFields(address || {});
     const savedAddressId = address?.saved_address_id || address?.address_row_id || '';
     const isDefault = customerAddressIsDefault(address, role);
@@ -5429,7 +5427,6 @@
         data-customer-address-index="${escapeAttr(index)}"
         data-customer-address-role="${escapeAttr(role)}"
         data-saved-address-id="${escapeAttr(savedAddressId)}"
-        ${startsOpen ? 'open' : ''}
       >
         <summary class="db-customer-address-summary">
           <span class="db-customer-address-summary-text" title="${escapeAttr(summary)}">${escapeHtml(summary)}</span>
