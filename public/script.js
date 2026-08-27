@@ -45,7 +45,6 @@ const TEST_DASHBOARD_SPLIT_TICKS_REQUIRED_MESSAGE = 'Tick both TRANS and JAQ bef
 const TEST_DASHBOARD_VISUAL_UPLOAD_ACCEPT = '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png';
 const TEST_DASHBOARD_VISUAL_UPLOAD_ERROR = 'The VISUAL column only accepts PDF, JPEG, and PNG files.';
 const DASHBOARD_COMPLETION_BLOCK_EMAILS = new Set(['melvyn@ultimatepromotions.co.uk']);
-const DASHBOARD_COMPLETION_BLOCK_NAMES = new Set(['ultimate production']);
 const DASHBOARD_COMPLETION_BLOCK_MESSAGE = 'LEAVE IT ALONE MELVYN';
 const DASHBOARD_ZOOM_MIN = 0.45;
 const DASHBOARD_ZOOM_MAX = 1;
@@ -3121,11 +3120,7 @@ function shouldBlockDashboardCompletion(state, option, user = window.ultimateHub
 
 function isDashboardCompletionBlockedUser(user) {
   const email = String(user?.email || '').trim().toLowerCase();
-  const name = String(
-    user?.full_name || [user?.first_name, user?.last_name].filter(Boolean).join(' ')
-  ).trim().replace(/\s+/g, ' ').toLowerCase();
-  return DASHBOARD_COMPLETION_BLOCK_EMAILS.has(email)
-    || DASHBOARD_COMPLETION_BLOCK_NAMES.has(name);
+  return DASHBOARD_COMPLETION_BLOCK_EMAILS.has(email);
 }
 
 function isDashboardCompletionBlockMessage(message) {
