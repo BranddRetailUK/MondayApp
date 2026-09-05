@@ -1,16 +1,33 @@
 {
-  "name": "monday-dashboard",
+  "name": "ultimate-hub",
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "import:database-mdb": "node scripts/import-database-mdb.js",
+    "verify:mdb-invoices": "node scripts/verify-mdb-invoice-numbers.js",
+    "verify:mdb-numbering": "node scripts/verify-mdb-invoice-numbers.js",
+    "import:ralawise-catalogue": "node scripts/import-ralawise-catalogue.js",
+    "backfill:ralawise-line-items": "node scripts/backfill-ralawise-line-items.js",
+    "verify:ralawise-catalogue": "node scripts/verify-ralawise-catalogue.js",
+    "test:ralawise-catalogue": "node --test test/ralawise-catalogue.test.js test/ralawise-line-items.test.js",
+    "test:suppliers": "node --test test/supplier-integrations.test.js test/ralawise-basket.test.js test/stock-ordering-ralawise.test.js",
+    "test:database-addresses": "node --test test/database-customer-addresses.test.js test/database-saved-addresses.test.js",
+    "test:labels": "node --test test/label-layout.test.js",
+    "test:dtf": "node --test test/dtf.test.js test/dtf-routes.test.js",
+    "preflight:dtf-cloudinary": "node scripts/preflight-dtf-cloudinary.js",
+    "preflight:dtf-cloudinary:large": "node scripts/preflight-dtf-cloudinary.js --large",
+    "suppliers:ping": "node scripts/ping-supplier-apis.js"
   },
   "dependencies": {
-    "axios": "^1.7.0",
+    "cloudinary": "^2.10.0",
+    "cors": "^2.8.5",
+    "csv-parse": "^6.2.1",
     "dotenv": "^16.4.0",
-    "express": "^4.19.0",
+    "express": "^4.21.2",
     "multer": "^2.0.2",
+    "pdf-lib": "^1.17.1",
     "pg": "^8.16.3",
-    "qrcode": "^1.5.4"
+    "xlsx": "^0.18.5"
   }
 }

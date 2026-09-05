@@ -2,294 +2,1107 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Ultimate Hub</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Ultimate Hub · Dashboard</title>
+  <link rel="icon" type="image/png" href="https://res.cloudinary.com/brandduk/image/upload/v1784184878/UPC_FAV_xeevye.png" media="(prefers-color-scheme: light)">
+  <link rel="icon" type="image/png" href="https://res.cloudinary.com/brandduk/image/upload/v1783932861/UPC_FAV_all5bl.png" media="(prefers-color-scheme: dark)">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="dashboard-visual-removal.css">
+  <link rel="stylesheet" href="dtf-uploader.css">
+  <script src="vendor/pdf-lib.min.js" defer></script>
+  <script src="auth-session.js" defer></script>
+  <script src="label-layout.js" defer></script>
   <script src="script.js" defer></script>
-  <script src="customers.js" defer></script>
-  <script src="orders.js" defer></script>
+  <script src="product-size-order.js" defer></script>
+  <script src="database.js" defer></script>
+  <script src="dtf-layout.js" defer></script>
+  <script src="dtf-uploader.js" defer></script>
 </head>
-<body>
+<body class="dashboard-only hub-auth-pending">
   <div class="app-container">
-    <nav class="sidebar">
-      <h2 class="sidebar-logo">Ultimate Hub</h2>
-      <ul class="nav-tabs">
-        <li data-tab="home" class="active">Home</li>
-        <li data-tab="orders">Orders</li>
-        <li data-tab="customers">Customers</li>
-        <li data-tab="stock">Stock</li>
-        <li data-tab="labels"> Box Labels</li>
-        <li data-tab="shipping">Shipping</li>
-      </ul>
+    <button id="mobileNavToggle" class="mobile-nav-toggle" type="button" aria-label="Open navigation" aria-controls="appSidebar" aria-expanded="false">
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+    <div id="mobileNavBackdrop" class="mobile-nav-backdrop" hidden></div>
+    <nav id="appSidebar" class="sidebar">
+      <button id="sidebarToggle" class="sidebar-toggle" type="button" aria-label="Hide navigation" aria-expanded="true">‹</button>
+      <div class="sidebar-top">
+        <img class="sidebar-brand-icon" src="https://res.cloudinary.com/brandduk/image/upload/v1783932861/UPC_FAV_all5bl.png" alt="" aria-hidden="true">
+        <div class="logo-text">
+          <div class="sidebar-logo">Ultimate Hub</div>
+          <div class="sidebar-sub">User</div>
+        </div>
+      </div>
+      <div class="nav-group">
+        <ul class="nav-tabs">
+          <li data-tab="database">DATABASE</li>
+          <li data-tab="test-dashboard" class="active">TUESDAY DASHBOARD</li>
+          <li data-tab="dtf-uploader">DTF UPLOADER</li>
+        </ul>
+      </div>
+      <div id="sidebarDashboardControls" class="sidebar-dashboard-controls" aria-label="Dashboard controls">
+        <button id="logoutButton" class="btn sidebar-logout-button" type="button" aria-label="Sign out">
+          <svg class="sidebar-logout-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <path d="m16 17 5-5-5-5"></path>
+            <path d="M21 12H9"></path>
+          </svg>
+          <span data-logout-label>Sign out</span>
+        </button>
+      </div>
     </nav>
 
     <main class="main-content">
-      <!-- HOME -->
-      <div id="tab-home" class="tab-content active">
-        <h1>Home</h1>
-        <p>Welcome to the dashboard.</p>
-      </div>
 
-      <!-- ORDERS -->
-      <div id="tab-orders" class="tab-content">
-        <h1>Orders</h1>
+      <!-- TUESDAY DASHBOARD (Railway/Postgres + Cloudinary files) -->
+      <section id="tab-test-dashboard" class="tab-content active">
+        <div class="board-shell-head dashboard-board-head">
+          <div id="test-labels-toolbar"></div>
+        </div>
+        <div id="test-board"></div>
+      </section>
 
-        <!-- LIST VIEW -->
-        <div id="orders-list-view">
-          <section class="card">
-            <div class="card-head">
-              <h2>Active Orders</h2>
-              <div class="card-actions">
-                <button id="open-create-order" class="btn primary">Create Order</button>
-              </div>
+      <!-- DTF UPLOADER -->
+      <section id="tab-dtf-uploader" class="tab-content dtf-tab-content">
+        <div id="dtf-app" class="dtf-app">
+          <div class="dtf-page-head">
+            <div>
+              <div class="dtf-eyebrow">Lami DTF</div>
+              <h1>DTF Uploader</h1>
             </div>
-            <div class="card-body">
-              <table id="orders-table" class="data-table">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Customer</th>
-                    <th>Title</th><!-- changed from Product -->
-                    <th>Code</th>
-                    <th>Colour/Size</th>
-                    <th>Status</th>
-                    <th>Created</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
-              <div class="small muted" style="margin-top:8px;">
-                Showing Draft, Confirmed, and In Production only. Completed/Shipped are hidden.
+            <div class="dtf-mode-tabs" role="tablist" aria-label="DTF uploader sections">
+              <button class="active" type="button" data-dtf-mode="upload">Upload Gang</button>
+              <button type="button" data-dtf-mode="layout">Create Gang</button>
+            </div>
+          </div>
+
+          <section id="dtf-upload-view" class="dtf-mode-view active" aria-label="Upload DTF gang sheets">
+            <div class="dtf-upload-grid">
+              <div class="dtf-surface dtf-preview-panel">
+                <div id="dtf-pdf-preview" class="dtf-pdf-preview">
+                  <canvas id="dtf-pdf-canvas" hidden></canvas>
+                  <div id="dtf-preview-empty" class="dtf-empty-preview">
+                    <span class="dtf-upload-icon" aria-hidden="true">⇧</span>
+                    <strong>Drag or upload gang sheets</strong>
+                  </div>
+                </div>
+              </div>
+
+              <aside class="dtf-upload-sidebar">
+                <div class="dtf-surface dtf-upload-card">
+                  <h2>Add gang sheet PDFs</h2>
+                  <input id="dtf-sheet-input" type="file" accept="application/pdf,.pdf" multiple hidden>
+                  <button id="dtf-choose-sheets" class="dtf-primary-button" type="button">Choose gang sheets</button>
+                  <div id="dtf-sheet-list" class="dtf-sheet-list">
+                    <div class="dtf-empty-list">No gang sheets added yet.</div>
+                  </div>
+                </div>
+
+                <div class="dtf-surface dtf-price-card">
+                  <div class="dtf-eyebrow">Price</div>
+                  <div id="dtf-total-large" class="dtf-total-large">
+                    <span id="dtf-total-large-value">£0.00</span>
+                    <span class="dtf-total-vat">+ VAT</span>
+                  </div>
+                  <dl>
+                    <div><dt>Sheets</dt><dd id="dtf-sheet-count">0</dd></div>
+                    <div><dt>Subtotal</dt><dd id="dtf-subtotal">£0.00</dd></div>
+                    <div><dt>VAT</dt><dd id="dtf-vat">£0.00</dd></div>
+                    <div class="dtf-price-total"><dt>Total</dt><dd id="dtf-total">£0.00</dd></div>
+                  </dl>
+                </div>
+                <button id="dtf-send-sheets" class="dtf-submit-button" type="button" disabled>Send gang sheets <span aria-hidden="true">⇧</span></button>
+                <div id="dtf-upload-feedback" class="dtf-feedback" aria-live="polite"></div>
+              </aside>
+            </div>
+          </section>
+
+          <section id="dtf-layout-view" class="dtf-mode-view" aria-label="Create DTF gang sheet">
+            <div class="dtf-layout-grid">
+              <aside class="dtf-surface dtf-layout-controls">
+                <div class="dtf-layout-settings-row">
+                  <section class="dtf-layout-setting">
+                    <div class="dtf-eyebrow">Background</div>
+                    <div class="dtf-background-options" role="group" aria-label="Layout background">
+                      <button class="active" type="button" data-dtf-background="LIGHT">Light</button>
+                      <button type="button" data-dtf-background="GREY">Grey</button>
+                      <button type="button" data-dtf-background="DARK">Dark</button>
+                    </div>
+                  </section>
+                  <div class="dtf-layout-settings-divider" aria-hidden="true"></div>
+                  <section class="dtf-layout-setting">
+                    <div class="dtf-eyebrow">Artwork gap</div>
+                    <div class="dtf-stepper dtf-gap-stepper">
+                      <button type="button" data-dtf-gap="-1" aria-label="Decrease artwork gap">−</button>
+                      <span class="dtf-gap-value">
+                        <input id="dtf-layout-gap" type="number" min="0" max="250" step="1" value="10" aria-label="Artwork gap in millimetres">
+                        <span>mm</span>
+                      </span>
+                      <button type="button" data-dtf-gap="1" aria-label="Increase artwork gap">+</button>
+                    </div>
+                  </section>
+                </div>
+
+                <div class="dtf-eyebrow dtf-control-section">Artwork</div>
+                <input id="dtf-artwork-input" type="file" accept="image/png,.png,.eps,application/postscript,application/pdf,.pdf" multiple hidden>
+                <button id="dtf-add-artwork" class="dtf-artwork-empty" type="button">
+                  <span class="dtf-upload-icon" aria-hidden="true">⇧</span>
+                  Upload PNG, EPS or PDF
+                </button>
+                <div id="dtf-artwork-list" class="dtf-artwork-list"></div>
+                <div id="dtf-layout-feedback" class="dtf-feedback" aria-live="polite"></div>
+              </aside>
+
+              <div class="dtf-surface dtf-layout-preview-panel">
+                <div class="dtf-layout-canvas-shell">
+                  <div id="dtf-layout-canvas" class="dtf-layout-canvas dtf-background-light">
+                    <button id="dtf-layout-empty" class="dtf-layout-empty" type="button">
+                      <span class="dtf-upload-icon" aria-hidden="true">⇧</span>
+                      Drag artwork here or choose files
+                    </button>
+                  </div>
+                  <div id="dtf-eps-processing" class="dtf-eps-processing" role="status" aria-live="polite" hidden>
+                    <span class="dtf-loading-wheel" aria-hidden="true"></span>
+                    <strong>Processing EPS artwork</strong>
+                    <span id="dtf-eps-processing-name">Preparing preview…</span>
+                  </div>
+                </div>
+                <button id="dtf-add-to-order" class="dtf-submit-button" type="button" disabled>Add to order <span aria-hidden="true">⇧</span></button>
               </div>
             </div>
           </section>
         </div>
+      </section>
 
-        <!-- CREATE VIEW -->
-        <section id="order-create-view" class="card" style="display:none">
-          <div class="card-head">
-            <h2>Create Order</h2>
-            <div class="card-actions">
-              <button id="order-create-back" class="btn outline">Back to Orders</button>
+      <!-- DATABASE -->
+      <section id="tab-database" class="tab-content db-legacy-tab">
+        <div id="db-legacy-app" class="db-legacy-app">
+          <div class="db-legacy-stage">
+            <div class="db-stage-nav">
+              <button id="db-home-button" class="db-home-button" type="button">Back</button>
+
+              <div class="db-main-tabs" role="tablist" aria-label="Database sections">
+                <button class="db-main-tab active" type="button" data-db-go="home">Home</button>
+                <button class="db-main-tab" type="button" data-db-go="outstanding">Open Orders</button>
+              </div>
             </div>
-          </div>
-          <div class="card-body">
-            <form id="order-form" class="form-grid">
-              <div class="form-row full">
-                <label>Customer <span class="req">*</span></label>
-                <div class="combo">
-                  <input id="order-customer" autocomplete="off" />
-                  <button type="button" class="btn" id="add-customer-btn">Add Customer</button>
-                  <div id="order-customer-dd" class="dd"></div>
-                </div>
-                <div class="small muted">Search your customers, then click to select.</div>
+
+            <section id="db-home-view" class="db-view db-home-view active" aria-label="Database home">
+              <div class="db-menu-column db-menu-left">
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="new-order">New Order</button>
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="open-orders">Open Orders</button>
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="all-orders">All Orders</button>
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="customers">Customers</button>
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="styles">Styles</button>
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="stock-ordering" disabled>Stock Ordering</button>
               </div>
 
-              <!-- NEW: Job Title -->
-              <div class="form-row full">
-                <label>Job Title
-                  <input name="job_title" id="order-job-title" placeholder="e.g. Hoodies for Freshers Week" />
+              <div class="db-outstanding-actions">
+                <div class="db-panel-title">Open Orders</div>
+                <div class="db-action-columns" aria-label="Open order counts by job type">
+                  <div class="db-action-column">
+                    <div class="db-action-title">Printing</div>
+                    <div class="db-action-count" id="db-count-printing">0</div>
+                  </div>
+                  <div class="db-action-column">
+                    <div class="db-action-title">Embroidery</div>
+                    <div class="db-action-count" id="db-count-embroidery">0</div>
+                  </div>
+                  <div class="db-action-column">
+                    <div class="db-action-title">Business Gifts</div>
+                    <div class="db-action-count" id="db-count-gifts">0</div>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                class="db-home-logs-toggle"
+                type="button"
+                data-db-action="toggle-home-logs"
+                aria-controls="db-status-updates-panel"
+                aria-expanded="true"
+              >Hide logs</button>
+
+              <section id="db-status-updates-panel" class="db-status-updates" aria-label="Status updates">
+                <div
+                  class="db-status-updates-list"
+                  id="db-status-updates-list"
+                  role="feed"
+                  aria-live="polite"
+                  aria-busy="true"
+                >
+                  <div class="db-status-updates-empty">Loading status updates...</div>
+                </div>
+              </section>
+
+              <div class="db-menu-column db-menu-right">
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="users" disabled>Users</button>
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="dtf-admin">Lami DTF</button>
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="visuals">Visuals</button>
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="logs">Logs</button>
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="reports" disabled>Reports</button>
+                <button class="db-raised-button db-blue-link" type="button" data-db-action="to-invoice" disabled>To Invoice</button>
+              </div>
+            </section>
+
+            <section id="db-visuals-view" class="db-view db-visuals-view" aria-label="Visuals">
+              <div class="db-visuals-heading">
+                <h2>Visuals</h2>
+                <input
+                  id="db-visuals-search"
+                  class="db-legacy-input db-visuals-search"
+                  type="search"
+                  autocomplete="off"
+                  aria-label="Search visuals by previous job number, customer, design number, or filename"
+                  placeholder="Search by previous job number, customer or design number"
+                >
+                <div id="db-visuals-summary" class="db-visuals-summary" aria-live="polite"></div>
+              </div>
+              <div id="db-visuals-scroll" class="db-visuals-scroll">
+                <div id="db-visuals-grid" class="db-visuals-grid" role="list"></div>
+                <div id="db-visuals-status" class="db-visuals-status" role="status" aria-live="polite">Open Visuals to load previews</div>
+                <button id="db-visuals-load-more" class="db-toolbar-button db-blue-link db-visuals-load-more" type="button" hidden>Load more</button>
+                <div id="db-visuals-sentinel" class="db-visuals-sentinel" aria-hidden="true"></div>
+              </div>
+            </section>
+
+            <section id="db-logs-view" class="db-view db-logs-view" aria-label="Logs">
+              <div class="db-logs-heading">Logs</div>
+              <div class="db-table-frame db-logs-table-frame">
+                <table id="db-logs-table" class="db-legacy-table db-mobile-card-table">
+                  <thead>
+                    <tr>
+                      <th>Timestamp</th>
+                      <th>Job number</th>
+                      <th>Customer</th>
+                      <th>Job title</th>
+                      <th>Job owner</th>
+                      <th>Update</th>
+                    </tr>
+                  </thead>
+                  <tbody id="db-logs-body">
+                    <tr><td colspan="6" class="db-empty-cell">Loading logs</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section id="db-reports-view" class="db-view db-reports-view" aria-label="Analytics and reports">
+              <div class="db-reports-toolbar">
+                <div>
+                  <div class="db-reports-title">Analytics &amp; Reports</div>
+                  <div id="db-reports-period" class="db-reports-period">Year to date</div>
+                </div>
+                <div class="db-reports-toolbar-controls">
+                  <div class="db-report-range-buttons" role="group" aria-label="Financial report time span">
+                    <button class="db-toolbar-button" type="button" data-db-report-range="daily">Daily</button>
+                    <button class="db-toolbar-button" type="button" data-db-report-range="weekly">Weekly</button>
+                    <button class="db-toolbar-button" type="button" data-db-report-range="monthly">Monthly</button>
+                    <button class="db-toolbar-button" type="button" data-db-report-range="yearly">Yearly</button>
+                    <button class="db-toolbar-button" type="button" data-db-report-range="mtd">Month to date</button>
+                    <button class="db-toolbar-button active" type="button" data-db-report-range="ytd">Year to date</button>
+                  </div>
+                  <label id="db-report-period-control" class="db-report-year-control" for="db-report-year-select">
+                    <span id="db-report-period-control-label">Year</span>
+                    <select id="db-report-year-select" aria-label="Report year"></select>
+                  </label>
+                </div>
+              </div>
+
+              <div class="db-report-compare-toolbar" aria-label="Compare financial periods">
+                <strong>Compare:</strong>
+                <div class="db-report-compare-modes" role="group" aria-label="Comparison type">
+                  <button class="db-toolbar-button" type="button" data-db-report-compare-mode="month">Months</button>
+                  <button class="db-toolbar-button" type="button" data-db-report-compare-mode="year">Years</button>
+                </div>
+                <div id="db-report-compare-months" class="db-report-compare-periods" hidden>
+                  <div class="db-report-compare-month-box">
+                    <select id="db-report-compare-month-name-a" aria-label="First comparison month"></select>
+                    <select id="db-report-compare-month-year-a" aria-label="First comparison month year"></select>
+                  </div>
+                  <span class="db-report-compare-arrow" aria-hidden="true">→</span>
+                  <div class="db-report-compare-month-box">
+                    <select id="db-report-compare-month-name-b" aria-label="Second comparison month"></select>
+                    <select id="db-report-compare-month-year-b" aria-label="Second comparison month year"></select>
+                  </div>
+                </div>
+                <div id="db-report-compare-years" class="db-report-compare-periods" hidden>
+                  <select id="db-report-compare-year-a" aria-label="First comparison year"></select>
+                  <span class="db-report-compare-arrow" aria-hidden="true">→</span>
+                  <select id="db-report-compare-year-b" aria-label="Second comparison year"></select>
+                </div>
+                <button id="db-report-compare-clear" class="db-toolbar-button db-report-compare-clear" type="button" data-db-action="clear-report-comparison" hidden>Clear</button>
+              </div>
+
+              <section class="db-report-panel db-report-chart-panel" aria-labelledby="db-reports-chart-title">
+                <div class="db-report-panel-heading">
+                  <div class="db-report-panel-heading-copy">
+                    <strong id="db-reports-chart-title">Gross sales over time</strong>
+                    <span id="db-reports-chart-subtitle">Net sales plus VAT</span>
+                  </div>
+                  <div id="db-reports-chart-legend" class="db-report-chart-legend" aria-label="Comparison key" hidden></div>
+                  <span id="db-reports-chart-total" class="db-report-chart-total">£0.00</span>
+                </div>
+                <div id="db-reports-chart-wrap" class="db-report-chart-wrap">
+                  <svg id="db-reports-chart" class="db-report-chart" viewBox="0 0 900 236" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Gross sales chart"></svg>
+                  <div id="db-reports-chart-state" class="db-report-chart-state">Loading financial report</div>
+                </div>
+              </section>
+
+              <div id="db-reports-kpis" class="db-report-kpis" aria-label="Financial summary"></div>
+
+              <div class="db-report-insights">
+                <section id="db-report-top-customer" class="db-report-panel db-report-insight-card" aria-label="Highest grossing customer"></section>
+                <section class="db-report-panel db-report-table-card db-report-customers-card" aria-labelledby="db-report-customers-title">
+                  <div class="db-report-card-title" id="db-report-customers-title">Top customers</div>
+                  <div class="db-report-table-scroll">
+                    <table class="db-report-mini-table">
+                      <thead><tr><th>Customer</th><th>Orders</th><th>Gross sales</th></tr></thead>
+                      <tbody id="db-report-customers-body"></tbody>
+                    </table>
+                  </div>
+                </section>
+                <section class="db-report-panel db-report-table-card" aria-labelledby="db-report-types-title">
+                  <div class="db-report-card-title" id="db-report-types-title">Sales by order type</div>
+                  <div class="db-report-table-scroll">
+                    <table class="db-report-mini-table">
+                      <thead><tr><th>Type</th><th>Orders</th><th>Gross sales</th></tr></thead>
+                      <tbody id="db-report-types-body"></tbody>
+                    </table>
+                  </div>
+                </section>
+              </div>
+
+              <div class="db-reports-actions">
+                <button class="db-toolbar-button db-blue-link db-reports-download-button" type="button" data-db-action="download-financial-report">Download report</button>
+              </div>
+              <div id="db-reports-status" class="db-reports-status" role="status" aria-live="polite"></div>
+            </section>
+
+            <section id="db-new-order-view" class="db-view db-new-order-view" aria-label="New order">
+              <form id="db-new-order-form" class="db-new-order-box">
+                <div class="db-new-order-title">New Order</div>
+
+                <div class="db-new-order-row db-new-order-customer-row">
+                  <label>Customer:</label>
+                  <input id="db-new-customer" name="customer_name" autocomplete="off">
+                  <div id="db-new-customer-results" class="db-customer-results" role="listbox"></div>
+                </div>
+
+                <div class="db-new-order-row db-new-order-contact-row">
+                  <label>Contact:</label>
+                  <select id="db-new-contact" name="contact_name"></select>
+                </div>
+
+                <div class="db-new-order-row db-new-short-row">
+                  <label>Order type:</label>
+                  <select id="db-new-order-type" name="order_type">
+                    <option value="Business Gifts">Business Gifts</option>
+                    <option value="Printing">Printing</option>
+                    <option value="Print + Emb">Print + Emb</option>
+                    <option value="Embroidery">Embroidery</option>
+                  </select>
+                </div>
+
+                <div class="db-new-order-row">
+                  <label>Job title:</label>
+                  <input id="db-new-job-title" name="job_title" autocomplete="off">
+                </div>
+
+                <div class="db-new-order-row db-new-order-date-row">
+                  <label>Order date:</label>
+                  <input id="db-new-order-date" name="order_date" autocomplete="off">
+                </div>
+
+                <div class="db-new-order-row db-new-order-delivery-date-row">
+                  <label>Delivery date:</label>
+                  <input id="db-new-delivery-date" name="delivery_date" autocomplete="off">
+                </div>
+
+                <div class="db-new-order-row db-new-short-row">
+                  <label>Delivery method:</label>
+                  <select id="db-new-delivery-method" name="delivery_method">
+                    <option value="Collection">Collection</option>
+                    <option value="Delivery">Delivery</option>
+                  </select>
+                </div>
+
+                <div class="db-new-order-row db-new-short-row">
+                  <label>Payment terms:</label>
+                  <select id="db-new-payment-terms" name="payment_terms">
+                    <option value="Account" selected>Account</option>
+                    <option value="COD">COD</option>
+                    <option value="Pro Forma">Pro Forma</option>
+                  </select>
+                </div>
+
+                <div class="db-new-order-row db-new-combo-row">
+                  <label>Order taken by:</label>
+                  <select id="db-new-order-taken-by" name="order_taken_by"></select>
+                </div>
+
+                <div class="db-new-order-row db-new-wide-combo-row">
+                  <label>Delivery adds:</label>
+                  <select id="db-new-delivery-address" name="delivery_address"></select>
+                </div>
+
+                <div class="db-new-order-row db-new-wide-combo-row">
+                  <label>Invoice adds:</label>
+                  <select id="db-new-invoice-address" name="invoice_address"></select>
+                </div>
+
+                <div class="db-new-order-row db-new-order-invoice-row">
+                  <label>Invoice required:</label>
+                  <select id="db-new-invoice-required" name="invoice_required" required>
+                    <option value="Yes">Yes</option>
+                    <option value="No">No</option>
+                  </select>
+                </div>
+
+                <div class="db-new-order-row db-new-order-customer-ref-row">
+                  <label>Customer ref:</label>
+                  <input id="db-new-customer-ref" name="client_order_no" autocomplete="off">
+                </div>
+
+                <div id="db-new-order-status" class="db-new-order-status"></div>
+
+                <div class="db-new-order-actions">
+                  <button id="db-new-order-cancel" class="db-new-action-button" type="button">Cancel</button>
+                  <button id="db-new-order-accept" class="db-new-action-button" type="submit" disabled>Accept</button>
+                </div>
+              </form>
+            </section>
+
+            <section id="db-customers-view" class="db-view db-customers-view" aria-label="Database customers">
+              <div class="db-customers-toolbar">
+                <div class="db-customers-filter-group">
+                  <label>Search:
+                    <input id="db-customers-search" class="db-legacy-input" type="search" autocomplete="off">
+                  </label>
+                  <label>Sort by:
+                    <select id="db-customers-sort" class="db-legacy-input">
+                      <option value="recent" selected>Most Recent</option>
+                      <option value="active">Most Active</option>
+                      <option value="az">A-Z</option>
+                      <option value="za">Z-A</option>
+                    </select>
+                  </label>
+                </div>
+                <button id="db-add-customer-button" class="db-toolbar-button" type="button" data-db-action="new-customer">Add Customer</button>
+              </div>
+
+              <div class="db-table-frame db-customers-table-frame">
+                <table id="db-customers-table" class="db-legacy-table db-mobile-card-table">
+                  <thead>
+                    <tr>
+                      <th class="db-row-selector"></th>
+                      <th>Customer:</th>
+                      <th>Latest order:</th>
+                      <th>Job title:</th>
+                      <th>Order date:</th>
+                      <th>Contact:</th>
+                      <th>Code:</th>
+                      <th>Orders:</th>
+                    </tr>
+                  </thead>
+                  <tbody id="db-customers-body">
+                    <tr><td colspan="8" class="db-empty-cell">Loading customers</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section id="db-new-customer-view" class="db-view db-new-order-view db-new-customer-view" aria-label="New customer">
+              <form id="db-new-customer-form" class="db-new-order-box db-new-customer-box">
+                <div class="db-new-order-title">New Customer</div>
+
+                <div class="db-new-order-row db-new-customer-name-row">
+                  <label>Customer:</label>
+                  <input id="db-new-customer-name" name="customer_name" autocomplete="off">
+                </div>
+
+                <div class="db-new-order-row db-new-customer-code-row">
+                  <label>Code:</label>
+                  <input id="db-new-customer-code" name="customer_code" autocomplete="off">
+                </div>
+
+                <div class="db-new-order-row db-new-customer-contact-row">
+                  <label>Contact:</label>
+                  <input id="db-new-customer-contact" name="contact_name" autocomplete="off">
+                </div>
+
+                <div class="db-new-order-row db-new-customer-tel-row">
+                  <label>Tel:</label>
+                  <input id="db-new-customer-tel" name="contact_phone" autocomplete="off">
+                </div>
+
+                <div class="db-new-order-row db-new-customer-mobile-row">
+                  <label>Mobile:</label>
+                  <input id="db-new-customer-mobile" name="contact_mobile" autocomplete="off">
+                </div>
+
+                <div class="db-new-order-row db-new-customer-email-row">
+                  <label>Email:</label>
+                  <input id="db-new-customer-email" name="contact_email" autocomplete="off">
+                </div>
+
+                <fieldset class="db-new-customer-address db-new-customer-invoice-address">
+                  <legend>
+                    <span>Invoice Address:</span>
+                  </legend>
+                  <input name="invoice_address_line1" autocomplete="off">
+                  <input name="invoice_address_line2" autocomplete="off">
+                  <input name="invoice_address_line3" autocomplete="off">
+                  <input name="invoice_address_line4" autocomplete="off">
+                  <input name="invoice_address_line5" autocomplete="off">
+                  <label class="db-new-customer-postcode">
+                    <span>(postcode)</span>
+                    <input name="invoice_postcode" autocomplete="off">
+                  </label>
+                </fieldset>
+
+                <fieldset class="db-new-customer-address db-new-customer-delivery-address">
+                  <legend>
+                    <span>Delivery Address:</span>
+                    <small>(if different)</small>
+                  </legend>
+                  <input name="delivery_address_line1" autocomplete="off">
+                  <input name="delivery_address_line2" autocomplete="off">
+                  <input name="delivery_address_line3" autocomplete="off">
+                  <input name="delivery_address_line4" autocomplete="off">
+                  <input name="delivery_address_line5" autocomplete="off">
+                  <label class="db-new-customer-postcode">
+                    <span>(postcode)</span>
+                    <input name="delivery_postcode" autocomplete="off">
+                  </label>
+                </fieldset>
+
+                <div class="db-new-order-row db-new-customer-manager-row">
+                  <label>Account manager:</label>
+                  <select id="db-new-customer-account-manager" name="account_manager_user_id"></select>
+                </div>
+
+                <div id="db-new-customer-status" class="db-new-order-status"></div>
+
+                <div class="db-new-order-actions">
+                  <button id="db-new-customer-cancel" class="db-new-action-button" type="button">Cancel</button>
+                  <button id="db-new-customer-accept" class="db-new-action-button" type="submit" disabled>Accept</button>
+                </div>
+              </form>
+            </section>
+
+            <section id="db-customer-view" class="db-view db-customer-view" aria-label="Database customer">
+              <div class="db-customer-header">
+                <div class="db-customer-title-area">
+                  <div class="db-customer-line">
+                    <span class="db-order-label-large">Customer:</span>
+                    <input id="db-customer-name" class="db-title-input" readonly>
+                  </div>
+                  <div class="db-customer-line db-customer-code-line">
+                    <span class="db-order-label-large">Code:</span>
+                    <input id="db-customer-code" class="db-order-number-input" readonly>
+                    <span class="db-customer-manager-label">Account manager:</span>
+                    <select id="db-customer-account-manager" class="db-customer-manager-select"></select>
+                  </div>
+                </div>
+
+                <div id="db-customer-header-stats" class="db-customer-header-stats" aria-label="Customer overview"></div>
+
+              </div>
+
+              <div class="db-customer-tabs" role="tablist" aria-label="Customer tabs">
+                <button class="db-customer-tab active" type="button" data-db-customer-tab="orders">Orders</button>
+                <button class="db-customer-tab" type="button" data-db-customer-tab="contacts">Contacts</button>
+                <button class="db-customer-tab" type="button" data-db-customer-tab="addresses">Addresses</button>
+                <button class="db-customer-tab" type="button" data-db-customer-tab="quotations">Quotations</button>
+                <button class="db-customer-tab" type="button" data-db-customer-tab="design-numbers">Design Numbers</button>
+              </div>
+
+              <div class="db-customer-panel active" id="db-customer-orders-panel">
+                <div class="db-customer-table-frame">
+                  <table id="db-customer-orders-table" class="db-legacy-table db-mobile-card-table">
+                    <thead>
+                      <tr>
+                        <th class="db-row-selector"></th>
+                        <th>Order no:</th>
+                        <th>Invoice no:</th>
+                        <th>Customer ref:</th>
+                        <th>P/E:</th>
+                        <th>Contact:</th>
+                        <th>Job title:</th>
+                        <th>Order date:</th>
+                        <th>Completed:</th>
+                        <th>Action:</th>
+                      </tr>
+                    </thead>
+                    <tbody id="db-customer-orders-body">
+                      <tr><td colspan="10" class="db-empty-cell">Loading customer orders</td></tr>
+                    </tbody>
+                  </table>
+                  <div class="db-customer-gray-fill"></div>
+                </div>
+                <label class="db-customer-orders-search" for="db-customer-orders-search">
+                  <span>Search orders:</span>
+                  <input
+                    id="db-customer-orders-search"
+                    class="db-legacy-input"
+                    type="search"
+                    autocomplete="off"
+                    placeholder="Job, invoice, title, contact…"
+                    aria-label="Search this customer's orders by job number, invoice number, title, contact, or reference"
+                  >
                 </label>
               </div>
 
-              <div class="form-row full"><h3 class="subhead">Products</h3></div>
+              <div class="db-customer-panel" id="db-customer-contacts-panel">
+                <div id="db-customer-contacts-body" class="db-customer-contacts-layout">
+                  <div class="db-panel-message">Loading contacts</div>
+                </div>
+              </div>
 
-              <div id="order-lines">
-                <!-- Header row (shown once) -->
-                <div class="line-grid horizontal header-row">
-                  <div class="col code">Product Code</div>
-                  <div class="col type">Garment Type</div>
-                  <div class="col title">Product Title</div>
-                  <div class="col colour">Colour</div>
-                  <div class="col size">Size</div>
-                  <div class="col qty">Qty</div>
-                  <div class="col actions">Actions</div>
+              <div class="db-customer-panel" id="db-customer-addresses-panel">
+                <div id="db-customer-addresses-body" class="db-customer-addresses-layout">
+                  <div class="db-panel-message">Loading addresses</div>
+                </div>
+              </div>
+
+              <div class="db-customer-panel" id="db-customer-quotations-panel">
+                <div class="db-customer-table-frame"><div class="db-panel-message">No quotations recorded</div><div class="db-customer-gray-fill"></div></div>
+              </div>
+              <div class="db-customer-panel" id="db-customer-design-numbers-panel">
+                <div class="db-customer-table-frame">
+                  <table id="db-customer-design-numbers-table" class="db-legacy-table db-mobile-card-table">
+                    <thead>
+                      <tr>
+                        <th class="db-row-selector"></th>
+                        <th>Job no:</th>
+                        <th>Design number:</th>
+                        <th>PSG / Stitch Count</th>
+                        <th>Job title:</th>
+                        <th>Order date:</th>
+                      </tr>
+                    </thead>
+                    <tbody id="db-customer-design-numbers-body">
+                      <tr><td colspan="6" class="db-empty-cell">Loading design numbers</td></tr>
+                    </tbody>
+                  </table>
+                  <div class="db-customer-gray-fill"></div>
+                </div>
+              </div>
+            </section>
+
+            <section id="db-new-contact-view" class="db-view db-new-contact-view" aria-label="Add contact">
+              <form id="db-add-contact-form" class="db-add-contact-box">
+                <div id="db-add-contact-title" class="db-add-contact-title">Add contact</div>
+
+                <div class="db-add-contact-row db-add-contact-title-row">
+                  <label>Title:</label>
+                  <input id="db-add-contact-contact-title" name="contact_title" autocomplete="off">
                 </div>
 
-                <!-- Template (hidden; cloned by JS) -->
-                <div class="line-row line-template" style="display:none">
-                  <div class="line-grid horizontal">
-                    <div class="col code"><input name="product_code" /></div>
-                    <div class="col type"><input name="garment_type" /></div>
-                    <div class="col title"><input name="product_title" /></div>
-                    <div class="col colour"><input name="colour" /></div>
-                    <div class="col size"><input name="size" /></div>
-                    <div class="col qty"><input name="quantity" type="number" min="1" value="1" /></div>
-                    <div class="col actions">
-                      <button type="button" class="btn small line-remove">Remove</button>
+                <div class="db-add-contact-row db-add-contact-required-row">
+                  <label>Firstname:</label>
+                  <input id="db-add-contact-firstname" name="contact_first_name" autocomplete="off">
+                </div>
+
+                <div class="db-add-contact-row">
+                  <label>Lastname:</label>
+                  <input id="db-add-contact-lastname" name="contact_last_name" autocomplete="off">
+                </div>
+
+                <div class="db-add-contact-row">
+                  <label>Tel:</label>
+                  <input id="db-add-contact-tel" name="contact_phone" autocomplete="off">
+                </div>
+
+                <div class="db-add-contact-row">
+                  <label>Fax:</label>
+                  <input id="db-add-contact-fax" name="contact_fax" autocomplete="off">
+                </div>
+
+                <div class="db-add-contact-row">
+                  <label>Mobile:</label>
+                  <input id="db-add-contact-mobile" name="contact_mobile" autocomplete="off">
+                </div>
+
+                <div class="db-add-contact-row">
+                  <label>Email:</label>
+                  <input id="db-add-contact-email" name="contact_email" autocomplete="off">
+                </div>
+
+                <div class="db-add-contact-row">
+                  <label>Address:</label>
+                  <input id="db-add-contact-address" name="contact_address" autocomplete="off">
+                </div>
+
+                <div id="db-add-contact-status" class="db-add-contact-status"></div>
+
+                <div class="db-add-contact-actions">
+                  <button id="db-add-contact-cancel" class="db-new-action-button" type="button">Cancel</button>
+                  <button id="db-add-contact-accept" class="db-new-action-button" type="submit" disabled>Accept</button>
+                </div>
+              </form>
+            </section>
+
+            <section id="db-outstanding-view" class="db-view db-outstanding-view" aria-label="Outstanding orders">
+              <div class="db-table-frame db-outstanding-table-frame">
+                <table id="db-outstanding-table" class="db-legacy-table db-mobile-card-table">
+                  <thead>
+                    <tr>
+                      <th class="db-row-selector"></th>
+                      <th>Order no:</th>
+                      <th>Invoice number:</th>
+                      <th>Customer:</th>
+                      <th>Type</th>
+                      <th>Job title:</th>
+                      <th>Taken by:</th>
+                      <th>Order date:</th>
+                      <th>Delivery:</th>
+                      <th class="db-open-orders-status-column">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="db-outstanding-body">
+                    <tr><td colspan="9" class="db-empty-cell">Loading outstanding orders</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="db-outstanding-controls">
+                <div class="db-filter-buttons" role="group" aria-label="Outstanding order filters">
+                  <button class="db-toolbar-button" type="button" data-db-group="ready">Approved</button>
+                  <button class="db-toolbar-button db-filter-separator-after" type="button" data-db-group="not-ready">Not Approved</button>
+                  <button class="db-toolbar-button db-type-print" type="button" data-db-group="print">Print</button>
+                  <button class="db-toolbar-button db-type-print_embroidery" type="button" data-db-group="print_embroidery">Print + Emb</button>
+                  <button class="db-toolbar-button db-type-embroidery" type="button" data-db-group="embroidery">Embroidery</button>
+                  <button class="db-toolbar-button db-type-gifts db-filter-separator-after" type="button" data-db-group="gifts">Gifts</button>
+                  <button class="db-toolbar-button active" type="button" data-db-group="all">All outstanding</button>
+                </div>
+                <label class="db-order-search" hidden>
+                  <span>Search:</span>
+                  <input id="db-order-search" type="search" autocomplete="off">
+                </label>
+                <button class="db-toolbar-button db-outstanding-print-button" type="button" data-db-action="print-outstanding">Print PDF</button>
+              </div>
+            </section>
+
+            <section id="db-to-invoice-view" class="db-view db-to-invoice-view" aria-label="To invoice">
+              <div class="db-table-frame db-to-invoice-table-frame">
+                <table id="db-to-invoice-table" class="db-legacy-table db-mobile-card-table">
+                  <thead>
+                    <tr>
+                      <th class="db-row-selector"></th>
+                      <th>Order no:</th>
+                      <th>Customer:</th>
+                      <th>Type</th>
+                      <th>Job title:</th>
+                      <th>Completed:</th>
+                      <th>Taken by:</th>
+                    </tr>
+                  </thead>
+                  <tbody id="db-to-invoice-body">
+                    <tr><td colspan="7" class="db-empty-cell">Loading jobs to invoice</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section id="db-stock-ordering-view" class="db-view db-stock-ordering-view" aria-label="Stock ordering">
+              <div class="db-table-frame db-stock-ordering-table-frame">
+                <table id="db-stock-ordering-table" class="db-legacy-table db-mobile-card-table">
+                  <thead>
+                    <tr>
+                      <th class="db-row-selector"></th>
+                      <th class="db-row-selector"></th>
+                      <th>Order no:</th>
+                      <th>Customer:</th>
+                      <th>Type</th>
+                      <th>Job title:</th>
+                      <th>Items:</th>
+                      <th>Qty:</th>
+                      <th>Ralawise:</th>
+                    </tr>
+                  </thead>
+                  <tbody id="db-stock-ordering-body">
+                    <tr><td colspan="9" class="db-empty-cell">Loading stock ordering jobs</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="db-stock-ordering-actions">
+                <span id="db-stock-ordering-summary">0 selected</span>
+                <button class="db-toolbar-button" type="button" data-db-action="create-stock-ordering" disabled>Create List</button>
+              </div>
+            </section>
+
+            <section id="db-styles-view" class="db-view db-styles-view" aria-label="Styles">
+              <div class="db-styles-toolbar">
+                <label>
+                  <span>Search:</span>
+                  <input id="db-styles-search" type="search" autocomplete="off">
+                </label>
+                <label>
+                  <span>Sort by:</span>
+                  <select id="db-styles-sort">
+                    <option value="most-used">Most used</option>
+                    <option value="highest-price">Highest price</option>
+                    <option value="lowest-price">Lowest price</option>
+                    <option value="az">A-Z</option>
+                    <option value="za">Z-A</option>
+                  </select>
+                </label>
+                <div id="db-styles-summary" class="db-styles-summary" aria-live="polite"></div>
+              </div>
+              <div class="db-styles-layout">
+                <div class="db-styles-panel db-styles-parent-panel">
+                  <div class="db-styles-panel-title">Parent products</div>
+                  <div class="db-table-frame db-styles-table-frame">
+                    <table id="db-styles-table" class="db-legacy-table db-mobile-card-table">
+                      <thead>
+                        <tr>
+                          <th class="db-row-selector"></th>
+                          <th>SKU:</th>
+                          <th>Title:</th>
+                          <th>Cost:</th>
+                          <th>Variants:</th>
+                        </tr>
+                      </thead>
+                      <tbody id="db-styles-body">
+                        <tr><td colspan="5" class="db-empty-cell">Loading styles</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div class="db-styles-detail-column">
+                  <div class="db-styles-panel db-styles-detail-panel">
+                    <div class="db-styles-detail-head">
+                      <div>
+                        <div id="db-styles-selected-title" class="db-styles-selected-title">Select a parent product</div>
+                        <div id="db-styles-selected-meta" class="db-styles-selected-meta"></div>
+                      </div>
+                      <div id="db-styles-selected-cost" class="db-styles-selected-cost"></div>
+                    </div>
+                    <div
+                      id="db-styles-preview"
+                      class="db-styles-preview"
+                      role="button"
+                      tabindex="0"
+                      aria-label="Open product image fullscreen"
+                      aria-disabled="true"
+                      aria-live="polite"
+                    >
+                      <img id="db-styles-preview-image" class="is-loading" alt="" loading="eager" decoding="async">
+                      <div id="db-styles-preview-placeholder" class="db-styles-preview-placeholder">Select a parent product</div>
+                    </div>
+                    <div class="db-styles-variant-options">
+                      <div class="db-styles-section-title">
+                        Colours <span id="db-styles-colour-label" class="db-styles-option-selection"></span>
+                      </div>
+                      <div id="db-styles-colours" class="db-styles-chip-list db-styles-colour-list" aria-label="Colour variants"></div>
+                      <div class="db-styles-section-title db-styles-size-title">
+                        Sizes <span id="db-styles-size-label" class="db-styles-option-selection"></span>
+                      </div>
+                      <div id="db-styles-sizes" class="db-styles-chip-list db-styles-size-list" aria-label="Available sizes"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section id="db-users-view" class="db-view db-users-view" aria-label="Users">
+              <div class="db-users-section-title">Pending signup requests</div>
+              <div class="db-table-frame db-signup-requests-table-frame">
+                <table id="db-signup-requests-table" class="db-legacy-table db-mobile-card-table">
+                  <thead>
+                    <tr>
+                      <th>Name:</th>
+                      <th>Email:</th>
+                      <th>Date requested:</th>
+                      <th>Review:</th>
+                    </tr>
+                  </thead>
+                  <tbody id="db-signup-requests-body">
+                    <tr><td colspan="4" class="db-empty-cell">Loading signup requests</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="db-users-section-title db-registered-users-title">Registered users</div>
+              <div class="db-table-frame db-users-table-frame">
+                <table id="db-users-table" class="db-legacy-table db-mobile-card-table">
+                  <thead>
+                    <tr>
+                      <th>Name:</th>
+                      <th>Email:</th>
+                      <th>Access:</th>
+                      <th>Date registered:</th>
+                      <th>Remove:</th>
+                    </tr>
+                  </thead>
+                  <tbody id="db-users-body">
+                    <tr><td colspan="5" class="db-empty-cell">Loading users</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section id="db-dtf-admin-view" class="db-view db-dtf-admin-view" aria-label="Lami DTF jobs">
+              <div class="db-dtf-toolbar">
+                <div>
+                  <div class="db-dtf-title">Lami DTF</div>
+                  <div class="db-dtf-subtitle">Uploaded gang sheet jobs</div>
+                </div>
+                <div class="db-dtf-toolbar-actions">
+                  <label>Status:
+                    <select id="db-dtf-status-filter">
+                      <option value="">All</option>
+                      <option value="UPLOADING">Uploading</option>
+                      <option value="RECEIVED">Received</option>
+                      <option value="IN_PRODUCTION">In production</option>
+                      <option value="COMPLETED">Completed</option>
+                      <option value="FAILED">Failed</option>
+                    </select>
+                  </label>
+                  <button id="db-dtf-refresh" class="db-toolbar-button db-blue-link" type="button">Refresh</button>
+                </div>
+              </div>
+              <div class="db-table-frame db-dtf-table-frame">
+                <table class="db-legacy-table db-mobile-card-table">
+                  <thead><tr>
+                    <th>Job:</th><th>Date:</th><th>Customer:</th><th>Email:</th><th>Files:</th><th>Sheets:</th><th>Subtotal:</th><th>VAT:</th><th>Total:</th><th>Status:</th>
+                  </tr></thead>
+                  <tbody id="db-dtf-jobs-body"><tr><td colspan="10" class="db-empty-cell">Open Lami DTF to load jobs</td></tr></tbody>
+                </table>
+              </div>
+              <button id="db-dtf-load-more" class="db-toolbar-button db-dtf-load-more" type="button" hidden>Load more</button>
+              <div id="db-dtf-detail" class="db-dtf-detail" hidden>
+                <div class="db-dtf-detail-head">
+                  <div><strong id="db-dtf-detail-number"></strong><span id="db-dtf-detail-customer"></span></div>
+                  <label>Status:
+                    <select id="db-dtf-detail-status">
+                      <option value="RECEIVED">Received</option>
+                      <option value="IN_PRODUCTION">In production</option>
+                      <option value="COMPLETED">Completed</option>
+                      <option value="FAILED">Failed</option>
+                    </select>
+                  </label>
+                </div>
+                <div id="db-dtf-detail-pricing" class="db-dtf-detail-pricing"></div>
+                <div class="db-table-frame">
+                  <table class="db-legacy-table db-mobile-card-table">
+                    <thead><tr><th>File:</th><th>Qty:</th><th>Size:</th><th>Upload:</th><th>Error:</th><th>PDF:</th></tr></thead>
+                    <tbody id="db-dtf-files-body"></tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+
+            <section id="db-order-view" class="db-view db-order-view" aria-label="Order">
+              <div class="db-order-header">
+                <div class="db-order-title-area">
+                  <div class="db-order-line">
+                    <span class="db-order-label-large">Job:</span>
+                    <input id="db-order-job-title" class="db-title-input" autocomplete="off">
+                  </div>
+                  <div class="db-order-line db-order-number-line">
+                    <span class="db-order-label-large">Order No:</span>
+                    <input id="db-order-number" class="db-order-number-input" readonly>
+                    <div class="db-document-buttons">
+                      <button class="db-doc-button" type="button" data-db-document="order-ack">Order<br>Ack.</button>
+                      <button class="db-doc-button" type="button" data-db-document="delivery-note">Delivery<br>Note</button>
+                      <button class="db-doc-button" type="button" data-db-document="invoice">Invoice</button>
+                      <button class="db-doc-button db-pre-completion-invoice-button" type="button" data-db-pre-completion-invoice="true">Pre-Completion<br>Invoice</button>
+                      <button class="db-doc-button" type="button" data-db-document="pro-forma">Pro-<br>Forma</button>
+                      <button class="db-doc-button" type="button" data-db-no-invoice-close="true" hidden>Close<br>Order</button>
                     </div>
                   </div>
                 </div>
 
-                <!-- Lines inserted here -->
-                <div id="order-lines-body"></div>
-
-                <div class="form-row full">
-                  <button type="button" id="add-line-btn" class="btn outline">+ Add line</button>
+                <div id="db-order-stats-drawer" class="db-order-stats-drawer is-collapsed">
+                  <div id="db-order-header-stats" class="db-order-header-stats" aria-label="Customer overview"></div>
+                  <button id="db-order-stats-toggle" class="db-order-stats-toggle" type="button" data-db-order-stats-toggle aria-label="Show customer overview" aria-expanded="false">
+                    <span aria-hidden="true">&#8249;</span>
+                  </button>
                 </div>
               </div>
 
-              <div class="form-row">
-                <label>Status
-                  <select name="status">
-                    <option value="Draft">Draft</option>
-                    <option value="Confirmed">Confirmed</option>
-                    <option value="In Production">In Production</option>
-                    <option value="Completed">Completed</option>
-                    <option value="Shipped">Shipped</option>
-                  </select>
-                </label>
+              <div class="db-order-tabs" role="tablist" aria-label="Order tabs">
+                <button class="db-order-tab active" type="button" data-db-order-tab="details">Order details</button>
+                <button class="db-order-tab" type="button" data-db-order-tab="items">Order Items</button>
+                <button class="db-order-tab" type="button" data-db-order-tab="design">Design</button>
+                <button class="db-order-tab" type="button" data-db-order-tab="proof">VISUAL</button>
               </div>
 
-              <div class="form-row full">
-                <label>Notes
-                  <input name="notes" />
-                </label>
-              </div>
-
-              <div class="form-row full">
-                <label>Upload Artwork / Visuals (multiple)
-                  <input type="file" name="files" id="files" multiple />
-                </label>
-              </div>
-
-              <div class="form-row full">
-                <button class="btn primary" type="submit">Create Order</button>
-              </div>
-            </form>
+              <div id="db-order-details-panel" class="db-order-panel active"></div>
+              <div id="db-order-items-panel" class="db-order-panel"></div>
+              <div id="db-order-design-panel" class="db-order-panel"></div>
+              <div id="db-order-proof-panel" class="db-order-panel"></div>
+              <input
+                id="db-order-proof-upload-input"
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                multiple
+                hidden
+              >
+            </section>
           </div>
-        </section>
-      </div>
 
-      <!-- CUSTOMERS -->
-      <div id="tab-customers" class="tab-content">
-        <h1>Customers</h1>
-        <div id="customers-root" class="grid-2">
-          <section id="customers-list" class="card">
-            <div class="card-head"><h2>All Customers</h2></div>
-            <div class="card-body">
-              <table id="customers-table" class="data-table">
-                <thead>
-                  <tr>
-                    <th>Business</th>
-                    <th>Contact</th>
-                    <th>Email</th>
-                    <th>Phone</th>
-                    <th class="w-90">Actions</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
-            </div>
-          </section>
-
-          <section id="customer-form-wrap" class="card">
-            <div class="card-head"><h2>Add Customer</h2></div>
-            <div class="card-body">
-              <form id="customer-form" class="form-grid">
-                <div class="form-row full">
-                  <label>Business Name<span class="req">*</span>
-                    <input name="business_name" required />
-                  </label>
-                </div>
-                <div class="form-row">
-                  <label>Contact Name
-                    <input name="contact_name" />
-                  </label>
-                </div>
-                <div class="form-row">
-                  <label>Email<span class="req">*</span>
-                    <input type="email" name="email" required />
-                  </label>
-                </div>
-                <div class="form-row">
-                  <label>Phone
-                    <input name="phone" />
-                  </label>
-                </div>
-                <div class="form-row">
-                  <label>Mobile
-                    <input name="mobile" />
-                  </label>
-                </div>
-
-                <div class="form-row full"><h3 class="subhead">Invoice Address</h3></div>
-                <div class="form-row full"><label>Line 1<input name="inv_line1" /></label></div>
-                <div class="form-row full"><label>Line 2<input name="inv_line2" /></label></div>
-                <div class="form-row"><label>City<input name="inv_city" /></label></div>
-                <div class="form-row"><label>Region/State<input name="inv_region" /></label></div>
-                <div class="form-row"><label>Postcode<input name="inv_postcode" /></label></div>
-                <div class="form-row"><label>Country<input name="inv_country" /></label></div>
-
-                <div class="form-row full"><h3 class="subhead">Shipping Address</h3></div>
-                <div class="form-row full"><label>Line 1<input name="ship_line1" /></label></div>
-                <div class="form-row full"><label>Line 2<input name="ship_line2" /></label></div>
-                <div class="form-row"><label>City<input name="ship_city" /></label></div>
-                <div class="form-row"><label>Region/State<input name="ship_region" /></label></div>
-                <div class="form-row"><label>Postcode<input name="ship_postcode" /></label></div>
-                <div class="form-row"><label>Country<input name="ship_country" /></label></div>
-
-                <div class="form-row full">
-                  <button class="btn primary" type="submit">Save Customer</button>
-                </div>
-              </form>
-            </div>
-          </section>
-
-          <section id="customer-detail" class="card" style="display:none">
-            <div class="card-head">
-              <div>
-                <h2 id="cd-name">Customer</h2>
-                <div class="muted small">Contact: <span id="cd-contact"></span> · <span id="cd-email"></span> · <span id="cd-phone"></span></div>
-              </div>
-              <div class="card-actions">
-                <button id="customer-back-btn" class="btn outline">Back to list</button>
-              </div>
-            </div>
-            <div class="card-body">
-              <div class="grid-2">
-                <div><h3 class="subhead">Invoice Address</h3><p id="cd-invoice" class="address"></p></div>
-                <div><h3 class="subhead">Shipping Address</h3><p id="cd-shipping" class="address"></p></div>
-              </div>
-
-              <h3 class="subhead mt">Previous Orders</h3>
-              <table id="customer-orders-table" class="data-table">
-                <thead>
-                  <tr><th>Order</th><th>Status</th><th>Total</th><th>Created</th></tr>
-                </thead>
-                <tbody></tbody>
-              </table>
-            </div>
-          </section>
         </div>
-      </div>
+      </section>
 
-      <!-- STOCK -->
-      <div id="tab-stock" class="tab-content">
-        <h1>Stock</h1>
-        <p>Stock management content.</p>
-      </div>
-
-      <!-- LABELS -->
-      <div id="tab-labels" class="tab-content">
-        <h1>Labels</h1>
-        <button id="loadBtn" onclick="loadBoard()">Update Board Info</button>
-        <div id="board"></div>
-      </div>
-
-      <!-- SHIPPING -->
-      <div id="tab-shipping" class="tab-content">
-        <h1>Shipping</h1>
-        <p>Shipping tools will be shown here.</p>
-      </div>
     </main>
   </div>
 
-  <!-- Hidden scanner input + pill -->
-  <input id="scannerInput" type="text" autocomplete="off" inputmode="text"
-         style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;" />
-  <div id="scannerPill"
-       style="position:fixed;right:12px;bottom:12px;background:#111;color:#fff;padding:6px 10px;border-radius:999px;font:12px/1 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;">
-    Scanner: <span id="scannerPillText">ready</span>
+  <div id="db-styles-image-modal" class="db-styles-image-modal" hidden aria-hidden="true">
+    <div class="db-styles-image-modal-shell" role="dialog" aria-modal="true" aria-label="Product image preview">
+      <button
+        id="db-styles-image-modal-close"
+        class="db-styles-image-modal-close"
+        type="button"
+        aria-label="Close product image preview"
+      >&#215;</button>
+      <img id="db-styles-image-modal-image" alt="">
+    </div>
+  </div>
+
+  <div id="db-visual-modal" class="db-visual-modal" hidden aria-hidden="true">
+    <div class="db-visual-modal-shell" role="dialog" aria-modal="true" aria-labelledby="db-visual-modal-title">
+      <div class="db-visual-modal-toolbar">
+        <div class="db-visual-modal-title-wrap">
+          <strong id="db-visual-modal-title">Visual preview</strong>
+          <span id="db-visual-modal-meta"></span>
+        </div>
+        <label class="db-visual-modal-job-control" for="db-visual-modal-job">
+          <span>Add visual to open job</span>
+          <select id="db-visual-modal-job">
+            <option value="">Choose a job…</option>
+          </select>
+        </label>
+        <button id="db-visual-modal-delete" class="db-visual-modal-delete" type="button" hidden>Delete file</button>
+        <button id="db-visual-modal-close" class="db-visual-modal-close" type="button" aria-label="Close visual preview">&#215;</button>
+      </div>
+      <div id="db-visual-modal-feedback" class="db-visual-modal-feedback" role="status" aria-live="polite"></div>
+      <div id="db-visual-modal-viewer" class="db-visual-modal-viewer"></div>
+    </div>
+  </div>
+
+  <div id="db-visual-delete-confirm-modal" class="db-visual-delete-confirm-modal" hidden aria-hidden="true">
+    <div
+      class="db-visual-delete-confirm-shell"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="db-visual-delete-confirm-title"
+      aria-describedby="db-visual-delete-confirm-message"
+    >
+      <div id="db-visual-delete-confirm-title" class="db-visual-delete-confirm-title">Are you sure?</div>
+      <div id="db-visual-delete-confirm-message" class="db-visual-delete-confirm-message">Delete this visual file?</div>
+      <div id="db-visual-delete-confirm-error" class="db-visual-delete-confirm-error" role="status" aria-live="polite"></div>
+      <div class="db-visual-delete-confirm-actions">
+        <button class="db-visual-delete-confirm-button" type="button" data-db-visual-delete-confirm>Delete</button>
+        <button class="db-visual-delete-cancel-button" type="button" data-db-visual-delete-cancel>Cancel</button>
+      </div>
+    </div>
   </div>
 </body>
 </html>

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ultimate Hub · Login</title>
+  <link rel="icon" type="image/png" href="https://res.cloudinary.com/brandduk/image/upload/v1784184878/UPC_FAV_xeevye.png" media="(prefers-color-scheme: light)">
+  <link rel="icon" type="image/png" href="https://res.cloudinary.com/brandduk/image/upload/v1783932861/UPC_FAV_all5bl.png" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="styles.css">
+  <script src="auth-page.js" defer></script>
+</head>
+<body class="auth-page">
+  <main class="auth-shell">
+    <section class="auth-panel" aria-labelledby="auth-title">
+      <div class="auth-brand">
+        <div>
+          <h1 id="auth-title">Ultimate Hub</h1>
+          <p>Ultimate Promotions</p>
+        </div>
+      </div>
+
+      <div class="auth-tabs" role="tablist" aria-label="Authentication">
+        <button id="auth-login-tab" class="auth-tab active" type="button" data-auth-mode="login">Login</button>
+        <button id="auth-signup-tab" class="auth-tab" type="button" data-auth-mode="signup">Sign up</button>
+      </div>
+
+      <form id="auth-login-form" class="auth-form active" data-auth-form="login">
+        <label>Email
+          <input name="email" type="email" autocomplete="email" required>
+        </label>
+        <label>Password
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button class="btn primary auth-submit" type="submit">Login</button>
+      </form>
+
+      <form id="auth-signup-form" class="auth-form" data-auth-form="signup">
+        <div class="auth-name-grid">
+          <label>First name
+            <input name="first_name" autocomplete="given-name" maxlength="80" required>
+          </label>
+          <label>Last name
+            <input name="last_name" autocomplete="family-name" maxlength="80" required>
+          </label>
+        </div>
+        <label>Email
+          <input name="email" type="email" autocomplete="email" maxlength="254" required>
+        </label>
+        <label>Password
+          <input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+        </label>
+        <label>Confirm password
+          <input name="confirm_password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+        </label>
+        <p class="auth-signup-note">Your account will require approval from an existing Hub user before you can log in.</p>
+        <button class="btn primary auth-submit" type="submit">Request access</button>
+      </form>
+
+      <div id="auth-signup-received" class="auth-signup-received" hidden>
+        <strong>Your request has been received.</strong>
+        <p>You will be able to log in after an existing Hub user accepts your request.</p>
+        <button class="btn primary" type="button" data-auth-return-login>Back to login</button>
+      </div>
+
+      <div id="auth-status" class="auth-status" role="status" aria-live="polite"></div>
+    </section>
+  </main>
+</body>
+</html>
