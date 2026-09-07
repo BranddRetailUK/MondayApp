@@ -41,6 +41,8 @@ const TEST_DASHBOARD_CLIENT_COLUMN_IDS = Object.freeze({
   TYPE: 'project_status'
 });
 const TEST_DASHBOARD_APPROVAL_REQUIREMENTS_MESSAGE = 'Please add design number and/or Visual Proof.';
+const TEST_DASHBOARD_SAMPLE_REQUIRED_MESSAGE = 'Set this job to SAMPLED before approving it or marking it READY TO PRINT.';
+const TEST_DASHBOARD_JOB_APPROVAL_REQUIRED_MESSAGE = 'Tick JOB ✔ before setting READY TO PRINT.';
 const TEST_DASHBOARD_SPLIT_TICKS_REQUIRED_MESSAGE = 'Tick both TRANS and JAQ before continuing.';
 const TEST_DASHBOARD_VISUAL_UPLOAD_ACCEPT = '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png';
 const TEST_DASHBOARD_VISUAL_UPLOAD_ERROR = 'The VISUAL column only accepts PDF, JPEG, and PNG files.';
@@ -3058,6 +3060,12 @@ async function selectStatusOption(option) {
     return;
   }
 
+  const readinessMessage = testDashboardReadyStatusBlockMessage(state, option);
+  if (readinessMessage) {
+    showTestDashboardApprovalWarning(readinessMessage, 'Status blocked');
+    return;
+  }
+
   if (shouldBlockTestDashboardSplitReadyStatus(state, option)) {
     showTestDashboardApprovalWarning(
       TEST_DASHBOARD_SPLIT_TICKS_REQUIRED_MESSAGE,
@@ -3092,7 +3100,9 @@ async function selectStatusOption(option) {
   } catch (err) {
     console.warn('Status update failed', err);
     await loadBoardForContext(context, { forceRefresh: true });
-    if (isDashboardCompletionBlockMessage(err.message)) {
+    if (isTestDashboardReadinessMessage(err.message)) {
+      showTestDashboardApprovalWarning(err.message, 'Status blocked');
+    } else if (isDashboardCompletionBlockMessage(err.message)) {
       showTestDashboardApprovalWarning(
         DASHBOARD_COMPLETION_BLOCK_MESSAGE,
         'Status blocked'
@@ -3147,6 +3157,23 @@ function shouldBlockTestDashboardSplitReadyStatus(state, option) {
 
   return !isCheckedValue(findColumnValue(item, TEST_DASHBOARD_CLIENT_COLUMN_IDS.TRANS)) ||
     !isCheckedValue(findColumnValue(item, TEST_DASHBOARD_CLIENT_COLUMN_IDS.JAQ));
+}
+
+function testDashboardReadyStatusBlockMessage(state, option) {
+  if (state?.context !== BOARD_CONTEXT_TEST || normalizeColumnTitle(state.columnTitle) !== 'STATUS'
+    || option?.clear || normalizeColumnTitle(option?.label) !== 'READY TO PRINT') return '';
+  const item = findBoardPayloadItem(window.__latestTestBoardPayload, state.itemId);
+  if (!item || item.dashboard_split_job) return '';
+  if (item.dashboard_sampling?.blocked) return TEST_DASHBOARD_SAMPLE_REQUIRED_MESSAGE;
+  if (item.database_job && !isCheckedValue(findColumnValue(item, TEST_DASHBOARD_CLIENT_COLUMN_IDS.JOB))) {
+    return TEST_DASHBOARD_JOB_APPROVAL_REQUIRED_MESSAGE;
+  }
+  return '';
+}
+
+function isTestDashboardReadinessMessage(message) {
+  return [TEST_DASHBOARD_SAMPLE_REQUIRED_MESSAGE, TEST_DASHBOARD_JOB_APPROVAL_REQUIRED_MESSAGE]
+    .includes(String(message || '').trim());
 }
 
 function isTestSplitTicksRequirementsMessage(message) {
@@ -3414,7 +3441,7 @@ async function updateTestDashboardCheckbox(itemId, column, checked) {
   if (checked && isTestJobApprovalColumn(column)) {
     const readiness = getTestDashboardApprovalReadiness(itemId);
     if (readiness && !readiness.ok) {
-      showTestDashboardApprovalWarning();
+      showTestDashboardApprovalWarning(readiness.message);
       return;
     }
   }
@@ -3446,7 +3473,9 @@ async function updateTestDashboardCheckbox(itemId, column, checked) {
     }
     await loadTestBoard({ forceRefresh: true });
     const message = err.message || 'Unknown error';
-    if (isTestApprovalRequirementsMessage(message)) {
+    if (isTestDashboardReadinessMessage(message)) {
+      showTestDashboardApprovalWarning(message);
+    } else if (isTestApprovalRequirementsMessage(message)) {
       showTestDashboardApprovalWarning();
     } else {
       alert(`Failed to update ${column?.title || 'checkbox'}: ${message}`);
@@ -3461,6 +3490,10 @@ function getTestDashboardApprovalReadiness(itemId) {
   const board = unwrapFirstBoard(payload);
   const item = findBoardPayloadItem(payload, itemId);
   if (!board || !item) return null;
+
+  if (item.dashboard_sampling?.blocked) {
+    return { ok: false, message: TEST_DASHBOARD_SAMPLE_REQUIRED_MESSAGE };
+  }
 
   const designColumn = findBoardColumnByIdOrCompactTitle(board, TEST_DASHBOARD_CLIENT_COLUMN_IDS.DESIGN, 'DESPSG');
   const proofColumn = findBoardColumnByIdOrCompactTitle(board, TEST_DASHBOARD_CLIENT_COLUMN_IDS.PROOF, 'PROOF');

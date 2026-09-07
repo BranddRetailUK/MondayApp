@@ -52,6 +52,13 @@ const {
   isDashboardCompletionBlocked,
 } = require('../services/dashboardCompletionGuard');
 const {
+  SAMPLE_REQUIRED_MESSAGE,
+  JOB_APPROVAL_REQUIRED_MESSAGE,
+  dashboardSamplingState,
+  rememberPrivateDashboardSampling,
+  fetchDashboardSamplingHistory,
+} = require('../services/dashboardSampling');
+const {
   AWAITING_APPROVAL_LABEL,
   STOCK_ORDERED_LABEL,
   PRE_PRODUCTION_LABEL,
@@ -348,7 +355,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
       });
     }
 
-    const state = privateJob ? job : await fetchJobState(sourceOrderId);
+    const state = privateJob ? job : await fetchJobState(job.source_order_id);
     const columnValues = { ...(state?.column_values || {}) };
     let selectedOption = null;
     if (
@@ -372,6 +379,20 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
       selectedOption = findStatusOption(column, requestedLabel);
       if (!selectedOption) {
         return res.status(400).json({ error: 'Status label is not configured on that Tuesday Dashboard column' });
+      }
+    }
+
+    if (
+      !splitItem && !clearRequested &&
+      normalizeColumnTitle(column.title) === 'STATUS' &&
+      normalizeColumnTitle(requestedLabel) === READY_TO_PRINT_LABEL
+    ) {
+      const sampling = await getDashboardSamplingState(job, state, privateJob);
+      if (sampling.blocked) {
+        return res.status(400).json({ error: SAMPLE_REQUIRED_MESSAGE, code: 'sample_required' });
+      }
+      if (!privateJob && !resolveJobApproved(job, columnValues)) {
+        return res.status(400).json({ error: JOB_APPROVAL_REQUIRED_MESSAGE, code: 'job_approval_required' });
       }
     }
 
@@ -444,20 +465,21 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
 
     const saved = privateJob
       ? await updatePrivateDashboardJob(job.id, nextState)
-      : await upsertJobState(sourceOrderId, nextState);
+      : await upsertJobState(job.source_order_id, nextState);
+    const effectiveLabel = getColumnText(nextState.column_values[columnId]);
     if (!privateJob) {
       await updateDatabaseJobDashboardFields(
         pool,
         job.source_order_id,
-        dashboardLabelsForChangedColumn(column, clearRequested ? '' : requestedLabel)
+        dashboardLabelsForChangedColumn(column, effectiveLabel)
       );
     }
     res.json({
       ok: true,
-      itemId: privateJob ? job.id : String(sourceOrderId),
+      itemId: privateJob ? job.id : String(job.source_order_id),
       columnId,
       columnTitle: column.title,
-      label: clearRequested ? '' : requestedLabel,
+      label: effectiveLabel,
       cleared: clearRequested,
       groupId: saved.group_id,
       archived: saved.archived,
@@ -499,6 +521,10 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (r
     if (isApprovalCheckbox) {
       if (!privateJob) delete columnValues[DASHBOARD_SPLIT_STATE_KEY];
       if (checked) {
+        const sampling = await getDashboardSamplingState(job, state, privateJob);
+        if (sampling.blocked) {
+          return res.status(400).json({ error: SAMPLE_REQUIRED_MESSAGE, code: 'sample_required' });
+        }
         const requirements = privateJob
           ? getPrivateApprovalRequirements(columnValues)
           : await getApprovalRequirements(job, columnValues);
@@ -1065,12 +1091,13 @@ async function buildTestDashboardBoardPayload() {
   ]);
   const candidateJobs = jobs.filter(job => deriveJobCategory(job) !== 'gifts');
   const sourceOrderIds = candidateJobs.map(job => job.source_order_id);
-  const [states, lineItems, initialPositions, files, scans] = await Promise.all([
+  const [states, lineItems, initialPositions, files, scans, samplingHistory] = await Promise.all([
     fetchStateMap(sourceOrderIds),
     fetchLineItemMap(sourceOrderIds),
     fetchPositionMap(sourceOrderIds),
     fetchFileMap(sourceOrderIds),
     fetchScanMap(sourceOrderIds),
+    fetchDashboardSamplingHistory(pool, sourceOrderIds),
   ]);
   let positions = initialPositions;
   if (await backfillDashboardDesignPositions(candidateJobs, states, positions, scans)) {
@@ -1091,6 +1118,7 @@ async function buildTestDashboardBoardPayload() {
       positions: positions.get(job.source_order_id) || [],
       files: files.get(job.source_order_id) || new Map(),
       scan,
+      samplingHistory: samplingHistory.get(job.source_order_id),
     };
     const splitState = resolveDashboardSplitState(job, state?.column_values || {});
     if (splitState) {
@@ -1181,7 +1209,7 @@ function hasDashboardIdentity(job, state, scan) {
   );
 }
 
-function buildBoardItem({ job, state, columns, subitemColumns, lineItems, positions, files, scan }) {
+function buildBoardItem({ job, state, columns, subitemColumns, lineItems, positions, files, scan, samplingHistory }) {
   const stateValues = state?.column_values || {};
   const values = new Map();
   const itemName = state?.item_name || formatJobName(job);
@@ -1220,6 +1248,7 @@ function buildBoardItem({ job, state, columns, subitemColumns, lineItems, positi
   return {
     id: String(job.source_order_id),
     name: itemName,
+    dashboard_sampling: dashboardSamplingState(job, state, samplingHistory),
     group: {
       id: groupId,
       title: '',
@@ -1308,6 +1337,7 @@ function buildPrivateBoardItem(job, columns) {
     },
     database_job: null,
     dashboard_private_job: true,
+    dashboard_sampling: dashboardSamplingState({}, job),
     column_values: Array.from(values.values()).filter(Boolean),
     subitems: [],
   };
@@ -1433,6 +1463,12 @@ async function getApprovalRequirements(job, stateValues = {}) {
     ok: missing.length === 0,
     missing,
   };
+}
+
+async function getDashboardSamplingState(job, state, privateJob) {
+  const history = privateJob ? new Map()
+    : await fetchDashboardSamplingHistory(pool, [job.source_order_id]);
+  return dashboardSamplingState(privateJob ? {} : job, state, history.get(job.source_order_id));
 }
 
 function getPrivateApprovalRequirements(stateValues = {}) {
@@ -1691,7 +1727,7 @@ async function fetchPrivateDashboardJobs() {
      WHERE archived IS NOT TRUE
      ORDER BY created_at ASC, id ASC`
   );
-  return result.rows;
+  return result.rows.map(rememberPrivateDashboardSampling);
 }
 
 async function fetchPrivateDashboardJob(jobId) {
@@ -1702,7 +1738,7 @@ async function fetchPrivateDashboardJob(jobId) {
      LIMIT 1`,
     [jobId]
   );
-  return result.rows[0] || null;
+  return rememberPrivateDashboardSampling(result.rows[0]) || null;
 }
 
 async function createPrivateDashboardJob({ groupId, title, columns, user }) {
@@ -1734,6 +1770,7 @@ async function createPrivateDashboardJob({ groupId, title, columns, user }) {
 }
 
 async function updatePrivateDashboardJob(jobId, state) {
+  state = rememberPrivateDashboardSampling(state);
   const result = await pool.query(
     `UPDATE test_dashboard_private_jobs
      SET group_id = $2,
