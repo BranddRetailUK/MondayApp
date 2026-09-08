@@ -1,5 +1,6 @@
 const TEST_DASHBOARD_BOARD_ID = 'test-dashboard';
 const AWAITING_APPROVAL_STATUS_COLOR = '#2b2b2c';
+const PRIVATE_DASHBOARD_TOTAL_COLUMN = Object.freeze({ id: 'private_total', title: 'TOTAL', type: 'text' });
 
 const TEST_DASHBOARD_GROUPS = [
   { id: 'group_mkv26kq5', title: 'HOLD', color: '#bb3354', position: 16224, sort_order: 1 },
@@ -161,6 +162,7 @@ module.exports = {
   TEST_DASHBOARD_COLUMNS,
   TEST_DASHBOARD_SUBITEM_COLUMNS,
   TEST_DASHBOARD_COLUMN_IDS,
+  PRIVATE_DASHBOARD_TOTAL_COLUMN,
   AWAITING_APPROVAL_STATUS_COLOR,
   STATUS_SETTINGS,
   PRIORITY_SETTINGS,

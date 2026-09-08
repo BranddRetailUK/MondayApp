@@ -1744,10 +1744,12 @@ body.test-dashboard-mobile-job-open{
   font-size:110%;
   font-weight:800;
 }
-.job-total-cell .dashboard-plain-text{
+.job-total-cell .dashboard-plain-text,
+.job-total-cell .test-text-input{
   font-size:110%;
   font-weight:800;
 }
+.job-total-cell.test-text-cell{padding:0}
 .test-date-cell{padding:0}
 .test-date-button{
   width:100%;

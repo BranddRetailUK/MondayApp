@@ -28,6 +28,7 @@ const PROOF_PDF_ZOOM_STEP = 0.25;
 const DASHBOARD_TAB_NAMES = ['database', 'test-dashboard', 'dtf-uploader'];
 const BOARD_AUTO_REFRESH_MS = 1000;
 const BOARD_CONTEXT_TEST = 'test-dashboard';
+const PRIVATE_DASHBOARD_TOTAL_COLUMN = Object.freeze({ id: 'private_total', title: 'TOTAL', type: 'text' });
 const ULTIMATE_PACKING_USER_NAME = 'ultimate packing';
 const TEST_DASHBOARD_CLIENT_COLUMN_IDS = Object.freeze({
   JOB: 'checkbox1__1',
@@ -1384,12 +1385,10 @@ function buildParentTotalColumnSpec(items, subitemColumns) {
   const qtyColumn = findSubitemQuantityColumn(subitemColumns);
   const titleWidth = measureBoardTextWidth('TOTAL', "700 13px Manrope, 'Segoe UI', system-ui, sans-serif");
   let maxValueWidth = 0;
-  if (qtyColumn?.id) {
-    for (const item of (Array.isArray(items) ? items : [])) {
-      const text = getDashboardParentTotalText(item, qtyColumn);
-      if (!text) continue;
-      maxValueWidth = Math.max(maxValueWidth, measureBoardTextWidth(text, "800 15.4px Manrope, 'Segoe UI', system-ui, sans-serif"));
-    }
+  for (const item of (Array.isArray(items) ? items : [])) {
+    const text = getDashboardParentTotalText(item, qtyColumn);
+    if (!text) continue;
+    maxValueWidth = Math.max(maxValueWidth, measureBoardTextWidth(text, "800 15.4px Manrope, 'Segoe UI', system-ui, sans-serif"));
   }
   return {
     qtyColumn,
@@ -1398,6 +1397,9 @@ function buildParentTotalColumnSpec(items, subitemColumns) {
 }
 
 function getDashboardParentTotalText(item, qtyColumn) {
+  if (isTestDashboardPrivateItem(item)) {
+    return normalizeCellText(findColumnValue(item, PRIVATE_DASHBOARD_TOTAL_COLUMN.id)?.text || '');
+  }
   if (!qtyColumn?.id) return '';
   const subitems = Array.isArray(item?.subitems) ? item.subitems : [];
   const lineSubitems = subitems.filter(subitem => !isDashboardTotalSubitem(subitem));
@@ -1551,7 +1553,9 @@ function buildParentTotalCell(item, spec) {
   const cell = document.createElement('div');
   cell.className = 'grid-cell dashboard-value-cell job-total-cell';
   const text = getDashboardParentTotalText(item, spec?.qtyColumn);
-  if (text) {
+  if (isTestDashboardPrivateItem(item)) {
+    renderTestTextInputValue(cell, text, item, PRIVATE_DASHBOARD_TOTAL_COLUMN);
+  } else if (text) {
     cell.title = text;
     renderPlainTextValue(cell, text);
   }
@@ -5010,6 +5014,10 @@ function renderTestTextInputValue(cell, text, entity, column) {
   input.setAttribute('aria-label', `Set ${column?.title || 'text'}`);
   input.autocomplete = 'off';
   input.spellcheck = true;
+  if (column?.id === PRIVATE_DASHBOARD_TOTAL_COLUMN.id) {
+    input.inputMode = 'numeric';
+    input.spellcheck = false;
+  }
 
   input.addEventListener('pointerdown', (event) => event.stopPropagation());
   input.addEventListener('click', (event) => event.stopPropagation());

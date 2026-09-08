@@ -5,8 +5,10 @@ const test = require('node:test');
 const vm = require('node:vm');
 const {
   TEST_DASHBOARD_COLUMNS: columns,
+  TEST_DASHBOARD_SUBITEM_COLUMNS: subitemColumns,
   TEST_DASHBOARD_COLUMN_IDS: ids,
   TEST_DASHBOARD_GROUP_IDS: groups,
+  PRIVATE_DASHBOARD_TOTAL_COLUMN: totalColumn,
 } = require('../src/services/testDashboardDefaults');
 const { resolvePrivateDashboardGroupId } = require('../src/services/dashboardAutomation');
 const { rememberPrivateDashboardSampling } = require('../src/services/dashboardSampling');
@@ -126,6 +128,93 @@ test('TYPE renders as a picker only on private parent rows, with the configured 
     ['EMB', 'EMB / PRINT', 'HOLD', 'PRINT', 'PRINTED TRANSFER', 'UV PRINT']);
 });
 
+test('private TOTAL saves, survives status changes and board reloads, and can be cleared', async () => {
+  await withFixture({}, async fixture => {
+    for (const total of ['24', '0', '1250', '']) {
+      const before = fixture.snapshot();
+      const response = await fixture.saveTotal(total);
+      assert.equal(response.statusCode, 200);
+      assert.equal(response.body.value, total);
+      const saved = fixture.snapshot();
+      assert.equal(saved.column_values[totalColumn.id].text, total);
+      delete saved.column_values[totalColumn.id];
+      delete before.column_values[totalColumn.id];
+      assert.deepEqual(saved, before);
+      const item = await fixture.boardItem();
+      assert.equal(item.column_values.find(value => value.id === totalColumn.id).text, total);
+      assert.deepEqual(item.subitems, []);
+    }
+    await fixture.saveTotal('24');
+    await fixture.select(ids.TYPE, 'PRINT');
+    await fixture.select(ids.STATUS, 'READY TO PRINT');
+    await fixture.select(ids.STATUS, 'COMPLETED');
+    assert.equal(fixture.snapshot().column_values[totalColumn.id].text, '24');
+    assert.equal(fixture.databaseWrites(), 0);
+  });
+});
+
+test('invalid private totals and DATABASE total overrides are rejected without writes', async () => {
+  await withFixture({}, async fixture => {
+    const before = fixture.snapshot();
+    for (const value of ['-1', '1.5', 'twelve', '1e3', '9007199254740992']) {
+      assert.equal((await fixture.saveTotal(value)).statusCode, 400);
+      assert.deepEqual(fixture.snapshot(), before);
+    }
+  });
+  await withFixture({ databaseJob: true }, async fixture => {
+    assert.equal((await fixture.saveTotal('24')).statusCode, 400);
+    assert.equal(fixture.databaseWrites(), 0);
+  });
+});
+
+test('private TOTAL is editable and displayed without subitems, while real totals are calculated', () => {
+  const ui = loadFrontend();
+  const privateJob = {
+    id: privateId, dashboard_private_job: true, database_job: null,
+    column_values: [{ id: totalColumn.id, text: '24' }], subitems: [],
+  };
+  assert.equal(ui.getDashboardParentTotalText(privateJob, null), '24');
+  const input = ui.buildParentTotalCell(privateJob, {}).children[0];
+  assert.equal(input.tagName, 'input');
+  assert.equal(input.value, '24');
+  assert.equal(input.inputMode, 'numeric');
+  assert.equal(input.attributes['aria-label'], 'Set TOTAL');
+  assert.equal(typeof input.events.blur, 'function');
+  let blurred = false;
+  input.blur = () => { blurred = true; };
+  input.events.keydown({ key: 'Enter', preventDefault() {} });
+  assert.equal(blurred, true);
+  input.value = '99';
+  input.events.keydown({ key: 'Escape', preventDefault() {} });
+  assert.equal(input.value, '24');
+
+  const databaseJob = {
+    ...privateJob, id: '50503', dashboard_private_job: false, database_job: { source_order_id: 50503 },
+    subitems: [{ column_values: [{ id: 'qty', text: '4' }] }, { column_values: [{ id: 'qty', text: '6' }] }],
+  };
+  const total = ui.buildParentTotalCell(databaseJob, { qtyColumn: { id: 'qty' } }).children[0];
+  assert.equal(total.tagName, 'span');
+  assert.equal(total.textContent, '10');
+});
+
+test('editing private TOTAL saves through the text endpoint and refreshes the board', async () => {
+  const ui = loadFrontend();
+  const item = { id: privateId, dashboard_private_job: true, column_values: [], subitems: [] };
+  const input = ui.buildParentTotalCell(item, {}).children[0];
+  input.value = '24';
+  let refreshed = false;
+  ui.fetch = async (url, options) => {
+    assert.equal(url, `/api/test-dashboard/items/${privateId}/text-column`);
+    assert.equal(options.method, 'PUT');
+    assert.deepEqual(JSON.parse(options.body), { columnId: totalColumn.id, value: '24' });
+    return { ok: true };
+  };
+  ui.loadTestBoard = async options => { refreshed = options.forceRefresh; };
+  await ui.saveTestTextInput(input, item, totalColumn);
+  assert.equal(refreshed, true);
+  assert.equal(input.disabled, false);
+});
+
 async function withFixture(options, run) {
   const poolPath = require.resolve('../src/db/pool');
   const routePath = require.resolve('../src/routes/test-dashboard');
@@ -146,9 +235,9 @@ async function withFixture(options, run) {
   const rows = data => ({ rows: structuredClone(data), rowCount: data.length });
   const pool = { async query(sql, values = []) {
     queries.push(sql);
-    if (sql.includes('FROM test_dashboard_columns') && sql.trimStart().startsWith('SELECT')) return rows(columns);
+    if (sql.includes('FROM test_dashboard_columns') && sql.trimStart().startsWith('SELECT')) return rows(values[0] ? subitemColumns : columns);
     if (sql.includes('FROM test_dashboard_private_jobs')) return rows([row]);
-    if (sql.includes('FROM database_jobs')) return rows([{ source_order_id: 50503, order_type: 'Printing' }]);
+    if (sql.includes('FROM database_jobs')) return rows(options.databaseJob ? [{ source_order_id: 50503, order_type: 'Printing' }] : []);
     if (sql.includes('UPDATE test_dashboard_private_jobs')) {
       assert.equal(values[0], privateId);
       row = { ...row, group_id: values[1], item_name: values[2], column_values: structuredClone(values[3]), archived: values[4] };
@@ -160,14 +249,25 @@ async function withFixture(options, run) {
   delete require.cache[routePath];
   try {
     const { protectedRouter } = require('../src/routes/test-dashboard');
-    const route = protectedRouter.stack.find(layer => layer.route?.path === '/api/test-dashboard/items/:jobId/status-column' && layer.route.methods.put);
+    async function request(endpoint, body, method = 'put') {
+      const route = protectedRouter.stack.find(layer => layer.route?.path === endpoint && layer.route.methods[method]);
+      const response = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(data) { this.body = data; return this; } };
+      await route.route.stack[0].handle({ params: { jobId: options.databaseJob ? '50503' : privateId }, body }, response);
+      return response;
+    }
     await run({
       snapshot: () => structuredClone(row),
       databaseWrites: () => queries.filter(sql => /(?:UPDATE|INSERT INTO|DELETE FROM) (?:database_jobs|test_dashboard_job_state)\b/.test(sql)).length,
       async select(columnId, label, extra = {}) {
-        const response = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(data) { this.body = data; return this; } };
-        await route.route.stack[0].handle({ params: { jobId: options.databaseJob ? '50503' : privateId }, body: { columnId, label, ...extra } }, response);
-        return response;
+        return request('/api/test-dashboard/items/:jobId/status-column', { columnId, label, ...extra });
+      },
+      async saveTotal(value) {
+        return request('/api/test-dashboard/items/:jobId/text-column', { columnId: totalColumn.id, value });
+      },
+      async boardItem() {
+        const response = await request('/api/test-dashboard/board', null, 'get');
+        assert.equal(response.statusCode, 200);
+        return response.body.boards[0].groups.flatMap(group => group.items_page.items).find(item => item.id === privateId);
       },
     });
   } finally {
@@ -184,7 +284,7 @@ function loadFrontend() {
       addEventListener() {},
       createElement(tagName) {
         return {
-          tagName, attributes: {}, children: [], events: {}, style: {}, classList: { add() {} },
+          tagName, attributes: {}, children: [], events: {}, style: {}, dataset: {}, classList: { add() {}, remove() {} },
           appendChild(child) { this.children.push(child); },
           setAttribute(name, value) { this.attributes[name] = value; },
           addEventListener(name, handler) { this.events[name] = handler; },

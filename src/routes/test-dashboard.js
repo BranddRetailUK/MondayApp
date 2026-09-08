@@ -10,6 +10,7 @@ const {
   TEST_DASHBOARD_COLUMNS,
   TEST_DASHBOARD_SUBITEM_COLUMNS,
   TEST_DASHBOARD_COLUMN_IDS,
+  PRIVATE_DASHBOARD_TOTAL_COLUMN,
   AWAITING_APPROVAL_STATUS_COLOR,
   normalizeColumnTitle,
 } = require('../services/testDashboardDefaults');
@@ -622,9 +623,13 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/text-column', async (req, 
     ]);
     if (!job) return res.status(404).json({ error: privateJob ? 'Private dashboard job not found' : 'Database job not found' });
 
-    const column = columns.find(col => col.id === columnId);
+    const privateTotal = privateJob && columnId === PRIVATE_DASHBOARD_TOTAL_COLUMN.id;
+    const column = privateTotal ? PRIVATE_DASHBOARD_TOTAL_COLUMN : columns.find(col => col.id === columnId);
     if (!column || !['text', 'long_text'].includes(column.type)) {
       return res.status(400).json({ error: 'Column is not a Tuesday Dashboard text column' });
+    }
+    if (privateTotal && value !== '' && (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))) {
+      return res.status(400).json({ error: 'TOTAL must be a whole number of zero or more, or blank' });
     }
     if (!privateJob && !EDITABLE_TEXT_TITLES.has(normalizeColumnTitle(column.title))) {
       return res.status(400).json({ error: 'Only the Tuesday Dashboard NOTES column can be updated' });
@@ -1301,6 +1306,10 @@ function buildPrivateBoardItem(job, columns) {
   const stateValues = job?.column_values || {};
   const values = new Map();
   const jobApproved = jobApprovedFromColumnValues(stateValues) === true;
+
+  if (stateValues[PRIVATE_DASHBOARD_TOTAL_COLUMN.id]) {
+    values.set(PRIVATE_DASHBOARD_TOTAL_COLUMN.id, stateValues[PRIVATE_DASHBOARD_TOTAL_COLUMN.id]);
+  }
 
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.PRIORITY, stateValues[TEST_DASHBOARD_COLUMN_IDS.PRIORITY] || null);
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JOB, stateValues[TEST_DASHBOARD_COLUMN_IDS.JOB] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JOB), jobApproved));
