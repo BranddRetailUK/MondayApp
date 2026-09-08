@@ -1217,6 +1217,9 @@ body{
   background:#7f879e;
   min-height:35px;
 }
+.dashboard-status-badge.empty-priority{
+  background:transparent;
+}
 .dashboard-status-button{
   appearance:none;
   border:0;

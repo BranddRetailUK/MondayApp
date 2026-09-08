@@ -2234,6 +2234,7 @@ function renderStatusValue(cell, value, column, text, { entity = null, subitem =
 
   if (!text) {
     badge.classList.add('empty');
+    if (isPriorityStatusColumn(column)) badge.classList.add('empty-priority');
     cell.appendChild(badge);
     return;
   }
