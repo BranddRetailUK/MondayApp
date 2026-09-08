@@ -340,8 +340,9 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
     if (!column || column.type !== 'status') {
       return res.status(400).json({ error: 'Column is not a Tuesday Dashboard status column' });
     }
-    if (!EDITABLE_STATUS_TITLES.has(normalizeColumnTitle(column.title))) {
-      return res.status(400).json({ error: 'Only Tuesday Dashboard STATUS and PRIORITY columns can be updated' });
+    const columnTitle = normalizeColumnTitle(column.title);
+    if (!EDITABLE_STATUS_TITLES.has(columnTitle) && !(privateJob && columnTitle === 'TYPE')) {
+      return res.status(400).json({ error: 'Only Tuesday Dashboard STATUS and PRIORITY columns can be updated; TYPE is editable only for private dashboard jobs' });
     }
     if (isDashboardCompletionBlocked({
       user: req.hubUser,

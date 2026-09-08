@@ -249,7 +249,9 @@ function applyPrivateDashboardAutomations({
   let groupId = currentJob?.group_id || TEST_DASHBOARD_GROUP_IDS.OFFICE;
   let archived = Boolean(currentJob?.archived);
   const title = normalizeColumnTitle(column?.title || '');
-  const statusText = normalizeColumnTitle(changedLabel || getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]));
+  const statusText = normalizeColumnTitle(
+    (title === 'STATUS' ? changedLabel : '') || getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS])
+  );
   const typeText = normalizeColumnTitle(getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.TYPE]));
   const jobApproved = jobApprovedFromColumnValues(columnValues) === true;
 
@@ -272,6 +274,10 @@ function applyPrivateDashboardAutomations({
     } else if (automatedGroupId) {
       groupId = automatedGroupId;
     }
+  }
+
+  if (title === 'TYPE' && statusText === READY_TO_PRINT_LABEL) {
+    groupId = groupIdForStatusAndType(statusText, typeText) || groupId;
   }
 
   return {

@@ -2211,14 +2211,15 @@ function normalizeCellText(text) {
 }
 
 function renderStatusValue(cell, value, column, text, { entity = null, subitem = false, context = BOARD_CONTEXT_TEST } = {}) {
-  const editable = !subitem && entity?.id && isEditableDashboardStatusColumn(column) && getStatusOptions(column).length > 0;
+  const editable = !subitem && entity?.id && isEditableDashboardStatusColumn(column, entity) && getStatusOptions(column).length > 0;
   const badge = document.createElement(editable ? 'button' : 'span');
   badge.className = 'dashboard-status-badge';
   if (editable) {
     badge.type = 'button';
     badge.classList.add('dashboard-status-button');
     badge.setAttribute('aria-haspopup', 'menu');
-    badge.setAttribute('aria-label', text ? `Change job status from ${text}` : 'Set job status');
+    const fieldName = normalizeColumnTitle(column.title).toLowerCase();
+    badge.setAttribute('aria-label', text ? `Change job ${fieldName} from ${text}` : `Set job ${fieldName}`);
     badge.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -2246,10 +2247,11 @@ function renderStatusValue(cell, value, column, text, { entity = null, subitem =
   cell.appendChild(badge);
 }
 
-function isEditableDashboardStatusColumn(column) {
+function isEditableDashboardStatusColumn(column, entity = null) {
   if (column?.type !== 'status') return false;
   const title = normalizeColumnTitle(column.title);
-  return title === 'STATUS' || title === 'PRIORITY';
+  return title === 'STATUS' || title === 'PRIORITY' ||
+    (title === 'TYPE' && isTestDashboardPrivateItem(entity));
 }
 
 function getStatusOptions(column) {
