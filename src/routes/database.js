@@ -670,7 +670,11 @@ router.get('/api/database/reports', async (req, res) => {
                 pj.sales_at,
                 COALESCE(SUM(fl.net_sales), 0)::numeric AS net_sales,
                 COALESCE(SUM(fl.vat), 0)::numeric AS vat,
-                COALESCE(SUM(fl.cost_of_goods), 0)::numeric AS cost_of_goods
+                COALESCE(SUM(fl.cost_of_goods), 0)::numeric AS cost_of_goods,
+                COALESCE(SUM(fl.quantity), 0)::numeric AS units_sold,
+                COUNT(fl.source_order_id)::int AS financial_line_count,
+                COUNT(*) FILTER (WHERE fl.cost_missing)::int AS missing_cost_lines,
+                COUNT(*) FILTER (WHERE fl.price_missing)::int AS missing_price_lines
          FROM period_jobs pj
          LEFT JOIN financial_lines fl ON fl.source_order_id = pj.source_order_id
          GROUP BY pj.source_order_id, pj.order_no, pj.customer_name, pj.job_title, pj.order_type, pj.order_type_abbr, pj.sales_at
@@ -690,7 +694,10 @@ router.get('/api/database/reports', async (req, res) => {
                 COALESCE(SUM(jf.vat), 0)::numeric AS vat,
                 COALESCE(SUM(jf.cost_of_goods), 0)::numeric AS cost_of_goods,
                 COALESCE(SUM(jf.net_sales - jf.cost_of_goods), 0)::numeric AS gross_profit,
-                COUNT(jf.source_order_id)::int AS order_count
+                COUNT(jf.source_order_id)::int AS order_count,
+                COALESCE(SUM(jf.units_sold), 0)::numeric AS units_sold,
+                COALESCE(SUM(jf.missing_cost_lines), 0)::int AS missing_cost_lines,
+                COALESCE(SUM(jf.missing_price_lines), 0)::int AS missing_price_lines
          FROM series_buckets sb
          LEFT JOIN job_financials jf
            ON jf.sales_at >= sb.bucket_start
@@ -765,6 +772,9 @@ router.get('/api/database/reports', async (req, res) => {
               COALESCE((
                 SELECT JSON_AGG(JSON_BUILD_OBJECT(
                          'bucketStart', TO_CHAR(bucket_start, 'YYYY-MM-DD"T"HH24:MI:SS'),
+                         'unitsSold', units_sold,
+                         'missingCostLines', missing_cost_lines,
+                         'missingPriceLines', missing_price_lines,
                          'grossSales', gross_sales,
                          'netSales', net_sales,
                          'vat', vat,
@@ -794,6 +804,12 @@ router.get('/api/database/reports', async (req, res) => {
               COALESCE((
                 SELECT JSON_AGG(JSON_BUILD_OBJECT(
                          'sourceOrderId', source_order_id,
+                         'salesAt', TO_CHAR(sales_at, 'YYYY-MM-DD"T"HH24:MI:SS'),
+                         'orderType', order_type,
+                         'unitsSold', units_sold,
+                         'financialLineCount', financial_line_count,
+                         'missingCostLines', missing_cost_lines,
+                         'missingPriceLines', missing_price_lines,
                          'orderNo', order_no,
                          'customerName', COALESCE(NULLIF(TRIM(customer_name), ''), 'Unknown customer'),
                          'jobTitle', COALESCE(job_title, ''),

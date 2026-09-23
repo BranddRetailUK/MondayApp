@@ -17,7 +17,8 @@
     "test:dtf": "node --test test/dtf.test.js test/dtf-routes.test.js",
     "preflight:dtf-cloudinary": "node scripts/preflight-dtf-cloudinary.js",
     "preflight:dtf-cloudinary:large": "node scripts/preflight-dtf-cloudinary.js --large",
-    "suppliers:ping": "node scripts/ping-supplier-apis.js"
+    "suppliers:ping": "node scripts/ping-supplier-apis.js",
+    "test:reports": "node --test test/database-reports.test.js"
   },
   "dependencies": {
     "cloudinary": "^2.10.0",

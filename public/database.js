@@ -2813,6 +2813,7 @@
   }
 
   function renderDatabaseReportsLoading() {
+    window.DatabaseReports?.clear();
     if (els.reportsStatus) els.reportsStatus.textContent = 'Loading financial report…';
     if (els.reportsChart) els.reportsChart.replaceChildren();
     if (els.reportsChartLegend) els.reportsChartLegend.hidden = true;
@@ -2832,6 +2833,7 @@
   }
 
   function renderDatabaseReportsError(err) {
+    window.DatabaseReports?.clear();
     const message = err?.message || 'Failed to load financial report';
     if (els.reportsStatus) els.reportsStatus.textContent = message;
     if (els.reportsChartState) {
@@ -2862,7 +2864,7 @@
       { key: 'netSales', note: 'Before VAT' },
       { key: 'vat', note: 'Invoice VAT' },
       { key: 'costOfGoods', note: 'Unit cost × quantity' },
-      { key: 'grossProfit', note: `${formatReportPercent(summary.grossMarginPercent)} margin`, profit: reportNumber(summary.grossProfit) },
+      { key: 'grossProfit', note: `${formatReportPercent(summary.grossMarginPercent)} margin${summary.missingCostLines || summary.missingPriceLines ? ' · provisional' : ''}`, profit: reportNumber(summary.grossProfit) },
       { key: 'orderCount', note: `${formatCurrency(reportNumber(summary.averageOrderValue))} average` },
     ];
     if (els.reportsKpis) {
@@ -2897,6 +2899,9 @@
       formatNumber(type.orderCount || 0),
       formatCurrency(reportNumber(type.grossSales)),
     ]);
+    window.DatabaseReports?.render(data, comparison, (series, grain) => {
+      renderDatabaseReportsChart(series, grain, data.rangeLabel, state.reportsMetric);
+    });
   }
 
   function renderDatabaseReportsTopCustomer(customers, topOrder, summary) {
