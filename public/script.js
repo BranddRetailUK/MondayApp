@@ -5251,6 +5251,9 @@ function requestLabelQuantity(trigger) {
   const modal = ensureLabelQuantityModal();
   const input = modal.querySelector('[data-label-quantity-input]');
   if (input) input.value = '1';
+  const countCheckbox = modal.querySelector('[data-label-count-checkbox]');
+  if (countCheckbox) countCheckbox.checked = true;
+  updateLabelCountControls(modal);
   __labelQuantityReturnFocus = trigger || document.activeElement;
   modal.hidden = false;
   modal.setAttribute('aria-hidden', 'false');
@@ -5278,13 +5281,19 @@ function ensureLabelQuantityModal() {
     <form class="test-dashboard-complete-confirm-shell label-quantity-shell" data-label-quantity-form role="dialog" aria-modal="true" aria-labelledby="label-quantity-title">
       <div class="test-dashboard-complete-confirm-title" id="label-quantity-title">Print labels</div>
       <div class="label-quantity-body">
-        <label for="label-quantity-input">How many labels?</label>
-        <div class="label-quantity-control">
-          <button type="button" data-label-quantity-decrement aria-label="Remove one label">−</button>
-          <input id="label-quantity-input" data-label-quantity-input type="number" inputmode="numeric" min="1" max="99" step="1" value="1" required>
-          <button type="button" data-label-quantity-increment aria-label="Add one label">+</button>
+        <label class="label-count-option" for="label-count-checkbox">
+          <input id="label-count-checkbox" data-label-count-checkbox type="checkbox" checked>
+          <span>Number labels</span>
+        </label>
+        <div class="label-quantity-settings" data-label-quantity-settings>
+          <label for="label-quantity-input">How many labels?</label>
+          <div class="label-quantity-control">
+            <button type="button" data-label-quantity-decrement aria-label="Remove one label">−</button>
+            <input id="label-quantity-input" data-label-quantity-input type="number" inputmode="numeric" min="1" max="99" step="1" value="1" required>
+            <button type="button" data-label-quantity-increment aria-label="Add one label">+</button>
+          </div>
+          <div class="label-quantity-help">Labels will be numbered automatically. Keep Copies set to 1 in the print dialog.</div>
         </div>
-        <div class="label-quantity-help">Labels will be numbered automatically. Keep Copies set to 1 in the print dialog.</div>
       </div>
       <div class="test-dashboard-complete-confirm-actions">
         <button class="test-dashboard-complete-confirm-button cancel" type="button" data-label-quantity-cancel>Cancel</button>
@@ -5293,10 +5302,23 @@ function ensureLabelQuantityModal() {
     </form>
   `;
   modal.addEventListener('click', handleLabelQuantityClick);
+  modal.querySelector('[data-label-count-checkbox]')?.addEventListener('change', () => updateLabelCountControls(modal));
   modal.querySelector('[data-label-quantity-form]')?.addEventListener('submit', handleLabelQuantitySubmit);
   document.addEventListener('keydown', handleLabelQuantityKeydown);
   document.body.appendChild(modal);
   return modal;
+}
+
+function updateLabelCountControls(modal) {
+  const numbered = Boolean(modal.querySelector('[data-label-count-checkbox]')?.checked);
+  const settings = modal.querySelector('[data-label-quantity-settings]');
+  const input = modal.querySelector('[data-label-quantity-input]');
+  if (settings) settings.hidden = !numbered;
+  if (input) {
+    input.required = numbered;
+    input.disabled = !numbered;
+    input.setCustomValidity('');
+  }
 }
 
 function readLabelQuantity(modal) {
@@ -5337,8 +5359,13 @@ function handleLabelQuantityClick(event) {
 function handleLabelQuantitySubmit(event) {
   event.preventDefault();
   const modal = document.getElementById('label-quantity-modal');
+  const numbered = Boolean(modal?.querySelector('[data-label-count-checkbox]')?.checked);
+  if (!numbered) {
+    closeLabelQuantityModal({ quantity: 1, showCount: false });
+    return;
+  }
   const quantity = readLabelQuantity(modal);
-  if (quantity !== null) closeLabelQuantityModal(quantity);
+  if (quantity !== null) closeLabelQuantityModal({ quantity, showCount: true });
 }
 
 function handleLabelQuantityKeydown(event) {
@@ -5367,8 +5394,8 @@ function closeLabelQuantityModal(quantity) {
 }
 
 async function printLabel(item, trigger) {
-  const quantity = await requestLabelQuantity(trigger);
-  if (!quantity) return;
+  const printOptions = await requestLabelQuantity(trigger);
+  if (!printOptions) return;
 
   const itemId = item?.id;
   const parsed = parseTitle(item?.name || '');
@@ -5406,7 +5433,7 @@ async function printLabel(item, trigger) {
   } finally {
     __statusUpdateInFlight = Math.max(0, __statusUpdateInFlight - 1);
   }
-  const body = buildLabelDocument({ orderNumber, customerName, jobTitle }, { quantity });
+  const body = buildLabelDocument({ orderNumber, customerName, jobTitle }, printOptions);
 
   if (!win.closed && win.document) {
     win.document.open();

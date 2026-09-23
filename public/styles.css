@@ -1401,6 +1401,27 @@ body{
   font-size:15px;
   font-weight:800;
 }
+.label-quantity-body .label-count-option{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  cursor:pointer;
+}
+.label-count-option input{
+  width:18px;
+  height:18px;
+  margin:0;
+  accent-color:#8ec7e3;
+}
+.label-quantity-settings{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:12px;
+}
+.label-quantity-settings[hidden]{
+  display:none;
+}
 .label-quantity-control{
   display:grid;
   grid-template-columns:40px 88px 40px;

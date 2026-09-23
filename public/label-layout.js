@@ -32,7 +32,8 @@
     const customerName = String(label.customerName || '').trim();
     const jobTitle = String(label.jobTitle || '').trim();
     const autoPrint = options.autoPrint !== false;
-    const quantity = normalizeLabelQuantity(options.quantity);
+    const showCount = options.showCount !== false;
+    const quantity = showCount ? normalizeLabelQuantity(options.quantity) : 1;
     const blocks = [
       { className: 'job-number', head: 'JOB NUMBER', value: orderNumber, ratio: 0.62, maxSize: 96, maxLines: 1 },
       { className: 'customer', head: 'CUSTOMER', value: customerName, ratio: 0.46, maxSize: 54, maxLines: 2, singleLineFloor: 34 },
@@ -54,7 +55,7 @@
                 >${block.maxLines > 1 ? renderWholeWords(block.value) : escapeHtml(block.value)}</div>
               </div>
             `).join('')}
-            <div class="label-count">${index + 1} of ${quantity}</div>
+            ${showCount ? `<div class="label-count">${index + 1} of ${quantity}</div>` : ''}
           </div>
         </div>
       </div>

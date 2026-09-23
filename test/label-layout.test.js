@@ -59,6 +59,18 @@ test('label layout creates one numbered 4 by 6 page for every requested label', 
   assert.doesNotMatch(html, /setTimeout\(startPrint,\s*150\)/);
 });
 
+test('unchecking label numbering creates one label without a count', () => {
+  const html = buildLabelDocument({
+    orderNumber: '51238',
+    customerName: 'Acme',
+    jobTitle: 'Staff Hoodies',
+  }, { autoPrint: false, quantity: 3, showCount: false });
+
+  assert.equal((html.match(/data-label-page="\d+"/g) || []).length, 1);
+  assert.doesNotMatch(html, /class="label-count"|1 of 1|1 of 3/);
+  assert.match(html, />JOB NUMBER<\/div>/);
+});
+
 test('label quantities are whole numbers limited to 1 through 99', () => {
   assert.equal(normalizeLabelQuantity(undefined), 1);
   assert.equal(normalizeLabelQuantity(0), 1);
