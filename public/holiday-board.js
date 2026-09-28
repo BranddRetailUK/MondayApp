@@ -31,8 +31,7 @@
     const scroll = { left: previousScroll?.scrollLeft || 0, top: previousScroll?.scrollTop || 0 };
     root.innerHTML = `<header class="hb-head"><div><h1>Holiday Board</h1></div><div class="hb-actions"><div class="hb-year"><button id="hb-prev" aria-label="Previous year" ${year <= 2000 ? 'disabled' : ''}>‹</button><strong>${year}</strong><button id="hb-next" aria-label="Next year" ${year >= 2100 ? 'disabled' : ''}>›</button></div><button id="hb-members">Manage people</button><button class="hb-primary" id="hb-add" ${!data.members.length || year < +londonToday().slice(0,4) ? 'disabled' : ''}>+ Add holiday</button></div></header>
       ${data.preview ? '<div class="hb-preview">LOCAL PREVIEW · Registered users are live; holiday changes are saved only on this Mac.</div>' : ''}
-      <div class="hb-legend"><div class="hb-people">${data.members.length ? data.members.map(m => `<button data-member="${m.user_id}" aria-pressed="${Number(selectedMember) === Number(m.user_id)}" title="Drag to a date. Right-click to change colour. Click to select ${esc(name(m.user_id))}.">${dot(m)}<span>${esc(name(m.user_id))}</span></button>`).join('') : '<span>Add people from registered users to start your board.</span>'}</div></div>
-      <div class="hb-zoom" aria-label="Calendar zoom"><button id="hb-zoom-out" aria-label="Zoom out">−</button><button id="hb-zoom-fit">Fit year</button><button id="hb-zoom-reset" aria-label="Reset calendar zoom to 100%">100%</button><button id="hb-zoom-in" aria-label="Zoom in">+</button></div><p id="hb-feedback" class="hb-feedback" role="status" aria-live="polite"></p><div class="hb-scroll"><div class="hb-calendar" role="group" aria-label="${year} holiday calendar"><div class="hb-weekdays"><span></span>${Array.from({length:37}, (_,i) => `<span class="${i%7>4?'hb-weekend':''}">${weekdays[i%7]}</span>`).join('')}</div>${months.map((month,m) => {
+      <div class="hb-legend"><div class="hb-people">${data.members.length ? data.members.map(m => `<button data-member="${m.user_id}" aria-pressed="${Number(selectedMember) === Number(m.user_id)}" title="Drag to a date. Right-click to change colour. Click to select ${esc(name(m.user_id))}.">${dot(m)}<span>${esc(name(m.user_id))}</span></button>`).join('') : '<span>Add people from registered users to start your board.</span>'}</div><div class="hb-zoom" aria-label="Calendar zoom"><button id="hb-zoom-out" aria-label="Zoom out">−</button><button id="hb-zoom-fit">Fit year</button><button id="hb-zoom-in" aria-label="Zoom in">+</button></div></div><p id="hb-feedback" class="hb-feedback" role="status" aria-live="polite"></p><div class="hb-scroll"><div class="hb-calendar" role="group" aria-label="${year} holiday calendar"><div class="hb-weekdays"><span></span>${Array.from({length:37}, (_,i) => `<span class="${i%7>4?'hb-weekend':''}">${weekdays[i%7]}</span>`).join('')}</div>${months.map((month,m) => {
         const offset = (new Date(Date.UTC(year,m,1)).getUTCDay()+6)%7, count = new Date(Date.UTC(year,m+1,0)).getUTCDate();
         return `<div class="hb-month"><strong>${month.slice(0,3)}</strong>${Array.from({length:37},(_,i) => {
           const day = i-offset+1;
@@ -87,7 +86,6 @@
       calendar.style.zoom = String(calendarZoom);
       viewport.scrollLeft = (viewport.scrollLeft + anchorX) * calendarZoom / previous - anchorX;
       viewport.scrollTop = (viewport.scrollTop + anchorY) * calendarZoom / previous - anchorY;
-      root.querySelector('#hb-zoom-reset').textContent = `${Math.round(calendarZoom * 100)}%`;
       root.querySelector('#hb-zoom-out').disabled = calendarZoom <= minimum() + 0.001;
       root.querySelector('#hb-zoom-in').disabled = calendarZoom >= 1;
     };
@@ -96,7 +94,6 @@
     root.querySelector('#hb-zoom-out').onclick = () => change(calendarZoom / 1.2);
     root.querySelector('#hb-zoom-in').onclick = () => change(calendarZoom * 1.2);
     root.querySelector('#hb-zoom-fit').onclick = () => { change(minimum()); viewport.scrollLeft = 0; viewport.scrollTop = 0; };
-    root.querySelector('#hb-zoom-reset').onclick = () => change(1);
     let gestureActive = false, gestureZoom = 1, touchDistance = 0, touchZoom = 1;
     // Chromium trackpads emit pinch gestures as Ctrl+wheel; ordinary wheel scrolling is unchanged.
     viewport.addEventListener('wheel', event => {
