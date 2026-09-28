@@ -1,0 +1,199 @@
+{
+  "year": 2026,
+  "source": "IMG_3320.JPG",
+  "people": [
+    {
+      "initials": "L",
+      "first_name": "Lubos",
+      "last_name": "Svorad",
+      "colour": "#159de3"
+    },
+    {
+      "initials": "S",
+      "first_name": "Scott",
+      "last_name": "Charles",
+      "colour": "#f36b99"
+    }
+  ],
+  "days": [
+    {
+      "initials": "L",
+      "day": "2026-01-05",
+      "portion": "full"
+    },
+    {
+      "initials": "L",
+      "day": "2026-04-01",
+      "portion": "full"
+    },
+    {
+      "initials": "L",
+      "day": "2026-04-02",
+      "portion": "full"
+    },
+    {
+      "initials": "L",
+      "day": "2026-04-07",
+      "portion": "full"
+    },
+    {
+      "initials": "L",
+      "day": "2026-04-08",
+      "portion": "full"
+    },
+    {
+      "initials": "L",
+      "day": "2026-05-29",
+      "portion": "full"
+    },
+    {
+      "initials": "L",
+      "day": "2026-08-07",
+      "portion": "full"
+    },
+    {
+      "initials": "L",
+      "day": "2026-08-12",
+      "portion": "full"
+    },
+    {
+      "initials": "L",
+      "day": "2026-09-25",
+      "portion": "full"
+    },
+    {
+      "initials": "L",
+      "day": "2026-10-23",
+      "portion": "full"
+    },
+    {
+      "initials": "L",
+      "day": "2026-10-30",
+      "portion": "full"
+    },
+    {
+      "initials": "S",
+      "day": "2026-02-17",
+      "portion": "full"
+    },
+    {
+      "initials": "S",
+      "day": "2026-03-02",
+      "portion": "full"
+    },
+    {
+      "initials": "S",
+      "day": "2026-03-27",
+      "portion": "full"
+    },
+    {
+      "initials": "S",
+      "day": "2026-03-30",
+      "portion": "full"
+    },
+    {
+      "initials": "S",
+      "day": "2026-04-02",
+      "portion": "full"
+    },
+    {
+      "initials": "S",
+      "day": "2026-05-01",
+      "portion": "full"
+    },
+    {
+      "initials": "S",
+      "day": "2026-05-22",
+      "portion": "full"
+    },
+    {
+      "initials": "S",
+      "day": "2026-05-26",
+      "portion": "full"
+    },
+    {
+      "initials": "S",
+      "day": "2026-05-27",
+      "portion": "full"
+    },
+    {
+      "initials": "S",
+      "day": "2026-06-05",
+      "portion": "full"
+    },
+    {
+      "initials": "S",
+      "day": "2026-06-08",
+      "portion": "full"
+    },
+    {
+      "initials": "S",
+      "day": "2026-06-09",
+      "portion": "full"
+    },
+    {
+      "initials": "S",
+      "day": "2026-06-24",
+      "portion": "full"
+    },
+    {
+      "initials": "S",
+      "day": "2026-07-31",
+      "portion": "full"
+    },
+    {
+      "initials": "S",
+      "day": "2026-08-19",
+      "portion": "full"
+    },
+    {
+      "initials": "S",
+      "day": "2026-08-20",
+      "portion": "full"
+    },
+    {
+      "initials": "S",
+      "day": "2026-08-28",
+      "portion": "full"
+    },
+    {
+      "initials": "S",
+      "day": "2026-09-01",
+      "portion": "full"
+    },
+    {
+      "initials": "S",
+      "day": "2026-09-02",
+      "portion": "full"
+    },
+    {
+      "initials": "S",
+      "day": "2026-09-03",
+      "portion": "full"
+    },
+    {
+      "initials": "S",
+      "day": "2026-01-30",
+      "portion": "am"
+    },
+    {
+      "initials": "S",
+      "day": "2026-02-13",
+      "portion": "pm"
+    },
+    {
+      "initials": "S",
+      "day": "2026-02-20",
+      "portion": "pm"
+    },
+    {
+      "initials": "S",
+      "day": "2026-07-30",
+      "portion": "pm"
+    }
+  ],
+  "unresolved": [
+    "2026-07-29: handwritten L, OFF = SATURDAY",
+    "2026-09-04: torn pink sticker"
+  ]
+}

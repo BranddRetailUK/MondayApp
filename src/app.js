@@ -50,6 +50,9 @@ app.use(requireHubApiAuth, dtfRoutes);
 app.use(requireHubFullApiAccess, require('./routes/database'));
 app.use(requireHubFullApiAccess, testDashboardRoutes.protectedRouter);
 
+app.use('/api/holiday-board', requireHubFullApiAccess);
+app.use(require('./routes/holiday-board').createRouter());
+
 // 404
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 

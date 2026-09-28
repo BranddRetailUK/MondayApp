@@ -11,6 +11,8 @@
   <link rel="stylesheet" href="dashboard-visual-removal.css">
   <link rel="stylesheet" href="dtf-uploader.css">
   <script src="vendor/pdf-lib.min.js" defer></script>
+  <link rel="stylesheet" href="holiday-board.css">
+  <script src="holiday-board.js" defer></script>
   <script src="auth-session.js" defer></script>
   <script src="label-layout.js" defer></script>
   <script src="script.js" defer></script>
@@ -41,6 +43,7 @@
         <ul class="nav-tabs">
           <li data-tab="database">DATABASE</li>
           <li data-tab="test-dashboard" class="active">TUESDAY DASHBOARD</li>
+          <li data-tab="holiday-board">HOLIDAY BOARD</li>
           <li data-tab="dtf-uploader">DTF UPLOADER</li>
         </ul>
       </div>
@@ -65,6 +68,8 @@
         </div>
         <div id="test-board"></div>
       </section>
+
+      <section id="tab-holiday-board" class="tab-content" aria-label="Holiday Board"><div id="holiday-board"></div></section>
 
       <!-- DTF UPLOADER -->
       <section id="tab-dtf-uploader" class="tab-content dtf-tab-content">
