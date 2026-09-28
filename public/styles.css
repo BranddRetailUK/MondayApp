@@ -124,9 +124,6 @@ body{
   border:1px solid transparent;
   transition:background .14s ease, border-color .14s ease, color .14s ease;
 }
-.nav-tabs li[data-tab="test-dashboard"]{
-  order:1;
-}
 .nav-tabs li:hover{color:#fff;background:#202123;border-color:#3b3c40}
 .nav-tabs li.active{
   color:#fff;

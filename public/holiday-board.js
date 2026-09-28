@@ -42,7 +42,7 @@
           const label = `${day} ${month} ${year}${members.length ? ': '+members.map(p=>name(p.user_id)+' ('+portionName(p.portion)+')').join(', ') : ': no holiday'}`;
           return `<div class="hb-day ${i%7>4?'hb-weekend':''} ${today?'hb-today':''} ${locked?'hb-past':''}" data-date="${date}" role="group" aria-label="${esc(label)}" title="${esc(label)}${locked ? ' · Past date — locked' : ''}"><button class="hb-number" ${locked ? 'disabled' : ''} aria-label="Edit ${day} ${month} ${year}">${day}</button><span class="hb-dots">${members.map(p => `<button class="hb-grid-dot" ${locked ? 'disabled' : ''} data-person="${p.user_id}" aria-label="${esc(name(p.user_id))}, ${date}, ${portionName(p.portion)}. ${locked ? 'Past date — locked.' : 'Click for '+(p.portion === 'am' ? 'afternoon' : p.portion === 'pm' ? 'remove' : 'morning')+'.'}" title="${esc(name(p.user_id))}: ${portionName(p.portion)}">${dot(p)}</button>`).join('')}</span></div>`;
         }).join('')}</div>`;
-      }).join('')}</div></div><footer class="hb-footer"><span><i></i> Past dates locked · Weekends shaded · Left half = morning · Right half = afternoon <span class="hb-today-key">○</span> Today</span><span>January – December ${year} · Monday first</span></footer>`;
+      }).join('')}</div></div>`;
     root.querySelector('#hb-prev').onclick=()=>{year--;load();};
     root.querySelector('#hb-next').onclick=()=>{year++;load();};
     root.querySelector('#hb-members').onclick=()=>memberDialog();
