@@ -1,7 +1,7 @@
 (() => {
   const root = document.getElementById('holiday-board');
   let year = new Date().getFullYear(), data = { users: [], members: [], days: [] }, loading = false;
-  let calendarZoom = 1, zoomObserver;
+  let calendarZoom = 1, zoomObserver, zoomInitialized = false;
   let selectedMember = null, saving = false, suppressClickUntil = 0;
   const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const weekdays = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
@@ -40,7 +40,7 @@
           const members = data.days.filter(d=>d.day===date).map(d=>{const p=data.members.find(p=>Number(p.user_id)===Number(d.user_id));return p ? {...p,portion:d.portion || 'full'} : null;}).filter(Boolean);
           const today = londonToday() === date, locked = isPast(date);
           const label = `${day} ${month} ${year}${members.length ? ': '+members.map(p=>name(p.user_id)+' ('+portionName(p.portion)+')').join(', ') : ': no holiday'}`;
-          return `<div class="hb-day ${i%7>4?'hb-weekend':''} ${today?'hb-today':''} ${locked?'hb-past':''}" data-date="${date}" role="group" aria-label="${esc(label)}" title="${esc(label)}${locked ? ' · Past date — locked' : ''}"><button class="hb-number" ${locked ? 'disabled' : ''} aria-label="Edit ${day} ${month} ${year}">${day}</button><span class="hb-dots">${members.map(p => `<button class="hb-grid-dot" ${locked ? 'disabled' : ''} data-person="${p.user_id}" aria-label="${esc(name(p.user_id))}, ${date}, ${portionName(p.portion)}. ${locked ? 'Past date — locked.' : 'Click for '+(p.portion === 'am' ? 'afternoon' : p.portion === 'pm' ? 'remove' : 'morning')+'.'}" title="${esc(name(p.user_id))}: ${portionName(p.portion)}">${dot(p)}</button>`).join('')}</span></div>`;
+          return `<div class="hb-day ${i%7>4?'hb-weekend':''} ${today?'hb-today':''} ${locked?'hb-past':''}" data-date="${date}" role="group" aria-label="${esc(label)}" title="${esc(label)}${locked ? ' · Past date — locked' : ''}"><button class="hb-number" ${locked ? 'disabled' : ''} aria-label="Edit ${day} ${month} ${year}"><svg class="hb-date-number" viewBox="0 0 26 20" width="26" height="20" aria-hidden="true" focusable="false"><text x="0" y="15">${day}</text></svg></button><span class="hb-dots">${members.map(p => `<button class="hb-grid-dot" ${locked ? 'disabled' : ''} data-person="${p.user_id}" aria-label="${esc(name(p.user_id))}, ${date}, ${portionName(p.portion)}. ${locked ? 'Past date — locked.' : 'Click for '+(p.portion === 'am' ? 'afternoon' : p.portion === 'pm' ? 'remove' : 'morning')+'.'}" title="${esc(name(p.user_id))}: ${portionName(p.portion)}">${dot(p)}</button>`).join('')}</span></div>`;
         }).join('')}</div>`;
       }).join('')}</div></div>`;
     root.querySelector('#hb-prev').onclick=()=>{year--;load();};
@@ -89,6 +89,10 @@
       root.querySelector('#hb-zoom-out').disabled = calendarZoom <= minimum() + 0.001;
       root.querySelector('#hb-zoom-in').disabled = calendarZoom >= 1;
     };
+    if (!zoomInitialized) {
+      calendarZoom = window.matchMedia('(min-width: 961px) and (pointer: fine)').matches ? minimum() : 1;
+      zoomInitialized = true;
+    }
     calendar.style.zoom = String(calendarZoom);
     change(calendarZoom);
     root.querySelector('#hb-zoom-out').onclick = () => change(calendarZoom / 1.2);

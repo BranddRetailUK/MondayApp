@@ -23,3 +23,6 @@
 .hb-calendar{width:3003px;min-width:3003px}.hb-scroll{height:calc(100vh - 290px);touch-action:pan-x pan-y}.hb-zoom{display:flex;justify-content:flex-end;align-items:center;gap:6px;margin-bottom:8px}#holiday-board .hb-zoom button{padding:4px 9px;font-size:12px;min-height:30px}
 
 .hb-legend{flex-direction:row;align-items:center}.hb-legend .hb-people{flex:1;min-width:0}.hb-legend .hb-zoom{flex-shrink:0;margin:0}
+
+/* Vector date labels shrink with the calendar without mobile minimum-font inflation. */
+.hb-date-number{display:block;overflow:visible;fill:currentColor;font:inherit;font-size:13px}.hb-calendar{-webkit-text-size-adjust:none;text-size-adjust:none}
