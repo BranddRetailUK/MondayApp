@@ -26,3 +26,9 @@
 
 /* Vector date labels shrink with the calendar without mobile minimum-font inflation. */
 .hb-date-number{display:block;overflow:visible;fill:currentColor;font:inherit;font-size:13px}.hb-calendar{-webkit-text-size-adjust:none;text-size-adjust:none}
+
+/* Unscaled, mouse-following details for overlapping people. */
+.hb-day-popup{position:fixed;z-index:1500;pointer-events:none;max-width:calc(100vw - 16px);padding:15px 18px;border:1px solid #81badb;border-radius:10px;background:#1c2932;color:#e9edf5;box-shadow:0 10px 30px #0008;font-size:14px}
+.hb-day-popup[hidden]{display:none}.hb-day-popup>strong{display:block;color:#aedcf5;font-size:12px;margin-bottom:12px}.hb-popup-person{display:flex;align-items:center;gap:12px;margin-top:10px}.hb-popup-person small{display:block;color:#a6b9c7;font-size:11px;text-transform:capitalize;margin-top:2px}.hb-popup-circle{display:flex;align-items:center;justify-content:center;width:34px;height:34px;flex-shrink:0}.hb-popup-circle .hb-dot{width:34px;height:34px;font-size:17px;margin:0}
+
+.hb-popup-person:first-child{margin-top:0}

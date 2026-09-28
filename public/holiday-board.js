@@ -27,6 +27,7 @@
   }
   window.loadHolidayBoard = load;
   function render() {
+    hideDayPopup();
     const previousScroll = root.querySelector('.hb-scroll');
     const scroll = { left: previousScroll?.scrollLeft || 0, top: previousScroll?.scrollTop || 0 };
     root.innerHTML = `<header class="hb-head"><div><h1>Holiday Board</h1></div><div class="hb-actions"><div class="hb-year"><button id="hb-prev" aria-label="Previous year" ${year <= 2000 ? 'disabled' : ''}>‹</button><strong>${year}</strong><button id="hb-next" aria-label="Next year" ${year >= 2100 ? 'disabled' : ''}>›</button></div><button id="hb-members">Manage people</button><button class="hb-primary" id="hb-add" ${!data.members.length || year < +londonToday().slice(0,4) ? 'disabled' : ''}>+ Add holiday</button></div></header>
@@ -70,14 +71,57 @@
       };
     });
     const viewport = root.querySelector('.hb-scroll');
+    setupDayPopups(viewport);
     setupCalendarZoom(viewport);
     viewport.scrollLeft = scroll.left; viewport.scrollTop = scroll.top;
+  }
+  let dayPopup = null;
+  function hideDayPopup() {
+    if (dayPopup) dayPopup.hidden = true;
+  }
+  window.addEventListener('blur', hideDayPopup);
+  window.addEventListener('scroll', hideDayPopup, true);
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') hideDayPopup(); });
+  function setupDayPopups(viewport) {
+    dayPopup = document.createElement('div');
+    dayPopup.className = 'hb-day-popup'; dayPopup.hidden = true;
+    dayPopup.setAttribute('role', 'tooltip');
+    root.append(dayPopup);
+    viewport.querySelectorAll('.hb-day').forEach(cell => {
+      const people = data.days.filter(d => d.day === cell.dataset.date).map(d => {
+        const member = data.members.find(m => Number(m.user_id) === Number(d.user_id));
+        return member ? { ...member, portion:d.portion || 'full' } : null;
+      }).filter(Boolean);
+      if (people.length < 2) return;
+      // Avoid a second native tooltip covering the full-size popup.
+      cell.removeAttribute('title');
+      cell.querySelectorAll('[title]').forEach(el => el.removeAttribute('title'));
+      const show = event => {
+        if (event.pointerType === 'touch' || document.querySelector('.hb-dialog[open]')) return;
+        if (dayPopup.hidden || dayPopup.dataset.date !== cell.dataset.date) {
+          dayPopup.dataset.date = cell.dataset.date;
+          dayPopup.innerHTML = `${people.map(person => `<div class="hb-popup-person"><span class="hb-popup-circle">${dot(person)}</span><span>${esc(name(person.user_id))}<small>${portionName(person.portion)}</small></span></div>`).join('')}`;
+          dayPopup.hidden = false;
+        }
+        const gap = 16, margin = 8, width = dayPopup.offsetWidth, height = dayPopup.offsetHeight;
+        const left = event.clientX + gap + width <= window.innerWidth - margin ? event.clientX + gap : event.clientX - width - gap;
+        const top = event.clientY + gap + height <= window.innerHeight - margin ? event.clientY + gap : event.clientY - height - gap;
+        dayPopup.style.left = `${Math.max(margin, left)}px`;
+        dayPopup.style.top = `${Math.max(margin, top)}px`;
+      };
+      cell.addEventListener('pointerenter', show);
+      cell.addEventListener('pointermove', show);
+      cell.addEventListener('pointerleave', hideDayPopup);
+      cell.addEventListener('pointerdown', hideDayPopup);
+    });
+    viewport.addEventListener('pointerleave', hideDayPopup);
   }
   function setupCalendarZoom(viewport) {
     zoomObserver?.disconnect();
     const calendar = viewport.querySelector('.hb-calendar');
     const minimum = () => Math.min(1, (viewport.clientWidth - 24) / calendar.offsetWidth, (viewport.clientHeight - 28) / calendar.offsetHeight);
     const change = (next, x, y) => {
+      hideDayPopup();
       const box = viewport.getBoundingClientRect();
       const anchorX = x == null ? viewport.clientWidth / 2 : x - box.left;
       const anchorY = y == null ? viewport.clientHeight / 2 : y - box.top;
@@ -201,6 +245,7 @@
     document.addEventListener('pointermove', move, { passive:false }); document.addEventListener('pointerup', finish); document.addEventListener('pointercancel', finish);
   }
   function dialog(title, content) {
+    hideDayPopup();
     const el = document.createElement('dialog'); el.className='hb-dialog';
     el.innerHTML=`<form><div class="hb-dialog-head"><h2>${title}</h2><button type="button" class="hb-close" aria-label="Close">×</button></div>${content}<p class="hb-error" role="alert"></p><div class="hb-dialog-actions"><button type="button" class="hb-cancel">Cancel</button><button type="submit" class="hb-primary">Save</button></div></form>`;
     document.body.append(el); el.querySelector('.hb-close').onclick=()=>el.close(); el.querySelector('.hb-cancel').onclick=()=>el.close(); el.onclose=()=>el.remove(); el.showModal(); return el;
