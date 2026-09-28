@@ -19,3 +19,5 @@
 #holiday-board .hb-grid-dot{position:relative;flex-shrink:0;opacity:1}
 #holiday-board .hb-grid-dot + .hb-grid-dot{margin-left:-43.2px}
 #holiday-board .hb-grid-dot:focus-visible{z-index:1}
+/* Calendar-only zoom retains the original day size at 100%. */
+.hb-calendar{width:3003px;min-width:3003px}.hb-scroll{height:calc(100vh - 290px);touch-action:pan-x pan-y}.hb-zoom{display:flex;justify-content:flex-end;align-items:center;gap:6px;margin-bottom:8px}#holiday-board .hb-zoom button{padding:4px 9px;font-size:12px;min-height:30px}#holiday-board #hb-zoom-reset{min-width:52px}

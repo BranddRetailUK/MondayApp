@@ -34,6 +34,8 @@ async function main() {
     assert.equal((await client.query('SELECT 1 FROM holiday_board_days WHERE user_id=1 AND day=$1',[date])).rowCount,0);
     result=await request('post','/api/holiday-board/days',{userId:1,start:'2000-01-01',end:'2000-01-01',action:'add'});assert.equal(result.statusCode,403);
     await request('put','/api/holiday-board/members/:id',{initials:'L',colour:'#a78bfa'},{id:1});
+    const freshBoard = await request('get','/api/holiday-board',null,{}, {year:'2026'});
+    assert.equal(freshBoard.body.members.find(member => member.user_id === 1).colour, '#a78bfa');
     await client.query("DELETE FROM holiday_board_days WHERE user_id=1 AND day='2026-10-30'");
     await importHolidayReference(db);
     assert.equal((await client.query("SELECT 1 FROM holiday_board_days WHERE user_id=1 AND day='2026-10-30'")).rowCount,0);
