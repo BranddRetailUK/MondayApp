@@ -6,3 +6,6 @@ tmp
 *.ldb
 CustomerDataFull.csv
 database2monday_script/
+
+# Local Illustrator worker credentials
+tools/print-worker/config.json

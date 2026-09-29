@@ -44,6 +44,9 @@ app.get('/api/status', (_req, res) => {
 });
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
+// Worker routes authenticate with a scoped bearer token, not a browser session.
+app.use(require('./routes/print-exports').createRouter(require('./db/pool')));
+
 // Routers
 app.use(testDashboardRoutes.publicRouter);
 app.use(requireHubApiAuth, dtfRoutes);

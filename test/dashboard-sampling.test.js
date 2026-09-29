@@ -201,11 +201,13 @@ async function withFixture(options, run) {
     }
     return rows([]);
   } };
+  pool.connect = async () => ({ query: pool.query.bind(pool), release() {} });
   require.cache[poolPath] = { id: poolPath, filename: poolPath, loaded: true, exports: pool };
   delete require.cache[routePath];
   try {
     const { protectedRouter } = require('../src/routes/test-dashboard');
     await run({
+      queued: () => queries.filter(({ sql }) => sql.includes('INSERT INTO print_export_jobs')).length,
       snapshot: () => structuredClone({ job, state }),
       jobWrites: () => queries.filter(({ sql }) => /(?:UPDATE database_jobs|INSERT INTO test_dashboard_job_state|UPDATE test_dashboard_private_jobs)/.test(sql)).length,
       async request(endpoint, body, id = options.privateJob ? 'private_00000000-0000-0000-0000-000000000001' : '50503') {
@@ -221,3 +223,22 @@ async function withFixture(options, run) {
     if (originalRoute) require.cache[routePath] = originalRoute; else delete require.cache[routePath];
   }
 }
+
+
+test('enabled print queue is created once after real approval; private rows remain excluded', async () => {
+  const old = process.env.PRINT_EXPORT_ENABLED;
+  process.env.PRINT_EXPORT_ENABLED = 'true';
+  try {
+    await withFixture({ status: 'AWAITING APPROVAL' }, async fixture => {
+      assert.equal((await fixture.request('checkbox-column', { columnId: ids.JOB, checked: true })).statusCode, 200);
+      assert.equal((await fixture.request('checkbox-column', { columnId: ids.JOB, checked: true })).statusCode, 200);
+      assert.equal(fixture.queued(), 1);
+    });
+    await withFixture({ status: 'AWAITING APPROVAL', privateJob: true }, async fixture => {
+      assert.equal((await fixture.request('checkbox-column', { columnId: ids.JOB, checked: true })).statusCode, 200);
+      assert.equal(fixture.queued(), 0);
+    });
+  } finally {
+    if (old === undefined) delete process.env.PRINT_EXPORT_ENABLED; else process.env.PRINT_EXPORT_ENABLED = old;
+  }
+});

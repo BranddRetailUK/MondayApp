@@ -519,6 +519,8 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (r
     const isApprovalCheckbox = isProofApprovalCheckbox(column);
     let nextState = null;
     let databaseJob = null;
+    let approvalLabels = null;
+    const printExports = require('../services/printExports');
 
     if (isApprovalCheckbox) {
       if (!privateJob) delete columnValues[DASHBOARD_SPLIT_STATE_KEY];
@@ -547,11 +549,11 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (r
           archived: false,
         };
         if (!privateJob) {
-          databaseJob = await updateDatabaseJobDashboardFields(pool, job.source_order_id, {
+          approvalLabels = {
             status: approvedStatusLabel,
             priority: '',
             jobApproved: true,
-          });
+          };
         }
       } else {
         columnValues[column.id] = checkboxValue(column, false);
@@ -567,11 +569,11 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (r
           archived: false,
         };
         if (!privateJob) {
-          databaseJob = await updateDatabaseJobDashboardFields(pool, job.source_order_id, {
+          approvalLabels = {
             status: AWAITING_APPROVAL_LABEL,
             priority: '',
             jobApproved: false,
-          });
+          };
         }
       }
     } else {
@@ -584,9 +586,22 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (r
       };
     }
 
-    const saved = privateJob
-      ? await updatePrivateDashboardJob(job.id, nextState)
-      : await upsertJobState(job.source_order_id, nextState);
+    let saved;
+    if (!privateJob && approvalLabels && printExports.enabled()) {
+      ({ saved, databaseJob } = await printExports.saveApproval(pool, {
+        sourceOrderId: job.source_order_id, labels: approvalLabels, nextState,
+        saveState: db => upsertJobState(job.source_order_id, nextState, db),
+      }));
+    } else {
+      if (approvalLabels) {
+        databaseJob = await updateDatabaseJobDashboardFields(pool, job.source_order_id, approvalLabels);
+        if (!approvalLabels.jobApproved) await pool.query(
+          `UPDATE print_export_jobs SET status='cancelled', message='Job approval removed', updated_at=NOW()
+           WHERE source_order_id=$1 AND status IN ('queued','processing','awaiting_review')`, [job.source_order_id]);
+      }
+      saved = privateJob ? await updatePrivateDashboardJob(job.id, nextState)
+        : await upsertJobState(job.source_order_id, nextState);
+    }
 
     res.json({
       ok: true,

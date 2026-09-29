@@ -20,7 +20,8 @@
     "suppliers:ping": "node scripts/ping-supplier-apis.js",
     "test:reports": "node --test test/database-reports.test.js",
     "test:holiday-board": "node --test test/holiday-board.test.js test/holiday-reference.test.js",
-    "verify:holiday-board": "node scripts/verify-holiday-board.js"
+    "verify:holiday-board": "node scripts/verify-holiday-board.js",
+    "test:print-exports": "node --test test/print-exports*.test.js test/dashboard-approval-status.test.js test/dashboard-sampling.test.js test/dashboard-private-jobs.test.js test/dashboard-design-display.test.js"
   },
   "dependencies": {
     "cloudinary": "^2.10.0",
@@ -32,5 +33,8 @@
     "pdf-lib": "^1.17.1",
     "pg": "^8.16.3",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8"
   }
 }
