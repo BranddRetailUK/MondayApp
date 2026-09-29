@@ -4,7 +4,19 @@ const { TEST_DASHBOARD_COLUMN_IDS: ids } = require('./testDashboardDefaults');
 const { updateDatabaseJobDashboardFields } = require('./testDashboardDbFields');
 const ACTIVE = ['queued', 'processing', 'awaiting_review'];
 const RUNNING = ['processing', 'awaiting_review'];
-const enabled = () => process.env.PRINT_EXPORT_ENABLED === 'true';
+const CONTROL_EMAIL = 'production@ultimatepromotions.co.uk';
+const canControl = user => Boolean(user && user.access_scope !== 'dtf_only' && String(user.email || '').trim().toLowerCase() === CONTROL_EMAIL);
+async function enabled(db, lock = false) {
+  const result = await db.query('SELECT enabled FROM print_export_settings WHERE id=1' + (lock ? ' FOR SHARE' : ''));
+  return result.rows[0]?.enabled === true;
+}
+async function setEnabled(db, value, user) {
+  if (!canControl(user)) throw new Error('Production account required');
+  if (typeof value !== 'boolean') throw new Error('enabled must be a boolean');
+  // This row lock also serialises against approval/claim/retry transactions.
+  await db.query('UPDATE print_export_settings SET enabled=$1,updated_by=$2,updated_at=NOW() WHERE id=1', [value, CONTROL_EMAIL]);
+  return value;
+}
 
 function numericDesigns(value) {
   // Strip the WHOLE embroidery/stitch reference before considering numeric tokens.
@@ -30,6 +42,7 @@ async function transaction(pool, action) {
 }
 async function saveApproval(pool, { sourceOrderId, labels, nextState, saveState }) {
   return transaction(pool, async db => {
+    const queueEnabled = await enabled(db, true);
     const previous = (await db.query('SELECT * FROM database_jobs WHERE source_order_id = $1 FOR UPDATE', [sourceOrderId])).rows[0];
     if (!previous) throw new Error('Job no longer exists');
     const databaseJob = await updateDatabaseJobDashboardFields(db, sourceOrderId, labels);
@@ -37,7 +50,7 @@ async function saveApproval(pool, { sourceOrderId, labels, nextState, saveState 
     if (!labels.jobApproved) {
       await db.query(`UPDATE print_export_jobs SET status='cancelled', message='Job approval removed. Check any files already produced.', updated_at=NOW()
         WHERE source_order_id=$1 AND status=ANY($2::text[])`, [sourceOrderId, ACTIVE]);
-    } else if (previous.proof_approved !== true) {
+    } else if (queueEnabled && previous.proof_approved !== true) {
       const positions = (await db.query('SELECT design_ref FROM database_job_positions WHERE source_order_id = $1', [sourceOrderId])).rows;
       const refs = eligibleDesigns(previous, positions, nextState);
       const approvalId = crypto.randomUUID();
@@ -55,6 +68,7 @@ async function stillEligible(db, task) {
 }
 async function claim(pool, workerId) {
   return transaction(pool, async db => {
+    if (!(await enabled(db, true))) return null;
     // Serialise claims so even multiple configured workers cannot overlap Illustrator work.
     await db.query('SELECT pg_advisory_xact_lock(71062901)');
     await db.query(`UPDATE print_export_jobs SET status='needs_attention', message='Worker lost contact. Inspect local outputs before retrying.', updated_at=NOW()
@@ -93,6 +107,7 @@ async function updateClaim(pool, id, token, { status, message = '', outputs = []
 }
 async function retry(pool, id) {
   return transaction(pool, async db => {
+    if (!(await enabled(db, true))) return false;
     const row = (await db.query('SELECT * FROM print_export_jobs WHERE id=$1 FOR UPDATE', [id])).rows[0];
     if (!row) return false;
     const expired = RUNNING.includes(row.status) && new Date(row.lease_until).getTime() < Date.now();
@@ -103,4 +118,4 @@ async function retry(pool, id) {
     return true;
   });
 }
-module.exports = { enabled, numericDesigns, eligibleDesigns, saveApproval, claim, updateClaim, retry };
+module.exports = { enabled, canControl, setEnabled, numericDesigns, eligibleDesigns, saveApproval, claim, updateClaim, retry };

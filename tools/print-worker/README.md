@@ -10,10 +10,10 @@ Deploy the accompanying Hub code from the feature branch after review. Normal st
 
 1. Generate a long random token, for example with Node: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
 2. Add that value as Railway `PRINT_EXPORT_WORKER_TOKEN`. Keep it private; this token can claim and report print work only.
-3. Initially leave `PRINT_EXPORT_ENABLED=false` (the default). Complete workstation setup, then set `PRINT_EXPORT_ENABLED=true` and redeploy/restart the server.
+3. The sidebar **Print exports** switch starts **Off**. Complete workstation setup, then sign in as `production@ultimatepromotions.co.uk` and turn it On immediately above Sign out. The setting is stored in Postgres and takes effect without a restart. Other accounts cannot see or change this switch. The former PRINT_EXPORT_ENABLED environment flag is no longer used.
 4. The Dashboard has a **Print exports** button showing the latest 200 tasks and their results. Export state does not change STATUS, TRANS or other production fields.
 
-No token is included in this package or stored in the repository. Disabling PRINT_EXPORT_ENABLED stops new queue entries and claims; in-flight jobs can finish. Unapproving a job cancels its queued/running tasks even if the feature has been disabled.
+No token is included in this package or stored in the repository. Turning the sidebar switch Off stops new queue entries and claims; in-flight jobs can finish. Unapproving a job cancels its queued/running tasks even if the feature has been disabled.
 
 ## Workstation setup
 
@@ -37,6 +37,8 @@ To start at sign-in, put a shortcut to start-worker.cmd in the current user's St
 - A skipped detected view produces Needs attention even if other artwork exported. Inspect those outputs before retrying; the script does not silently mark a partial job complete.
 - Existing output files are preserved with version suffixes. No text report is written to PRINT. Worker recovery records are stored under `%LOCALAPPDATA%\UltimateHub\PrintWorker`.
 - The worker uses the bundled exporter. Renaming or installing your separate manual JSX does not change this copy. The bundled JSX can also be run manually via File > Scripts > Other Script.
+
+When testing, turn the switch On, approve the intended test job, then turn it Off after the worker has claimed the task. While On it applies to eligible approvals by all users. Off pauses unclaimed tasks; they resume if switched On again. Approvals made while Off are not queued later. An already running export can finish.
 
 ## Recovery
 

@@ -57,6 +57,9 @@ test('durable SQL queue: transitions, rollback, duplicate approval, cancellation
       CREATE TABLE database_job_positions(source_order_id integer,design_ref text);
       CREATE TABLE test_dashboard_job_state(source_order_id integer PRIMARY KEY,column_values jsonb);`);
     await ensurePrintExportTables(db);await ensurePrintExportTables(db);
+    assert.equal(await service.enabled(db),false);
+    await service.setEnabled(db,true,{email:'production@ultimatepromotions.co.uk'});
+    await ensurePrintExportTables(db);assert.equal(await service.enabled(db),true);
     await db.query("INSERT INTO database_jobs(source_order_id,order_type,proof_approved) VALUES(1,'Print',false),(2,'Print',true),(3,'Embroidery',false)");
     await db.query("INSERT INTO database_job_positions VALUES(1,'28299 / 28300 / 29109 / PSG30000'),(2,'29110'),(3,'29111')");
     // Installing never backfills existing approvals.
@@ -71,6 +74,9 @@ test('durable SQL queue: transitions, rollback, duplicate approval, cancellation
     await approve();await approve();await approve(3);
     let rows=(await db.query('SELECT * FROM print_export_jobs ORDER BY design_number')).rows;
     assert.deepEqual(rows.map(r=>r.design_number),['28300','29109']);
+    await service.setEnabled(db,false,{email:'production@ultimatepromotions.co.uk'});
+    assert.equal(await service.claim(pool,'worker'),null);
+    await service.setEnabled(db,true,{email:'production@ultimatepromotions.co.uk'});
     const first=await service.claim(pool,'worker');assert.ok(first.claim_token);
     assert.equal(await service.claim(pool,'second-worker'),null);
     assert.equal((await service.updateClaim(pool,first.id,'00000000-0000-0000-0000-000000000000',{status:'exported'})).accepted,false);
@@ -86,6 +92,11 @@ test('durable SQL queue: transitions, rollback, duplicate approval, cancellation
     const again=await service.claim(pool,'worker');assert.notEqual(again.claim_token,second.claim_token);
     await approve(1,false);
     assert.equal((await service.updateClaim(pool,again.id,again.claim_token,{status:'exported'})).stop,true);
+    await service.setEnabled(db,false,{email:'production@ultimatepromotions.co.uk'});
+    await approve();assert.equal((await db.query("SELECT * FROM print_export_jobs WHERE status='queued'")).rows.length,0);
+    await service.setEnabled(db,true,{email:'production@ultimatepromotions.co.uk'});
+    assert.equal(await service.claim(pool,'worker'),null); // enabling never backfills approvals made while off
+    await approve(1,false);
     await approve();rows=(await db.query("SELECT * FROM print_export_jobs WHERE status='queued'")).rows;assert.equal(rows.length,2);
     // Editing a design after approval invalidates queued work before it runs.
     await db.query("UPDATE database_job_positions SET design_ref='27844' WHERE source_order_id=1");
@@ -106,4 +117,34 @@ test('automation uses Hub design even when proof reference and filename are old'
   vm.createContext(context);vm.runInContext(configFunction,context);
   const result=context.hubConfig({value:'27696',conflict:true,fromFilename:false});
   assert.equal(result.ref,'29109');assert.equal(result.root.fsName,'E:/DESIGN FILES/29109 Ace');
+});
+
+
+test('only the exact production account can operate the persisted switch API', async()=>{
+  const express=require('express');const {createRouter}=require('../src/routes/print-exports');
+  let setting=false,writes=0;
+  const pool={async query(sql,params){
+    if(sql.startsWith('UPDATE print_export_settings')){setting=params[0];writes++;return {rows:[]};}
+    if(sql.startsWith('SELECT enabled'))return {rows:[{enabled:setting}]};
+    throw Error('Unexpected query');
+  }};
+  const app=express();app.use(express.json());
+  app.use((req,_res,next)=>{if(req.headers['test-email'])req.hubUser={email:req.headers['test-email'],access_scope:req.headers['test-scope']||'full'};next();});
+  app.use(createRouter(pool));
+  const server=await new Promise(resolve=>{const server=app.listen(0,'127.0.0.1',()=>resolve(server));});
+  const url=`http://127.0.0.1:${server.address().port}/api/print-exports/settings`;
+  const request=(email,method='GET',enabled=true,scope='full')=>fetch(url,{method,headers:{...(email?{'test-email':email,'test-scope':scope}:{}),'Content-Type':'application/json'},...(method==='PUT'?{body:JSON.stringify({enabled})}:{})});
+  try{
+    assert.equal((await request(null)).status,401);
+    assert.equal((await request('other@ultimatepromotions.co.uk','PUT')).status,403);
+    assert.equal((await request('production@ultimatepromotions.co.uk.evil','PUT')).status,403);
+    assert.equal((await request('production@ultimatepromotions.co.uk','PUT',true,'dtf_only')).status,403);
+    assert.equal((await (await request('other@ultimatepromotions.co.uk')).json()).canToggle,false);
+    assert.equal(writes,0);
+    assert.equal((await request('production@ultimatepromotions.co.uk','PUT','true')).status,400);
+    const on=await (await request('Production@UltimatePromotions.co.uk','PUT',true)).json();assert.deepEqual(on,{enabled:true,canToggle:true});
+    assert.equal((await (await request('production@ultimatepromotions.co.uk')).json()).enabled,true);
+    assert.equal((await (await request('production@ultimatepromotions.co.uk','PUT',false)).json()).enabled,false);
+    assert.equal(writes,2);
+  }finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 });

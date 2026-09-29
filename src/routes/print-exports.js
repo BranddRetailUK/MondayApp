@@ -14,8 +14,16 @@ function workerAuth(req, res, next) {
 function createRouter(pool) {
   const router = express.Router();
   const wrap = fn => async (req,res,next) => { try { await fn(req,res); } catch(e) { next(e); } };
-  router.post('/api/print-worker/claim', workerAuth, wrap(async (req,res) => {
-    if (!service.enabled()) return res.json({ enabled: false, task: null });
+  router.get('/api/print-exports/settings',requireHubFullApiAccess,wrap(async(req,res)=>{
+    res.json({enabled:await service.enabled(pool),canToggle:service.canControl(req.hubUser)});
+  }));
+  router.put('/api/print-exports/settings',requireHubFullApiAccess,wrap(async(req,res)=>{
+    if (!service.canControl(req.hubUser)) return res.status(403).json({error:'Production account required'});
+    if (typeof req.body?.enabled !== 'boolean') return res.status(400).json({error:'enabled must be a boolean'});
+    res.json({enabled:await service.setEnabled(pool,req.body.enabled,req.hubUser),canToggle:true});
+  }));
+  router.post('/api/print-worker/claim' , workerAuth, wrap(async (req,res) => {
+    if (!(await service.enabled(pool))) return res.json({ enabled: false, task: null });
     if (!/^[A-Za-z0-9._-]{1,80}$/.test(req.body.workerId || '')) return res.status(400).json({ error:'Invalid worker ID' });
     const task = await service.claim(pool,req.body.workerId);
     res.json({ enabled: true, task: task && { id:task.id, designNumber:task.design_number, sourceOrderId:task.source_order_id, claimToken:task.claim_token, attempt:task.attempt } });
@@ -31,10 +39,10 @@ function createRouter(pool) {
     const jobs = await pool.query(`SELECT e.id,e.source_order_id,e.design_number,e.status,e.attempt,e.message,e.outputs,e.worker_id,e.updated_at,e.lease_until,
       j.order_no FROM print_export_jobs e LEFT JOIN database_jobs j USING(source_order_id)
       ORDER BY e.updated_at DESC LIMIT 200`);
-    res.json({ enabled:service.enabled(), jobs:jobs.rows });
+    res.json({ enabled:await service.enabled(pool), jobs:jobs.rows });
   }));
   router.post('/api/print-exports/:id/retry',requireHubFullApiAccess,wrap(async(req,res)=>{
-    if (!service.enabled()) return res.status(409).json({error:'Print exports are disabled'});
+    if (!(await service.enabled(pool))) return res.status(409).json({error:'Print exports are disabled'});
     if (!uuid.test(req.params.id) || req.body.outputsReviewed !== true) return res.status(400).json({error:'Review existing outputs before retrying'});
     if (!(await service.retry(pool,req.params.id))) return res.status(409).json({error:'Task cannot be retried; check approval, references and active exports'});
     res.json({ok:true});

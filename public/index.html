@@ -50,6 +50,12 @@
         </ul>
       </div>
       <div id="sidebarDashboardControls" class="sidebar-dashboard-controls" aria-label="Dashboard controls">
+        <div id="printExportSwitchContainer" hidden>
+          <button id="printExportSwitch" type="button" role="switch" aria-checked="false" aria-label="Automatic print exports" disabled>
+            <span>Print exports</span><span class="print-export-switch-state">Off</span><span class="print-export-switch-track" aria-hidden="true"></span>
+          </button>
+          <span id="printExportSwitchMessage" role="status" aria-live="polite"></span>
+        </div>
         <button id="logoutButton" class="btn sidebar-logout-button" type="button" aria-label="Sign out">
           <svg class="sidebar-logout-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>

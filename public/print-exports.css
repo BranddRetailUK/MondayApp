@@ -6,3 +6,16 @@
 .print-exports-dialog article { border-top:1px solid #555; padding:16px 0; }
 .print-exports-dialog p { overflow-wrap:anywhere; }
 .print-export-path { font-size:13px; }
+
+#printExportSwitchContainer[hidden] { display:none !important; }
+#printExportSwitchContainer { width:100%; }
+#printExportSwitch { display:flex; align-items:center; gap:8px; width:100%; padding:10px 12px; border:1px solid #555; border-radius:6px; background:#292929; color:#fff; cursor:pointer; font:inherit; font-size:13px; }
+#printExportSwitch:disabled { opacity:.6; cursor:wait; }
+#printExportSwitch:focus-visible { outline:2px solid #21b4ff; outline-offset:2px; }
+.print-export-switch-state { margin-left:auto; font-size:12px; }
+.print-export-switch-track { width:30px; height:18px; flex-shrink:0; border-radius:12px; background:#666; position:relative; }
+.print-export-switch-track::after { content:''; position:absolute; top:3px; left:3px; width:12px; height:12px; border-radius:50%; background:#fff; transition:transform .15s; }
+#printExportSwitch[aria-checked="true"] .print-export-switch-track { background:#008951; }
+#printExportSwitch[aria-checked="true"] .print-export-switch-track::after { transform:translateX(12px); }
+#printExportSwitchMessage { display:block; color:#ffba91; font-size:12px; overflow-wrap:anywhere; }
+#printExportSwitchMessage:empty { display:none; }

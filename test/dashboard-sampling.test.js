@@ -170,6 +170,7 @@ async function withFixture(options, run) {
   const rows = data => ({ rows: structuredClone(data), rowCount: data.length });
   const pool = { async query(sql, values = []) {
     queries.push({ sql, values });
+    if (sql.includes('FROM print_export_settings')) return rows([{ enabled: options.printExports === true }]);
     if (sql.includes('FROM test_dashboard_columns') && sql.trimStart().startsWith('SELECT')) return rows(columns);
     if (sql.includes('FROM database_jobs') && sql.trimStart().startsWith('SELECT')) return rows([job]);
     if (sql.includes('FROM test_dashboard_job_state') && sql.trimStart().startsWith('SELECT')) {
@@ -226,19 +227,15 @@ async function withFixture(options, run) {
 
 
 test('enabled print queue is created once after real approval; private rows remain excluded', async () => {
-  const old = process.env.PRINT_EXPORT_ENABLED;
-  process.env.PRINT_EXPORT_ENABLED = 'true';
-  try {
-    await withFixture({ status: 'AWAITING APPROVAL' }, async fixture => {
+  {
+    await withFixture({ status: 'AWAITING APPROVAL', printExports: true }, async fixture => {
       assert.equal((await fixture.request('checkbox-column', { columnId: ids.JOB, checked: true })).statusCode, 200);
       assert.equal((await fixture.request('checkbox-column', { columnId: ids.JOB, checked: true })).statusCode, 200);
       assert.equal(fixture.queued(), 1);
     });
-    await withFixture({ status: 'AWAITING APPROVAL', privateJob: true }, async fixture => {
+    await withFixture({ status: 'AWAITING APPROVAL', privateJob: true, printExports: true }, async fixture => {
       assert.equal((await fixture.request('checkbox-column', { columnId: ids.JOB, checked: true })).statusCode, 200);
       assert.equal(fixture.queued(), 0);
     });
-  } finally {
-    if (old === undefined) delete process.env.PRINT_EXPORT_ENABLED; else process.env.PRINT_EXPORT_ENABLED = old;
   }
 });

@@ -587,18 +587,12 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (r
     }
 
     let saved;
-    if (!privateJob && approvalLabels && printExports.enabled()) {
+    if (!privateJob && approvalLabels) {
       ({ saved, databaseJob } = await printExports.saveApproval(pool, {
         sourceOrderId: job.source_order_id, labels: approvalLabels, nextState,
         saveState: db => upsertJobState(job.source_order_id, nextState, db),
       }));
     } else {
-      if (approvalLabels) {
-        databaseJob = await updateDatabaseJobDashboardFields(pool, job.source_order_id, approvalLabels);
-        if (!approvalLabels.jobApproved) await pool.query(
-          `UPDATE print_export_jobs SET status='cancelled', message='Job approval removed', updated_at=NOW()
-           WHERE source_order_id=$1 AND status IN ('queued','processing','awaiting_review')`, [job.source_order_id]);
-      }
       saved = privateJob ? await updatePrivateDashboardJob(job.id, nextState)
         : await upsertJobState(job.source_order_id, nextState);
     }

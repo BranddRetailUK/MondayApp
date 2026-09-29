@@ -1,4 +1,35 @@
 (() => {
+  const switchContainer=document.getElementById('printExportSwitchContainer');
+  const toggle=document.getElementById('printExportSwitch');
+  const toggleMessage=document.getElementById('printExportSwitchMessage');
+  let changing=false,reading=false,canToggle=false;
+  function showEnabled(value) {
+    toggle.setAttribute('aria-checked',String(value));
+    toggle.querySelector('.print-export-switch-state').textContent=value?'On':'Off';
+  }
+  async function readSwitch() {
+    if(changing||reading||!toggle)return;reading=true;
+    try {
+      const response=await fetch('/api/print-exports/settings',{cache:'no-store'});
+      if(!response.ok)throw Error('Cannot read print export setting');
+      const settings=await response.json();
+      canToggle=settings.canToggle===true;switchContainer.hidden=!canToggle;
+      showEnabled(settings.enabled===true);toggle.disabled=!canToggle;toggleMessage.textContent='';
+    } catch(e) {if(canToggle){toggle.disabled=true;toggleMessage.textContent=e.message;}}
+    finally{reading=false;}
+  }
+  if(toggle)toggle.onclick=async()=>{
+    if(changing||reading||!canToggle)return;
+    changing=true;toggle.disabled=true;toggleMessage.textContent='';
+    try{
+      const response=await fetch('/api/print-exports/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:toggle.getAttribute('aria-checked')!=='true'})});
+      const result=await response.json();if(!response.ok)throw Error(result.error||'Could not save switch');
+      showEnabled(result.enabled===true);if(dialog.open)refresh();
+    }catch(e){toggleMessage.textContent=e.message;}finally{changing=false;toggle.disabled=false;}
+  };
+  Promise.resolve(window.ultimateHubUserPromise).then(user=>{if(user&&user.access_scope!=='dtf_only')readSwitch();});
+  setInterval(()=>{if(canToggle&&!document.hidden)readSwitch();},20000);
+
   const host=document.getElementById('print-export-controls');
   if(!host)return;
   const button=document.createElement('button');button.type='button';button.textContent='Print exports';host.append(button);
