@@ -1,4 +1,4 @@
-/* Proof Exporter 1.0 - ES3-compatible, coordinate system: [left, top, right, bottom], Y down. */
+/* Proof Exporter detection 1.12 - ES3-compatible, bounds [left, top, right, bottom], Y down. */
 var ProofCore = (function () {
     function w(b) { return b[2] - b[0]; }
     function h(b) { return b[3] - b[1]; }
@@ -9,6 +9,13 @@ var ProofCore = (function () {
     function intersection(a, b) { var c = [Math.max(a[0],b[0]), Math.max(a[1],b[1]), Math.min(a[2],b[2]), Math.min(a[3],b[3])]; return w(c) > 0 && h(c) > 0 ? c : null; }
     function contains(a, b, pad) { pad = pad || 0; return b[0] >= a[0]-pad && b[1] >= a[1]-pad && b[2] <= a[2]+pad && b[3] <= a[3]+pad; }
     function overlap(a,b) { var r=intersection(a,b); return r ? area(r)/Math.min(area(a),area(b)) : 0; }
+    // Distance between visible bounds, independent of which side the box occupies.
+    function gap(a,b) { var dx=Math.max(0,a[0]-b[2],b[0]-a[2]),dy=Math.max(0,a[1]-b[3],b[1]-a[3]);return Math.sqrt(dx*dx+dy*dy); }
+    function nearest(b, candidates, getBounds) {
+        var best=null,first=1e10,second=1e10;
+        for(var n=0;n<candidates.length;n++) {var d=gap(b,getBounds(candidates[n]));if(d<first){second=first;first=d;best=candidates[n];}else if(d<second)second=d;}
+        return second-first<=Math.max(3,first*.05)?null:best;
+    }
     function trim(s) { return String(s).replace(/^\s+|\s+$/g, ''); }
     function norm(s) { return trim(s).replace(/\s+/g, ' ').toUpperCase(); }
     function parseSize(s) {
@@ -68,8 +75,7 @@ var ProofCore = (function () {
             p=items[i];
             if(p.kind!=='vector'||!p.filled||p.clip||p.points<7) continue;
             if(w(p.b)>w(page)*0.045 && h(p.b)>h(page)*0.18 && area(p.b)>area(page)*0.012 && area(p.b)<area(page)*0.55) {
-                var below=false;for(j=0;j<ls.length;j++) if(p.b[1]>ls[j].b[3]-4) below=true;
-                if(below) seeds.push(p);
+                seeds.push(p);
             }
         }
         seeds.sort(function(a,b){return area(b.b)-area(a.b);});
@@ -79,23 +85,18 @@ var ProofCore = (function () {
             if(!g) {g={b:seeds[i].b.slice(0),seeds:[],palette:[],label:null};garments.push(g);}
             g.seeds.push(seeds[i].id);if(seeds[i].colour) g.palette.push(seeds[i].colour);
         }
-        // Assign the nearest label above each silhouette, then resolve collisions explicitly.
+        // Require mutual nearest neighbours; never reuse one box for two mockups.
+        // Process words (EMBROIDERY / TRANSFER etc.) are deliberately not eligibility rules.
         for(i=0;i<garments.length;i++) {
-            g=garments[i];var best=null,bestScore=1e10;
-            for(j=0;j<ls.length;j++) {
-                var dy=g.b[1]-ls[j].b[3], dx=Math.abs(cx(g.b)-cx(ls[j].b));
-                if(dy>=-8&&dy<h(page)*.25&&dx<Math.max(w(g.b)*.8,w(page)*.12)) {
-                    var score=dx+dy*.3;if(score<bestScore){bestScore=score;best=ls[j];}
-                }
-            }
-            g.label=best;
+            g=garments[i];var best=nearest(g.b,ls,function(l){return l.b;});
+            g.label=best&&nearest(best.b,garments,function(mock){return mock.b;})===g?best:null;
         }
         var results=[];
         for(i=0;i<ls.length;i++) {
             var matches=[];for(j=0;j<garments.length;j++) if(garments[j].label===ls[i]) matches.push(garments[j]);
             var r={label:ls[i],ids:[],excluded:[],b:null,warnings:[],garment:null,format:'EPS',confidence:'REVIEW'};
             if(matches.length!==1||ls[i].ambiguous) {r.warnings.push('No unique garment/size match. Use manual selection.');results.push(r);continue;}
-            g=matches[0];r.garment=g.b;
+            g=matches[0];r.garment=g.b;var colourCandidates=[];
             for(j=0;j<items.length;j++) {
                 p=items[j];if(p.clip || !contains(g.b,p.b,1)) continue;
                 if(has(g.seeds,p.id)) {r.excluded.push(p.id);continue;}
@@ -106,7 +107,7 @@ var ProofCore = (function () {
                 var edge=(p.b[0]<g.b[0]+w(g.b)*.025 || p.b[2]>g.b[2]-w(g.b)*.025 || p.b[3]>g.b[3]-h(g.b)*.04);
                 if(same||big||seam||edge) {
                     r.excluded.push(p.id);
-                    if(same&&!big&&!edge&&!seam) r.warnings.push('Small garment-coloured objects excluded; check for matching-colour print.');
+                    if(same&&!big&&!edge&&!seam) colourCandidates.push(p);
                     continue;
                 }
                 if(p.kind==='text' && (parseSize(p.text)||position(p.text))) continue;
@@ -115,6 +116,24 @@ var ProofCore = (function () {
                 if(p.kind==='unsupported') r.warnings.push('Unsupported appearance/object: use manual selection and inspect output.');
                 if(p.effect) r.warnings.push('Transparency/blending present; compare preview carefully.');
             }
+            // Recover nearby lettering/details without letting recovery spread through seams.
+            // Use only the original artwork bounds, never bounds expanded by recovered items.
+            var anchor=r.b,nearby=Math.min(w(g.b),h(g.b))*.035,recovered=false,leftOut=false;
+            for(j=0;j<colourCandidates.length;j++) {
+                p=colourCandidates[j];
+                if(anchor && w(p.b)<=Math.max(w(anchor)*1.8,w(g.b)*.12) &&
+                    h(p.b)<=Math.max(h(anchor)*.4,h(g.b)*.035) &&
+                    p.b[0]>=anchor[0]-nearby && p.b[2]<=anchor[2]+nearby &&
+                    p.b[1]>=anchor[1]-nearby && p.b[3]<=anchor[3]+nearby) {
+                    r.ids.push(p.id);r.b=union(r.b,p.b);recovered=true;
+                    for(k=r.excluded.length-1;k>=0;k--)if(r.excluded[k]===p.id)r.excluded.splice(k,1);
+                    if(p.kind==='raster'||p.kind==='placed')r.format='PNG';
+                    if(p.kind==='unsupported')r.warnings.push('Unsupported appearance/object: use manual selection and inspect output.');
+                    if(p.effect)r.warnings.push('Transparency/blending present; compare preview carefully.');
+                } else leftOut=true;
+            }
+            if(recovered)r.details='Nearby garment-coloured lettering/details retained within the artwork bounds.';
+            if(leftOut)r.warnings.push('Small garment-coloured objects excluded; check for matching-colour print.');
             if(!r.ids.length) r.warnings.push('No artwork found. Use manual selection.');
             else {
                 if(w(r.b)>w(g.b)*.75||h(r.b)>h(g.b)*.65) r.warnings.push('Artwork occupies a large part of the mockup.');
@@ -133,6 +152,11 @@ var ProofCore = (function () {
         }
         return results;
     }
-    return {w:w,h:h,area:area,cx:cx,cy:cy,union:union,intersection:intersection,contains:contains,parseSize:parseSize,position:position,reference:reference,labels:labels,detect:detect,scale:scale,px:px,folderMatches:folderMatches,trim:trim,has:has};
+    function canAutoExport(rows) {
+        if(!rows.length)return false;
+        for(var i=0;i<rows.length;i++)if(rows[i].confidence!=='GOOD MATCH'||rows[i].warnings.length||!rows[i].ids.length||!rows[i].preview||!rows[i].prepared)return false;
+        return true;
+    }
+    return {version:'1.12',canAutoExport:canAutoExport,w:w,h:h,area:area,cx:cx,cy:cy,union:union,intersection:intersection,contains:contains,parseSize:parseSize,position:position,reference:reference,labels:labels,detect:detect,scale:scale,px:px,folderMatches:folderMatches,trim:trim,has:has};
 }());
 if (typeof module !== 'undefined' && module.exports) module.exports=ProofCore;

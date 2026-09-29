@@ -19,3 +19,8 @@
 #printExportSwitch[aria-checked="true"] .print-export-switch-track::after { transform:translateX(12px); }
 #printExportSwitchMessage { display:block; color:#ffba91; font-size:12px; overflow-wrap:anywhere; }
 #printExportSwitchMessage:empty { display:none; }
+.artwork-export-tick { display:inline-flex;align-items:center;justify-content:center;font-size:26px;font-weight:800;line-height:1; }
+.artwork-export-success { color:#22c55e; }
+.artwork-export-partial { color:#facc15; }
+.artwork-export-failed { color:#ef4444; }
+.column-artwork_result { justify-content:center; }

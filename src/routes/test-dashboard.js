@@ -100,10 +100,11 @@ const STITCH_REFERENCE_PATTERN = new RegExp(
   'gi'
 );
 
-protectedRouter.get('/api/test-dashboard/board', async (_req, res) => {
+protectedRouter.get('/api/test-dashboard/board', async (req, res) => {
   try {
     await ensureTestDashboardDefaults(pool);
     const payload = await buildTestDashboardBoardPayload();
+    await require('../services/artworkExportStatus').decorateArtworkStatus(pool,payload,req.hubUser);
     res.json(payload);
   } catch (err) {
     console.error('GET /api/test-dashboard/board', err);

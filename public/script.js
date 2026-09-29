@@ -933,6 +933,7 @@ function isPrintEmbroideryMobileHiddenColumn(spec) {
 }
 
 function getColumnWidth(column) {
+  if (column.type === 'artwork_result') return 88;
   const title = String(column.title || '').toUpperCase();
   if (column.type === 'status') {
     if (title === 'TYPE') return 88;
@@ -2167,7 +2168,17 @@ function buildColumnValueCell(entity, column, { subitem = false, context = BOARD
   const text = normalizeCellText(value?.text || '');
   if (text) cell.title = text;
 
-  if (column.type === 'status') {
+  if (column.type === 'artwork_result') {
+    const result = parseJsonMaybe(value?.value)?.result;
+    if (['success','partial','failed'].includes(result)) {
+      const tick = document.createElement('span');
+      tick.className = `artwork-export-tick artwork-export-${result}`;
+      tick.textContent = '✓';
+      tick.setAttribute('role','img');
+      tick.setAttribute('aria-label',text);
+      cell.append(tick);
+    }
+  } else if (column.type === 'status') {
     renderStatusValue(cell, value, column, text, { entity, subitem, context });
   } else if (column.type === 'checkbox') {
     renderCheckboxValue(cell, value, column, { entity, subitem, context });

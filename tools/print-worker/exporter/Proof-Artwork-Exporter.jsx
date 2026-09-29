@@ -1,5 +1,5 @@
 #target illustrator
-/* Proof Artwork Exporter 1.8 - Windows Illustrator desktop.
+/* Proof Artwork Exporter 1.12 - Windows Illustrator desktop.
    Keep proof-core.js and png-helper.ps1 beside this file. Source documents are never saved/edited.
 */
 (function () {
@@ -261,7 +261,7 @@
         var g=d.add('group');g.add('button',undefined,'Cancel',{name:'cancel'});g.add('button',undefined,'Use folder',{name:'ok'});if(d.show()!==1)return null;return found[l.selection.index];
     }
     function review(rows,dest,ref) {
-        var d=new Window('dialog','Review isolated print artwork');d.orientation='column';d.alignChildren='fill';
+        var d=new Window('dialog','Review isolated print artwork - exporter 1.12 / core '+(ProofCore.version||'unversioned'));d.orientation='column';d.alignChildren='fill';
         var top=d.add('statictext',undefined,'Ref '+ref+'  |  '+dest.fsName);top.maximumSize.width=820;
         var body=d.add('group');body.alignChildren='top';
         var list=body.add('listbox',undefined,[]);list.preferredSize=[340,340];
@@ -370,15 +370,27 @@
         }
         if(!rows.length)throw Error('No readable position/size labels found on the active artboard. Select the print and rerun in Selected artwork mode.');
         for(i=0;i<rows.length;i++)if(rows[i].ids.length){status('Preparing preview '+(i+1)+' of '+rows.length+'...');try{rows[i].preview=preview(m,rows[i],i);}catch(e){var detail=failure(e);checkpoint('FAILED '+detail);closeWork();rows[i].warnings.push('Preview failed: '+detail);rows[i].confidence='REVIEW';for(var rest=i+1;rest<rows.length;rest++){rows[rest].warnings.push('Not attempted after an earlier preview failed. See export progress log.');rows[rest].confidence='REVIEW';}break;}}
-        busy.close();busy=null;source.activate();hubProgress('awaiting_review','Review artwork in Illustrator');if(!review(rows,dest,config.ref))return;checkHubCancellation();hubProgress('processing','Exporting approved artwork');
+        busy.close();busy=null;source.activate();
+        if(ProofCore.canAutoExport(rows)) {
+            for(i=0;i<rows.length;i++)rows[i].enabled=true;
+            hubProgress('processing','Confident match: exporting automatically');
+        } else {
+            hubProgress('awaiting_review','Artwork needs review in Illustrator');
+            if(!review(rows,dest,config.ref))return;
+        }
+        checkHubCancellation();hubProgress('processing','Exporting artwork');
         busy=new Window('palette','Exporting print artwork');busy.message=busy.add('statictext',undefined,'Exporting...');busy.message.preferredSize.width=580;busy.show();
         for(i=0;i<rows.length;i++)if(rows[i].enabled){status('Exporting '+rows[i].label.position+'...');try{saveRow(m,rows[i],dest,config.ref,i);}catch(e){closeWork();errors.push(rows[i].label.position+': '+failure(e));checkpoint('FAILED '+errors[errors.length-1]);}}
         if(busy){busy.close();busy=null;}
         var skipped=0;for(i=0;i<rows.length;i++)if(!rows[i].enabled)skipped++;
         hubOutcome=errors.length||skipped?'needs_attention':'exported';
         hubMessage='Exported '+exported.length+' artwork(s).'+(skipped?' '+skipped+' view(s) skipped.':'')+(errors.length?' '+errors.join(' | '):'');
-        if(!hubJob)alert('Exported '+exported.length+' artwork file(s) to:\n'+dest.fsName+(errors.length?'\n\nSome exports failed:\n'+errors.join('\n'):'\n\nExisting files were kept.'));
-    } catch(e) {hubMessage=e.message;hubOutcome='needs_attention';if(!hubJob)alert('Proof Artwork Exporter\n\n'+e.message+(e.line?'\nLine '+e.line:''));}
+        if(exported.length) {
+            var openedFolder=false;try{openedFolder=dest.execute();}catch(folderError){}
+            if(!openedFolder)alert('Artwork was saved, but the PRINT folder could not be opened:\n'+dest.fsName);
+        }
+        if(errors.length)alert('Some exports failed:\n'+errors.join('\n')+'\n\nSuccessfully saved files were kept in:\n'+dest.fsName);
+    } catch(e) {hubMessage=e.message;hubOutcome='needs_attention';alert('Proof Artwork Exporter\n\n'+e.message+(e.line?'\nLine '+e.line:''));}
     finally {for(var cleanup=0;cleanup<preparedDocuments.length;cleanup++)try{preparedDocuments[cleanup].close(SaveOptions.DONOTSAVECHANGES);}catch(ignored){}if(trace)try{checkpoint('Script finished or cancelled');}catch(e){}closeWork();if(busy)try{busy.close();}catch(e){}if(source)try{source.activate();}catch(e){}app.userInteractionLevel=originalInteraction;if(originalCoordinates!==undefined)app.coordinateSystem=originalCoordinates;cleanTemp();
         if(hubJob){
             if(hubOpened&&source)try{source.close(SaveOptions.DONOTSAVECHANGES);}catch(ignored){}

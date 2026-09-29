@@ -74,7 +74,7 @@ async function updateDatabaseJobDashboardFields(db, sourceOrderId, labels = {}, 
       const jobApproved = inferJobApproved(labels.status);
       values.push(jobApproved);
       fields.push(`proof_approved = $${values.length}`);
-      fields.push(`proof_approved_at = CASE WHEN $${values.length} IS TRUE THEN NOW() ELSE NULL END`);
+      fields.push(`proof_approved_at = CASE WHEN $${values.length} IS TRUE THEN CASE WHEN proof_approved IS TRUE THEN COALESCE(proof_approved_at, NOW()) ELSE NOW() END ELSE NULL END`);
     }
   }
 
@@ -95,7 +95,7 @@ async function updateDatabaseJobDashboardFields(db, sourceOrderId, labels = {}, 
       fields.push(`proof_approved_at = CASE WHEN proof_approved IS NULL AND $${values.length} IS TRUE THEN NOW() ELSE proof_approved_at END`);
     } else {
       fields.push(`proof_approved = $${values.length}`);
-      fields.push(`proof_approved_at = CASE WHEN $${values.length} IS TRUE THEN NOW() ELSE NULL END`);
+      fields.push(`proof_approved_at = CASE WHEN $${values.length} IS TRUE THEN CASE WHEN proof_approved IS TRUE THEN COALESCE(proof_approved_at, NOW()) ELSE NOW() END ELSE NULL END`);
     }
   }
 
