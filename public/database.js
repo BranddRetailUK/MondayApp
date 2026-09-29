@@ -665,6 +665,10 @@
     els.proofPanel?.addEventListener('touchend', handleDatabaseProofTouchEnd, { passive: false });
     els.proofPanel?.addEventListener('touchcancel', handleDatabaseProofTouchEnd, { passive: false });
     els.proofPanel?.addEventListener('error', handleDatabaseVisualThumbnailError, true);
+    els.proofPanel?.addEventListener('dragenter', handleDatabaseProofDragOver);
+    els.proofPanel?.addEventListener('dragover', handleDatabaseProofDragOver);
+    els.proofPanel?.addEventListener('dragleave', handleDatabaseProofDragLeave);
+    els.proofPanel?.addEventListener('drop', handleDatabaseProofDrop);
     els.proofUploadInput?.addEventListener('change', handleDatabaseProofUploadSelection);
     document.addEventListener('pointermove', handleLineDragPointerMove);
     document.addEventListener('pointerup', handleLineDragPointerUp);
@@ -8014,6 +8018,7 @@
 
   function renderProofPanel() {
     if (!els.proofPanel) return;
+    els.proofPanel.classList.remove('is-file-dragover');
     const files = state.selectedProofFiles || [];
     const upload = currentDatabaseProofUpload();
     const uploadButton = renderDatabaseProofUploadButton(upload);
@@ -8024,6 +8029,7 @@
         <div class="db-proof-empty">
           <div class="db-proof-empty-actions">
             ${uploadButton}
+            <span class="db-proof-drop-hint">or drag and drop PDF, JPEG or PNG files here</span>
             ${uploadMessage}
           </div>
         </div>
@@ -8033,6 +8039,7 @@
 
     els.proofPanel.innerHTML = `
       <div class="db-proof-upload-row">
+        <span class="db-proof-drop-hint">Drag and drop PDF, JPEG or PNG files here</span>
         ${uploadMessage}
         ${uploadButton}
       </div>
@@ -8127,12 +8134,36 @@
   async function handleDatabaseProofUploadSelection(event) {
     const files = Array.from(event.target?.files || []).filter(Boolean);
     if (event.target) event.target.value = '';
+    return uploadDatabaseProofFiles(files);
+  }
+
+  function handleDatabaseProofDragOver(event) {
+    if (!Array.from(event.dataTransfer?.types || []).includes('Files')) return;
+    event.preventDefault();
+    const canUpload = Boolean(state.selectedJob?.source_order_id) && !currentDatabaseProofUpload()?.inFlight;
+    event.dataTransfer.dropEffect = canUpload ? 'copy' : 'none';
+    els.proofPanel?.classList.toggle('is-file-dragover', canUpload);
+  }
+
+  function handleDatabaseProofDragLeave(event) {
+    if (els.proofPanel?.contains(event.relatedTarget)) return;
+    els.proofPanel?.classList.remove('is-file-dragover');
+  }
+
+  async function handleDatabaseProofDrop(event) {
+    event.preventDefault();
+    els.proofPanel?.classList.remove('is-file-dragover');
+    return uploadDatabaseProofFiles(Array.from(event.dataTransfer?.files || []).filter(Boolean));
+  }
+
+  async function uploadDatabaseProofFiles(files) {
     if (!files.length) return;
 
     const sourceOrderId = Number(state.selectedJob?.source_order_id);
-    if (!Number.isFinite(sourceOrderId)) return;
+    if (!sourceOrderId || !Number.isFinite(sourceOrderId)) return;
     const unsupported = files.filter((file) => !isAllowedDatabaseVisualUpload(file));
     const upload = databaseProofUploadForJob(sourceOrderId, { create: true });
+    if (upload.inFlight) return;
     if (unsupported.length) {
       upload.error = DATABASE_VISUAL_UPLOAD_ERROR;
       upload.message = '';
@@ -8700,7 +8731,8 @@
     if (documentType === 'invoice' && invoiceNotRequired(state.selectedJob) && !existingInvoicePreview) return;
 
     let generatedAt = new Date();
-    if (existingInvoicePreview) {
+    const manualInvoiceDateSelected = els.detailsPanel?.querySelector('[data-db-manual-invoice-date]')?.checked;
+    if (existingInvoicePreview && !manualInvoiceDateSelected) {
       generatedAt = validDateOrNow(
         state.selectedJob?.invoice_date
         || state.selectedJob?.complete_date

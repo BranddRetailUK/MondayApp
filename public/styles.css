@@ -6320,6 +6320,21 @@ body.modal-open{overflow:hidden}
   height:31px;
   font-weight:700;
 }
+.db-proof-drop-hint{
+  color:#263746;
+  font:11px Arial, Helvetica, sans-serif;
+}
+.db-proof-upload-row .db-proof-drop-hint{
+  margin-right:auto;
+}
+#db-order-proof-panel.is-file-dragover{
+  outline:3px dashed #1671a3;
+  outline-offset:-3px;
+}
+#db-order-proof-panel.is-file-dragover .db-proof-empty,
+#db-order-proof-panel.is-file-dragover .db-order-proof-grid-shell{
+  background:#abd9f2;
+}
 .db-proof-upload-button:disabled{
   color:#777;
   cursor:not-allowed;

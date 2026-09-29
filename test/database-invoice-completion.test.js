@@ -73,6 +73,34 @@ test('repeat invoice clicks do not create duplicate invoiced activity', async ()
   assert.ok(result.queries.some(query => query.text === 'COMMIT'));
 });
 
+test('manual date correction on an existing invoice bypasses completion and preserves invoice state', async () => {
+  const result = await exerciseInvoiceRoute('READY TO PRINT', {
+    invoice_no: 52001,
+    invoice_printed: true,
+  }, { mark_invoiced: true, manual_invoice_date: true, invoice_date: '25/09/26' });
+
+  assert.equal(result.response.statusCode, 200);
+  assert.equal(result.response.body.job.invoice_date, '2026-09-25');
+  assert.equal(result.response.body.job.invoice_no, 52001);
+  assert.equal(result.response.body.job.dashboard_status, 'READY TO PRINT');
+  const update = result.queries.find(query => query.text.includes('SET invoice_date = $2::timestamp'));
+  assert.deepEqual(update.values, [8001, '2026-09-25']);
+  assert.doesNotMatch(update.text, /invoice_no\s*=|invoice_printed\s*=|dashboard_status\s*=/);
+  assert.equal(result.queries.some(query => query.text.includes('WITH next_invoice AS')), false);
+  assert.equal(result.queries.some(query => query.text.includes('INSERT INTO database_job_status_updates')), false);
+  assert.ok(result.queries.some(query => query.text === 'COMMIT'));
+});
+
+test('invalid or missing manual invoice dates are rejected before any database mutation', async () => {
+  for (const invoice_date of ['', '31/09/26', 'invalid']) {
+    const result = await exerciseInvoiceRoute('COMPLETED', { invoice_no: 52001 }, {
+      mark_invoiced: true, manual_invoice_date: true, invoice_date,
+    });
+    assert.equal(result.response.statusCode, 400);
+    assert.equal(result.queries.length, 0);
+  }
+});
+
 test('first invoice click records activity when a legacy invoice number already exists', async () => {
   const result = await exerciseInvoiceRoute('COMPLETED', {
     invoice_no: 52001,
@@ -197,7 +225,7 @@ test('invoice UI opens an existing legacy invoice without requiring a dashboard 
   );
   assert.match(
     flow,
-    /if \(existingInvoicePreview\)[\s\S]*state\.selectedJob\?\.invoice_date[\s\S]*state\.selectedJob\?\.complete_date/
+    /if \(existingInvoicePreview && !manualInvoiceDateSelected\)[\s\S]*state\.selectedJob\?\.invoice_date[\s\S]*state\.selectedJob\?\.complete_date/
   );
 });
 
@@ -245,6 +273,15 @@ async function exerciseInvoiceRoute(
             ...jobOverrides,
           }],
         };
+      }
+      if (text.includes('SET invoice_date = $2::timestamp')) {
+        return { rowCount: 1, rows: [{
+          source_order_id: 8001,
+          order_no: 8101,
+          dashboard_status: dashboardStatus,
+          ...jobOverrides,
+          invoice_date: values[1],
+        }] };
       }
       if (text.includes('WITH next_invoice AS')) {
         return {

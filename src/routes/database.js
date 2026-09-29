@@ -4353,12 +4353,26 @@ router.put('/api/database/jobs/:id', async (req, res) => {
         `SELECT dashboard_status,
                 order_type,
                 order_type_abbr,
+                invoice_no,
                 invoice_printed
          FROM database_jobs
          WHERE source_order_id = $1`,
         [job.source_order_id]
       );
       const currentJob = completion.rows[0] || {};
+      if (currentJob.invoice_no && hasManualInvoiceDate) {
+        const result = await client.query(
+          `UPDATE database_jobs
+           SET invoice_date = $2::timestamp,
+               updated_at_source = NOW(),
+               imported_at = NOW()
+           WHERE source_order_id = $1
+           RETURNING *`,
+          [job.source_order_id, manualInvoiceDate]
+        );
+        await client.query('COMMIT');
+        return res.json({ job: result.rows[0] });
+      }
       if (
         !hasPreCompletionInvoice
         && !isBusinessGiftDatabaseOrder(currentJob)
