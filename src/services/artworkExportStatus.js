@@ -1,5 +1,14 @@
 const { canControl } = require('./printExports');
 const COLUMN = { id:'artwork_export_result', title:'ARTWORK', type:'artwork_result', settings_str:'' };
+function buttonState(rows,now=Date.now()) {
+  const active=rows.filter(r=>r.status==='queued'||(['processing','awaiting_review'].includes(r.status)&&new Date(r.lease_until).getTime()>now));
+  if(active.length) {
+    const status=active.some(r=>r.status==='awaiting_review')?'awaiting_review':active.some(r=>r.status==='processing')?'processing':'queued';
+    return {status,busy:true,message:status==='awaiting_review'?'Review artwork in Illustrator':status==='processing'?'Exporting artwork':'Artwork queued; waiting for worker'};
+  }
+  const result=summarize(rows,now);
+  return {status:result?.result||'idle',busy:false,message:result?.message||''};
+}
 function summarize(rows, now=Date.now()) {
   if (!rows.length || rows.some(r=>r.status==='cancelled')) return null;
   const active=r=>r.status==='queued'||(['processing','awaiting_review'].includes(r.status)&&new Date(r.lease_until).getTime()>now);
@@ -29,10 +38,12 @@ async function decorateArtworkStatus(db,payload,user) {
     const grouped=new Map();
     for(const r of rows){const key=String(r.source_order_id);if(!grouped.has(key))grouped.set(key,[]);grouped.get(key).push(r);}
     for(const item of items) {
-      const result=summarize(grouped.get(String(item.database_job?.source_order_id))||[]);
+      const jobs=grouped.get(String(item.database_job?.source_order_id))||[];
+      if(item.database_job)item.artwork_export=buttonState(jobs);
+      const result=summarize(jobs);
       if(result)item.column_values.push({id:COLUMN.id,type:COLUMN.type,text:result.message,value:JSON.stringify(result)});
     }
   }
   return payload;
 }
-module.exports={summarize,decorateArtworkStatus,COLUMN};
+module.exports={summarize,buttonState,decorateArtworkStatus,COLUMN};

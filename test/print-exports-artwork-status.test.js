@@ -33,3 +33,15 @@ test('production column precedes TRANS and only latest approval contributes',asy
  await db.exec("UPDATE print_export_jobs SET status='queued' WHERE id='00000000-0000-4000-8000-000000000002'");p=payload();await decorateArtworkStatus(db,p,production);assert.equal(p.boards[0].groups[0].items_page.items[0].column_values.length,0);
  await db.close();
 });
+test('button spinner follows durable queue state and only full success turns green',()=>{
+ const {buttonState}=require('../src/services/artworkExportStatus');
+ for(const status of ['queued','processing','awaiting_review']) {
+  const state=buttonState([{status,lease_until:'2100-01-01',outputs:[]}]);
+  assert.equal(state.busy,true);assert.equal(state.status,status);
+ }
+ assert.equal(buttonState([success]).status,'success');assert.equal(buttonState([success]).busy,false);
+ assert.equal(buttonState([success,failed]).status,'partial');
+ assert.equal(buttonState([{status:'processing',lease_until:'2000-01-01'}]).busy,false);
+ assert.equal(buttonState([{status:'cancelled'}]).status,'idle');
+ assert.equal(buttonState([]).busy,false);
+});

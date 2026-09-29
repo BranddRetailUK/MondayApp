@@ -1584,19 +1584,28 @@ function buildArtworkActionCell(item) {
   const cell=document.createElement('div');cell.className='grid-cell job-print-cell';
   const id=item?.database_job?.source_order_id;
   if(!id||isTestDashboardPrivateItem(item))return cell;
-  const button=document.createElement('button');button.type='button';button.className='job-action primary job-print-button';button.textContent='ARTWORK';
-  button.disabled=artworkRequestsInFlight.has(String(id));
-  button.title='Process artwork for this approved job, even when automatic Print exports is Off';
-  button.setAttribute('aria-label',`Process artwork for job ${item.database_job.order_no || id}`);
+  const button=document.createElement('button');button.type='button';button.className='job-action primary job-print-button artwork-action-button';
+  function renderButton(forceBusy=false) {
+    const busy=forceBusy||artworkRequestsInFlight.has(String(id))||item.artwork_export?.busy===true;
+    button.disabled=busy;button.setAttribute('aria-busy',String(busy));
+    button.classList.toggle('artwork-action-success',!busy&&item.artwork_export?.status==='success');
+    button.replaceChildren();
+    if(busy){const spinner=document.createElement('span');spinner.className='artwork-action-spinner';spinner.setAttribute('aria-hidden','true');button.append(spinner);}
+    else button.textContent='ARTWORK';
+    button.title=item.artwork_export?.message||'Process artwork for this approved job, even when automatic Print exports is Off';
+    button.setAttribute('aria-label',`${busy?(item.artwork_export?.message||'Queuing artwork'):'Process artwork'} for job ${item.database_job.order_no || id}`);
+  }
+  renderButton();
   button.onclick=async(event)=>{
     event.preventDefault();event.stopPropagation();if(artworkRequestsInFlight.has(String(id)))return;
-    artworkRequestsInFlight.add(String(id));button.disabled=true;button.textContent='Queuing…';
+    artworkRequestsInFlight.add(String(id));renderButton(true);
     try{
       const response=await fetch(`/api/print-exports/jobs/${encodeURIComponent(id)}/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
       if(!response.ok)throw Error(await readApiError(response));
+      artworkRequestsInFlight.delete(String(id));
       await loadTestBoard({forceRefresh:true});
-    }catch(e){alert(`Could not queue artwork: ${e.message}`);}
-    finally{artworkRequestsInFlight.delete(String(id));button.disabled=false;button.textContent='ARTWORK';}
+    }catch(e){artworkRequestsInFlight.delete(String(id));renderButton();alert(`Could not queue artwork: ${e.message}`);}
+    finally{artworkRequestsInFlight.delete(String(id));}
   };
   cell.append(button);return cell;
 }

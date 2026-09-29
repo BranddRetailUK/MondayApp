@@ -23,3 +23,10 @@
 .artwork-export-partial { color:#facc15; }
 .artwork-export-failed { color:#ef4444; }
 .column-artwork_result { justify-content:center; }
+.job-action.artwork-action-button { min-width:76px; min-height:30px; display:inline-flex; align-items:center; justify-content:center; }
+.job-action.artwork-action-button[aria-busy="true"] { opacity:1; cursor:wait; }
+.artwork-action-spinner { width:16px; height:16px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:artwork-action-spin .8s linear infinite; }
+.job-action.primary.artwork-action-success { background:#15803d; border-color:#15803d; color:#fff; }
+.job-action.primary.artwork-action-success:hover { background:#166534; }
+@keyframes artwork-action-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) { .artwork-action-spinner { animation-duration:2s; } }
