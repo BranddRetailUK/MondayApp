@@ -68,14 +68,14 @@ async function stillEligible(db, task) {
 }
 async function claim(pool, workerId) {
   return transaction(pool, async db => {
-    if (!(await enabled(db, true))) return null;
+    const automaticEnabled = await enabled(db, true);
     // Serialise claims so even multiple configured workers cannot overlap Illustrator work.
     await db.query('SELECT pg_advisory_xact_lock(71062901)');
     await db.query(`UPDATE print_export_jobs SET status='needs_attention', message='Worker lost contact. Inspect local outputs before retrying.', updated_at=NOW()
       WHERE status=ANY($1::text[]) AND lease_until<NOW()`, [RUNNING]);
     if ((await db.query('SELECT id FROM print_export_jobs WHERE status=ANY($1::text[]) LIMIT 1', [RUNNING])).rows.length) return null;
     for (let n = 0; n < 100; n++) {
-      const row = (await db.query(`SELECT * FROM print_export_jobs WHERE status='queued' ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED`)).rows[0];
+      const row = (await db.query(`SELECT * FROM print_export_jobs WHERE status='queued' AND ($1 OR manual_requested) ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED`,[automaticEnabled])).rows[0];
       if (!row) return null;
       if (!(await stillEligible(db, row))) {
         await db.query(`UPDATE print_export_jobs SET status='cancelled',message='Approval or eligible design reference changed.',updated_at=NOW() WHERE id=$1`, [row.id]);
@@ -118,4 +118,24 @@ async function retry(pool, id) {
     return true;
   });
 }
-module.exports = { enabled, canControl, setEnabled, numericDesigns, eligibleDesigns, saveApproval, claim, updateClaim, retry };
+async function requestManual(pool,sourceOrderId,user) {
+  if(!canControl(user))throw Error('Production account required');
+  return transaction(pool,async db=>{
+    const job=(await db.query('SELECT * FROM database_jobs WHERE source_order_id=$1 FOR UPDATE',[sourceOrderId])).rows[0];
+    if(!job||job.proof_approved!==true)throw Error('Approve this DATABASE job before processing artwork');
+    const refs=await currentDesigns(db,job);
+    if(!refs.length)throw Error('No eligible print designs in DES NO (numeric 28300 or higher)');
+    await db.query(`UPDATE print_export_jobs SET status='needs_attention',message='Worker lost contact before manual rerun',updated_at=NOW()
+      WHERE source_order_id=$1 AND status=ANY($2::text[]) AND lease_until<NOW()`,[sourceOrderId,RUNNING]);
+    const active=(await db.query('SELECT * FROM print_export_jobs WHERE source_order_id=$1 AND status=ANY($2::text[])',[sourceOrderId,ACTIVE])).rows;
+    if(active.length) {
+      await db.query('UPDATE print_export_jobs SET manual_requested=TRUE,updated_at=NOW() WHERE source_order_id=$1 AND status=ANY($2::text[])',[sourceOrderId,ACTIVE]);
+      return {queued:active.length,alreadyActive:true};
+    }
+    const cycle=crypto.randomUUID();
+    for(const ref of refs)await db.query(`INSERT INTO print_export_jobs(id,source_order_id,design_number,approval_id,manual_requested,message)
+      VALUES($1,$2,$3,$4,TRUE,'Manually requested by production')`,[crypto.randomUUID(),sourceOrderId,ref,cycle]);
+    return {queued:refs.length,alreadyActive:false};
+  });
+}
+module.exports = { enabled, canControl, setEnabled, numericDesigns, eligibleDesigns, saveApproval, claim, updateClaim, retry, requestManual };

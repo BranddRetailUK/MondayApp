@@ -23,10 +23,15 @@ function createRouter(pool) {
     res.json({enabled:await service.setEnabled(pool,req.body.enabled,req.hubUser),canToggle:true});
   }));
   router.post('/api/print-worker/claim' , workerAuth, wrap(async (req,res) => {
-    if (!(await service.enabled(pool))) return res.json({ enabled: false, task: null });
     if (!/^[A-Za-z0-9._-]{1,80}$/.test(req.body.workerId || '')) return res.status(400).json({ error:'Invalid worker ID' });
     const task = await service.claim(pool,req.body.workerId);
-    res.json({ enabled: true, task: task && { id:task.id, designNumber:task.design_number, sourceOrderId:task.source_order_id, claimToken:task.claim_token, attempt:task.attempt } });
+    res.json({ enabled: await service.enabled(pool), task: task && { id:task.id, designNumber:task.design_number, sourceOrderId:task.source_order_id, claimToken:task.claim_token, attempt:task.attempt } });
+  }));
+  router.post('/api/print-exports/jobs/:id/run',requireHubFullApiAccess,wrap(async(req,res)=>{
+    if(!service.canControl(req.hubUser))return res.status(403).json({error:'Production account required'});
+    if(!/^[1-9]\d*$/.test(req.params.id)||Number(req.params.id)>2147483647)return res.status(400).json({error:'Invalid DATABASE job'});
+    try{res.json({ok:true,...await service.requestManual(pool,Number(req.params.id),req.hubUser)});}
+    catch(e){if(/Approve this|No eligible/.test(e.message))return res.status(409).json({error:e.message});throw e;}
   }));
   router.post('/api/print-worker/tasks/:id', workerAuth, wrap(async (req,res) => {
     const { claimToken, status, outputs = [] } = req.body;

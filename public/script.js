@@ -850,7 +850,9 @@ function buildDashboardGridSpec(dashboardColumns, {
     ? dashboardColumns.filter(column => column.id !== subitemCodeColumn.id)
     : dashboardColumns;
   const columns = [
-    !subitem && isUltimatePackingUser()
+    !subitem && isProductionArtworkUser()
+      ? { kind: 'artworkAction', title: 'ARTWORK', width: 96 }
+      : !subitem && isUltimatePackingUser()
       ? { kind: 'print', title: 'LABEL', width: 82 }
       : null,
     subitem ? null : { kind: 'jobNumber', title: '', width: 64, mobileWidth: 72 },
@@ -1529,7 +1531,9 @@ function rerenderBoardContext(context = BOARD_CONTEXT_TEST) {
 
 function buildItemCell(item, spec, { subitemsOpen = false, context = BOARD_CONTEXT_TEST } = {}) {
   let cell;
-  if (spec.kind === 'print') {
+  if (spec.kind === 'artworkAction') {
+    cell = buildArtworkActionCell(item);
+  } else if (spec.kind === 'print') {
     cell = buildPrintLabelCell(item);
   } else if (spec.kind === 'jobNumber') {
     cell = buildJobNumberCell(item);
@@ -1572,6 +1576,30 @@ function buildOutsideJobActions(item) {
   return actions;
 }
 
+function isProductionArtworkUser(user = window.ultimateHubUser) {
+  return user?.access_scope !== 'dtf_only' && String(user?.email || '').trim().toLowerCase() === 'production@ultimatepromotions.co.uk';
+}
+const artworkRequestsInFlight = new Set();
+function buildArtworkActionCell(item) {
+  const cell=document.createElement('div');cell.className='grid-cell job-print-cell';
+  const id=item?.database_job?.source_order_id;
+  if(!id||isTestDashboardPrivateItem(item))return cell;
+  const button=document.createElement('button');button.type='button';button.className='job-action primary job-print-button';button.textContent='ARTWORK';
+  button.disabled=artworkRequestsInFlight.has(String(id));
+  button.title='Process artwork for this approved job, even when automatic Print exports is Off';
+  button.setAttribute('aria-label',`Process artwork for job ${item.database_job.order_no || id}`);
+  button.onclick=async(event)=>{
+    event.preventDefault();event.stopPropagation();if(artworkRequestsInFlight.has(String(id)))return;
+    artworkRequestsInFlight.add(String(id));button.disabled=true;button.textContent='Queuing…';
+    try{
+      const response=await fetch(`/api/print-exports/jobs/${encodeURIComponent(id)}/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+      if(!response.ok)throw Error(await readApiError(response));
+      await loadTestBoard({forceRefresh:true});
+    }catch(e){alert(`Could not queue artwork: ${e.message}`);}
+    finally{artworkRequestsInFlight.delete(String(id));button.disabled=false;button.textContent='ARTWORK';}
+  };
+  cell.append(button);return cell;
+}
 function buildPrintLabelCell(item) {
   const cell = document.createElement('div');
   cell.className = 'grid-cell job-print-cell';
@@ -2172,7 +2200,7 @@ function buildColumnValueCell(entity, column, { subitem = false, context = BOARD
     const result = parseJsonMaybe(value?.value)?.result;
     if (['success','partial','failed'].includes(result)) {
       const tick = document.createElement('span');
-      tick.className = `artwork-export-tick artwork-export-${result}`;
+      tick.className = `dashboard-check-tick artwork-export-${result}`;
       tick.textContent = '✓';
       tick.setAttribute('role','img');
       tick.setAttribute('aria-label',text);

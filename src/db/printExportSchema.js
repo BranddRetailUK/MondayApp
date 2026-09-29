@@ -23,6 +23,7 @@ async function ensurePrintExportTables(db) {
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(source_order_id, design_number, approval_id)
   )`);
+  await db.query('ALTER TABLE print_export_jobs ADD COLUMN IF NOT EXISTS manual_requested BOOLEAN NOT NULL DEFAULT FALSE');
   await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS print_export_active_design_idx
     ON print_export_jobs(source_order_id, design_number)
     WHERE status IN ('queued','processing','awaiting_review')`);
