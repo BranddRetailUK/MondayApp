@@ -31,7 +31,7 @@ async function main() {
   const exporter=path.join(__dirname,'exporter','Proof-Artwork-Exporter.jsx');
   const core=path.join(__dirname,'exporter','proof-core.js');
   const [exporterSource,coreSource]=await Promise.all([fs.readFile(exporter,'utf8'),fs.readFile(core,'utf8')]);
-  if(!exporterSource.includes('Proof Artwork Exporter 1.14')||!coreSource.includes("version:'1.13'"))
+  if(!exporterSource.includes('Proof Artwork Exporter 1.15')||!coreSource.includes("version:'1.14'"))
     throw new Error(`Worker files are out of date or mixed in ${__dirname}. Replace the complete worker folder before starting.`);
   const stateDir=path.join(process.env.LOCALAPPDATA||os.homedir(),'UltimateHub','PrintWorker');
   const ps=path.join(process.env.SystemRoot||'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
@@ -113,7 +113,7 @@ async function main() {
       }
       await report(record);
     }
-    console.log(`Ultimate Hub print worker 1.16 ready: exporter 1.14 from ${__dirname}. Keep this window running.`);
+    console.log(`Ultimate Hub print worker 1.17 ready: exporter 1.15 from ${__dirname}. Keep this window running.`);
     let lastIllustratorError='';
     for(;;) {
       try {

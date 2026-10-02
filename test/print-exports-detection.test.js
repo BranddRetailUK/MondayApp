@@ -71,8 +71,17 @@ test('same artwork and labelled size on another page is exported once',()=>{
     assert.equal(duplicate.duplicateOf,first);
     const vector=row('image-1',300,'EPS');
     assert.deepEqual(core.deduplicate([first,vector]),[vector]);assert.equal(first.duplicateOf,vector);
-    const uncertain=row('image-1',300);uncertain.warnings=['Other objects excluded'];
-    assert.deepEqual(core.deduplicate([vector,uncertain]),[vector,uncertain]);
+    const uncertain=row('image-1',300);uncertain.warnings=['Other objects excluded'];uncertain.confidence='REVIEW';
+    assert.deepEqual(core.deduplicate([vector,uncertain]),[vector]);
+    assert.equal(uncertain.duplicateOf,vector);
+    assert.equal(vector.confidence,'REVIEW');assert.match(vector.warnings.join(),/Other objects excluded/);
+    const firstBack=row('back-a',300),secondBack=row('back-b',300);
+    assert.deepEqual(core.deduplicate([firstBack,secondBack]),[firstBack,secondBack]);
+    assert.equal(core.canAutoExport([firstBack,secondBack]),false);
+    assert.match(firstBack.warnings.join(),/choose the intended artwork/);
+    const noFingerprint=row(null,300),otherBack=row('back-a',300);
+    core.deduplicate([noFingerprint,otherBack]);
+    assert.equal(core.canAutoExport([noFingerprint,otherBack]),false);
 });
 test('white outlined lettering near rainbow survives white mockup palette without remote details',()=>{
     const white=(id,b)=>({...art(id,b),colour:[1,1,1]});

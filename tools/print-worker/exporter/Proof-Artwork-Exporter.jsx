@@ -1,5 +1,5 @@
 #target illustrator
-/* Proof Artwork Exporter 1.14 - Windows Illustrator desktop.
+/* Proof Artwork Exporter 1.15 - Windows Illustrator desktop.
    Keep proof-core.js and png-helper.ps1 beside this file. Source documents are never saved/edited.
 */
 (function () {
@@ -159,6 +159,10 @@
         function layer(l){if(!l.visible)return;var cc=children(l);for(var i=0;i<cc.length;i++)cc[i].resize(scale,scale,true,true,true,true,scale,Transformation.DOCUMENTORIGIN);for(i=0;i<l.layers.length;i++)layer(l.layers[i]);}
         for(var i=0;i<doc.layers.length;i++)layer(doc.layers[i]);
     }
+    function translateDocument(doc,dx,dy) {
+        function layer(l){if(!l.visible)return;var cc=children(l);for(var i=0;i<cc.length;i++)cc[i].translate(dx,dy);for(i=0;i<l.layers.length;i++)layer(l.layers[i]);}
+        for(var i=0;i<doc.layers.length;i++)layer(doc.layers[i]);
+    }
     function makeArtwork(m,r) {
         checkpoint('Copying saved proof bytes for '+r.label.position);
         var extension=proofFile.name.match(/\.[^.]+$/)[0];
@@ -185,18 +189,25 @@
         doc.artboards[0].artboardRect=chosen;
         while(doc.artboards.length>1)doc.artboards[doc.artboards.length-1].remove();
         doc.artboards.setActiveArtboardIndex(0);
+        // Imported multi-artboard PDFs can place artwork close to Illustrator's
+        // canvas edge. Later scaling can push a capture artboard outside it.
+        // Move only the isolated temporary artwork to a safe central location.
+        checkpoint('Positioning isolated artwork inside Illustrator canvas');
+        translateDocument(doc,1000-b[0],b[1]-1000);
+        b=painted(group);
         return {doc:doc,group:group,b:b};
     }
     function closeWork() {if(work) {try {work.close(SaveOptions.DONOTSAVECHANGES);}catch(e){}work=null;}}
     function capture(a,file,b,res,transparent) {
         checkpoint('Setting PNG capture bounds');a.doc.activate();
         if(!b||!isFinite(ProofCore.w(b))||!isFinite(ProofCore.h(b))||ProofCore.w(b)<=0||ProofCore.h(b)<=0)throw Error('Invalid PNG bounds');
-        a.doc.artboards[0].artboardRect=aiRect(b);
+        var artboardError=null;
+        try {a.doc.artboards[0].artboardRect=aiRect(b);}catch(e){artboardError=e;}
         checkpoint('Rendering PNG using exportFile');
         var options=new ExportOptionsPNG24();options.antiAliasing=true;options.transparency=transparent;options.artBoardClipping=true;
         options.horizontalScale=res/72*100;options.verticalScale=res/72*100;
         options.matte=!transparent;var c=new RGBColor();c.red=88;c.green=88;c.blue=88;options.matteColor=c;
-        try {a.doc.exportFile(file,ExportType.PNG24,options);}
+        try {if(artboardError)throw artboardError;a.doc.exportFile(file,ExportType.PNG24,options);}
         catch(firstError) {
             checkpoint('Rendering PNG using imageCapture fallback');
             var fallback=new ImageCaptureOptions();fallback.resolution=res;fallback.antiAliasing=true;fallback.transparency=transparent;fallback.matte=!transparent;fallback.matteColor=c;
@@ -262,7 +273,7 @@
         var config=new File(Folder.userData.fsName+'/ProofArtworkExporter-root.txt'),root='';
         if(config.exists)try{root=ProofCore.trim(read(config));}catch(e){}
         if(!root) root='E:/OneDrive - ultimate promotions/DESIGN FILES';
-        var d=new Window('dialog','Proof Artwork Exporter 1.14');d.alignChildren='fill';
+        var d=new Window('dialog','Proof Artwork Exporter 1.15');d.alignChildren='fill';
         d.add('statictext',undefined,'Open proof: '+source.name);
         var g=d.add('group');g.add('statictext',undefined,'Design reference');var refField=g.add('edittext',undefined,ref.value);refField.characters=14;
         if(ref.conflict||ref.fromFilename) d.add('statictext',undefined,ref.conflict?'Reference mismatch: check against the proof.':'Reference was taken from the filename: check it.');
@@ -291,7 +302,7 @@
         var g=d.add('group');g.add('button',undefined,'Cancel',{name:'cancel'});g.add('button',undefined,'Use folder',{name:'ok'});if(d.show()!==1)return null;return found[l.selection.index];
     }
     function review(rows,dest,ref) {
-        var d=new Window('dialog','Review isolated print artwork - exporter 1.14 / core '+(ProofCore.version||'unversioned'));d.orientation='column';d.alignChildren='fill';
+        var d=new Window('dialog','Review isolated print artwork - exporter 1.15 / core '+(ProofCore.version||'unversioned'));d.orientation='column';d.alignChildren='fill';
         var top=d.add('statictext',undefined,'Ref '+ref+'  |  '+dest.fsName);top.maximumSize.width=820;
         var body=d.add('group');body.alignChildren='top';
         var list=body.add('listbox',undefined,[]);list.preferredSize=[340,340];
@@ -368,6 +379,16 @@
             checkpoint('Saving EPS: '+r.label.position);a.doc.saveAs(staged,eps);r.finalMM=[ProofCore.w(b)*25.4/72,ProofCore.h(b)*25.4/72];
         }
         checkpoint('Closing prepared document: '+r.label.position);closeWork();r.prepared=null;if(!staged.exists||staged.length===0)throw Error('Export file is missing/empty.');
+        if(r.format==='PNG') {
+            // Retries preserve old outputs. Reuse an existing byte-identical PNG
+            // instead of creating another _vN copy of the same artwork.
+            var existingHash=null;try{existingHash=helper('filehash',staged,null,axis,target)[1];}catch(hashError){}
+            if(existingHash){var oldFiles=dest.getFiles();for(var oldIndex=0;oldIndex<oldFiles.length;oldIndex++){
+                var old=oldFiles[oldIndex],oldName=old.name.toLowerCase(),base=(stem+'.png').toLowerCase(),prefix=(stem+'_v').toLowerCase();
+                if(!(old instanceof File)||old.length!==staged.length||!(oldName===base||(oldName.indexOf(prefix)===0&&/^\d+\.png$/.test(oldName.slice(prefix.length)))))continue;
+                try{if(helper('filehash',old,null,axis,target)[1]===existingHash){hubFiles.push(old.fsName);exported.push(old.name+' | existing identical artwork reused');return;}}catch(oldHashError){}
+            }}
+        }
         // Recheck before copying, never replace an existing production file.
         if(output.exists)output=uniqueFile(dest,stem,r.format==='PNG'?'png':'eps');
         checkpoint('Copying finished '+r.format+' to design folder');
@@ -399,7 +420,7 @@
         var dest=printFolder(designFolder);
         // Optional diagnostics stay disabled during normal production use.
         var enableDiagnosticLog=false;
-        if(enableDiagnosticLog)trace=uniqueFile(dest,config.ref+'_EXPORT_PROGRESS','txt');checkpoint('Starting snapshot exporter 1.14');
+        if(enableDiagnosticLog)trace=uniqueFile(dest,config.ref+'_EXPORT_PROGRESS','txt');checkpoint('Starting snapshot exporter 1.15');
         temporary=new Folder(Folder.temp.fsName+'/ProofExporter-'+new Date().getTime()+'-'+Math.floor(Math.random()*100000));if(!temporary.create())throw Error('Cannot create temporary folder.');
         var rows=[],i,pageCount=hubJob&&/\.pdf$/i.test(proofFile.name)?Number(hubJob.pdfPages)||1:1,duplicateCount=0;
         if(config.manual){

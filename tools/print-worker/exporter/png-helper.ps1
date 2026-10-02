@@ -158,6 +158,11 @@ public static class ProofPng {
         $response = "OK`n" + [ProofPng]::FinalizePng($inputPath,[string]$job.job.output,[string]$job.job.axis,$mm)
     } elseif ([string]$job.job.mode -eq 'fingerprint') {
         $response = "OK`n" + [ProofPng]::Fingerprint($inputPath,[string]$job.job.axis) + "`n"
+    } elseif ([string]$job.job.mode -eq 'filehash') {
+        $stream = [IO.File]::OpenRead($inputPath)
+        $sha = [Security.Cryptography.SHA256]::Create()
+        try { $response = "OK`n" + [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-','') + "`n" }
+        finally { $sha.Dispose(); $stream.Dispose() }
     } else { throw 'Unknown helper operation.' }
     [IO.File]::WriteAllText($resultFile+'.tmp',$response,[Text.Encoding]::UTF8)
     [IO.File]::Move($resultFile+'.tmp',$resultFile)

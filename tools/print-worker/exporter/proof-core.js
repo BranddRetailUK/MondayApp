@@ -1,4 +1,4 @@
-/* Proof Exporter detection 1.13 - ES3-compatible, bounds [left, top, right, bottom], Y down. */
+/* Proof Exporter detection 1.14 - ES3-compatible, bounds [left, top, right, bottom], Y down. */
 var ProofCore = (function () {
     function w(b) { return b[2] - b[0]; }
     function h(b) { return b[3] - b[1]; }
@@ -85,15 +85,32 @@ var ProofCore = (function () {
         var unique=[],i,j,r,match;
         for(i=0;i<rows.length;i++) {
             r=rows[i];match=null;
-            if(r.fingerprint && r.ids.length && r.preview && r.prepared && r.confidence==='GOOD MATCH' && !r.warnings.length) for(j=0;j<unique.length;j++) {
+            if(r.fingerprint && r.ids.length && r.preview && r.prepared) for(j=0;j<unique.length;j++) {
                 var previous=unique[j];
-                if(previous.confidence==='GOOD MATCH' && !previous.warnings.length && previous.fingerprint===r.fingerprint && previous.label.axis===r.label.axis &&
+                if(previous.fingerprint===r.fingerprint && previous.label.axis===r.label.axis &&
                    Math.abs(previous.label.mm-r.label.mm)<.01) {match=previous;break;}
             }
             if(match) {
-                if(match.format==='PNG' && r.format==='EPS') {match.duplicateOf=r;unique[j]=r;}
+                var representative=match;
+                if(match.format==='PNG' && r.format==='EPS') {match.duplicateOf=r;unique[j]=r;representative=r;}
                 else r.duplicateOf=match;
+                var combined=match.warnings.concat(r.warnings);
+                representative.warnings=[];
+                for(var k=0;k<combined.length;k++)if(!has(representative.warnings,combined[k]))representative.warnings.push(combined[k]);
+                if(match.confidence!=='GOOD MATCH'||r.confidence!=='GOOD MATCH')representative.confidence='REVIEW';
             } else unique.push(r);
+        }
+        // The same labelled placement/size with different rendered artwork is
+        // ambiguous: require review rather than silently exporting both.
+        for(i=0;i<unique.length;i++)for(j=i+1;j<unique.length;j++) {
+            var a=unique[i],b=unique[j];
+            if(a.label.position===b.label.position && a.label.axis===b.label.axis && Math.abs(a.label.mm-b.label.mm)<.01 &&
+               (!a.fingerprint||!b.fingerprint||a.fingerprint!==b.fingerprint)) {
+                var warning='Same position and size on another page could not be confirmed identical; review both and choose the intended artwork.';
+                if(!has(a.warnings,warning))a.warnings.push(warning);
+                if(!has(b.warnings,warning))b.warnings.push(warning);
+                a.confidence='REVIEW';b.confidence='REVIEW';
+            }
         }
         return unique;
     }
@@ -191,6 +208,6 @@ var ProofCore = (function () {
         for(var i=0;i<rows.length;i++)if(rows[i].confidence!=='GOOD MATCH'||rows[i].warnings.length||!rows[i].ids.length||!rows[i].preview||!rows[i].prepared)return false;
         return true;
     }
-    return {version:'1.13',canAutoExport:canAutoExport,deduplicate:deduplicate,w:w,h:h,area:area,cx:cx,cy:cy,union:union,intersection:intersection,contains:contains,parseSize:parseSize,position:position,reference:reference,labels:labels,detect:detect,scale:scale,px:px,folderMatches:folderMatches,trim:trim,has:has};
+    return {version:'1.14',canAutoExport:canAutoExport,deduplicate:deduplicate,w:w,h:h,area:area,cx:cx,cy:cy,union:union,intersection:intersection,contains:contains,parseSize:parseSize,position:position,reference:reference,labels:labels,detect:detect,scale:scale,px:px,folderMatches:folderMatches,trim:trim,has:has};
 }());
 if (typeof module !== 'undefined' && module.exports) module.exports=ProofCore;

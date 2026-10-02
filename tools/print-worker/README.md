@@ -1,10 +1,11 @@
 # Ultimate Hub print worker
 
-Current exporter: 1.14; detection core: 1.13. The worker counts PDF pages, then Illustrator processes
+Current exporter: 1.15; detection core: 1.14. The worker counts PDF pages, then Illustrator processes
 each page or imported artboard. Embroidery positions are ignored. PNG model photos
 and vector flats may both serve as garment bases; output remains EPS for vector-only
 artwork and PNG for artwork containing raster images. Identical isolated artwork at
-the same labelled size is saved once across pages. PNG capture retains a safety
+the same labelled size is saved once across pages; unconfirmed matches require
+review, and byte-identical PNGs from earlier attempts are reused. PNG capture retains a safety
 margin and never repeatedly trims after the final resample.
 
 Install the **whole updated worker folder**, including `worker.js`, `local-files.js`,
@@ -12,14 +13,16 @@ Install the **whole updated worker folder**, including `worker.js`, `local-files
 review and wait for its result to report, then restart the worker. Updating only the
 exporter folder will leave PDF page counting unavailable. The standalone worker
 still needs no npm installation.
-At startup the worker prints its running folder and `exporter 1.14`; it refuses to
+At startup the worker prints its running folder and `exporter 1.15`; it refuses to
 claim work if the exporter and detection core versions are mixed. If Hub still
 reports `Multi-artboard proofs require manual export.`, the workstation is using a
 pre-1.13 exporter from another folder. Locate the folder printed in the worker
 window, update that folder, preserve its `config.json`, then restart the worker.
-Worker 1.16 also heartbeats while it searches DESIGN FILES, hydrates the proof from
+Worker 1.17 also heartbeats while it searches DESIGN FILES, hydrates the proof from
 OneDrive, and counts PDF pages. Its window and Hub task message show the current
 lookup stage; a slow local read no longer silently exhausts the 90-second claim.
+The exporter moves isolated temporary artwork away from Illustrator's canvas edge
+before setting PNG capture bounds, with direct image capture as a fallback.
 It attaches only to an Illustrator session already running on the signed-in desktop.
 Before claiming work, it checks that Illustrator responds to a small script. A
 startup plug-in alert or other modal dialog leaves the worker waiting without
