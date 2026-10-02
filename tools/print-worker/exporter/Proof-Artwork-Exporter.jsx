@@ -1,9 +1,9 @@
 #target illustrator
-/* Proof Artwork Exporter 1.12 - Windows Illustrator desktop.
+/* Proof Artwork Exporter 1.13 - Windows Illustrator desktop.
    Keep proof-core.js and png-helper.ps1 beside this file. Source documents are never saved/edited.
 */
 (function () {
-    var home=File($.fileName).parent, source=null, work=null, busy=null, temporary=null, errors=[], exported=[], trace=null, snapshotCount=0, preparedDocuments=[];
+    var home=File($.fileName).parent, source=null, proofFile=null, work=null, busy=null, temporary=null, errors=[], exported=[], trace=null, snapshotCount=0, preparedDocuments=[];
     var hubJob=$.global.__ultimatePrintJob||null,hubOpened=false,hubFiles=[],hubOutcome='needs_attention',hubMessage='Export cancelled or incomplete.';
     $.global.__ultimatePrintJob=null;
     function hubProgress(phase,message) {
@@ -20,10 +20,13 @@
         var folder=new Folder(hubJob.designFolder);
         if(!folder.exists||!ProofCore.folderMatches(folder.name,hubJob.reference))throw Error('Invalid queued design folder.');
         if(source.fullName.parent.fsName.toLowerCase()!==folder.fsName.toLowerCase())throw Error('Proof is outside the queued design folder.');
-        if(source.artboards.length!==1)throw Error('Multi-artboard proofs require manual export.');
         return {ref:hubJob.reference,root:folder,manual:false};
     }
-    var originalInteraction=app.userInteractionLevel, originalCoordinates=app.coordinateSystem, stage='Starting';
+    var originalInteraction=app.userInteractionLevel, originalCoordinates=app.coordinateSystem, originalPdfPage=app.preferences.PDFFileOptions.pageToOpen, stage='Starting';
+    function openProof(file,page) {
+        if(/\.pdf$/i.test(file.name))app.preferences.PDFFileOptions.pageToOpen=page;
+        return app.open(file);
+    }
     function failure(e) {return stage+': '+e.message+(e.line?' (line '+e.line+')':'');}
     function read(f) {f.encoding='UTF-8';if(!f.open('r'))throw Error('Cannot read '+f.fsName);var s=f.read();f.close();return s.replace(/^\uFEFF/,'').replace(/\u0000/g,'');}
     function write(f,s) {f.encoding='UTF-8';if(!f.open('w')) throw Error('Cannot write '+f.fsName);f.write(s);f.close();}
@@ -50,15 +53,24 @@
     }
     function model(doc) {
         var roots=[],leaves=[],texts=[],next=0;
-        function node(p,inheritedEffect) {
+        function node(p,inheritedEffect,inheritedClip,inheritedMask) {
             if(hidden(p)) return null;
             var n={item:p,id:next++,kids:[],clip:clipItem(p)},t=p.typename;
             var effect=inheritedEffect;
             try {effect=effect||p.opacity!==100||p.blendingMode!==BlendModes.NORMAL;}catch(e){}
             if(t==='GroupItem') {
-                var cc=children(p);for(var i=0;i<cc.length;i++) {var sub=node(cc[i],effect);if(sub) n.kids.push(sub);}
+                var cc=children(p),mask=inheritedMask;
+                if(p.clipped)for(var k=0;k<cc.length;k++)if(clipItem(cc[k])) {
+                    var gb=cc[k].geometricBounds,localMask=[gb[0],-gb[1],gb[2],-gb[3]];
+                    mask=mask?ProofCore.intersection(mask,localMask):localMask;
+                    if(!mask)return null;
+                    break;
+                }
+                for(var i=0;i<cc.length;i++) {var sub=node(cc[i],effect,inheritedClip||p.clipped,mask);if(sub) n.kids.push(sub);}
             } else {
                 var b;try {b=bounds(p);}catch(e){return null;}
+                if(inheritedMask)b=ProofCore.intersection(b,inheritedMask);
+                if(!b)return null;
                 var sample=p, kind='unsupported',filled=false,points=0,col=null;
                 if(t==='CompoundPathItem'&&p.pathItems.length) sample=p.pathItems[0];
                 if(t==='PathItem'||t==='CompoundPathItem') {
@@ -66,7 +78,7 @@
                 } else if(t==='TextFrame') kind='text';
                 else if(t==='RasterItem') kind='raster';
                 else if(t==='PlacedItem') kind='placed';
-                var entry={id:n.id,b:b,kind:kind,filled:filled,points:points,colour:col,clip:n.clip,effect:effect,text:t==='TextFrame'?p.contents:''};
+                var entry={id:n.id,b:b,kind:kind,filled:filled,points:points,colour:col,clip:n.clip,clipGroup:!!inheritedClip,effect:effect,text:t==='TextFrame'?p.contents:''};
                 n.entry=entry;leaves.push(entry);
                 if(t==='TextFrame') {
                     var lines=p.contents.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
@@ -77,7 +89,7 @@
         }
         function layer(l) {
             if(!l.visible) return;
-            var cc=children(l);for(var j=0;j<cc.length;j++) {var n=node(cc[j],false);if(n) roots.push(n);}
+            var cc=children(l);for(var j=0;j<cc.length;j++) {var n=node(cc[j],false,false,null);if(n) roots.push(n);}
             for(j=0;j<l.layers.length;j++) layer(l.layers[j]);
         }
         for(var i=0;i<doc.layers.length;i++) layer(doc.layers[i]);
@@ -138,11 +150,11 @@
     }
     function makeArtwork(m,r) {
         checkpoint('Copying saved proof bytes for '+r.label.position);
-        var extension=source.fullName.name.match(/\.[^.]+$/)[0];
+        var extension=proofFile.name.match(/\.[^.]+$/)[0];
         var snap=new File(temporary.fsName+'/snapshot-'+(++snapshotCount)+extension);
-        if(!source.fullName.copy(snap.fsName))throw Error('Could not create temporary proof snapshot.');
+        if(!proofFile.copy(snap.fsName))throw Error('Could not create temporary proof snapshot.');
         checkpoint('Opening temporary proof for '+r.label.position);
-        var doc=app.open(snap);work=doc;doc.activate();
+        var doc=openProof(snap,r.pageNumber||1);work=doc;doc.activate();
         checkpoint('Checking saved proof matches open proof');
         var local=model(doc),ids=snapshotIds(m,local,r.ids),i;
         function unlock(l){l.locked=false;for(var j=0;j<l.layers.length;j++)unlock(l.layers[j]);}
@@ -157,7 +169,9 @@
         var group={_proofDocument:doc,resize:function(scale){checkpoint('Scaling '+r.label.position);transformDocument(doc,scale);}};
         checkpoint('Measuring isolated '+r.label.position);
         var b=painted(group);if(!b||ProofCore.w(b)<=0||ProofCore.h(b)<=0)throw Error('Artwork has empty bounds.');
-        // One artboard prevents unrelated proof pages appearing in EPS output.
+        // Keep the selected AI artboard's page geometry when removing the others.
+        var chosen=doc.artboards[r.artboardIndex||0].artboardRect;
+        doc.artboards[0].artboardRect=chosen;
         while(doc.artboards.length>1)doc.artboards[doc.artboards.length-1].remove();
         doc.artboards.setActiveArtboardIndex(0);
         return {doc:doc,group:group,b:b};
@@ -195,12 +209,17 @@
         var start=new Date().getTime();while(!result.exists) {if(new Date().getTime()-start>45000) throw Error('PNG helper exceeded 45 seconds. See the progress log and README.');$.sleep(100);if(busy)busy.update();}
         var lines=read(result).split(/\r?\n/);if(lines[0]!=='OK') throw Error('PNG helper: '+lines.slice(1).join('\n'));return lines;
     }
-    function preview(m,r,index) {
-        var a=makeArtwork(m,r),b=a.b,pad=Math.max(ProofCore.w(b),ProofCore.h(b))*.06;
+    function preview(r,index) {
+        var a=makeArtwork(r.model,r),b=a.b,pad=Math.max(ProofCore.w(b),ProofCore.h(b))*.06;
         b=[b[0]-pad,b[1]-pad,b[2]+pad,b[3]+pad];
         // Change raster sampling density, not the imported vector/clipping geometry.
         var res=Math.min(2400,Math.max(72,550*72/Math.max(ProofCore.w(b),ProofCore.h(b))));
-        var f=new File(temporary.fsName+'/preview-'+index+'.png');capture(a,f,b,res,false);r.prepared=a;preparedDocuments.push(a.doc);work=null;return f;
+        var f=new File(temporary.fsName+'/preview-'+index+'.png');capture(a,f,b,res,false);
+        if(/windows/i.test($.os))try {
+            var fingerprintFile=new File(temporary.fsName+'/fingerprint-'+index+'.png');capture(a,fingerprintFile,b,res,true);
+            r.fingerprint=helper('fingerprint',fingerprintFile,null,r.label.axis,r.label.mm)[1];
+        } catch(fingerprintError) {r.fingerprint=null;}
+        r.prepared=a;preparedDocuments.push(a.doc);work=null;return f;
     }
     function selectedIds(m) {
         var ids=[], selection=source.selection;if(!selection||typeof selection.length==='undefined') return ids;
@@ -232,7 +251,7 @@
         var config=new File(Folder.userData.fsName+'/ProofArtworkExporter-root.txt'),root='';
         if(config.exists)try{root=ProofCore.trim(read(config));}catch(e){}
         if(!root) root='E:/OneDrive - ultimate promotions/DESIGN FILES';
-        var d=new Window('dialog','Proof Artwork Exporter 1.8');d.alignChildren='fill';
+        var d=new Window('dialog','Proof Artwork Exporter 1.13');d.alignChildren='fill';
         d.add('statictext',undefined,'Open proof: '+source.name);
         var g=d.add('group');g.add('statictext',undefined,'Design reference');var refField=g.add('edittext',undefined,ref.value);refField.characters=14;
         if(ref.conflict||ref.fromFilename) d.add('statictext',undefined,ref.conflict?'Reference mismatch: check against the proof.':'Reference was taken from the filename: check it.');
@@ -261,7 +280,7 @@
         var g=d.add('group');g.add('button',undefined,'Cancel',{name:'cancel'});g.add('button',undefined,'Use folder',{name:'ok'});if(d.show()!==1)return null;return found[l.selection.index];
     }
     function review(rows,dest,ref) {
-        var d=new Window('dialog','Review isolated print artwork - exporter 1.12 / core '+(ProofCore.version||'unversioned'));d.orientation='column';d.alignChildren='fill';
+        var d=new Window('dialog','Review isolated print artwork - exporter 1.13 / core '+(ProofCore.version||'unversioned'));d.orientation='column';d.alignChildren='fill';
         var top=d.add('statictext',undefined,'Ref '+ref+'  |  '+dest.fsName);top.maximumSize.width=820;
         var body=d.add('group');body.alignChildren='top';
         var list=body.add('listbox',undefined,[]);list.preferredSize=[340,340];
@@ -277,7 +296,7 @@
         }
         var include=right.add('checkbox',undefined,'Export this artwork');var notes=right.add('edittext',undefined,'',{multiline:true,readonly:true});notes.preferredSize=[440,90];
         for(var i=0;i<rows.length;i++){rows[i].enabled=rows[i].enabled===true||(!rows[i].warnings.length&&rows[i].ids.length>0);list.add('item','');}
-        function title(i){var r=rows[i];list.items[i].text=(r.enabled?'[EXPORT] ':'[SKIP] ')+r.label.position+' | '+r.label.mm+'mm '+r.label.axis+' | '+r.format;}
+        function title(i){var r=rows[i];list.items[i].text=(r.enabled?'[EXPORT] ':'[SKIP] ')+'Page '+r.displayPage+' '+r.label.position+' | '+r.label.mm+'mm '+r.label.axis+' | '+r.format;}
         for(i=0;i<rows.length;i++)title(i);
         function refresh(){if(!list.selection)return;var r=rows[list.selection.index];include.value=r.enabled;include.enabled=!!r.preview&&r.ids.length>0;notes.text=r.confidence+'\n'+(r.warnings.length?r.warnings.join('\n'):'Check the preview contains the entire print and no garment.');showPreview(r.preview||null);}
         list.onChange=refresh;include.onClick=function(){rows[list.selection.index].enabled=include.value;title(list.selection.index);};list.selection=0;
@@ -296,9 +315,9 @@
         if(!output.exists && !output.create())throw Error('Could not create PRINT folder inside '+designFolder.fsName);
         return output;
     }
-    function saveRow(m,r,dest,ref,index) {
+    function saveRow(r,dest,ref,index) {
         checkpoint('Reusing prepared '+r.label.position);
-        var a=r.prepared||makeArtwork(m,r);work=a.doc;a.doc.activate();var b=painted(a.group),target=r.label.mm,axis=r.label.axis;
+        var a=r.prepared||makeArtwork(r.model,r);work=a.doc;a.doc.activate();var b=painted(a.group),target=r.label.mm,axis=r.label.axis;
         var stem=ref+'_'+safe(r.label.position)+'_'+String(target).replace('.','p')+'mm-'+(axis==='height'?'HIGH':'WIDE');
         var output=uniqueFile(dest,stem,r.format==='PNG'?'png':'eps'),staged=new File(temporary.fsName+'/export-'+index+'.'+(r.format==='PNG'?'png':'eps'));
         if(r.format==='PNG') {
@@ -309,10 +328,21 @@
             var s=ProofCore.scale(tight,target,axis);a.group.resize(s*100,s*100,true,true,true,true,s*100,Transformation.TOPLEFT);
             // Rebase tight coordinates using the actual group's before/after bounds.
             var after=painted(a.group),crop=[after[0]+(tight[0]-b[0])*s,after[1]+(tight[1]-b[1])*s,after[0]+(tight[2]-b[0])*s,after[1]+(tight[3]-b[1])*s];
-            var pad=unit*s*2;crop=[crop[0]-pad,crop[1]-pad,crop[2]+pad,crop[3]+pad];
+            // The probe runs at lower resolution than the final render. Preserve a
+            // transparent safety margin so Illustrator cannot clip faint edge ink.
+            var pad=Math.max(unit*s*4,72/25.4*2);crop=[crop[0]-pad,crop[1]-pad,crop[2]+pad,crop[3]+pad];
             var pixelsW=ProofCore.w(crop)/72*600,pixelsH=ProofCore.h(crop)/72*600;
             if(pixelsW*pixelsH>100000000||pixelsW>30000||pixelsH>30000)throw Error('PNG render exceeds the size limit.');
-            var raw=new File(temporary.fsName+'/raw-'+index+'.png');capture(a,raw,crop,600,true);
+            var raw=new File(temporary.fsName+'/raw-'+index+'.png'),edgeInfo,guard=0;
+            do {
+                capture(a,raw,crop,600,true);
+                edgeInfo=helper('analyze',raw);
+                if(Number(edgeInfo[1])>2 && Number(edgeInfo[2])>2 &&
+                   Number(edgeInfo[1])+Number(edgeInfo[3])<Number(edgeInfo[5])-2 &&
+                   Number(edgeInfo[2])+Number(edgeInfo[4])<Number(edgeInfo[6])-2)break;
+                var extra=72/25.4*2;crop=[crop[0]-extra,crop[1]-extra,crop[2]+extra,crop[3]+extra];
+            } while(++guard<3);
+            if(guard>=3)throw Error('PNG artwork reaches the capture edge; inspect clipping before export.');
             checkpoint('Trimming and encoding final PNG: '+r.label.position);var finalInfo=helper('finalize',raw,staged,axis,target);r.pixelSize=finalInfo[1]+' x '+finalInfo[2];
             r.finalMM=[Number(finalInfo[1])/300*25.4,Number(finalInfo[2])/300*25.4];
         } else {
@@ -346,30 +376,54 @@
                 var existingPath='';try{existingPath=app.documents[openIndex].fullName.fsName;}catch(ignored){}
                 if(existingPath.toLowerCase()===proof.fsName.toLowerCase())throw Error('Proof is already open. Close it before retrying the queued export.');
             }
-            source=app.open(proof);hubOpened=true;
+            proofFile=proof;source=openProof(proof,1);hubOpened=true;
         } else {
-            if(!app.documents.length)throw Error('Open your proof PDF or AI file in Illustrator first.');source=app.activeDocument;
+            if(!app.documents.length)throw Error('Open your proof PDF or AI file in Illustrator first.');source=app.activeDocument;proofFile=source.fullName;
         }
         app.coordinateSystem=CoordinateSystem.DOCUMENTCOORDINATESYSTEM;
         if(!source.saved)throw Error('Save the proof in Illustrator before running this version. It processes a temporary copy of the saved file.');
         if(!source.fullName.exists)throw Error('The saved proof is not available on disk.');
-        var m=model(source),ref=ProofCore.reference(m.texts,source.name),config=hubJob?hubConfig(ref):settings(ref);if(!config)return;
+        var firstModel=model(source),ref=ProofCore.reference(firstModel.texts,source.name),config=hubJob?hubConfig(ref):settings(ref);if(!config)return;
         busy=new Window('palette','Proof Artwork Exporter');busy.message=busy.add('statictext',undefined,'Reading proof...');busy.message.preferredSize.width=580;busy.show();
         status('Finding design folder '+config.ref+'...');var designFolder=hubJob?config.root:findDestination(config.root,config.ref);if(!designFolder)return;
         var dest=printFolder(designFolder);
         // Optional diagnostics stay disabled during normal production use.
         var enableDiagnosticLog=false;
-        if(enableDiagnosticLog)trace=uniqueFile(dest,config.ref+'_EXPORT_PROGRESS','txt');checkpoint('Starting snapshot exporter 1.8');
+        if(enableDiagnosticLog)trace=uniqueFile(dest,config.ref+'_EXPORT_PROGRESS','txt');checkpoint('Starting snapshot exporter 1.13');
         temporary=new Folder(Folder.temp.fsName+'/ProofExporter-'+new Date().getTime()+'-'+Math.floor(Math.random()*100000));if(!temporary.create())throw Error('Cannot create temporary folder.');
-        var rows=[],i,active=source.artboards.getActiveArtboardIndex(),art=source.artboards[active].artboardRect,page=[art[0],-art[1],art[2],-art[3]];
-        if(config.manual){var row=manualRow(m,ProofCore.labels(m.texts));if(!row)return;rows=[row];}
-        else {
-            var onPage=[],textOnPage=[];for(i=0;i<m.leaves.length;i++)if(ProofCore.intersection(page,m.leaves[i].b))onPage.push(m.leaves[i]);
-            for(i=0;i<m.texts.length;i++)if(ProofCore.intersection(page,m.texts[i].b))textOnPage.push(m.texts[i]);
-            rows=ProofCore.detect(onPage,textOnPage,page);
+        var rows=[],i,pageCount=hubJob&&/\.pdf$/i.test(proofFile.name)?Number(hubJob.pdfPages)||1:1,duplicateCount=0;
+        if(config.manual){
+            var manualModel=firstModel,active=source.artboards.getActiveArtboardIndex(),row=manualRow(manualModel,ProofCore.labels(manualModel.texts));
+            if(!row)return;row.model={leaves:manualModel.leaves};row.pageNumber=/\.pdf$/i.test(proofFile.name)?originalPdfPage:1;row.artboardIndex=active;row.displayPage=row.pageNumber;rows=[row];
+        } else {
+            // Illustrator may import a PDF as separate artboards or expose one
+            // selected PDF page per open(). Handle both without visiting a page twice.
+            if(pageCount>1 && source.artboards.length>1) {
+                if(source.artboards.length!==pageCount)throw Error('PDF page/artboard counts disagree; inspect this proof in Illustrator.');
+                pageCount=1;
+            }
+            for(var pdfPage=1;pdfPage<=pageCount;pdfPage++) {
+                if(pdfPage>1){source.close(SaveOptions.DONOTSAVECHANGES);source=openProof(proofFile,pdfPage);}
+                var m=pdfPage===1?firstModel:model(source);
+                for(var board=0;board<source.artboards.length;board++) {
+                    var art=source.artboards[board].artboardRect,page=[art[0],-art[1],art[2],-art[3]],onPage=[],textOnPage=[];
+                    for(i=0;i<m.leaves.length;i++)if(ProofCore.intersection(page,m.leaves[i].b))onPage.push(m.leaves[i]);
+                    for(i=0;i<m.texts.length;i++)if(ProofCore.intersection(page,m.texts[i].b))textOnPage.push(m.texts[i]);
+                    var pageRows=ProofCore.detect(onPage,textOnPage,page);
+                    for(i=0;i<pageRows.length;i++){
+                        pageRows[i].model={leaves:m.leaves};pageRows[i].pageNumber=pdfPage;pageRows[i].artboardIndex=board;
+                        pageRows[i].displayPage=pageCount===1&&source.artboards.length>1?board+1:pdfPage;
+                        rows.push(pageRows[i]);
+                    }
+                }
+            }
         }
-        if(!rows.length)throw Error('No readable position/size labels found on the active artboard. Select the print and rerun in Selected artwork mode.');
-        for(i=0;i<rows.length;i++)if(rows[i].ids.length){status('Preparing preview '+(i+1)+' of '+rows.length+'...');try{rows[i].preview=preview(m,rows[i],i);}catch(e){var detail=failure(e);checkpoint('FAILED '+detail);closeWork();rows[i].warnings.push('Preview failed: '+detail);rows[i].confidence='REVIEW';for(var rest=i+1;rest<rows.length;rest++){rows[rest].warnings.push('Not attempted after an earlier preview failed. See export progress log.');rows[rest].confidence='REVIEW';}break;}}
+        if(!rows.length)throw Error('No print positions with readable size labels found in the proof. Embroidery positions are ignored.');
+        for(i=0;i<rows.length;i++)if(rows[i].ids.length){status('Preparing preview '+(i+1)+' of '+rows.length+'...');try{rows[i].preview=preview(rows[i],i);}catch(e){var detail=failure(e);checkpoint('FAILED '+detail);closeWork();rows[i].warnings.push('Preview failed: '+detail);rows[i].confidence='REVIEW';for(var rest=i+1;rest<rows.length;rest++){rows[rest].warnings.push('Not attempted after an earlier preview failed. See export progress log.');rows[rest].confidence='REVIEW';}break;}}
+        var uniqueRows=ProofCore.deduplicate(rows);
+        duplicateCount=rows.length-uniqueRows.length;
+        for(i=0;i<rows.length;i++)if(rows[i].duplicateOf&&rows[i].prepared)try{rows[i].prepared.doc.close(SaveOptions.DONOTSAVECHANGES);}catch(ignored){}
+        rows=uniqueRows;
         busy.close();busy=null;source.activate();
         if(ProofCore.canAutoExport(rows)) {
             for(i=0;i<rows.length;i++)rows[i].enabled=true;
@@ -380,18 +434,18 @@
         }
         checkHubCancellation();hubProgress('processing','Exporting artwork');
         busy=new Window('palette','Exporting print artwork');busy.message=busy.add('statictext',undefined,'Exporting...');busy.message.preferredSize.width=580;busy.show();
-        for(i=0;i<rows.length;i++)if(rows[i].enabled){status('Exporting '+rows[i].label.position+'...');try{saveRow(m,rows[i],dest,config.ref,i);}catch(e){closeWork();errors.push(rows[i].label.position+': '+failure(e));checkpoint('FAILED '+errors[errors.length-1]);}}
+        for(i=0;i<rows.length;i++)if(rows[i].enabled){status('Exporting '+rows[i].label.position+'...');try{saveRow(rows[i],dest,config.ref,i);}catch(e){closeWork();errors.push(rows[i].label.position+': '+failure(e));checkpoint('FAILED '+errors[errors.length-1]);}}
         if(busy){busy.close();busy=null;}
         var skipped=0;for(i=0;i<rows.length;i++)if(!rows[i].enabled)skipped++;
         hubOutcome=errors.length||skipped?'needs_attention':'exported';
-        hubMessage='Exported '+exported.length+' artwork(s).'+(skipped?' '+skipped+' view(s) skipped.':'')+(errors.length?' '+errors.join(' | '):'');
+        hubMessage='Exported '+exported.length+' artwork(s).'+(duplicateCount?' '+duplicateCount+' identical view(s) reused.':'')+(skipped?' '+skipped+' view(s) skipped.':'')+(errors.length?' '+errors.join(' | '):'');
         if(exported.length) {
             var openedFolder=false;try{openedFolder=dest.execute();}catch(folderError){}
             if(!openedFolder)alert('Artwork was saved, but the PRINT folder could not be opened:\n'+dest.fsName);
         }
         if(errors.length)alert('Some exports failed:\n'+errors.join('\n')+'\n\nSuccessfully saved files were kept in:\n'+dest.fsName);
     } catch(e) {hubMessage=e.message;hubOutcome='needs_attention';alert('Proof Artwork Exporter\n\n'+e.message+(e.line?'\nLine '+e.line:''));}
-    finally {for(var cleanup=0;cleanup<preparedDocuments.length;cleanup++)try{preparedDocuments[cleanup].close(SaveOptions.DONOTSAVECHANGES);}catch(ignored){}if(trace)try{checkpoint('Script finished or cancelled');}catch(e){}closeWork();if(busy)try{busy.close();}catch(e){}if(source)try{source.activate();}catch(e){}app.userInteractionLevel=originalInteraction;if(originalCoordinates!==undefined)app.coordinateSystem=originalCoordinates;cleanTemp();
+    finally {for(var cleanup=0;cleanup<preparedDocuments.length;cleanup++)try{preparedDocuments[cleanup].close(SaveOptions.DONOTSAVECHANGES);}catch(ignored){}if(trace)try{checkpoint('Script finished or cancelled');}catch(e){}closeWork();if(busy)try{busy.close();}catch(e){}if(source)try{source.activate();}catch(e){}app.userInteractionLevel=originalInteraction;if(originalCoordinates!==undefined)app.coordinateSystem=originalCoordinates;app.preferences.PDFFileOptions.pageToOpen=originalPdfPage;cleanTemp();
         if(hubJob){
             if(hubOpened&&source)try{source.close(SaveOptions.DONOTSAVECHANGES);}catch(ignored){}
             var report='<result><status>'+xml(hubOutcome)+'</status><message>'+xml(hubMessage)+'</message>';

@@ -27,10 +27,18 @@ async function findProof(root, ref) {
   const proof=path.join(found[0],proofs[0].name);
   const bytes=await fs.readFile(proof); // Hydrates OneDrive online-only files before Illustrator opens them.
   if (!bytes.length) throw new Error('Proof file is empty');
+  let pdfPages=1;
+  if (/\.pdf$/i.test(proof)) {
+    try {
+      const {PDFDocument}=require('./vendor/pdf-lib.min.js');
+      pdfPages=(await PDFDocument.load(bytes,{updateMetadata:false})).getPageCount();
+      if (pdfPages<1 || pdfPages>100) throw new Error('PDF must have 1–100 pages');
+    } catch (error) { throw new Error(`Cannot read proof PDF pages: ${error.message}`); }
+  }
   const print=path.join(found[0],'PRINT');
   try { if ((await fs.lstat(print)).isSymbolicLink()) throw new Error('PRINT must not be a linked folder'); }
   catch(e) { if(e.code!=='ENOENT') throw e; }
-  return {proof, designFolder:found[0], hash:crypto.createHash('sha256').update(bytes).digest('hex')};
+  return {proof, designFolder:found[0], pdfPages, hash:crypto.createHash('sha256').update(bytes).digest('hex')};
 }
 function decodeXml(text) {
   return text.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&amp;/g,'&');

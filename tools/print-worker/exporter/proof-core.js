@@ -1,4 +1,4 @@
-/* Proof Exporter detection 1.12 - ES3-compatible, bounds [left, top, right, bottom], Y down. */
+/* Proof Exporter detection 1.13 - ES3-compatible, bounds [left, top, right, bottom], Y down. */
 var ProofCore = (function () {
     function w(b) { return b[2] - b[0]; }
     function h(b) { return b[3] - b[1]; }
@@ -27,7 +27,7 @@ var ProofCore = (function () {
         return {mm:n, axis:/^(HIGH|TALL|HEIGHT)$/.test(m[3]||'')?'height':'width', text:trim(m[0])};
     }
     function position(s) {
-        s=norm(s).replace(/\s*\(AS WORN\)\s*/g,'');
+        s=norm(s).replace(/^POSITION\s*[:#-]?\s*/,'').replace(/\s*\(AS WORN\)\s*/g,'');
         return /^(?:(?:LEFT|RIGHT|CENTRE|CENTER|FULL|UPPER|LOWER|SMALL|LARGE)\s+)*(?:BREAST|CHEST|FRONT|BACK|SLEEVE|LEG|THIGH|NAPE|NECK|POCKET|HOOD|SHOULDER)(?:\s+(?:LEFT|RIGHT|FRONT|BACK|CENTRE|CENTER|TOP|BOTTOM))?$/.test(s) ? s : null;
     }
     function reference(texts, filename) {
@@ -50,8 +50,13 @@ var ProofCore = (function () {
     }
     function has(a,v) { for(var i=0;i<a.length;i++) if(a[i]===v) return true; return false; }
     function labels(texts) {
-        var out=[], sizes=[], i,j;
+        var out=[], sizes=[], processes=[], i,j;
         for(i=0;i<texts.length;i++) {var z=parseSize(texts[i].text); if(z) sizes.push({size:z,b:texts[i].b,id:i});}
+        for(i=0;i<texts.length;i++) {
+            var process=norm(texts[i].text).replace(/^PROCESS\s*[:#-]?\s*/,'');
+            if(/^(?:EMBROIDERY|EMBROIDERED|PRINT|TRANSFER|SCREEN PRINT|DTF|DIGITAL PRINT|VINYL|SUBLIMATION)$/.test(process))
+                processes.push({text:process,b:texts[i].b});
+        }
         for(i=0;i<texts.length;i++) {
             var p=position(texts[i].text); if(!p) continue;
             var best=null, score=1e10;
@@ -59,7 +64,14 @@ var ProofCore = (function () {
                 var sb=sizes[j].b, dy=cy(sb)-cy(texts[i].b), dx=Math.abs(sb[0]-texts[i].b[0]);
                 if(dy>=-3 && dy<90 && dx<100) {var v=dy+dx*2; if(v<score) {best=sizes[j]; score=v;}}
             }
-            if(best) out.push({position:p,mm:best.size.mm,axis:best.size.axis,b:union(texts[i].b,best.b),sizeId:best.id});
+            if(best) {
+                var process=null,processScore=1e10;
+                for(j=0;j<processes.length;j++) {
+                    var pb=processes[j].b,vertical=Math.abs(cy(pb)-cy(texts[i].b)),horizontal=Math.abs(cx(pb)-cx(texts[i].b));
+                    if(vertical<100 && horizontal<120 && vertical+horizontal*.5<processScore) {process=processes[j].text;processScore=vertical+horizontal*.5;}
+                }
+                out.push({position:p,mm:best.size.mm,axis:best.size.axis,b:union(texts[i].b,best.b),sizeId:best.id,process:process});
+            }
         }
         // A size must never silently serve two labels.
         for(i=0;i<out.length;i++) for(j=i+1;j<out.length;j++) if(out[i].sizeId===out[j].sizeId) {out[i].ambiguous=true;out[j].ambiguous=true;}
@@ -69,12 +81,31 @@ var ProofCore = (function () {
     function folderMatches(name,ref) { if(!/^\d+$/.test(String(ref)))return false;return new RegExp('(^|[^0-9])'+ref+'([^0-9]|$)').test(String(name)) && !/^\d+\s*-\s*\d+(?:\s|$)/.test(name); }
     function px(mm) { return Math.round(mm/25.4*300); }
     function scale(b,mm,axis) { var dimension=axis==='height'?h(b):w(b); if(dimension<=0) throw Error('Empty artwork'); return (mm*72/25.4)/dimension; }
+    function deduplicate(rows) {
+        var unique=[],i,j,r,match;
+        for(i=0;i<rows.length;i++) {
+            r=rows[i];match=null;
+            if(r.fingerprint && r.ids.length && r.preview && r.prepared && r.confidence==='GOOD MATCH' && !r.warnings.length) for(j=0;j<unique.length;j++) {
+                var previous=unique[j];
+                if(previous.confidence==='GOOD MATCH' && !previous.warnings.length && previous.fingerprint===r.fingerprint && previous.label.axis===r.label.axis &&
+                   Math.abs(previous.label.mm-r.label.mm)<.01) {match=previous;break;}
+            }
+            if(match) {
+                if(match.format==='PNG' && r.format==='EPS') {match.duplicateOf=r;unique[j]=r;}
+                else r.duplicateOf=match;
+            } else unique.push(r);
+        }
+        return unique;
+    }
     function detect(items,texts,page) {
         var ls=labels(texts), seeds=[],garments=[],i,j,k,p;
         for(i=0;i<items.length;i++) {
             p=items[i];
-            if(p.kind!=='vector'||!p.filled||p.clip||p.points<7) continue;
-            if(w(p.b)>w(page)*0.045 && h(p.b)>h(page)*0.18 && area(p.b)>area(page)*0.012 && area(p.b)<area(page)*0.55) {
+            if(p.clip) continue;
+            var vector=p.kind==='vector'&&p.filled&&p.points>=7;
+            var image=p.kind==='raster'||p.kind==='placed';
+            if(!vector&&!image) continue;
+            if(w(p.b)>w(page)*(image?.10:.045) && h(p.b)>h(page)*.18 && area(p.b)>area(page)*(image?.03:.012) && area(p.b)<area(page)*.70) {
                 seeds.push(p);
             }
         }
@@ -82,17 +113,18 @@ var ProofCore = (function () {
         for(i=0;i<seeds.length;i++) {
             var g=null;
             for(j=0;j<garments.length;j++) if(overlap(seeds[i].b,garments[j].b)>.82 && area(seeds[i].b)/area(garments[j].b)>.52) {g=garments[j];break;}
-            if(!g) {g={b:seeds[i].b.slice(0),seeds:[],palette:[],label:null};garments.push(g);}
+            if(!g) {g={b:seeds[i].b.slice(0),seeds:[],palette:[],label:null,imageBase:false};garments.push(g);}
             g.seeds.push(seeds[i].id);if(seeds[i].colour) g.palette.push(seeds[i].colour);
+            if(seeds[i].kind==='raster'||seeds[i].kind==='placed')g.imageBase=true;
         }
         // Require mutual nearest neighbours; never reuse one box for two mockups.
-        // Process words (EMBROIDERY / TRANSFER etc.) are deliberately not eligibility rules.
         for(i=0;i<garments.length;i++) {
             g=garments[i];var best=nearest(g.b,ls,function(l){return l.b;});
             g.label=best&&nearest(best.b,garments,function(mock){return mock.b;})===g?best:null;
         }
         var results=[];
         for(i=0;i<ls.length;i++) {
+            if(/^EMBROIDER/.test(ls[i].process||''))continue;
             var matches=[];for(j=0;j<garments.length;j++) if(garments[j].label===ls[i]) matches.push(garments[j]);
             var r={label:ls[i],ids:[],excluded:[],b:null,warnings:[],garment:null,format:'EPS',confidence:'REVIEW'};
             if(matches.length!==1||ls[i].ambiguous) {r.warnings.push('No unique garment/size match. Use manual selection.');results.push(r);continue;}
@@ -104,7 +136,7 @@ var ProofCore = (function () {
                 for(k=0;k<g.palette.length;k++) if(colourDistance(p.colour,g.palette[k])<.055) same=true;
                 var big=area(p.b)>area(g.b)*.36 || h(p.b)>h(g.b)*.72 || w(p.b)>w(g.b)*.86;
                 var seam=p.kind==='vector' && !p.filled && (h(p.b)>h(g.b)*.16||w(p.b)>w(g.b)*.40);
-                var edge=(p.b[0]<g.b[0]+w(g.b)*.025 || p.b[2]>g.b[2]-w(g.b)*.025 || p.b[3]>g.b[3]-h(g.b)*.04);
+                var edge=(p.b[0]<g.b[0]+w(g.b)*.025 || p.b[2]>g.b[2]-w(g.b)*.025 || p.b[3]>g.b[3]-h(g.b)*.025);
                 if(same||big||seam||edge) {
                     r.excluded.push(p.id);
                     if(same&&!big&&!edge&&!seam) colourCandidates.push(p);
@@ -113,6 +145,7 @@ var ProofCore = (function () {
                 if(p.kind==='text' && (parseSize(p.text)||position(p.text))) continue;
                 r.ids.push(p.id);r.b=union(r.b,p.b);
                 if(p.kind==='raster'||p.kind==='placed') r.format='PNG';
+                if(p.clipGroup) r.warnings.push('Artwork is inside a clipping group; inspect every edge in the preview.');
                 if(p.kind==='unsupported') r.warnings.push('Unsupported appearance/object: use manual selection and inspect output.');
                 if(p.effect) r.warnings.push('Transparency/blending present; compare preview carefully.');
             }
@@ -128,6 +161,7 @@ var ProofCore = (function () {
                     r.ids.push(p.id);r.b=union(r.b,p.b);recovered=true;
                     for(k=r.excluded.length-1;k>=0;k--)if(r.excluded[k]===p.id)r.excluded.splice(k,1);
                     if(p.kind==='raster'||p.kind==='placed')r.format='PNG';
+                    if(p.clipGroup)r.warnings.push('Artwork is inside a clipping group; inspect every edge in the preview.');
                     if(p.kind==='unsupported')r.warnings.push('Unsupported appearance/object: use manual selection and inspect output.');
                     if(p.effect)r.warnings.push('Transparency/blending present; compare preview carefully.');
                 } else leftOut=true;
@@ -157,6 +191,6 @@ var ProofCore = (function () {
         for(var i=0;i<rows.length;i++)if(rows[i].confidence!=='GOOD MATCH'||rows[i].warnings.length||!rows[i].ids.length||!rows[i].preview||!rows[i].prepared)return false;
         return true;
     }
-    return {version:'1.12',canAutoExport:canAutoExport,w:w,h:h,area:area,cx:cx,cy:cy,union:union,intersection:intersection,contains:contains,parseSize:parseSize,position:position,reference:reference,labels:labels,detect:detect,scale:scale,px:px,folderMatches:folderMatches,trim:trim,has:has};
+    return {version:'1.13',canAutoExport:canAutoExport,deduplicate:deduplicate,w:w,h:h,area:area,cx:cx,cy:cy,union:union,intersection:intersection,contains:contains,parseSize:parseSize,position:position,reference:reference,labels:labels,detect:detect,scale:scale,px:px,folderMatches:folderMatches,trim:trim,has:has};
 }());
 if (typeof module !== 'undefined' && module.exports) module.exports=ProofCore;

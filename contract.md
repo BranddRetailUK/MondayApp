@@ -1,6 +1,6 @@
 # Ultimate Hub Service Contract
 
-Last reviewed: 2026-08-27
+Last reviewed: 2026-10-02
 
 ## Purpose
 
@@ -554,7 +554,9 @@ No external work-management token, OAuth, board, column, or webhook environment 
 
 ## Illustrator Print Export Queue (2026-09-29)
 
-- The production ARTWORK action hides its text and displays a spinner immediately on click and throughout queued, processing and awaiting-review states. Database-derived state survives refresh and updates through normal board polling. Active buttons are disabled; after successful completion the ARTWORK text returns on a green button. Partial/failed/cancelled/expired work stops spinning without showing false success; the result tick retains its outcome colour. Hover text distinguishes queued work from Illustrator review, and aria-busy/accessible names expose loading state.
+- Exporter/core 1.13 supports multi-page PDF proofs and multi-artboard AI proofs. The local worker reads the PDF page count before Illustrator opens the proof, and each page is evaluated for eligible print positions. Explicit embroidery-process positions are ignored. Detection accepts vector flats and raster/placed model photos as garment bases while selecting EPS for vector-only extracted artwork and PNG when the artwork itself contains raster content. Confident, successfully prepared artwork is fingerprinted after isolation; identical artwork at the same labelled size/axis is exported once across pages, preferring the EPS copy when both EPS and PNG representations match. Uncertain views remain separate for review. PNG capture uses a transparent safety margin and checks that no opaque pixels meet the render edge; final PNG resizing avoids repeated edge trims that could cut lettering. Clipped artwork requires review. The complete worker folder, including its bundled PDF parser, must be installed and restarted for page counting. Native Windows Illustrator acceptance is still required. A failed ARTWORK result displays a red X in the shared mark size, while successful and partial results retain their green/yellow ticks.
+
+- The production ARTWORK action hides its text and displays a spinner immediately on click and throughout queued, processing and awaiting-review states. Database-derived state survives refresh and updates through normal board polling. Active buttons are disabled; after successful completion the ARTWORK text returns on a green button. Partial/failed/cancelled/expired work stops spinning without showing false success; the result mark retains its outcome colour. Hover text distinguishes queued work from Illustrator review, and aria-busy/accessible names expose loading state.
 
 - Production's leading ARTWORK action occupies the packing user's LABEL-button position; packing users retain their existing label action. The exact production full-access account alone can POST `/api/print-exports/jobs/:id/run`. Manual requests require an approved, real DATABASE print/mixed job with eligible DES refs. They queue a new cycle after terminal attempts or reuse/promote existing queued/running work, without changing global enablement or creating duplicate active tasks. `manual_requested` is an idempotently migrated queue flag; worker claims may take these tasks while the global switch is Off, leaving automatic tasks paused. Approval removal and design changes still cancel work. Expired attempts are marked needs_attention before an explicit manual rerun. The local worker protocol is unchanged. Artwork result marks use the shared dashboard-check-tick sizing.
 

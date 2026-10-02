@@ -33,9 +33,10 @@ test('folder/proof lookup is exact, case-insensitive at suffix, and rejects ambi
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'print-export-test-'));
   try{
     const dir=path.join(root,'29100-29199','29109 Ace');await fs.mkdir(dir,{recursive:true});
-    await fs.writeFile(path.join(dir,'27844 OLD CLIENT PROOF.PDF'),'proof');
+    const pdf=await require('pdf-lib').PDFDocument.create();pdf.addPage();pdf.addPage();
+    await fs.writeFile(path.join(dir,'27844 OLD CLIENT PROOF.PDF'),await pdf.save());
     await fs.mkdir(path.join(root,'129109 wrong'));
-    const result=await findProof(root,'29109');assert.equal(result.designFolder,dir);
+    const result=await findProof(root,'29109');assert.equal(result.designFolder,await fs.realpath(dir));assert.equal(result.pdfPages,2);
     await fs.writeFile(path.join(dir,'other proof.ai'),'proof');await assert.rejects(findProof(root,'29109'),/found 2/);
     await assert.rejects(findProof(root,'28299'),/Ineligible/);
     await fs.unlink(path.join(dir,'other proof.ai'));

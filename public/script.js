@@ -2210,7 +2210,7 @@ function buildColumnValueCell(entity, column, { subitem = false, context = BOARD
     if (['success','partial','failed'].includes(result)) {
       const tick = document.createElement('span');
       tick.className = `dashboard-check-tick artwork-export-${result}`;
-      tick.textContent = '✓';
+      tick.textContent = result === 'failed' ? '✕' : '✓';
       tick.setAttribute('role','img');
       tick.setAttribute('aria-label',text);
       cell.append(tick);

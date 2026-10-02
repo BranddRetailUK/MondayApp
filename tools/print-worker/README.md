@@ -1,33 +1,22 @@
-# Ultimate Hub print worker — first release
+# Ultimate Hub print worker
 
-Current exporter/core: 1.12. Confident, fully prepared proofs export automatically;
-uncertain detections, manual selections and preparation failures still show review.
-Compact recovered lettering alone no longer requires review. Successful exports
-open PRINT in File Explorer (Finder for supported manual Mac EPS use), without a
-success alert. Export errors show a dialog and are reported to Hub after dismissal.
-Replace all three files in the running worker's existing exporter folder while idle.
+Current exporter/core: 1.13. The worker counts PDF pages, then Illustrator processes
+each page or imported artboard. Embroidery positions are ignored. PNG model photos
+and vector flats may both serve as garment bases; output remains EPS for vector-only
+artwork and PNG for artwork containing raster images. Identical isolated artwork at
+the same labelled size is saved once across pages. PNG capture retains a safety
+margin and never repeatedly trims after the final resample.
 
-Exporter package 1.11 bundles the JSX and core together. The review title must show
-`exporter 1.11 / core 1.10`. Replace the files inside the worker's existing `exporter`
-folder after cancelling any active review and waiting for its result to report.
-The actual 28516 T-shirt PDF geometry passes the white-lettering regression; native
-Illustrator import and preview must still be checked on the workstation.
+Install the **whole updated worker folder**, including `worker.js`, `local-files.js`,
+`vendor/pdf-lib.min.js` and the three `exporter` files. Close any active Illustrator
+review and wait for its result to report, then restart the worker. Updating only the
+exporter folder will leave PDF page counting unavailable. The standalone worker
+still needs no npm installation.
 
-Detection update 1.10 retains small garment-coloured lettering/details immediately
-around already detected artwork, with a review warning. Large shapes, edge details
-and seams stay excluded. Recovery uses fixed initial artwork bounds so it cannot
-spread along chains of garment details. Install by replacing `exporter/proof-core.js`
-while the worker is idle; use the same cancel/report/retry steps below.
-
-Detection update 1.9: information tables can sit above, below or beside a mockup.
-The position/size text bounds are matched by nearest edge distance in both directions;
-ties within 3 points or 5% require review instead of guessing or reusing a table.
-Proof process words such as EMBROIDERY and TRANSFER do not affect extraction.
-Hub job eligibility and DES-number rules remain authoritative.
-To install the detection-only patch, cancel any current Illustrator review and wait
-for the task to finish reporting. Replace `exporter/proof-core.js` in the existing
-worker folder, then use Retry on the task in Hub. The core reloads for each task;
-no worker restart, config change or Railway deployment is needed.
+Confident, fully prepared proofs export automatically; uncertain detections, manual
+selections and preparation failures still show review. Successful exports open PRINT
+in File Explorer without a success alert. Export errors show a dialog and are
+reported to Hub after dismissal.
 
 This package runs on the signed-in Windows computer that has Illustrator and your synced DESIGN FILES folder. Ultimate Hub queues exports when a real DATABASE job's JOB tick changes from unapproved to approved. Numeric print designs >=28300 are eligible. PSG, older designs, embroidery-only jobs and private dashboard jobs are excluded. Mixed print/embroidery jobs export only their eligible numeric print references.
 
@@ -62,7 +51,7 @@ To start at sign-in, put a shortcut to start-worker.cmd in the current user's St
 - Requires one folder containing the exact design-number token. `29109` does not match `129109`.
 - Requires exactly one direct child file ending in `proof.pdf` or `proof.ai`, case-insensitive. Two matches require operator attention; it never guesses the newest revision.
 - The numeric reference from Hub DES/PSG is the source of truth for folder selection and output filenames. Old numbers printed inside reused proofs or in their filenames do not block automation and never override Hub. The containing folder must match the queued design number. Manual runs still read the proof reference.
-- Only single-artboard proofs are automated in this release. No readable labels, unavailable links, already-open proofs or incomplete previews require attention.
+- Multi-page PDFs and multi-artboard AI proofs are processed page by page. PDF page count is read before Illustrator opens the file. Missing readable print labels, unavailable links, already-open proofs or incomplete previews require attention.
 - A skipped detected view produces Needs attention even if other artwork exported. Inspect those outputs before retrying; the script does not silently mark a partial job complete.
 - Existing output files are preserved with version suffixes. No text report is written to PRINT. Worker recovery records are stored under `%LOCALAPPDATA%\UltimateHub\PrintWorker`.
 - The worker uses the bundled exporter. Renaming or installing your separate manual JSX does not change this copy. The bundled JSX can also be run manually via File > Scripts > Other Script.

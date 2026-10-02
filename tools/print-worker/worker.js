@@ -45,7 +45,7 @@ async function main() {
     let timer;
     try {
       const located=await findProof(config.designRoot,task.designNumber);
-      const job={reference:task.designNumber,proofPath:located.proof,designFolder:located.designFolder,resultPath,progressPath,cancelPath};
+      const job={reference:task.designNumber,proofPath:located.proof,designFolder:located.designFolder,pdfPages:located.pdfPages,resultPath,progressPath,cancelPath};
       await atomicJson(path.join(dir,'source.json'),{...located,taskId:task.id});
       const launcher=path.join(dir,'launch.jsx');
       const exporter=path.join(__dirname,'exporter','Proof-Artwork-Exporter.jsx');

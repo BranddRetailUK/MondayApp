@@ -12,6 +12,7 @@ using System.Drawing.Imaging;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.IO;
+using System.Security.Cryptography;
 public static class ProofPng {
     public static Rectangle Bounds(Bitmap image) {
         Rectangle all = new Rectangle(0, 0, image.Width, image.Height);
@@ -57,6 +58,30 @@ public static class ProofPng {
         }
         return output;
     }
+    public static string Fingerprint(string input,string axis) {
+        using(Bitmap source=Load(input)) {
+            Rectangle crop=Bounds(source);
+            int width=axis=="height"?Math.Max(1,(int)Math.Round(256.0*crop.Width/crop.Height)):256;
+            int height=axis=="height"?256:Math.Max(1,(int)Math.Round(256.0*crop.Height/crop.Width));
+            if(width>2048||height>2048) throw new Exception("Artwork aspect ratio is too extreme for duplicate detection.");
+            using(Bitmap normalized=Render(source,crop,width,height,InterpolationMode.HighQualityBicubic)) {
+                byte[] pixels=new byte[8+width*height*4];
+                Buffer.BlockCopy(BitConverter.GetBytes(width),0,pixels,0,4);
+                Buffer.BlockCopy(BitConverter.GetBytes(height),0,pixels,4,4);
+                int at=8;
+                for(int y=0;y<height;y++) for(int x=0;x<width;x++) {
+                    Color c=normalized.GetPixel(x,y);
+                    // A four-bit channel reduces false differences from PDF import
+                    // antialiasing without considering visibly different colours equal.
+                    pixels[at++]=(byte)(c.A>>4);
+                    pixels[at++]=c.A==0?(byte)0:(byte)(c.R>>4);
+                    pixels[at++]=c.A==0?(byte)0:(byte)(c.G>>4);
+                    pixels[at++]=c.A==0?(byte)0:(byte)(c.B>>4);
+                }
+                using(SHA256 sha=SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(pixels)).Replace("-","");
+            }
+        }
+    }
     public static string FinalizePng(string input,string output,string axis,double mm) {
         using(Bitmap source=Load(input)) {
             Rectangle crop=Bounds(source);
@@ -69,31 +94,19 @@ public static class ProofPng {
             try {
                 using(Bitmap trimmed=source.Clone(crop,PixelFormat.Format32bppArgb))
                     result=Render(trimmed,new Rectangle(0,0,trimmed.Width,trimmed.Height),width,height,InterpolationMode.HighQualityBicubic);
-                // Downsampling can round faint boundary alpha to zero. Trim the actual
-                // result, then apply one uniform scale to restore the requested axis.
-                // Correction is a crop or slight enlargement, never a new downsample.
-                for(int pass=0;pass<4;pass++) {
-                    Rectangle visible=Bounds(result);
-                    if(visible.X==0 && visible.Y==0 && visible.Width==result.Width && visible.Height==result.Height) break;
-                    width=axis=="height"?Math.Max(1,(int)Math.Round(pixels*(double)visible.Width/visible.Height)):pixels;
-                    height=axis=="height"?pixels:Math.Max(1,(int)Math.Round(pixels*(double)visible.Height/visible.Width));
-                    if(width>30000||height>30000||(long)width*height>100000000)
-                        throw new Exception("Trimmed image exceeds the output size limit.");
-                    Bitmap corrected;
-                    using(Bitmap tight=result.Clone(visible,PixelFormat.Format32bppArgb))
-                        corrected=Render(tight,new Rectangle(0,0,tight.Width,tight.Height),width,height,InterpolationMode.HighQualityBilinear);
-                    result.Dispose();result=corrected;
-                }
+                // Resampling may turn faint boundary alpha into one or two clear
+                // pixels. Keep that safety border; another trim/resize can remove
+                // the lowest strokes of small lettering.
                 Rectangle finalBounds=Bounds(result);
-                if(finalBounds.X!=0 || finalBounds.Y!=0 || finalBounds.Width!=width || finalBounds.Height!=height || (axis=="height"?height:width)!=pixels)
-                    throw new Exception("Could not settle the final transparent bounds at the requested pixel size.");
+                if(finalBounds.X>2 || finalBounds.Y>2 || finalBounds.Right<width-2 || finalBounds.Bottom<height-2)
+                    throw new Exception("Resampling left more than a two-pixel transparent border; inspect artwork bounds.");
                 result.Save(output,ImageFormat.Png);
             } finally {if(result!=null)result.Dispose();}
             SetDpi(output);
             // Inspect the decoded file directly; verification must not render it.
             using(Bitmap check=new Bitmap(output)) {
                 Rectangle b=Bounds(check);
-                if(check.Width!=width||check.Height!=height||b.X!=0||b.Y!=0||b.Width!=width||b.Height!=height)
+                if(check.Width!=width||check.Height!=height||b.X>2||b.Y>2||b.Right<width-2||b.Bottom<height-2)
                     throw new Exception("PNG verification failed. Expected "+width+"x"+height+
                         "; decoded "+check.Width+"x"+check.Height+"; alpha bounds x="+b.X+
                         ", y="+b.Y+", width="+b.Width+", height="+b.Height+".");
@@ -143,6 +156,8 @@ public static class ProofPng {
     } elseif ([string]$job.job.mode -eq 'finalize') {
         $mm = [double]::Parse([string]$job.job.mm, [Globalization.CultureInfo]::InvariantCulture)
         $response = "OK`n" + [ProofPng]::FinalizePng($inputPath,[string]$job.job.output,[string]$job.job.axis,$mm)
+    } elseif ([string]$job.job.mode -eq 'fingerprint') {
+        $response = "OK`n" + [ProofPng]::Fingerprint($inputPath,[string]$job.job.axis) + "`n"
     } else { throw 'Unknown helper operation.' }
     [IO.File]::WriteAllText($resultFile+'.tmp',$response,[Text.Encoding]::UTF8)
     [IO.File]::Move($resultFile+'.tmp',$resultFile)
