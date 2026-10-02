@@ -3785,11 +3785,14 @@ function renderFileValue(cell, value, text, column) {
   }
   if (!files.length) return 0;
   cell.classList.add('dashboard-file-cell');
+  const strip = document.createElement('div');
+  strip.className = 'dashboard-file-strip';
+  cell.appendChild(strip);
   files.forEach((file, index) => {
     if (isPreviewModalFileColumn(column)) {
-      renderPreviewFileButton(cell, files, index, text, column);
+      renderPreviewFileButton(strip, files, index, text, column);
     } else {
-      renderFileIconLink(cell, file, text);
+      renderFileIconLink(strip, file, text);
     }
   });
   return files.length;
@@ -3820,6 +3823,7 @@ function renderFileIconLink(cell, file, text) {
     link.rel = 'noopener noreferrer';
   }
   link.appendChild(buildFileIcon(file));
+  attachDashboardFileHoverPreview(link, file);
   cell.appendChild(link);
 }
 
@@ -3833,12 +3837,104 @@ function renderPreviewFileButton(cell, files, index, text, column) {
   button.setAttribute('aria-label', button.title);
 
   button.appendChild(buildFileIcon(file));
+  attachDashboardFileHoverPreview(button, file);
   button.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
     openProofModal(files, index, { label });
   });
   cell.appendChild(button);
+}
+
+let __dashboardFileHoverPreview = null;
+let __dashboardFileHoverTimer = 0;
+let __dashboardFileHoverTarget = null;
+
+function attachDashboardFileHoverPreview(target, file) {
+  target.addEventListener('pointerenter', (event) => {
+    if (event.pointerType === 'touch') return;
+    clearTimeout(__dashboardFileHoverTimer);
+    __dashboardFileHoverTarget = target;
+    __dashboardFileHoverTimer = window.setTimeout(() => {
+      if (__dashboardFileHoverTarget === target && target.isConnected) {
+        showDashboardFileHoverPreview(file, event.clientX, event.clientY);
+      }
+    }, 180);
+  });
+  target.addEventListener('pointermove', (event) => {
+    if (__dashboardFileHoverTarget !== target || event.pointerType === 'touch') return;
+    positionDashboardFileHoverPreview(event.clientX, event.clientY);
+  });
+  target.addEventListener('pointerleave', hideDashboardFileHoverPreview);
+  target.addEventListener('pointercancel', hideDashboardFileHoverPreview);
+}
+
+function ensureDashboardFileHoverPreview() {
+  if (__dashboardFileHoverPreview) return __dashboardFileHoverPreview;
+  const preview = document.createElement('div');
+  preview.className = 'dashboard-file-hover-preview';
+  preview.hidden = true;
+  document.body.appendChild(preview);
+  document.addEventListener('scroll', hideDashboardFileHoverPreview, true);
+  window.addEventListener('blur', hideDashboardFileHoverPreview);
+  __dashboardFileHoverPreview = preview;
+  return preview;
+}
+
+function showDashboardFileHoverPreview(file, x, y) {
+  const preview = ensureDashboardFileHoverPreview();
+  preview.replaceChildren();
+  const frame = document.createElement('div');
+  frame.className = 'dashboard-file-hover-frame';
+  const src = buildAssetSrc(file, { stripPdfUi: true });
+  if (src && isPdfFile(file.name, file.mime)) {
+    const viewer = document.createElement('iframe');
+    viewer.src = src;
+    viewer.title = file.name || 'PDF preview';
+    viewer.loading = 'eager';
+    frame.appendChild(viewer);
+  } else if (src && isImageFile(file)) {
+    const image = document.createElement('img');
+    image.src = src;
+    image.alt = file.name || 'File preview';
+    frame.appendChild(image);
+  } else {
+    const fallback = document.createElement('div');
+    fallback.className = 'dashboard-file-hover-fallback';
+    fallback.appendChild(buildFileIcon(file));
+    const message = document.createElement('span');
+    message.textContent = src ? 'Preview unavailable for this file type' : 'No preview available';
+    fallback.appendChild(message);
+    frame.appendChild(fallback);
+  }
+  const name = document.createElement('div');
+  name.className = 'dashboard-file-hover-name';
+  name.textContent = file.name || 'Attached file';
+  preview.append(frame, name);
+  preview.hidden = false;
+  positionDashboardFileHoverPreview(x, y);
+}
+
+function positionDashboardFileHoverPreview(x, y) {
+  const preview = __dashboardFileHoverPreview;
+  if (!preview || preview.hidden) return;
+  const margin = 10;
+  const offset = 18;
+  const width = preview.offsetWidth;
+  const height = preview.offsetHeight;
+  const left = x + offset + width > window.innerWidth - margin ? x - width - offset : x + offset;
+  const top = y + offset + height > window.innerHeight - margin ? y - height - offset : y + offset;
+  preview.style.left = `${Math.max(margin, Math.min(left, window.innerWidth - width - margin))}px`;
+  preview.style.top = `${Math.max(margin, Math.min(top, window.innerHeight - height - margin))}px`;
+}
+
+function hideDashboardFileHoverPreview() {
+  clearTimeout(__dashboardFileHoverTimer);
+  __dashboardFileHoverTarget = null;
+  if (__dashboardFileHoverPreview) {
+    __dashboardFileHoverPreview.hidden = true;
+    __dashboardFileHoverPreview.replaceChildren();
+  }
 }
 
 function isTestDashboardVisualColumn(column) {
@@ -3951,8 +4047,10 @@ function decorateTestFileDropCell(cell, entity, column, { hasFiles = false } = {
 
 function preserveTestFileCellScrollPosition(cell, uploadKey) {
   if (!cell || !uploadKey) return;
-  cell.addEventListener('scroll', () => {
-    const scrollLeft = Number(cell.scrollLeft);
+  const strip = cell.querySelector('.dashboard-file-strip');
+  if (!strip) return;
+  strip.addEventListener('scroll', () => {
+    const scrollLeft = Number(strip.scrollLeft);
     if (Number.isFinite(scrollLeft)) {
       __testFileCellScrollPositions.set(uploadKey, Math.max(0, scrollLeft));
     }
@@ -3962,8 +4060,8 @@ function preserveTestFileCellScrollPosition(cell, uploadKey) {
   if (!Number.isFinite(savedScrollLeft) || savedScrollLeft <= 0) return;
   window.requestAnimationFrame(() => {
     if (!cell.isConnected) return;
-    const maxScrollLeft = Math.max(0, cell.scrollWidth - cell.clientWidth);
-    cell.scrollLeft = Math.min(savedScrollLeft, maxScrollLeft);
+    const maxScrollLeft = Math.max(0, strip.scrollWidth - strip.clientWidth);
+    strip.scrollLeft = Math.min(savedScrollLeft, maxScrollLeft);
   });
 }
 
