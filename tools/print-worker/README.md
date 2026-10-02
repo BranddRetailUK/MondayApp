@@ -12,6 +12,11 @@ Install the **whole updated worker folder**, including `worker.js`, `local-files
 review and wait for its result to report, then restart the worker. Updating only the
 exporter folder will leave PDF page counting unavailable. The standalone worker
 still needs no npm installation.
+At startup the worker prints its running folder and `exporter 1.13`; it refuses to
+claim work if the exporter and detection core versions are mixed. If Hub still
+reports `Multi-artboard proofs require manual export.`, the workstation is using a
+pre-1.13 exporter from another folder. Locate the folder printed in the worker
+window, update that folder, preserve its `config.json`, then restart the worker.
 
 Confident, fully prepared proofs export automatically; uncertain detections, manual
 selections and preparation failures still show review. Successful exports open PRINT

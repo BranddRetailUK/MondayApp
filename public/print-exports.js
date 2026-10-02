@@ -36,19 +36,32 @@
   const dialog=document.createElement('dialog');dialog.className='print-exports-dialog';
   const title=document.createElement('h2');title.textContent='Print exports';
   const close=document.createElement('button');close.type='button';close.textContent='Close';close.onclick=()=>dialog.close();
+  const clear=document.createElement('button');clear.type='button';clear.textContent='Clear history';
+  clear.title='Hide past exports in this browser. Export records are retained.';
   const info=document.createElement('p'), list=document.createElement('div');
-  dialog.append(title,close,info,list);document.body.append(dialog);
+  dialog.append(title,close,clear,info,list);document.body.append(dialog);
   const labels={queued:'Queued',processing:'Processing',awaiting_review:'Review in Illustrator',exported:'Exported',needs_attention:'Needs attention',cancelled:'Cancelled'};
+  const historyKey='ultimateHub.printExports.historyClearedAt';
+  let historyCutoff=0;
+  try{historyCutoff=Number(localStorage.getItem(historyKey))||0;}catch(e){}
+  clear.onclick=()=>{
+    historyCutoff=Date.now();
+    try{localStorage.setItem(historyKey,String(historyCutoff));}catch(e){}
+    refresh();
+  };
   let loading=false;
   async function refresh() {
     if(loading)return;loading=true;
     try {
       const response=await fetch('/api/print-exports');if(!response.ok)throw Error('Could not load export queue');
       const data=await response.json();
-      info.textContent=data.enabled?'Approvals queue eligible print designs. Showing the latest 200 exports.':'Automatic exports are disabled. Existing export history is shown below.';
+      info.textContent=(data.enabled?'Approvals queue eligible print designs.':'Automatic exports are disabled.')+
+        (historyCutoff?' Earlier history is hidden in this browser.':' Showing the latest 200 exports.');
       list.replaceChildren();
-      if(!data.jobs.length){list.textContent='No exports queued yet.';return;}
-      for(const job of data.jobs) {
+      const visible=data.jobs.filter(job=>['queued','processing','awaiting_review'].includes(job.status)||
+        !Number.isFinite(Date.parse(job.updated_at))||Date.parse(job.updated_at)>historyCutoff);
+      if(!visible.length){list.textContent=historyCutoff?'History cleared on this browser. New exports will appear here.':'No exports queued yet.';return;}
+      for(const job of visible) {
         if(['processing','awaiting_review'].includes(job.status)&&job.lease_until&&new Date(job.lease_until)<new Date()){
           job.status='needs_attention';job.message='Worker lost contact. Inspect Illustrator and any exported files before retrying.';
         }

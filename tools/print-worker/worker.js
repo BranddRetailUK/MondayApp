@@ -15,6 +15,11 @@ async function main() {
   if(url.protocol!=='https:'||url.username||url.password) throw new Error('hubUrl must be an HTTPS URL without credentials');
   if(typeof config.token!=='string'||config.token.length<32||config.token.startsWith('REPLACE_')) throw new Error('Configure the worker token (at least 32 characters)');
   if(!/^[A-Za-z0-9._-]{1,80}$/.test(config.workerId||'')) throw new Error('Set an alphanumeric workerId');
+  const exporter=path.join(__dirname,'exporter','Proof-Artwork-Exporter.jsx');
+  const core=path.join(__dirname,'exporter','proof-core.js');
+  const [exporterSource,coreSource]=await Promise.all([fs.readFile(exporter,'utf8'),fs.readFile(core,'utf8')]);
+  if(!exporterSource.includes('Proof Artwork Exporter 1.13')||!coreSource.includes("version:'1.13'"))
+    throw new Error(`Worker files are out of date or mixed in ${__dirname}. Replace the complete worker folder before starting.`);
   const stateDir=path.join(process.env.LOCALAPPDATA||os.homedir(),'UltimateHub','PrintWorker');
   await fs.mkdir(stateDir,{recursive:true});
   // An exclusive local lock prevents two startup shortcuts driving the same Illustrator.
@@ -48,7 +53,6 @@ async function main() {
       const job={reference:task.designNumber,proofPath:located.proof,designFolder:located.designFolder,pdfPages:located.pdfPages,resultPath,progressPath,cancelPath};
       await atomicJson(path.join(dir,'source.json'),{...located,taskId:task.id});
       const launcher=path.join(dir,'launch.jsx');
-      const exporter=path.join(__dirname,'exporter','Proof-Artwork-Exporter.jsx');
       await fs.writeFile(launcher,'#target illustrator\n$.global.__ultimatePrintJob='+JSON.stringify(job)+';\n$.evalFile(new File('+JSON.stringify(exporter)+'));\n','utf8');
       const check=await api(`/api/print-worker/tasks/${task.id}`,{claimToken:task.claimToken,status:'processing',message:'Opening local proof'});
       if(!check.accepted) throw new Error('Task is no longer eligible');
@@ -88,7 +92,7 @@ async function main() {
       }
       await report(record);
     }
-    console.log('Ultimate Hub print worker ready. Keep this window running.');
+    console.log(`Ultimate Hub print worker ready: exporter 1.13 from ${__dirname}. Keep this window running.`);
     for(;;) {
       try {
         if(await exists(pending)) await report(JSON.parse(await fs.readFile(pending,'utf8')));
