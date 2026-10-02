@@ -425,8 +425,11 @@ function renderBoard(payload, options = {}) {
 
   const boardColumns = getRenderableBoardColumns(board.columns || []);
   const subitemColumns = getRenderableSubitemColumns(board.subitemColumns || []);
-  const groupSummaryTitleWidth = buildGroupSummaryTitleWidth(board.groups || []);
-  const mobileClosedGroupWidth = buildMobileClosedGroupSummaryWidth(board.groups || []);
+  const visibleGroups = (board.groups || []).filter(group =>
+    normalizeColumnTitle(group.title) === 'OFFICE' || (group.items_page?.items?.length || 0) > 0
+  );
+  const groupSummaryTitleWidth = buildGroupSummaryTitleWidth(visibleGroups);
+  const mobileClosedGroupWidth = buildMobileClosedGroupSummaryWidth(visibleGroups);
   boardDiv.style.setProperty('--mobile-closed-group-width', `${mobileClosedGroupWidth}px`);
   const boardSortPlan = getBoardSortPlan(boardColumns);
   const allBoardItems = getAllBoardItems(board.groups || []);
@@ -437,7 +440,7 @@ function renderBoard(payload, options = {}) {
   zoomLayer.className = 'dashboard-zoom-layer';
   boardDiv.appendChild(zoomLayer);
 
-  for (const group of (board.groups || [])) {
+  for (const group of visibleGroups) {
     const collectionName = group.title || 'Untitled Group';
     const items = (group.items_page && group.items_page.items) || [];
     const sortedItems = sortItemsForBoard(items, boardSortPlan);
