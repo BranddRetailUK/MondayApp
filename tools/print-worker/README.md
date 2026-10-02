@@ -17,9 +17,14 @@ claim work if the exporter and detection core versions are mixed. If Hub still
 reports `Multi-artboard proofs require manual export.`, the workstation is using a
 pre-1.13 exporter from another folder. Locate the folder printed in the worker
 window, update that folder, preserve its `config.json`, then restart the worker.
-Worker 1.15 also heartbeats while it searches DESIGN FILES, hydrates the proof from
+Worker 1.16 also heartbeats while it searches DESIGN FILES, hydrates the proof from
 OneDrive, and counts PDF pages. Its window and Hub task message show the current
 lookup stage; a slow local read no longer silently exhausts the 90-second claim.
+It attaches only to an Illustrator session already running on the signed-in desktop.
+Before claiming work, it checks that Illustrator responds to a small script. A
+startup plug-in alert or other modal dialog leaves the worker waiting without
+claiming a task. If COM returns an error after the exporter wrote a result, the
+worker reports that result instead of replacing it with a generic HRESULT error.
 Queued PDF imports can appear unsaved in Illustrator; the exporter validates and
 copies the original proof file supplied by the worker. Manual Illustrator script
 runs still require a saved document.
@@ -50,7 +55,7 @@ No token is included in this package or stored in the repository. Turning the si
 2. Extract the whole worker folder to a permanent user-writable location, such as `C:\UltimateHub\PrintWorker`. Keep all files and the `exporter` subfolder together. If Windows marks the downloaded ZIP as blocked, use its Properties > Unblock before extracting. The launcher uses PowerShell RemoteSigned; it does not bypass execution policy. Managed computers may need their administrator to approve/sign the scripts.
 3. Copy `config.example.json` to `config.json`. Set `hubUrl`, `workerId`, your actual `designRoot`, and the same random token used on Railway. Do not commit or share config.json.
 4. Mark DESIGN FILES **Always keep on this device** in OneDrive where practical. The worker reads a proof fully before opening it; unavailable or ambiguous files need attention.
-5. Close any proof already open in Illustrator that the worker is about to process. Double-click `start-worker.cmd` and keep that window running. It polls Hub every ten seconds.
+5. Open Illustrator normally and dismiss any startup plug-in alerts. Close any proof already open that the worker is about to process. Double-click `start-worker.cmd` and keep that window running. It polls Hub every ten seconds and waits for Illustrator to become responsive before claiming a task.
 6. After the server is enabled, approve one eligible test job in Hub. The proof opens locally; check each artwork preview and click Export. Outputs are saved in that design folder's PRINT subfolder. EPS is used for vectors, PNG for raster/mixed artwork, using the proof's size and 300ppi for PNG.
 7. Verify this first real Windows/Illustrator run before leaving the worker in routine use. Native COM launch, ScriptUI review and real Illustrator output cannot be verified by the Linux development tests.
 

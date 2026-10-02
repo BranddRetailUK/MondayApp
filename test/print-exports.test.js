@@ -9,6 +9,7 @@ const service=require('../src/services/printExports');
 const {TEST_DASHBOARD_COLUMN_IDS:ids}=require('../src/services/testDashboardDefaults');
 const {findProof,parseResult}=require('../tools/print-worker/local-files');
 const {acquireWorkerLock}=require('../tools/print-worker/worker-lock');
+const {readIllustratorResult}=require('../tools/print-worker/worker');
 const {workerAuth}=require('../src/routes/print-exports');
 
 test('eligible refs exclude PSG, stitch counts and old designs; boundary inclusive',()=>{
@@ -50,6 +51,17 @@ test('folder/proof lookup is exact, case-insensitive at suffix, and rejects ambi
 test('Illustrator result preserves XML-escaped filenames and rejects incomplete results',()=>{
   assert.deepEqual(parseResult('<result><status>exported</status><message>Done &amp; checked</message><output>E:\\A&amp;B\\PRINT\\x.png</output></result>'),{status:'exported',message:'Done & checked',outputs:['E:\\A&B\\PRINT\\x.png']});
   assert.throws(()=>parseResult('<result/>'),/Invalid/);
+});
+
+test('worker reports the Illustrator result even when its COM launcher returns E_FAIL',async()=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'print-export-result-'));
+  const result=path.join(dir,'result.xml'),progress=path.join(dir,'progress.txt');
+  try {
+    await fs.writeFile(progress,'processing\nPreparing preview 2 of 3');
+    await assert.rejects(readIllustratorResult(result,progress,new Error('HRESULT E_FAIL')),/Preparing preview 2 of 3.*HRESULT E_FAIL/);
+    await fs.writeFile(result,'<result><status>needs_attention</status><message>Artwork preview failed on page 2</message></result>');
+    assert.equal((await readIllustratorResult(result,progress,new Error('HRESULT E_FAIL'))).message,'Artwork preview failed on page 2');
+  } finally {await fs.rm(dir,{recursive:true,force:true});}
 });
 
 test('durable SQL queue: transitions, rollback, duplicate approval, cancellation, lease and retry',async()=>{
