@@ -376,7 +376,7 @@ async function loadTestBoard(options = {}) {
     const payload = await response.json();
     window.__latestTestBoardPayload = payload;
     pruneSyncedTestCheckboxOptimisticValues(payload);
-    if (!allowDuringDesignEdit && isTestDashboardTextEditActive()) return;
+    if (__dashboardFileHoverTarget?.isConnected || (!allowDuringDesignEdit && isTestDashboardTextEditActive())) return;
     renderBoard(payload, { context: BOARD_CONTEXT_TEST, boardDiv });
   } catch (err) {
     console.warn('Tuesday Dashboard load failed', err);
@@ -401,7 +401,7 @@ function startTestBoardAutoRefresh() {
     if (document.hidden) return;
     const dashboard = document.getElementById('tab-test-dashboard');
     if (dashboard && !dashboard.classList.contains('active')) return;
-    if (isStatusDropdownOpen() || isTestRowMenuOpen() || isTestVisualRemovalModalOpen() || isTestDatePopoverOpen() || isTestDashboardMobileJobOverviewOpen() || __statusUpdateInFlight > 0 || __testFileUploadsInFlight > 0 || isTestDashboardTextEditActive()) return;
+    if (isStatusDropdownOpen() || isTestRowMenuOpen() || isTestVisualRemovalModalOpen() || isTestDatePopoverOpen() || isTestDashboardMobileJobOverviewOpen() || __statusUpdateInFlight > 0 || __testFileUploadsInFlight > 0 || isTestDashboardTextEditActive() || __dashboardFileHoverTarget?.isConnected) return;
     loadTestBoard({ forceRefresh: true });
   }, BOARD_AUTO_REFRESH_MS);
 }
@@ -945,7 +945,7 @@ function getColumnWidth(column) {
   }
   if (column.type === 'checkbox') return title.length <= 5 ? 72 : 92;
   if (column.type === 'date') return 92;
-  if (column.type === 'file') return title === 'PROOF' ? 100 : 90;
+  if (column.type === 'file') return title === 'PROOF' ? 120 : 110;
   if (column.type === 'people') return 150;
   if (column.type === 'timeline') return 150;
   if (column.type === 'numbers') return 92;
@@ -3787,12 +3787,23 @@ function renderFileValue(cell, value, text, column) {
   cell.classList.add('dashboard-file-cell');
   const strip = document.createElement('div');
   strip.className = 'dashboard-file-strip';
+  const overflowing = files.length > 3;
+  strip.classList.toggle('is-overflowing', overflowing);
+  if (overflowing) {
+    strip.addEventListener('wheel', (event) => {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      if (strip.scrollWidth <= strip.clientWidth) return;
+      const before = strip.scrollLeft;
+      strip.scrollLeft += event.deltaY;
+      if (strip.scrollLeft !== before) event.preventDefault();
+    }, { passive: false });
+  }
   cell.appendChild(strip);
   files.forEach((file, index) => {
     if (isPreviewModalFileColumn(column)) {
-      renderPreviewFileButton(strip, files, index, text, column);
+      renderPreviewFileButton(strip, files, index, text, column, { showHoverPreview: !overflowing });
     } else {
-      renderFileIconLink(strip, file, text);
+      renderFileIconLink(strip, file, text, { showHoverPreview: !overflowing });
     }
   });
   return files.length;
@@ -3813,34 +3824,38 @@ function isLikelyFileUrl(value) {
   return /^(https?:\/\/|\/)/i.test(String(value || '').trim());
 }
 
-function renderFileIconLink(cell, file, text) {
+function renderFileIconLink(cell, file, text, { showHoverPreview = true } = {}) {
   const link = document.createElement(file.url ? 'a' : 'span');
   link.className = 'dashboard-file-link';
-  link.title = file.name || text || 'Attached file';
+  const label = file.name || text || 'Attached file';
+  link.setAttribute('aria-label', label);
+  if (!showHoverPreview) link.title = label;
   if (file.url) {
     link.href = file.url;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
   }
   link.appendChild(buildFileIcon(file));
-  attachDashboardFileHoverPreview(link, file);
+  attachDashboardFileHoverPreview(link, file, { showHoverPreview });
   cell.appendChild(link);
 }
 
-function renderPreviewFileButton(cell, files, index, text, column) {
+function renderPreviewFileButton(cell, files, index, text, column, { showHoverPreview = true } = {}) {
   const file = files[index];
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'dashboard-file-link dashboard-proof-trigger';
   const label = getPreviewModalLabel(column);
-  button.title = file.name || text || `Open ${label.toLowerCase()}`;
-  button.setAttribute('aria-label', button.title);
+  const buttonLabel = file.name || text || `Open ${label.toLowerCase()}`;
+  button.setAttribute('aria-label', buttonLabel);
+  if (!showHoverPreview) button.title = buttonLabel;
 
   button.appendChild(buildFileIcon(file));
-  attachDashboardFileHoverPreview(button, file);
+  attachDashboardFileHoverPreview(button, file, { showHoverPreview });
   button.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
+    hideDashboardFileHoverPreview();
     openProofModal(files, index, { label });
   });
   cell.appendChild(button);
@@ -3850,11 +3865,12 @@ let __dashboardFileHoverPreview = null;
 let __dashboardFileHoverTimer = 0;
 let __dashboardFileHoverTarget = null;
 
-function attachDashboardFileHoverPreview(target, file) {
+function attachDashboardFileHoverPreview(target, file, { showHoverPreview = true } = {}) {
   target.addEventListener('pointerenter', (event) => {
     if (event.pointerType === 'touch') return;
     clearTimeout(__dashboardFileHoverTimer);
     __dashboardFileHoverTarget = target;
+    if (!showHoverPreview) return;
     __dashboardFileHoverTimer = window.setTimeout(() => {
       if (__dashboardFileHoverTarget === target && target.isConnected) {
         showDashboardFileHoverPreview(file, event.clientX, event.clientY);
@@ -3862,7 +3878,7 @@ function attachDashboardFileHoverPreview(target, file) {
     }, 180);
   });
   target.addEventListener('pointermove', (event) => {
-    if (__dashboardFileHoverTarget !== target || event.pointerType === 'touch') return;
+    if (!showHoverPreview || __dashboardFileHoverTarget !== target || event.pointerType === 'touch') return;
     positionDashboardFileHoverPreview(event.clientX, event.clientY);
   });
   target.addEventListener('pointerleave', hideDashboardFileHoverPreview);
@@ -3875,7 +3891,6 @@ function ensureDashboardFileHoverPreview() {
   preview.className = 'dashboard-file-hover-preview';
   preview.hidden = true;
   document.body.appendChild(preview);
-  document.addEventListener('scroll', hideDashboardFileHoverPreview, true);
   window.addEventListener('blur', hideDashboardFileHoverPreview);
   __dashboardFileHoverPreview = preview;
   return preview;

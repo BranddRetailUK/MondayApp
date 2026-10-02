@@ -1943,7 +1943,7 @@ body.test-dashboard-mobile-job-open{
   gap:3px;
   justify-content:center;
   padding-left:3px;
-  padding-right:3px;
+  padding-right:9px;
   overflow:hidden;
 }
 .dashboard-file-strip{
@@ -1953,7 +1953,7 @@ body.test-dashboard-mobile-job-open{
   gap:3px;
   min-width:0;
   flex:1 1 auto;
-  overflow-x:auto;
+  overflow-x:hidden;
   overflow-y:hidden;
   overscroll-behavior-x:contain;
   scroll-behavior:auto;
@@ -1965,6 +1965,9 @@ body.test-dashboard-mobile-job-open{
 .dashboard-file-strip::-webkit-scrollbar{
   display:none;
 }
+.dashboard-file-strip.is-overflowing{
+  overflow-x:auto;
+}
 .dashboard-file-cell > .test-file-upload-add-button{
   flex:0 0 23px;
   margin-left:auto;
@@ -1972,7 +1975,7 @@ body.test-dashboard-mobile-job-open{
 .dashboard-file-hover-preview{
   position:fixed;
   z-index:10000;
-  width:min(340px, calc(100vw - 20px));
+  width:min(408px, calc(100vw - 20px));
   padding:7px;
   border:1px solid #6b7180;
   border-radius:8px;
@@ -1987,7 +1990,7 @@ body.test-dashboard-mobile-job-open{
   display:flex;
   align-items:center;
   justify-content:center;
-  height:min(250px, 42vh);
+  height:min(300px, 50vh);
   overflow:hidden;
   border-radius:4px;
   background:#f7f7f8;
@@ -2029,8 +2032,8 @@ body.test-dashboard-mobile-job-open{
   box-shadow:0 0 0 2px rgba(87,155,252,.35);
 }
 .dashboard-file-icon{
-  width:15px;
-  height:18px;
+  width:20px;
+  height:24px;
   border:1px solid #cfd1d6;
   background:#f2f3f5;
   border-radius:2px;
