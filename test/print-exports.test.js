@@ -8,6 +8,7 @@ const {ensurePrintExportTables}=require('../src/db/printExportSchema');
 const service=require('../src/services/printExports');
 const {TEST_DASHBOARD_COLUMN_IDS:ids}=require('../src/services/testDashboardDefaults');
 const {findProof,parseResult}=require('../tools/print-worker/local-files');
+const {acquireWorkerLock}=require('../tools/print-worker/worker-lock');
 const {workerAuth}=require('../src/routes/print-exports');
 
 test('eligible refs exclude PSG, stitch counts and old designs; boundary inclusive',()=>{
@@ -36,7 +37,9 @@ test('folder/proof lookup is exact, case-insensitive at suffix, and rejects ambi
     const pdf=await require('pdf-lib').PDFDocument.create();pdf.addPage();pdf.addPage();
     await fs.writeFile(path.join(dir,'27844 OLD CLIENT PROOF.PDF'),await pdf.save());
     await fs.mkdir(path.join(root,'129109 wrong'));
-    const result=await findProof(root,'29109');assert.equal(result.designFolder,await fs.realpath(dir));assert.equal(result.pdfPages,2);
+    const stages=[];const result=await findProof(root,'29109',message=>stages.push(message));
+    assert.equal(result.designFolder,await fs.realpath(dir));assert.equal(result.pdfPages,2);
+    assert.deepEqual(stages.slice(-3),['Reading proof bytes from the local design folder','Counting proof PDF pages','Local proof ready']);
     await fs.writeFile(path.join(dir,'other proof.ai'),'proof');await assert.rejects(findProof(root,'29109'),/found 2/);
     await assert.rejects(findProof(root,'28299'),/Ineligible/);
     await fs.unlink(path.join(dir,'other proof.ai'));
@@ -113,11 +116,33 @@ test('automation uses Hub design even when proof reference and filename are old'
   const configFunction=sourceText.slice(sourceText.indexOf('    function hubConfig('),sourceText.indexOf('    var originalInteraction='));
   const context={hubJob:{reference:'29109',designFolder:'E:/DESIGN FILES/29109 Ace'},
     Folder:function(p){return {exists:true,name:'29109 Ace',fsName:p};},
-    source:{fullName:{parent:{fsName:'E:/DESIGN FILES/29109 Ace'}},artboards:{length:1}},
+    proofFile:{exists:true,parent:{fsName:'E:/DESIGN FILES/29109 Ace'}},
+    source:{saved:false,artboards:{length:5}},
     ProofCore:{folderMatches:(name,ref)=>name.startsWith(ref+' ')}};
   vm.createContext(context);vm.runInContext(configFunction,context);
+  assert.doesNotThrow(()=>context.ensureSourceReady());
   const result=context.hubConfig({value:'27696',conflict:true,fromFilename:false});
   assert.equal(result.ref,'29109');assert.equal(result.root.fsName,'E:/DESIGN FILES/29109 Ace');
+  context.hubJob=null;
+  assert.throws(()=>context.ensureSourceReady(),/Save the proof/);
+});
+
+test('worker lock blocks a live owner and clears an exited owner',async()=>{
+  const {spawn}=require('node:child_process');
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'print-worker-lock-'));
+  const lock=path.join(dir,'worker.lock');
+  try {
+    const release=await acquireWorkerLock(lock);
+    await assert.rejects(acquireWorkerLock(lock),/Another worker is running/);
+    await release();
+    const child=spawn(process.execPath,['-e','process.exit(0)']);
+    await new Promise((resolve,reject)=>{child.on('error',reject);child.on('close',resolve);});
+    await fs.writeFile(lock,String(child.pid));
+    const recovered=await acquireWorkerLock(lock);
+    assert.equal(await fs.readFile(lock,'utf8'),String(process.pid));
+    await recovered();
+    await assert.rejects(fs.access(lock),{code:'ENOENT'});
+  } finally {await fs.rm(dir,{recursive:true,force:true});}
 });
 
 

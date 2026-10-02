@@ -1,6 +1,6 @@
 # Ultimate Hub print worker
 
-Current exporter/core: 1.13. The worker counts PDF pages, then Illustrator processes
+Current exporter: 1.14; detection core: 1.13. The worker counts PDF pages, then Illustrator processes
 each page or imported artboard. Embroidery positions are ignored. PNG model photos
 and vector flats may both serve as garment bases; output remains EPS for vector-only
 artwork and PNG for artwork containing raster images. Identical isolated artwork at
@@ -12,11 +12,17 @@ Install the **whole updated worker folder**, including `worker.js`, `local-files
 review and wait for its result to report, then restart the worker. Updating only the
 exporter folder will leave PDF page counting unavailable. The standalone worker
 still needs no npm installation.
-At startup the worker prints its running folder and `exporter 1.13`; it refuses to
+At startup the worker prints its running folder and `exporter 1.14`; it refuses to
 claim work if the exporter and detection core versions are mixed. If Hub still
 reports `Multi-artboard proofs require manual export.`, the workstation is using a
 pre-1.13 exporter from another folder. Locate the folder printed in the worker
 window, update that folder, preserve its `config.json`, then restart the worker.
+Worker 1.15 also heartbeats while it searches DESIGN FILES, hydrates the proof from
+OneDrive, and counts PDF pages. Its window and Hub task message show the current
+lookup stage; a slow local read no longer silently exhausts the 90-second claim.
+Queued PDF imports can appear unsaved in Illustrator; the exporter validates and
+copies the original proof file supplied by the worker. Manual Illustrator script
+runs still require a saved document.
 
 Confident, fully prepared proofs export automatically; uncertain detections, manual
 selections and preparation failures still show review. Successful exports open PRINT
@@ -67,7 +73,7 @@ When testing, turn the switch On, approve the intended test job, then turn it Of
 
 The server issues a unique claim for each attempt, renewed by a heartbeat. If contact is lost, the task needs attention instead of being automatically re-exported. A final result whose HTTP reply was lost is retried from the local pending record without launching Illustrator again.
 
-If the worker crashes or is forcibly closed, it intentionally leaves `worker.lock`. Check that no other worker or export is running before removing that file. Restart the worker to report a saved result. If it reports an unfinished previous export, close that export's review/temporary documents in Illustrator, inspect PRINT, preserve a copy of pending.json for diagnosis and move pending.json aside. Restart the worker, then use Retry export in Hub once the task needs attention. Do not kill Illustrator if it contains unsaved unrelated work.
+If the worker crashes or is forcibly closed, it can leave `worker.lock`. On restart, the worker removes that lock only when its recorded process ID has exited. A running worker's lock still prevents a second worker from controlling Illustrator. If the lock has no valid process ID, inspect Illustrator before removing it manually. The separate `pending.json` recovery guard remains: if the previous export has no saved result, close its Illustrator review/temporary documents, inspect PRINT, preserve a copy of pending.json for diagnosis and move pending.json aside. Restart the worker, then use Retry export in Hub once the task needs attention. Do not kill Illustrator if it contains unsaved unrelated work.
 
 Removing approval or changing design references stops a queued task before launch and is detected during worker heartbeats. Cancellation is cooperative at script checkpoints, including before copying each completed output. A file already written stays in PRINT; cancellation does not delete production files. A native Illustrator call/dialog cannot be forcibly interrupted safely, so dismiss the review when asked to stop. The worker does not launch another job until its Illustrator invocation finishes.
 

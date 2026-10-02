@@ -4,6 +4,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { spawn } = require('node:child_process');
 const { findProof, parseResult } = require('./local-files');
+const { acquireWorkerLock } = require('./worker-lock');
 const wait = ms=>new Promise(r=>setTimeout(r,ms));
 const exists = async p=>fs.access(p).then(()=>true,()=>false);
 const atomicJson = async (p,data)=>{ await fs.writeFile(p+'.tmp',JSON.stringify(data,null,2)); await fs.rename(p+'.tmp',p); };
@@ -18,14 +19,13 @@ async function main() {
   const exporter=path.join(__dirname,'exporter','Proof-Artwork-Exporter.jsx');
   const core=path.join(__dirname,'exporter','proof-core.js');
   const [exporterSource,coreSource]=await Promise.all([fs.readFile(exporter,'utf8'),fs.readFile(core,'utf8')]);
-  if(!exporterSource.includes('Proof Artwork Exporter 1.13')||!coreSource.includes("version:'1.13'"))
+  if(!exporterSource.includes('Proof Artwork Exporter 1.14')||!coreSource.includes("version:'1.13'"))
     throw new Error(`Worker files are out of date or mixed in ${__dirname}. Replace the complete worker folder before starting.`);
   const stateDir=path.join(process.env.LOCALAPPDATA||os.homedir(),'UltimateHub','PrintWorker');
   await fs.mkdir(stateDir,{recursive:true});
   // An exclusive local lock prevents two startup shortcuts driving the same Illustrator.
   const lockPath=path.join(stateDir,'worker.lock');
-  try { const lock=await fs.open(lockPath,'wx'); await lock.writeFile(String(process.pid)); await lock.close(); }
-  catch(e) { throw new Error('Worker lock exists. Close any other worker; if it crashed, inspect Illustrator and remove '+lockPath); }
+  const releaseLock=await acquireWorkerLock(lockPath);
   const api=async(route,body)=>{
     const response=await fetch(new URL(route,url.origin),{method:'POST',headers:{Authorization:`Bearer ${config.token}`,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(15000)});
     if(!response.ok) throw new Error(`Hub request failed (${response.status})`);
@@ -45,11 +45,22 @@ async function main() {
     const resultPath=path.join(dir,'result.xml'),progressPath=path.join(dir,'progress.txt'),cancelPath=path.join(dir,'cancel.flag');
     // Persist BEFORE launching, so a restart cannot silently rerun an uncertain attempt.
     let record={task,dir,resultPath,result:null}; await atomicJson(pending,record);
-    let child=null,finished=false,lastContact=Date.now(),heartbeatBusy=false,cancelled=false;
+    let child=null,finished=false,lastContact=Date.now(),heartbeatBusy=false,cancelled=false,locatingMessage='Finding local proof';
     const cancel=async message=>{cancelled=true;await fs.writeFile(cancelPath,message);};
-    let timer;
+    // Renew the claim during OneDrive directory scans and proof hydration too.
+    const timer=setInterval(async()=>{
+      if(heartbeatBusy||finished)return; heartbeatBusy=true;
+      try {
+        const progress=await fs.readFile(progressPath,'utf8').catch(()=>`processing\n${locatingMessage}`);
+        const [phase,...message]=progress.replace(/^\uFEFF/,'').split('\n');
+        const reply=await api(`/api/print-worker/tasks/${task.id}`,{claimToken:task.claimToken,status:phase==='awaiting_review'?'awaiting_review':'processing',message:message.join('\n')});
+        if(!reply.accepted) await cancel('Approval, design or claim changed'); else lastContact=Date.now();
+      } catch(e) { console.error(e.message); if(Date.now()-lastContact>45000) await cancel('Lost contact with Hub'); }
+      finally {heartbeatBusy=false;}
+    },10000);
     try {
-      const located=await findProof(config.designRoot,task.designNumber);
+      const located=await findProof(config.designRoot,task.designNumber,message=>{locatingMessage=message;console.log(message);});
+      if(cancelled)throw new Error('Task was cancelled while finding the proof');
       const job={reference:task.designNumber,proofPath:located.proof,designFolder:located.designFolder,pdfPages:located.pdfPages,resultPath,progressPath,cancelPath};
       await atomicJson(path.join(dir,'source.json'),{...located,taskId:task.id});
       const launcher=path.join(dir,'launch.jsx');
@@ -60,20 +71,11 @@ async function main() {
       const ps=path.join(process.env.SystemRoot||'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
       let stderr='';
       child=spawn(ps,['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','RemoteSigned','-File',path.join(__dirname,'run-illustrator.ps1'),'-ScriptPath',launcher],{windowsHide:true,stdio:['ignore','ignore','pipe']});
+      locatingMessage='Illustrator is processing';
       const completion=new Promise((resolve,reject)=>{
         child.stderr.on('data',d=>{stderr=(stderr+d.toString()).slice(-4000);});
         child.on('error',reject);child.on('close',code=>{finished=true;code===0?resolve():reject(new Error(stderr||`Illustrator launcher exited ${code}`));});
       });
-      timer=setInterval(async()=>{
-        if(heartbeatBusy||finished)return; heartbeatBusy=true;
-        try {
-          const progress=await fs.readFile(progressPath,'utf8').catch(()=> 'processing\nIllustrator is processing');
-          const [phase,...message]=progress.replace(/^\uFEFF/,'').split('\n');
-          const reply=await api(`/api/print-worker/tasks/${task.id}`,{claimToken:task.claimToken,status:phase==='awaiting_review'?'awaiting_review':'processing',message:message.join('\n')});
-          if(!reply.accepted) await cancel('Approval, design or claim changed'); else lastContact=Date.now();
-        } catch(e) { console.error(e.message); if(Date.now()-lastContact>45000) await cancel('Lost contact with Hub'); }
-        finally {heartbeatBusy=false;}
-      },10000);
       // Never kill Illustrator or launch another task while this call is still running.
       await completion;
       record.result=parseResult(await fs.readFile(resultPath,'utf8'));
@@ -92,7 +94,7 @@ async function main() {
       }
       await report(record);
     }
-    console.log(`Ultimate Hub print worker ready: exporter 1.13 from ${__dirname}. Keep this window running.`);
+    console.log(`Ultimate Hub print worker 1.15 ready: exporter 1.14 from ${__dirname}. Keep this window running.`);
     for(;;) {
       try {
         if(await exists(pending)) await report(JSON.parse(await fs.readFile(pending,'utf8')));
@@ -103,6 +105,6 @@ async function main() {
       } catch(e) {console.error(e.message);}
       await wait(10000);
     }
-  } finally {await fs.unlink(lockPath).catch(()=>{});}
+  } finally {await releaseLock();}
 }
 if(require.main===module) main().catch(e=>{console.error(e.message);process.exitCode=1;});

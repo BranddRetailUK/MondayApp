@@ -1,5 +1,5 @@
 #target illustrator
-/* Proof Artwork Exporter 1.13 - Windows Illustrator desktop.
+/* Proof Artwork Exporter 1.14 - Windows Illustrator desktop.
    Keep proof-core.js and png-helper.ps1 beside this file. Source documents are never saved/edited.
 */
 (function () {
@@ -19,8 +19,19 @@
         // Validate the resolved design folder, never substitute the proof's printed reference.
         var folder=new Folder(hubJob.designFolder);
         if(!folder.exists||!ProofCore.folderMatches(folder.name,hubJob.reference))throw Error('Invalid queued design folder.');
-        if(source.fullName.parent.fsName.toLowerCase()!==folder.fsName.toLowerCase())throw Error('Proof is outside the queued design folder.');
+        if(proofFile.parent.fsName.toLowerCase()!==folder.fsName.toLowerCase())throw Error('Proof is outside the queued design folder.');
         return {ref:hubJob.reference,root:folder,manual:false};
+    }
+    function ensureSourceReady() {
+        if(hubJob) {
+            // Imported PDFs can appear unsaved in Illustrator. The queued source
+            // file is already on disk and is what the snapshot exporter copies.
+            if(!proofFile.exists)throw Error('The queued proof is no longer available on disk.');
+        } else {
+            if(!source.saved)throw Error('Save the proof in Illustrator before running this version. It processes a temporary copy of the saved file.');
+            proofFile=source.fullName;
+            if(!proofFile.exists)throw Error('The saved proof is not available on disk.');
+        }
     }
     var originalInteraction=app.userInteractionLevel, originalCoordinates=app.coordinateSystem, originalPdfPage=app.preferences.PDFFileOptions.pageToOpen, stage='Starting';
     function openProof(file,page) {
@@ -251,7 +262,7 @@
         var config=new File(Folder.userData.fsName+'/ProofArtworkExporter-root.txt'),root='';
         if(config.exists)try{root=ProofCore.trim(read(config));}catch(e){}
         if(!root) root='E:/OneDrive - ultimate promotions/DESIGN FILES';
-        var d=new Window('dialog','Proof Artwork Exporter 1.13');d.alignChildren='fill';
+        var d=new Window('dialog','Proof Artwork Exporter 1.14');d.alignChildren='fill';
         d.add('statictext',undefined,'Open proof: '+source.name);
         var g=d.add('group');g.add('statictext',undefined,'Design reference');var refField=g.add('edittext',undefined,ref.value);refField.characters=14;
         if(ref.conflict||ref.fromFilename) d.add('statictext',undefined,ref.conflict?'Reference mismatch: check against the proof.':'Reference was taken from the filename: check it.');
@@ -280,7 +291,7 @@
         var g=d.add('group');g.add('button',undefined,'Cancel',{name:'cancel'});g.add('button',undefined,'Use folder',{name:'ok'});if(d.show()!==1)return null;return found[l.selection.index];
     }
     function review(rows,dest,ref) {
-        var d=new Window('dialog','Review isolated print artwork - exporter 1.13 / core '+(ProofCore.version||'unversioned'));d.orientation='column';d.alignChildren='fill';
+        var d=new Window('dialog','Review isolated print artwork - exporter 1.14 / core '+(ProofCore.version||'unversioned'));d.orientation='column';d.alignChildren='fill';
         var top=d.add('statictext',undefined,'Ref '+ref+'  |  '+dest.fsName);top.maximumSize.width=820;
         var body=d.add('group');body.alignChildren='top';
         var list=body.add('listbox',undefined,[]);list.preferredSize=[340,340];
@@ -378,18 +389,17 @@
             }
             proofFile=proof;source=openProof(proof,1);hubOpened=true;
         } else {
-            if(!app.documents.length)throw Error('Open your proof PDF or AI file in Illustrator first.');source=app.activeDocument;proofFile=source.fullName;
+            if(!app.documents.length)throw Error('Open your proof PDF or AI file in Illustrator first.');source=app.activeDocument;
         }
         app.coordinateSystem=CoordinateSystem.DOCUMENTCOORDINATESYSTEM;
-        if(!source.saved)throw Error('Save the proof in Illustrator before running this version. It processes a temporary copy of the saved file.');
-        if(!source.fullName.exists)throw Error('The saved proof is not available on disk.');
+        ensureSourceReady();
         var firstModel=model(source),ref=ProofCore.reference(firstModel.texts,source.name),config=hubJob?hubConfig(ref):settings(ref);if(!config)return;
         busy=new Window('palette','Proof Artwork Exporter');busy.message=busy.add('statictext',undefined,'Reading proof...');busy.message.preferredSize.width=580;busy.show();
         status('Finding design folder '+config.ref+'...');var designFolder=hubJob?config.root:findDestination(config.root,config.ref);if(!designFolder)return;
         var dest=printFolder(designFolder);
         // Optional diagnostics stay disabled during normal production use.
         var enableDiagnosticLog=false;
-        if(enableDiagnosticLog)trace=uniqueFile(dest,config.ref+'_EXPORT_PROGRESS','txt');checkpoint('Starting snapshot exporter 1.13');
+        if(enableDiagnosticLog)trace=uniqueFile(dest,config.ref+'_EXPORT_PROGRESS','txt');checkpoint('Starting snapshot exporter 1.14');
         temporary=new Folder(Folder.temp.fsName+'/ProofExporter-'+new Date().getTime()+'-'+Math.floor(Math.random()*100000));if(!temporary.create())throw Error('Cannot create temporary folder.');
         var rows=[],i,pageCount=hubJob&&/\.pdf$/i.test(proofFile.name)?Number(hubJob.pdfPages)||1:1,duplicateCount=0;
         if(config.manual){
