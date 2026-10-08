@@ -97,3 +97,16 @@ test('separate verified colours expand into sheets without splitting real combin
  const invalid={products:[{code:'RX350',colour:'Black and Imaginary',decorations:[]}]};
  await enrichProofProducts(invalid,{provider:'ralawise',pool:{query:async()=>({rows})}});assert.equal(invalid.products.length,1);assert.equal(invalid.products[0].visual.lookupIssue,'colour_not_found');
 });
+test('product picker lists sorted colours with active variants for the selected style only',async()=>{
+ const {PGlite}=require('@electric-sql/pglite');const db=new PGlite();
+ try{
+  await db.exec(`CREATE TABLE database_ralawise_catalog_styles(id int,style_code text,manufacturer_style_code text,style_name text,brand text);
+   CREATE TABLE database_ralawise_catalog_colours(id int,style_id int,colour_name text);
+   CREATE TABLE database_ralawise_catalog_variants(style_id int,colour_id int,is_active bool);
+   INSERT INTO database_ralawise_catalog_styles VALUES(1,'GD017','8900','Polo','Gildan'),(2,'GD002','2000','T-shirt','Gildan');
+   INSERT INTO database_ralawise_catalog_colours VALUES(1,1,'White'),(2,1,'Black'),(3,1,'Red'),(4,2,'Navy');
+   INSERT INTO database_ralawise_catalog_variants VALUES(1,1,true),(1,2,true),(1,2,true),(1,3,false),(2,4,true);`);
+  const results=await searchRalawiseProducts('GD017',{query:({text,values})=>db.query(text,values)});
+  assert.equal(results.length,1);assert.deepEqual(results[0].colours,['Black','White']);
+ }finally{await db.close();}
+});

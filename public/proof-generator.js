@@ -30,8 +30,12 @@
           <section class="proof-card">
             <div class="proof-card-heading"><span class="proof-step">01</span><div><h2>Proof request</h2></div></div>
             <div class="proof-product-search">
-              <label class="proof-label" for="proof-product-query">Find a product</label>
-              <input id="proof-product-query" type="search" maxlength="24" autocomplete="off" aria-describedby="proof-product-status" aria-controls="proof-product-results">
+              <div class="proof-product-picker">
+                <div><label class="proof-label" for="proof-product-query">Find a product</label>
+                <input id="proof-product-query" type="search" maxlength="24" autocomplete="off" aria-describedby="proof-product-status" aria-controls="proof-product-results"></div>
+                <div><label class="proof-label" for="proof-product-colour">Colour</label>
+                <select id="proof-product-colour" disabled><option value="">Select a product first</option></select></div>
+              </div>
               <div id="proof-product-status" class="proof-search-status" role="status" aria-live="polite"></div>
               <div id="proof-product-results" class="proof-search-results"></div>
             </div>
@@ -257,6 +261,7 @@
     if(busy)return;design=null;designId=null;try{sessionStorage.removeItem('proof-design-id');}catch(_){}
     request.value='';customer.value='';jobTitle.value='';instructions.value='';
     for(const art of artworks)if(art.url)URL.revokeObjectURL(art.url);artworks.length=0;artworksNode.replaceChildren();
+    resetProductPicker();productQuery.value='';productResults.replaceChildren();productStatus.textContent='';
     sourceChanged();results.replaceChildren();showDesign();setFeedback('Enter a new proof request.');request.focus();
   }
   newProof.addEventListener('click',startNewProof);
@@ -270,10 +275,24 @@
   const productQuery=root.querySelector('#proof-product-query');
   const productResults=root.querySelector('#proof-product-results');
   const productStatus=root.querySelector('#proof-product-status');
+  const productColour=root.querySelector('#proof-product-colour');
+  let selectedProduct=null;
+  function resetProductPicker(){
+    selectedProduct=null;productColour.replaceChildren(new Option('Select a product first',''));productColour.disabled=true;
+  }
+  productColour.addEventListener('change',()=>{
+    if(busy||!selectedProduct||!productColour.value)return;
+    const lines=request.value.split('\n'),index=lines.lastIndexOf(selectedProduct.line);
+    if(index<0){productStatus.textContent='The product line has been edited. Select the product again to add its colour.';return;}
+    const line=`${selectedProduct.title}, ${productColour.value}`;lines[index]=line;
+    const updated=lines.join('\n');
+    if(updated.length>request.maxLength){productStatus.textContent='The request is full. Shorten it before adding the colour.';return;}
+    request.value=updated;selectedProduct.line=line;sourceChanged();productStatus.textContent='';
+  });
   let searchTimer, searchController, searchVersion=0;
   productQuery.addEventListener('input',()=>{
     clearTimeout(searchTimer);searchController?.abort();const version=++searchVersion;
-    productResults.replaceChildren();
+    productResults.replaceChildren();resetProductPicker();
     const query=productQuery.value.trim();
     if(!/^[a-z0-9-]{2,24}$/i.test(query)){productStatus.textContent='';return;}
     productStatus.textContent='Searching catalogue…';
@@ -294,7 +313,12 @@
             const updated=request.value+(request.value&&!request.value.endsWith('\n')?'\n':'')+line;
             if(updated.length>request.maxLength){productStatus.textContent='The request is full. Shorten it before adding another product.';return;}
             request.value=updated;sourceChanged();request.focus();request.setSelectionRange(updated.length,updated.length);
-            productQuery.value='';productResults.replaceChildren();productStatus.textContent=`Added ${product.code}.`;
+            selectedProduct={title:line,line};productQuery.value=product.code;
+            productColour.replaceChildren(new Option('Select a colour',''));
+            for(const colour of [...new Set(product.colours||[])])productColour.append(new Option(colour,colour));
+            productColour.disabled=productColour.options.length<2;
+            productResults.replaceChildren();productStatus.textContent=productColour.disabled?'No active catalogue colours available.':'';
+            if(!productColour.disabled)productColour.focus({preventScroll:true});
           });
           productResults.append(button);
         }
@@ -411,6 +435,7 @@
     reviewButton.querySelector('[data-proof-button-label]').textContent = creating ? (designId?'Regenerating proof…':'Creating proof…') : designId?'Regenerate proof':'Create proof';
     newProof.disabled=creating;retrySave.disabled=creating;createNew.disabled=creating;
     editorScreen.querySelectorAll('input,textarea,select,#proof-dropzone,#proof-load-sample,.proof-remove').forEach(control=>{control.disabled=creating;});
+    productColour.disabled=creating||!selectedProduct||productColour.options.length<2;
   }
 
   async function reviewBrief() {

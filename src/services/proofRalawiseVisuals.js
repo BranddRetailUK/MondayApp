@@ -74,7 +74,11 @@ async function searchRalawiseProducts(query, pool) {
     if(!process.env.DATABASE_URL)throw new Error('Catalogue search requires the hosted catalogue connection.');
     pool=require('../db/pool');
   }
-  const {rows}=await pool.query({text:`SELECT s.style_code AS code, s.style_name AS name, s.brand
+  const {rows}=await pool.query({text:`SELECT s.style_code AS code, s.style_name AS name, s.brand,
+      COALESCE((SELECT JSONB_AGG(c.colour_name ORDER BY c.colour_name)
+        FROM database_ralawise_catalog_colours c WHERE c.style_id=s.id
+        AND EXISTS (SELECT 1 FROM database_ralawise_catalog_variants cv
+          WHERE cv.style_id=s.id AND cv.colour_id=c.id AND cv.is_active IS TRUE)), '[]'::jsonb) AS colours
     FROM database_ralawise_catalog_styles s
     WHERE (UPPER(s.style_code) LIKE $1 OR UPPER(s.manufacturer_style_code) LIKE $1)
       AND EXISTS (SELECT 1 FROM database_ralawise_catalog_variants v WHERE v.style_id=s.id AND v.is_active IS TRUE)
