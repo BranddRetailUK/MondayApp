@@ -130,6 +130,24 @@ async function saveOriginals(folder,originals,assertClaim){
     finally{await fs.unlink(temporary).catch(()=>{});}
   }
 }
+// Folder rename intent stays in local state so a lost acknowledgement can be replayed.
+async function finishFolderRename(parent,stateDir,marker,assertClaim){
+  if(marker.pendingFolderName){
+    const from=marker.folderName,to=marker.pendingFolderName;
+    for(const name of [from,to])if(typeof name!=='string'||name!==path.basename(name)||!name.startsWith(marker.designNumber+' ')||/[\\/<>:"|?*\x00-\x1f]/.test(name))throw new Error('Unsafe proof folder rename.');
+    const oldPath=path.join(parent,from),newPath=path.join(parent,to);
+    const inspect=async p=>{try{const stat=await fs.lstat(p);if(stat.isSymbolicLink()||!stat.isDirectory())throw new Error('Design folders must be real directories, not links.');return true;}catch(error){if(error.code==='ENOENT')return false;throw error;}};
+    const oldExists=await inspect(oldPath),newExists=await inspect(newPath);
+    if(oldExists&&newExists)throw new Error('The updated customer design folder already exists. It has not been overwritten.');
+    if(!oldExists&&!newExists)throw new Error('The proof folder is missing.');
+    if(oldExists){await assertClaim();await fs.rename(oldPath,newPath);}
+    marker={...marker,previousFolderName:from,folderName:to};delete marker.pendingFolderName;
+    await atomicJson(stateMarker(stateDir,marker.id),marker);
+  }
+  // Also repair the allocation journal if interrupted after updating the marker.
+  await atomicJson(path.join(stateDir,`proof-${marker.id}.json`),{designNumber:marker.designNumber,folderName:marker.folderName});
+  return marker;
+}
 async function saveDesignProof(root,stateDir,task,assertClaim=async()=>{}){
   if(!UUID.test(task.id)||!/^\d{5,10}$/.test(task.designNumber||'')||!task.folderName?.startsWith(task.designNumber+' ')||/[\\/\x00-\x1f]/.test(task.folderName)||!Number.isInteger(task.revision)||task.revision<1)throw new Error('Invalid proof destination.');
   const bytes=Buffer.from(task.pdf||'','base64'),hash=crypto.createHash('sha256').update(bytes).digest('hex');
@@ -139,10 +157,29 @@ async function saveDesignProof(root,stateDir,task,assertClaim=async()=>{}){
   const release=await acquireWorkerLock(path.join(stateDir,'proof-files.lock'));
   try{
     const parent=await directory(path.join(root,rangeFor(task.designNumber)));
+    const markerPath=stateMarker(stateDir,task.id);
+    let retained=await safeRead(markerPath);
+    if(retained){
+      if(retained.id!==task.id||retained.designNumber!==task.designNumber)throw new Error('This folder is not owned by the requested proof.');
+      if(retained.revision>task.revision)throw new Error('A newer proof is already saved.');
+      if(![retained.folderName,retained.previousFolderName].includes(task.folderName))throw new Error('This folder is not owned by the requested proof.');
+      retained=await finishFolderRename(parent,stateDir,retained,assertClaim);
+      task={...task,folderName:retained.folderName};
+    }
     const folder=await directory(path.join(parent,task.folderName));
-    const markerPath=stateMarker(stateDir,task.id);let marker=await loadMarker(folder,stateDir,task);
+    let marker=await loadMarker(folder,stateDir,task);
     if(marker?.id!==task.id||marker.designNumber!==task.designNumber)throw new Error('This folder is not owned by the requested proof.');
     if(marker.revision>task.revision)throw new Error('A newer proof is already saved.');
+    const desiredFolder=task.customer===undefined?task.folderName:`${task.designNumber} ${cleanCustomer(task.customer)}`;
+    if(desiredFolder!==task.folderName){
+      const collision=await fs.lstat(path.join(parent,desiredFolder)).catch(error=>{if(error.code==='ENOENT')return null;throw error;});
+      if(collision)throw new Error('The updated customer design folder already exists. It has not been overwritten.');
+    }
+    const finishSave=async filename=>{
+      if(desiredFolder!==marker.folderName){marker={...marker,pendingFolderName:desiredFolder};await atomicJson(markerPath,marker);}
+      marker=await finishFolderRename(parent,stateDir,marker,assertClaim);
+      return path.join(parent,marker.folderName,filename);
+    };
     await saveOriginals(folder,task.artworks||[],assertClaim);
     const safeName=name=>typeof name==='string'&&name===path.basename(name)&&!/[\\/<>:"|?*\x00-\x1f]/.test(name)&&name.startsWith(task.designNumber+' ')&&name.endsWith('PROOF.pdf');
     const fileHash=async name=>{
@@ -174,14 +211,14 @@ async function saveDesignProof(root,stateDir,task,assertClaim=async()=>{}){
     const stat=await fs.lstat(file).catch(e=>{if(e.code==='ENOENT')return null;throw e;});
     if(stat&&(stat.isSymbolicLink()||!stat.isFile()))throw new Error('Unsafe proof destination.');
     const current=stat?crypto.createHash('sha256').update(await fs.readFile(file)).digest('hex'):null;
-    if(current===hash){await atomicJson(markerPath,{...marker,fileName:filename,revision:task.revision,hash});return file;}
+    if(current===hash){marker={...marker,fileName:filename,revision:task.revision,hash};await atomicJson(markerPath,marker);return await finishSave(filename);}
     if(current && (!marker.hash||current!==marker.hash))throw new Error('The saved proof was changed outside Proof Generator. It has not been overwritten.');
     const temporary=path.join(folder,`.proof-${task.id}-${task.revision}-${crypto.randomUUID()}.tmp`);
     // A crash after rename but before metadata acknowledgement is recovered by its hash.
     await fs.writeFile(temporary,bytes,{flag:'wx'});
     try{await assertClaim();await fs.rename(temporary,file);}finally{await fs.unlink(temporary).catch(()=>{});}
-    await atomicJson(markerPath,{...marker,fileName:filename,revision:task.revision,hash});
-    return file;
+    marker={...marker,fileName:filename,revision:task.revision,hash};await atomicJson(markerPath,marker);
+    return await finishSave(filename);
   }finally{await release();}
 }
 module.exports={allocateDesign,saveDesignProof,cleanCustomer,rangeFor};

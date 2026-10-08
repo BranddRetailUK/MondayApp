@@ -231,8 +231,13 @@
   }
   request.addEventListener('input', sourceChanged);
   instructions.addEventListener('input', sourceChanged);
-  customer.addEventListener('input',sourceChanged);jobTitle.addEventListener('input',sourceChanged);
+  function metadataChanged(){
+    if(currentBrief){currentBrief.customer=customer.value;currentBrief.jobTitle=jobTitle.value;markDirty(false);setFeedback('Details changed. Regenerate proof to save the updated names.');}
+    else sourceChanged();
+  }
+  customer.addEventListener('input',metadataChanged);jobTitle.addEventListener('input',metadataChanged);
   function showDesign(){
+    reviewButton.querySelector('[data-proof-button-arrow]').hidden=busy||Boolean(designId);
     newProof.hidden=!designId;retrySave.hidden=!designId||['saved','folder_ready'].includes(design?.status);
     designStatus.textContent=design?.designNumber?`Design ${design.designNumber} · ${design.folderName||'Preparing folder'}${design.status==='saved'?' · Saved':design.status==='error'?' · Save needs attention':''}`:designId?'Waiting for ARTWORK-PC to allocate the design folder.':'';
     if(!busy)reviewButton.querySelector('[data-proof-button-label]').textContent=designId?'Regenerate proof':'Create proof';
@@ -436,7 +441,7 @@
     reviewButton.disabled = creating;
     reviewButton.setAttribute('aria-busy', String(creating));
     reviewButton.querySelector('.proof-button-spinner').hidden = !creating;
-    reviewButton.querySelector('[data-proof-button-arrow]').hidden = creating;
+    reviewButton.querySelector('[data-proof-button-arrow]').hidden = creating || Boolean(designId);
     reviewButton.querySelector('[data-proof-button-label]').textContent = creating ? (designId?'Regenerating proof…':'Creating proof…') : designId?'Regenerate proof':'Create proof';
     newProof.disabled=creating;retrySave.disabled=creating;createNew.disabled=creating;
     editorScreen.querySelectorAll('input,textarea,select,#proof-dropzone,#proof-load-sample,.proof-remove').forEach(control=>{control.disabled=creating;});
@@ -632,46 +637,16 @@
     const fallback=document.createElement('details');fallback.open=wasFallbackOpen;fallback.addEventListener('toggle',()=>{results.dataset.fallbackOpen=String(fallback.open);});fallback.className='proof-fallback';
     const fallbackTitle=document.createElement('summary');fallbackTitle.textContent='Adjust placement (fallback)';fallback.append(fallbackTitle);
 
-    currentBrief.products.forEach((product,pi)=>{
+    const views=document.createElement('div');views.className='proof-placement-views';
+    for(const page of currentPreview?.pages || []){
+      const product=currentBrief.products[page.productIndex];
+      if(!product)continue;
       const section=document.createElement('section');section.className='proof-product-editor';
       const heading=document.createElement('h3');heading.textContent=[product.code,product.name,colourName(product.colour)].filter(Boolean).join(' · ');section.append(heading);
-      const placementControls=new Map();
-      product.decorations.forEach(d=>{
-        const panel=document.createElement('details');panel.className='proof-decoration-editor';
-        const title=document.createElement('summary');title.textContent=d.position || 'Choose position';panel.append(title);
-        const grid=document.createElement('div');grid.className='proof-control-grid';
-        grid.append(selectField('Artwork',[['','Choose artwork'],...artworks.map(a=>[a.id,a.file.name])],d.artworkId,value=>{d.artworkId=value;}));
-        const positions=['left breast','right breast','front','back','upper back','nape','left sleeve','right sleeve','left hem','right hem'];
-        if(d.position&&!positions.includes(d.position))positions.push(d.position);
-        grid.append(selectField('Position',positions.map(p=>[p,p]),d.position,value=>{d.position=value;delete d.placement;}));
-        grid.append(inputField('Visible width (mm)',d.widthMm,value=>{d.widthMm=value;d.dimensionIssues=[];},{min:.1,max:3000}));
-        grid.append(inputField('Visible height (mm)',d.heightMm,value=>{d.heightMm=value;d.dimensionIssues=[];},{min:.1,max:3000}));
-        grid.append(selectField('Garment view',[['auto','Automatic'],['front','Front'],['back','Back'],['left','Left side'],['right','Right side']],d.view||'auto',value=>{d.view=value;delete d.placement;}));
-        grid.append(selectField('Placement reference',[['region','Printable region'],['collar','Marked collar'],['hem','Marked hem']],d.anchor||'region',value=>{d.anchor=value;delete d.placement;}));
-        grid.append(inputField('Horizontal offset (mm; + right)',d.offsetXmm,value=>{d.offsetXmm=value;delete d.placement;}));
-        grid.append(inputField('Vertical offset (mm; + down)',d.offsetYmm,value=>{d.offsetYmm=value;delete d.placement;}));
-        const p=currentPreview?.pages.flatMap(page=>page.productIndex===pi?page.placements:[]).find(p=>p.id===d.id);
-        const setPosition=(axis,value)=>{d.placement={x:d.placement?.x??p?.x??.5,y:d.placement?.y??p?.y??.3,[axis]:Number(value)/100};d.anchor='region';d.offsetXmm='';d.offsetYmm='';};
-        grid.append(inputField('Horizontal centre (%)',d.placement?d.placement.x*100:p?+(p.x*100).toFixed(1):'',value=>setPosition('x',value),{min:0,max:100}));
-        grid.append(inputField('Top edge (%)',d.placement?d.placement.y*100:p?+(p.y*100).toFixed(1):'',value=>setPosition('y',value),{min:0,max:100}));
-        grid.append(action('Reset automatic placement',()=>{delete d.placement;d.anchor='region';d.offsetXmm='';d.offsetYmm='';markDirty();renderEditor();}));
-        placementControls.set(d.id,()=>{
-          const values={'Visible width (mm)':d.widthMm,'Visible height (mm)':d.heightMm,
-            'Horizontal offset (mm; + right)':d.offsetXmm,'Vertical offset (mm; + down)':d.offsetYmm,
-            'Horizontal centre (%)':d.placement?+(d.placement.x*100).toFixed(2):'',
-            'Top edge (%)':d.placement?+(d.placement.y*100).toFixed(2):'', 'Placement reference':d.anchor||'region'};
-          for(const label of grid.querySelectorAll('label')){
-            const key=label.firstChild?.textContent,control=label.querySelector('input,select');
-            if(control&&Object.hasOwn(values,key))control.value=values[key]??'';
-          }
-        });
-        panel.append(grid);section.append(panel);
-      });
-      const views=document.createElement('div');views.className='proof-placement-views';
-      for(const page of currentPreview?.pages.filter(page=>page.productIndex===pi)||[]) views.append(viewEditor(product,page,id=>placementControls.get(id)?.()));
-      section.append(views);
-      fallback.append(section);
-    });
+      section.append(viewEditor(product,page));
+      views.append(section);
+    }
+    fallback.append(views);
     const hasGarment = currentPreview?.pages.some(page=>page.image);
     if(currentPreview?.pdf && hasGarment){
       const container=document.createElement('div');container.className='proof-pdf-pages proof-auto-preview';results.append(container);
@@ -721,14 +696,14 @@
     }catch(error){container.textContent=`PDF preview unavailable: ${error.message}`;}
   }
 
-  function viewEditor(product,page,syncControls) {
+  function viewEditor(product,page) {
     const wrap=document.createElement('div');wrap.className='proof-view-editor';
     const heading=document.createElement('h4');heading.textContent=`${page.view.toUpperCase()} view`;wrap.append(heading);
     if(!page.image){const text=document.createElement('p');text.textContent='No verified image for this view. Select an available matching view above.';wrap.append(text);return wrap;}
     product.calibrations ||= {};
     let selected=page.placements[0]?.id || product.decorations.find(d=>(d.view||'auto')===page.view)?.id || product.decorations[0]?.id;
     let drag=null;
-    const canvas=document.createElement('canvas');canvas.width=600;canvas.height=Math.round(600*page.height/page.width);canvas.className='proof-placement-canvas';canvas.tabIndex=0;canvas.setAttribute('aria-label',`${product.code} ${page.view} artwork placement. Use numeric controls for keyboard positioning.`);
+    const canvas=document.createElement('canvas');canvas.width=600;canvas.height=Math.round(600*page.height/page.width);canvas.className='proof-placement-canvas';canvas.tabIndex=0;canvas.setAttribute('aria-label',`${product.code} ${page.view} artwork placement. Drag artwork to move it; drag its corner handle to resize.`);
     const ctx=canvas.getContext('2d');const base=new Image();base.src=page.image;
     const images=new Map();for(const p of page.placements){const img=new Image();img.src=p.preview;images.set(p.id,img);img.onload=paint;}
     // Use one scale factor for both axes, based on the renderer's visible bounds.
@@ -779,9 +754,9 @@
     });
     const finishDrag=event=>{
       if(!drag)return;
-      const id=drag.d.id;drag=null;
+      drag=null;
       if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId);
-      syncControls(id);paint();
+      paint();
     };
     canvas.addEventListener('pointerup',finishDrag);
     canvas.addEventListener('pointercancel',finishDrag);

@@ -67,6 +67,10 @@ test('durable proof jobs allocate once, fence leases, reject stale saves and reu
   const stored=(await db.query('SELECT pdf,artworks FROM proof_design_jobs WHERE id=$1',[id])).rows[0];assert.equal(stored.pdf,null);assert.deepEqual(stored.artworks,[]);
   await assert.rejects(()=>service.queueSave(id,randomUUID(),0,bytes,{}),/has changed/);
   await service.queueSave(id,randomUUID(),1,bytes,{customer:'Changed'});assert.equal((await service.get(id)).designNumber,'29200');assert.equal((await service.get(id)).revision,2);
+  const renamedSave=await service.claim('production-pc');
+  await assert.rejects(()=>service.report(id,renamedSave.claimToken,{status:'saved',hash:renamedSave.hash,revision:renamedSave.revision,folderName:'29200 Wrong'}),/Invalid saved design folder/);
+  await service.report(id,renamedSave.claimToken,{status:'saved',hash:renamedSave.hash,revision:renamedSave.revision,folderName:'29200 Changed'});
+  assert.equal((await service.get(id)).folderName,'29200 Changed');
  }finally{await db.close();}
 });
 
@@ -227,4 +231,43 @@ test('archived test proofs are hidden and unclaimable while their design numbers
   const allocated=await service.report(next,claim.claimToken,{status:'reserve',proposedNumber:'29100'});
   assert.equal(allocated.designNumber,'29133');assert.equal((await service.list()).designs.length,1);
  }finally{await db.close();}
+});
+
+test('customer regeneration renames the owned folder and PDF, retains contents and replays safely',async()=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'proof-customer-')),root=path.join(dir,'designs'),state=path.join(dir,'state');
+ try{
+  await fs.mkdir(path.join(root,'29100-29199','29198 Previous'),{recursive:true});
+  const id=randomUUID(),destination=await allocateDesign(root,state,{id,customer:'Old customer'}),bytes=await pdfBytes('Proof');
+  const task={id,...destination,customer:'Old customer',jobTitle:'Old title',revision:1,pdf:bytes.toString('base64'),hash:createHash('sha256').update(bytes).digest('hex')};
+  const original=await saveDesignProof(root,state,task);await fs.writeFile(path.join(path.dirname(original),'keep.txt'),'retain');
+  const changed={...task,revision:2,customer:'New customer',jobTitle:'New title'};
+  const renamed=await saveDesignProof(root,state,changed);
+  assert.equal(path.basename(path.dirname(renamed)),'29199 New customer');
+  assert.equal(path.basename(renamed),'29199 - New customer - New title - PROOF.pdf');
+  assert.equal(await fs.readFile(path.join(path.dirname(renamed),'keep.txt'),'utf8'),'retain');
+  await assert.rejects(()=>fs.stat(path.dirname(original)),{code:'ENOENT'});
+  assert.equal(await saveDesignProof(root,state,changed),renamed);
+  assert.deepEqual(await allocateDesign(root,state,{id,customer:'New customer'}),{designNumber:'29199',folderName:'29199 New customer'});
+  const titleOnly=await saveDesignProof(root,state,{...changed,folderName:'29199 New customer',revision:3,jobTitle:'Third title'});
+  assert.equal(path.dirname(titleOnly),path.dirname(renamed));assert.equal(path.basename(titleOnly),'29199 - New customer - Third title - PROOF.pdf');
+  await fs.mkdir(path.join(path.dirname(path.dirname(titleOnly)),'29199 Conflict'));
+  await assert.rejects(()=>saveDesignProof(root,state,{...changed,folderName:'29199 New customer',revision:4,customer:'Conflict'}),/already exists/);
+  assert.deepEqual(await fs.readFile(titleOnly),bytes);
+ }finally{await fs.rm(dir,{recursive:true,force:true});}
+});
+
+test('customer folder rename recovers a crash between filesystem rename and journal acknowledgement',async()=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'proof-customer-recovery-')),root=path.join(dir,'designs'),state=path.join(dir,'state');
+ try{
+  await fs.mkdir(path.join(root,'29100-29199','29198 Previous'),{recursive:true});
+  const id=randomUUID(),destination=await allocateDesign(root,state,{id,customer:'Before'}),bytes=await pdfBytes('Proof');
+  const task={id,...destination,customer:'Before',jobTitle:'Job',revision:1,pdf:bytes.toString('base64'),hash:createHash('sha256').update(bytes).digest('hex')};
+  const file=await saveDesignProof(root,state,task),markerPath=path.join(state,`proof-${id}-state.json`);
+  const marker=JSON.parse(await fs.readFile(markerPath,'utf8'));marker.pendingFolderName='29199 After';await fs.writeFile(markerPath,JSON.stringify(marker));
+  await fs.rename(path.dirname(file),path.join(path.dirname(path.dirname(file)),marker.pendingFolderName));
+  const saved=await saveDesignProof(root,state,{...task,customer:'After',revision:2});
+  assert.equal(path.basename(path.dirname(saved)),'29199 After');assert.deepEqual(await fs.readFile(saved),bytes);
+  assert.equal(JSON.parse(await fs.readFile(markerPath,'utf8')).pendingFolderName,undefined);
+  assert.equal(JSON.parse(await fs.readFile(path.join(state,`proof-${id}.json`),'utf8')).folderName,'29199 After');
+ }finally{await fs.rm(dir,{recursive:true,force:true});}
 });

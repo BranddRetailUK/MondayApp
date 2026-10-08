@@ -120,7 +120,10 @@ function createService(pool){
       if(String(row.design_number||'')!==n)return {accepted:false,message:'Reserve the design number before creating its folder.'};
       await query("UPDATE proof_design_jobs SET design_number=$3,folder_name=$4,status='folder_ready',message='',lease_until=NULL,updated_at=NOW() WHERE id=$1 AND claim_token=$2",[id,token,n,folder]);
     }else if(result.status==='saved'&&row.status==='saving'&&result.hash===row.pdf_hash&&result.revision===row.revision){
-      await query("UPDATE proof_design_jobs SET status='saved',generation_status='complete',generation_message='',saved_revision=revision,pdf=NULL,artworks='[]'::jsonb,message='Saved in DESIGN FILES',lease_until=NULL,updated_at=NOW() WHERE id=$1 AND claim_token=$2",[id,token]);
+      const folder=result.folderName==null?row.folder_name:String(result.folderName);
+      const expected=`${row.design_number} ${require('../../tools/print-worker/proof-files').cleanCustomer(row.customer)}`;
+      if(result.folderName!=null&&folder!==expected)throw new Error('Invalid saved design folder result.');
+      await query("UPDATE proof_design_jobs SET folder_name=$3,status='saved',generation_status='complete',generation_message='',saved_revision=revision,pdf=NULL,artworks='[]'::jsonb,message='Saved in DESIGN FILES',lease_until=NULL,updated_at=NOW() WHERE id=$1 AND claim_token=$2",[id,token,folder]);
     }else throw new Error('Invalid file worker result.');
     return {accepted:true};
   }

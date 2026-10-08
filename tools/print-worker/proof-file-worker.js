@@ -21,7 +21,7 @@ async function runProofFileWorker(config,stateDir,{signal}={}){
         try{
           let result;
           if(task.operation==='allocate'){const folder=await allocateDesign(config.designRoot,stateDir,task,value=>{message=value;},async proposedNumber=>{const reservation=await report({status:'reserve',proposedNumber});if(!reservation.accepted)throw new Error('Proof allocation claim changed.');return reservation.designNumber;});result={status:'allocated',...folder};}
-          else{message='Saving proof PDF';await saveDesignProof(config.designRoot,stateDir,task,assertClaim);result={status:'saved',hash:task.hash,revision:task.revision};}
+          else{message='Saving proof PDF';const savedFile=await saveDesignProof(config.designRoot,stateDir,task,assertClaim);result={status:'saved',hash:task.hash,revision:task.revision,folderName:require('node:path').basename(require('node:path').dirname(savedFile))};}
           const acknowledgement=await report(result);if(!acknowledgement.accepted)throw new Error(acknowledgement.message||'Proof file claim changed.');
         }catch(error){console.error('Proof files:',error.message);await report({status:'error',message:error.message}).catch(()=>{});}
         finally{clearInterval(timer);while(heartbeatBusy)await wait(50);}
