@@ -1,0 +1,27 @@
+{
+  "measurementNote": "Approximate visible bounds sampled from 1300-pixel renders of user-supplied reference PDFs. These constrain placement proportions only, not physical calibration. Original PDFs remain outside the repository.",
+  "smallMarks": [
+    {"source":"29115 page 1","code":"RX350","view":"front","position":"left breast","garmentY":[202,775],"artworkY":[377,420],"tolerance":0.02},
+    {"source":"29115 page 1","code":"RX350","view":"front","position":"right sleeve","garmentY":[202,775],"artworkY":[405,423],"tolerance":0.02},
+    {"source":"29115 page 2","code":"AFP2","view":"front","position":"left breast","garmentY":[201,774],"artworkY":[406,447],"tolerance":0.02},
+    {"source":"29115 page 2","code":"AFP2","view":"front","position":"right sleeve","garmentY":[201,774],"artworkY":[429,446],"tolerance":0.02},
+    {"source":"29115 page 3","code":"LV290","view":"front","position":"left breast","garmentY":[205,768],"artworkY":[337,379],"tolerance":0.02},
+    {"source":"29115 page 3","code":"LV290","view":"front","position":"right sleeve","garmentY":[205,768],"artworkY":[377,394],"tolerance":0.02},
+    {"source":"29115 page 4","code":"LV370","view":"front","position":"left breast","garmentY":[208,768],"artworkY":[342,384],"tolerance":0.02},
+    {"source":"29115 page 4","code":"LV370","view":"front","position":"right sleeve","garmentY":[208,768],"artworkY":[399,417],"tolerance":0.02},
+    {"source":"29115 page 5","code":"SS8","view":"front","position":"left breast","garmentY":[198,780],"artworkY":[337,379],"tolerance":0.02},
+    {"source":"29115 page 5","code":"SS8","view":"front","position":"right sleeve","garmentY":[198,780],"artworkY":[382,400],"tolerance":0.02},
+    {"source":"29115 page 6","code":"03824","view":"front","position":"left breast","garmentY":[206,775],"artworkY":[353,395],"tolerance":0.02},
+    {"source":"29115 page 6","code":"03824","view":"front","position":"right sleeve","garmentY":[206,775],"artworkY":[394,412],"tolerance":0.02},
+    {"source":"29039 side left","name":"T-shirt","view":"left","position":"left sleeve","garmentY":[278,756],"artworkY":[427,450],"tolerance":0.02},
+    {"source":"29039 side right","name":"T-shirt","view":"right","position":"right sleeve","garmentY":[278,756],"artworkY":[420,447],"tolerance":0.02},
+    {"source":"29018 front","name":"T-shirt","view":"front","position":"left breast","garmentY":[282,758],"artworkY":[377,400],"tolerance":0.04}
+  ],
+  "compositions": [
+    {"source":"29104 front","position":"front","garmentY":[158,732],"artworkY":[271,543],"tolerance":0.02},
+    {"source":"29104 back","position":"back","garmentY":[158,732],"artworkY":[238,588],"tolerance":0.02},
+    {"source":"29039 front","position":"front","garmentY":[282,758],"artworkY":[366,662],"tolerance":0.035},
+    {"source":"29039 back","position":"back","garmentY":[282,758],"artworkY":[332,674],"tolerance":0.02},
+    {"source":"29018 back","position":"back","garmentY":[282,758],"artworkY":[375,427],"tolerance":0.02}
+  ]
+}

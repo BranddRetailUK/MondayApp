@@ -2,8 +2,10 @@
   "name": "ultimate-hub",
   "version": "1.0.0",
   "main": "server.js",
+  "engines": { "node": "22.x" },
   "scripts": {
     "start": "node server.js",
+    "preview:proof-generator": "node scripts/preview-proof-generator.js",
     "import:database-mdb": "node scripts/import-database-mdb.js",
     "verify:mdb-invoices": "node scripts/verify-mdb-invoice-numbers.js",
     "verify:mdb-numbering": "node scripts/verify-mdb-invoice-numbers.js",
@@ -21,9 +23,12 @@
     "test:reports": "node --test test/database-reports.test.js",
     "test:holiday-board": "node --test test/holiday-board.test.js test/holiday-reference.test.js",
     "verify:holiday-board": "node scripts/verify-holiday-board.js",
-    "test:print-exports": "node --test test/print-exports*.test.js test/dashboard-approval-status.test.js test/dashboard-sampling.test.js test/dashboard-private-jobs.test.js test/dashboard-design-display.test.js"
+    "test:print-exports": "node --test test/print-exports*.test.js test/dashboard-approval-status.test.js test/dashboard-sampling.test.js test/dashboard-private-jobs.test.js test/dashboard-design-display.test.js",
+    "test:proof-generator": "node --test test/proof-generator.test.js test/proof-generator-hosted.test.js test/proof-generator-views.test.js test/proof-design-files.test.js",
+    "smoke:proof-generator": "node scripts/smoke-proof-generator.js"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^0.1.80",
     "cloudinary": "^2.10.0",
     "cors": "^2.8.5",
     "csv-parse": "^6.2.1",
@@ -31,7 +36,9 @@
     "express": "^4.21.2",
     "multer": "^2.0.2",
     "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.10.38",
     "pg": "^8.16.3",
+    "sharp": "^0.35.4",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

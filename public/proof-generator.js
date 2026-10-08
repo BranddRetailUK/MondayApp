@@ -1,0 +1,607 @@
+(async function () {
+  const {colourName}=window.ProofDisplay;
+  const root = document.getElementById('proof-generator-root');
+  if (!root) return;
+  const localPreview = document.body.classList.contains('proof-preview');
+  if (!localPreview) {
+    const user = await window.ultimateHubUserPromise;
+    if (!user || user.access_scope === 'dtf_only' || String(user.email || '').trim().toLowerCase() !== 'production@ultimatepromotions.co.uk') return;
+  }
+
+  root.innerHTML = `
+    <div class="proof-page">
+      <header class="proof-page-header">
+        <div>
+          <div class="proof-eyebrow">PRODUCTION</div>
+          <h1>Proof Generator</h1>
+          <p>Describe the job and attach the artwork to create a clothing proof.</p>
+        </div>
+        <span class="proof-preview-badge">${localPreview ? 'LOCAL PREVIEW' : 'PRODUCTION TESTING'}</span>
+      </header>
+      <div class="proof-layout">
+        <div class="proof-form-column">
+          <section class="proof-card">
+            <div class="proof-card-heading"><span class="proof-step">01</span><div><h2>Proof request</h2><p>Paste the customer request as received. Include garments, colours, decoration positions and sizes.</p></div></div>
+            <div class="proof-product-search">
+              <label class="proof-label" for="proof-product-query">Find a product</label>
+              <input id="proof-product-query" type="search" maxlength="24" autocomplete="off" placeholder="Search Ralawise product code, e.g. RX350" aria-describedby="proof-product-status" aria-controls="proof-product-results">
+              <div id="proof-product-status" class="proof-search-status" role="status" aria-live="polite">Enter at least 2 characters, then select a product to add it to your request.</div>
+              <div id="proof-product-results" class="proof-search-results"></div>
+            </div>
+            <div class="proof-job-fields">
+              <label class="proof-control">Customer name<input id="proof-customer" type="text" maxlength="200" autocomplete="off"></label>
+              <label class="proof-control">Job title<input id="proof-job-title" autocomplete="off" type="text" maxlength="200"></label>
+            </div>
+            <div id="proof-design-status" class="proof-design-status" role="status"></div>
+            <label class="proof-label" for="proof-request">Request</label>
+            <textarea id="proof-request" class="proof-textarea proof-main-request" maxlength="20000"></textarea>
+            <button class="proof-sample-button" id="proof-load-sample" type="button">Use AC Solutions example</button>
+          </section>
+          <section class="proof-card">
+            <div class="proof-card-heading"><span class="proof-step">02</span><div><h2>Artwork</h2><p>Attach each design. Describe its position and size in the request above.</p></div></div>
+            <input id="proof-file-input" type="file" accept=".png,.jpg,.jpeg,.webp,.svg,.pdf,.eps,.ai" multiple hidden>
+            <button id="proof-dropzone" class="proof-dropzone" type="button"><span class="proof-upload-icon" aria-hidden="true">↥</span><strong>Choose artwork files</strong><span>or drag them here · PNG, JPG, SVG or PDF for proof creation</span></button>
+            <div id="proof-artworks" class="proof-artwork-list"></div>
+          </section>
+          <section class="proof-card">
+            <div class="proof-card-heading"><span class="proof-step">03</span><div><h2>Special instructions</h2><p>Add anything that should guide this proof in particular.</p></div></div>
+            <label class="proof-label" for="proof-instructions">Instructions</label>
+            <textarea id="proof-instructions" class="proof-textarea" maxlength="5000" placeholder="For example: one page per product type; use a side view for the sleeve position."></textarea>
+          </section>
+          <div class="proof-form-actions"><button id="proof-review" class="proof-primary-button" type="button"><span class="proof-button-spinner" aria-hidden="true" hidden></span><span data-proof-button-label>Create proof</span><span data-proof-button-arrow aria-hidden="true">→</span></button><button id="proof-new" class="proof-secondary-button" type="button" hidden>New proof</button><button id="proof-retry-save" class="proof-secondary-button" type="button" hidden>Retry folder/save</button><span id="proof-feedback" role="status" aria-live="polite"></span></div>
+        </div>
+        <aside class="proof-review-column">
+          <section class="proof-card proof-review-card" aria-live="polite">
+            <div class="proof-review-title"><div class="proof-eyebrow">PROOF OUTPUT</div><h2>Clothing proof</h2></div>
+            <div id="proof-results" class="proof-results-empty"><div class="proof-empty-mark" aria-hidden="true">✦</div><strong>Ready when you are</strong><p>Enter the request and artwork details, then create the proof here.</p></div>
+          </section>
+        </aside>
+      </div>
+    </div>`;
+
+  const request = root.querySelector('#proof-request');
+  const customer=root.querySelector('#proof-customer'),jobTitle=root.querySelector('#proof-job-title');
+  const designStatus=root.querySelector('#proof-design-status'),newProof=root.querySelector('#proof-new'),retrySave=root.querySelector('#proof-retry-save');
+  let design=null,designId=null;
+  try{designId=sessionStorage.getItem('proof-design-id');}catch(_){}
+  const instructions = root.querySelector('#proof-instructions');
+  const input = root.querySelector('#proof-file-input');
+  const dropzone = root.querySelector('#proof-dropzone');
+  const artworksNode = root.querySelector('#proof-artworks');
+  const results = root.querySelector('#proof-results');
+  const reviewButton = root.querySelector('#proof-review');
+  const feedback = root.querySelector('#proof-feedback');
+  const artworks = [];
+  let currentBrief = null;
+  let currentPreview = null;
+  let busy = false;
+  let dirty = true;
+  function sourceChanged() {
+    currentBrief = null; currentPreview = null; dirty = true;
+    results.querySelectorAll('button').forEach(button => { button.disabled = true; });
+    setFeedback(`Request changed. ${designId?'Regenerate':'Create'} the proof to apply it.`);
+  }
+  request.addEventListener('input', sourceChanged);
+  instructions.addEventListener('input', sourceChanged);
+  customer.addEventListener('input',sourceChanged);jobTitle.addEventListener('input',sourceChanged);
+  function showDesign(){
+    newProof.hidden=!designId;retrySave.hidden=!designId||['saved','folder_ready'].includes(design?.status);
+    designStatus.textContent=design?.designNumber?`Design ${design.designNumber} · ${design.folderName||'Preparing folder'}${design.status==='saved'?' · Saved':design.status==='error'?' · Save needs attention':''}`:designId?'Waiting for ARTWORK-PC to allocate the design folder.':'';
+    if(!busy)reviewButton.querySelector('[data-proof-button-label]').textContent=designId?'Regenerate proof':'Create proof';
+  }
+  async function designRequest(path,body){
+    const response=await fetch(`/api/proof-generator/designs${path}`,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{cache:'no-store'});
+    const data=await response.json();if(!response.ok)throw new Error(data.error||'Design folder request failed.');return data.design;
+  }
+  async function awaitDesign(saved=false){
+    const id=designId,started=Date.now();
+    while(Date.now()-started<90000){
+      if(id!==designId)return;
+      design=await designRequest(`/${id}`);showDesign();
+      if(design.status==='error')throw new Error(design.message||'The design folder needs attention.');
+      if(saved?design.status==='saved':!!(design.designNumber&&design.folderName))return;
+      setFeedback(saved?'Waiting for ARTWORK-PC to save the proof…':'Waiting for ARTWORK-PC to reserve the next design number…');
+      await new Promise(resolve=>setTimeout(resolve,2000));
+    }
+    throw new Error('ARTWORK-PC has not finished the folder/save request. Keep its updated print worker running, then use Retry folder/save. This proof keeps its reserved identity.');
+  }
+  async function reserveDesign(brief){
+    if(localPreview)return;
+    if(!designId){designId=crypto.randomUUID();try{sessionStorage.setItem('proof-design-id',designId);}catch(_){}showDesign();}
+    design=await designRequest('',{id:designId,customer:brief.customer,jobTitle:brief.jobTitle});
+    if(design.status==='error')design=await designRequest(`/${designId}/retry`,{});
+    await awaitDesign();
+    if(['save_queued','saving'].includes(design.status))await awaitDesign(true);
+    brief.proofDesignId=design.id;brief.reference=design.designNumber;brief.proofRevision=design.revision;
+  }
+  newProof.addEventListener('click',()=>{
+    if(busy)return;design=null;designId=null;try{sessionStorage.removeItem('proof-design-id');}catch(_){}
+    request.value='';customer.value='';jobTitle.value='';instructions.value='';
+    for(const art of artworks)if(art.url)URL.revokeObjectURL(art.url);artworks.length=0;artworksNode.replaceChildren();
+    sourceChanged();results.replaceChildren();showDesign();setFeedback('Enter a new proof request.');request.focus();
+  });
+  retrySave.addEventListener('click',async()=>{
+    if(busy||!designId)return;busy=true;retrySave.disabled=true;
+    try{design=await designRequest(`/${designId}/retry`,{});await awaitDesign(['save_queued','saving'].includes(design.status));showDesign();setFeedback(design.status==='saved'?'Proof saved in DESIGN FILES.':'Design folder ready. Regenerate the proof to continue.');}
+    catch(error){setFeedback(error.message,true);}finally{busy=false;retrySave.disabled=false;showDesign();}
+  });
+  if(designId&&!localPreview){const restoringId=designId;designRequest(`/${restoringId}`).then(value=>{if(designId!==restoringId)return;design=value;showDesign();}).catch(()=>{showDesign();});}
+
+  const productQuery=root.querySelector('#proof-product-query');
+  const productResults=root.querySelector('#proof-product-results');
+  const productStatus=root.querySelector('#proof-product-status');
+  let searchTimer, searchController, searchVersion=0;
+  productQuery.addEventListener('input',()=>{
+    clearTimeout(searchTimer);searchController?.abort();const version=++searchVersion;
+    productResults.replaceChildren();
+    const query=productQuery.value.trim();
+    if(!/^[a-z0-9-]{2,24}$/i.test(query)){productStatus.textContent='Enter at least 2 letters or numbers from the product code.';return;}
+    productStatus.textContent='Searching catalogue…';
+    searchTimer=setTimeout(async()=>{
+      const controller=new AbortController();searchController=controller;
+      try{
+        const response=await fetch(`/api/proof-generator/products?q=${encodeURIComponent(query)}`,{signal:controller.signal});
+        const data=await response.json();
+        if(version!==searchVersion)return;
+        if(!response.ok)throw new Error(data.error || 'Catalogue search is unavailable.');
+        productStatus.textContent=data.products.length?'Select a product to add it to the request.':'No matching products. Try another product code.';
+        for(const product of data.products){
+          const button=document.createElement('button');button.type='button';button.className='proof-search-result';
+          const title=document.createElement('strong');title.textContent=`${product.code} — ${colourName(product.name)}`;
+          const detail=document.createElement('span');detail.textContent=product.brand || 'Ralawise';button.append(title,detail);
+          button.addEventListener('click',()=>{
+            const line=`${product.code} - ${colourName(product.name)}`.trim();
+            const updated=request.value+(request.value&&!request.value.endsWith('\n')?'\n':'')+line;
+            if(updated.length>request.maxLength){productStatus.textContent='The request is full. Shorten it before adding another product.';return;}
+            request.value=updated;sourceChanged();request.focus();request.setSelectionRange(updated.length,updated.length);
+            productQuery.value='';productResults.replaceChildren();productStatus.textContent=`Added ${product.code}. Add its colour in the request, or search for another product.`;
+          });
+          productResults.append(button);
+        }
+      }catch(error){if(version===searchVersion&&error.name!=='AbortError')productStatus.textContent=error.message;}
+    },250);
+  });
+
+  root.querySelector('#proof-load-sample').addEventListener('click', () => {
+    sourceChanged();
+    request.value = `Customer: AC Solutions\nDesign number / ref: 29115\n\nEmbroidered:\nLeft breast - AC Solutions logo, 100 mm wide\nRight sleeve - DAIKIN logo, 75 mm wide\n\nRX350 - RTX Hoodie, Navy\nAFP2 - Stormtech padded coat, Navy\nLV290 - F&H T-Shirts, Navy & white\nLV370 - F&H piped polo shirts, Navy & white\nSS8 - FOTL Sweatshirt, Navy\n03824 - SOLS fleece, Navy`;
+    request.focus();
+  });
+
+  dropzone.addEventListener('click', () => input.click());
+  input.addEventListener('change', () => { addFiles(input.files); input.value = ''; });
+  for (const eventName of ['dragenter', 'dragover']) {
+    dropzone.addEventListener(eventName, (event) => { event.preventDefault(); dropzone.classList.add('dragging'); });
+  }
+  for (const eventName of ['dragleave', 'drop']) {
+    dropzone.addEventListener(eventName, (event) => { event.preventDefault(); dropzone.classList.remove('dragging'); });
+  }
+  dropzone.addEventListener('drop', (event) => addFiles(event.dataTransfer.files));
+  reviewButton.addEventListener('click', () => reviewBrief([]));
+
+  function addFiles(files) {
+    for (const file of Array.from(files || [])) {
+      if (artworks.length >= 20) { setFeedback('Add no more than 20 artwork files.', true); break; }
+      if (!/\.(png|jpe?g|webp|svg|pdf|eps|ai)$/i.test(file.name)) { setFeedback(`Unsupported file: ${file.name}`, true); continue; }
+      const item = { id: crypto.randomUUID(), backgroundMode: 'auto', file, assignment: '', notes: '', url: file.type.startsWith('image/') ? URL.createObjectURL(file) : '' };
+      if (file.size > 10 * 1024 * 1024) { setFeedback('Each artwork must be no larger than 10 MB.', true); continue; }
+      sourceChanged();
+      artworks.push(item);
+      renderArtwork(item);
+    }
+  }
+
+  function renderArtwork(item) {
+    const card = document.createElement('div');
+    card.className = 'proof-artwork-card';
+    const thumb = document.createElement('div');
+    thumb.className = 'proof-artwork-thumb';
+    if (item.url) {
+      const image = document.createElement('img');
+      image.src = item.url;
+      image.alt = '';
+      thumb.append(image);
+    } else {
+      thumb.textContent = item.file.name.split('.').pop().toUpperCase();
+      if(/\.(pdf|ai)$/i.test(item.file.name))renderArtworkThumbnail(item.file,thumb);
+    }
+    const body = document.createElement('div');
+    body.className = 'proof-artwork-fields';
+    const title = document.createElement('div');
+    title.className = 'proof-artwork-title';
+    const name = document.createElement('strong');
+    name.textContent = item.file.name;
+    title.append(name);
+    const fileType = document.createElement('span');
+    fileType.className = 'proof-artwork-type';
+    fileType.textContent = item.file.name.split('.').pop().toUpperCase();
+    body.append(title, fileType);
+    card.append(thumb, body);
+    artworksNode.append(card);
+  }
+
+  async function renderArtworkThumbnail(file,thumb){
+    try{
+      const pdfjs=await import('/api/proof-generator/renderer/pdf.mjs');
+      pdfjs.GlobalWorkerOptions.workerSrc='/api/proof-generator/renderer/pdf.worker.mjs';
+      const doc=await pdfjs.getDocument({data:new Uint8Array(await file.arrayBuffer()),isEvalSupported:false}).promise;
+      try{
+        const page=await doc.getPage(1),base=page.getViewport({scale:1});
+        const viewport=page.getViewport({scale:156/Math.max(base.width,base.height)});
+        const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
+        await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+        const image=document.createElement('img');image.alt='';image.src=canvas.toDataURL();thumb.replaceChildren(image);
+      }finally{await doc.destroy();}
+    }catch(_){/* Keep the filetype tile for files without a supported preview. */}
+  }
+
+  function setFeedback(message, error = false) {
+    feedback.textContent = message;
+    feedback.classList.toggle('error', error);
+  }
+
+  function setCreating(creating) {
+    reviewButton.disabled = creating;
+    reviewButton.setAttribute('aria-busy', String(creating));
+    reviewButton.querySelector('.proof-button-spinner').hidden = !creating;
+    reviewButton.querySelector('[data-proof-button-arrow]').hidden = creating;
+    reviewButton.querySelector('[data-proof-button-label]').textContent = creating ? (designId?'Regenerating proof…':'Creating proof…') : designId?'Regenerate proof':'Create proof';
+    newProof.disabled=creating;retrySave.disabled=creating;
+  }
+
+  async function reviewBrief() {
+    if (busy) return;
+    if (!request.value.trim()) { request.focus(); setFeedback('Enter the proof request first.', true); return; }
+    if (!artworks.length) { setFeedback('Attach artwork first so each decoration can be assigned to a file.', true); return; }
+    busy = true; setCreating(true);
+    const submittedSource=JSON.stringify([customer.value,jobTitle.value,request.value,instructions.value,artworks.map(a=>[a.id,a.assignment,a.notes])]);
+    setFeedback('Reading the brief and resolving artwork assignments…');
+    try {
+      const readinessResponse = await fetch('/api/proof-generator/status', { cache: 'no-store' });
+      const readiness = await readinessResponse.json();
+      if (!readinessResponse.ok || !readiness.ready) {
+        throw new Error(readiness.error || 'Proof Generator is temporarily unavailable. Ask an administrator to check the AI and PDF service configuration.');
+      }
+      const response = await fetch('/api/proof-generator/parse', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({
+        customer:customer.value,jobTitle:jobTitle.value,requestText:request.value, specialInstructions:instructions.value,
+        artworks:artworks.map(({id,file,assignment,notes})=>({id,fileName:file.name,assignment,notes})), answers:[],
+      }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Could not read the brief.');
+      if(submittedSource!==JSON.stringify([customer.value,jobTitle.value,request.value,instructions.value,artworks.map(a=>[a.id,a.assignment,a.notes])]))throw new Error('The request changed while it was being read. Create the proof again to apply it.');
+      await reserveDesign(payload.brief);
+      currentBrief = payload.brief; currentPreview = null; dirty = true;
+      renderEditor();
+      await updatePreview();
+    } catch(error) { setFeedback(error.message, true); }
+    finally { busy = false; setCreating(false); }
+  }
+
+  async function uploadForm(brief,includeOriginals=false) {
+    const form = new FormData();
+    form.append('brief', JSON.stringify(brief));
+    form.append('artworkDetails', JSON.stringify(artworks.map(({id,file,assignment,notes,backgroundMode})=>({id,originalName:file.name,assignment,notes,backgroundMode}))));
+    for (const item of artworks) {
+      const file = await prepareArtworkFile(item.file);
+      form.append('artworks', file, file.name);
+      if(includeOriginals)form.append('originalArtworks',item.file,item.file.name);
+    }
+    return form;
+  }
+
+  async function updatePreview(loadSaved = true) {
+    if (!currentBrief) return;
+    if(loadSaved)await prepareMissingViews();
+    if (!currentBrief) return;
+    const snapshot = JSON.stringify(currentBrief);
+    const targetBrief = currentBrief;
+    const requestFiles = artworks.map(a=>a.id).join(',');
+    setFeedback('Measuring visible artwork and preparing garment views…');
+    const response = await fetch('/api/proof-generator/preview', {method:'POST',body:await uploadForm(targetBrief)});
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Could not prepare the preview.');
+    if (targetBrief !== currentBrief || snapshot !== JSON.stringify(currentBrief) || requestFiles !== artworks.map(a=>a.id).join(',')) return;
+    currentBrief = payload.brief; currentPreview = payload;
+    if(loadSaved){
+      let loaded=false;
+      for(const page of payload.pages){
+        const product=currentBrief.products[page.productIndex];
+        if(Object.keys(product.calibrations?.[page.view] || {}).some(key=>key!=='sourceHash'))continue;
+        try{
+          const saved=localStorage.getItem(`proof-calibration-v1:${product.code}:${product.colour}:${page.view}:${page.sourceHash}`);
+          if(saved){product.calibrations||={};product.calibrations[page.view]=JSON.parse(saved);loaded=true;}
+        }catch(_) { /* A corrupt or unavailable local template must not block automatic proofs. */ }
+      }
+      if(loaded)return updatePreview(false);
+    }
+    dirty = false;
+    renderEditor();
+    const hasGarment = payload.pages.some(page => page.image);
+    setFeedback(!hasGarment ? 'Proof paused: garment images could not be loaded. See the message below.' : payload.issues.some(i=>i.blocking) ? 'Resolve the highlighted proof issues before downloading.' : 'Preview ready. Check placement and scale, then download.');
+    if(!localPreview&&designId&&!payload.issues.some(i=>i.blocking)){
+      const saveTarget=currentBrief;saveTarget.proofSaveKey=crypto.randomUUID();saveTarget.proofRevision=design.revision;
+      setFeedback('Saving the proof to its design folder…');
+      const saved=await fetch('/api/proof-generator/save',{method:'POST',body:await uploadForm(saveTarget,true)});const savedData=await saved.json();
+      if(!saved.ok)throw new Error(savedData.error||'Could not save proof.');
+      design=savedData.design;showDesign();await awaitDesign(true);
+      if(currentBrief===saveTarget){currentBrief.proofRevision=design.revision;setFeedback(`Proof saved under design ${design.designNumber}.`);}
+    }
+  }
+
+  async function prepareMissingViews() {
+    const target = currentBrief;
+    const snapshot = JSON.stringify(target);
+    setFeedback('Loading garment views and checking for missing angles…');
+    const response = await fetch('/api/proof-generator/views', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brief:target})});
+    const task = await response.json();
+    if(!response.ok)throw new Error(task.error || 'Could not prepare garment views.');
+    const started = Date.now();
+    while(Date.now()-started<40*60*1000){
+      if(currentBrief!==target || JSON.stringify(target)!==snapshot)return;
+      await new Promise(resolve=>setTimeout(resolve,2000));
+      const poll = await fetch(`/api/proof-generator/views/${encodeURIComponent(task.jobId)}`,{cache:'no-store'});
+      const job = await poll.json();
+      if(!poll.ok || job.state==='failed')throw new Error(job.error || 'Could not prepare garment views.');
+      if(currentBrief!==target || JSON.stringify(target)!==snapshot)return;
+      setFeedback(job.message || 'Generating missing garment views…');
+      if(job.state==='complete'){currentBrief=job.brief;return;}
+    }
+    throw new Error('Garment view preparation is taking longer than expected. Create the proof again to reuse completed views.');
+  }
+
+  function markDirty() {
+    dirty = true;
+    results.querySelectorAll('[data-download]').forEach(button=>{button.disabled=true;});
+    setFeedback('Placement changed. Resave proof to apply your position and scale edits.');
+  }
+
+  function inputField(label, value, change, {min, max, step='any'} = {}) {
+    const node=document.createElement('label'); node.className='proof-control'; node.textContent=label;
+    const control=document.createElement('input'); control.type='number'; control.step=step;
+    if(min!=null)control.min=min;if(max!=null)control.max=max;
+    control.value=value == null?'':value;
+    control.addEventListener('input',()=>{change(control.value);markDirty();});
+    node.append(control); return node;
+  }
+  function selectField(label, options, value, change) {
+    const node=document.createElement('label'); node.className='proof-control'; node.textContent=label;
+    const select=document.createElement('select');
+    for(const [id,name] of options){const option=document.createElement('option');option.value=id;option.textContent=name;select.append(option);}
+    select.value=value || '';
+    select.addEventListener('change',()=>{change(select.value);markDirty();});
+    node.append(select);return node;
+  }
+  function action(label, fn, className='proof-secondary-button') {
+    const button=document.createElement('button');button.type='button';button.className=className;button.textContent=label;
+    button.addEventListener('click',async()=>{
+      if(busy)return;
+      busy=true;button.disabled=true;reviewButton.disabled=true;
+      try{await fn();}catch(error){setFeedback(error.message,true);}
+      finally{busy=false;button.disabled=false;reviewButton.disabled=false;}
+    });return button;
+  }
+
+  async function downloadPdf(productIndex) {
+    if(dirty || !currentBrief)throw new Error('Update the preview before downloading.');
+    const snapshot=JSON.stringify(currentBrief);
+    const suffix=productIndex===undefined?'':`?productIndex=${productIndex}`;
+    const response=await fetch(`/api/proof-generator/create${suffix}`,{method:'POST',body:await uploadForm(currentBrief)});
+    if(!response.ok){const payload=await response.json();throw new Error(payload.error || 'Could not create PDF.');}
+    if(dirty || snapshot!==JSON.stringify(currentBrief))throw new Error('The brief changed during export. Update the preview and download again.');
+    const url=URL.createObjectURL(await response.blob());const link=document.createElement('a');link.href=url;
+    const productDocument=currentPreview.documents?.find(item=>item.productIndex===productIndex);
+    link.download=productDocument?.fileName || currentPreview.fileName || 'PROOF.pdf';
+    link.hidden=true;document.body.append(link);link.click();link.remove();
+    setFeedback('PDF ready. Your browser will save the download.');
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+  }
+
+  function renderEditor() {
+    if(!currentBrief)return;
+    results.className='proof-results proof-editor';results.replaceChildren();
+    const summary=document.createElement('p');summary.textContent=[currentBrief.customer,currentBrief.reference,currentBrief.jobTitle].filter(Boolean).join(' · ');results.append(summary);
+    const help=document.createElement('p');help.className='proof-editor-help';help.textContent='Artwork is sized and placed automatically from your brief. Review the proof below; adjustments are available only if needed.';results.append(help);
+    const actions=document.createElement('div');actions.className='proof-question-actions';
+
+    const download=action(currentBrief.products.length>1?'Download all as multipage PDF':'Download PDF',()=>downloadPdf());
+    download.dataset.download='true';download.disabled=dirty || !currentPreview || currentPreview.issues.some(i=>i.blocking);actions.append(download);results.append(actions);
+    const blockers=(currentPreview?.issues || []).filter(issue=>issue.blocking);
+    const notices=(currentPreview?.issues || []).filter(issue=>!issue.blocking);
+    if(blockers.length){
+      const list=document.createElement('ul');list.className='proof-issues';
+      for(const issue of blockers){const li=document.createElement('li');li.className=issue.blocking?'blocking':'';const product=currentBrief.products[issue.productIndex];const mark=product.decorations.find(d=>d.id===issue.decorationId);li.textContent=`${product.code || product.name}${mark?' / '+mark.position:''}: ${issue.message}`;list.append(li);}
+      results.append(list);
+    }
+    const wasFallbackOpen=results.dataset.fallbackOpen==='true';
+    const fallback=document.createElement('details');fallback.open=wasFallbackOpen;fallback.addEventListener('toggle',()=>{results.dataset.fallbackOpen=String(fallback.open);});fallback.className='proof-fallback';
+    const fallbackTitle=document.createElement('summary');fallbackTitle.textContent='Adjust placement (fallback)';fallback.append(fallbackTitle);
+    const fallbackHelp=document.createElement('p');fallbackHelp.textContent='Use these controls only when the automatic proof needs correction. You can also revise the text request and create it again.';fallback.append(fallbackHelp);
+
+    currentBrief.products.forEach((product,pi)=>{
+      const section=document.createElement('section');section.className='proof-product-editor';
+      const heading=document.createElement('h3');heading.textContent=[product.code,product.name,colourName(product.colour)].filter(Boolean).join(' · ');section.append(heading);
+      product.decorations.forEach(d=>{
+        const panel=document.createElement('details');panel.className='proof-decoration-editor';
+        const title=document.createElement('summary');title.textContent=d.position || 'Choose position';panel.append(title);
+        const grid=document.createElement('div');grid.className='proof-control-grid';
+        grid.append(selectField('Artwork',[['','Choose artwork'],...artworks.map(a=>[a.id,a.file.name])],d.artworkId,value=>{d.artworkId=value;}));
+        const positions=['left breast','right breast','front','back','upper back','nape','left sleeve','right sleeve','left hem','right hem'];
+        if(d.position&&!positions.includes(d.position))positions.push(d.position);
+        grid.append(selectField('Position',positions.map(p=>[p,p]),d.position,value=>{d.position=value;delete d.placement;}));
+        grid.append(inputField('Visible width (mm)',d.widthMm,value=>{d.widthMm=value;d.dimensionIssues=[];},{min:.1,max:3000}));
+        grid.append(inputField('Visible height (mm)',d.heightMm,value=>{d.heightMm=value;d.dimensionIssues=[];},{min:.1,max:3000}));
+        const note=document.createElement('small');note.textContent='Leave one dimension blank to preserve proportions. Leave both blank for Size to confirm.';grid.append(note);
+        grid.append(selectField('Garment view',[['auto','Automatic'],['front','Front'],['back','Back'],['left','Left side'],['right','Right side']],d.view||'auto',value=>{d.view=value;delete d.placement;}));
+        grid.append(selectField('Placement reference',[['region','Printable region'],['collar','Marked collar'],['hem','Marked hem']],d.anchor||'region',value=>{d.anchor=value;delete d.placement;}));
+        grid.append(inputField('Horizontal offset (mm; + right)',d.offsetXmm,value=>{d.offsetXmm=value;delete d.placement;}));
+        grid.append(inputField('Vertical offset (mm; + down)',d.offsetYmm,value=>{d.offsetYmm=value;delete d.placement;}));
+        const p=currentPreview?.pages.flatMap(page=>page.productIndex===pi?page.placements:[]).find(p=>p.id===d.id);
+        const setPosition=(axis,value)=>{d.placement={x:d.placement?.x??p?.x??.5,y:d.placement?.y??p?.y??.3,[axis]:Number(value)/100};d.anchor='region';d.offsetXmm='';d.offsetYmm='';};
+        grid.append(inputField('Horizontal centre (%)',d.placement?d.placement.x*100:p?+(p.x*100).toFixed(1):'',value=>setPosition('x',value),{min:0,max:100}));
+        grid.append(inputField('Top edge (%)',d.placement?d.placement.y*100:p?+(p.y*100).toFixed(1):'',value=>setPosition('y',value),{min:0,max:100}));
+        grid.append(action('Reset automatic placement',()=>{delete d.placement;d.anchor='region';d.offsetXmm='';d.offsetYmm='';markDirty();renderEditor();}));
+        panel.append(grid);section.append(panel);
+      });
+      for(const page of currentPreview?.pages.filter(page=>page.productIndex===pi)||[]) section.append(viewEditor(product,page));
+      fallback.append(section);
+    });
+    fallback.append(action('Resave proof',()=>updatePreview(false),'proof-primary-button'));
+    const hasGarment = currentPreview?.pages.some(page=>page.image);
+    if(currentPreview?.pdf && hasGarment){
+      const container=document.createElement('div');container.className='proof-pdf-pages proof-auto-preview';results.append(container);
+      renderDocument(currentPreview.pdf,container,currentPreview.documents || []);
+    }
+    if(notices.length){
+      const notes=document.createElement('details');const title=document.createElement('summary');title.textContent='Proof notes';notes.append(title);
+      const list=document.createElement('ul');list.className='proof-issues';
+      for(const message of [...new Set(notices.map(i=>i.message))]){const li=document.createElement('li');li.textContent=message;list.append(li);}
+      notes.append(list);results.append(notes);
+    }
+    if(hasGarment)results.append(fallback);
+  }
+
+  function openProofPreview(encoded,pageNumber){
+    const previousFocus=document.activeElement,dialog=document.createElement('dialog');dialog.className='proof-fullscreen';
+    dialog.setAttribute('aria-label','Full screen proof preview');
+    const bar=document.createElement('div');bar.className='proof-fullscreen-bar';
+    const title=document.createElement('strong');title.textContent='Proof preview';
+    const close=document.createElement('button');close.type='button';close.className='proof-secondary-button';close.textContent='Close preview';close.addEventListener('click',()=>dialog.close());bar.append(title,close);
+    const viewer=document.createElement('div');viewer.className='proof-fullscreen-pages';dialog.append(bar,viewer);document.body.append(dialog);
+    dialog.addEventListener('close',()=>{dialog.remove();previousFocus?.focus();});dialog.showModal();close.focus();
+    renderDocument(encoded,viewer,[],{onlyPage:pageNumber,clickable:false});
+  }
+
+  async function renderDocument(encoded,container,documents=[],{onlyPage,clickable=true}={}){
+    try{
+      const pdfjs=await import('/api/proof-generator/renderer/pdf.mjs');
+      pdfjs.GlobalWorkerOptions.workerSrc='/api/proof-generator/renderer/pdf.worker.mjs';
+      const data=Uint8Array.from(atob(encoded),c=>c.charCodeAt(0));
+      const doc=await pdfjs.getDocument({data,isEvalSupported:false}).promise;
+      try{for(let i=1;i<=doc.numPages;i++){
+        if(onlyPage&&i!==onlyPage)continue;
+        if(!container.isConnected)break;
+        const documentInfo=documents[i-1];
+        if(documentInfo){
+          const heading=document.createElement('div');heading.className='proof-product-download';
+          const title=document.createElement('strong');title.textContent=[documentInfo.code,colourName(documentInfo.colour)].filter(Boolean).join(' · ');heading.append(title);
+          if(doc.numPages>1){const button=action('Download product PDF',()=>downloadPdf(documentInfo.productIndex));button.dataset.download='true';button.disabled=dirty||currentPreview.issues.some(issue=>issue.blocking);heading.append(button);}
+          container.append(heading);
+        }
+        const page=await doc.getPage(i);const base=page.getViewport({scale:1});const viewport=page.getViewport({scale:Math.max(.75,(container.clientWidth||600)/base.width)});
+        const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);canvas.setAttribute('aria-label',`Proof page ${i} of ${doc.numPages}`);container.append(canvas);
+        if(clickable){canvas.tabIndex=0;canvas.setAttribute('role','button');canvas.setAttribute('aria-label',`Open proof sheet ${i} full screen`);canvas.title='Click to view full screen';canvas.classList.add('proof-clickable-preview');canvas.addEventListener('click',()=>openProofPreview(encoded,i));canvas.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openProofPreview(encoded,i);}});}
+        await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+      }}finally{await doc.destroy();}
+    }catch(error){container.textContent=`PDF preview unavailable: ${error.message}`;}
+  }
+
+  function viewEditor(product,page) {
+    const wrap=document.createElement('div');wrap.className='proof-view-editor';
+    const heading=document.createElement('h4');heading.textContent=`${page.view.toUpperCase()} view`;wrap.append(heading);
+    if(!page.image){const text=document.createElement('p');text.textContent='No verified image for this view. Select an available matching view above.';wrap.append(text);return wrap;}
+    product.calibrations ||= {};
+    const getCalibration=()=>{
+      if(!product.calibrations[page.view])product.calibrations[page.view]={sourceHash:page.sourceHash};
+      return product.calibrations[page.view];
+    };
+    let selected=page.placements[0]?.id || product.decorations.find(d=>(d.view||'auto')===page.view)?.id || product.decorations[0]?.id;
+    let tool='move',start=null,drag=null;
+    const canvas=document.createElement('canvas');canvas.width=600;canvas.height=Math.round(600*page.height/page.width);canvas.className='proof-placement-canvas';canvas.tabIndex=0;canvas.setAttribute('aria-label',`${product.code} ${page.view} artwork placement. Use numeric controls for keyboard positioning.`);
+    const ctx=canvas.getContext('2d');const base=new Image();base.src=page.image;
+    const images=new Map();for(const p of page.placements){const img=new Image();img.src=p.preview;images.set(p.id,img);img.onload=paint;}
+    // Use one scale factor for both axes, based on the renderer's visible bounds.
+    function bounds(p){
+      const d=product.decorations.find(d=>d.id===p.id),pos=d.placement||p;
+      const scale=Number(d.widthMm)>0?Number(d.widthMm)/p.size.width:Number(d.heightMm)>0?Number(d.heightMm)/p.size.height:1;
+      return {x:pos.x,y:pos.y,width:p.width*scale,height:p.height*scale};
+    }
+    function paint(){
+      ctx.fillStyle='#eee';ctx.fillRect(0,0,canvas.width,canvas.height);
+      if(base.complete&&base.naturalWidth)ctx.drawImage(base,0,0,canvas.width,canvas.height);
+      for(const p of page.placements){
+        const position=bounds(p);
+        const x=(position.x-position.width/2)*canvas.width,y=position.y*canvas.height,w=position.width*canvas.width,h=position.height*canvas.height;
+        const img=images.get(p.id);if(img?.complete&&img.naturalWidth)ctx.drawImage(img,x,y,w,h);
+        ctx.strokeStyle=p.id===selected?'#0873c8':'#777';ctx.lineWidth=2;ctx.strokeRect(x,y,w,h);
+        if(p.id===selected){ctx.fillStyle='#0873c8';ctx.fillRect(x+w-7,y+h-7,14,14);ctx.strokeStyle='#fff';ctx.strokeRect(x+w-7,y+h-7,14,14);}
+      }
+      const c=product.calibrations[page.view];ctx.strokeStyle='#cf2270';ctx.fillStyle='#cf2270';ctx.lineWidth=3;
+      if(c?.start&&c?.end){ctx.beginPath();ctx.moveTo(c.start.x*canvas.width,c.start.y*canvas.height);ctx.lineTo(c.end.x*canvas.width,c.end.y*canvas.height);ctx.stroke();}
+      for(const [label,point] of [['A',c?.start],['B',c?.end],['Collar',c?.collar],['Hem',c?.hem]])if(point){ctx.beginPath();ctx.arc(point.x*canvas.width,point.y*canvas.height,5,0,Math.PI*2);ctx.fill();ctx.font='16px sans-serif';ctx.fillText(label,point.x*canvas.width+8,point.y*canvas.height+5);}
+    }
+    base.onload=paint;
+    const message=document.createElement('p');message.className='proof-editor-help';message.textContent='Drag artwork to move it. Drag the blue bottom-right handle to resize proportionally, then Resave proof.';
+    const point=event=>{const box=canvas.getBoundingClientRect();return{x:Math.max(0,Math.min(1,(event.clientX-box.left)/box.width)),y:Math.max(0,Math.min(1,(event.clientY-box.top)/box.height))};};
+    canvas.addEventListener('pointerdown',event=>{
+      if(busy)return;
+      const q=point(event),c=getCalibration();
+      if(tool==='span'){
+        if(!start){start=q;c.start=q;delete c.end;message.textContent='Click the second end of the measured span.';}
+        else{c.end=q;start=null;tool='move';message.textContent='Enter the real span length in mm, then update preview.';}markDirty();paint();return;
+      }
+      if(tool==='collar'||tool==='hem'){c[tool]=q;tool='move';markDirty();paint();return;}
+      const active=page.placements.find(p=>p.id===selected),box=canvas.getBoundingClientRect();
+      if(active){
+        const pos=bounds(active);
+        if(Math.abs(q.x-pos.x-pos.width/2)*box.width<=12&&Math.abs(q.y-pos.y-pos.height)*box.height<=12){
+          drag={mode:'scale',d:product.decorations.find(d=>d.id===active.id),p:active,left:pos.x-pos.width/2,top:pos.y};
+          canvas.setPointerCapture(event.pointerId);event.preventDefault();return;
+        }
+      }
+      const hit=[...page.placements].reverse().find(p=>{const pos=bounds(p);return q.x>=pos.x-pos.width/2&&q.x<=pos.x+pos.width/2&&q.y>=pos.y&&q.y<=pos.y+pos.height;});
+      if(hit){selected=hit.id;const d=product.decorations.find(d=>d.id===hit.id);const pos=bounds(hit);drag={mode:'move',d,dx:q.x-pos.x,dy:q.y-pos.y};canvas.setPointerCapture(event.pointerId);paint();}
+    });
+    canvas.addEventListener('pointermove',event=>{
+      if(!drag)return;const q=point(event);
+      if(drag.mode==='scale'){
+        const {p,left,top}=drag;
+        // Project onto the artwork diagonal in pixel space to preserve its aspect ratio.
+        const w=p.width*canvas.width,h=p.height*canvas.height;
+        const scale=Math.max(.1/Math.min(p.size.width,p.size.height),Math.min(3000/Math.max(p.size.width,p.size.height),((q.x-left)*canvas.width*w+(q.y-top)*canvas.height*h)/(w*w+h*h)));
+        drag.d.widthMm=p.size.width*scale;drag.d.heightMm='';drag.d.dimensionIssues=[];
+        drag.d.placement={x:left+p.width*scale/2,y:top};
+      }else drag.d.placement={x:Math.max(0,Math.min(1,q.x-drag.dx)),y:Math.max(0,Math.min(1,q.y-drag.dy))};
+      drag.d.offsetXmm='';drag.d.offsetYmm='';drag.d.anchor='region';markDirty();paint();
+    });
+    const finishDrag=()=>{if(drag){drag=null;renderEditor();}};
+    canvas.addEventListener('pointerup',finishDrag);
+    canvas.addEventListener('pointercancel',finishDrag);
+    const controls=document.createElement('div');controls.className='proof-control-grid';
+    controls.append(action('Mark measured span',()=>{tool='span';start=null;message.textContent='Click both ends of a span whose real length you know.';}));
+    controls.append(inputField('Measured span (mm)',getCalibration().referenceMm,value=>{getCalibration().referenceMm=value;},{min:1,max:3000}));
+    controls.append(action('Mark collar',()=>{tool='collar';message.textContent='Click the collar reference point.';}));
+    controls.append(action('Mark hem',()=>{tool='hem';message.textContent='Click the hem reference point.';}));
+    const templateKey=`proof-calibration-v1:${product.code}:${product.colour}:${page.view}:${page.sourceHash}`;
+    controls.append(action('Save garment template',()=>{localStorage.setItem(templateKey,JSON.stringify(getCalibration()));message.textContent='Template saved for this style, colour and supplier image in this browser.';}));
+    controls.append(action('Load garment template',()=>{const saved=localStorage.getItem(templateKey);if(!saved)throw new Error('No saved template matches this garment image.');product.calibrations[page.view]=JSON.parse(saved);markDirty();renderEditor();}));
+    controls.append(action('Clear calibration',()=>{delete product.calibrations[page.view];markDirty();renderEditor();}));
+    const regions=document.createElement('details');const label=document.createElement('summary');label.textContent='Printable regions and landmarks';regions.append(label);
+    const regionControls=document.createElement('div');regionControls.className='proof-control-grid';
+    for(const p of page.placements){
+      const d=product.decorations.find(d=>d.id===p.id);
+      for(const [key,name] of [['left','left'],['top','top'],['width','width'],['height','height'],['x','anchor centre'],['y','anchor top']]){
+        const r=getCalibration().regions?.[d.position]||p.region;
+        regionControls.append(inputField(`${d.position}: ${name} (%)`,+(r[key]*100).toFixed(1),value=>{const c=getCalibration();c.regions||={};c.regions[d.position]||={...p.region};c.regions[d.position][key]=Number(value)/100;paint();},{min:0,max:100}));
+      }
+    }
+    // All canvas calibration operations also have keyboard-editable coordinates.
+    for(const [key,name] of [['start','Span A'],['end','Span B'],['collar','Collar'],['hem','Hem']])for(const axis of ['x','y']){
+      regionControls.append(inputField(`${name} ${axis.toUpperCase()} (%)`,getCalibration()[key]?.[axis]==null?'':+(getCalibration()[key][axis]*100).toFixed(1),value=>{const c=getCalibration();c[key]||={x:.5,y:.5};c[key][axis]=Number(value)/100;paint();},{min:0,max:100}));
+    }
+    regions.append(regionControls);wrap.append(canvas,message,controls,regions);paint();return wrap;
+  }
+
+  async function prepareArtworkFile(file) {
+    if(!/\.svg$/i.test(file.name))return file;
+    const url=URL.createObjectURL(file);
+    try{
+      const img=new Image();img.src=url;await img.decode();
+      const scale=Math.min(4,4000/Math.max(img.naturalWidth,img.naturalHeight));
+      const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
+      canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+      const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
+      if(!blob)throw new Error('SVG rendering failed.');
+      return new File([blob],file.name.replace(/\.svg$/i,'.png'),{type:'image/png'});
+    }finally{URL.revokeObjectURL(url);}
+  }
+})();

@@ -1,0 +1,2 @@
+# Preserve the proof template bytes on Windows worker/development checkouts.
+assets/proof-generator/template.pdf binary

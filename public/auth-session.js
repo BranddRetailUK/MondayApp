@@ -33,8 +33,14 @@
     const dtfOnly = user?.access_scope === 'dtf_only';
     document.body.classList.toggle('hub-access-dtf-only', dtfOnly);
     document.querySelectorAll('.nav-tabs li[data-tab]').forEach((tab) => {
-      tab.hidden = dtfOnly && tab.dataset.tab !== 'dtf-uploader';
+      tab.hidden = (dtfOnly && tab.dataset.tab !== 'dtf-uploader')
+        || (tab.dataset.tab === 'proof-generator' && !isProductionProofUser(user));
     });
+  }
+
+  function isProductionProofUser(user) {
+    return user?.access_scope !== 'dtf_only'
+      && String(user?.email || '').trim().toLowerCase() === 'production@ultimatepromotions.co.uk';
   }
 
   function updateSidebarUser(user) {

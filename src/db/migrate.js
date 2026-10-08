@@ -91,6 +91,7 @@ async function initDb() {
   // Denormalized Access/MDB import tables for the dashboard DATABASE tab.
   await ensureDatabaseTables(pool);
   await require('./printExportSchema').ensurePrintExportTables(pool);
+  await require('./proofGeneratorSchema').ensureProofGeneratorTables(pool);
 }
 
 module.exports = { initDb };

@@ -1,5 +1,10 @@
 # Ultimate Hub print worker
 
+Worker **1.21** also reserves Proof Generator design folders and saves/regenerates their PDF. It uses the existing `config.json` `designRoot` (production: `E:\OneDrive - ultimatepromotions\DESIGN FILES`), worker ID, Hub URL and token. Keep that private config when replacing the complete worker folder. The `proof-file-worker.js`, `proof-files.js` and `proof-filename.js` files must be included. Folder saving runs without Illustrator and while Print exports is Off; Illustrator exports retain their existing behavior.
+
+New proofs use the higher of the next filesystem number and the next number after all Hub reservations. Hub reserves that number before a folder is created. Deleted folders cannot cause number reuse, and the same customer name never links separate new proofs. Retries retain their reserved number and create a new 100-number parent when needed. Worker 1.21 can recover an old failed duplicate-number allocation by moving its own empty, unsaved folder to the new number; folders containing files are preserved for review. After updating, use Retry folder/save on the failed proof, then Regenerate proof. Regenerate retains the folder and replaces `<number> - <customer> - <job title> - PROOF.pdf` atomically, omitting blank name/title parts. Name/title changes rename the owned proof. Original uploads are saved in `pre-print`; valid original filenames (including Unicode) are retained exactly and identical files are reused. Invalid Windows names and different artwork with an existing filename stop with a review message instead of renaming or overwriting. Ownership/hash checks prevent overwriting unrelated or manually changed files. Folder/save errors appear in the Proof Generator; Retry folder/save reuses the same reservation. All ownership records and journals are kept in LocalAppData; preserve these across updates. No service JSON is created in new design folders. Existing `.ultimate-proof.json` files migrate into LocalAppData when the design is next used. The server requires worker 1.21 (proofFilesVersion 4) for proof jobs so older versions cannot bypass number reservation or omit artwork copies.
+
+
 Current exporter: 1.15; detection core: 1.14. The worker counts PDF pages, then Illustrator processes
 each page or imported artboard. Embroidery positions are ignored. PNG model photos
 and vector flats may both serve as garment bases; output remains EPS for vector-only
@@ -46,7 +51,7 @@ The first release retains Illustrator's artwork review dialog. Settings and fold
 Deploy the accompanying Hub code from the feature branch after review. Normal startup creates the queue table. No existing approvals are backfilled.
 
 1. Generate a long random token, for example with Node: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
-2. Add that value as Railway `PRINT_EXPORT_WORKER_TOKEN`. Keep it private; this token can claim and report print work only.
+2. Add that value as Railway `PRINT_EXPORT_WORKER_TOKEN`. Keep it private; this token can claim and report print work and proof folder/file jobs only.
 3. The sidebar **Print exports** switch starts **Off**. Complete workstation setup, then sign in as `production@ultimatepromotions.co.uk` and turn it On immediately above Sign out. The setting is stored in Postgres and takes effect without a restart. Other accounts cannot see or change this switch. The former PRINT_EXPORT_ENABLED environment flag is no longer used.
 4. The Dashboard has a **Print exports** button showing the latest 200 tasks and their results. Export state does not change STATUS, TRANS or other production fields.
 

@@ -25,7 +25,7 @@ const MOBILE_NAV_MEDIA = '(max-width: 720px), (max-width: 960px) and (max-height
 const PROOF_PDF_ZOOM_MIN = 0.5;
 const PROOF_PDF_ZOOM_MAX = 3;
 const PROOF_PDF_ZOOM_STEP = 0.25;
-const DASHBOARD_TAB_NAMES = ['database', 'test-dashboard', 'holiday-board', 'dtf-uploader'];
+const DASHBOARD_TAB_NAMES = ['database', 'test-dashboard', 'holiday-board', 'dtf-uploader', 'proof-generator'];
 const BOARD_AUTO_REFRESH_MS = 3000;
 const BOARD_CONTEXT_TEST = 'test-dashboard';
 const PRIVATE_DASHBOARD_TOTAL_COLUMN = Object.freeze({ id: 'private_total', title: 'TOTAL', type: 'text' });
@@ -5819,7 +5819,9 @@ function activateDashboardTab(target) {
   if (!window.ultimateHubUser) return;
   const dtfOnly = window.ultimateHubUser?.access_scope === 'dtf_only';
   const fallbackTab = dtfOnly ? 'dtf-uploader' : 'test-dashboard';
-  const requestedTab = !dtfOnly && isValidDashboardTab(target)
+  const proofAllowed = isProductionArtworkUser(window.ultimateHubUser);
+  const allowedTarget = target !== 'proof-generator' || proofAllowed;
+  const requestedTab = !dtfOnly && allowedTarget && isValidDashboardTab(target)
     ? target
     : (target === 'dtf-uploader' ? target : fallbackTab);
   const activeTab = document.getElementById(`tab-${requestedTab}`) ? requestedTab : 'test-dashboard';

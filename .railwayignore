@@ -3,3 +3,12 @@
 node_modules
 uploads
 tmp
+.env
+.env.*
+!.env.example
+.DS_Store
+.git
+output
+CustomerDataFull.csv
+database2monday_script
+tools/print-worker/config.json

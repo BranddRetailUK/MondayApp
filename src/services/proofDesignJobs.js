@@ -1,0 +1,82 @@
+const {originalArtworkName}=require('../../tools/print-worker/proof-filename');
+const {randomUUID,createHash}=require('node:crypto');
+const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+const publicJob=row=>row&&({id:row.id,customer:row.customer,jobTitle:row.job_title,designNumber:row.design_number&&String(row.design_number),folderName:row.folder_name,status:row.status,revision:row.revision,savedRevision:row.saved_revision,message:row.message});
+const columns='id,customer,job_title,design_number,folder_name,status,revision,saved_revision,message,save_key,pdf_hash';
+function createService(pool){
+  const query=(text,values=[])=>pool.query(text,values);
+  async function get(id){if(!UUID.test(id||''))throw new Error('Invalid proof ID.');const r=await query(`SELECT ${columns} FROM proof_design_jobs WHERE id=$1`,[id]);if(!r.rows[0])throw new Error('Proof design not found.');return publicJob(r.rows[0]);}
+  async function reserve(id,customer='',jobTitle=''){
+    if(!UUID.test(id||''))throw new Error('Invalid proof ID.');
+    await query('INSERT INTO proof_design_jobs(id,customer,job_title) VALUES($1,$2,$3) ON CONFLICT(id) DO NOTHING',[id,String(customer).trim().slice(0,200),String(jobTitle).trim().slice(0,200)]);
+    return get(id);
+  }
+  async function queueSave(id,key,expectedRevision,bytes,brief,artworks=[]){
+    if(!UUID.test(key||'')||!Number.isInteger(expectedRevision)||expectedRevision<0)throw new Error('Invalid proof revision.');
+    if(bytes.length>50*1024*1024)throw new Error('The saved proof must be smaller than 50 MB.');
+    if(artworks.length>20||artworks.reduce((sum,file)=>sum+file.buffer.length,0)>50*1024*1024)throw new Error('Artwork originals must total less than 50 MB.');
+    const originals=artworks.map(file=>({name:originalArtworkName(file.originalname),hash:createHash('sha256').update(file.buffer).digest('hex'),data:file.buffer.toString('base64')}));
+    const hash=createHash('sha256').update(bytes).digest('hex');
+    const r=await query(`UPDATE proof_design_jobs SET pdf=$4,pdf_hash=$5,save_key=$2,revision=revision+1,status='save_queued',
+      customer=$6,job_title=$7,artworks=$8::jsonb,claim_token=NULL,lease_until=NULL,message='Waiting for ARTWORK-PC to save the proof',updated_at=NOW()
+      WHERE id=$1 AND design_number IS NOT NULL AND folder_name IS NOT NULL AND revision=$3 AND status IN ('folder_ready','saved','error')
+      AND (save_key IS NULL OR save_key<>$2) RETURNING *`,[id,key,expectedRevision,bytes,hash,String(brief.customer||'').slice(0,200),String(brief.jobTitle||'').slice(0,200),JSON.stringify(originals)]);
+    if(r.rows[0])return publicJob(r.rows[0]);
+    const current=await query(`SELECT ${columns} FROM proof_design_jobs WHERE id=$1`,[id]);
+    if(current.rows[0]?.save_key===key)return publicJob(current.rows[0]);
+    throw new Error('The proof has changed or is still being saved. Wait for the current save, then regenerate.');
+  }
+  async function retry(id){await get(id);await query(`UPDATE proof_design_jobs SET status=CASE WHEN folder_name IS NULL THEN 'awaiting_folder' WHEN pdf IS NOT NULL THEN 'save_queued' ELSE 'folder_ready' END,message='',claim_token=NULL,lease_until=NULL WHERE id=$1 AND status='error'`,[id]);return get(id);}
+  async function claim(workerId){
+    const db=await pool.connect();
+    try{
+      await db.query('BEGIN');await db.query('SELECT pg_advisory_xact_lock(731092)');
+      const active=await db.query("SELECT id FROM proof_design_jobs WHERE status IN ('allocating','saving') AND lease_until>NOW() LIMIT 1");
+      if(active.rows.length){await db.query('COMMIT');return null;}
+      const result=await db.query(`SELECT * FROM proof_design_jobs WHERE status IN ('awaiting_folder','save_queued') OR
+        (status IN ('allocating','saving') AND lease_until<=NOW()) ORDER BY created_at LIMIT 1 FOR UPDATE`);
+      const job=result.rows[0];if(!job){await db.query('COMMIT');return null;}
+      const token=randomUUID(),operation=job.folder_name?'save':'allocate';
+      await db.query(`UPDATE proof_design_jobs SET status=$2,claim_token=$3,worker_id=$4,lease_until=NOW()+INTERVAL '120 seconds',updated_at=NOW() WHERE id=$1`,[job.id,operation==='save'?'saving':'allocating',token,workerId]);
+      await db.query('COMMIT');
+      return {id:job.id,operation,claimToken:token,customer:job.customer,jobTitle:job.job_title,designNumber:job.design_number&&String(job.design_number),folderName:job.folder_name,revision:job.revision,hash:job.pdf_hash,artworks:job.artworks||[],pdf:job.pdf&&Buffer.from(job.pdf).toString('base64')};
+    }catch(error){await db.query('ROLLBACK');throw error;}finally{db.release();}
+  }
+  async function reserveNumber(id,token,proposed){
+    if(!/^\d{5,10}$/.test(String(proposed||'')))throw new Error('Invalid proposed design number.');
+    const db=await pool.connect();
+    try{
+      await db.query('BEGIN');await db.query('SELECT pg_advisory_xact_lock(731092)');
+      const row=(await db.query("SELECT design_number FROM proof_design_jobs WHERE id=$1 AND claim_token=$2 AND status='allocating' AND lease_until>NOW() FOR UPDATE",[id,token])).rows[0];
+      if(!row){await db.query('COMMIT');return {accepted:false};}
+      if(row.design_number){await db.query('COMMIT');return {accepted:true,designNumber:String(row.design_number)};}
+      const highest=(await db.query('SELECT COALESCE(MAX(design_number),0) AS highest FROM proof_design_jobs')).rows[0].highest;
+      const number=String(Math.max(Number(proposed),Number(highest)+1));
+      if(!/^\d{5,10}$/.test(number))throw new Error('Design number range exhausted.');
+      await db.query("UPDATE proof_design_jobs SET design_number=$3,message='Design number reserved; creating folder',updated_at=NOW() WHERE id=$1 AND claim_token=$2",[id,token,number]);
+      await db.query('COMMIT');return {accepted:true,designNumber:number};
+    }catch(error){await db.query('ROLLBACK');throw error;}finally{db.release();}
+  }
+  async function report(id,token,result){
+    if(!UUID.test(id||'')||!UUID.test(token||''))throw new Error('Invalid worker claim.');
+    if(result.status==='reserve')return reserveNumber(id,token,result.proposedNumber);
+    const row=(await query(`SELECT ${columns} FROM proof_design_jobs WHERE id=$1 AND claim_token=$2`,[id,token])).rows[0];
+    if(!row)return {accepted:false};
+    if(['folder_ready','saved','error'].includes(row.status))return {accepted:true};
+    if(result.status==='heartbeat'){
+      const r=await query("UPDATE proof_design_jobs SET lease_until=NOW()+INTERVAL '120 seconds',message=$3 WHERE id=$1 AND claim_token=$2 AND lease_until>NOW() RETURNING id",[id,token,String(result.message||'Working on design files').slice(0,500)]);return {accepted:!!r.rows.length};
+    }
+    if(result.status==='error')await query("UPDATE proof_design_jobs SET status='error',message=$3,lease_until=NULL,updated_at=NOW() WHERE id=$1 AND claim_token=$2",[id,token,String(result.message||'Local file operation failed').slice(0,1000)]);
+    else if(result.status==='allocated'&&row.status==='allocating'){
+      const n=String(result.designNumber||''),folder=String(result.folderName||'');
+      if(!/^\d{5,10}$/.test(n)||!folder.startsWith(n+' ')||/[\\/\x00-\x1f]/.test(folder)||folder.length>160)throw new Error('Invalid design folder result.');
+      if(String(row.design_number||'')!==n)return {accepted:false,message:'Reserve the design number before creating its folder.'};
+      await query("UPDATE proof_design_jobs SET design_number=$3,folder_name=$4,status='folder_ready',message='',lease_until=NULL,updated_at=NOW() WHERE id=$1 AND claim_token=$2",[id,token,n,folder]);
+    }else if(result.status==='saved'&&row.status==='saving'&&result.hash===row.pdf_hash&&result.revision===row.revision){
+      await query("UPDATE proof_design_jobs SET status='saved',saved_revision=revision,pdf=NULL,artworks='[]'::jsonb,message='Saved in DESIGN FILES',lease_until=NULL,updated_at=NOW() WHERE id=$1 AND claim_token=$2",[id,token]);
+    }else throw new Error('Invalid file worker result.');
+    return {accepted:true};
+  }
+  return {get,reserve,queueSave,retry,claim,report};
+}
+module.exports={createService,UUID};

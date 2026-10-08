@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="dtf-uploader.css">
   <script src="vendor/pdf-lib.min.js" defer></script>
   <link rel="stylesheet" href="holiday-board.css">
+  <link rel="stylesheet" href="proof-generator.css">
   <script src="holiday-board.js" defer></script>
   <script src="auth-session.js" defer></script>
   <script src="label-layout.js" defer></script>
@@ -23,6 +24,8 @@
   <script src="database.js" defer></script>
   <script src="dtf-layout.js" defer></script>
   <script src="dtf-uploader.js" defer></script>
+  <script src="proof-display.js" defer></script>
+  <script src="proof-generator.js" defer></script>
 </head>
 <body class="dashboard-only hub-auth-pending">
   <div class="app-container">
@@ -47,6 +50,7 @@
           <li data-tab="database">DATABASE</li>
           <li data-tab="holiday-board">HOLIDAY BOARD</li>
           <li data-tab="dtf-uploader">DTF UPLOADER</li>
+          <li data-tab="proof-generator" hidden>PROOF GENERATOR</li>
         </ul>
       </div>
       <div id="sidebarDashboardControls" class="sidebar-dashboard-controls" aria-label="Dashboard controls">
@@ -79,6 +83,8 @@
       </section>
 
       <section id="tab-holiday-board" class="tab-content" aria-label="Holiday Board"><div id="holiday-board"></div></section>
+
+      <section id="tab-proof-generator" class="tab-content" aria-label="Proof Generator"><div id="proof-generator-root"></div></section>
 
       <!-- DTF UPLOADER -->
       <section id="tab-dtf-uploader" class="tab-content dtf-tab-content">

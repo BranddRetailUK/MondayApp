@@ -40,6 +40,9 @@ async function main() {
   // An exclusive local lock prevents two startup shortcuts driving the same Illustrator.
   const lockPath=path.join(stateDir,'worker.lock');
   const releaseLock=await acquireWorkerLock(lockPath);
+  // File saving does not depend on Illustrator readiness or the Print exports switch.
+  const proofFileAbort=new AbortController();
+  const proofFileLoop=require('./proof-file-worker').runProofFileWorker(config,stateDir,{signal:proofFileAbort.signal}).catch(error=>console.error('Proof storage stopped:',error.message));
   const api=async(route,body)=>{
     const response=await fetch(new URL(route,url.origin),{method:'POST',headers:{Authorization:`Bearer ${config.token}`,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(15000)});
     if(!response.ok) throw new Error(`Hub request failed (${response.status})`);
@@ -113,7 +116,7 @@ async function main() {
       }
       await report(record);
     }
-    console.log(`Ultimate Hub print worker 1.17 ready: exporter 1.15 from ${__dirname}. Keep this window running.`);
+    console.log(`Ultimate Hub print worker 1.21 ready: exporter 1.15 and proof folder saving from ${__dirname}. Keep this window running.`);
     let lastIllustratorError='';
     for(;;) {
       try {
@@ -137,7 +140,7 @@ async function main() {
       } catch(e) {console.error(e.message);}
       await wait(10000);
     }
-  } finally {await releaseLock();}
+  } finally {proofFileAbort.abort();await proofFileLoop;await releaseLock();}
 }
 if(require.main===module) main().catch(e=>{console.error(e.message);process.exitCode=1;});
 module.exports={readIllustratorResult};
