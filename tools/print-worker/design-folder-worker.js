@@ -5,10 +5,16 @@ async function openFolder(root,task,{launch=spawn,platform=process.platform}={})
   if(platform!=='win32')throw new Error('Opening folders requires the Windows worker');
   const folder=await findDesignFolder(root,task.designNumber);
   if(!Number.isFinite(Date.parse(task.expiresAt))||Date.parse(task.expiresAt)<=Date.now())throw new Error('Folder request expired; click the design number again');
-  const executable=path.win32.join(process.env.SystemRoot||'C:\\Windows','explorer.exe');
+  const executable=path.win32.join(process.env.SystemRoot||'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
   await new Promise((resolve,reject)=>{
-    const child=launch(executable,[folder],{shell:false,detached:true,stdio:'ignore'});
-    child.once('error',reject);child.once('spawn',()=>{child.unref();resolve();});
+    const child=launch(executable,['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'open-design-folder.ps1'),'-Folder',folder],{shell:false,windowsHide:true,stdio:'ignore'});
+    const timer=setTimeout(()=>{child.kill();reject(new Error('Explorer did not respond; check the Windows desktop'));},15000);
+    child.once('error',error=>{clearTimeout(timer);reject(error);});
+    child.once('exit',code=>{
+      clearTimeout(timer);
+      if(code===0)resolve();
+      else reject(new Error(code===3?'Folder opened, but Windows blocked foreground focus. Select Explorer on the taskbar.':'Could not open and focus the design folder; check the Windows desktop'));
+    });
   });
 }
 async function runDesignFolderWorker(config,{signal}={}){

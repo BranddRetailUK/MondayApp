@@ -117,7 +117,7 @@ async function main() {
       }
       await report(record);
     }
-    console.log(`Ultimate Hub print worker 1.22 ready: exporter 1.15 and proof folder saving from ${__dirname}. Keep this window running.`);
+    console.log(`Ultimate Hub print worker 1.23 ready: exporter 1.15 and proof folder saving from ${__dirname}. Keep this window running.`);
     let lastIllustratorError='';
     for(;;) {
       try {

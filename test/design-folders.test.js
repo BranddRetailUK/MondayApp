@@ -34,9 +34,10 @@ test('folder opening supports older designs without a PDF, rejects ambiguity, li
   for(const ref of ['PSG12345','../12345','12345&calc','12345/'])await assert.rejects(()=>findDesignFolder(root,ref),/Invalid/);
   await assert.rejects(()=>findDesignFolder(root,'12346'),/found 0/);
   let args;
-  const launch=(...values)=>{args=values;const child=new EventEmitter();child.unref=()=>{};queueMicrotask(()=>child.emit('spawn'));return child;};
+  const launch=(...values)=>{args=values;const child=new EventEmitter();child.kill=()=>{};queueMicrotask(()=>child.emit('exit',0));return child;};
   await openFolder(root,{designNumber:'12345',expiresAt:new Date(Date.now()+10000).toISOString()},{launch,platform:'win32'});
-  assert.deepEqual(args[1],[folder]);assert.equal(args[2].shell,false);assert.match(args[0],/explorer\.exe$/);
+  assert.deepEqual(args[1].slice(-2),['-Folder',folder]);assert.equal(args[2].shell,false);assert.equal(args[2].windowsHide,true);assert.match(args[0],/powershell\.exe$/);
+  await assert.rejects(()=>openFolder(root,{designNumber:'12345',expiresAt:new Date(Date.now()+10000).toISOString()},{platform:'win32',launch:()=>{const child=new EventEmitter();queueMicrotask(()=>child.emit('exit',3));return child;}}),/blocked foreground/);
   await assert.rejects(()=>openFolder(root,{designNumber:'12345',expiresAt:'2000-01-01'},{launch,platform:'win32'}),/expired/);
   await fs.mkdir(path.join(root,'12345 Duplicate'));await assert.rejects(()=>findDesignFolder(root,'12345'),/found 2/);
   await fs.symlink(folder,path.join(root,'12346 Link'),'dir');await assert.rejects(()=>findDesignFolder(root,'12346'),/found 0/);
