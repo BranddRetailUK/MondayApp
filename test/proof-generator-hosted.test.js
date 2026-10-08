@@ -171,3 +171,16 @@ test('proof history and preview endpoints enforce production access and private 
   const pdf=await fetch(`${url}/designs/${id}/pdf?download=1`,{headers:production});assert.equal(pdf.status,200);assert.match(pdf.headers.get('content-disposition'),/^attachment;/);assert.equal(pdf.headers.get('cache-control'),'no-store');assert.equal(await pdf.text(),'%PDF-retained');
  });
 });
+test('in-flight EPS thumbnails cannot block source retention or proof parsing',async()=>{
+ let release,entered;const hold=new Promise(r=>release=r),started=new Promise(r=>entered=r);
+ const png=await require('sharp')({create:{width:10,height:10,channels:4,background:'#f00'}}).png().toBuffer();
+ await serve(createRouter({convertEps:async()=>{entered();await hold;return png;},designs:{saveSource:async()=>{}},parse:async()=>({products:[],sharedDecorations:[]}),enrich:async()=>{}}),async url=>{
+  const eps=new FormData();eps.append('artwork',new Blob(['%!PS-Adobe-3.0 EPSF-3.0']),'logo.eps');
+  const converting=fetch(`${url}/artwork/eps-preview`,{method:'POST',headers:production,body:eps});await started;
+  try{
+   const source=new FormData();source.append('brief',JSON.stringify({request:'test'}));source.append('artworkDetails','[]');
+   assert.equal((await fetch(`${url}/designs/${require('crypto').randomUUID()}/source`,{method:'POST',headers:production,body:source})).status,200);
+   assert.equal((await fetch(`${url}/parse`,{method:'POST',headers:{...production,'Content-Type':'application/json'},body:JSON.stringify({requestText:'RX350 Black',artworks:[]})})).status,200);
+  }finally{release();await converting;}
+ });
+});

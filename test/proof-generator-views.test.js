@@ -86,3 +86,14 @@ test('export cannot silently replace a missing generated sleeve with a front vie
  const brief=makeBrief();
  await assert.rejects(()=>ensureGeneratedViews(brief,{allowGenerate:false,download:async()=>Buffer.from('changed-source'),read:async()=>null}),/needs preparing/);
 });
+test('separate verified colours expand into sheets without splitting real combined colourways',async()=>{
+ const rows=['Black','White'].map((colour,i)=>({...row,colour_id:i+1,colour_code:colour,colour_name:colour}));
+ const brief={products:[{code:'RX350',colour:'Black/White',decorations:[{id:'a',widthMm:300}]}]};
+ await enrichProofProducts(brief,{provider:'ralawise',pool:{query:async()=>({rows})}});
+ assert.deepEqual(brief.products.map(p=>p.colour),['Black','White']);assert.notEqual(brief.products[0].decorations,brief.products[1].decorations);
+ rows.push({...row,colour_id:3,colour_name:'Black/White'});
+ const combined={products:[{code:'RX350',colour:'Black and White',decorations:[]}]};
+ await enrichProofProducts(combined,{provider:'ralawise',pool:{query:async()=>({rows})}});assert.equal(combined.products.length,1);assert.equal(combined.products[0].colour,'Black/White');
+ const invalid={products:[{code:'RX350',colour:'Black and Imaginary',decorations:[]}]};
+ await enrichProofProducts(invalid,{provider:'ralawise',pool:{query:async()=>({rows})}});assert.equal(invalid.products.length,1);assert.equal(invalid.products[0].visual.lookupIssue,'colour_not_found');
+});

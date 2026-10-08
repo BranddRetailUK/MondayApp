@@ -497,7 +497,8 @@
     dirty = false;
     renderEditor();
     const hasGarment = payload.pages.some(page => page.image);
-    setFeedback(!hasGarment ? 'Proof paused: garment images could not be loaded. See the message below.' : payload.issues.some(i=>i.blocking) ? 'Resolve the highlighted proof issues before downloading.' : 'Preview ready.');
+    const blockers=payload.issues.filter(issue=>issue.blocking);
+    setFeedback(blockers.length?blockers.map(issue=>[currentBrief.products[issue.productIndex]?.code,issue.message].filter(Boolean).join(': ')).filter((text,index,all)=>all.indexOf(text)===index).join(' '):!hasGarment?'No garment preview is available.':'Preview ready.');
     if(save&&!localPreview&&designId&&!payload.issues.some(i=>i.blocking)){
       const saveTarget=currentBrief;saveTarget.proofSaveKey=crypto.randomUUID();saveTarget.proofRevision=design.revision;
       setFeedback('Saving the proof to its design folder…');

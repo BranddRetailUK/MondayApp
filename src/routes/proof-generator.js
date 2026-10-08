@@ -25,6 +25,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
   const designJobs=()=>designs || (designs=designService(require('../db/pool')));
   const upload = multer({ storage: multer.memoryStorage(), limits: { files: 40, fields: 2, parts: 42, fileSize: 10 * 1024 * 1024, fieldSize: 100 * 1024 } });
   let active = false;
+  const uploadLanes={source:false,eps:false};
   const viewJobs = new Map();
   const allowed = (req, res) => {
     if (requireProduction && !isProofGeneratorUser(req.hubUser)) {
@@ -80,20 +81,20 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
   });
   // Reserve before accepting uploads; a cancelled client cannot release capacity
   // while its AI/render work is still running. Finally also releases failed jobs.
-  const exclusive = handler => async (req, res, next) => {
+  const exclusive = (handler,lane='proof') => async (req, res, next) => {
     if (!allowed(req, res)) return;
     res.set('Cache-Control', 'no-store');
-    if (active) return res.set('Retry-After', '5').status(429).json({ error: 'Another proof is being prepared. Please try again shortly.' });
-    active = true;
+    if (lane==='proof'?active:uploadLanes[lane]) return res.set('Retry-After', '5').status(429).json({ error: 'Another proof is being prepared. Please try again shortly.' });
+    if(lane==='proof')active=true;else uploadLanes[lane]=true;
     try { await handler(req, res); }
     catch (error) { next(error); }
-    finally { active = false; }
+    finally { if(lane==='proof')active=false;else uploadLanes[lane]=false; }
   };
   router.post('/designs/:id/source',exclusive(async(req,res)=>{
     await new Promise((resolve,reject)=>upload.array('artworks',20)(req,res,error=>error?reject(error):resolve()));
     try{await designJobs().saveSource(req.params.id,JSON.parse(req.body.brief||'{}'),req.files||[],JSON.parse(req.body.artworkDetails||'[]'));return res.json({ok:true});}
     catch(error){return res.status(400).json({error:error.message});}
-  }));
+  },'source'));
   router.post('/artwork/eps-preview',exclusive(async(req,res)=>{
     await new Promise((resolve,reject)=>upload.single('artwork')(req,res,error=>error?reject(error):resolve()));
     const file=req.file;
@@ -106,7 +107,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       const transparent=await require('sharp')(data,{raw:{width:info.width,height:info.height,channels:4}}).png().toBuffer();
       return res.type('png').send(transparent);
     }catch(error){return res.status(422).json({error:'EPS preview conversion failed. '+error.message});}
-  }));
+  },'eps'));
   router.get('/products', async (req,res) => {
     if(!allowed(req,res))return;
     res.set('Cache-Control','no-store');
@@ -202,13 +203,12 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       // Reuse the saved supplier selection when reopening an unchanged product.
       // Only server-retained visuals are trusted; changed products are resolved normally.
       const retained=design&&designJobs().source?await designJobs().source(design.id):null;
-      const unresolved=[];
+      const savedProducts=retained?.source?.brief?.products||[];
+      await enrich(brief);
       for(const product of brief.products){
-        const saved=retained?.source?.brief?.products?.find(item=>item.code===product.code&&item.colour===product.colour);
+        const saved=savedProducts.find(item=>item.code===product.code&&item.colour===product.colour);
         if(saved?.visual?.matched)product.visual=saved.visual;
-        else unresolved.push(product);
       }
-      if(unresolved.length)await enrich({...brief,products:unresolved});
       await generateViews(brief, { allowGenerate: false });
       const productIndex=req.query.productIndex;
       if(productIndex!==undefined && (typeof productIndex!=='string'||!/^\d+$/.test(productIndex)||Number(productIndex)>=brief.products.length))return res.status(400).json({error:'Choose a valid product PDF.'});

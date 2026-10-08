@@ -72,6 +72,18 @@ async function enrichProofProducts(brief, { fetchImpl = fetch, pool, provider = 
     let failed = false;
     try { rows = await fetchRalawiseRows(brief.products.map(product => product.code), pool || require('../db/pool')); }
     catch (error) { failed = true; console.warn('Ralawise proof catalogue lookup failed:', error.message); }
+    // Prefer a real combined colourway; expand only when every separate colour is verified.
+    if(!failed){
+      brief.products=brief.products.flatMap(item=>{
+        const combined=selectRalawiseVisual(rows,item.code,item.colour,matchColour);
+        const colours=String(item.colour||'').split(/\s*(?:\band\b|&|\/|,)\s*/i).filter(Boolean);
+        if(combined.lookupIssue!=='colour_not_found'||colours.length<2||colours.length>6)return [item];
+        const matches=colours.map(colour=>selectRalawiseVisual(rows,item.code,colour,matchColour));
+        if(!matches.every(visual=>visual.matched))return [item];
+        return matches.map(visual=>({...structuredClone(item),colour:visual.colour}));
+      });
+      if(brief.products.length>20)throw new Error('A proof supports at most 20 garment colourways.');
+    }
     for (const item of brief.products) {
       const visual = failed
         ? { source: 'Ralawise catalog', matched: false, views: [], lookupIssue: 'catalogue_unavailable' }
