@@ -186,7 +186,19 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
       drawText(page,`${view.toUpperCase()} VIEW`,cellX+8,104,10,bold,NAVY,cellWidth-16);
       const methods=[...new Set(marks.map(mark=>printMethod(mark.method)))];
       pageData.printMethods=methods;
-      drawText(page,`Print method: ${methods.join(' / ')}`,cellX+8,118,8,bold,GREY,cellWidth-16);
+      const methodLabel='Print method:';
+      drawText(page,methodLabel,cellX+8,120,8,regular,rgb(0,0,0),cellWidth-16);
+      let methodX=cellX+8+regular.widthOfTextAtSize(methodLabel,8)+5;
+      const available=cellX+cellWidth-8-methodX;
+      const methodText=methods.join(' / ');
+      let methodSize=11;
+      while(methodSize>8.5&&bold.widthOfTextAtSize(safeText(methodText),methodSize)>available)methodSize-=.25;
+      for(const [index,method] of methods.entries()){
+        if(index){drawText(page,' / ',methodX,128-methodSize,methodSize,bold,rgb(0,0,0));methodX+=bold.widthOfTextAtSize(' / ',methodSize);}
+        const colour=method.toLowerCase()==='transfer print'?rgb(0,.45,.18):method.toLowerCase()==='embroidery'?rgb(.8,.08,.08):rgb(0,0,0);
+        drawText(page,method,methodX,128-methodSize,methodSize,bold,colour,cellX+cellWidth-8-methodX);
+        methodX+=bold.widthOfTextAtSize(safeText(method),methodSize);
+      }
       if (!garment) drawText(page,'Matching view unavailable',cellX+8,245,10,bold,GREY,cellWidth-16);
       if (garment && !garment.confident) issue(productIndex,null,'Garment boundary is uncertain. Check printable regions and placement.');
       for (const d of marks) {
