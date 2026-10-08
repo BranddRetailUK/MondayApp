@@ -17,5 +17,17 @@ async function ensureProofGeneratorTables(pool) {
     message TEXT NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`);
   await pool.query("ALTER TABLE proof_design_jobs ADD COLUMN IF NOT EXISTS artworks JSONB NOT NULL DEFAULT '[]'::jsonb");
+  await pool.query(`ALTER TABLE proof_design_jobs
+    ADD COLUMN IF NOT EXISTS proof_pdf BYTEA,
+    ADD COLUMN IF NOT EXISTS proof_ready BOOLEAN NOT NULL DEFAULT false,
+    ADD COLUMN IF NOT EXISTS source JSONB,
+    ADD COLUMN IF NOT EXISTS garment_assets JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ADD COLUMN IF NOT EXISTS source_artworks JSONB NOT NULL DEFAULT '[]'::jsonb,
+    ADD COLUMN IF NOT EXISTS reference TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS preview_png BYTEA,
+    ADD COLUMN IF NOT EXISTS generation_status TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS generation_message TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS generation_updated_at TIMESTAMPTZ`);
+  await pool.query('CREATE INDEX IF NOT EXISTS proof_design_jobs_history_idx ON proof_design_jobs(created_at DESC,id DESC)');
 }
 module.exports = { ensureProofGeneratorTables };

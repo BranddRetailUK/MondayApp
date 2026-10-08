@@ -33,10 +33,41 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
     }
     return true;
   };
+  router.get('/designs',async(req,res)=>{
+    if(!allowed(req,res))return;res.set('Cache-Control','no-store');
+    const offset=String(req.query.offset||'0');
+    if(!/^\d{1,7}$/.test(offset))return res.status(400).json({error:'Invalid history page.'});
+    try{return res.json(await designJobs().list(Number(offset)));}
+    catch(error){return res.status(503).json({error:'Could not load proof history.'});}
+  });
+  router.get('/designs/:id/preview',async(req,res)=>{
+    if(!allowed(req,res))return;res.set('Cache-Control','no-store');
+    try{const png=await designJobs().preview(req.params.id);if(!png)return res.status(404).end();return res.type('png').send(Buffer.from(png));}
+    catch(error){return res.status(404).end();}
+  });
+  router.get('/designs/:id/source',async(req,res)=>{
+    if(!allowed(req,res))return;res.set('Cache-Control','no-store');
+    try{const data=await designJobs().source(req.params.id);if(!data)return res.status(404).json({error:'This older proof has no retained source. Reattach its artwork and request to regenerate.'});return res.json(data);}
+    catch(error){return res.status(404).json({error:'Proof source is unavailable.'});}
+  });
+  router.get('/designs/:id/pdf',async(req,res)=>{
+    if(!allowed(req,res))return;res.set('Cache-Control','no-store');
+    try{
+      const job=await designJobs().get(req.params.id),pdf=await designJobs().document(req.params.id);
+      if(!pdf)return res.status(404).json({error:'This proof has no retained PDF. Regenerate it to create one.'});
+      res.set('Content-Disposition',require('content-disposition')(proofFileName(job),{type:req.query.download==='1'?'attachment':'inline'}));
+      return res.type('pdf').send(Buffer.from(pdf));
+    }catch(error){return res.status(404).json({error:'Proof PDF is unavailable.'});}
+  });
+  router.post('/designs/:id/progress',async(req,res)=>{
+    if(!allowed(req,res))return;res.set('Cache-Control','no-store');
+    try{return res.json({design:await designJobs().progress(req.params.id,req.body)});}
+    catch(error){return res.status(400).json({error:error.message});}
+  });
   router.post('/designs',async(req,res)=>{
     if(!allowed(req,res))return;res.set('Cache-Control','no-store');
     if(!UUID.test(req.body?.id||''))return res.status(400).json({error:'Invalid proof ID.'});
-    try{return res.json({design:await designJobs().reserve(req.body.id,req.body.customer,req.body.jobTitle)});}
+    try{return res.json({design:await designJobs().reserve(req.body.id,req.body.customer,req.body.jobTitle,req.body.deferAllocation===true)});}
     catch(error){console.error('Proof design reservation:',error.message);return res.status(503).json({error:'Could not reserve the design folder. Please try again.'});}
   });
   router.get('/designs/:id',async(req,res)=>{
@@ -58,6 +89,11 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
     catch (error) { next(error); }
     finally { active = false; }
   };
+  router.post('/designs/:id/source',exclusive(async(req,res)=>{
+    await new Promise((resolve,reject)=>upload.array('artworks',20)(req,res,error=>error?reject(error):resolve()));
+    try{await designJobs().saveSource(req.params.id,JSON.parse(req.body.brief||'{}'),req.files||[],JSON.parse(req.body.artworkDetails||'[]'));return res.json({ok:true});}
+    catch(error){return res.status(400).json({error:error.message});}
+  }));
   router.post('/artwork/eps-preview',exclusive(async(req,res)=>{
     await new Promise((resolve,reject)=>upload.single('artwork')(req,res,error=>error?reject(error):resolve()));
     const file=req.file;
@@ -163,12 +199,22 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
         notes: String(details[index]?.notes || '').slice(0, 1000) }));
       const supported = artworks.every(({ file }) => /\.(png|jpe?g|webp|pdf)$/i.test(file.originalname) || file.buffer.subarray(0, 4).toString() === '%PDF');
       if (!supported) return res.status(400).json({ error: 'Artwork must be prepared as PNG, JPG, WebP or a single-page PDF before proof creation.' });
-      await enrich(brief);
+      // Reuse the saved supplier selection when reopening an unchanged product.
+      // Only server-retained visuals are trusted; changed products are resolved normally.
+      const retained=design&&designJobs().source?await designJobs().source(design.id):null;
+      const unresolved=[];
+      for(const product of brief.products){
+        const saved=retained?.source?.brief?.products?.find(item=>item.code===product.code&&item.colour===product.colour);
+        if(saved?.visual?.matched)product.visual=saved.visual;
+        else unresolved.push(product);
+      }
+      if(unresolved.length)await enrich({...brief,products:unresolved});
       await generateViews(brief, { allowGenerate: false });
       const productIndex=req.query.productIndex;
       if(productIndex!==undefined && (typeof productIndex!=='string'||!/^\d+$/.test(productIndex)||Number(productIndex)>=brief.products.length))return res.status(400).json({error:'Choose a valid product PDF.'});
-      const { bytes, documents = [], pages, issues } = await build(brief, artworks, { strict: req.path !== '/preview' });
+      const { bytes, documents = [], pages, issues } = await build(brief, artworks, { strict: req.path !== '/preview', ...(design&&designJobs().garmentLoader?{garmentLoader:await designJobs().garmentLoader(design.id)}:{}) });
       if(req.path==='/save')return res.json({design:await designJobs().queueSave(design.id,brief.proofSaveKey,brief.proofRevision,bytes,brief,originals||req.files)});
+      if(design&&req.path==='/preview')await designJobs().setPreview(design.id,bytes,brief,!issues.some(issue=>issue.blocking));
       if (req.path === '/preview') return res.json({ pdf: bytes.toString('base64'), fileName:proofFileName(brief), documents:documents.map(({bytes,...metadata})=>metadata), pages, issues, brief });
       const selected=productIndex===undefined?null:documents.find(document=>document.productIndex===Number(productIndex));
       if(productIndex!==undefined&&!selected)return res.status(422).json({error:'The product PDF is unavailable. Create the proof again.'});

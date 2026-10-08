@@ -140,3 +140,27 @@ body.proof-preview .proof-preview-badge{display:block}
 
 .proof-artwork-type{font-size:12px;color:#b8c4d1}
 .proof-artwork-fields{align-content:center}
+.proof-page [hidden]{display:none!important}
+.proof-history-toolbar{display:flex;justify-content:flex-end;margin-bottom:20px}
+.proof-history-list{display:grid;gap:14px;margin:15px 0}
+.proof-history-row{display:grid;grid-template-columns:240px minmax(0,1fr) 230px;gap:24px;align-items:center;padding:20px;border:1px solid #41474d;border-radius:12px;background:#202327}
+.proof-history-thumb{min-height:150px;display:grid;place-items:center;color:#aeb8c3;font-size:12px;background:#15191e;border-radius:6px;overflow:hidden}
+.proof-history-image{border:0;padding:0;background:transparent;cursor:zoom-in;width:100%}
+.proof-history-thumb img,.proof-history-thumb canvas{display:block;width:100%;height:auto}
+.proof-history-large{display:block;width:min(1400px,95vw);margin:24px auto}
+.proof-history-info{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.proof-history-info>div{display:grid;gap:6px;min-width:0}
+.proof-history-info span{color:#aeb8c3;font-size:12px}
+.proof-history-info strong{color:#fff;font-size:15px;overflow-wrap:anywhere}
+.proof-history-state{display:grid;gap:12px;justify-items:start;color:#94cafa}
+.proof-history-state p,.proof-history-state time{margin:0;font-size:12px;color:#bec8d3;overflow-wrap:anywhere}
+#proof-history-status{color:#ffaaaa;font-size:13px}
+#proof-back-list{margin-bottom:20px}
+@media(max-width:1100px){.proof-history-row{grid-template-columns:180px minmax(0,1fr)}.proof-history-state{grid-column:2}}
+@media(max-width:650px){.proof-history-row{grid-template-columns:1fr;gap:16px}.proof-history-state{grid-column:auto}.proof-history-thumb{max-width:300px}.proof-history-info{gap:14px}}
+.proof-history-row{grid-template-columns:220px minmax(0,1fr) 280px}
+.proof-history-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:5px}
+.proof-history-actions a,.proof-fullscreen-bar a{text-decoration:none}
+.proof-history-actions button:disabled{opacity:.45;cursor:not-allowed}
+@media(max-width:1100px){.proof-history-row{grid-template-columns:180px minmax(0,1fr)}}
+@media(max-width:650px){.proof-history-row{grid-template-columns:1fr}}

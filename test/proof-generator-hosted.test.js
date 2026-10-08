@@ -156,3 +156,18 @@ test('EPS previews validate uploads, preserve bytes and require production acces
   assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'no-store');assert.equal((await require('sharp')(Buffer.from(await response.arrayBuffer())).metadata()).width,40);assert.equal(calls,1);
  });
 });
+
+test('proof history and preview endpoints enforce production access and private responses',async()=>{
+ let calls=0;const id=require('crypto').randomUUID();
+ await serve(createRouter({designs:{get:async()=>({id,designNumber:'30001',customer:'History'}),document:async()=>Buffer.from('%PDF-retained'),source:async()=>({source:{request:'Saved request'},artworks:[{name:'logo.svg',data:'c3Zn'}]}),list:async offset=>{calls++;return {designs:[{id,customer:'History',hasPreview:true}],nextOffset:null};},preview:async()=>{calls++;return Buffer.from('PNG');},progress:async()=>{calls++;return {id};}}}),async url=>{
+  for(const headers of [{},{'x-test-email':'office@example.com'},{...production,'x-test-scope':'dtf_only'}])for(const endpoint of ['designs',`designs/${id}/preview`,`designs/${id}/source`,`designs/${id}/pdf`,`designs/${id}/progress`]){
+   assert.ok([401,403].includes((await fetch(`${url}/${endpoint}`,{headers,method:endpoint.endsWith('progress')?'POST':'GET'})).status));
+  }
+  assert.equal(calls,0);
+  const list=await fetch(`${url}/designs`,{headers:production});assert.equal(list.status,200);assert.equal(list.headers.get('cache-control'),'no-store');assert.equal((await list.json()).designs[0].customer,'History');
+  const preview=await fetch(`${url}/designs/${id}/preview`,{headers:production});assert.equal(preview.headers.get('content-type'),'image/png');assert.equal(preview.headers.get('cache-control'),'no-store');
+  assert.equal((await fetch(`${url}/designs?offset=-1`,{headers:production})).status,400);
+  const source=await fetch(`${url}/designs/${id}/source`,{headers:production});assert.equal(source.headers.get('cache-control'),'no-store');assert.equal((await source.json()).artworks[0].name,'logo.svg');
+  const pdf=await fetch(`${url}/designs/${id}/pdf?download=1`,{headers:production});assert.equal(pdf.status,200);assert.match(pdf.headers.get('content-disposition'),/^attachment;/);assert.equal(pdf.headers.get('cache-control'),'no-store');assert.equal(await pdf.text(),'%PDF-retained');
+ });
+});

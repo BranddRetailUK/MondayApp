@@ -169,3 +169,49 @@ test('original artwork names retain Unicode and reject Windows-invalid names rat
  for(const name of ['Fullers Centenary Crest 1926–2026.png','Café logo 你好.svg','two  spaces.PDF'])assert.equal(originalArtworkName(name),name);
  for(const name of ['../logo.svg','bad:name.png','name?.png','CON.png','LPT1.svg','trailing.png ','bad\u0080.png','x'.repeat(256)+'.png'])assert.throws(()=>originalArtworkName(name),/not valid on Windows/);
 });
+
+test('proof history is newest-first, paginated, private of upload data and retains thumbnails after saving',async()=>{
+ const db=new PGlite(),pool={query:(...args)=>db.query(...args),connect:async()=>({query:(...args)=>db.query(...args),release(){}})};
+ try{
+  await ensureProofGeneratorTables(db);await ensureProofGeneratorTables(db);const service=createService(pool),id=randomUUID();
+  await service.reserve(id,'Customer','Title',true);
+  assert.equal(await service.claim('worker'),null,'Pending generation does not allocate an unnamed folder before parsing');
+  await service.progress(id,{state:'generating',message:'Reading brief',reference:'CUSTOM-REF'});
+  const pending=(await service.list()).designs[0];assert.equal(pending.generationStatus,'generating');assert.equal(pending.reference,'CUSTOM-REF');
+  await db.query("UPDATE proof_design_jobs SET generation_updated_at=NOW()-INTERVAL '3 minutes' WHERE id=$1",[id]);
+  assert.equal((await service.get(id)).generationStatus,'interrupted');
+  await service.reserve(id,'Parsed customer','Parsed title');
+  const claim=await service.claim('worker');assert.equal(claim.customer,'Parsed customer');
+  await service.report(id,claim.claimToken,{status:'reserve',proposedNumber:'29200'});
+  await service.report(id,claim.claimToken,{status:'allocated',designNumber:'29200',folderName:'29200 Parsed customer'});
+  const bytes=await pdfBytes('History proof');
+  const savedBrief={customer:'Parsed customer',jobTitle:'Parsed title',products:[{code:'TEST',decorations:[{id:'logo',artworkId:'art',widthMm:125,placement:{x:.6,y:.2}}]}]};
+  await service.saveSource(id,{request:'TEST navy, logo 125mm',instructions:'Keep position',customer:'Parsed customer',jobTitle:'Parsed title'},[{buffer:Buffer.from('<svg>original</svg>'),mimetype:'image/svg+xml',originalname:'logo.svg'}],[{id:'art',originalName:'logo.svg'}]);
+  await service.setPreview(id,bytes,savedBrief,true);
+  await service.queueSave(id,randomUUID(),0,bytes,savedBrief);
+  const save=await service.claim('worker');await service.report(id,save.claimToken,{status:'saved',hash:save.hash,revision:save.revision});
+  assert.deepEqual(Buffer.from(await service.document(id)),bytes);
+  const restored=await service.source(id);assert.equal(restored.source.request,'TEST navy, logo 125mm');assert.equal(restored.source.instructions,'Keep position');assert.deepEqual(restored.source.brief,savedBrief);assert.equal(Buffer.from(restored.artworks[0].data,'base64').toString(),'<svg>original</svg>');
+  assert.equal((await service.get(id)).hasSource,true);
+  assert.equal((await service.get(id)).hasPreview,true);assert.equal((await service.get(id)).generationStatus,'complete');
+  assert.equal(Buffer.from(await service.preview(id)).subarray(1,4).toString(),'PNG');
+  assert.equal((await db.query('SELECT pdf FROM proof_design_jobs WHERE id=$1',[id])).rows[0].pdf,null);
+  await db.query("UPDATE proof_design_jobs SET created_at='2020-01-01' WHERE id=$1",[id]);
+  for(let i=0;i<51;i++)await service.reserve(randomUUID(),`Customer ${i}`,'Title',true);
+  const first=await service.list();assert.equal(first.designs.length,50);assert.equal(first.nextOffset,50);
+  const last=await service.list(50);assert.equal(last.designs.length,2);assert.equal(last.designs[1].id,id);assert.equal(last.nextOffset,null);
+  assert.equal(JSON.stringify(first).includes('artworks'),false);assert.equal(JSON.stringify(first).includes('pdf_hash'),false);
+ }finally{await db.close();}
+});
+
+test('retained garment images survive a new service instance without supplier access',async()=>{
+ const db=new PGlite(),pool={query:(...args)=>db.query(...args)};
+ try{
+  await ensureProofGeneratorTables(db);const service=createService(pool),id=randomUUID();await service.reserve(id);
+  const url='https://www.pencarrie.com/storage/saved.png',bytes=Buffer.from('saved garment');
+  const first=await service.garmentLoader(id);
+  assert.deepEqual(await first(url,'PenCarrie',async()=>({ok:true,arrayBuffer:async()=>bytes})),bytes);
+  const reopened=await createService(pool).garmentLoader(id);
+  assert.deepEqual(await reopened(url,'PenCarrie',async()=>{throw new Error('Supplier unavailable');}),bytes);
+ }finally{await db.close();}
+});

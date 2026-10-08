@@ -93,7 +93,7 @@ function drawCallout(page, decoration, asset, regular, bold, index, total) {
 }
 
 
-async function buildProof(brief, artworks, { fetchImpl = fetch, date = new Date(), strict = false } = {}) {
+async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = fetchGarment, date = new Date(), strict = false } = {}) {
   if (!Array.isArray(brief?.products) || !brief.products.length || brief.products.length > 20) throw new Error('A proof needs 1-20 products.');
   const ids = artworks.map(a => a.id);
   if (ids.some(id => !id) || new Set(ids).size !== ids.length) throw new Error('Each uploaded artwork needs a unique ID.');
@@ -113,7 +113,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, date = new Date(
   const embedded = new Map(), assetErrors = new Map(), garments = new Map();
   const loadGarment = async (source, provider) => {
     if (!garments.has(source.url)) {
-      const bytes = await fetchGarment(source.url, provider, fetchImpl);
+      const bytes = await garmentLoader(source.url, provider, fetchImpl);
       const analysis = await analyseGarment(bytes);
       const image = await pdf.embedPng(analysis.bytes);
       garments.set(source.url, {...analysis, image, kind:'image', sourceHash:createHash('sha256').update(bytes).digest('hex')});
