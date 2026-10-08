@@ -1,0 +1,6 @@
+
+.design-folder-link { appearance:none; border:0; padding:0; background:transparent; color:inherit; font:inherit; font-weight:inherit; cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
+.design-folder-link:hover, .design-folder-link:focus-visible { color:#94cafa; }
+.design-folder-notice { position:fixed; bottom:20px; right:20px; z-index:10000; max-width:min(480px,calc(100vw - 40px)); padding:14px 18px; border:1px solid #94cafa; border-radius:8px; background:#202427; color:#eaf5ff; box-shadow:0 4px 20px #0006; }
+
+.design-folder-edit { border:0; background:transparent; color:#94cafa; cursor:pointer; padding:0 4px; font:inherit; }

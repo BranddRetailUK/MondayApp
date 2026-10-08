@@ -5113,11 +5113,15 @@ function renderTextInputValue(cell, text) {
 }
 
 function renderTestDesignInputValue(cell, text, entity, column) {
-  const display = document.createElement('button');
+  const display = document.createElement('div');
   display.className = 'test-design-display';
-  display.type = 'button';
-  display.setAttribute('aria-label', text ? `Edit ${column?.title || 'DES/PSG'} ${text}` : `Set ${column?.title || 'DES/PSG'}`);
   renderColoredDesignText(display, text);
+  const edit = document.createElement('button');
+  edit.type = 'button';
+  edit.className = 'design-folder-edit';
+  edit.textContent = '✎';
+  edit.setAttribute('aria-label', `Edit ${column?.title || 'DES/PSG'} ${text || ''}`);
+  display.appendChild(edit);
 
   const input = document.createElement('input');
   input.className = 'test-design-input';
@@ -5213,9 +5217,18 @@ function renderColoredDesignText(container, text) {
 
   const segments = splitDesignDisplaySegments(value);
   for (const segment of segments) {
-    const span = document.createElement('span');
-    span.className = `test-design-segment ${segment.kind}`;
+    const number = segment.text.trim();
+    const clickable = segment.kind === 'design' && /^[1-9]\d{0,9}$/.test(number);
+    const span = document.createElement(clickable ? 'button' : 'span');
+    span.className = `test-design-segment ${segment.kind}${clickable ? ' design-folder-link' : ''}`;
     span.textContent = segment.text;
+    if (clickable) {
+      span.type = 'button';
+      span.title = `Open design folder ${number} on the Windows design computer`;
+      span.addEventListener('click', event => window.openDesignFolder(number, event));
+      span.addEventListener('dblclick', event => event.stopPropagation());
+      span.addEventListener('pointerdown', event => event.stopPropagation());
+    }
     container.appendChild(span);
   }
 }

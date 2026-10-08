@@ -4,12 +4,15 @@ const crypto = require('node:crypto');
 function folderMatches(name, ref) {
   return new RegExp(`(^|[^0-9])${ref}([^0-9]|$)`).test(name) && !/^\d+\s*-\s*\d+(?:\s|$)/.test(name);
 }
-async function findProof(root, ref, onProgress = () => {}) {
-  if (!/^\d{5,10}$/.test(ref) || Number(ref)<28300) throw new Error('Ineligible design number');
+async function findDesignFolder(root, ref, onProgress = () => {}) {
+  if (!/^[1-9]\d{0,9}$/.test(ref)) throw new Error('Invalid design number');
   onProgress('Scanning local design folders');
   root = await fs.realpath(root);
   const found = []; let count = 0;
   async function visit(folder, depth) {
+    const resolved=await fs.realpath(folder);
+    const relative=path.relative(root,resolved);
+    if(relative==='..'||relative.startsWith('..'+path.sep)||path.isAbsolute(relative))throw new Error('Design folder is outside the configured root');
     if (++count>30000) throw new Error('Design search exceeded 30,000 folders');
     if(count%1000===0) onProgress(`Scanning local design folders (${count} checked)`);
     if (folderMatches(path.basename(folder),ref)) { found.push(folder); return; }
@@ -23,6 +26,11 @@ async function findProof(root, ref, onProgress = () => {}) {
   }
   await visit(root,0);
   if (found.length!==1) throw new Error(`Expected one folder for ${ref}; found ${found.length}`);
+  return found[0];
+}
+async function findProof(root, ref, onProgress = () => {}) {
+  if (!/^\d{5,10}$/.test(ref) || Number(ref)<28300) throw new Error('Ineligible design number');
+  const found=[await findDesignFolder(root,ref,onProgress)];
   onProgress('Checking files in the matching design folder');
   // Proof must be directly in the matching design folder; never guess between revisions.
   const proofs=(await fs.readdir(found[0],{withFileTypes:true})).filter(e=>e.isFile()&&!e.isSymbolicLink()&&/proof\.(pdf|ai)$/i.test(e.name));
@@ -54,4 +62,4 @@ function parseResult(text) {
   if (!['exported','needs_attention'].includes(read('status'))) throw new Error('Invalid Illustrator result');
   return {status:read('status'),message:read('message'),outputs:[...text.matchAll(/<output>([\s\S]*?)<\/output>/g)].map(m=>decodeXml(m[1]))};
 }
-module.exports={findProof,folderMatches,parseResult};
+module.exports={findDesignFolder,findProof,folderMatches,parseResult};

@@ -92,6 +92,7 @@ async function initDb() {
   await ensureDatabaseTables(pool);
   await require('./printExportSchema').ensurePrintExportTables(pool);
   await require('./proofGeneratorSchema').ensureProofGeneratorTables(pool);
+  await require('../services/designFolders').ensureTables(pool);
 }
 
 module.exports = { initDb };

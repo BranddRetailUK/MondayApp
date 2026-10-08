@@ -49,6 +49,7 @@ app.get('/health', (_req, res) => res.json({ ok: true }));
 // Worker routes authenticate with a scoped bearer token, not a browser session.
 app.use(require('./routes/print-exports').createRouter(require('./db/pool')));
 app.use('/api/proof-file-worker',require('./routes/proof-file-worker').createRouter(require('./db/pool')));
+app.use(require('./routes/design-folders').createRouter(require('./db/pool')));
 app.use('/api/proof-generator', require('./routes/proof-generator').createRouter());
 
 // Routers
