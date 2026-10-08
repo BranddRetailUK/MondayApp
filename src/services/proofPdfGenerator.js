@@ -73,23 +73,22 @@ function drawAsset(page, asset, x, top, width, height) {
 
 function drawCallout(page, decoration, asset, regular, bold, index, total) {
   const columns=Math.min(3,total), width=774/columns-16, x=34+(index%columns)*(774/columns);
-  const compact=total>3, top=(compact?428:438)+Math.floor(index/columns)*72;
+  const compact=total>3, top=(compact?450:462)+Math.floor(index/columns)*62;
   const displayPosition = positionName(decoration.position);
   const title = `${String(index + 1).padStart(2, '0')}  ${safeText(displayPosition || 'DECORATION').toUpperCase()}`;
   drawText(page, title, x, top, 9, bold, NAVY, width);
   line(page, x, top + 14, x + width, top + 14, BLUE, 1);
-  const imageWidth=compact?60:85, imageHeight=compact?43:76, textX=x+imageWidth+10, textWidth=width-imageWidth-10;
+  const imageWidth=compact?60:85, imageHeight=compact?36:76, textX=x+imageWidth+10, textWidth=width-imageWidth-10;
   if (asset) drawAsset(page, asset, x, top + 21, imageWidth, imageHeight);
   else drawText(page, 'No artwork', x, top + 27, 8, regular, GREY, imageWidth);
-  drawText(page, decoration.artwork || 'Artwork', textX, top + 21, 8, bold, NAVY, textWidth);
   let widthLabel = 'Size to confirm';
   try {
     const size = asset && artworkSize(decoration, asset.width / asset.height);
     if (size?.confirmed) widthLabel = `${Number(size.width.toFixed(1))} x ${Number(size.height.toFixed(1))} mm`;
   } catch (_) { widthLabel = 'Dimensions need review'; }
-  drawText(page, `${printMethod(decoration.method)} / ${widthLabel}`, textX, top + 34, 8, regular, GREY, textWidth);
+  drawText(page, `${printMethod(decoration.method)} / ${widthLabel}`, textX, top + 24, 8, regular, GREY, textWidth);
   const colours = [...(decoration.printColours || []), ...(decoration.threadColours || [])];
-  if (colours.length) drawText(page, `Colours: ${colours.join(', ')}`, textX, top + 47, 7, regular, GREY, textWidth);
+  if (colours.length) drawText(page, `Colours: ${colours.join(', ')}`, textX, top + 37, 7, regular, GREY, textWidth);
 }
 
 
@@ -183,11 +182,11 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
       const pageData = {productIndex,pdfPageIndex:productIndex,view,sourceHash:garment?.sourceHash || '',width:garment?.width || 400,height:garment?.height || 500,
         image:garment ? `data:image/png;base64,${garment.bytes.toString('base64')}` : '',generatedView:Boolean(source?.generated),calibration,landmarks:garment?.landmarks,placements:[]};
       const cellWidth=774/groups.size, cellX=34+viewIndex*cellWidth;
-      const garmentBox = garment ? drawAsset(page,garment,cellX+8,124,cellWidth-16,270) : null;
-      drawText(page,`${view.toUpperCase()} VIEW`,cellX+8,398,10,bold,NAVY,cellWidth-16);
+      const garmentBox = garment ? drawAsset(page,garment,cellX+8,136,cellWidth-16,decorations.length>3?300:312) : null;
+      drawText(page,`${view.toUpperCase()} VIEW`,cellX+8,104,10,bold,NAVY,cellWidth-16);
       const methods=[...new Set(marks.map(mark=>printMethod(mark.method)))];
       pageData.printMethods=methods;
-      drawText(page,`Print method: ${methods.join(' / ')}`,cellX+8,412,8,bold,GREY,cellWidth-16);
+      drawText(page,`Print method: ${methods.join(' / ')}`,cellX+8,118,8,bold,GREY,cellWidth-16);
       if (!garment) drawText(page,'Matching view unavailable',cellX+8,245,10,bold,GREY,cellWidth-16);
       if (garment && !garment.confident) issue(productIndex,null,'Garment boundary is uncertain. Check printable regions and placement.');
       for (const d of marks) {
@@ -227,8 +226,8 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
     decorations.forEach((d,index)=>{const artwork=findArtwork(d,artworks);drawCallout(page,d,artwork&&embedded.get(artwork.id),regular,bold,index,decorations.length);});
     const blocking=issues.some(i=>i.productIndex===productIndex&&i.blocking);
     const placements=pages.filter(p=>p.productIndex===productIndex).flatMap(p=>p.placements);
-    drawText(page,blocking?(supplierUnavailable?'DRAFT - GARMENT IMAGES UNAVAILABLE':'DRAFT - PROOF REQUIRES REVIEW'):placements.length&&placements.every(p=>p.calibrated)?'Calibrated garment scale - verify production dimensions':'INDICATIVE SCALE - automatic garment placement',34,568,8,bold,blocking?rgb(.75,.18,.1):GREY,774);
-    drawText(page,'Positions as worn. Artwork callouts are enlarged for inspection. Dimensions describe visible artwork.',34,582,7,regular,GREY,774);
+    drawText(page,blocking?(supplierUnavailable?'DRAFT - GARMENT IMAGES UNAVAILABLE':'DRAFT - PROOF REQUIRES REVIEW'):placements.length&&placements.every(p=>p.calibrated)?'Calibrated garment scale - verify production dimensions':'INDICATIVE SCALE - automatic garment placement',34,576,8,bold,blocking?rgb(.75,.18,.1):GREY,774);
+    drawText(page,'Positions as worn. Artwork callouts are enlarged for inspection. Dimensions describe visible artwork.',34,586,7,regular,GREY,774);
   }
   const uniqueIssues=issues.filter((item,index)=>issues.findIndex(other=>JSON.stringify(other)===JSON.stringify(item))===index);
   if(strict && uniqueIssues.some(i=>i.blocking)) {
