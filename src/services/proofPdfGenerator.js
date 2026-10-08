@@ -183,7 +183,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
       const pageData = {productIndex,pdfPageIndex:productIndex,view,sourceHash:garment?.sourceHash || '',width:garment?.width || 400,height:garment?.height || 500,
         image:garment ? `data:image/png;base64,${garment.bytes.toString('base64')}` : '',generatedView:Boolean(source?.generated),calibration,landmarks:garment?.landmarks,placements:[]};
       const cellWidth=774/groups.size, cellX=34+viewIndex*cellWidth;
-      const garmentBox = garment ? drawAsset(page,garment,cellX+8,112,cellWidth-16,270) : null;
+      const garmentBox = garment ? drawAsset(page,garment,cellX+8,124,cellWidth-16,270) : null;
       drawText(page,`${view.toUpperCase()} VIEW`,cellX+8,398,10,bold,NAVY,cellWidth-16);
       const methods=[...new Set(marks.map(mark=>printMethod(mark.method)))];
       pageData.printMethods=methods;

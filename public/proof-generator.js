@@ -82,7 +82,7 @@
   const artworks = [];
   let currentBrief = null;
   let currentPreview = null;
-  let busy = false;
+  let busy = false, generatingProof = false;
   let dirty = true;
   const historyScreen=root.querySelector('#proof-history'),editorScreen=root.querySelector('#proof-editor-screen');
   const historyList=root.querySelector('#proof-history-list'),historyStatus=root.querySelector('#proof-history-status');
@@ -417,7 +417,7 @@
     if (busy) return;
     if (!request.value.trim()) { request.focus(); setFeedback('Enter the proof request first.', true); return; }
     if (!artworks.length) { setFeedback('Attach artwork first so each decoration can be assigned to a file.', true); return; }
-    busy = true; setCreating(true);
+    busy = true; generatingProof = true; setCreating(true);
     const submittedSource=JSON.stringify([customer.value,jobTitle.value,request.value,instructions.value,artworks.map(a=>[a.id,a.assignment,a.notes])]);
     setFeedback('Reading the brief and resolving artwork assignments…');
     try {
@@ -454,7 +454,7 @@
       await recordProgress(currentPreview?.issues.some(issue=>issue.blocking)?'review':'complete');
       if(localPreview)design.status='saved';
     } catch(error) { setFeedback(error.message, true);try{await recordProgress('error',error.message);}catch(_){} }
-    finally { busy = false; setCreating(false);renderHistory();refreshHistory(); }
+    finally { generatingProof = false; busy = false; setCreating(false);renderHistory();refreshHistory(); }
   }
 
   async function uploadForm(brief,includeOriginals=false) {
@@ -771,5 +771,5 @@
   }
   showProofList();
   setInterval(()=>{if(!historyScreen.hidden&&document.visibilityState==='visible'&&root.getClientRects().length)refreshHistory();},4000);
-  setInterval(()=>{if(reviewButton.getAttribute('aria-busy')==='true'&&designId)recordProgress('generating').catch(()=>{});},30000);
+  setInterval(()=>{if(generatingProof&&designId)recordProgress('generating').catch(()=>{});},30000);
 })();
