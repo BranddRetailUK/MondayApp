@@ -5,9 +5,9 @@ const publicJob=row=>row&&({id:row.id,customer:row.customer,jobTitle:row.job_tit
 const columns='id,customer,job_title,design_number,folder_name,status,revision,saved_revision,message,save_key,pdf_hash,reference,created_at,updated_at,generation_status,generation_message,generation_updated_at,(preview_png IS NOT NULL) AS has_preview,(proof_pdf IS NOT NULL AND proof_ready) AS has_pdf,(source IS NOT NULL) AS has_source';
 function createService(pool){
   const query=(text,values=[])=>pool.query(text,values);
-  async function get(id){if(!UUID.test(id||''))throw new Error('Invalid proof ID.');const r=await query(`SELECT ${columns} FROM proof_design_jobs WHERE id=$1`,[id]);if(!r.rows[0])throw new Error('Proof design not found.');return publicJob(r.rows[0]);}
+  async function get(id){if(!UUID.test(id||''))throw new Error('Invalid proof ID.');const r=await query(`SELECT ${columns} FROM proof_design_jobs WHERE id=$1 AND status<>'archived'`,[id]);if(!r.rows[0])throw new Error('Proof design not found.');return publicJob(r.rows[0]);}
   async function list(offset=0){
-    const result=await query(`SELECT ${columns} FROM proof_design_jobs ORDER BY created_at DESC,id DESC LIMIT 51 OFFSET $1`,[offset]);
+    const result=await query(`SELECT ${columns} FROM proof_design_jobs WHERE status<>'archived' ORDER BY created_at DESC,id DESC LIMIT 51 OFFSET $1`,[offset]);
     return {designs:result.rows.slice(0,50).map(publicJob),nextOffset:result.rows.length>50?offset+50:null};
   }
   async function progress(id,{state,message='',customer,jobTitle,reference}={}){

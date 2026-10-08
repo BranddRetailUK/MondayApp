@@ -140,13 +140,13 @@
       }else if(localPreview&&job.id===designId&&currentPreview?.pdf){renderDocument(currentPreview.pdf,thumb,[],{onlyPage:1,clickable:false});}
       else{thumb.textContent=job.status==='saved'?'Preview unavailable':'Preview pending';}
       const info=document.createElement('div');info.className='proof-history-info';
-      for(const [label,value] of [['Customer',job.customer],['Title',job.jobTitle],['Ref',job.reference||job.designNumber],['Design number',job.designNumber]]){
+      for(const [label,value] of [['Customer',job.customer],['Title',job.jobTitle],['Ref',job.designNumber||job.reference],['Date created',job.createdAt?new Date(job.createdAt).toLocaleString('en-GB',{timeZone:'Europe/London',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—']]){
         const field=document.createElement('div'),name=document.createElement('span'),valueNode=document.createElement('strong');name.textContent=label;valueNode.textContent=value||'—';field.append(name,valueNode);info.append(field);
       }
       const state=document.createElement('div');state.className='proof-history-state';const [label,message]=historyState(job);
       const status=document.createElement('strong');status.textContent=label;state.append(status);
       if(message){const detail=document.createElement('p');detail.textContent=message;state.append(detail);}
-      if(job.createdAt){const date=document.createElement('time');date.dateTime=job.createdAt;date.textContent=new Date(job.createdAt).toLocaleString('en-GB',{timeZone:'Europe/London',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});state.append(date);}
+
       const actions=document.createElement('div');actions.className='proof-history-actions';
       if(job.hasPdf){const download=document.createElement('a');download.className='proof-secondary-button';download.textContent='Download';download.href=`/api/proof-generator/designs/${encodeURIComponent(job.id)}/pdf?download=1`;actions.append(download);}
       else{const download=document.createElement('button');download.type='button';download.className='proof-secondary-button';download.textContent='Download';download.disabled=true;download.title='Available after a proof PDF has been generated and retained.';actions.append(download);}

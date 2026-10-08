@@ -215,3 +215,16 @@ test('retained garment images survive a new service instance without supplier ac
   assert.deepEqual(await reopened(url,'PenCarrie',async()=>{throw new Error('Supplier unavailable');}),bytes);
  }finally{await db.close();}
 });
+
+test('archived test proofs are hidden and unclaimable while their design numbers stay reserved',async()=>{
+ const db=new PGlite(),pool={query:(...a)=>db.query(...a),connect:async()=>({query:(...a)=>db.query(...a),release(){}})};
+ try{
+  await ensureProofGeneratorTables(db);const service=createService(pool),id=randomUUID();await service.reserve(id,'Test');
+  await db.query("UPDATE proof_design_jobs SET status='archived',design_number=29132 WHERE id=$1",[id]);
+  assert.deepEqual((await service.list()).designs,[]);await assert.rejects(()=>service.get(id),/not found/);
+  await assert.rejects(()=>service.source(id),/not found/);assert.equal(await service.claim('worker'),null);
+  const next=randomUUID();await service.reserve(next,'Real job');const claim=await service.claim('worker');
+  const allocated=await service.report(next,claim.claimToken,{status:'reserve',proposedNumber:'29100'});
+  assert.equal(allocated.designNumber,'29133');assert.equal((await service.list()).designs.length,1);
+ }finally{await db.close();}
+});
