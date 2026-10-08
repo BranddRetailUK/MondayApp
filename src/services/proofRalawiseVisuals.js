@@ -1,3 +1,8 @@
+function normaliseStyleCode(value) {
+  return String(value || '').trim().toUpperCase().replace(/^([A-Z]+)0+(?=\d)/, '$1');
+}
+const styleCodeSql = "REGEXP_REPLACE(UPPER(s.style_code), '^([A-Z]+)0+([0-9])', '\\1\\2')";
+
 const PIMBERLY_TENANT = '/public/asset/raw/571f95845f13380f0056d06a/';
 
 function isRalawiseImageUrl(value) {
@@ -36,10 +41,10 @@ async function fetchRalawiseRows(codes, pool) {
                  FROM database_ralawise_catalog_images i
                 WHERE i.style_id = s.id AND i.colour_id = c.id
              ) images ON TRUE
-            WHERE (UPPER(s.style_code) = ANY($1::text[]) OR UPPER(s.manufacturer_style_code) = ANY($1::text[]))
+            WHERE (UPPER(s.style_code) = ANY($1::text[]) OR UPPER(s.manufacturer_style_code) = ANY($1::text[]) OR ${styleCodeSql} = ANY($2::text[]))
               AND EXISTS (SELECT 1 FROM database_ralawise_catalog_variants v
                           WHERE v.style_id = s.id AND v.colour_id = c.id AND v.is_active IS TRUE)`,
-    values: [valid], query_timeout: 5000,
+    values: [valid, valid.map(normaliseStyleCode)], query_timeout: 5000,
   });
   return rows;
 }
@@ -47,7 +52,8 @@ async function fetchRalawiseRows(codes, pool) {
 function selectRalawiseVisual(rows, code, requestedColour, matchColour) {
   const requestedCode = String(code || '').trim().toUpperCase();
   const direct = rows.filter(row => row.style_code.toUpperCase() === requestedCode);
-  const candidates = direct.length ? direct : rows.filter(row => String(row.manufacturer_style_code || '').toUpperCase() === requestedCode);
+  const equivalent = rows.filter(row => normaliseStyleCode(row.style_code) === normaliseStyleCode(requestedCode));
+  const candidates = direct.length ? direct : equivalent.length ? equivalent : rows.filter(row => String(row.manufacturer_style_code || '').toUpperCase() === requestedCode);
   const base = { source: 'Ralawise catalog', name: '', colour: '', matched: false, productUrl: '', views: [] };
   const styles = [...new Set(candidates.map(row => String(row.style_id)))];
   if (!styles.length) return { ...base, lookupIssue: requestedCode ? 'product_not_found' : 'missing_code' };
@@ -80,10 +86,10 @@ async function searchRalawiseProducts(query, pool) {
         AND EXISTS (SELECT 1 FROM database_ralawise_catalog_variants cv
           WHERE cv.style_id=s.id AND cv.colour_id=c.id AND cv.is_active IS TRUE)), '[]'::jsonb) AS colours
     FROM database_ralawise_catalog_styles s
-    WHERE (UPPER(s.style_code) LIKE $1 OR UPPER(s.manufacturer_style_code) LIKE $1)
+    WHERE (UPPER(s.style_code) LIKE $1 OR UPPER(s.manufacturer_style_code) LIKE $1 OR ${styleCodeSql}=$3)
       AND EXISTS (SELECT 1 FROM database_ralawise_catalog_variants v WHERE v.style_id=s.id AND v.is_active IS TRUE)
-    ORDER BY CASE WHEN UPPER(s.style_code)=$2 THEN 0 WHEN UPPER(s.manufacturer_style_code)=$2 THEN 1 ELSE 2 END,
-      s.style_code LIMIT 12`,values:[`${code}%`,code],query_timeout:5000});
+    ORDER BY CASE WHEN UPPER(s.style_code)=$2 THEN 0 WHEN ${styleCodeSql}=$3 THEN 1 WHEN UPPER(s.manufacturer_style_code)=$2 THEN 2 ELSE 3 END,
+      s.style_code LIMIT 12`,values:[`${code}%`,code,normaliseStyleCode(code)],query_timeout:5000});
   return rows;
 }
 

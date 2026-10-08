@@ -30,7 +30,7 @@ test('Ralawise prefers exact codes and requires unique manufacturer mappings and
 });
 test('hosted supplier enrichment uses the existing database without contacting PenCarrie',async()=>{
  const brief=makeBrief();let queries=0;
- await enrichProofProducts(brief,{provider:'ralawise',pool:{query:async query=>{queries++;assert.deepEqual(query.values,[['RX350']]);return {rows:[row]};}},fetchImpl:async()=>{throw Error('Unexpected website lookup');}});
+ await enrichProofProducts(brief,{provider:'ralawise',pool:{query:async query=>{queries++;assert.deepEqual(query.values,[['RX350'],['RX350']]);return {rows:[row]};}},fetchImpl:async()=>{throw Error('Unexpected website lookup');}});
  assert.equal(queries,1);assert.equal(brief.products[0].visual.source,'Ralawise catalog');assert.equal(brief.products[0].visual.views[0].view,'front');
 });
 test('missing back and sleeve views generate once and export reuses identical cached images',async()=>{
@@ -76,7 +76,7 @@ test('generated contact sheets and empty images are rejected; validation failure
 });
 
 test('catalogue search uses bounded code prefixes and does not interpret wildcard input',async()=>{
- let calls=0;const pool={query:async query=>{calls++;assert.deepEqual(query.values,['RX3%','RX3']);return {rows:[{code:'RX350',name:'Pro hoodie'}]};}};
+ let calls=0;const pool={query:async query=>{calls++;assert.deepEqual(query.values,['RX3%','RX3','RX3']);return {rows:[{code:'RX350',name:'Pro hoodie'}]};}};
  assert.deepEqual(await searchRalawiseProducts(' rx3 ',pool),[{code:'RX350',name:'Pro hoodie'}]);
  for(const query of ['','R','%','RX_','RX350\' OR TRUE'])assert.deepEqual(await searchRalawiseProducts(query,pool),[]);
  assert.equal(calls,1);
@@ -108,5 +108,23 @@ test('product picker lists sorted colours with active variants for the selected 
    INSERT INTO database_ralawise_catalog_variants VALUES(1,1,true),(1,2,true),(1,2,true),(1,3,false),(2,4,true);`);
   const results=await searchRalawiseProducts('GD017',{query:({text,values})=>db.query(text,values)});
   assert.equal(results.length,1);assert.deepEqual(results[0].colours,['Black','White']);
+ }finally{await db.close();}
+});
+test('GD01 resolves GD001 with all 53 colours before the eight-colour GD010 prefix match',async()=>{
+ const {PGlite}=require('@electric-sql/pglite');const db=new PGlite();
+ try{
+  await db.exec(`CREATE TABLE database_ralawise_catalog_styles(id int,style_code text,manufacturer_style_code text,style_name text,brand text);
+   CREATE TABLE database_ralawise_catalog_colours(id int,style_id int,colour_name text);
+   CREATE TABLE database_ralawise_catalog_variants(style_id int,colour_id int,is_active bool);
+   INSERT INTO database_ralawise_catalog_styles VALUES(1,'GD001','64000','Softstyle T-shirt','Gildan'),(2,'GD010','64V00','V-neck','Gildan');
+   INSERT INTO database_ralawise_catalog_colours SELECT i,1,'Colour '||i FROM generate_series(1,53) AS i;
+   INSERT INTO database_ralawise_catalog_colours SELECT i,2,'Colour '||i FROM generate_series(54,61) AS i;
+   INSERT INTO database_ralawise_catalog_variants SELECT style_id,id,true FROM database_ralawise_catalog_colours;`);
+  const pool={query:({text,values})=>db.query(text,values)};
+  const results=await searchRalawiseProducts('GD01',pool);
+  assert.deepEqual(results.map(x=>[x.code,x.colours.length]),[['GD001',53],['GD010',8]]);
+  assert.equal((await searchRalawiseProducts('GD001',pool))[0].colours.length,53);
+  const visual=selectRalawiseVisual([{style_id:1,style_code:'GD001',style_name:'T-shirt',colour_name:'Black',colour_id:1,images:[]}],'GD01','Black',(items,name)=>items.find(x=>x.name===name));
+  assert.equal(visual.matched,true);assert.equal(visual.styleCode,'GD001');
  }finally{await db.close();}
 });
