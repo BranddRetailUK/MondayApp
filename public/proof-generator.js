@@ -448,19 +448,22 @@
     if (!request.value.trim()) { request.focus(); setFeedback('Enter the proof request first.', true); return; }
     if (!artworks.length) { setFeedback('Attach artwork first so each decoration can be assigned to a file.', true); return; }
     busy = true; generatingProof = true; setCreating(true);
+    if(!designId){designId=crypto.randomUUID();try{sessionStorage.setItem('proof-design-id',designId);}catch(_){} }
+    design={...design,id:designId,customer:customer.value,jobTitle:jobTitle.value,createdAt:design?.createdAt||new Date().toISOString(),generationStatus:'generating'};
+    showProofList();
     const submittedSource=JSON.stringify([customer.value,jobTitle.value,request.value,instructions.value,artworks.map(a=>[a.id,a.assignment,a.notes])]);
     setFeedback('Reading the brief and resolving artwork assignments…');
     try {
-      if(!designId){designId=crypto.randomUUID();try{sessionStorage.setItem('proof-design-id',designId);}catch(_){} }
       design=localPreview?{id:designId,customer:customer.value,jobTitle:jobTitle.value,status:'folder_ready',createdAt:new Date().toISOString()}:await designRequest('',{id:designId,customer:customer.value,jobTitle:jobTitle.value,deferAllocation:true});
       await recordProgress('generating','Preparing artwork…');
-      showProofList();
       setFeedback('Preparing artwork…');
       await Promise.all(artworks.map(item=>prepareArtworkFile(item.file)));
       await saveProofSource();
       if(currentBrief){
-        await updatePreview(false);
+        await reserveDesign(currentBrief);
+        await updatePreview();
         await recordProgress(currentPreview?.issues.some(issue=>issue.blocking)?'review':'complete');
+        if(localPreview)design.status='saved';
         return;
       }
       const readinessResponse = await fetch('/api/proof-generator/status', { cache: 'no-store' });
@@ -483,7 +486,10 @@
       await updatePreview();
       await recordProgress(currentPreview?.issues.some(issue=>issue.blocking)?'review':'complete');
       if(localPreview)design.status='saved';
-    } catch(error) { setFeedback(error.message, true);try{await recordProgress('error',error.message);}catch(_){} }
+    } catch(error) {
+      if(design)design={...design,generationStatus:'error',generationMessage:error.message};
+      setFeedback(error.message, true);try{await recordProgress('error',error.message);}catch(_){}
+    }
     finally { generatingProof = false; busy = false; setCreating(false);renderHistory();refreshHistory(); }
   }
 
@@ -563,7 +569,7 @@
   function markDirty(showFeedback = true) {
     dirty = true;
     results.querySelectorAll('[data-download]').forEach(button=>{button.disabled=true;});
-    if(showFeedback)setFeedback('Placement changed. Resave proof to apply your position and scale edits.');
+    if(showFeedback)setFeedback('Placement changed. Regenerate proof to save your position and scale edits.');
   }
 
   function inputField(label, value, change, {min, max, step='any'} = {}) {
@@ -661,10 +667,11 @@
         });
         panel.append(grid);section.append(panel);
       });
-      for(const page of currentPreview?.pages.filter(page=>page.productIndex===pi)||[]) section.append(viewEditor(product,page,id=>placementControls.get(id)?.()));
+      const views=document.createElement('div');views.className='proof-placement-views';
+      for(const page of currentPreview?.pages.filter(page=>page.productIndex===pi)||[]) views.append(viewEditor(product,page,id=>placementControls.get(id)?.()));
+      section.append(views);
       fallback.append(section);
     });
-    fallback.append(action('Resave proof',()=>updatePreview(false),'proof-primary-button'));
     const hasGarment = currentPreview?.pages.some(page=>page.image);
     if(currentPreview?.pdf && hasGarment){
       const container=document.createElement('div');container.className='proof-pdf-pages proof-auto-preview';results.append(container);

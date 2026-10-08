@@ -177,3 +177,7 @@ body.proof-preview .proof-preview-badge{display:block}
 @media(max-width:500px){.proof-product-picker{grid-template-columns:1fr}}
 
 .proof-control input,.proof-control select{font-weight:400}
+
+.proof-placement-views{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+.proof-placement-views .proof-view-editor{min-width:0}
+@media(max-width:650px){.proof-placement-views{grid-template-columns:1fr}}

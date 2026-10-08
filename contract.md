@@ -642,3 +642,10 @@ No external work-management token, OAuth, board, column, or webhook environment 
 - The preview height is 50vh bounded to 280–420px, with one seamless transparency grid and proportionally contained artwork. The conversion column is 340px wide; mobile stacks below. Filenames wrap fully. Empty preview uses the light-blue upload arrow. Clear sits below the artwork; there is no file-list panel, page navigator, original-download button, review pill or supporting footer. File type, File size and Dimensions remain visible. The native format selector uses an inset chevron.
 - Convert & download exports PNG/JPG/WebP/PDF/SVG/EPS from the rendered first page/image, capped to 4096px per side. GIF uses a single frame. PDF contains one raster page at 150ppi, SVG wraps embedded PNG, and EPS embeds RGB pixels against white. These are flattened exports: they do not preserve editable vectors, layers, PDF text, all PDF pages or original physical dimensions. General lossless/vector conversion is outside this approved version.
 - `node scripts/preview-file-viewer.js` remains an optional loopback-only review server on port 3109, using a synthetic user and no database/migrations. Its EPS requests use configured Cloudinary credentials; it is not the production entry point.
+
+
+## Proof regeneration interaction (2026-10-08)
+
+- Regenerate proof is the single regeneration/save action; the fallback Resave proof button is removed. Current manual placements, dimensions and other brief controls are submitted through the same preview/save workflow. Required views are prepared before rendering, and the existing design identity/revision is retained. Request/artwork changes continue through brief parsing.
+- A valid create/regenerate click immediately returns to the proof list before network work. Its row uses the existing greyed-out, inert contents and loading wheel throughout generation and the workstation save acknowledgement. Errors stop the busy state and surface a failure; blocking review issues remain reviewable.
+- Individual garment placement canvases use two columns per product, falling back to one column on screens at or below 650px.
