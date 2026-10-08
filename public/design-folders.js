@@ -1,9 +1,11 @@
 (() => {
   const pending=new Set();
-  let notice;
-  function show(message){
+  let notice,hideTimer;
+  function show(message,autoHide=false){
+    clearTimeout(hideTimer);
     if(!notice){notice=document.createElement('div');notice.className='design-folder-notice';notice.setAttribute('role','status');document.body.append(notice);}
     notice.textContent=message;notice.hidden=false;
+    if(autoHide)hideTimer=setTimeout(()=>{notice.hidden=true;},2000);
   }
   window.openDesignFolder=async(number,event)=>{
     event?.preventDefault();event?.stopPropagation();
@@ -18,7 +20,7 @@
         await new Promise(resolve=>setTimeout(resolve,1000));
         const check=await fetch(`/api/design-folders/requests/${result.id}`,{cache:'no-store'});
         const state=await check.json();if(!check.ok)throw new Error(state.error||'Unable to check folder request');
-        if(state.status==='opened'){show(`Folder ${number} opened on the Windows design computer.`);return;}
+        if(state.status==='opened'){show(`Folder ${number} opened on the Windows design computer.`,true);return;}
         if(state.status==='error')throw new Error(state.message||'Folder could not be opened');
         if(state.status==='expired')break;
       }
