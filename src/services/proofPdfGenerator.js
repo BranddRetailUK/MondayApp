@@ -86,9 +86,10 @@ function drawCallout(page, decoration, asset, regular, bold, index, total) {
     const size = asset && artworkSize(decoration, asset.width / asset.height);
     if (size?.confirmed) widthLabel = `${Number(size.width.toFixed(1))} x ${Number(size.height.toFixed(1))} mm`;
   } catch (_) { widthLabel = 'Dimensions need review'; }
-  drawText(page, `${printMethod(decoration.method)} / ${widthLabel}`, textX, top + 24, 8, regular, GREY, textWidth);
+  drawText(page, printMethod(decoration.method), textX, top + 21, 8, regular, GREY, textWidth);
+  drawText(page, widthLabel, textX, top + 33, 8, regular, GREY, textWidth);
   const colours = [...(decoration.printColours || []), ...(decoration.threadColours || [])];
-  if (colours.length) drawText(page, `Colours: ${colours.join(', ')}`, textX, top + 37, 7, regular, GREY, textWidth);
+  if (colours.length) drawText(page, `Colours: ${colours.join(', ')}`, textX, top + 45, 7, regular, GREY, textWidth);
 }
 
 
@@ -236,10 +237,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
       pages.push(pageData);
     }
     decorations.forEach((d,index)=>{const artwork=findArtwork(d,artworks);drawCallout(page,d,artwork&&embedded.get(artwork.id),regular,bold,index,decorations.length);});
-    const blocking=issues.some(i=>i.productIndex===productIndex&&i.blocking);
-    const placements=pages.filter(p=>p.productIndex===productIndex).flatMap(p=>p.placements);
-    drawText(page,blocking?(supplierUnavailable?'DRAFT - GARMENT IMAGES UNAVAILABLE':'DRAFT - PROOF REQUIRES REVIEW'):placements.length&&placements.every(p=>p.calibrated)?'Calibrated garment scale - verify production dimensions':'INDICATIVE SCALE - automatic garment placement',34,576,8,bold,blocking?rgb(.75,.18,.1):GREY,774);
-    drawText(page,'Positions as worn. Artwork callouts are enlarged for inspection. Dimensions describe visible artwork.',34,586,7,regular,GREY,774);
+
   }
   const uniqueIssues=issues.filter((item,index)=>issues.findIndex(other=>JSON.stringify(other)===JSON.stringify(item))===index);
   if(strict && uniqueIssues.some(i=>i.blocking)) {

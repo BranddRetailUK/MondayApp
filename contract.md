@@ -660,3 +660,5 @@ No external work-management token, OAuth, board, column, or webhook environment 
 - PDF view headings show “Print method:” in black 8pt text; method values use larger bold text (11pt, fitted for narrow/mixed-method views), green for Transfer print and red for Embroidery. Other method values remain black.
 
 - The generated-proof editor no longer displays the optional Proof notes section. Blocking review issues remain visible and continue to prevent saving/downloading until resolved.
+
+- Proof PDFs omit the scale/status footer line and all explanatory text below it; server-side blocking validation is unchanged. Artwork callouts stack method, dimensions and optional colours on separate lines beside the artwork. The fullscreen proof modal separates pages with a 24px gap.
