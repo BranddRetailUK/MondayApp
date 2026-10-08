@@ -2,7 +2,8 @@
 async function proofThumbnail(bytes){
  const pdfjs=await import('pdfjs-dist/legacy/build/pdf.mjs');
  const {createCanvas}=require('@napi-rs/canvas');
- const document=await pdfjs.getDocument({data:new Uint8Array(bytes),isEvalSupported:false,useSystemFonts:true}).promise;
+ const standardFontDataUrl=require('node:path').join(require('node:path').dirname(require.resolve('pdfjs-dist/package.json')),'standard_fonts')+require('node:path').sep;
+ const document=await pdfjs.getDocument({data:new Uint8Array(bytes),isEvalSupported:false,useSystemFonts:false,standardFontDataUrl}).promise;
  try{
   const page=await document.getPage(1),base=page.getViewport({scale:1});
   const viewport=page.getViewport({scale:1000/Math.max(base.width,base.height)});
