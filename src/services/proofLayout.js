@@ -2,7 +2,7 @@
 // visible garment bounds, not the supplier photograph's surrounding canvas.
 const { automaticTop } = require('./proofPlacementProfiles');
 const POSITIONS = ['left breast', 'right breast', 'front', 'back', 'upper back', 'nape', 'left sleeve', 'right sleeve', 'left hem', 'right hem'];
-const ALIASES = { lb: 'left breast', rb: 'right breast', ls: 'left sleeve', rs: 'right sleeve', 'left chest': 'left breast', 'right chest': 'right breast', 'centre front': 'front', 'center front': 'front', 'full front': 'front', 'centre back': 'back', 'center back': 'back', 'full back': 'back', rear: 'back', 'back neck': 'nape' };
+const ALIASES = { lb: 'left breast', rb: 'right breast', ls: 'left sleeve', rs: 'right sleeve', 'left chest': 'left breast', 'right chest': 'right breast', chest: 'front', 'centre chest': 'front', 'center chest': 'front', 'full chest': 'front', 'front chest': 'front', 'centre front': 'front', 'center front': 'front', 'full front': 'front', 'centre back': 'back', 'center back': 'back', 'full back': 'back', rear: 'back', 'back neck': 'nape' };
 function normalise(value) { return String(value || '').toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim(); }
 function positionName(value) { const text = normalise(value); return ALIASES[text] || text; }
 function dimension(value, { signed = false } = {}) {
@@ -41,18 +41,22 @@ function textClauses(text) {
   });
 }
 
+function mentionsPosition(text, position) {
+  const names = [...POSITIONS, ...Object.keys(ALIASES)].sort((a,b) => b.length-a.length).join('|');
+  return [...String(text || '').matchAll(new RegExp('\\b(?:' + names + ')\\b', 'gi'))].some(match => positionName(match[0]) === position);
+}
+
 function recoverDimensions(decoration, input = {}, product = {}, products = []) {
   const assigned = (input.artworks || []).find(a => a.id && a.id === decoration.artworkId);
   const position = positionName(decoration.position);
-  const aliases = [position, ...Object.keys(ALIASES).filter(k => ALIASES[k] === position)];
   const scoped = textClauses(input.requestText).filter(clause => {
-    if (!aliases.some(a => new RegExp('\\b' + a + '\\b', 'i').test(clause))) return false;
+    if (!mentionsPosition(clause, position)) return false;
     // Never recover another product's numbers into this product's decoration.
     const codes = products.filter(p => p.code && new RegExp('\\b' + String(p.code).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i').test(clause));
     return !codes.length || (product.code && codes.some(p => p.code === product.code));
   });
   const assignedClauses=textClauses(assigned?.notes);
-  const scopedNotes=assignedClauses.filter(clause=>aliases.some(a=>new RegExp('\\b'+a+'\\b','i').test(clause)));
+  const scopedNotes=assignedClauses.filter(clause=>mentionsPosition(clause, position));
   const notesHavePositions=assignedClauses.some(clause=>[...POSITIONS,...Object.keys(ALIASES)].some(p=>new RegExp('\\b'+p+'\\b','i').test(clause)));
   const texts = [decoration.notes, ...(notesHavePositions?scopedNotes:[assigned?.notes]), ...scoped];
   const issues = [];

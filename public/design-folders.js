@@ -20,11 +20,13 @@
         await new Promise(resolve=>setTimeout(resolve,1000));
         const check=await fetch(`/api/design-folders/requests/${result.id}`,{cache:'no-store'});
         const state=await check.json();if(!check.ok)throw new Error(state.error||'Unable to check folder request');
-        if(state.status==='opened'){show(`Folder ${number} opened on the Windows design computer.`,true);return;}
+        if(state.status==='opened'||(state.status==='error'&&state.message==='Folder opened, but Windows blocked foreground focus. Select Explorer on the taskbar.')){
+          clearTimeout(hideTimer);if(notice)notice.hidden=true;return;
+        }
         if(state.status==='error')throw new Error(state.message||'Folder could not be opened');
         if(state.status==='expired')break;
       }
       throw new Error('Folder request expired. Check the Windows worker, then click the number again.');
-    }catch(error){show(error.message);}finally{pending.delete(number);}
+    }catch(error){show(error.message,true);}finally{pending.delete(number);}
   };
 })();

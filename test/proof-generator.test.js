@@ -292,3 +292,20 @@ test('combined and product PDFs omit stale Illustrator template data and retain 
   }}finally{await rendered.destroy();}
  }
 });
+test('chest aliases place artwork on the front of a generated proof and preserve left/right chest',async()=>{
+ for(const name of ['chest','centre chest','center chest','full chest','front chest'])assert.equal(layout.positionName(name),'front');
+ assert.equal(layout.positionName('left chest'),'left breast');assert.equal(layout.positionName('right chest'),'right breast');
+ const out=await buildProof(brief([mark({position:'chest',widthMm:'200'})]),[await artFile()],{fetchImpl:await fixtureFetch(),strict:true});
+ assert.equal(out.issues.filter(i=>i.blocking).length,0);
+ assert.ok(out.documents.length>0);
+ const placement=out.pages.find(page=>page.view==='front').placements[0];
+ assert.equal(placement.artworkId,'art');
+ const front=await buildProof(brief([mark({position:'front',widthMm:'200'})]),[await artFile()],{fetchImpl:await fixtureFetch(),strict:true});
+ assert.deepEqual(placement,front.pages.find(page=>page.view==='front').placements[0]);
+});
+
+test('chest size recovery does not borrow left or right chest dimensions',()=>{
+ const d=mark({position:'chest',widthMm:''});
+ layout.recoverDimensions(d,{requestText:'left chest 80 mm wide; chest 200 mm wide; right chest 90 mm wide'});
+ assert.equal(d.widthMm,'200');assert.deepEqual(d.dimensionIssues,[]);
+});
