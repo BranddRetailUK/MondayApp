@@ -5116,12 +5116,6 @@ function renderTestDesignInputValue(cell, text, entity, column) {
   const display = document.createElement('div');
   display.className = 'test-design-display';
   renderColoredDesignText(display, text);
-  const edit = document.createElement('button');
-  edit.type = 'button';
-  edit.className = 'design-folder-edit';
-  edit.textContent = '✎';
-  edit.setAttribute('aria-label', `Edit ${column?.title || 'DES/PSG'} ${text || ''}`);
-  display.appendChild(edit);
 
   const input = document.createElement('input');
   input.className = 'test-design-input';
