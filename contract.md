@@ -628,15 +628,3 @@ No external work-management token, OAuth, board, column, or webhook environment 
 
 - Sidebar on/off control: `print_export_settings` is a singleton Postgres row initialized Off exactly once. `GET /api/print-exports/settings` reports `enabled` and caller-specific `canToggle`; `PUT` accepts a boolean only from the full-access account whose normalized email is exactly `production@ultimatepromotions.co.uk`. UI visibility is based on that server permission and the semantic switch sits directly above Sign out. Unauthorized writes return 403; dtf_only/unauthenticated access is denied. Updates record the production email and timestamp. Schema bootstrap preserves saved state. The PRINT_EXPORT_ENABLED environment flag is retired.
 - Off prevents new approval queue entries, worker claims and retries. Existing running attempts may finish; queued work is paused and can resume when On. Enabling never backfills approvals made while Off. The switch is global across eligible jobs/users, not a per-job selector. Approval/claim/retry transactions hold a shared settings-row lock so a completed Off write cannot race with a later queue insertion/claim using stale settings. Production can enable around a test approval and disable after its worker claim.
-
-
-## File Viewer local review (2026-10-08)
-
-- Adds the full-access File Viewer navigation tab (`file-viewer`) after DTF Uploader, using the existing Hub shell. DTF-only navigation remains restricted. Not deployed; approval pending.
-- `node scripts/preview-file-viewer.js` serves the real shell on loopback port 3109 with a synthetic local user; no database access or migrations. Only local review APIs are available. The PDF.js modules are served at `/file-viewer-renderer/` by this review server; production wiring is pending approval.
-- Files remain in browser memory (30 files, 25 MB each). PNG/JPEG/WebP/GIF/BMP/AVIF/SVG preview through browser decoding; PDF uses PDF.js with page navigation. EPS uses the existing temporary Cloudinary 300-DPI conversion helper and cleanup, explicitly disclosed in the UI. AI and PSD are deferred. Unknown types retain original downloads without a fabricated preview.
-- PNG/JPG/WebP/PDF/SVG/EPS downloads are generated from the current preview/page (maximum 4096px side for browser images/PDF). GIF uses one frame. PDF export contains one raster page, SVG embeds PNG, and EPS embeds RGB pixels on white; these exports do not preserve editable vector paths, PDF text, layers, original physical dimensions or multiple pages. Original download preserves the supplied file. General lossless/vector conversion and production renderer wiring remain follow-up work after review.
-
-- File Viewer review styling omits grey supporting copy, upload hints, duplicate file metadata and the format/footer explanation strips. The File type, File size and Dimensions summary remains, with readable light labels. Functional page navigation remains visible.
-
-- The File Viewer “Made for your artwork” information strip and both footer notes are removed from the page markup at user request.
