@@ -32,6 +32,8 @@ app.get('/vendor/pdf-lib.min.js', requireHubPageAuth, (_req, res) => {
   res.sendFile(require.resolve('pdf-lib/dist/pdf-lib.min.js'));
 });
 
+app.use(require('./routes/file-viewer'));
+
 // Static
 app.use(express.static(publicDir, { index: false }));
 

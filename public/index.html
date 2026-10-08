@@ -12,6 +12,8 @@
   <link rel="stylesheet" href="dtf-uploader.css">
   <script src="vendor/pdf-lib.min.js" defer></script>
   <link rel="stylesheet" href="holiday-board.css">
+  <link rel="stylesheet" href="file-viewer.css">
+  <script src="file-viewer.js" defer></script>
   <link rel="stylesheet" href="proof-generator.css">
   <script src="holiday-board.js" defer></script>
   <script src="auth-session.js" defer></script>
@@ -50,7 +52,8 @@
           <li data-tab="test-dashboard" class="active">DASHBOARD</li>
           <li data-tab="database">DATABASE</li>
           <li data-tab="holiday-board">HOLIDAY BOARD</li>
-          <li data-tab="dtf-uploader">DTF UPLOADER</li>
+          <li data-tab="dtf-uploader" hidden>DTF UPLOADER</li>
+          <li data-tab="file-viewer">FILE VIEWER</li>
           <li data-tab="proof-generator" hidden>PROOF GENERATOR</li>
         </ul>
       </div>
@@ -86,6 +89,8 @@
       <section id="tab-holiday-board" class="tab-content" aria-label="Holiday Board"><div id="holiday-board"></div></section>
 
       <section id="tab-proof-generator" class="tab-content" aria-label="Proof Generator"><div id="proof-generator-root"></div></section>
+
+      <section id="tab-file-viewer" class="tab-content" aria-label="File Viewer"><div id="file-viewer-root"></div></section>
 
       <!-- DTF UPLOADER -->
       <section id="tab-dtf-uploader" class="tab-content dtf-tab-content">

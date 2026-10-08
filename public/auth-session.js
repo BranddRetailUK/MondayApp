@@ -34,7 +34,8 @@
     document.body.classList.toggle('hub-access-dtf-only', dtfOnly);
     document.querySelectorAll('.nav-tabs li[data-tab]').forEach((tab) => {
       tab.hidden = (dtfOnly && tab.dataset.tab !== 'dtf-uploader')
-        || (tab.dataset.tab === 'proof-generator' && !isProductionProofUser(user));
+        || (tab.dataset.tab === 'proof-generator' && !isProductionProofUser(user))
+        || (tab.dataset.tab === 'dtf-uploader' && String(user?.email || '').trim().toLowerCase() !== 'production@ultimatepromotions.co.uk');
     });
   }
 
