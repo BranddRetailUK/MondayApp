@@ -268,3 +268,27 @@ test('PNG preparation preserves faint and disconnected marks at every canvas edg
  const preview=Buffer.from(asset.preview.split(',')[1],'base64');
  assert.deepEqual(await sharp(preview).raw().toBuffer(),data);
 });
+
+test('combined and product PDFs omit stale Illustrator template data and retain generated text and images',async()=>{
+ const b=brief();b.customer='Illustrator Customer';b.jobTitle='Illustrator Job';b.reference='29130';
+ b.products.push({...structuredClone(b.products[0]),code:'SECOND'});
+ const out=await buildProof(b,[await artFile()],{fetchImpl:await fixtureFetch(),strict:true});
+ const {PDFName}=require('pdf-lib');
+ const pdfjs=await import('pdfjs-dist/legacy/build/pdf.mjs');
+ for(const bytes of [out.bytes,...out.documents.map(d=>d.bytes)]){
+  const pdf=await PDFDocument.load(bytes);
+  for(const page of pdf.getPages()){
+   assert.equal(page.node.has(PDFName.of('PieceInfo')),false,'Old Illustrator document must not override generated PDF content');
+   assert.equal(page.node.has(PDFName.of('Thumb')),false,'Do not retain the blank template thumbnail');
+  }
+  assert.equal(pdf.context.enumerateIndirectObjects().some(([,object])=>/AIPDFPrivateData|AIMetaData/.test(object.toString())),false);
+  const rendered=await pdfjs.getDocument({data:new Uint8Array(bytes),isEvalSupported:false}).promise;
+  try{for(let index=1;index<=rendered.numPages;index++){
+   const page=await rendered.getPage(index);
+   const text=(await page.getTextContent()).items.map(item=>item.str).join(' ');
+   for(const expected of ['Illustrator Customer','Illustrator Job','29130'])assert.ok(text.includes(expected),expected);
+   const operators=await page.getOperatorList();
+   assert.ok(operators.fnArray.filter(op=>op===pdfjs.OPS.paintImageXObject).length>=3,'Retain garment, logo and artwork callout images');
+  }}finally{await rendered.destroy();}
+ }
+});

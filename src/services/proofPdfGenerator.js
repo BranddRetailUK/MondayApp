@@ -2,7 +2,7 @@ const {colourName,printMethod}=require('../../public/proof-display');
 const {proofFileName}=require('../../tools/print-worker/proof-filename');
 const fs = require('fs/promises');
 const path = require('path');
-const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
+const { PDFDocument, PDFName, StandardFonts, rgb } = require('pdf-lib');
 const { createHash } = require('crypto');
 const { fetchGarment } = require('./proofImageFetch');
 const { findArtwork, resolveDecorations, preferredView, placementFor, fitsRegion, positionName, artworkSize } = require('./proofLayout');
@@ -98,6 +98,14 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, date = new Date(
   const ids = artworks.map(a => a.id);
   if (ids.some(id => !id) || new Set(ids).size !== ids.length) throw new Error('Each uploaded artwork needs a unique ID.');
   const template = await PDFDocument.load(await fs.readFile(TEMPLATE_PATH));
+  // Illustrator otherwise reopens the template's private native document and
+  // ignores the proof content added below. Remove it before copyPages so its
+  // private streams never enter either the combined or per-product PDF.
+  for(const page of template.getPages()){
+    page.node.delete(PDFName.of('PieceInfo'));
+    page.node.delete(PDFName.of('Thumb'));
+    page.node.delete(PDFName.of('LastModified'));
+  }
   const pdf = await PDFDocument.create();
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
