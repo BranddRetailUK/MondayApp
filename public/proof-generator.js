@@ -144,7 +144,7 @@
         const field=document.createElement('div'),name=document.createElement('span'),valueNode=document.createElement('strong');name.textContent=label;valueNode.textContent=value||'—';field.append(name,valueNode);info.append(field);
       }
       const state=document.createElement('div');state.className='proof-history-state';const [label,message]=historyState(job);
-      const status=document.createElement('strong');status.textContent=label;state.append(status);
+      if(label!=='Saved'){const status=document.createElement('strong');status.textContent=label;state.append(status);}
       if(message){const detail=document.createElement('p');detail.textContent=message;state.append(detail);}
 
       const actions=document.createElement('div');actions.className='proof-history-actions';
