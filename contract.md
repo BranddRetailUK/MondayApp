@@ -658,3 +658,5 @@ No external work-management token, OAuth, board, column, or webhook environment 
 - Generated proof PDFs omit the artwork filename from bottom callouts. Each garment view’s view/method labels sit at its top left; garment display height grows from 270pt to 312pt (300pt for 4–6 decorations), with its artwork scaled proportionally. Bottom callouts and footer text sit lower, with compact two-row spacing for 4–6 decorations to keep all content inside the landscape A4 page. Download filenames and physical artwork dimensions are unchanged.
 
 - PDF view headings show “Print method:” in black 8pt text; method values use larger bold text (11pt, fitted for narrow/mixed-method views), green for Transfer print and red for Embroidery. Other method values remain black.
+
+- The generated-proof editor no longer displays the optional Proof notes section. Blocking review issues remain visible and continue to prevent saving/downloading until resolved.

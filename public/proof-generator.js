@@ -627,7 +627,6 @@
     const download=action(currentBrief.products.length>1?'Download all as multipage PDF':'Download PDF',()=>downloadPdf());
     download.dataset.download='true';download.disabled=dirty || !currentPreview || currentPreview.issues.some(i=>i.blocking);actions.append(download);results.append(actions);
     const blockers=(currentPreview?.issues || []).filter(issue=>issue.blocking);
-    const notices=(currentPreview?.issues || []).filter(issue=>!issue.blocking);
     if(blockers.length){
       const list=document.createElement('ul');list.className='proof-issues';
       for(const issue of blockers){const li=document.createElement('li');li.className=issue.blocking?'blocking':'';const product=currentBrief.products[issue.productIndex];const mark=product.decorations.find(d=>d.id===issue.decorationId);li.textContent=`${product.code || product.name}${mark?' / '+mark.position:''}: ${issue.message}`;list.append(li);}
@@ -651,12 +650,6 @@
     if(currentPreview?.pdf && hasGarment){
       const container=document.createElement('div');container.className='proof-pdf-pages proof-auto-preview';results.append(container);
       renderDocument(currentPreview.pdf,container,currentPreview.documents || []);
-    }
-    if(notices.length){
-      const notes=document.createElement('details');const title=document.createElement('summary');title.textContent='Proof notes';notes.append(title);
-      const list=document.createElement('ul');list.className='proof-issues';
-      for(const message of [...new Set(notices.map(i=>i.message))]){const li=document.createElement('li');li.textContent=message;list.append(li);}
-      notes.append(list);results.append(notes);
     }
     if(hasGarment)results.append(fallback);
   }
