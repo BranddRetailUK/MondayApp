@@ -16,10 +16,9 @@
           <h1>Proof Generator</h1>
 
         </div>
-        <span class="proof-preview-badge">${localPreview ? 'LOCAL PREVIEW' : 'PRODUCTION TESTING'}</span>
+        <button id="proof-create-new" class="proof-primary-button" type="button">Create proof</button>
       </header>
       <section id="proof-history">
-        <div class="proof-history-toolbar"><button id="proof-create-new" class="proof-primary-button" type="button">Create proof</button></div>
         <div id="proof-history-status" role="status"></div>
         <div id="proof-history-list" class="proof-history-list"></div>
         <button id="proof-history-more" class="proof-secondary-button" type="button" hidden>Load more</button>
@@ -91,9 +90,9 @@
   let progressChain=Promise.resolve();
   let historyRows=[],nextOffset=null,historyLimit=50,historyLoading=false,lastHistory='',progressMessage='',progressError=false;
   function showProofList(){
-    editorScreen.hidden=true;historyScreen.hidden=false;renderHistory();refreshHistory();
+    editorScreen.hidden=true;historyScreen.hidden=false;createNew.hidden=false;renderHistory();refreshHistory();
   }
-  function showProofEditor(){historyScreen.hidden=true;editorScreen.hidden=false;}
+  function showProofEditor(){historyScreen.hidden=true;editorScreen.hidden=false;createNew.hidden=true;}
   root.querySelector('#proof-back-list').addEventListener('click',showProofList);
   createNew.addEventListener('click',()=>{if(busy)return;startNewProof();showProofEditor();});
   loadMore.addEventListener('click',()=>{historyLimit+=50;refreshHistory();});
@@ -116,9 +115,9 @@
     if(job.status==='error')return ['Needs attention',job.message];
     if(job.generationStatus==='error')return ['Failed',job.generationMessage];
     if(job.generationStatus==='review')return ['Needs review',job.generationMessage];
-    if(job.status==='saved')return ['Saved',''];
-    if(job.generationStatus==='interrupted')return ['Interrupted','Generation stopped before saving. Reattach the artwork to continue.'];
+    if(job.generationStatus==='interrupted')return ['Interrupted','Generation stopped before saving. Reopen the proof to continue.'];
     if(job.generationStatus==='generating')return ['Pending',job.generationMessage];
+    if(job.status==='saved')return ['Saved',''];
     if(job.status==='save_queued'||job.status==='saving')return ['Saving',job.message];
     return ['Pending',job.message];
   }
@@ -147,13 +146,21 @@
       const state=document.createElement('div');state.className='proof-history-state';const [label,message]=historyState(job);
       const status=document.createElement('strong');status.textContent=label;state.append(status);
       if(message){const detail=document.createElement('p');detail.textContent=message;state.append(detail);}
-      if(job.createdAt){const date=document.createElement('time');date.dateTime=job.createdAt;date.textContent=new Date(job.createdAt).toLocaleString('en-GB',{timeZone:'Europe/London'});state.append(date);}
+      if(job.createdAt){const date=document.createElement('time');date.dateTime=job.createdAt;date.textContent=new Date(job.createdAt).toLocaleString('en-GB',{timeZone:'Europe/London',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});state.append(date);}
       const actions=document.createElement('div');actions.className='proof-history-actions';
       if(job.hasPdf){const download=document.createElement('a');download.className='proof-secondary-button';download.textContent='Download';download.href=`/api/proof-generator/designs/${encodeURIComponent(job.id)}/pdf?download=1`;actions.append(download);}
       else{const download=document.createElement('button');download.type='button';download.className='proof-secondary-button';download.textContent='Download';download.disabled=true;download.title='Available after a proof PDF has been generated and retained.';actions.append(download);}
       const regenerate=document.createElement('button');regenerate.type='button';regenerate.className='proof-secondary-button';regenerate.textContent='Regenerate proof';regenerate.disabled=busy;
       regenerate.addEventListener('click',()=>openHistoryProof(job));actions.append(regenerate);state.append(actions);
-      item.append(thumb,info,state);historyList.append(item);
+      item.append(thumb,info,state);
+      const generating=label==='Pending'||label==='Saving';
+      item.classList.toggle('proof-history-generating',generating);
+      item.setAttribute('aria-busy',String(generating));
+      if(generating){
+        for(const content of [thumb,info,state])content.inert=true;
+        const spinner=document.createElement('span');spinner.className='proof-history-spinner';spinner.setAttribute('role','status');spinner.setAttribute('aria-label','Generating proof');item.append(spinner);
+      }
+      historyList.append(item);
     }
   }
   async function openSavedProof(job){
@@ -351,7 +358,22 @@
     title.className = 'proof-artwork-title';
     const name = document.createElement('strong');
     name.textContent = item.file.name;
-    title.append(name);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'proof-remove';
+    remove.textContent = 'Remove';
+    remove.setAttribute('aria-label', `Remove ${item.file.name}`);
+    remove.disabled = busy;
+    remove.addEventListener('click', () => {
+      if (busy) return;
+      const index = artworks.indexOf(item);
+      if (index === -1) return;
+      artworks.splice(index, 1);
+      if (item.url) URL.revokeObjectURL(item.url);
+      card.remove();
+      sourceChanged();
+    });
+    title.append(name, remove);
     const fileType = document.createElement('span');
     fileType.className = 'proof-artwork-type';
     fileType.textContent = item.file.name.split('.').pop().toUpperCase();
@@ -388,7 +410,7 @@
     reviewButton.querySelector('[data-proof-button-arrow]').hidden = creating;
     reviewButton.querySelector('[data-proof-button-label]').textContent = creating ? (designId?'Regenerating proof…':'Creating proof…') : designId?'Regenerate proof':'Create proof';
     newProof.disabled=creating;retrySave.disabled=creating;createNew.disabled=creating;
-    editorScreen.querySelectorAll('input,textarea,select,#proof-dropzone,#proof-load-sample').forEach(control=>{control.disabled=creating;});
+    editorScreen.querySelectorAll('input,textarea,select,#proof-dropzone,#proof-load-sample,.proof-remove').forEach(control=>{control.disabled=creating;});
   }
 
   async function reviewBrief() {
@@ -507,10 +529,10 @@
     throw new Error('Garment view preparation is taking longer than expected. Create the proof again to reuse completed views.');
   }
 
-  function markDirty() {
+  function markDirty(showFeedback = true) {
     dirty = true;
     results.querySelectorAll('[data-download]').forEach(button=>{button.disabled=true;});
-    setFeedback('Placement changed. Resave proof to apply your position and scale edits.');
+    if(showFeedback)setFeedback('Placement changed. Resave proof to apply your position and scale edits.');
   }
 
   function inputField(label, value, change, {min, max, step='any'} = {}) {
@@ -576,6 +598,7 @@
     currentBrief.products.forEach((product,pi)=>{
       const section=document.createElement('section');section.className='proof-product-editor';
       const heading=document.createElement('h3');heading.textContent=[product.code,product.name,colourName(product.colour)].filter(Boolean).join(' · ');section.append(heading);
+      const placementControls=new Map();
       product.decorations.forEach(d=>{
         const panel=document.createElement('details');panel.className='proof-decoration-editor';
         const title=document.createElement('summary');title.textContent=d.position || 'Choose position';panel.append(title);
@@ -595,9 +618,19 @@
         grid.append(inputField('Horizontal centre (%)',d.placement?d.placement.x*100:p?+(p.x*100).toFixed(1):'',value=>setPosition('x',value),{min:0,max:100}));
         grid.append(inputField('Top edge (%)',d.placement?d.placement.y*100:p?+(p.y*100).toFixed(1):'',value=>setPosition('y',value),{min:0,max:100}));
         grid.append(action('Reset automatic placement',()=>{delete d.placement;d.anchor='region';d.offsetXmm='';d.offsetYmm='';markDirty();renderEditor();}));
+        placementControls.set(d.id,()=>{
+          const values={'Visible width (mm)':d.widthMm,'Visible height (mm)':d.heightMm,
+            'Horizontal offset (mm; + right)':d.offsetXmm,'Vertical offset (mm; + down)':d.offsetYmm,
+            'Horizontal centre (%)':d.placement?+(d.placement.x*100).toFixed(2):'',
+            'Top edge (%)':d.placement?+(d.placement.y*100).toFixed(2):'', 'Placement reference':d.anchor||'region'};
+          for(const label of grid.querySelectorAll('label')){
+            const key=label.firstChild?.textContent,control=label.querySelector('input,select');
+            if(control&&Object.hasOwn(values,key))control.value=values[key]??'';
+          }
+        });
         panel.append(grid);section.append(panel);
       });
-      for(const page of currentPreview?.pages.filter(page=>page.productIndex===pi)||[]) section.append(viewEditor(product,page));
+      for(const page of currentPreview?.pages.filter(page=>page.productIndex===pi)||[]) section.append(viewEditor(product,page,id=>placementControls.get(id)?.()));
       fallback.append(section);
     });
     fallback.append(action('Resave proof',()=>updatePreview(false),'proof-primary-button'));
@@ -650,7 +683,7 @@
     }catch(error){container.textContent=`PDF preview unavailable: ${error.message}`;}
   }
 
-  function viewEditor(product,page) {
+  function viewEditor(product,page,syncControls) {
     const wrap=document.createElement('div');wrap.className='proof-view-editor';
     const heading=document.createElement('h4');heading.textContent=`${page.view.toUpperCase()} view`;wrap.append(heading);
     if(!page.image){const text=document.createElement('p');text.textContent='No verified image for this view. Select an available matching view above.';wrap.append(text);return wrap;}
@@ -681,7 +714,7 @@
     base.onload=paint;
     const point=event=>{const box=canvas.getBoundingClientRect();return{x:Math.max(0,Math.min(1,(event.clientX-box.left)/box.width)),y:Math.max(0,Math.min(1,(event.clientY-box.top)/box.height))};};
     canvas.addEventListener('pointerdown',event=>{
-      if(busy)return;
+      if(busy||event.button!==0)return;
       const q=point(event);
       const active=page.placements.find(p=>p.id===selected),box=canvas.getBoundingClientRect();
       if(active){
@@ -692,7 +725,7 @@
         }
       }
       const hit=[...page.placements].reverse().find(p=>{const pos=bounds(p);return q.x>=pos.x-pos.width/2&&q.x<=pos.x+pos.width/2&&q.y>=pos.y&&q.y<=pos.y+pos.height;});
-      if(hit){selected=hit.id;const d=product.decorations.find(d=>d.id===hit.id);const pos=bounds(hit);drag={mode:'move',d,dx:q.x-pos.x,dy:q.y-pos.y};canvas.setPointerCapture(event.pointerId);paint();}
+      if(hit){event.preventDefault();canvas.focus({preventScroll:true});selected=hit.id;const d=product.decorations.find(d=>d.id===hit.id);const pos=bounds(hit);drag={mode:'move',d,dx:q.x-pos.x,dy:q.y-pos.y};canvas.setPointerCapture(event.pointerId);paint();}
     });
     canvas.addEventListener('pointermove',event=>{
       if(!drag)return;const q=point(event);
@@ -704,11 +737,17 @@
         drag.d.widthMm=p.size.width*scale;drag.d.heightMm='';drag.d.dimensionIssues=[];
         drag.d.placement={x:left+p.width*scale/2,y:top};
       }else drag.d.placement={x:Math.max(0,Math.min(1,q.x-drag.dx)),y:Math.max(0,Math.min(1,q.y-drag.dy))};
-      drag.d.offsetXmm='';drag.d.offsetYmm='';drag.d.anchor='region';markDirty();paint();
+      drag.d.offsetXmm='';drag.d.offsetYmm='';drag.d.anchor='region';markDirty(false);paint();
     });
-    const finishDrag=()=>{if(drag){drag=null;renderEditor();}};
+    const finishDrag=event=>{
+      if(!drag)return;
+      const id=drag.d.id;drag=null;
+      if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId);
+      syncControls(id);paint();
+    };
     canvas.addEventListener('pointerup',finishDrag);
     canvas.addEventListener('pointercancel',finishDrag);
+    canvas.addEventListener('lostpointercapture',finishDrag);
     wrap.append(canvas);paint();return wrap;
   }
 
