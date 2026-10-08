@@ -256,3 +256,15 @@ test('each garment view shows only its own print methods',async()=>{
  assert.deepEqual(out.pages.map(p=>[p.view,p.printMethods]),[['front',['Embroidery']],['back',['Transfer print']]]);
  assert.equal(b.products[0].colour,'Navy*');
 });
+
+test('PNG preparation preserves faint and disconnected marks at every canvas edge',async()=>{
+ const width=80,height=60,data=Buffer.alloc(width*height*4);
+ for(const [x,y,alpha] of [[0,0,1],[79,0,255],[0,59,255],[79,59,1],[40,30,255]]){
+  const i=(y*width+x)*4;data[i]=228;data[i+1]=35;data[i+2]=19;data[i+3]=alpha;
+ }
+ const buffer=await sharp(data,{raw:{width,height,channels:4}}).png().toBuffer();
+ const asset=await artwork.prepareArtwork(await PDFDocument.create(),{file:{originalname:'edge-marks.png',buffer}});
+ assert.equal(asset.width,width);assert.equal(asset.height,height);
+ const preview=Buffer.from(asset.preview.split(',')[1],'base64');
+ assert.deepEqual(await sharp(preview).raw().toBuffer(),data);
+});

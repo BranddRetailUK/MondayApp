@@ -14,18 +14,18 @@
         <div>
           <div class="proof-eyebrow">PRODUCTION</div>
           <h1>Proof Generator</h1>
-          <p>Describe the job and attach the artwork to create a clothing proof.</p>
+
         </div>
         <span class="proof-preview-badge">${localPreview ? 'LOCAL PREVIEW' : 'PRODUCTION TESTING'}</span>
       </header>
       <div class="proof-layout">
         <div class="proof-form-column">
           <section class="proof-card">
-            <div class="proof-card-heading"><span class="proof-step">01</span><div><h2>Proof request</h2><p>Paste the customer request as received. Include garments, colours, decoration positions and sizes.</p></div></div>
+            <div class="proof-card-heading"><span class="proof-step">01</span><div><h2>Proof request</h2></div></div>
             <div class="proof-product-search">
               <label class="proof-label" for="proof-product-query">Find a product</label>
-              <input id="proof-product-query" type="search" maxlength="24" autocomplete="off" placeholder="Search Ralawise product code, e.g. RX350" aria-describedby="proof-product-status" aria-controls="proof-product-results">
-              <div id="proof-product-status" class="proof-search-status" role="status" aria-live="polite">Enter at least 2 characters, then select a product to add it to your request.</div>
+              <input id="proof-product-query" type="search" maxlength="24" autocomplete="off" aria-describedby="proof-product-status" aria-controls="proof-product-results">
+              <div id="proof-product-status" class="proof-search-status" role="status" aria-live="polite"></div>
               <div id="proof-product-results" class="proof-search-results"></div>
             </div>
             <div class="proof-job-fields">
@@ -38,22 +38,22 @@
             <button class="proof-sample-button" id="proof-load-sample" type="button">Use AC Solutions example</button>
           </section>
           <section class="proof-card">
-            <div class="proof-card-heading"><span class="proof-step">02</span><div><h2>Artwork</h2><p>Attach each design. Describe its position and size in the request above.</p></div></div>
+            <div class="proof-card-heading"><span class="proof-step">02</span><div><h2>Artwork</h2></div></div>
             <input id="proof-file-input" type="file" accept=".png,.jpg,.jpeg,.webp,.svg,.pdf,.eps,.ai" multiple hidden>
-            <button id="proof-dropzone" class="proof-dropzone" type="button"><span class="proof-upload-icon" aria-hidden="true">↥</span><strong>Choose artwork files</strong><span>or drag them here · PNG, JPG, SVG or PDF for proof creation</span></button>
+            <button id="proof-dropzone" class="proof-dropzone" type="button"><span class="proof-upload-icon" aria-hidden="true">↥</span><strong>Choose artwork files</strong></button>
             <div id="proof-artworks" class="proof-artwork-list"></div>
           </section>
           <section class="proof-card">
-            <div class="proof-card-heading"><span class="proof-step">03</span><div><h2>Special instructions</h2><p>Add anything that should guide this proof in particular.</p></div></div>
+            <div class="proof-card-heading"><span class="proof-step">03</span><div><h2>Special instructions</h2></div></div>
             <label class="proof-label" for="proof-instructions">Instructions</label>
-            <textarea id="proof-instructions" class="proof-textarea" maxlength="5000" placeholder="For example: one page per product type; use a side view for the sleeve position."></textarea>
+            <textarea id="proof-instructions" class="proof-textarea" maxlength="5000"></textarea>
           </section>
           <div class="proof-form-actions"><button id="proof-review" class="proof-primary-button" type="button"><span class="proof-button-spinner" aria-hidden="true" hidden></span><span data-proof-button-label>Create proof</span><span data-proof-button-arrow aria-hidden="true">→</span></button><button id="proof-new" class="proof-secondary-button" type="button" hidden>New proof</button><button id="proof-retry-save" class="proof-secondary-button" type="button" hidden>Retry folder/save</button><span id="proof-feedback" role="status" aria-live="polite"></span></div>
         </div>
         <aside class="proof-review-column">
           <section class="proof-card proof-review-card" aria-live="polite">
             <div class="proof-review-title"><div class="proof-eyebrow">PROOF OUTPUT</div><h2>Clothing proof</h2></div>
-            <div id="proof-results" class="proof-results-empty"><div class="proof-empty-mark" aria-hidden="true">✦</div><strong>Ready when you are</strong><p>Enter the request and artwork details, then create the proof here.</p></div>
+            <div id="proof-results" class="proof-results-empty"><div class="proof-empty-mark" aria-hidden="true">✦</div><strong>Ready when you are</strong></div>
           </section>
         </aside>
       </div>
@@ -135,7 +135,7 @@
     clearTimeout(searchTimer);searchController?.abort();const version=++searchVersion;
     productResults.replaceChildren();
     const query=productQuery.value.trim();
-    if(!/^[a-z0-9-]{2,24}$/i.test(query)){productStatus.textContent='Enter at least 2 letters or numbers from the product code.';return;}
+    if(!/^[a-z0-9-]{2,24}$/i.test(query)){productStatus.textContent='';return;}
     productStatus.textContent='Searching catalogue…';
     searchTimer=setTimeout(async()=>{
       const controller=new AbortController();searchController=controller;
@@ -144,7 +144,7 @@
         const data=await response.json();
         if(version!==searchVersion)return;
         if(!response.ok)throw new Error(data.error || 'Catalogue search is unavailable.');
-        productStatus.textContent=data.products.length?'Select a product to add it to the request.':'No matching products. Try another product code.';
+        productStatus.textContent=data.products.length?'':'No matching products.';
         for(const product of data.products){
           const button=document.createElement('button');button.type='button';button.className='proof-search-result';
           const title=document.createElement('strong');title.textContent=`${product.code} — ${colourName(product.name)}`;
@@ -154,7 +154,7 @@
             const updated=request.value+(request.value&&!request.value.endsWith('\n')?'\n':'')+line;
             if(updated.length>request.maxLength){productStatus.textContent='The request is full. Shorten it before adding another product.';return;}
             request.value=updated;sourceChanged();request.focus();request.setSelectionRange(updated.length,updated.length);
-            productQuery.value='';productResults.replaceChildren();productStatus.textContent=`Added ${product.code}. Add its colour in the request, or search for another product.`;
+            productQuery.value='';productResults.replaceChildren();productStatus.textContent=`Added ${product.code}.`;
           });
           productResults.append(button);
         }
@@ -196,7 +196,14 @@
     card.className = 'proof-artwork-card';
     const thumb = document.createElement('div');
     thumb.className = 'proof-artwork-thumb';
-    if (item.url) {
+    if (/\.(svg|eps)$/i.test(item.file.name)) {
+      prepareArtworkFile(item.file).then(file=>{
+        if(!card.isConnected)return;
+        if(item.url)URL.revokeObjectURL(item.url);
+        item.url=URL.createObjectURL(file);
+        const image=document.createElement('img');image.src=item.url;image.alt='';thumb.replaceChildren(image);
+      }).catch(error=>{thumb.textContent=item.file.name.split('.').pop().toUpperCase();setFeedback(error.message,true);});
+    } else if (item.url) {
       const image = document.createElement('img');
       image.src = item.url;
       image.alt = '';
@@ -229,7 +236,7 @@
         const page=await doc.getPage(1),base=page.getViewport({scale:1});
         const viewport=page.getViewport({scale:156/Math.max(base.width,base.height)});
         const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
-        await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+        await page.render({canvasContext:canvas.getContext('2d'),viewport,background:'rgba(0,0,0,0)'}).promise;
         const image=document.createElement('img');image.alt='';image.src=canvas.toDataURL();thumb.replaceChildren(image);
       }finally{await doc.destroy();}
     }catch(_){/* Keep the filetype tile for files without a supported preview. */}
@@ -257,6 +264,8 @@
     const submittedSource=JSON.stringify([customer.value,jobTitle.value,request.value,instructions.value,artworks.map(a=>[a.id,a.assignment,a.notes])]);
     setFeedback('Reading the brief and resolving artwork assignments…');
     try {
+      setFeedback('Preparing artwork…');
+      await Promise.all(artworks.map(item=>prepareArtworkFile(item.file)));
       const readinessResponse = await fetch('/api/proof-generator/status', { cache: 'no-store' });
       const readiness = await readinessResponse.json();
       if (!readinessResponse.ok || !readiness.ready) {
@@ -317,7 +326,7 @@
     dirty = false;
     renderEditor();
     const hasGarment = payload.pages.some(page => page.image);
-    setFeedback(!hasGarment ? 'Proof paused: garment images could not be loaded. See the message below.' : payload.issues.some(i=>i.blocking) ? 'Resolve the highlighted proof issues before downloading.' : 'Preview ready. Check placement and scale, then download.');
+    setFeedback(!hasGarment ? 'Proof paused: garment images could not be loaded. See the message below.' : payload.issues.some(i=>i.blocking) ? 'Resolve the highlighted proof issues before downloading.' : 'Preview ready.');
     if(!localPreview&&designId&&!payload.issues.some(i=>i.blocking)){
       const saveTarget=currentBrief;saveTarget.proofSaveKey=crypto.randomUUID();saveTarget.proofRevision=design.revision;
       setFeedback('Saving the proof to its design folder…');
@@ -400,7 +409,6 @@
     if(!currentBrief)return;
     results.className='proof-results proof-editor';results.replaceChildren();
     const summary=document.createElement('p');summary.textContent=[currentBrief.customer,currentBrief.reference,currentBrief.jobTitle].filter(Boolean).join(' · ');results.append(summary);
-    const help=document.createElement('p');help.className='proof-editor-help';help.textContent='Artwork is sized and placed automatically from your brief. Review the proof below; adjustments are available only if needed.';results.append(help);
     const actions=document.createElement('div');actions.className='proof-question-actions';
 
     const download=action(currentBrief.products.length>1?'Download all as multipage PDF':'Download PDF',()=>downloadPdf());
@@ -415,7 +423,6 @@
     const wasFallbackOpen=results.dataset.fallbackOpen==='true';
     const fallback=document.createElement('details');fallback.open=wasFallbackOpen;fallback.addEventListener('toggle',()=>{results.dataset.fallbackOpen=String(fallback.open);});fallback.className='proof-fallback';
     const fallbackTitle=document.createElement('summary');fallbackTitle.textContent='Adjust placement (fallback)';fallback.append(fallbackTitle);
-    const fallbackHelp=document.createElement('p');fallbackHelp.textContent='Use these controls only when the automatic proof needs correction. You can also revise the text request and create it again.';fallback.append(fallbackHelp);
 
     currentBrief.products.forEach((product,pi)=>{
       const section=document.createElement('section');section.className='proof-product-editor';
@@ -430,7 +437,6 @@
         grid.append(selectField('Position',positions.map(p=>[p,p]),d.position,value=>{d.position=value;delete d.placement;}));
         grid.append(inputField('Visible width (mm)',d.widthMm,value=>{d.widthMm=value;d.dimensionIssues=[];},{min:.1,max:3000}));
         grid.append(inputField('Visible height (mm)',d.heightMm,value=>{d.heightMm=value;d.dimensionIssues=[];},{min:.1,max:3000}));
-        const note=document.createElement('small');note.textContent='Leave one dimension blank to preserve proportions. Leave both blank for Size to confirm.';grid.append(note);
         grid.append(selectField('Garment view',[['auto','Automatic'],['front','Front'],['back','Back'],['left','Left side'],['right','Right side']],d.view||'auto',value=>{d.view=value;delete d.placement;}));
         grid.append(selectField('Placement reference',[['region','Printable region'],['collar','Marked collar'],['hem','Marked hem']],d.anchor||'region',value=>{d.anchor=value;delete d.placement;}));
         grid.append(inputField('Horizontal offset (mm; + right)',d.offsetXmm,value=>{d.offsetXmm=value;delete d.placement;}));
@@ -500,12 +506,8 @@
     const heading=document.createElement('h4');heading.textContent=`${page.view.toUpperCase()} view`;wrap.append(heading);
     if(!page.image){const text=document.createElement('p');text.textContent='No verified image for this view. Select an available matching view above.';wrap.append(text);return wrap;}
     product.calibrations ||= {};
-    const getCalibration=()=>{
-      if(!product.calibrations[page.view])product.calibrations[page.view]={sourceHash:page.sourceHash};
-      return product.calibrations[page.view];
-    };
     let selected=page.placements[0]?.id || product.decorations.find(d=>(d.view||'auto')===page.view)?.id || product.decorations[0]?.id;
-    let tool='move',start=null,drag=null;
+    let drag=null;
     const canvas=document.createElement('canvas');canvas.width=600;canvas.height=Math.round(600*page.height/page.width);canvas.className='proof-placement-canvas';canvas.tabIndex=0;canvas.setAttribute('aria-label',`${product.code} ${page.view} artwork placement. Use numeric controls for keyboard positioning.`);
     const ctx=canvas.getContext('2d');const base=new Image();base.src=page.image;
     const images=new Map();for(const p of page.placements){const img=new Image();img.src=p.preview;images.set(p.id,img);img.onload=paint;}
@@ -525,21 +527,13 @@
         ctx.strokeStyle=p.id===selected?'#0873c8':'#777';ctx.lineWidth=2;ctx.strokeRect(x,y,w,h);
         if(p.id===selected){ctx.fillStyle='#0873c8';ctx.fillRect(x+w-7,y+h-7,14,14);ctx.strokeStyle='#fff';ctx.strokeRect(x+w-7,y+h-7,14,14);}
       }
-      const c=product.calibrations[page.view];ctx.strokeStyle='#cf2270';ctx.fillStyle='#cf2270';ctx.lineWidth=3;
-      if(c?.start&&c?.end){ctx.beginPath();ctx.moveTo(c.start.x*canvas.width,c.start.y*canvas.height);ctx.lineTo(c.end.x*canvas.width,c.end.y*canvas.height);ctx.stroke();}
-      for(const [label,point] of [['A',c?.start],['B',c?.end],['Collar',c?.collar],['Hem',c?.hem]])if(point){ctx.beginPath();ctx.arc(point.x*canvas.width,point.y*canvas.height,5,0,Math.PI*2);ctx.fill();ctx.font='16px sans-serif';ctx.fillText(label,point.x*canvas.width+8,point.y*canvas.height+5);}
+
     }
     base.onload=paint;
-    const message=document.createElement('p');message.className='proof-editor-help';message.textContent='Drag artwork to move it. Drag the blue bottom-right handle to resize proportionally, then Resave proof.';
     const point=event=>{const box=canvas.getBoundingClientRect();return{x:Math.max(0,Math.min(1,(event.clientX-box.left)/box.width)),y:Math.max(0,Math.min(1,(event.clientY-box.top)/box.height))};};
     canvas.addEventListener('pointerdown',event=>{
       if(busy)return;
-      const q=point(event),c=getCalibration();
-      if(tool==='span'){
-        if(!start){start=q;c.start=q;delete c.end;message.textContent='Click the second end of the measured span.';}
-        else{c.end=q;start=null;tool='move';message.textContent='Enter the real span length in mm, then update preview.';}markDirty();paint();return;
-      }
-      if(tool==='collar'||tool==='hem'){c[tool]=q;tool='move';markDirty();paint();return;}
+      const q=point(event);
       const active=page.placements.find(p=>p.id===selected),box=canvas.getBoundingClientRect();
       if(active){
         const pos=bounds(active);
@@ -566,42 +560,24 @@
     const finishDrag=()=>{if(drag){drag=null;renderEditor();}};
     canvas.addEventListener('pointerup',finishDrag);
     canvas.addEventListener('pointercancel',finishDrag);
-    const controls=document.createElement('div');controls.className='proof-control-grid';
-    controls.append(action('Mark measured span',()=>{tool='span';start=null;message.textContent='Click both ends of a span whose real length you know.';}));
-    controls.append(inputField('Measured span (mm)',getCalibration().referenceMm,value=>{getCalibration().referenceMm=value;},{min:1,max:3000}));
-    controls.append(action('Mark collar',()=>{tool='collar';message.textContent='Click the collar reference point.';}));
-    controls.append(action('Mark hem',()=>{tool='hem';message.textContent='Click the hem reference point.';}));
-    const templateKey=`proof-calibration-v1:${product.code}:${product.colour}:${page.view}:${page.sourceHash}`;
-    controls.append(action('Save garment template',()=>{localStorage.setItem(templateKey,JSON.stringify(getCalibration()));message.textContent='Template saved for this style, colour and supplier image in this browser.';}));
-    controls.append(action('Load garment template',()=>{const saved=localStorage.getItem(templateKey);if(!saved)throw new Error('No saved template matches this garment image.');product.calibrations[page.view]=JSON.parse(saved);markDirty();renderEditor();}));
-    controls.append(action('Clear calibration',()=>{delete product.calibrations[page.view];markDirty();renderEditor();}));
-    const regions=document.createElement('details');const label=document.createElement('summary');label.textContent='Printable regions and landmarks';regions.append(label);
-    const regionControls=document.createElement('div');regionControls.className='proof-control-grid';
-    for(const p of page.placements){
-      const d=product.decorations.find(d=>d.id===p.id);
-      for(const [key,name] of [['left','left'],['top','top'],['width','width'],['height','height'],['x','anchor centre'],['y','anchor top']]){
-        const r=getCalibration().regions?.[d.position]||p.region;
-        regionControls.append(inputField(`${d.position}: ${name} (%)`,+(r[key]*100).toFixed(1),value=>{const c=getCalibration();c.regions||={};c.regions[d.position]||={...p.region};c.regions[d.position][key]=Number(value)/100;paint();},{min:0,max:100}));
-      }
-    }
-    // All canvas calibration operations also have keyboard-editable coordinates.
-    for(const [key,name] of [['start','Span A'],['end','Span B'],['collar','Collar'],['hem','Hem']])for(const axis of ['x','y']){
-      regionControls.append(inputField(`${name} ${axis.toUpperCase()} (%)`,getCalibration()[key]?.[axis]==null?'':+(getCalibration()[key][axis]*100).toFixed(1),value=>{const c=getCalibration();c[key]||={x:.5,y:.5};c[key][axis]=Number(value)/100;paint();},{min:0,max:100}));
-    }
-    regions.append(regionControls);wrap.append(canvas,message,controls,regions);paint();return wrap;
+    wrap.append(canvas);paint();return wrap;
   }
 
+  const epsPreviews=new WeakMap();
+  let epsQueue=Promise.resolve();
   async function prepareArtworkFile(file) {
-    if(!/\.svg$/i.test(file.name))return file;
-    const url=URL.createObjectURL(file);
-    try{
-      const img=new Image();img.src=url;await img.decode();
-      const scale=Math.min(4,4000/Math.max(img.naturalWidth,img.naturalHeight));
-      const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
-      canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
-      const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
-      if(!blob)throw new Error('SVG rendering failed.');
-      return new File([blob],file.name.replace(/\.svg$/i,'.png'),{type:'image/png'});
-    }finally{URL.revokeObjectURL(url);}
+    if(/\.svg$/i.test(file.name))return window.ProofSvg.prepare(file);
+    if(!/\.eps$/i.test(file.name))return file;
+    if(!epsPreviews.has(file)){
+      const pending=epsQueue.then(async()=>{
+      const form=new FormData();form.append('artwork',file,file.name);
+      const response=await fetch('/api/proof-generator/artwork/eps-preview',{method:'POST',body:form});
+      if(!response.ok){const data=await response.json();throw new Error(data.error||'EPS conversion failed.');}
+      return new File([await response.blob()],file.name.replace(/\.eps$/i,'.png'),{type:'image/png'});
+      });
+      epsQueue=pending.catch(()=>{});
+      epsPreviews.set(file,pending.catch(error=>{epsPreviews.delete(file);throw error;}));
+    }
+    return epsPreviews.get(file);
   }
 })();

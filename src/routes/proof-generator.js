@@ -20,7 +20,7 @@ function isProofGeneratorUser(user) {
     && String(user?.email || '').trim().toLowerCase() === PRODUCTION_EMAIL;
 }
 
-function createRouter({ requireProduction = true, parse = parseProofBrief, enrich = enrichProofProducts, build = buildProof, status = proofRuntimeStatus, generateViews = ensureGeneratedViews, searchProducts = searchRalawiseProducts, designs } = {}) {
+function createRouter({ requireProduction = true, parse = parseProofBrief, enrich = enrichProofProducts, build = buildProof, status = proofRuntimeStatus, generateViews = ensureGeneratedViews, searchProducts = searchRalawiseProducts, convertEps = require('../services/dtfCloudinary').createEpsPng, designs } = {}) {
   const router = express.Router();
   const designJobs=()=>designs || (designs=designService(require('../db/pool')));
   const upload = multer({ storage: multer.memoryStorage(), limits: { files: 40, fields: 2, parts: 42, fileSize: 10 * 1024 * 1024, fieldSize: 100 * 1024 } });
@@ -58,6 +58,19 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
     catch (error) { next(error); }
     finally { active = false; }
   };
+  router.post('/artwork/eps-preview',exclusive(async(req,res)=>{
+    await new Promise((resolve,reject)=>upload.single('artwork')(req,res,error=>error?reject(error):resolve()));
+    const file=req.file;
+    const postscript=file?.buffer.subarray(0,4);
+    if(!file||!/\.eps$/i.test(file.originalname)||!(postscript.toString().startsWith('%!PS')||postscript.equals(Buffer.from([0xc5,0xd0,0xd3,0xc6]))))return res.status(400).json({error:'Upload a valid EPS artwork file.'});
+    try{
+      const png=await convertEps(file.buffer,req.hubUser?.id||0);
+      const {data,info}=await require('sharp')(png,{limitInputPixels:40_000_000}).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+      require('../services/proofArtwork').visibleBounds(data,info.width,info.height,'auto');
+      const transparent=await require('sharp')(data,{raw:{width:info.width,height:info.height,channels:4}}).png().toBuffer();
+      return res.type('png').send(transparent);
+    }catch(error){return res.status(422).json({error:'EPS preview conversion failed. '+error.message});}
+  }));
   router.get('/products', async (req,res) => {
     if(!allowed(req,res))return;
     res.set('Cache-Control','no-store');
@@ -149,7 +162,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
         assignment: String(details[index]?.assignment || '').slice(0, 500),
         notes: String(details[index]?.notes || '').slice(0, 1000) }));
       const supported = artworks.every(({ file }) => /\.(png|jpe?g|webp|pdf)$/i.test(file.originalname) || file.buffer.subarray(0, 4).toString() === '%PDF');
-      if (!supported) return res.status(400).json({ error: 'For proof creation, upload PNG, JPG, or PDF artwork. SVG, EPS, and AI files need a PNG or PDF copy.' });
+      if (!supported) return res.status(400).json({ error: 'Artwork must be prepared as PNG, JPG, WebP or a single-page PDF before proof creation.' });
       await enrich(brief);
       await generateViews(brief, { allowGenerate: false });
       const productIndex=req.query.productIndex;

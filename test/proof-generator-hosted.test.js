@@ -140,3 +140,19 @@ test('save passes exact JSON Unicode filenames and original bytes through multip
   assert.equal(saved[0].originalname,name);assert.equal(saved[0].buffer.toString(),original);
  });
 });
+
+test('EPS previews validate uploads, preserve bytes and require production access before conversion',async()=>{
+ let calls=0;
+ const converted=await require('sharp')({create:{width:40,height:20,channels:4,background:'#e42313'}}).png().toBuffer();
+ const original=Buffer.from('%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 100 50\n');
+ await serve(createRouter({convertEps:async bytes=>{calls++;assert.deepEqual(bytes,original);return converted;}}),async url=>{
+  const form=(bytes=original)=>{const f=new FormData();f.append('artwork',new Blob([bytes]),'logo.eps');return f;};
+  for(const headers of [{},{'x-test-email':'office@example.com'},{...production,'x-test-scope':'dtf_only'}]){
+   assert.ok([401,403].includes((await fetch(`${url}/artwork/eps-preview`,{method:'POST',headers,body:form()})).status));
+  }
+  assert.equal(calls,0);
+  assert.equal((await fetch(`${url}/artwork/eps-preview`,{method:'POST',headers:production,body:form('not postscript')})).status,400);
+  const response=await fetch(`${url}/artwork/eps-preview`,{method:'POST',headers:production,body:form()});
+  assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'no-store');assert.equal((await require('sharp')(Buffer.from(await response.arrayBuffer())).metadata()).width,40);assert.equal(calls,1);
+ });
+});
