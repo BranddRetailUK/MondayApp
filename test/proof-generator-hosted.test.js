@@ -174,7 +174,7 @@ test('proof history and preview endpoints enforce production access and private 
 test('in-flight EPS thumbnails cannot block source retention or proof parsing',async()=>{
  let release,entered;const hold=new Promise(r=>release=r),started=new Promise(r=>entered=r);
  const png=await require('sharp')({create:{width:10,height:10,channels:4,background:'#f00'}}).png().toBuffer();
- await serve(createRouter({convertEps:async()=>{entered();await hold;return png;},designs:{saveSource:async()=>{}},parse:async()=>({products:[],sharedDecorations:[]}),enrich:async()=>{}}),async url=>{
+ await serve(createRouter({convertEps:async()=>{entered();await hold;return png;},designs:{saveSource:async()=>{}},parse:async()=>({products:[{code:'RX350',colour:'Black',decorations:[]}],sharedDecorations:[]}),enrich:async()=>{}}),async url=>{
   const eps=new FormData();eps.append('artwork',new Blob(['%!PS-Adobe-3.0 EPSF-3.0']),'logo.eps');
   const converting=fetch(`${url}/artwork/eps-preview`,{method:'POST',headers:production,body:eps});await started;
   try{
