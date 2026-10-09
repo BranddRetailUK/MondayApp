@@ -744,7 +744,7 @@ No external work-management token, OAuth, board, column, or webhook environment 
 
 - Proof customer name supports debounced live DATABASE customer suggestions using `/api/database/customers/search?q=` (existing job customers and standalone customer profiles; up to 20 ranked matches, with further typing to narrow). Suggestions show customer names only in an overlay dropdown that does not move surrounding fields, with no choose-or-manual-entry helper text for matches. Selecting a match copies its canonical name; free-text names remain valid when no match exists or search is unavailable. Stale searches are cancelled/ignored, and resetting the proof clears suggestions.
 
-- The Proof request and Artwork headings have no numbered pills, and Clothing proof has no PROOF OUTPUT eyebrow.
+- The Proof request, Artwork and Special instructions headings have no numbered pills, and Clothing proof has no PROOF OUTPUT eyebrow.
 
 - The proof editor omits the job-link text/button above Customer name. Existing job associations, automatic pairing and history-list Link to job remain available.
 

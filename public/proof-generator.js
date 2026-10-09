@@ -58,7 +58,7 @@
             <div id="proof-artworks" class="proof-artwork-list"></div>
           </section>
           <section class="proof-card">
-            <div class="proof-card-heading"><span class="proof-step">03</span><div><h2>Special instructions</h2></div></div>
+            <div class="proof-card-heading"><div><h2>Special instructions</h2></div></div>
             <label class="proof-label" for="proof-instructions">Instructions</label>
             <textarea id="proof-instructions" class="proof-textarea" maxlength="5000"></textarea>
           </section>
