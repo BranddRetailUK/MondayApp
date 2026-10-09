@@ -298,7 +298,7 @@
         const response=await fetch(`/api/database/customers/search?q=${encodeURIComponent(query)}`,{signal:controller.signal,cache:'no-store'});
         const matches=await response.json();if(version!==customerSearchVersion)return;
         if(!response.ok)throw new Error('Customer search unavailable. You can still enter the customer name manually.');
-        customerStatus.textContent=matches.length?(matches.length===20?'Showing the first 20 matches. Keep typing to narrow the list.':'Choose a customer or keep your entered name.'):'No matching customers. You can use the name you entered.';
+        customerStatus.textContent=matches.length?(matches.length===20?'Showing the first 20 matches. Keep typing to narrow the list.':''):'No matching customers. You can use the name you entered.';
         for(const match of matches){
           const button=document.createElement('button');button.type='button';button.className='proof-search-result';
           const name=document.createElement('strong');name.textContent=match.business_name;button.append(name);
