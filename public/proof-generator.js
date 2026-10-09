@@ -68,7 +68,7 @@
         </div>
         <aside class="proof-review-column">
           <section class="proof-card proof-review-card" aria-live="polite">
-            <div class="proof-review-title"><div class="proof-eyebrow">PROOF OUTPUT</div><h2>Clothing proof</h2></div>
+            <div class="proof-review-title"><h2>Clothing proof</h2></div>
             <div id="proof-results" class="proof-results-empty"><div class="proof-empty-mark" aria-hidden="true">✦</div><strong>Ready when you are</strong></div>
           </section>
         </aside>
