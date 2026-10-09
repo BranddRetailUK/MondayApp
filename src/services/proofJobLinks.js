@@ -44,7 +44,7 @@ function createService(pool, {upload = require('./cloudinaryDashboard').uploadBu
     const existing=(await db.query('SELECT * FROM proof_job_links WHERE source_order_id=$1',[id])).rows[0];
     if(existing?.proof_id===proofId)return;
     if(existing)throw new Error('This job already has a linked proof.');
-    if(target.proof_approved)throw new Error('Clear JOB approval before linking a new proof to this job.');
+    if(target.proof_approved && (proof.status!=='saved'||!proof.saved_revision||!proof.saved_proof_pdf))throw new Error('An approved job can only be linked to an existing saved proof.');
     if((await db.query(`SELECT id FROM test_dashboard_files WHERE source_order_id=$1 AND ${VISUAL} LIMIT 1`,[id])).rows.length)throw new Error('This job already has a visual. Select a job without visuals.');
     if(['saving','save_queued','allocating'].includes(proof.status) || (proof.generation_status==='generating'&&Date.now()-new Date(proof.generation_updated_at).getTime()<120000))throw new Error('Wait for the proof to finish saving before linking it.');
     await db.query('INSERT INTO proof_job_links(source_order_id,proof_id,order_no) VALUES($1,$2,$3)',[id,proofId,target.order_no]);
@@ -99,14 +99,14 @@ function createService(pool, {upload = require('./cloudinaryDashboard').uploadBu
   async function sync(proofId){await autoLink(proofId);await publish(proofId);}
   async function publish(proofId) {
     // Nothing to do for ordinary standalone proofs; no dashboard tables are needed.
-    const pending=await pool.query(`SELECT p.*,l.source_order_id AS publication_target,l.file_public_id FROM proof_job_links l JOIN proof_design_jobs p ON p.id=l.proof_id
+    const pending=await pool.query(`SELECT p.*,l.source_order_id AS publication_target,l.saved_revision AS linked_saved_revision,l.file_public_id FROM proof_job_links l JOIN proof_design_jobs p ON p.id=l.proof_id
       WHERE p.id=$1 AND p.status='saved' AND l.source_order_id=p.publish_source_order_id AND l.saved_revision<p.saved_revision`,[proofId]);
     if(!pending.rows.length)return;
     const saved=pending.rows[0];
     const targetBeforeUpload=(await pool.query('SELECT proof_approved FROM database_jobs WHERE source_order_id=$1',[saved.publication_target])).rows[0];
     if(!targetBeforeUpload)throw new Error('The linked job no longer exists.');
-    if(targetBeforeUpload.proof_approved)throw new Error('Clear JOB approval before updating its visual, then retry linking.');
     const filesBeforeUpload=(await pool.query(`SELECT public_id FROM test_dashboard_files WHERE source_order_id=$1 AND ${VISUAL}`,[saved.publication_target])).rows;
+    if(targetBeforeUpload.proof_approved && (saved.linked_saved_revision>0||saved.file_public_id||filesBeforeUpload.length))throw new Error('Approved proofs cannot be regenerated or replaced.');
     if(filesBeforeUpload.some(file=>file.public_id!==saved.file_public_id))throw new Error('The job visual has changed. Remove the unrelated visual before retrying.');
     if(!saved.saved_proof_pdf)throw new Error('The saved PDF is unavailable.');
     const filename=proofFileName({designNumber:String(saved.design_number),customer:saved.saved_snapshot?.customer||saved.customer,jobTitle:saved.saved_snapshot?.job_title||saved.job_title});
@@ -121,8 +121,8 @@ function createService(pool, {upload = require('./cloudinaryDashboard').uploadBu
       if(!link||proof.status!=='saved'||link.saved_revision>=proof.saved_revision)return;
       const target=(await db.query('SELECT * FROM database_jobs WHERE source_order_id=$1 FOR UPDATE',[link.source_order_id])).rows[0];
       if(!target)throw new Error('The linked job no longer exists.');
-      if(target.proof_approved)throw new Error('Clear JOB approval before updating its visual, then retry linking.');
       const files=(await db.query(`SELECT * FROM test_dashboard_files WHERE source_order_id=$1 AND ${VISUAL} FOR UPDATE`,[link.source_order_id])).rows;
+      if(target.proof_approved && (link.saved_revision>0||link.file_public_id||files.length))throw new Error('Approved proofs cannot be regenerated or replaced.');
       if(files.some(file=>file.public_id!==link.file_public_id))throw new Error('The job visual has changed. Remove the unrelated visual before retrying.');
       if(!proof.saved_proof_pdf)throw new Error('The saved PDF is unavailable.');
       // Revision-specific assets preserve previous/repeat order visuals.

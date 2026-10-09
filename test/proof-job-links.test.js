@@ -88,7 +88,7 @@ test('approval, conflicting visuals and failed publication preserve job data and
     await f.db.query('UPDATE database_jobs SET proof_approved=true WHERE source_order_id=1');
     await assert.rejects(()=>f.links.activate(1),/approval/);await assert.rejects(()=>f.links.unlink(1),/approval/);
     await f.db.query('UPDATE proof_design_jobs SET saved_revision=2 WHERE id=$1',[f.id]);
-    await assert.rejects(()=>f.links.publish(f.id),/approval/);
+    await assert.rejects(()=>f.links.publish(f.id),/Approved proofs/);
     await f.db.query('UPDATE database_jobs SET proof_approved=false WHERE source_order_id=1');
     await f.db.query(`INSERT INTO test_dashboard_files(source_order_id,column_id,column_title,public_id) VALUES(1,$1,'PROOF','unrelated')`,[COL.PROOF]);
     await assert.rejects(()=>f.links.publish(f.id),/visual has changed/);
@@ -151,13 +151,26 @@ test('a save changed during Cloudinary upload cannot replace the job visual with
   }finally{await f.db.close();}
 });
 
-test('approved jobs without visuals reject new proof links before reserving an association',async()=>{
+test('approved jobs accept an initial saved proof without clearing approval but block replacement',async()=>{
   const f=await fixture();try{
     await f.db.query('UPDATE database_jobs SET proof_approved=true WHERE source_order_id=1');
-    await assert.rejects(()=>f.links.link(f.id,1),/Clear JOB approval before linking/);
-    assert.equal((await f.db.query('SELECT * FROM proof_job_links WHERE source_order_id=1')).rows.length,0);
-    assert.equal((await f.db.query('SELECT active_source_order_id FROM proof_design_jobs WHERE id=$1',[f.id])).rows[0].active_source_order_id,null);
-    assert.equal(f.uploads.length,0);
+    await f.links.link(f.id,1);
+    assert.equal((await f.db.query('SELECT saved_revision FROM proof_job_links WHERE source_order_id=1')).rows[0].saved_revision,1);
     assert.equal((await f.db.query('SELECT proof_approved FROM database_jobs WHERE source_order_id=1')).rows[0].proof_approved,true);
+    assert.equal(f.uploads.length,1);
+    await assert.rejects(()=>f.links.activate(1),/approval/);
+    await f.db.query('UPDATE proof_design_jobs SET saved_revision=2 WHERE id=$1',[f.id]);
+    await assert.rejects(()=>f.links.publish(f.id),/Approved proofs/);
+    await f.db.query('DELETE FROM test_dashboard_files WHERE source_order_id=1');
+    await assert.rejects(()=>f.links.publish(f.id),/Approved proofs/);
+    assert.equal(f.uploads.length,1);
+  }finally{await f.db.close();}
+});
+test('approved jobs reject unsaved proof links without reserving an association',async()=>{
+  const f=await fixture();try{
+    await f.db.query('UPDATE database_jobs SET proof_approved=true WHERE source_order_id=1');
+    await f.db.query("UPDATE proof_design_jobs SET status='folder_ready',saved_revision=0,saved_proof_pdf=NULL WHERE id=$1",[f.id]);
+    await assert.rejects(()=>f.links.link(f.id,1),/existing saved proof/);
+    assert.equal((await f.db.query('SELECT * FROM proof_job_links')).rows.length,0);
   }finally{await f.db.close();}
 });
