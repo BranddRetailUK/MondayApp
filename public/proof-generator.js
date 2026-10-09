@@ -317,9 +317,9 @@
         for(const product of data.products){
           const button=document.createElement('button');button.type='button';button.className='proof-search-result';
           const title=document.createElement('strong');title.textContent=`${product.code} — ${colourName(product.name)}`;
-          const detail=document.createElement('span');detail.textContent=product.brand || 'Ralawise';button.append(title,detail);
+          const detail=document.createElement('span');detail.textContent=[product.brand,product.supplier==='pencarrie'?'PenCarrie':'Ralawise'].filter(Boolean).join(' · ');button.append(title,detail);
           button.addEventListener('click',()=>{
-            const line=`${product.code} - ${colourName(product.name)}`.trim();
+            const line=`${product.code} - ${colourName(product.name)} (${product.supplier==='pencarrie'?'PenCarrie':'Ralawise'})`.trim();
             const updated=request.value+(request.value&&!request.value.endsWith('\n')?'\n':'')+line;
             if(updated.length>request.maxLength){productStatus.textContent='The request is full. Shorten it before adding another product.';return;}
             request.value=updated;sourceChanged();request.focus();request.setSelectionRange(updated.length,updated.length);

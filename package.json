@@ -24,7 +24,7 @@
     "test:holiday-board": "node --test test/holiday-board.test.js test/holiday-reference.test.js",
     "verify:holiday-board": "node scripts/verify-holiday-board.js",
     "test:print-exports": "node --test test/print-exports*.test.js test/dashboard-approval-status.test.js test/dashboard-sampling.test.js test/dashboard-private-jobs.test.js test/dashboard-design-display.test.js",
-    "test:proof-generator": "node --test test/proof-generator.test.js test/proof-generator-hosted.test.js test/proof-generator-views.test.js test/proof-design-files.test.js test/proof-regeneration-ui.test.js",
+    "test:proof-generator": "node --test test/proof-generator.test.js test/proof-generator-hosted.test.js test/proof-generator-views.test.js test/proof-design-files.test.js test/proof-regeneration-ui.test.js test/proof-pencarrie-catalogue.test.js",
     "smoke:proof-generator": "node scripts/smoke-proof-generator.js"
   },
   "dependencies": {

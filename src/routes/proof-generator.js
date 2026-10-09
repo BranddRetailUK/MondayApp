@@ -8,7 +8,7 @@ const { buildProof } = require('../services/proofPdfGenerator');
 const { proofRuntimeStatus } = require('../services/proofRuntime');
 const { ensureGeneratedViews } = require('../services/proofGeneratedViews');
 const { randomUUID } = require('crypto');
-const { searchRalawiseProducts } = require('../services/proofRalawiseVisuals');
+const { searchProofProducts } = require('../services/proofPencarrieVisuals');
 const {createService:designService,UUID}=require('../services/proofDesignJobs');
 
 const { prepareBrief, recoverProductCodes } = require('../services/proofLayout');
@@ -20,7 +20,7 @@ function isProofGeneratorUser(user) {
     && String(user?.email || '').trim().toLowerCase() === PRODUCTION_EMAIL;
 }
 
-function createRouter({ requireProduction = true, parse = parseProofBrief, enrich = enrichProofProducts, build = buildProof, status = proofRuntimeStatus, generateViews = ensureGeneratedViews, searchProducts = searchRalawiseProducts, convertEps = require('../services/dtfCloudinary').createEpsPng, designs } = {}) {
+function createRouter({ requireProduction = true, parse = parseProofBrief, enrich = enrichProofProducts, build = buildProof, status = proofRuntimeStatus, generateViews = ensureGeneratedViews, searchProducts = searchProofProducts, convertEps = require('../services/dtfCloudinary').createEpsPng, designs } = {}) {
   const router = express.Router();
   const designJobs=()=>designs || (designs=designService(require('../db/pool')));
   const upload = multer({ storage: multer.memoryStorage(), limits: { files: 40, fields: 2, parts: 42, fileSize: 10 * 1024 * 1024, fieldSize: 100 * 1024 } });

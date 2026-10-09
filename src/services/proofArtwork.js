@@ -1,6 +1,6 @@
 const sharp = require('sharp');
 const { PDFDocument } = require('pdf-lib');
-const { placementProfile } = require('./proofPlacementProfiles');
+const { placementProfile, garmentSizeProfile } = require('./proofPlacementProfiles');
 
 // Remove only edge-connected white background. Interior white marks are retained.
 // The original upload is never changed; callers may explicitly keep its background.
@@ -132,11 +132,11 @@ function fitSleeve(garment,p) {
 }
 
 function automaticGarmentProfile(product, garment, view, referenceGarment) {
-  const name=String(product.requestedName || product.name || '').toLowerCase();
-  const hood=/hood/.test(name), outer=/jacket|coat|padded|softshell/.test(name);
-  const child=/kids|child|junior|youth/.test(name);
+  const profile=placementProfile(product);
+  const hood=['hoodie','hoodedOuterwear'].includes(profile.family), outer=['outerwear','hoodedOuterwear'].includes(profile.family);
+  const sizing=garmentSizeProfile(product);
   // Representative flat body widths, not supplier-confirmed measurements.
-  const torsoMm=child?400:outer?600:550;
+  const torsoMm=(outer?600:550)*sizing.garmentScale;
   const rows=[];
   for(let y=Math.floor(garment.height*.5);y<garment.height*.66;y+=Math.max(1,Math.floor(garment.height*.025))){
     const runs=[];let start=-1;
@@ -151,7 +151,7 @@ function automaticGarmentProfile(product, garment, view, referenceGarment) {
   rows.sort((a,b)=>a-b);
   const torsoPx=rows[Math.floor(rows.length/2)];
   // Side views use an explicit estimate; a torso width cannot calibrate depth.
-  let estimatedPxPerMm=garment.confident&&torsoPx&&['front','back'].includes(view)?torsoPx/torsoMm:garment.width/700;
+  let estimatedPxPerMm=garment.confident&&torsoPx&&['front','back'].includes(view)?torsoPx/torsoMm:garment.width/(700*sizing.garmentScale);
   // Full-length views depict the same physical garment height. Transfer the
   // front estimate by height; a side silhouette's width represents depth.
   if(['left','right'].includes(view)&&garment.confident&&referenceGarment?.confident&&referenceGarment.height>0&&referenceGarment.estimatedPxPerMm>0){
@@ -163,6 +163,6 @@ function automaticGarmentProfile(product, garment, view, referenceGarment) {
       if(garment.mask[y*garment.width+Math.floor(garment.width*.5)]){collarY=y/garment.height;break;}
     }
   }
-  return {estimatedPxPerMm,placementProfile:placementProfile(product),landmarks:{collar:{x:.5,y:collarY},hem:{x:.5,y:.97}}};
+  return {estimatedPxPerMm,estimatedTorsoMm:torsoMm,...sizing,placementProfile:profile,landmarks:{collar:{x:.5,y:collarY},hem:{x:.5,y:.97}}};
 }
 module.exports={visibleBounds,rasterPdf,prepareArtwork,analyseGarment,coverage,fitSleeve,automaticGarmentProfile};

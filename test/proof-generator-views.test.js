@@ -142,10 +142,10 @@ test('mixed suppliers retain input order and route an explicitly PenCarrie-only 
  const brief={products:[{code:'GD01',colour:'Royal Blue'},{code:'01436',colour:'Navy',supplier:'pencarrie'},{code:'GD57',colour:'Royal Blue'},{code:'GD57B',colour:'Royal Blue'}]};
  const rows=['GD001','GD057','GD057B'].map((code,i)=>({...row,style_code:code,style_id:i+1,colour_name:'Royal'}));
  let pc=0;
- await enrichProofProducts(brief,{provider:'ralawise',pool:{query:async q=>{assert.equal(q.values[0].includes('01436'),false);return {rows};}},fetchImpl:async(_url,request)=>{
-  pc++;assert.match(request.body,/01436/);assert.doesNotMatch(request.body,/GD01/);
-  return {ok:true,json:async()=>({responses:[{hits:{hits:[{_source:{code:'01436',name:['Wave Bodywarmer'],brandcolour_details:[{id:1,name:'Navy'}],assets:[]}}]}}]})};
- }});
+ await enrichProofProducts(brief,{provider:'ralawise',pool:{query:async q=>{
+  if(q.text.includes('proof_pencarrie_styles')) {pc++;assert.deepEqual(q.values[0],['01436']);return {rows:[{style_code:'01436',style_name:'Wave Bodywarmer',colour_name:'Navy',colour_code:'NAV',images:[]}]};}
+  assert.equal(q.values[0].includes('01436'),false);return {rows};
+ }},fetchImpl:async()=>{throw Error('Hosted lookup must not call the website');}});
  assert.equal(pc,1);assert.deepEqual(brief.products.map(p=>p.code),['GD001','01436','GD057','GD057B']);
  assert.deepEqual(brief.products.map(p=>p.supplier),['ralawise','pencarrie','ralawise','ralawise']);
  assert.ok(brief.products.every(p=>p.visual.matched));
@@ -160,8 +160,16 @@ test('name-only lookup accepts a unique exact catalogue name and rejects ambiguo
 
 test('auto supplier fallback resolves a product once without duplicating its sheet',async()=>{
  const brief={products:[{code:'01436',colour:'Navy',supplier:'auto'}]};let calls=0;
- await enrichProofProducts(brief,{provider:'ralawise',pool:{query:async()=>({rows:[]})},fetchImpl:async()=>{
-  calls++;return {ok:true,json:async()=>({responses:[{hits:{hits:[{_source:{code:'01436',brandcolour_details:[{id:1,name:'Navy'}],assets:[]}}]}}]})};
- }});
+ await enrichProofProducts(brief,{provider:'ralawise',pool:{query:async q=>{
+  if(q.text.includes('proof_pencarrie_styles')){calls++;return {rows:[{style_code:'01436',style_name:'Wave Bodywarmer',colour_name:'Navy',images:[]}]};}
+  return {rows:[]};
+ }},fetchImpl:async()=>{throw Error('Hosted lookup must not call the website');}});
  assert.equal(calls,1);assert.equal(brief.products.length,1);assert.equal(brief.products[0].supplier,'pencarrie');
+});
+
+test('PenCarrie access rejection preserves the upstream status for a useful review message',async()=>{
+ const brief={products:[{code:'01436',colour:'Navy',supplier:'pencarrie'}]};
+ await enrichProofProducts(brief,{fetchImpl:async()=>({ok:false,status:403})});
+ assert.equal(brief.products[0].visual.lookupIssue,'supplier_unavailable');
+ assert.equal(brief.products[0].visual.supplierHttpStatus,403);
 });

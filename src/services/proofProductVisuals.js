@@ -33,7 +33,11 @@ async function fetchPencarrieProducts(codes, { fetchImpl = fetch } = {}) {
       body,
       signal: controller.signal,
     });
-    if (!response.ok) throw new Error(`PenCarrie returned ${response.status}`);
+    if (!response.ok) {
+      const error = new Error(`PenCarrie returned ${response.status}`);
+      error.supplierHttpStatus = response.status;
+      throw error;
+    }
     const payload = await response.json();
     const hits = payload?.responses?.[0]?.hits?.hits || [];
     return new Map(hits.map((hit) => hit?._source).filter((product) => product?.code && valid.includes(product.code.toUpperCase()))
@@ -115,15 +119,28 @@ async function enrichProofProducts(brief, { fetchImpl = fetch, pool, provider = 
     }
     return brief;
   }
+  if (pool || process.env.DATABASE_URL) {
+    const {fetchPencarrieRows,selectPencarrieCatalogueVisual}=require('./proofPencarrieVisuals');
+    let rows,failed=false;
+    try {rows=await fetchPencarrieRows(brief.products,pool || require('../db/pool'));}
+    catch(error){failed=true;console.warn('PenCarrie proof catalogue lookup failed:',error.message);}
+    for(const item of brief.products) {
+      item.visual=failed?{source:'PenCarrie',matched:false,views:[],lookupIssue:'pencarrie_catalogue_unavailable'}:selectPencarrieCatalogueVisual(rows,item,matchColour);
+      item.requestedName ||= item.name;
+      if(item.visual.matched){item.code=item.visual.styleCode;item.name=item.visual.name;item.colour=item.visual.colour;item.supplier='pencarrie';}
+    }
+    return brief;
+  }
   let products = new Map();
   let lookupFailed = false;
+  let supplierHttpStatus;
   try { products = await fetchPencarrieProducts(brief.products.map(product => product.code), { fetchImpl }); }
-  catch (error) { lookupFailed = true; console.warn('PenCarrie product lookup failed:', error.message); }
+  catch (error) { lookupFailed = true; supplierHttpStatus = error.supplierHttpStatus; console.warn('PenCarrie product lookup failed:', error.message); }
   for (const item of brief.products) {
     const found = products.get(String(item.code || '').toUpperCase());
     item.visual = found ? selectPencarrieVisual(found, item.colour) : { source: '', name: '', colour: '', matched: false, productUrl: '', views: [] };
     if (!String(item.code || '').trim()) item.visual.lookupIssue = 'missing_code';
-    else if (lookupFailed) item.visual.lookupIssue = 'supplier_unavailable';
+    else if (lookupFailed) { item.visual.lookupIssue = 'supplier_unavailable'; item.visual.supplierHttpStatus = supplierHttpStatus; }
     else if (!found) item.visual.lookupIssue = 'pencarrie_product_not_found';
     else if (!item.visual.matched) item.visual.lookupIssue = 'pencarrie_colour_not_found';
     item.visual.source = 'PenCarrie';

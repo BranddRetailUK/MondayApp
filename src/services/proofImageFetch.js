@@ -1,3 +1,4 @@
+const {isPencarrieCatalogueImage}=require('./proofPencarrieCatalogue');
 const { isRalawiseImageUrl } = require('./proofRalawiseVisuals');
 
 async function fetchGarment(url, source, fetchImpl = fetch) {
@@ -9,7 +10,7 @@ async function fetchGarment(url, source, fetchImpl = fetch) {
   const parsed = new URL(url);
   const pencarrie = (parsed.hostname === 'pencarrie.com' || parsed.hostname.endsWith('.pencarrie.com')) && parsed.pathname.startsWith('/storage/');
   const ralawise = source === 'Ralawise catalog' && isRalawiseImageUrl(url);
-  if (parsed.protocol !== 'https:' || !(pencarrie || ralawise)) {
+  if (parsed.protocol !== 'https:' || !(pencarrie || ralawise || (source === 'PenCarrie' && isPencarrieCatalogueImage(url)))) {
     throw new Error('No safe garment image is available for this product.');
   }
   const controller = new AbortController();

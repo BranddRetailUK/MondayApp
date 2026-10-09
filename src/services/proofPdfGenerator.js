@@ -139,13 +139,15 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
     const catalogueMessages = {
       catalogue_unavailable: 'The Ralawise catalogue is temporarily unavailable. Please try again shortly.',
       product_not_found: 'This style code was not found in the active Ralawise catalogue. Check the product code or supplier.',
+      pencarrie_catalogue_unavailable: 'The PenCarrie proof catalogue is unavailable. Please try again shortly.',
+      pencarrie_ambiguous_code: 'This name matches several PenCarrie garments. Specify the product code.',
       pencarrie_product_not_found: 'This style code was not found in the PenCarrie catalogue. Check the product code.',
       pencarrie_colour_not_found: 'This colour is not available.',
       ambiguous_code: 'This manufacturer code matches several Ralawise garments. Include the exact Ralawise style code in the brief.',
       colour_not_found: 'This colour is not available.',
     };
     const catalogueIssue = catalogueMessages[lookupIssue];
-    if (supplierUnavailable) issue(productIndex,null,'Garment image lookup is unavailable. The supplier connection needs attention before this proof can be completed. Your artwork and placement settings do not need changing.',true);
+    if (supplierUnavailable) issue(productIndex,null,product.visual?.supplierHttpStatus === 403 ? 'PenCarrie refused the catalogue lookup (HTTP 403). Its server access or product-data connection needs resolving.' : 'Garment image lookup is unavailable. The supplier connection needs attention before this proof can be completed. Your artwork and placement settings do not need changing.',true);
     else if (missingCode) issue(productIndex,null,'The garment style code is missing or ambiguous. Include its exact supplier code in the request.',true);
     else if (catalogueIssue) issue(productIndex,null,catalogueIssue,true);
     const groups = new Map();

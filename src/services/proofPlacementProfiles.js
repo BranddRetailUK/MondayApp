@@ -13,13 +13,22 @@ const PROFILES = {
   outerwear: { breastCentre: 0.295, sleeveCentre: 0.345, hoodClearance: 0 },
 };
 const STYLE_PROFILES = {
+  GD57: 'hoodie', GD57B: 'hoodie', GD057: 'hoodie', GD057B: 'hoodie',
   RX350: 'hoodie', AFP2: 'hoodedOuterwear', LV290: 'tee',
   LV370: 'polo', SS8: 'sweatshirt', '03824': 'fleece',
 };
 
+function garmentSizeProfile(product = {}) {
+  const code = String(product.code || '').toUpperCase().replace(/^([A-Z]+)0+(?=\d)/,'$1');
+  const names = `${product.name || ''} ${product.requestedName || ''} ${product.visual?.name || ''} ${product.visual?.gender || ''}`;
+  const child = code === 'GD57B' || /\b(?:kids?|children|child(?:ren)?['’]?s?|juniors?|youth|boys?|girls?|toddlers?|infants?|bab(?:y|ies))\b/i.test(names);
+  // Representative child garment dimensions are 20% smaller, not print dimensions.
+  return {sizeCategory:child ? 'child' : 'adult', garmentScale:child ? 0.8 : 1};
+}
+
 function placementProfile(product = {}) {
   const code = String(product.code || '').trim().toUpperCase();
-  const name = `${product.name || ''} ${product.requestedName || ''}`.toLowerCase();
+  const name = `${product.name || ''} ${product.requestedName || ''} ${product.visual?.name || ''}`.toLowerCase();
   const outer = /jacket|coat|padded|softshell|parka/.test(name);
   const hood = /hood/.test(name);
   const family = STYLE_PROFILES[code] || (hood && outer ? 'hoodedOuterwear'
@@ -46,4 +55,4 @@ function automaticTop(position, view, height, profile = PROFILES.tee) {
   return null; // Nape and hem retain their existing explicit region defaults.
 }
 
-module.exports = { placementProfile, automaticTop };
+module.exports = { placementProfile, automaticTop, garmentSizeProfile };

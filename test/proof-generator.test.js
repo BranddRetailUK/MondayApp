@@ -330,3 +330,28 @@ test('missing artwork size remains a question and blocks final export',async()=>
  const file=await artFile(),fetchImpl=await fixtureFetch();
  await assert.rejects(()=>buildProof(b,[file],{fetchImpl,strict:true}),/specify the artwork width or height/);
 });
+
+test('kids classification uses supplier names and known codes even when the original name is generic',()=>{
+ const {garmentSizeProfile}=require('../src/services/proofPlacementProfiles');
+ for(const product of [{code:'GD057B',name:'Heavy Blend hoodie'},{requestedName:'Hoodie',name:'Kids hoodie'},{name:'Sweatshirt',visual:{name:'Youth sweatshirt'}},{name:"Children’s polo"},{name:'Junior jacket'},{name:'Girls T-shirt'}])assert.equal(garmentSizeProfile(product).garmentScale,.8);
+ assert.equal(garmentSizeProfile({code:'GD057',name:'Adult hoodie'}).garmentScale,1);
+ assert.equal(garmentSizeProfile({code:'OTHERB',name:'Unisex tee'}).garmentScale,1);
+});
+
+test('child mockups enlarge the relative print while preserving millimetres and adult back positioning rules',async()=>{
+ const base=await artwork.analyseGarment(await garmentBytes());
+ const adult={...base,view:'back',...artwork.automaticGarmentProfile({name:'Adult hoodie'},base,'back')};
+ const child={...base,view:'back',...artwork.automaticGarmentProfile({code:'GD057B',requestedName:'Hoodie'},base,'back')};
+ assert.equal(adult.estimatedTorsoMm,550);assert.equal(child.estimatedTorsoMm,440);
+ const asset={width:200,height:100};
+ const a=layout.placementFor(mark({position:'back',widthMm:'250'}),asset,adult,{});
+ const c=layout.placementFor(mark({position:'back',widthMm:'250'}),asset,child,{});
+ assert.equal(c.size.width,250);assert.ok(Math.abs(c.width/a.width-1.25)<1e-9);
+ const proportionate=layout.placementFor(mark({position:'back',widthMm:'200'}),asset,child,{});
+ assert.ok(Math.abs(proportionate.width-a.width)<1e-9);assert.ok(Math.abs(proportionate.y-a.y)<1e-9);assert.equal(c.x,a.x);
+ assert.ok(layout.fitsRegion(c));
+ const calibration={referenceMm:500,start:{x:.2,y:.5},end:{x:.8,y:.5}};
+ assert.equal(layout.placementFor(mark(),asset,adult,calibration).width,layout.placementFor(mark(),asset,child,calibration).width);
+ const side=artwork.automaticGarmentProfile({code:'GD57B'},base,'right',child);
+ assert.equal(side.estimatedPxPerMm,child.estimatedPxPerMm);
+});
