@@ -98,12 +98,24 @@ function createService(pool, {upload = require('./cloudinaryDashboard').uploadBu
   async function sync(proofId){await autoLink(proofId);await publish(proofId);}
   async function publish(proofId) {
     // Nothing to do for ordinary standalone proofs; no dashboard tables are needed.
-    const pending=await pool.query(`SELECT l.source_order_id FROM proof_job_links l JOIN proof_design_jobs p ON p.id=l.proof_id
+    const pending=await pool.query(`SELECT p.*,l.source_order_id AS publication_target,l.file_public_id FROM proof_job_links l JOIN proof_design_jobs p ON p.id=l.proof_id
       WHERE p.id=$1 AND p.status='saved' AND l.source_order_id=p.publish_source_order_id AND l.saved_revision<p.saved_revision`,[proofId]);
     if(!pending.rows.length)return;
+    const saved=pending.rows[0];
+    const targetBeforeUpload=(await pool.query('SELECT proof_approved FROM database_jobs WHERE source_order_id=$1',[saved.publication_target])).rows[0];
+    if(!targetBeforeUpload)throw new Error('The linked job no longer exists.');
+    if(targetBeforeUpload.proof_approved)throw new Error('Clear JOB approval before updating its visual, then retry linking.');
+    const filesBeforeUpload=(await pool.query(`SELECT public_id FROM test_dashboard_files WHERE source_order_id=$1 AND ${VISUAL}`,[saved.publication_target])).rows;
+    if(filesBeforeUpload.some(file=>file.public_id!==saved.file_public_id))throw new Error('The job visual has changed. Remove the unrelated visual before retrying.');
+    if(!saved.saved_proof_pdf)throw new Error('The saved PDF is unavailable.');
+    const filename=proofFileName({designNumber:String(saved.design_number),customer:saved.saved_snapshot?.customer||saved.customer,jobTitle:saved.saved_snapshot?.job_title||saved.job_title});
+    // Upload without database locks: Cloudinary processing must not block order creation.
+    const asset=await upload(Buffer.from(saved.saved_proof_pdf),{folder:`ultimate-hub/test-dashboard/proof/${saved.publication_target}`,publicId:`generated-${saved.id}-${saved.saved_revision}`,filename,resourceType:'image'});
+    if(!asset.public_id||!asset.secure_url)throw new Error('Proof upload failed.');
     return transaction(async db=>{
       await db.query('LOCK TABLE database_job_positions IN SHARE ROW EXCLUSIVE MODE');
       const proof=(await db.query('SELECT * FROM proof_design_jobs WHERE id=$1 FOR UPDATE',[proofId])).rows[0];
+      if(proof.status!=='saved'||proof.saved_revision!==saved.saved_revision||proof.publish_source_order_id!==saved.publication_target)return;
       const link=(await db.query('SELECT * FROM proof_job_links WHERE source_order_id=$1 AND proof_id=$2 FOR UPDATE',[proof.publish_source_order_id,proofId])).rows[0];
       if(!link||proof.status!=='saved'||link.saved_revision>=proof.saved_revision)return;
       const target=(await db.query('SELECT * FROM database_jobs WHERE source_order_id=$1 FOR UPDATE',[link.source_order_id])).rows[0];
@@ -112,9 +124,6 @@ function createService(pool, {upload = require('./cloudinaryDashboard').uploadBu
       const files=(await db.query(`SELECT * FROM test_dashboard_files WHERE source_order_id=$1 AND ${VISUAL} FOR UPDATE`,[link.source_order_id])).rows;
       if(files.some(file=>file.public_id!==link.file_public_id))throw new Error('The job visual has changed. Remove the unrelated visual before retrying.');
       if(!proof.saved_proof_pdf)throw new Error('The saved PDF is unavailable.');
-      const filename=proofFileName({designNumber:String(proof.design_number),customer:proof.saved_snapshot?.customer||proof.customer,jobTitle:proof.saved_snapshot?.job_title||proof.job_title});
-      const asset=await upload(Buffer.from(proof.saved_proof_pdf),{folder:`ultimate-hub/test-dashboard/proof/${link.source_order_id}`,publicId:`generated-${proof.id}-${proof.saved_revision}`,filename,resourceType:'image'});
-      if(!asset.public_id||!asset.secure_url)throw new Error('Proof upload failed.');
       // Revision-specific assets preserve previous/repeat order visuals.
       await db.query(`DELETE FROM test_dashboard_files WHERE source_order_id=$1 AND ${VISUAL}`,[link.source_order_id]);
       await db.query(`INSERT INTO test_dashboard_files(source_order_id,column_id,column_title,public_id,secure_url,resource_type,format,original_filename,bytes,metadata)

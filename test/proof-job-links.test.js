@@ -136,3 +136,17 @@ test('automatic pairing ignores customers whose only matching job already has a 
     await f.links.sync(f.id);assert.equal((await f.designs.get(f.id)).sourceOrderId,null);assert.equal(f.uploads.length,0);
   }finally{await f.db.close();}
 });
+test('a save changed during Cloudinary upload cannot replace the job visual with stale bytes',async()=>{
+  const f=await fixture();try{
+    await f.links.link(f.id,1);
+    const original=(await f.db.query('SELECT public_id FROM test_dashboard_files WHERE source_order_id=1')).rows[0].public_id;
+    await f.db.query('UPDATE proof_design_jobs SET saved_revision=2,revision=2 WHERE id=$1',[f.id]);
+    const racing=createService(f.pool,{upload:async()=>{
+      await f.db.query("UPDATE proof_design_jobs SET status='save_queued',revision=3 WHERE id=$1",[f.id]);
+      return {public_id:'stale-upload',secure_url:'https://example.test/stale.pdf'};
+    }});
+    await racing.publish(f.id);
+    assert.equal((await f.db.query('SELECT public_id FROM test_dashboard_files WHERE source_order_id=1')).rows[0].public_id,original);
+    assert.equal((await f.db.query('SELECT saved_revision FROM proof_job_links WHERE source_order_id=1')).rows[0].saved_revision,1);
+  }finally{await f.db.close();}
+});
