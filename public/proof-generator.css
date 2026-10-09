@@ -206,3 +206,5 @@ body.proof-preview .proof-preview-badge{display:block}
 
 .proof-editor-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}
 .proof-editor-toolbar .proof-primary-button{margin-left:auto}
+.proof-editor>.proof-history-large{width:100%;max-width:100%;height:auto}
+.proof-editor-toolbar #proof-review,.proof-editor-toolbar #proof-back-list{margin-top:0;margin-bottom:0}
