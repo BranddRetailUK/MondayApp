@@ -178,7 +178,7 @@
         }else info.append(field);
       }
       const linkButton=document.createElement('button');linkButton.type='button';linkButton.className='proof-secondary-button proof-history-link-button';linkButton.textContent='Link to job';linkButton.disabled=busy||['save_queued','saving','allocating'].includes(job.status);
-      linkButton.addEventListener('click',async()=>{try{const target=await window.ProofLinks.picker('jobs',{customer:job.customer});if(!target)return;await window.ProofLinks.api(`/designs/${job.id}/link`,{sourceOrderId:target.source_order_id});if(designId===job.id){design=null;designId=null;}await refreshHistory();window.ProofLinks.refresh();}catch(error){historyStatus.textContent=error.message;}});
+      linkButton.addEventListener('click',async()=>{try{const target=await window.ProofLinks.picker('jobs',{customer:job.customer});if(!target)return;if(!await window.ProofLinks.link(job.id,target.source_order_id))return;if(designId===job.id){design=null;designId=null;}await refreshHistory();window.ProofLinks.refresh();}catch(error){historyStatus.textContent=error.message;}});
       const state=document.createElement('div');state.className='proof-history-state';const [label,message]=historyState(job);
       if(label!=='Saved'){const status=document.createElement('strong');status.textContent=label;state.append(status);}
       if(message){const detail=document.createElement('p');detail.textContent=reviewMessage(message);state.append(detail);}

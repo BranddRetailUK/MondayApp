@@ -150,3 +150,14 @@ test('a save changed during Cloudinary upload cannot replace the job visual with
     assert.equal((await f.db.query('SELECT saved_revision FROM proof_job_links WHERE source_order_id=1')).rows[0].saved_revision,1);
   }finally{await f.db.close();}
 });
+
+test('approved jobs without visuals reject new proof links before reserving an association',async()=>{
+  const f=await fixture();try{
+    await f.db.query('UPDATE database_jobs SET proof_approved=true WHERE source_order_id=1');
+    await assert.rejects(()=>f.links.link(f.id,1),/Clear JOB approval before linking/);
+    assert.equal((await f.db.query('SELECT * FROM proof_job_links WHERE source_order_id=1')).rows.length,0);
+    assert.equal((await f.db.query('SELECT active_source_order_id FROM proof_design_jobs WHERE id=$1',[f.id])).rows[0].active_source_order_id,null);
+    assert.equal(f.uploads.length,0);
+    assert.equal((await f.db.query('SELECT proof_approved FROM database_jobs WHERE source_order_id=1')).rows[0].proof_approved,true);
+  }finally{await f.db.close();}
+});

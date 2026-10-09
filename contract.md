@@ -751,3 +751,5 @@ No external work-management token, OAuth, board, column, or webhook environment 
 - The proof request form no longer includes the Use AC Solutions example control.
 
 - Proof request, Clothing proof, Artwork and Special instructions share the same 22px white title styling and light-blue divider underneath.
+
+- Manual proof linking checks JOB approval before creating the association. The browser offers to clear approval through the existing checkbox/automation route; cancelling leaves approval and links unchanged. The server rechecks approval transactionally to prevent a new pending association when an approved job has no visual. Existing pending links retain the publication approval gate.

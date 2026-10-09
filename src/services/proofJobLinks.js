@@ -44,6 +44,7 @@ function createService(pool, {upload = require('./cloudinaryDashboard').uploadBu
     const existing=(await db.query('SELECT * FROM proof_job_links WHERE source_order_id=$1',[id])).rows[0];
     if(existing?.proof_id===proofId)return;
     if(existing)throw new Error('This job already has a linked proof.');
+    if(target.proof_approved)throw new Error('Clear JOB approval before linking a new proof to this job.');
     if((await db.query(`SELECT id FROM test_dashboard_files WHERE source_order_id=$1 AND ${VISUAL} LIMIT 1`,[id])).rows.length)throw new Error('This job already has a visual. Select a job without visuals.');
     if(['saving','save_queued','allocating'].includes(proof.status) || (proof.generation_status==='generating'&&Date.now()-new Date(proof.generation_updated_at).getTime()<120000))throw new Error('Wait for the proof to finish saving before linking it.');
     await db.query('INSERT INTO proof_job_links(source_order_id,proof_id,order_no) VALUES($1,$2,$3)',[id,proofId,target.order_no]);

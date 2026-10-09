@@ -39,9 +39,19 @@
     });
   }
   function refresh(){window.dispatchEvent(new CustomEvent('proof-job-linked'));if(typeof loadTestBoard==='function')loadTestBoard({forceRefresh:true});}
+  async function link(proofId,id){
+    if(!allowed())return null;
+    const {job}=await api(`/link-jobs/${id}`);
+    if(job.proof_approved){
+      if(!window.confirm(`Job ${job.order_no||id} is approved. Clear JOB approval and attach this proof? The job will need approval again.`))return null;
+      const response=await fetch(`/api/test-dashboard/items/${id}/checkbox-column`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({columnId:'checkbox1__1',checked:false})});
+      const data=await response.json();if(!response.ok)throw new Error(data.error||'Could not clear approval.');
+    }
+    return api(`/designs/${proofId}/link`,{sourceOrderId:id});
+  }
   async function attach(id,customer=''){
     if(!allowed())return;const proof=await picker('proofs',{customer});if(!proof)return;
-    await api(`/designs/${proof.id}/link`,{sourceOrderId:id});refresh();
+    if(await link(proof.id,id))refresh();
   }
   async function edit(id){
     if(!allowed())return;const {job}=await api(`/link-jobs/${id}`);
@@ -68,5 +78,5 @@
       }else if(!job.has_visual){container.append(button('Create proof',()=>create(id)),button('Attach existing proof',()=>attach(id,job.customer_name)));}
     }catch(error){container.textContent=error.message;}
   }
-  window.ProofLinks={allowed,api,picker,attach,edit,create,controls,refresh};
+  window.ProofLinks={allowed,api,picker,link,attach,edit,create,controls,refresh};
 })();
