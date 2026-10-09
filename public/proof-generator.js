@@ -52,7 +52,7 @@
             <textarea id="proof-request" class="proof-textarea proof-main-request" maxlength="20000"></textarea>
           </section>
           <section class="proof-card">
-            <div class="proof-card-heading"><span class="proof-step">02</span><div><h2>Artwork</h2></div></div>
+            <div class="proof-card-heading"><div><h2>Artwork</h2></div></div>
             <input id="proof-file-input" type="file" accept=".png,.jpg,.jpeg,.webp,.svg,.pdf,.eps,.ai" multiple hidden>
             <button id="proof-dropzone" class="proof-dropzone" type="button"><span class="proof-upload-icon" aria-hidden="true">↥</span><strong>Choose artwork files</strong></button>
             <div id="proof-artworks" class="proof-artwork-list"></div>
