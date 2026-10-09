@@ -98,7 +98,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
   });
   router.post('/designs/:id/sync',async(req,res)=>{
     if(!allowed(req,res))return;
-    try{await links().publish(req.params.id);res.json({design:await designJobs().get(req.params.id)});}catch(error){res.status(409).json({error:error.message});}
+    try{await links().sync(req.params.id);res.json({design:await designJobs().get(req.params.id)});}catch(error){res.status(409).json({error:error.message});}
   });
   router.post('/designs/:id/retry',async(req,res)=>{
     if(!allowed(req,res))return;res.set('Cache-Control','no-store');

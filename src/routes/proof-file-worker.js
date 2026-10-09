@@ -13,7 +13,7 @@ function createRouter(pool){
     if(!UUID.test(req.params.id)||!UUID.test(req.body?.claimToken||''))return res.status(400).json({error:'Invalid worker claim'});
     try{const result=await service.report(req.params.id,req.body.claimToken,req.body);
       if(result.accepted && req.body.status==='saved'){
-        try{await require('../services/proofJobLinks').createService(pool).publish(req.params.id);}catch(error){console.error('Proof visual publication pending:',error.message);}
+        try{await require('../services/proofJobLinks').createService(pool).sync(req.params.id);}catch(error){console.error('Proof visual publication pending:',error.message);}
       }
       res.json(result);}catch(error){next(error);}
   });

@@ -280,7 +280,7 @@
     while(Date.now()-started<90000){
       if(id!==designId)return;
       design=await designRequest(`/${id}`);showDesign();
-      if(saved&&design.status==='saved'&&design.sourceOrderId){try{await window.ProofLinks.api(`/designs/${id}/sync`,{});window.ProofLinks.refresh();}catch(error){throw new Error('Proof saved, but Dashboard sync needs attention: '+error.message);}}
+      if(saved&&design.status==='saved'){try{const synced=await window.ProofLinks.api(`/designs/${id}/sync`,{});design=synced.design;if(design.sourceOrderId)selectedLinkJob={source_order_id:design.sourceOrderId,order_no:design.linkedOrders?.find(order=>order.sourceOrderId===design.sourceOrderId)?.orderNo};window.ProofLinks.refresh();}catch(error){throw new Error('Proof saved, but Dashboard sync needs attention: '+error.message);}}
       if(design.status==='error')throw new Error(design.message||'The design folder needs attention.');
       if(saved?design.status==='saved':!!(design.designNumber&&design.folderName))return;
       setFeedback(saved?'Waiting for ARTWORK-PC to save the proof…':'Waiting for ARTWORK-PC to reserve the next design number…');

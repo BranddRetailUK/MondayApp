@@ -1,4 +1,4 @@
-const { TEST_DASHBOARD_COLUMN_IDS: COL } = require('./testDashboardDefaults');
+const { TEST_DASHBOARD_COLUMN_IDS: COL, TEST_DASHBOARD_GROUP_IDS: GROUP } = require('./testDashboardDefaults');
 const { proofFileName } = require('../../tools/print-worker/proof-filename');
 const VISUAL = `(column_id = '${COL.PROOF}' OR UPPER(BTRIM(column_title)) IN ('PROOF','VISUAL'))`;
 const eligible = `j.is_complete IS NOT TRUE AND COALESCE(j.dashboard_status,'') NOT IN ('COMPLETED','INVOICED')
@@ -28,9 +28,11 @@ function createService(pool, {upload = require('./cloudinaryDashboard').uploadBu
     if(!row)throw new Error('Job not found.');return row;
   }
   async function checkTargetSwitch(db,proof,id){
-    if(!proof.active_source_order_id||proof.active_source_order_id===id)return;
-    const pending=(await db.query('SELECT saved_revision FROM proof_job_links WHERE source_order_id=$1 AND proof_id=$2',[proof.active_source_order_id,proof.id])).rows[0];
-    if(pending && (!pending.saved_revision||pending.saved_revision<proof.saved_revision))throw new Error('Finish syncing the current linked job before selecting another job.');
+    if(proof.publish_source_order_id && proof.publish_source_order_id!==id){
+      const pending=(await db.query('SELECT saved_revision FROM proof_job_links WHERE source_order_id=$1 AND proof_id=$2',[proof.publish_source_order_id,proof.id])).rows[0];
+      if(pending && pending.saved_revision<proof.saved_revision)throw new Error('Finish syncing the current saved proof before selecting another job.');
+    }
+    if(proof.active_source_order_id && proof.active_source_order_id!==id && !proof.saved_revision)throw new Error('Finish the current linked proof before selecting another job.');
   }
   async function linkWithClient(db, proofId, id) {
     id=orderId(id);
@@ -45,7 +47,7 @@ function createService(pool, {upload = require('./cloudinaryDashboard').uploadBu
     if((await db.query(`SELECT id FROM test_dashboard_files WHERE source_order_id=$1 AND ${VISUAL} LIMIT 1`,[id])).rows.length)throw new Error('This job already has a visual. Select a job without visuals.');
     if(['saving','save_queued','allocating'].includes(proof.status) || (proof.generation_status==='generating'&&Date.now()-new Date(proof.generation_updated_at).getTime()<120000))throw new Error('Wait for the proof to finish saving before linking it.');
     await db.query('INSERT INTO proof_job_links(source_order_id,proof_id,order_no) VALUES($1,$2,$3)',[id,proofId,target.order_no]);
-    await db.query('UPDATE proof_design_jobs SET active_source_order_id=$2 WHERE id=$1',[proofId,id]);
+    await db.query("UPDATE proof_design_jobs SET active_source_order_id=$2,publish_source_order_id=CASE WHEN status='saved' THEN $2 ELSE publish_source_order_id END WHERE id=$1",[proofId,id]);
   }
   async function link(proofId,id) {
     await transaction(db=>linkWithClient(db,proofId,id));
@@ -72,15 +74,37 @@ function createService(pool, {upload = require('./cloudinaryDashboard').uploadBu
       return proof.id;
     });
   }
+  async function autoLink(proofId){
+    return transaction(async db=>{
+      const proof=(await db.query('SELECT * FROM proof_design_jobs WHERE id=$1 FOR UPDATE',[proofId])).rows[0];
+      if(!proof||proof.status!=='saved'||!proof.saved_revision||proof.active_source_order_id)return null;
+      if((await db.query('SELECT 1 FROM proof_job_links WHERE proof_id=$1 LIMIT 1',[proofId])).rows.length)return null;
+      const name=String(proof.saved_snapshot?.customer||proof.customer||'').trim().replace(/\s+/g,' ').toLowerCase();
+      if(!name)return null;
+      const candidates=(await db.query(`SELECT j.*,s.group_id,s.column_values,s.archived
+        FROM database_jobs j LEFT JOIN test_dashboard_job_state s USING(source_order_id)
+        WHERE ${eligible} AND (s.source_order_id IS NOT NULL OR j.dashboard_status IS NOT NULL)
+        AND LOWER(REGEXP_REPLACE(BTRIM(j.customer_name),'[[:space:]]+',' ','g'))=$1
+        AND NOT EXISTS(SELECT 1 FROM test_dashboard_files WHERE source_order_id=j.source_order_id AND ${VISUAL})
+        AND NOT EXISTS(SELECT 1 FROM proof_job_links l WHERE l.source_order_id=j.source_order_id)
+        FOR UPDATE OF j`,[name])).rows;
+      const {resolveDashboardGroupId,resolveJobApproved}=require('./dashboardAutomation');
+      const matches=candidates.filter(job=>!resolveJobApproved(job,job.column_values||{}) && resolveDashboardGroupId(job,job,null)===GROUP.OFFICE);
+      if(matches.length!==1)return null;
+      await linkWithClient(db,proofId,matches[0].source_order_id);
+      return matches[0].source_order_id;
+    });
+  }
+  async function sync(proofId){await autoLink(proofId);await publish(proofId);}
   async function publish(proofId) {
     // Nothing to do for ordinary standalone proofs; no dashboard tables are needed.
     const pending=await pool.query(`SELECT l.source_order_id FROM proof_job_links l JOIN proof_design_jobs p ON p.id=l.proof_id
-      WHERE p.id=$1 AND p.status='saved' AND l.source_order_id=p.active_source_order_id AND l.saved_revision<p.saved_revision`,[proofId]);
+      WHERE p.id=$1 AND p.status='saved' AND l.source_order_id=p.publish_source_order_id AND l.saved_revision<p.saved_revision`,[proofId]);
     if(!pending.rows.length)return;
     return transaction(async db=>{
       await db.query('LOCK TABLE database_job_positions IN SHARE ROW EXCLUSIVE MODE');
       const proof=(await db.query('SELECT * FROM proof_design_jobs WHERE id=$1 FOR UPDATE',[proofId])).rows[0];
-      const link=(await db.query('SELECT * FROM proof_job_links WHERE source_order_id=$1 AND proof_id=$2 FOR UPDATE',[proof.active_source_order_id,proofId])).rows[0];
+      const link=(await db.query('SELECT * FROM proof_job_links WHERE source_order_id=$1 AND proof_id=$2 FOR UPDATE',[proof.publish_source_order_id,proofId])).rows[0];
       if(!link||proof.status!=='saved'||link.saved_revision>=proof.saved_revision)return;
       const target=(await db.query('SELECT * FROM database_jobs WHERE source_order_id=$1 FOR UPDATE',[link.source_order_id])).rows[0];
       if(!target)throw new Error('The linked job no longer exists.');
@@ -118,6 +142,6 @@ function createService(pool, {upload = require('./cloudinaryDashboard').uploadBu
       await db.query('UPDATE proof_design_jobs SET active_source_order_id=NULL WHERE id=$1 AND active_source_order_id=$2',[proof.id,id]);
     });
   }
-  return {jobs,job,link,linkWithClient,activate,publish,unlink};
+  return {jobs,job,link,linkWithClient,activate,publish,unlink,autoLink,sync};
 }
 module.exports={createService,isProduction,VISUAL};

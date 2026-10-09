@@ -28,7 +28,7 @@ async function ensureProofGeneratorTables(pool) {
     ADD COLUMN IF NOT EXISTS generation_status TEXT NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS generation_message TEXT NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS generation_updated_at TIMESTAMPTZ`);
-  await pool.query('ALTER TABLE proof_design_jobs ADD COLUMN IF NOT EXISTS active_source_order_id INTEGER');
+  await pool.query('ALTER TABLE proof_design_jobs ADD COLUMN IF NOT EXISTS active_source_order_id INTEGER, ADD COLUMN IF NOT EXISTS publish_source_order_id INTEGER');
   await pool.query('ALTER TABLE proof_design_jobs ADD COLUMN IF NOT EXISTS saved_proof_pdf BYTEA, ADD COLUMN IF NOT EXISTS saved_snapshot JSONB');
   await pool.query(`UPDATE proof_design_jobs SET saved_proof_pdf=proof_pdf,
     saved_snapshot=jsonb_build_object('source',source,'source_artworks',source_artworks,'garment_assets',garment_assets,'customer',customer,'job_title',job_title)
