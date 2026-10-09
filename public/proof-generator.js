@@ -39,7 +39,6 @@
               <div id="proof-product-status" class="proof-search-status" role="status" aria-live="polite"></div>
               <div id="proof-product-results" class="proof-search-results"></div>
             </div>
-            <div id="proof-job-link" class="proof-job-link"></div>
             <div class="proof-job-fields">
               <div class="proof-customer-picker">
                 <label class="proof-control">Customer name<input id="proof-customer" type="search" maxlength="200" autocomplete="off" aria-controls="proof-customer-results" aria-describedby="proof-customer-status"></label>
@@ -101,28 +100,17 @@
   let progressChain=Promise.resolve();
   let historyRows=[],nextOffset=null,historyLimit=50,historyLoading=false,lastHistory='',progressMessage='',progressError=false;
   let selectedLinkJob=null;
-  const linkControl=root.querySelector('#proof-job-link');
-  function showLinkControl(){
-    if(localPreview)return;linkControl.replaceChildren();
-    const label=document.createElement('span');label.textContent=selectedLinkJob?`Job: ${selectedLinkJob.order_no||selectedLinkJob.source_order_id}`:'No job linked';linkControl.append(label);
-    if(!selectedLinkJob){const select=document.createElement('button');select.type='button';select.className='proof-secondary-button';select.textContent='Link to job';select.disabled=busy;
-      select.addEventListener('click',async()=>{try{
-        const job=await window.ProofLinks.picker('jobs',{customer:customer.value});if(!job)return;
-        if(designId){const data=await window.ProofLinks.api(`/designs/${designId}/link`,{sourceOrderId:job.source_order_id});design=data.design;}
-        selectedLinkJob=job;customer.value=job.customer_name||'';jobTitle.value=job.job_title||'';metadataChanged();showLinkControl();
-      }catch(error){setFeedback(error.message,true);}});linkControl.append(select);}
-  }
   window.openLinkedProof=async({design:linkedDesign,job})=>{
     if(busy)throw new Error('Wait for the current proof to finish.');
     startNewProof();
     if(linkedDesign)await openHistoryProof(linkedDesign);
     else{customer.value=job.customer_name||'';jobTitle.value=job.job_title||'';showProofEditor();}
-    selectedLinkJob=job;showLinkControl();
+    selectedLinkJob=job;
   };
   function showProofList(){
     editorScreen.hidden=true;historyScreen.hidden=false;createNew.hidden=false;renderHistory();refreshHistory();
   }
-  function showProofEditor(){showLinkControl();historyScreen.hidden=true;editorScreen.hidden=false;createNew.hidden=true;}
+  function showProofEditor(){historyScreen.hidden=true;editorScreen.hidden=false;createNew.hidden=true;}
   root.querySelector('#proof-back-list').addEventListener('click',showProofList);
   createNew.addEventListener('click',()=>{if(busy)return;startNewProof();showProofEditor();});
   loadMore.addEventListener('click',()=>{historyLimit+=50;refreshHistory();});
@@ -348,7 +336,7 @@
     brief.proofSourceOrderId=selectedLinkJob?.source_order_id||null;brief.proofDesignId=design.id;brief.reference=design.designNumber;brief.proofRevision=design.revision;
   }
   function startNewProof(){
-    if(busy)return;selectedLinkJob=null;showLinkControl();design=null;designId=null;try{sessionStorage.removeItem('proof-design-id');}catch(_){}
+    if(busy)return;selectedLinkJob=null;design=null;designId=null;try{sessionStorage.removeItem('proof-design-id');}catch(_){}
     request.value='';customer.value='';clearCustomerSearch();jobTitle.value='';instructions.value='';
     for(const art of artworks)if(art.url)URL.revokeObjectURL(art.url);artworks.length=0;artworksNode.replaceChildren();
     resetProductPicker();productQuery.value='';productResults.replaceChildren();productStatus.textContent='';
