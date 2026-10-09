@@ -8050,7 +8050,7 @@
           </div>
         </div>
       `;
-      window.ProofLinks?.controls(els.proofPanel.querySelector('[data-proof-job-controls]'),state.selectedJob?.source_order_id);
+      window.ProofLinks?.controls(els.proofPanel.querySelector('[data-proof-job-controls]'),state.selectedJob?.source_order_id,{showLinkedActions:false});
       return;
     }
 
@@ -8072,7 +8072,7 @@
         </div>
       </div>
     `;
-    window.ProofLinks?.controls(els.proofPanel.querySelector('[data-proof-job-controls]'),state.selectedJob?.source_order_id);
+    window.ProofLinks?.controls(els.proofPanel.querySelector('[data-proof-job-controls]'),state.selectedJob?.source_order_id,{showLinkedActions:false});
   }
 
   function orderVisualFromFile(file) {

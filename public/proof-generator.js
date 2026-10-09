@@ -19,7 +19,6 @@
         <button id="proof-create-new" class="proof-primary-button" type="button">Create proof</button>
       </header>
       <section id="proof-history">
-        <label><input id="proof-unlinked-only" type="checkbox"> Unlinked only</label>
         <div id="proof-history-status" role="status"></div>
         <div id="proof-history-list" class="proof-history-list"></div>
         <button id="proof-history-more" class="proof-secondary-button" type="button" hidden>Load more</button>
@@ -114,7 +113,6 @@
     else{customer.value=job.customer_name||'';jobTitle.value=job.job_title||'';showProofEditor();}
     selectedLinkJob=job;showLinkControl();
   };
-  root.querySelector('#proof-unlinked-only').addEventListener('change',()=>{historyLimit=50;refreshHistory();});
   function showProofList(){
     editorScreen.hidden=true;historyScreen.hidden=false;createNew.hidden=false;renderHistory();refreshHistory();
   }
@@ -128,7 +126,7 @@
     try{
       let offset=0,rows=[],more=null;
       do{
-        const response=await fetch(`/api/proof-generator/designs?offset=${offset}&unlinked=${root.querySelector('#proof-unlinked-only').checked?'1':'0'}`,{cache:'no-store'});
+        const response=await fetch(`/api/proof-generator/designs?offset=${offset}`,{cache:'no-store'});
         const data=await response.json();if(!response.ok)throw new Error(data.error||'Could not load proof history.');
         rows.push(...data.designs);more=data.nextOffset;offset=more;
       }while(more!==null&&rows.length<historyLimit);
@@ -151,7 +149,7 @@
   function renderHistory(){
     createNew.disabled=busy;loadMore.hidden=nextOffset===null;loadMore.disabled=historyLoading;
     let rows=[...historyRows];
-    if(design&&(!root.querySelector('#proof-unlinked-only').checked||!design.linkedJobs?.length)&&!rows.some(job=>job.id===design.id))rows.unshift(design);
+    if(design&&!rows.some(job=>job.id===design.id))rows.unshift(design);
     rows.sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))||b.id.localeCompare(a.id));
     const signature=JSON.stringify([rows,design,busy,progressMessage,progressError,!!currentBrief,!!currentPreview]);
     if(signature===lastHistory)return;lastHistory=signature;historyList.replaceChildren();

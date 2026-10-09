@@ -58,11 +58,12 @@
     if(job.has_visual||job.proof_id)throw new Error('This job already has a visual or linked proof.');
     activateDashboardTab('proof-generator');await window.openLinkedProof({job});
   }
-  async function controls(container,id){
+  async function controls(container,id,{showLinkedActions=true}={}){
     if(!container)return;container.replaceChildren();container.dataset.proofControlJob=String(id);if(!allowed()||!/^\d+$/.test(String(id)))return;
     try{
       const {job}=await api(`/link-jobs/${id}`);if(!container.isConnected||container.dataset.proofControlJob!==String(id))return;
       if(job.proof_id){
+        if(!showLinkedActions)return;
         container.append(button('Edit proof',()=>edit(id)),button('Retry proof sync',async()=>{await api(`/designs/${job.proof_id}/sync`,{});refresh();}),button('Unlink proof',async()=>{if(!window.confirm('Remove this job’s proof link and visual? The original proof stays in Proof Generator.'))return;await api(`/link-jobs/${id}/unlink`,{});refresh();await controls(container,id);}));
       }else if(!job.has_visual){container.append(button('Create proof',()=>create(id)),button('Attach existing proof',()=>attach(id,job.customer_name)));}
     }catch(error){container.textContent=error.message;}
