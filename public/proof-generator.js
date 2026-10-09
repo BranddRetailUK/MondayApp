@@ -179,7 +179,7 @@
       for(const linkedOrder of job.linkedOrders||[]){const id=linkedOrder.sourceOrderId;const link=document.createElement('a');link.href=`/database-job.html?id=${id}`;link.textContent=`Job: ${linkedOrder.orderNo||id}`;link.addEventListener('click',event=>{if(window.ultimateHubOpenDatabaseOrder){event.preventDefault();window.ultimateHubOpenDatabaseOrder(id,'proof');}});jobLinks.append(link,document.createTextNode(' '));}
       const linkButton=document.createElement('button');linkButton.type='button';linkButton.className='proof-secondary-button';linkButton.textContent='Link to job';linkButton.disabled=busy||['save_queued','saving','allocating'].includes(job.status);
       linkButton.addEventListener('click',async()=>{try{const target=await window.ProofLinks.picker('jobs',{customer:job.customer});if(!target)return;await window.ProofLinks.api(`/designs/${job.id}/link`,{sourceOrderId:target.source_order_id});if(designId===job.id){design=null;designId=null;}await refreshHistory();window.ProofLinks.refresh();}catch(error){historyStatus.textContent=error.message;}});
-      jobLinks.append(linkButton);info.append(jobLinks);
+      info.append(jobLinks);
       const state=document.createElement('div');state.className='proof-history-state';const [label,message]=historyState(job);
       if(label!=='Saved'){const status=document.createElement('strong');status.textContent=label;state.append(status);}
       if(message){const detail=document.createElement('p');detail.textContent=reviewMessage(message);state.append(detail);}
@@ -189,7 +189,7 @@
       if(job.hasPdf){const download=document.createElement('a');download.className='proof-secondary-button';download.textContent='Download';download.href=`/api/proof-generator/designs/${encodeURIComponent(job.id)}/pdf?download=1`;actions.append(download);}
       else{const download=document.createElement('button');download.type='button';download.className='proof-secondary-button';download.textContent='Download';download.disabled=true;download.title='Available after a proof PDF has been generated and retained.';actions.append(download);}
       const regenerate=document.createElement('button');regenerate.type='button';regenerate.className='proof-secondary-button';regenerate.textContent='Regenerate proof';regenerate.disabled=busy;
-      regenerate.addEventListener('click',async()=>{try{if(job.sourceOrderId)await window.ProofLinks.edit(job.sourceOrderId);else await openHistoryProof(job);}catch(error){historyStatus.textContent=error.message;}});actions.append(regenerate);state.append(actions);
+      regenerate.addEventListener('click',async()=>{try{if(job.sourceOrderId)await window.ProofLinks.edit(job.sourceOrderId);else await openHistoryProof(job);}catch(error){historyStatus.textContent=error.message;}});actions.append(regenerate);state.append(actions,linkButton);
       item.append(thumb,info,state);
       const generating=label==='Pending'||label==='Saving';
       item.classList.toggle('proof-history-generating',generating);
