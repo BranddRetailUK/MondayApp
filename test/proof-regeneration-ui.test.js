@@ -79,7 +79,7 @@ test('customer and title edits retain manual geometry while updating the saved b
   let dirty=false;
   const context={currentBrief:brief,customer:{value:'New customer'},jobTitle:{value:'New title'},markDirty(){dirty=true;},setFeedback(){},sourceChanged(){throw Error('Metadata must not discard placements');}};
   vm.createContext(context);
-  const fn=source.slice(source.indexOf('  function metadataChanged()'),source.indexOf("  customer.addEventListener('input',metadataChanged)"));
+  const fn=source.slice(source.indexOf('  function metadataChanged()'),source.indexOf("  const customerResults="));
   vm.runInContext(fn+'\nmetadataChanged();',context);
   assert.equal(context.currentBrief,brief);assert.equal(brief.customer,'New customer');assert.equal(brief.jobTitle,'New title');
   assert.deepEqual(brief.products[0].decorations[0],{placement:{x:.4,y:.2},widthMm:140});assert.equal(dirty,true);

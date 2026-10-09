@@ -741,3 +741,5 @@ No external work-management token, OAuth, board, column, or webhook environment 
 - Live acceptance: automatic customer matching linked proof 29137 (saved revision 6) to job 51344 (source order 50591). Read-back confirmed one VISUAL, design ref 29137, unchanged proof revision/hash, and a byte-identical 3,510,970-byte Cloudinary PDF. Production UI confirmed the linked order, proof actions and DATABASE visual.
 
 - Opening Regenerate proof from history loads retained source and the saved preview only; it does not render or save a new proof. Generation begins only with the editor’s Regenerate proof action, positioned at the top right beside All proofs.
+
+- Proof customer name supports debounced live DATABASE customer suggestions using `/api/database/customers/search?q=` (existing job customers and standalone customer profiles; up to 20 ranked matches, with further typing to narrow). Selecting a match copies its canonical name; free-text names remain valid when no match exists or search is unavailable. Stale searches are cancelled/ignored, and resetting the proof clears suggestions.

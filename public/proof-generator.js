@@ -41,7 +41,11 @@
             </div>
             <div id="proof-job-link" class="proof-job-link"></div>
             <div class="proof-job-fields">
-              <label class="proof-control">Customer name<input id="proof-customer" type="text" maxlength="200" autocomplete="off"></label>
+              <div class="proof-customer-picker">
+                <label class="proof-control">Customer name<input id="proof-customer" type="search" maxlength="200" autocomplete="off" aria-controls="proof-customer-results" aria-describedby="proof-customer-status"></label>
+                <div id="proof-customer-status" class="proof-search-status" role="status" aria-live="polite"></div>
+                <div id="proof-customer-results" class="proof-search-results" aria-label="Matching customers"></div>
+              </div>
               <label class="proof-control">Job title<input id="proof-job-title" autocomplete="off" type="text" maxlength="200"></label>
             </div>
             <div id="proof-design-status" class="proof-design-status" role="status"></div>
@@ -277,6 +281,38 @@
     if(currentBrief){currentBrief.customer=customer.value;currentBrief.jobTitle=jobTitle.value;markDirty(false);setFeedback('Details changed. Regenerate proof to save the updated names.');}
     else sourceChanged();
   }
+  const customerResults=root.querySelector('#proof-customer-results');
+  const customerStatus=root.querySelector('#proof-customer-status');
+  let customerSearchTimer,customerSearchController,customerSearchVersion=0;
+  function clearCustomerSearch(){
+    clearTimeout(customerSearchTimer);customerSearchController?.abort();customerSearchVersion++;
+    customerResults.replaceChildren();customerStatus.textContent='';
+  }
+  customer.addEventListener('input',()=>{
+    clearCustomerSearch();const query=customer.value.trim(),version=customerSearchVersion;
+    if(!query||localPreview)return;
+    customerStatus.textContent='Searching customers…';
+    customerSearchTimer=setTimeout(async()=>{
+      const controller=new AbortController();customerSearchController=controller;
+      try{
+        const response=await fetch(`/api/database/customers/search?q=${encodeURIComponent(query)}`,{signal:controller.signal,cache:'no-store'});
+        const matches=await response.json();if(version!==customerSearchVersion)return;
+        if(!response.ok)throw new Error('Customer search unavailable. You can still enter the customer name manually.');
+        customerStatus.textContent=matches.length?(matches.length===20?'Showing the first 20 matches. Keep typing to narrow the list.':'Choose a customer or keep your entered name.'):'No matching customers. You can use the name you entered.';
+        for(const match of matches){
+          const button=document.createElement('button');button.type='button';button.className='proof-search-result';
+          const name=document.createElement('strong');name.textContent=match.business_name;button.append(name);
+          if(match.customer_code){const code=document.createElement('span');code.textContent=match.customer_code;button.append(code);}
+          button.addEventListener('click',()=>{customer.value=match.business_name;clearCustomerSearch();metadataChanged();customer.focus();});
+          customerResults.append(button);
+        }
+      }catch(error){if(version===customerSearchVersion&&error.name!=='AbortError')customerStatus.textContent='Customer search unavailable. You can still enter the customer name manually.';}
+    },250);
+  });
+  customer.addEventListener('keydown',event=>{
+    if(event.key==='Escape')clearCustomerSearch();
+    if(event.key==='ArrowDown'){const first=customerResults.querySelector('button');if(first){event.preventDefault();first.focus();}}
+  });
   customer.addEventListener('input',metadataChanged);jobTitle.addEventListener('input',metadataChanged);
   function showDesign(){
     if(designId)editorToolbar.append(reviewButton);else formActions.prepend(reviewButton);
@@ -313,7 +349,7 @@
   }
   function startNewProof(){
     if(busy)return;selectedLinkJob=null;showLinkControl();design=null;designId=null;try{sessionStorage.removeItem('proof-design-id');}catch(_){}
-    request.value='';customer.value='';jobTitle.value='';instructions.value='';
+    request.value='';customer.value='';clearCustomerSearch();jobTitle.value='';instructions.value='';
     for(const art of artworks)if(art.url)URL.revokeObjectURL(art.url);artworks.length=0;artworksNode.replaceChildren();
     resetProductPicker();productQuery.value='';productResults.replaceChildren();productStatus.textContent='';
     sourceChanged();results.replaceChildren();showDesign();setFeedback('Enter a new proof request.');request.focus();
