@@ -1,6 +1,6 @@
 // Deterministic brief resolution and geometry. All coordinates refer to the
 // visible garment bounds, not the supplier photograph's surrounding canvas.
-const { automaticTop } = require('./proofPlacementProfiles');
+const { automaticTop, automaticPrintScale } = require('./proofPlacementProfiles');
 const POSITIONS = ['left breast', 'right breast', 'front', 'back', 'upper back', 'nape', 'left sleeve', 'right sleeve', 'left hem', 'right hem'];
 const ALIASES = { lb: 'left breast', rb: 'right breast', ls: 'left sleeve', rs: 'right sleeve', 'left chest': 'left breast', 'right chest': 'right breast', chest: 'front', 'centre chest': 'front', 'center chest': 'front', 'full chest': 'front', 'front chest': 'front', 'centre front': 'front', 'center front': 'front', 'full front': 'front', 'centre back': 'back', 'center back': 'back', 'full back': 'back', rear: 'back', 'back neck': 'nape' };
 function normalise(value) { return String(value || '').toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim(); }
@@ -163,7 +163,7 @@ function regionFor(position, view) {
   const p = positionName(position);
   if (/sleeve/.test(p) && ['left','right'].includes(view)) return { x:.5,y:.30, left:.22,top:.16,width:.56,height:.43 };
   const presets = {
-    'left breast': [.65,.25,.52,.12,.27,.40], 'right breast': [.35,.25,.21,.12,.27,.40],
+    'left breast': [.62,.25,.46,.12,.38,.40], 'right breast': [.38,.25,.16,.12,.38,.40],
     front: [.5,.20,.26,.12,.48,.76], back: [.5,.20,.24,.08,.52,.82],
     'upper back': [.5,.18,.24,.1,.52,.48], nape: [.5,.11,.35,.05,.3,.22],
     'left sleeve': [.87,.31,.75,.16,.24,.38], 'right sleeve': [.13,.31,.01,.16,.24,.38],
@@ -203,6 +203,8 @@ function placementFor(d, asset, garment, calibration = {}) {
     if (distance < 5) throw new Error('Calibration reference points are too close together.');
     pxPerMm = distance/mm; calibrated = true;
   }
+  const automatic = !calibrated && !d.placement && !custom && (!d.anchor || d.anchor === 'region') && !Number(d.offsetXmm) && !Number(d.offsetYmm);
+  if(automatic)pxPerMm *= automaticPrintScale(position,garment);
   const width = size.width * pxPerMm / garment.width;
   const height = size.height * pxPerMm / garment.height;
   const explicit = d.placement != null;
@@ -211,6 +213,11 @@ function placementFor(d, asset, garment, calibration = {}) {
   let y = explicit ? d.placement.y : region.y;
   if (!explicit && !custom && (!d.anchor || d.anchor === 'region')) {
     y = automaticTop(position, garment.view, height, garment.placementProfile) ?? y;
+    if(/breast/.test(position)){
+      const edge=calibration.neckRight || garment.landmarks?.neckRight;
+      const right=edge?.x ?? garment.placementProfile?.neckRight;
+      if(Number.isFinite(right))x=position==='left breast'?right:1-right;
+    }
   }
   if (!explicit && d.anchor && d.anchor !== 'region') {
     const landmark = calibration[d.anchor] || garment.landmarks?.[d.anchor];

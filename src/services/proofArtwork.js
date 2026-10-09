@@ -117,15 +117,20 @@ function coverage(garment,p) {
 }
 
 function fitSleeve(garment,p) {
-  if(p.explicit || !garment.confident)return p;
+  if(p.explicit || p.calibrated || !garment.confident)return p;
+  // On a side view the sleeve occupies the trailing portion of the silhouette,
+  // not the centre of the entire sleeve-plus-torso image. Keep the chosen height.
+  let centre=p.x;
+  if(['left','right'].includes(garment.view)) {
+    const y=Math.max(0,Math.min(garment.height-1,Math.round((p.y+p.height/2)*garment.height)));
+    const xs=[];for(let x=0;x<garment.width;x++)if(garment.mask[y*garment.width+x])xs.push(x);
+    if(xs.length)centre=(xs[0]+(xs.at(-1)-xs[0])*(garment.view==='right'?.42:.58))/garment.width;
+  }
   let best={...p},score=-Infinity;
-  // Keep the reference height unless a small correction is needed at the edge.
-  // A broad vertical search previously moved sleeve logos up toward shoulders.
-  for(let dy=-.02;dy<=.02;dy+=.01)for(let dx=-.1;dx<=.1;dx+=.01){
-    const candidate={...p,x:p.x+dx,y:p.y+dy};
-    const r=p.region;
+  for(let dx=-.08;dx<=.0801;dx+=.005){
+    const candidate={...p,x:centre+dx};const r=p.region;
     if(candidate.x-p.width/2<r.left || candidate.x+p.width/2>r.left+r.width || candidate.y<r.top || candidate.y+p.height>r.top+r.height)continue;
-    const next=coverage(garment,candidate)-Math.hypot(dx,dy)*.3;
+    const next=coverage(garment,candidate)-Math.abs(dx)*.3;
     if(next>score){score=next;best=candidate;}
   }
   return best;
@@ -163,6 +168,6 @@ function automaticGarmentProfile(product, garment, view, referenceGarment) {
       if(garment.mask[y*garment.width+Math.floor(garment.width*.5)]){collarY=y/garment.height;break;}
     }
   }
-  return {estimatedPxPerMm,estimatedTorsoMm:torsoMm,...sizing,placementProfile:profile,landmarks:{collar:{x:.5,y:collarY},hem:{x:.5,y:.97}}};
+  return {estimatedPxPerMm,estimatedTorsoMm:torsoMm,...sizing,placementProfile:profile,landmarks:{neckRight:{x:profile.neckRight,y:collarY},collar:{x:.5,y:collarY},hem:{x:.5,y:.97}}};
 }
 module.exports={visibleBounds,rasterPdf,prepareArtwork,analyseGarment,coverage,fitSleeve,automaticGarmentProfile};

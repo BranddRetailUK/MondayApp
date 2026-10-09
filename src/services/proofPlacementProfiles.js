@@ -4,13 +4,13 @@
 // AC Solutions: RX350, AFP2, LV290, LV370, SS8, 03824 (all six pages).
 // Opal, Rons March and AT&T: small breast, full chest/back and side sleeves.
 const PROFILES = {
-  tee: { breastCentre: 0.26, sleeveCentre: 0.32, hoodClearance: 0 },
-  polo: { breastCentre: 0.275, sleeveCentre: 0.35, hoodClearance: 0 },
-  sweatshirt: { breastCentre: 0.275, sleeveCentre: 0.335, hoodClearance: 0 },
-  fleece: { breastCentre: 0.295, sleeveCentre: 0.345, hoodClearance: 0 },
-  hoodie: { breastCentre: 0.345, sleeveCentre: 0.37, hoodClearance: 0.13 },
-  hoodedOuterwear: { breastCentre: 0.395, sleeveCentre: 0.415, hoodClearance: 0.18 },
-  outerwear: { breastCentre: 0.295, sleeveCentre: 0.345, hoodClearance: 0 },
+  tee: { neckRight: 0.62, breastCentre: 0.26, sleeveCentre: 0.32, hoodClearance: 0 },
+  polo: { neckRight: 0.62, breastCentre: 0.275, sleeveCentre: 0.35, hoodClearance: 0 },
+  sweatshirt: { neckRight: 0.62, breastCentre: 0.275, sleeveCentre: 0.335, hoodClearance: 0 },
+  fleece: { neckRight: 0.66, breastCentre: 0.295, sleeveCentre: 0.345, hoodClearance: 0 },
+  hoodie: { neckRight: 0.60, breastCentre: 0.345, sleeveCentre: 0.37, hoodClearance: 0.13 },
+  hoodedOuterwear: { neckRight: 0.62, breastCentre: 0.395, sleeveCentre: 0.415, hoodClearance: 0.18 },
+  outerwear: { neckRight: 0.66, breastCentre: 0.295, sleeveCentre: 0.345, hoodClearance: 0 },
 };
 const STYLE_PROFILES = {
   GD57: 'hoodie', GD57B: 'hoodie', GD057: 'hoodie', GD057B: 'hoodie',
@@ -29,13 +29,22 @@ function garmentSizeProfile(product = {}) {
 function placementProfile(product = {}) {
   const code = String(product.code || '').trim().toUpperCase();
   const name = `${product.name || ''} ${product.requestedName || ''} ${product.visual?.name || ''}`.toLowerCase();
-  const outer = /jacket|coat|padded|softshell|parka/.test(name);
+  const outer = /jacket|coat|padded|softshell|parka|bodywarmer|gilet/.test(name);
   const hood = /hood/.test(name);
   const family = STYLE_PROFILES[code] || (hood && outer ? 'hoodedOuterwear'
     : hood ? 'hoodie' : /fleece/.test(name) ? 'fleece'
     : /polo/.test(name) ? 'polo' : /sweatshirt|sweat shirt|sweat|crewneck/.test(name) ? 'sweatshirt'
     : outer ? 'outerwear' : 'tee');
-  return { family, ...PROFILES[family] };
+  // Gildan's supplied hoodie images have a deeper hood/neck opening.
+  const breast = /^GD0?57B?$/.test(code) ? {breastCentre:0.40} : {};
+  return { family, ...PROFILES[family], ...breast };
+}
+
+function automaticPrintScale(position, garment) {
+  if (/breast/.test(position)) return 1.2;
+  if (/sleeve/.test(position)) return 1.15;
+  if (garment.sizeCategory === 'child' && /^(back|upper back)$/.test(position)) return 0.85;
+  return 1;
 }
 
 function automaticTop(position, view, height, profile = PROFILES.tee) {
@@ -55,4 +64,4 @@ function automaticTop(position, view, height, profile = PROFILES.tee) {
   return null; // Nape and hem retain their existing explicit region defaults.
 }
 
-module.exports = { placementProfile, automaticTop, garmentSizeProfile };
+module.exports = { placementProfile, automaticTop, garmentSizeProfile, automaticPrintScale };

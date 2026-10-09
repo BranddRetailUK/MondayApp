@@ -48,8 +48,8 @@ test('height-only sizing preserves actual proportions',()=>{
 });
 test('large and tall artwork have no silent width or height caps',()=>{
  const g={width:700,height:850,view:'front'};const a={width:100,height:400};
- const p=layout.placementFor(mark(),a,g);assert.equal(p.width*700,100);assert.equal(p.height*850,400);
- const p2=layout.placementFor(mark({widthMm:'300'}),a,g);assert.equal(p2.width/p.width,3);
+ const p=layout.placementFor(mark(),a,g);assert.equal(p.width*700,120);assert.equal(p.height*850,480);assert.equal(p.size.width,100);
+ const p2=layout.placementFor(mark({widthMm:'300'}),a,g);assert.ok(Math.abs(p2.width/p.width-3)<1e-9);
  assert.equal(layout.fitsRegion(p2),false);
 });
 test('calibration sets scale and landmarks apply signed physical offsets',()=>{
@@ -209,7 +209,7 @@ test('breast logo centres stay aligned across artwork shapes and garment types',
  const wide=layout.placementFor(mark(),{width:200,height:50},g);
  const square=layout.placementFor(mark(),{width:100,height:100},g);
  assert.ok(Math.abs((wide.y+wide.height/2)-(square.y+square.height/2))<1e-10);
- assert.ok(wide.y>.30);assert.ok(square.y>.28);
+ assert.equal(wide.x,g.placementProfile.neckRight);assert.equal(square.x,wide.x);
  const manual=layout.placementFor(mark({placement:{x:.65,y:.23}}),{width:200,height:50},g);
  assert.equal(manual.y,.23);
  const custom=layout.placementFor(mark(),{width:200,height:50},g,{regions:{'left breast':{...layout.regionFor('left breast','front'),y:.25}}});
@@ -219,7 +219,7 @@ test('sleeve edge fitting cannot undo the reference height with a large upward m
  const {placementProfile}=require('../src/services/proofPlacementProfiles');
  const g=await artwork.analyseGarment(await garmentBytes());g.view='front';g.placementProfile=placementProfile({code:'RX350'});
  const p=layout.placementFor(mark({position:'right sleeve',widthMm:'50'}),{width:200,height:50},g);
- const fitted=artwork.fitSleeve(g,p);assert.ok(Math.abs(fitted.y-p.y)<=.020001);assert.equal(fitted.height,p.height);
+ const fitted=artwork.fitSleeve(g,p);assert.equal(fitted.y,p.y);assert.equal(fitted.height,p.height);
 });
 
 test('descriptive or ambiguous model code fields cannot break supplier lookup',()=>{
@@ -346,8 +346,8 @@ test('child mockups enlarge the relative print while preserving millimetres and 
  const asset={width:200,height:100};
  const a=layout.placementFor(mark({position:'back',widthMm:'250'}),asset,adult,{});
  const c=layout.placementFor(mark({position:'back',widthMm:'250'}),asset,child,{});
- assert.equal(c.size.width,250);assert.ok(Math.abs(c.width/a.width-1.25)<1e-9);
- const proportionate=layout.placementFor(mark({position:'back',widthMm:'200'}),asset,child,{});
+ assert.equal(c.size.width,250);assert.ok(Math.abs(c.width/a.width-1.0625)<1e-9);
+ const proportionate=layout.placementFor(mark({position:'back',widthMm:String(200/.85)}),asset,child,{});
  assert.ok(Math.abs(proportionate.width-a.width)<1e-9);assert.ok(Math.abs(proportionate.y-a.y)<1e-9);assert.equal(c.x,a.x);
  assert.ok(layout.fitsRegion(c));
  const calibration={referenceMm:500,start:{x:.2,y:.5},end:{x:.8,y:.5}};
@@ -395,3 +395,20 @@ test('repaired single-axis brief renders artwork and permits strict export',asyn
  const out=await buildProof(b,[await artFile()],{fetchImpl:await fixtureFetch(),strict:true});
  assert.equal(out.pages[0].placements.length,1);assert.equal(out.pages[0].placements[0].size.width,100);assert.equal(out.pages[0].placements[0].size.height,50);
 });
+
+ test('automatic preview tuning preserves calibrated and manual sizing',()=>{
+ const asset={width:100,height:100},g={width:700,height:850,view:'front'};
+ for(const [position,factor] of [['left breast',1.2],['right sleeve',1.15]]){
+  const auto=layout.placementFor(mark({position}),asset,g);
+  const manual=layout.placementFor(mark({position,placement:{x:.6,y:.3}}),asset,g);
+  assert.ok(Math.abs(auto.width/manual.width-factor)<1e-9);assert.equal(auto.size.width,100);
+  const calibrated=layout.placementFor(mark({position}),asset,g,{start:{x:0,y:0},end:{x:1,y:0},referenceMm:700});
+  assert.equal(calibrated.width,100/700);assert.equal(artwork.fitSleeve({...g,confident:true},calibrated),calibrated);
+ }
+ });
+ test('side sleeve centres follow the sleeve portion without moving vertically',()=>{
+ const g={width:100,height:100,view:'right',confident:true,mask:new Uint8Array(10000).fill(1)};
+ const p={x:.5,y:.3,width:.1,height:.1,region:{left:0,top:0,width:1,height:1}};
+ const fitted=artwork.fitSleeve(g,p);assert.ok(Math.abs(fitted.x-.4158)<1e-9);assert.equal(fitted.y,p.y);
+ g.view='left';assert.ok(Math.abs(artwork.fitSleeve(g,p).x-.5742)<1e-9);
+ });
