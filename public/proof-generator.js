@@ -50,7 +50,6 @@
             <div id="proof-design-status" class="proof-design-status" role="status"></div>
             <label class="proof-label" for="proof-request">Request</label>
             <textarea id="proof-request" class="proof-textarea proof-main-request" maxlength="20000"></textarea>
-            <button class="proof-sample-button" id="proof-load-sample" type="button">Use AC Solutions example</button>
           </section>
           <section class="proof-card">
             <div class="proof-card-heading"><span class="proof-step">02</span><div><h2>Artwork</h2></div></div>
@@ -404,12 +403,6 @@
     },250);
   });
 
-  root.querySelector('#proof-load-sample').addEventListener('click', () => {
-    sourceChanged();
-    request.value = `Customer: AC Solutions\nDesign number / ref: 29115\n\nEmbroidered:\nLeft breast - AC Solutions logo, 100 mm wide\nRight sleeve - DAIKIN logo, 75 mm wide\n\nRX350 - RTX Hoodie, Navy\nAFP2 - Stormtech padded coat, Navy\nLV290 - F&H T-Shirts, Navy & white\nLV370 - F&H piped polo shirts, Navy & white\nSS8 - FOTL Sweatshirt, Navy\n03824 - SOLS fleece, Navy`;
-    request.focus();
-  });
-
   dropzone.addEventListener('click', () => input.click());
   input.addEventListener('change', () => { addFiles(input.files); input.value = ''; });
   for (const eventName of ['dragenter', 'dragover']) {
@@ -512,7 +505,7 @@
     reviewButton.querySelector('[data-proof-button-arrow]').hidden = creating || Boolean(designId);
     reviewButton.querySelector('[data-proof-button-label]').textContent = creating ? (designId?'Regenerating proof…':'Creating proof…') : designId?'Regenerate proof':'Create proof';
     newProof.disabled=creating;retrySave.disabled=creating;createNew.disabled=creating;
-    editorScreen.querySelectorAll('input,textarea,select,#proof-dropzone,#proof-load-sample,.proof-remove').forEach(control=>{control.disabled=creating;});
+    editorScreen.querySelectorAll('input,textarea,select,#proof-dropzone,.proof-remove').forEach(control=>{control.disabled=creating;});
     productColour.disabled=creating||!selectedProduct||productColour.options.length<2;
   }
 

@@ -747,3 +747,5 @@ No external work-management token, OAuth, board, column, or webhook environment 
 - The Proof request heading has no numbered 01 pill, and Clothing proof has no PROOF OUTPUT eyebrow.
 
 - The proof editor omits the job-link text/button above Customer name. Existing job associations, automatic pairing and history-list Link to job remain available.
+
+- The proof request form no longer includes the Use AC Solutions example control.
