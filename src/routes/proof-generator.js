@@ -11,7 +11,7 @@ const { randomUUID } = require('crypto');
 const { searchProofProducts } = require('../services/proofPencarrieVisuals');
 const {createService:designService,UUID}=require('../services/proofDesignJobs');
 
-const { prepareBrief, recoverProductCodes } = require('../services/proofLayout');
+const { prepareBrief, recoverProductCodes, repairRetainedDimensions } = require('../services/proofLayout');
 
 const PRODUCTION_EMAIL = 'production@ultimatepromotions.co.uk';
 
@@ -219,6 +219,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       // Only server-retained visuals are trusted; changed products are resolved normally.
       const retained=design&&designJobs().source?await designJobs().source(design.id):null;
       const savedProducts=retained?.source?.brief?.products||[];
+      repairRetainedDimensions(brief,retained?.source);
       await enrich(brief);
       for(const product of brief.products){
         const saved=savedProducts.find(item=>item.code===product.code&&item.colour===product.colour&&item.supplier===product.supplier);

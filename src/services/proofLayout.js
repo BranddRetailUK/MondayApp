@@ -49,16 +49,34 @@ function mentionsPosition(text, position) {
 function recoverDimensions(decoration, input = {}, product = {}, products = []) {
   const assigned = (input.artworks || []).find(a => a.id && a.id === decoration.artworkId);
   const position = positionName(decoration.position);
-  const scoped = textClauses(input.requestText).filter(clause => {
+  const scoped = textClauses([input.requestText,input.specialInstructions].filter(Boolean).join('\n')).filter(clause => {
     if (!mentionsPosition(clause, position)) return false;
     // Never recover another product's numbers into this product's decoration.
-    const codes = products.filter(p => p.code && new RegExp('\\b' + String(p.code).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i').test(clause));
-    return !codes.length || (product.code && codes.some(p => p.code === product.code));
+    const canonical=code=>String(code||'').toUpperCase().replace(/^([A-Z]+)0+(?=\d)/,'$1');
+    const tokens=[...clause.matchAll(/\b[A-Z]*\d[A-Z0-9-]*\b/gi)].map(m=>canonical(m[0]));
+    const codes = products.filter(p => p.code && tokens.includes(canonical(p.code)));
+    return !codes.length || codes.some(p => canonical(p.code) === canonical(product.code));
   });
   const assignedClauses=textClauses(assigned?.notes);
   const scopedNotes=assignedClauses.filter(clause=>mentionsPosition(clause, position));
   const notesHavePositions=assignedClauses.some(clause=>[...POSITIONS,...Object.keys(ALIASES)].some(p=>new RegExp('\\b'+p+'\\b','i').test(clause)));
-  const texts = [decoration.notes, ...(notesHavePositions?scopedNotes:[assigned?.notes]), ...scoped];
+  const sourceTexts = [...(notesHavePositions?scopedNotes:[assigned?.notes]), ...scoped];
+  // The model may estimate the other axis from a thumbnail. Only user text can
+  // authorize a second dimension; geometry must derive it from visible artwork.
+  if(input.repairOnly && decoration.placement)return;
+  if (input.enforceSuppliedAxis && !decoration.placement) {
+    const suppliedAxes=['width','height'].map(axis=>[...new Set(sourceTexts.flatMap(t=>dimensionsInText(t)[axis]))]);
+    const axis=suppliedAxes[0].length===1&&!suppliedAxes[1].length?'width':suppliedAxes[1].length===1&&!suppliedAxes[0].length?'height':null;
+    if(input.repairOnly && !axis)return;
+    if(axis) {
+      const value=suppliedAxes[axis==='width'?0:1][0];
+      const current=dimension(decoration[`${axis}Mm`]);
+      if(input.repairOnly && (current==null || Math.abs(current-value)>=.001))return;
+      // Preserve manual size changes; only repair dimensions matching the source.
+      if(current==null || Math.abs(current-value)<.001)decoration[axis==='width'?'heightMm':'widthMm']='';
+    }
+  }
+  const texts = input.enforceSuppliedAxis ? sourceTexts : [decoration.notes, ...sourceTexts];
   const issues = [];
   for (const axis of ['width','height']) {
     const field = `${axis}Mm`;
@@ -111,7 +129,7 @@ function prepareBrief(brief, input = {}) {
       d.method = d.method || product.method || brief.method || '';
       const artwork = findArtwork(d, input.artworks || []);
       if (artwork) d.artworkId = artwork.id;
-      recoverDimensions(d, input, product, brief.products);
+      recoverDimensions(d, {...input,enforceSuppliedAxis:true}, product, brief.products);
       return d;
     });
     if (product.decorations.length > 6) throw new Error(`${product.code || 'Product'} has more than six decorations.`);
@@ -119,6 +137,13 @@ function prepareBrief(brief, input = {}) {
   brief.sharedDecorations = [];
   brief.questions = brief.products.flatMap(product => product.decorations.filter(d => !d.widthMm && !d.heightMm).map(d => ({id:d.id,question:`What width or height should ${d.artwork || d.position} at ${d.position} on ${product.code || product.name} be?`})));
   return brief;
+}
+
+function repairRetainedDimensions(brief, source) {
+  if(!source?.request)return;
+  for(const product of brief.products || [])for(const d of product.decorations || []) {
+    recoverDimensions(d,{requestText:source.request,specialInstructions:source.instructions,enforceSuppliedAxis:true,repairOnly:true},product,brief.products);
+  }
 }
 
 function preferredView(d, views) {
@@ -204,4 +229,4 @@ function placementFor(d, asset, garment, calibration = {}) {
 function fitsRegion(p) {
   return p.x-p.width/2 >= p.region.left-.001 && p.x+p.width/2 <= p.region.left+p.region.width+.001 && p.y >= p.region.top-.001 && p.y+p.height <= p.region.top+p.region.height+.001;
 }
-module.exports = {POSITIONS,positionName,dimension,dimensionsInText,textClauses,recoverDimensions,resolveDecorations,findArtwork,recoverProductCodes,prepareBrief,preferredView,regionFor,artworkSize,placementFor,fitsRegion};
+module.exports = {POSITIONS,positionName,dimension,dimensionsInText,textClauses,recoverDimensions,resolveDecorations,findArtwork,recoverProductCodes,prepareBrief,repairRetainedDimensions,preferredView,regionFor,artworkSize,placementFor,fitsRegion};

@@ -355,3 +355,43 @@ test('child mockups enlarge the relative print while preserving millimetres and 
  const side=artwork.automaticGarmentProfile({code:'GD57B'},base,'right',child);
  assert.equal(side.estimatedPxPerMm,child.estimatedPxPerMm);
 });
+
+test('user single-axis dimensions discard model-estimated second axes across the exact four-product request',()=>{
+ const input={requestText:`GD001 - Softstyle adult ringspun t-shirt, Royal
+01436 – SOL’S Navy Bodywarmer – PenCarrie-only product
+GD57 – Royal Blue Hoodies
+GD57B – Kids Royal Blue Hoodie
+Adventure Playground logo to the left breast of all garments, 100mm wide.
+RS logo to the right sleeve of GD01 and GD57 only, 70mm tall.
+APG youth artwork to the back of GD57B only, 250mm wide.
+All decoration to be transfer print.`};
+ const b={sharedDecorations:[mark({widthMm:'100',heightMm:'39.1'})],products:[
+  {code:'GD001',decorations:[mark({position:'right sleeve',widthMm:'48.2',heightMm:'70'})]},
+  {code:'01436',decorations:[]},
+  {code:'GD057',decorations:[mark({position:'right sleeve',widthMm:'48.2',heightMm:'70'})]},
+  {code:'GD57B',decorations:[mark({position:'back',widthMm:'250',heightMm:'140.6'})]}
+ ]};layout.prepareBrief(b,input);
+ assert.equal(b.products.flatMap(p=>p.decorations).length,7);
+ for(const p of b.products)for(const d of p.decorations){
+  if(d.position==='right sleeve'){assert.equal(d.widthMm,'');assert.equal(d.heightMm,'70');}
+  else {assert.equal(d.heightMm,'');assert.equal(d.widthMm,d.position==='back'?'250':'100');}
+  assert.deepEqual(d.dimensionIssues,[]);assert.doesNotThrow(()=>layout.artworkSize(d,3));
+ }
+});
+
+test('retained brief repairs inferred dimensions without changing manual placement or explicitly supplied pairs',()=>{
+ const source={request:'Logo left breast of all garments, 100mm wide.'};
+ const b=brief([mark({widthMm:'100',heightMm:'39.1'})]);layout.repairRetainedDimensions(b,source);
+ assert.equal(b.products[0].decorations[0].heightMm,'');
+ const manual=brief([mark({widthMm:'120',heightMm:'40',dimensionIssues:[]})]);layout.repairRetainedDimensions(manual,source);
+ assert.equal(manual.products[0].decorations[0].heightMm,'40');assert.deepEqual(manual.products[0].decorations[0].dimensionIssues,[]);
+ const placed=brief([mark({widthMm:'100',heightMm:'40',placement:{x:.6,y:.3}})]);layout.repairRetainedDimensions(placed,source);assert.equal(placed.products[0].decorations[0].heightMm,'40');
+ const pair=brief([mark({widthMm:'100',heightMm:'39.1'})]);layout.prepareBrief(pair,{requestText:'Logo left breast 100mm wide and 39.1mm tall.'});
+ assert.equal(pair.products[0].decorations[0].heightMm,'39.1');assert.throws(()=>layout.artworkSize(pair.products[0].decorations[0],3),/proportions/);
+});
+
+test('repaired single-axis brief renders artwork and permits strict export',async()=>{
+ const b=brief([mark({widthMm:'100',heightMm:'39.1'})]);layout.repairRetainedDimensions(b,{request:'Logo left breast of all garments 100mm wide.'});
+ const out=await buildProof(b,[await artFile()],{fetchImpl:await fixtureFetch(),strict:true});
+ assert.equal(out.pages[0].placements.length,1);assert.equal(out.pages[0].placements[0].size.width,100);assert.equal(out.pages[0].placements[0].size.height,50);
+});
