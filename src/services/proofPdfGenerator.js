@@ -42,6 +42,13 @@ function line(page, x1, top1, x2, top2, colour = LIGHT, thickness = 1) {
 function drawField(page, x, top, width, label, value, regular, bold, split = false) {
   rect(page, x, top, width, 25, rgb(1, 1, 1), rgb(0.65, 0.69, 0.73));
   drawText(page, label, x + 12, top + 6, 10, bold, rgb(0.15, 0.15, 0.15), 80);
+  if(label==='Garment:'){
+    const words=safeText(value || 'To confirm').split(' '), lines=[''];
+    for(const word of words){const i=lines.length-1,candidate=[lines[i],word].filter(Boolean).join(' ');
+      if(bold.widthOfTextAtSize(candidate,8.5)>width-75 && lines[i] && lines.length<2)lines.push(word);else lines[i]=candidate;
+    }
+    lines.forEach((text,i)=>drawText(page,text,x+67,top+(lines.length===1?7:2)+i*10,8.5,bold,rgb(.15,.15,.15),width-75));return;
+  }
   drawText(page, value || 'To confirm', x + (split ? 77 : 91), top + 5.5, 10.5, bold, rgb(0.15, 0.15, 0.15), width - (split ? 86 : 103));
 }
 
@@ -71,7 +78,7 @@ function drawAsset(page, asset, x, top, width, height) {
   return options;
 }
 
-function drawCallout(page, decoration, asset, regular, bold, index, total) {
+function drawCallout(page, decoration, asset, regular, bold, index, total, garmentColour) {
   const columns=Math.min(3,total), width=774/columns-16, x=34+(index%columns)*(774/columns);
   const compact=total>3, top=(compact?450:462)+Math.floor(index/columns)*62;
   const displayPosition = positionName(decoration.position);
@@ -79,7 +86,10 @@ function drawCallout(page, decoration, asset, regular, bold, index, total) {
   drawText(page, title, x, top, 9, bold, NAVY, width);
   line(page, x, top + 14, x + width, top + 14, BLUE, 1);
   const imageWidth=compact?60:85, imageHeight=compact?36:76, textX=x+imageWidth+10, textWidth=width-imageWidth-10;
-  if (asset) drawAsset(page, asset, x, top + 21, imageWidth, imageHeight);
+  if (asset) {
+    if(asset.needsContrast)rect(page,x-3,top+18,imageWidth+6,imageHeight+6,rgb(...(garmentColour || [.4,.4,.4])),LIGHT);
+    drawAsset(page, asset, x, top + 21, imageWidth, imageHeight);
+  }
   else drawText(page, 'No artwork', x, top + 27, 8, regular, GREY, imageWidth);
   let widthLabel = 'Size to confirm';
   try {
@@ -162,6 +172,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
     if (!groups.size) groups.set('front', []);
     const [page] = await pdf.copyPages(template,[0]); pdf.addPage(page);
     drawHeader(page,brief,product,regular,bold,dateLabel);
+    let garmentColour;
     const orderedGroups=[...groups].sort((a,b)=>['front','back','left','right'].indexOf(a[0])-['front','back','left','right'].indexOf(b[0]));
     for (const [viewIndex,[view, marks]] of orderedGroups.entries()) {
       const source = views.find(v => v.view === view);
@@ -175,6 +186,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
             const front=await loadGarment(frontSource,product.visual?.source);
             referenceGarment={...front,...automaticGarmentProfile(product,front,'front')};
           }
+          garmentColour ||= garment.colour;
           Object.assign(garment, automaticGarmentProfile(product, garment, view, referenceGarment));
         } catch(error) { issue(productIndex,null,error.message,true); }
       } else if (!supplierUnavailable && !missingCode && !catalogueIssue) issue(productIndex,null,`No verified ${view} view for ${product.code || product.name}. The supplier catalogue needs a matching garment view before this position can be shown.`,true);
@@ -187,7 +199,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
       const pageData = {productIndex,pdfPageIndex:productIndex,view,sourceHash:garment?.sourceHash || '',width:garment?.width || 400,height:garment?.height || 500,
         image:garment ? `data:image/png;base64,${garment.bytes.toString('base64')}` : '',generatedView:Boolean(source?.generated),calibration,landmarks:garment?.landmarks,placements:[]};
       const cellWidth=774/groups.size, cellX=34+viewIndex*cellWidth;
-      const garmentBox = garment ? drawAsset(page,garment,cellX+8,136,cellWidth-16,decorations.length>3?300:312) : null;
+      const garmentBox = garment ? drawAsset(page,garment,cellX+8,148,cellWidth-16,decorations.length>3?288:300) : null;
       drawText(page,`${view.toUpperCase()} VIEW`,cellX+8,104,10,bold,NAVY,cellWidth-16);
       const methods=[...new Set(marks.map(mark=>printMethod(mark.method)))];
       pageData.printMethods=methods;
@@ -204,6 +216,12 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
         drawText(page,method,methodX,128-methodSize,methodSize,bold,colour,cellX+cellWidth-8-methodX);
         methodX+=bold.widthOfTextAtSize(safeText(method),methodSize);
       }
+      const dimensionLabels=marks.map(d=>{
+        const file=findArtwork(d,artworks),asset=file&&embedded.get(file.id);
+        try {const size=asset&&artworkSize(d,asset.width/asset.height);return (marks.length>1?`${positionName(d.position)}: `:'')+(size?.confirmed?`${Number(size.width.toFixed(1))} x ${Number(size.height.toFixed(1))} mm`:'To confirm');}
+        catch(_){return 'Needs review';}
+      });
+      drawText(page,`Dimensions: ${dimensionLabels.join(' / ')}`,cellX+8,133,8,regular,GREY,cellWidth-16);
       if (!garment) drawText(page,'Matching view unavailable',cellX+8,245,10,bold,GREY,cellWidth-16);
       if (garment && !garment.confident) issue(productIndex,null,'Garment boundary is uncertain. Check printable regions and placement.');
       for (const d of marks) {
@@ -241,7 +259,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
       }
       pages.push(pageData);
     }
-    decorations.forEach((d,index)=>{const artwork=findArtwork(d,artworks);drawCallout(page,d,artwork&&embedded.get(artwork.id),regular,bold,index,decorations.length);});
+    decorations.forEach((d,index)=>{const artwork=findArtwork(d,artworks);drawCallout(page,d,artwork&&embedded.get(artwork.id),regular,bold,index,decorations.length,garmentColour);});
 
   }
   const uniqueIssues=issues.filter((item,index)=>issues.findIndex(other=>JSON.stringify(other)===JSON.stringify(item))===index);

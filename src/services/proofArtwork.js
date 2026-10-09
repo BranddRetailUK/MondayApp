@@ -65,6 +65,9 @@ async function prepareArtwork(pdf, artwork) {
   const mode=artwork.backgroundMode || 'auto';
   if(!['auto','keep','white'].includes(mode))throw new Error('Invalid artwork background mode.');
   const bounds=visibleBounds(rendered.data,rendered.width,rendered.height,mode);
+  let visible=0,light=0;
+  for(let i=0;i<rendered.data.length;i+=4)if(rendered.data[i+3]>80){visible++;if(Math.min(...rendered.data.subarray(i,i+3))>190)light++;}
+  const needsContrast=visible>0 && light/visible>.03;
   const cropped=await sharp(rendered.data,{raw:{width:rendered.width,height:rendered.height,channels:4}}).extract({left:bounds.left,top:bounds.top,width:bounds.width,height:bounds.height}).png().toBuffer();
   const preview=await sharp(cropped).resize({width:500,height:500,fit:'inside',withoutEnlargement:true}).png().toBuffer();
   const warnings=[];
@@ -87,7 +90,7 @@ async function prepareArtwork(pdf, artwork) {
     if(isPdf) warnings.push('PDF proof preview is rasterised; retain the uploaded PDF for production.');
   }
   const previewBytes=isPdf && rendered.rotation ? await sharp(preview).rotate(rendered.rotation).png().toBuffer() : preview;
-  return {...asset,preview:`data:image/png;base64,${previewBytes.toString('base64')}`,warnings,bounds};
+  return {...asset,needsContrast,preview:`data:image/png;base64,${previewBytes.toString('base64')}`,warnings,bounds};
 }
 
 async function analyseGarment(bytes) {
@@ -102,7 +105,10 @@ async function analyseGarment(bytes) {
   const density=mask.reduce((a,b)=>a+b,0)/mask.length;
   if(density>.98 || density<.08)confident=false;
   const png=await sharp(crop.data,{raw:{width:crop.info.width,height:crop.info.height,channels:4}}).png().toBuffer();
-  return {bytes:png,width:crop.info.width,height:crop.info.height,mask,confident,bounds};
+  const channels=[[],[],[]];
+  for(let i=0;i<mask.length;i+=7)if(mask[i])for(let c=0;c<3;c++)channels[c].push(crop.data[i*4+c]);
+  const colour=channels.map(values=>{values.sort((a,b)=>a-b);return (values[Math.floor(values.length/2)] ?? 128)/255;});
+  return {colour,bytes:png,width:crop.info.width,height:crop.info.height,mask,confident,bounds};
 }
 
 function coverage(garment,p) {

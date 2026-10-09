@@ -375,7 +375,7 @@ All decoration to be transfer print.`};
  assert.equal(b.products.flatMap(p=>p.decorations).length,7);
  for(const p of b.products)for(const d of p.decorations){
   if(d.position==='right sleeve'){assert.equal(d.widthMm,'');assert.equal(d.heightMm,'70');}
-  else {assert.equal(d.heightMm,'');assert.equal(d.widthMm,d.position==='back'?'250':p.code==='GD57B'?'80':'100');}
+  else {assert.equal(d.heightMm,'');assert.equal(d.widthMm,d.position==='back'?'250':'100');}
   assert.deepEqual(d.dimensionIssues,[]);assert.doesNotThrow(()=>layout.artworkSize(d,3));
  }
 });
@@ -414,12 +414,12 @@ test('repaired single-axis brief renders artwork and permits strict export',asyn
  g.view='left';assert.ok(Math.abs(artwork.fitSleeve(g,p).x-.5742)<1e-9);
  });
 
- test('shared adult breast widths become 80mm for kids once; explicit sizes and manual changes win',()=>{
+ test('shared kids preview scaling preserves requested dimensions and explicit sizes',()=>{
  const requestText='Logo left breast of all garments 100mm wide.';
  const make=()=>({products:[{code:'AD1',name:'Adult tee',decorations:[]},{code:'KD1',name:'Kids tee',decorations:[]}],sharedDecorations:[mark()]});
  const b=make();layout.prepareBrief(b,{requestText});
- assert.equal(b.products[0].decorations[0].widthMm,'100');assert.equal(b.products[1].decorations[0].widthMm,'80');
- layout.prepareBrief(b,{requestText});layout.repairRetainedDimensions(b,{request:requestText});assert.equal(b.products[1].decorations[0].widthMm,'80');
+ assert.equal(b.products[0].decorations[0].widthMm,'100');assert.equal(b.products[1].decorations[0].widthMm,'100');
+ layout.prepareBrief(b,{requestText});layout.repairRetainedDimensions(b,{request:requestText});assert.equal(b.products[1].decorations[0].widthMm,'100');
  b.products[1].decorations[0].widthMm='100';layout.repairRetainedDimensions(b,{request:requestText});assert.equal(b.products[1].decorations[0].widthMm,'100');
  for(const scope of ['KD1','Kids']){
   const explicit=make();explicit.products[1].decorations=[mark({widthMm:'90'})];
@@ -427,7 +427,7 @@ test('repaired single-axis brief renders artwork and permits strict export',asyn
   assert.equal(explicit.products[1].decorations[0].widthMm,'90');assert.deepEqual(explicit.products[1].decorations[0].dimensionIssues,[]);
   assert.equal(explicit.products[0].decorations[0].widthMm,'100');
  }
- const retained=make();retained.products[1].decorations=[mark()];layout.repairRetainedDimensions(retained,{request:requestText});assert.equal(retained.products[1].decorations[0].widthMm,'80');
+ const retained=make();retained.products[1].decorations=[mark()];layout.repairRetainedDimensions(retained,{request:requestText});assert.equal(retained.products[1].decorations[0].widthMm,'100');
  });
  test('approved garment references apply to future styles, not only the example codes',()=>{
  const {placementProfile,automaticPrintScale,automaticTop}=require('../src/services/proofPlacementProfiles');
@@ -442,3 +442,31 @@ test('repaired single-axis brief renders artwork and permits strict export',asyn
  assert.ok(Math.abs(placementProfile({code:'GD57B'}).breastCentre-.42)<1e-9);
  assert.equal(automaticPrintScale('back',{placementProfile:child,sizeCategory:'child'}),.85);
  });
+
+test('legacy child size adjustment migrates to preview-only scaling without changing explicit kids sizes',()=>{
+ const b=brief([mark({widthMm:'80',childSizeAdjustment:{inheritedWidthMm:100,widthMm:80}})]);b.products[0].name='Kids hoodie';
+ layout.repairRetainedDimensions(b,{request:'Logo left breast of all garments 100mm wide.'});
+ const d=b.products[0].decorations[0];assert.equal(d.widthMm,'100');assert.equal(d.childPreviewScale,.8);
+ const g={view:'front',width:700,height:850};
+ const scaled=layout.placementFor(d,{width:200,height:100},g),old=layout.placementFor(mark({widthMm:'80'}),{width:200,height:100},g);
+ assert.ok(Math.abs(scaled.width-old.width)<1e-9);assert.equal(scaled.size.width,100);
+ layout.repairRetainedDimensions(b,{request:'Kids left breast 100mm wide.'});assert.equal(d.childPreviewScale,undefined);
+});
+test('light artwork is detected for garment-colour callout backing',async()=>{
+ const pdf=await PDFDocument.create();
+ const buffer=await sharp(Buffer.from('<svg width="100" height="100"><rect x="10" y="10" width="80" height="80" fill="white"/></svg>')).png().toBuffer();
+ assert.equal((await artwork.prepareArtwork(pdf,{file:{buffer}})).needsContrast,true);
+ assert.equal((await artwork.prepareArtwork(pdf,await artFile())).needsContrast,false);
+ const g=await artwork.analyseGarment(await garmentBytes('#123456'));
+ assert.deepEqual(g.colour,[18/255,52/255,86/255]);
+});
+test('PDF shows view dimensions and wraps long garment names',async()=>{
+ const b=brief();b.products[0].requestedName='Premium cotton adult ringspun shirt';
+ const out=await buildProof(b,[await artFile()],{fetchImpl:await fixtureFetch()});
+ const pdfjs=await import('pdfjs-dist/legacy/build/pdf.mjs');
+ const doc=await pdfjs.getDocument({data:new Uint8Array(out.bytes),isEvalSupported:false,useSystemFonts:true}).promise;
+ try{const page=await doc.getPage(1),content=await page.getTextContent();
+ assert.ok(content.items.some(i=>i.str==='Dimensions: 100 x 50 mm'));
+ assert.ok(content.items.some(i=>i.str.includes('ringspun shirt')));
+ }finally{await doc.destroy();}
+});

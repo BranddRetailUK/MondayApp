@@ -127,7 +127,8 @@ function recoverProductCodes(brief, input = {}) {
 
 // A shared adult breast width has a child default; explicit child sizes win.
 function applyChildBreastSize(d, product, input = {}, inherited = false) {
-  if (d.childSizeAdjustment || garmentSizeProfile(product).sizeCategory !== 'child' || !/breast/.test(positionName(d.position)) || d.placement) return;
+  delete d.childPreviewScale;
+  if (garmentSizeProfile(product).sizeCategory !== 'child' || !/breast/.test(positionName(d.position)) || d.placement) return;
   const assigned=(input.artworks || []).find(a=>a.id===d.artworkId);
   const noteDimensions=dimensionsInText(assigned?.notes);
   if(noteDimensions.width.length || noteDimensions.height.length)return;
@@ -137,9 +138,11 @@ function applyChildBreastSize(d, product, input = {}, inherited = false) {
   if(explicit.some(c=>{const dims=dimensionsInText(c);return dims.width.length || dims.height.length;}))return;
   const shared=clauses.filter(c=>/\b(all|every|each)\s+(?:the\s+)?(?:garments?|products?|items?)\b/i.test(c));
   if(!inherited && !shared.some(c=>dimensionsInText(c).width.includes(100)))return;
+  if(d.childSizeAdjustment?.inheritedWidthMm===100 && dimension(d.widthMm)===80) {
+    d.widthMm='100'; delete d.childSizeAdjustment;
+  }
   if(dimension(d.widthMm)!==100 || dimension(d.heightMm)!=null)return;
-  d.widthMm='80';
-  d.childSizeAdjustment={inheritedWidthMm:100,widthMm:80};
+  d.childPreviewScale=0.8;
 }
 
 function prepareBrief(brief, input = {}) {
@@ -152,7 +155,8 @@ function prepareBrief(brief, input = {}) {
       d.method = d.method || product.method || brief.method || '';
       const artwork = findArtwork(d, input.artworks || []);
       if (artwork) d.artworkId = artwork.id;
-      if(!(d.childSizeAdjustment && dimension(d.widthMm)===80))recoverDimensions(d, {...input,enforceSuppliedAxis:true}, product, brief.products);
+      applyChildBreastSize(d,product,input,(brief.sharedDecorations || []).includes(original));
+      recoverDimensions(d, {...input,enforceSuppliedAxis:true}, product, brief.products);
       applyChildBreastSize(d,product,input,(brief.sharedDecorations || []).includes(original));
       return d;
     });
@@ -166,6 +170,7 @@ function prepareBrief(brief, input = {}) {
 function repairRetainedDimensions(brief, source) {
   if(!source?.request)return;
   for(const product of brief.products || [])for(const d of product.decorations || []) {
+    applyChildBreastSize(d,product,{requestText:source.request,specialInstructions:source.instructions});
     recoverDimensions(d,{requestText:source.request,specialInstructions:source.instructions,enforceSuppliedAxis:true,repairOnly:true},product,brief.products);
     applyChildBreastSize(d,product,{requestText:source.request,specialInstructions:source.instructions});
   }
@@ -229,7 +234,7 @@ function placementFor(d, asset, garment, calibration = {}) {
     pxPerMm = distance/mm; calibrated = true;
   }
   const automatic = !calibrated && !d.placement && !custom && (!d.anchor || d.anchor === 'region') && !Number(d.offsetXmm) && !Number(d.offsetYmm);
-  if(automatic)pxPerMm *= automaticPrintScale(position,garment);
+  if(automatic)pxPerMm *= automaticPrintScale(position,garment)*(d.childPreviewScale===0.8 ? 0.8 : 1);
   const width = size.width * pxPerMm / garment.width;
   const height = size.height * pxPerMm / garment.height;
   const explicit = d.placement != null;
