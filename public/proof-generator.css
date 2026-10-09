@@ -203,3 +203,6 @@ body.proof-preview .proof-preview-badge{display:block}
 .proof-history-actions .proof-history-link-button{background:#94cafa;border-color:#94cafa;color:#17212b}
 .proof-history-actions .proof-history-link-button:hover{background:#b4dcff;border-color:#b4dcff}
 @media(min-width:1101px){.proof-history-row{grid-template-columns:130px minmax(0,1fr) max-content}}
+
+.proof-editor-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}
+.proof-editor-toolbar .proof-primary-button{margin-left:auto}

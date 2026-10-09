@@ -24,7 +24,7 @@
         <button id="proof-history-more" class="proof-secondary-button" type="button" hidden>Load more</button>
       </section>
       <div id="proof-editor-screen" hidden>
-      <button id="proof-back-list" class="proof-secondary-button" type="button">← All proofs</button>
+      <div class="proof-editor-toolbar"><button id="proof-back-list" class="proof-secondary-button" type="button">← All proofs</button></div>
       <div class="proof-layout">
         <div class="proof-form-column">
           <section class="proof-card">
@@ -83,6 +83,8 @@
   const artworksNode = root.querySelector('#proof-artworks');
   const results = root.querySelector('#proof-results');
   const reviewButton = root.querySelector('#proof-review');
+  const formActions = root.querySelector('.proof-form-actions');
+  const editorToolbar = root.querySelector('.proof-editor-toolbar');
   const feedback = root.querySelector('#proof-feedback');
   const artworks = [];
   let currentBrief = null;
@@ -277,6 +279,7 @@
   }
   customer.addEventListener('input',metadataChanged);jobTitle.addEventListener('input',metadataChanged);
   function showDesign(){
+    if(designId)editorToolbar.append(reviewButton);else formActions.prepend(reviewButton);
     reviewButton.querySelector('[data-proof-button-arrow]').hidden=busy||Boolean(designId);
     newProof.hidden=!designId;retrySave.hidden=!designId||['saved','folder_ready'].includes(design?.status);
     designStatus.textContent=design?.designNumber?`Design ${design.designNumber} · ${design.folderName||'Preparing folder'}${design.status==='saved'?' · Saved':design.status==='error'?' · Save needs attention':''}`:designId?'Waiting for ARTWORK-PC to allocate the design folder.':'';
