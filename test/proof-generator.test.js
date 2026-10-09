@@ -198,7 +198,8 @@ test('automatic vertical anchors match the supplied reference proofs',()=>{
  for(const sample of [...refs.smallMarks,...refs.compositions]){
   const h=sample.garmentY[1]-sample.garmentY[0];
   const artworkHeight=(sample.artworkY[1]-sample.artworkY[0])/h;
-  const expected=(sample.artworkY[0]-sample.garmentY[0])/h;
+  const hoodieBreast=placementProfile(sample).family==='hoodie' && /breast/.test(sample.position);
+  const expected=(sample.artworkY[0]-sample.garmentY[0])/h+(hoodieBreast?.02:0);
   const actual=automaticTop(sample.position,sample.view||'front',artworkHeight,placementProfile(sample));
   assert.ok(Math.abs(actual-expected)<=sample.tolerance,`${sample.source} ${sample.position}: ${actual} vs ${expected}`);
  }
@@ -433,7 +434,11 @@ test('repaired single-axis brief renders artwork and permits strict export',asyn
  const tee=placementProfile({code:'NEW1',name:'T-shirt'});assert.equal(tee.sideSleeveAcross,.46);assert.equal(tee.neckRight,.62);
  const vest=placementProfile({code:'NEW2',name:'Padded bodywarmer'});assert.equal(vest.neckRight,.70);
  const hoodie=placementProfile({code:'NEW3',name:'Adult hoodie'});assert.equal(hoodie.neckRight,.62);
- assert.equal(automaticPrintScale('left breast',{placementProfile:hoodie}),1.08);assert.equal(automaticPrintScale('right sleeve',{placementProfile:hoodie}),1.035);
+ assert.equal(automaticPrintScale('left breast',{placementProfile:hoodie}),1.08*.95);assert.equal(automaticPrintScale('right sleeve',{placementProfile:hoodie}),1.035);
  assert.equal(automaticTop('right sleeve','right',.1,hoodie),.32);
- const child=placementProfile({code:'NEW4',name:'Kids hoodie'});assert.equal(automaticPrintScale('back',{placementProfile:child,sizeCategory:'child'}),.85);
+ const child=placementProfile({code:'NEW4',name:'Kids hoodie'});
+ assert.equal(automaticPrintScale('left breast',{placementProfile:child}),1.2*.95);
+ assert.ok(Math.abs(child.breastCentre-.365)<1e-9);
+ assert.ok(Math.abs(placementProfile({code:'GD57B'}).breastCentre-.42)<1e-9);
+ assert.equal(automaticPrintScale('back',{placementProfile:child,sizeCategory:'child'}),.85);
  });

@@ -38,6 +38,11 @@ function placementProfile(product = {}) {
   // Gildan's supplied hoodie images have a deeper hood/neck opening.
   const breast = /^GD0?57B?$/.test(code) ? {breastCentre:0.40} : {};
   if (family==='hoodie' && garmentSizeProfile(product).sizeCategory==='adult') Object.assign(breast,{neckRight:0.62,breastScale:1.08,sleeveScale:1.035,sideSleeveCentre:0.37});
+  // Approved global hoodie breast refinement: 5% smaller and slightly lower.
+  if (family==='hoodie') {
+    breast.breastScale=(breast.breastScale ?? 1.2)*0.95;
+    breast.breastCentre=(breast.breastCentre ?? PROFILES.hoodie.breastCentre)+0.02;
+  }
   if (/bodywarmer|gilet/.test(name)) breast.neckRight=0.70;
   return { family, ...PROFILES[family], ...breast };
 }
