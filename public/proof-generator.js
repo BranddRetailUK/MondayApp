@@ -235,7 +235,7 @@
     if(busy)return;
     if(job.id===designId&&artworks.length){showProofEditor();return;}
     startNewProof();selectedLinkJob=job.sourceOrderId?{source_order_id:job.sourceOrderId,order_no:job.linkedOrders?.find(order=>order.sourceOrderId===job.sourceOrderId)?.orderNo}:null;designId=job.id;design=job;try{sessionStorage.setItem('proof-design-id',designId);}catch(_){}
-    customer.value=job.customer||'';jobTitle.value=job.jobTitle||'';showProofEditor();showDesign();busy=true;setCreating(true);
+    customer.value=job.customer||'';jobTitle.value=job.jobTitle||'';showProofEditor();showDesign();busy=true;setCreating(true);reviewButton.querySelector('[data-proof-button-label]').textContent='Loading proof…';
     try{
       const response=await fetch(`/api/proof-generator/designs/${encodeURIComponent(job.id)}/source`,{cache:'no-store'});const data=await response.json();
       if(!response.ok)throw new Error(data.error||'Proof source is unavailable.');
@@ -245,8 +245,13 @@
         const item={id:saved.id,file,assignment:saved.assignment||'',notes:saved.notes||'',backgroundMode:saved.backgroundMode||'auto',url:file.type.startsWith('image/')?URL.createObjectURL(file):''};artworks.push(item);renderArtwork(item);
       }
       currentBrief=data.source.brief;currentPreview=null;dirty=true;
-      if(currentBrief){currentBrief.proofSourceOrderId=job.sourceOrderId||null;currentBrief.proofRevision=job.revision;currentBrief.proofDesignId=job.id;renderEditor();await updatePreview(false,false);}
-      else setFeedback('Ready to regenerate.');
+      if(currentBrief){currentBrief.proofSourceOrderId=job.sourceOrderId||null;currentBrief.proofRevision=job.revision;currentBrief.proofDesignId=job.id;renderEditor();
+        if(job.hasPreview){
+          const savedPreview=document.createElement('img');savedPreview.className='proof-history-large';savedPreview.alt='Previously saved proof';savedPreview.src=`/api/proof-generator/designs/${encodeURIComponent(job.id)}/preview?v=${encodeURIComponent(job.updatedAt||job.revision)}`;
+          results.append(savedPreview);
+        }
+      }
+      setFeedback('Ready to regenerate. Make your changes, then click Regenerate proof.');
     }catch(error){setFeedback(error.message,true);}
     finally{busy=false;setCreating(false);renderHistory();}
   }

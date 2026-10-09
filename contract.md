@@ -739,3 +739,5 @@ No external work-management token, OAuth, board, column, or webhook environment 
 - Verification covers production-only endpoint access, proof-first/job-first linking, existing-visual exclusion and rechecks, idempotency, confirmed-PDF publication, repeat snapshots, stale-target rejection, approval gates, unlink ownership and publication retries. Browser checks cover the generator link picker, linked order display, full proof list and New Order picker.
 
 - Live acceptance: automatic customer matching linked proof 29137 (saved revision 6) to job 51344 (source order 50591). Read-back confirmed one VISUAL, design ref 29137, unchanged proof revision/hash, and a byte-identical 3,510,970-byte Cloudinary PDF. Production UI confirmed the linked order, proof actions and DATABASE visual.
+
+- Opening Regenerate proof from history loads retained source and the saved preview only; it does not render or save a new proof. Generation begins only with the editor’s Regenerate proof action.

@@ -84,3 +84,21 @@ test('customer and title edits retain manual geometry while updating the saved b
   assert.equal(context.currentBrief,brief);assert.equal(brief.customer,'New customer');assert.equal(brief.jobTitle,'New title');
   assert.deepEqual(brief.products[0].decorations[0],{placement:{x:.4,y:.2},widthMm:140});assert.equal(dirty,true);
 });
+
+test('opening a saved proof restores the editor without generating or saving',async()=>{
+  const calls=[];
+  const context={busy:false,designId:null,artworks:[],customer:{},jobTitle:{},request:{},instructions:{},reviewButton:{querySelector:()=>({})},results:element('div'),document:{createElement:element},sessionStorage:{setItem(){}},
+    startNewProof(){},showProofEditor(){calls.push('editor');},showDesign(){},setCreating(){},renderHistory(){},renderEditor(){calls.push('restore');},setFeedback(){},
+    async fetch(url,options){calls.push([url,options]);return {ok:true,json:async()=>({source:{request:'Saved request',brief:{products:[]}},artworks:[]})};},
+    updatePreview(){throw Error('Opening must not generate a preview');}
+  };
+  vm.createContext(context);
+  const open=source.slice(source.indexOf('  async function openHistoryProof(job)'),source.indexOf('  async function recordProgress('));
+  vm.runInContext(open+'\nthis.open=openHistoryProof;',context);
+  await context.open({id:'saved-proof',revision:6,hasPreview:true});
+  assert.equal(context.request.value,'Saved request');assert.equal(context.currentBrief.proofRevision,6);
+  assert.equal(context.busy,false);assert.ok(calls.includes('restore'));
+  const requests=calls.filter(Array.isArray);assert.equal(requests.length,1);
+  assert.equal(requests[0][0],'/api/proof-generator/designs/saved-proof/source');assert.equal(requests[0][1].method,undefined);
+  assert.equal(context.results.children[0].alt,'Previously saved proof');
+});
