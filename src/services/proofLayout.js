@@ -108,6 +108,7 @@ function prepareBrief(brief, input = {}) {
       const d = JSON.parse(JSON.stringify(original));
       d.id = d.id || `product-${pi}-decoration-${di}`;
       d.position = positionName(d.position);
+      d.method = d.method || product.method || brief.method || '';
       const artwork = findArtwork(d, input.artworks || []);
       if (artwork) d.artworkId = artwork.id;
       recoverDimensions(d, input, product, brief.products);
@@ -116,7 +117,7 @@ function prepareBrief(brief, input = {}) {
     if (product.decorations.length > 6) throw new Error(`${product.code || 'Product'} has more than six decorations.`);
   });
   brief.sharedDecorations = [];
-  brief.questions = [];
+  brief.questions = brief.products.flatMap(product => product.decorations.filter(d => !d.widthMm && !d.heightMm).map(d => ({id:d.id,question:`What width or height should ${d.artwork || d.position} at ${d.position} on ${product.code || product.name} be?`})));
   return brief;
 }
 

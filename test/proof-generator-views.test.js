@@ -128,3 +128,40 @@ test('GD01 resolves GD001 with all 53 colours before the eight-colour GD010 pref
   assert.equal(visual.matched,true);assert.equal(visual.styleCode,'GD001');
  }finally{await db.close();}
 });
+
+test('Royal Blue alias is restricted to the requested Gildan styles and an actual Royal colour',()=>{
+ for(const code of ['GD001','GD057','GD057B']) {
+  const royal={...row,style_code:code,colour_name:'Royal*'};
+  assert.equal(selectRalawiseVisual([royal],code.replace('0',''),'Royal Blue',matchColour).colour,'Royal*');
+  assert.equal(selectRalawiseVisual([{...royal,colour_name:'Royal Heather'}],code,'Royal Blue',matchColour).matched,false);
+ }
+ assert.equal(selectRalawiseVisual([{...row,colour_name:'Royal'}],'RX350','Royal Blue',matchColour).matched,false);
+});
+
+test('mixed suppliers retain input order and route an explicitly PenCarrie-only garment separately',async()=>{
+ const brief={products:[{code:'GD01',colour:'Royal Blue'},{code:'01436',colour:'Navy',supplier:'pencarrie'},{code:'GD57',colour:'Royal Blue'},{code:'GD57B',colour:'Royal Blue'}]};
+ const rows=['GD001','GD057','GD057B'].map((code,i)=>({...row,style_code:code,style_id:i+1,colour_name:'Royal'}));
+ let pc=0;
+ await enrichProofProducts(brief,{provider:'ralawise',pool:{query:async q=>{assert.equal(q.values[0].includes('01436'),false);return {rows};}},fetchImpl:async(_url,request)=>{
+  pc++;assert.match(request.body,/01436/);assert.doesNotMatch(request.body,/GD01/);
+  return {ok:true,json:async()=>({responses:[{hits:{hits:[{_source:{code:'01436',name:['Wave Bodywarmer'],brandcolour_details:[{id:1,name:'Navy'}],assets:[]}}]}}]})};
+ }});
+ assert.equal(pc,1);assert.deepEqual(brief.products.map(p=>p.code),['GD001','01436','GD057','GD057B']);
+ assert.deepEqual(brief.products.map(p=>p.supplier),['ralawise','pencarrie','ralawise','ralawise']);
+ assert.ok(brief.products.every(p=>p.visual.matched));
+});
+
+test('name-only lookup accepts a unique exact catalogue name and rejects ambiguous names',async()=>{
+ const b={products:[{code:'',name:'Pro hoodie',colour:'Navy',supplier:'ralawise'}]};
+ await enrichProofProducts(b,{provider:'ralawise',pool:{query:async q=>{assert.deepEqual(q.values[2],['pro hoodie']);return {rows:[row]};}}});
+ assert.equal(b.products[0].code,'RX350');assert.equal(b.products[0].visual.matched,true);
+ assert.equal(selectRalawiseVisual([row,{...row,style_id:99,style_code:'OTHER'}],'','Navy',matchColour,'Pro hoodie').lookupIssue,'ambiguous_code');
+});
+
+test('auto supplier fallback resolves a product once without duplicating its sheet',async()=>{
+ const brief={products:[{code:'01436',colour:'Navy',supplier:'auto'}]};let calls=0;
+ await enrichProofProducts(brief,{provider:'ralawise',pool:{query:async()=>({rows:[]})},fetchImpl:async()=>{
+  calls++;return {ok:true,json:async()=>({responses:[{hits:{hits:[{_source:{code:'01436',brandcolour_details:[{id:1,name:'Navy'}],assets:[]}}]}}]})};
+ }});
+ assert.equal(calls,1);assert.equal(brief.products.length,1);assert.equal(brief.products[0].supplier,'pencarrie');
+});

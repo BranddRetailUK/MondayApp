@@ -476,10 +476,11 @@
       if (!readinessResponse.ok || !readiness.ready) {
         throw new Error(readiness.error || 'Proof Generator is temporarily unavailable. Ask an administrator to check the AI and PDF service configuration.');
       }
-      const response = await fetch('/api/proof-generator/parse', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({
+      const parseForm = await uploadForm({
         customer:customer.value,jobTitle:jobTitle.value,requestText:request.value, specialInstructions:instructions.value,
         artworks:artworks.map(({id,file,assignment,notes})=>({id,fileName:file.name,assignment,notes})), answers:[],
-      }) });
+      });
+      const response = await fetch('/api/proof-generator/parse', { method: 'POST', body: parseForm });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Could not read the brief.');
       if(submittedSource!==JSON.stringify([customer.value,jobTitle.value,request.value,instructions.value,artworks.map(a=>[a.id,a.assignment,a.notes])]))throw new Error('The request changed while it was being read. Create the proof again to apply it.');

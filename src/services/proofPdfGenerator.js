@@ -130,7 +130,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
     issues.push(item); return item;
   };
   for (const [productIndex, product] of brief.products.entries()) {
-    const decorations = resolveDecorations(brief, product);
+    const decorations = resolveDecorations(brief, product).map(d => ({...d, method:d.method || product.method || brief.method || ''}));
     if (decorations.length > 6) throw new Error(`${product.code} has more than six decoration positions.`);
     const views = product.visual?.views || [];
     const lookupIssue = product.visual?.lookupIssue;
@@ -138,11 +138,13 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
     const missingCode = lookupIssue === 'missing_code';
     const catalogueMessages = {
       catalogue_unavailable: 'The Ralawise catalogue is temporarily unavailable. Please try again shortly.',
-      product_not_found: 'This style code was not found in the active Ralawise catalogue. Include its Ralawise code in the brief.',
+      product_not_found: 'This style code was not found in the active Ralawise catalogue. Check the product code or supplier.',
+      pencarrie_product_not_found: 'This style code was not found in the PenCarrie catalogue. Check the product code.',
+      pencarrie_colour_not_found: 'The requested colour does not match this garment in the PenCarrie catalogue.',
       ambiguous_code: 'This manufacturer code matches several Ralawise garments. Include the exact Ralawise style code in the brief.',
       colour_not_found: 'The requested colour does not match this garment in the Ralawise catalogue. Check the colour name in the brief.',
     };
-    const catalogueIssue = catalogueMessages[lookupIssue];
+    const catalogueIssue = catalogueMessages[lookupIssue] && catalogueMessages[lookupIssue] + (product.visual?.availableColours?.length ? ` Requested: ${product.colour}. Available colours: ${product.visual.availableColours.join(', ')}.` : '');
     if (supplierUnavailable) issue(productIndex,null,'Garment image lookup is unavailable. The supplier connection needs attention before this proof can be completed. Your artwork and placement settings do not need changing.',true);
     else if (missingCode) issue(productIndex,null,'The garment style code is missing or ambiguous. Include its exact supplier code in the request.',true);
     else if (catalogueIssue) issue(productIndex,null,catalogueIssue,true);
@@ -210,6 +212,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
         }
         for (const message of asset.warnings) issue(productIndex,d.id,message);
         for (const message of d.dimensionIssues || []) issue(productIndex,d.id,message,true);
+        if (!d.widthMm && !d.heightMm) issue(productIndex,d.id,`${d.position}: specify the artwork width or height before saving.`,true);
         if (!garment) continue;
         try {
           let p = placementFor(d,asset,garment,calibration);

@@ -26,9 +26,10 @@ function imageView(filename) {
   return null;
 }
 
-async function fetchRalawiseRows(codes, pool) {
+async function fetchRalawiseRows(codes, pool, names = []) {
   const valid = [...new Set(codes.map(code => String(code || '').trim().toUpperCase()))].filter(code => /^[A-Z0-9-]{2,24}$/.test(code));
-  if (!valid.length) return [];
+  const exactNames = [...new Set(names.map(name=>String(name || '').trim().toLowerCase()).filter(Boolean))];
+  if (!valid.length && !exactNames.length) return [];
   const { rows } = await pool.query({
     text: `SELECT s.id AS style_id, s.style_code, s.manufacturer_style_code, s.style_name,
                   c.id AS colour_id, c.colour_name, c.colour_code, c.colour_image_url, c.colour_image_filename,
@@ -41,25 +42,30 @@ async function fetchRalawiseRows(codes, pool) {
                  FROM database_ralawise_catalog_images i
                 WHERE i.style_id = s.id AND i.colour_id = c.id
              ) images ON TRUE
-            WHERE (UPPER(s.style_code) = ANY($1::text[]) OR UPPER(s.manufacturer_style_code) = ANY($1::text[]) OR ${styleCodeSql} = ANY($2::text[]))
+            WHERE (UPPER(s.style_code) = ANY($1::text[]) OR UPPER(s.manufacturer_style_code) = ANY($1::text[]) OR ${styleCodeSql} = ANY($2::text[])${exactNames.length ? ' OR LOWER(s.style_name) = ANY($3::text[])' : ''})
               AND EXISTS (SELECT 1 FROM database_ralawise_catalog_variants v
                           WHERE v.style_id = s.id AND v.colour_id = c.id AND v.is_active IS TRUE)`,
-    values: [valid, valid.map(normaliseStyleCode)], query_timeout: 5000,
+    values: [valid, valid.map(normaliseStyleCode), ...(exactNames.length ? [exactNames] : [])], query_timeout: 5000,
   });
   return rows;
 }
 
-function selectRalawiseVisual(rows, code, requestedColour, matchColour) {
+function selectRalawiseVisual(rows, code, requestedColour, matchColour, requestedName = '') {
   const requestedCode = String(code || '').trim().toUpperCase();
   const direct = rows.filter(row => row.style_code.toUpperCase() === requestedCode);
   const equivalent = rows.filter(row => normaliseStyleCode(row.style_code) === normaliseStyleCode(requestedCode));
-  const candidates = direct.length ? direct : equivalent.length ? equivalent : rows.filter(row => String(row.manufacturer_style_code || '').toUpperCase() === requestedCode);
+  const candidates = !requestedCode && requestedName ? rows.filter(row=>String(row.style_name).trim().toLowerCase()===String(requestedName).trim().toLowerCase()) : direct.length ? direct : equivalent.length ? equivalent : rows.filter(row => String(row.manufacturer_style_code || '').toUpperCase() === requestedCode);
   const base = { source: 'Ralawise catalog', name: '', colour: '', matched: false, productUrl: '', views: [] };
   const styles = [...new Set(candidates.map(row => String(row.style_id)))];
-  if (!styles.length) return { ...base, lookupIssue: requestedCode ? 'product_not_found' : 'missing_code' };
+  if (!styles.length) return { ...base, lookupIssue: requestedCode || requestedName ? 'product_not_found' : 'missing_code' };
   if (styles.length !== 1) return { ...base, lookupIssue: 'ambiguous_code' };
-  const match = matchColour(candidates.map(row => ({ name: row.colour_name, row })), requestedColour)?.row;
-  if (!match) return { ...base, name: candidates[0].style_name, lookupIssue: 'colour_not_found' };
+  const colours = candidates.map(row => ({ name: row.colour_name, row }));
+  // Explicit Gildan style allowlist only: never collapse other royal shades or combined colourways.
+  const colourRequest = /^GD(?:1|57|57B)$/.test(normaliseStyleCode(candidates[0].style_code)) && /^royal blue$/i.test(String(requestedColour).trim())
+    && colours.some(c => /^royal[\s*†‡]*$/i.test(c.name))
+    && !colours.some(c => /^royal blue[\s*†‡]*$/i.test(c.name)) ? 'Royal' : requestedColour;
+  const match = matchColour(colours, colourRequest)?.row;
+  if (!match) return { ...base, name: candidates[0].style_name, lookupIssue: 'colour_not_found', availableColours: candidates.map(row=>row.colour_name), requestedColour };
   const views = new Map();
   const assets = [{ url: match.colour_image_url, filename: match.colour_image_filename, colour_id: match.colour_id }, ...(match.images || [])];
   for (const asset of assets) {

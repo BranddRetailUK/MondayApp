@@ -66,19 +66,39 @@ function selectPencarrieVisual(product, requestedColour) {
   };
 }
 
-async function enrichProofProducts(brief, { fetchImpl = fetch, pool, provider = process.env.PROOF_IMAGE_PROVIDER || ((pool || process.env.DATABASE_URL) ? 'ralawise' : 'pencarrie') } = {}) {
+async function enrichProofProducts(brief, { fetchImpl = fetch, pool, provider = process.env.PROOF_IMAGE_PROVIDER || ((pool || process.env.DATABASE_URL) ? 'ralawise' : 'pencarrie'), routed = false } = {}) {
+  if (!routed) {
+    const resolved = [];
+    brief.products.forEach((product,index)=>{product.proofInputOrder=index;});
+    const groups = ['ralawise','pencarrie'].map(selected => ({selected, products:brief.products.filter(p => (['ralawise','pencarrie'].includes(p.supplier) ? p.supplier : provider) === selected)}));
+    for (const {selected,products} of groups) {
+      if (!products.length) continue;
+      const group = {products};
+      await enrichProofProducts(group, {fetchImpl, pool, provider:selected, routed:true});
+      // Only a verified absence permits trying the other supplier, never an outage or a colour mismatch.
+      if (selected === 'ralawise') {
+        const fallback = group.products.filter(p => p.code && (!p.supplier || p.supplier === 'auto') && p.visual?.lookupIssue === 'product_not_found');
+        if (fallback.length) await enrichProofProducts({products:fallback}, {fetchImpl,pool,provider:'pencarrie',routed:true});
+      }
+      resolved.push(...group.products);
+    }
+    brief.products = resolved.sort((a,b) => a.proofInputOrder-b.proofInputOrder);
+    brief.products.forEach(product=>{delete product.proofInputOrder;});
+    if (brief.products.length > 20) throw new Error('A proof supports at most 20 garment colourways.');
+    return brief;
+  }
   if (provider === 'ralawise') {
     let rows = [];
     let failed = false;
-    try { rows = await fetchRalawiseRows(brief.products.map(product => product.code), pool || require('../db/pool')); }
+    try { rows = await fetchRalawiseRows(brief.products.map(product => product.code), pool || require('../db/pool'), brief.products.filter(p=>!p.code).map(p=>p.name)); }
     catch (error) { failed = true; console.warn('Ralawise proof catalogue lookup failed:', error.message); }
     // Prefer a real combined colourway; expand only when every separate colour is verified.
     if(!failed){
       brief.products=brief.products.flatMap(item=>{
-        const combined=selectRalawiseVisual(rows,item.code,item.colour,matchColour);
+        const combined=selectRalawiseVisual(rows,item.code,item.colour,matchColour,item.name);
         const colours=String(item.colour||'').split(/\s*(?:\band\b|&|\/|,)\s*/i).filter(Boolean);
         if(combined.lookupIssue!=='colour_not_found'||colours.length<2||colours.length>6)return [item];
-        const matches=colours.map(colour=>selectRalawiseVisual(rows,item.code,colour,matchColour));
+        const matches=colours.map(colour=>selectRalawiseVisual(rows,item.code,colour,matchColour,item.name));
         if(!matches.every(visual=>visual.matched))return [item];
         return matches.map(visual=>({...structuredClone(item),colour:visual.colour}));
       });
@@ -87,11 +107,11 @@ async function enrichProofProducts(brief, { fetchImpl = fetch, pool, provider = 
     for (const item of brief.products) {
       const visual = failed
         ? { source: 'Ralawise catalog', matched: false, views: [], lookupIssue: 'catalogue_unavailable' }
-        : selectRalawiseVisual(rows, item.code, item.colour, matchColour);
+        : selectRalawiseVisual(rows, item.code, item.colour, matchColour,item.name);
       item.visual = visual;
       item.requestedName ||= item.name;
       if (visual.name) item.name = visual.name;
-      if (visual.matched) { item.colour = visual.colour; item.code = visual.styleCode; }
+      if (visual.matched) { item.colour = visual.colour; item.code = visual.styleCode; item.supplier = 'ralawise'; }
     }
     return brief;
   }
@@ -104,9 +124,13 @@ async function enrichProofProducts(brief, { fetchImpl = fetch, pool, provider = 
     item.visual = found ? selectPencarrieVisual(found, item.colour) : { source: '', name: '', colour: '', matched: false, productUrl: '', views: [] };
     if (!String(item.code || '').trim()) item.visual.lookupIssue = 'missing_code';
     else if (lookupFailed) item.visual.lookupIssue = 'supplier_unavailable';
+    else if (!found) item.visual.lookupIssue = 'pencarrie_product_not_found';
+    else if (!item.visual.matched) item.visual.lookupIssue = 'pencarrie_colour_not_found';
+    item.visual.source = 'PenCarrie';
+    item.visual.availableColours = (found?.brandcolour_details || []).map(c=>c.name);
     item.requestedName ||= item.name;
     if (item.visual.name) item.name = item.visual.name;
-    if (item.visual.matched) item.colour = item.visual.colour;
+    if (item.visual.matched) { item.colour = item.visual.colour; item.supplier = 'pencarrie'; }
   }
   return brief;
 }

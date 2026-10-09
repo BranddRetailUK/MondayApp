@@ -309,3 +309,24 @@ test('chest size recovery does not borrow left or right chest dimensions',()=>{
  layout.recoverDimensions(d,{requestText:'left chest 80 mm wide; chest 200 mm wide; right chest 90 mm wide'});
  assert.equal(d.widthMm,'200');assert.deepEqual(d.dimensionIssues,[]);
 });
+
+test('global methods inherit across seven positions with garment and position exceptions',()=>{
+ const b={method:'transfer print',sharedDecorations:[mark({method:''})],products:[
+  {code:'GD01',decorations:[mark({position:'right sleeve',widthMm:'',heightMm:'70'})]},
+  {code:'01436',method:'embroidery',decorations:[]},
+  {code:'GD57',decorations:[mark({position:'right sleeve',widthMm:'',heightMm:'70'})]},
+  {code:'GD57B',method:'embroidery',decorations:[mark({position:'back',widthMm:'250',method:'transfer print'})]}
+ ]};
+ layout.prepareBrief(b);
+ assert.equal(b.products.flatMap(p=>p.decorations).length,7);
+ assert.deepEqual(b.products.map(p=>p.decorations.map(d=>d.method)),[['transfer print','transfer print'],['embroidery'],['transfer print','transfer print'],['embroidery','transfer print']]);
+ assert.deepEqual(b.products[3].decorations.map(d=>d.position),['left breast','back']);
+ assert.equal(b.products[0].decorations[1].heightMm,'70');assert.equal(b.products[0].decorations[1].widthMm,'');
+});
+
+test('missing artwork size remains a question and blocks final export',async()=>{
+ const b=brief([mark({widthMm:'',heightMm:''})]);layout.prepareBrief(b);
+ assert.equal(b.questions.length,1);
+ const file=await artFile(),fetchImpl=await fixtureFetch();
+ await assert.rejects(()=>buildProof(b,[file],{fetchImpl,strict:true}),/specify the artwork width or height/);
+});

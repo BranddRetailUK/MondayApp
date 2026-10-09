@@ -184,3 +184,28 @@ test('in-flight EPS thumbnails cannot block source retention or proof parsing',a
   }finally{release();await converting;}
  });
 });
+
+test('multipart parsing sends labelled bounded artwork previews to the parser',async()=>{
+ const png=await require('sharp')({create:{width:20,height:10,channels:4,background:'#ff0000'}}).png().toBuffer();
+ let calls=0;
+ await serve(createRouter({parse:async(body,options)=>{
+  calls++;assert.equal(body.artworks[0].id,'apg');assert.equal(options.artworkImages[0].id,'apg');
+  assert.match(options.artworkImages[0].url,/^data:image\/png;base64,/);
+  return {products:[{code:'GD01',colour:'Royal',decorations:[]}],sharedDecorations:[]};
+ },enrich:async()=>{}}),async url=>{
+  const form=new FormData();form.append('brief',JSON.stringify({requestText:'APG youth back 250mm wide',artworks:[{id:'apg',fileName:'scan.png'}]}));
+  form.append('artworks',new Blob([png],{type:'image/png'}),'scan.png');
+  const res=await fetch(`${url}/parse`,{method:'POST',headers:production,body:form});assert.equal(res.status,200);assert.equal(calls,1);
+ });
+});
+
+test('AI input labels images and defines global method and supplier inheritance',async()=>{
+ await parseProofBrief({requestText:'All print to be transfer',artworks:[{id:'apg',fileName:'scan.png'}]}, {
+  apiKey:'test',artworkImages:[{id:'apg',url:'data:image/png;base64,dGVzdA=='}],fetchImpl:async(_url,options)=>{
+   const body=JSON.parse(options.body);assert.match(body.instructions,/brief.method/);assert.match(body.instructions,/always as worn/);
+   assert.deepEqual(body.text.format.schema.properties.products.items.properties.supplier.enum,['auto','ralawise','pencarrie']);
+   assert.equal(body.input[0].content[1].text,'Artwork upload ID: apg');assert.equal(body.input[0].content[2].type,'input_image');
+   return {ok:true,json:async()=>({output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({products:[],questions:[]})}]}]})};
+  }
+ });
+});

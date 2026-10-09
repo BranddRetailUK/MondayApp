@@ -156,7 +156,22 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
   });
   router.post('/parse', exclusive(async (req, res) => {
     try {
-      const brief = await parse(req.body);
+      let artworkImages = [];
+      if (req.is('multipart/form-data')) {
+        await new Promise((resolve,reject)=>upload.array('artworks',20)(req,res,error=>error?reject(error):resolve()));
+        req.body = JSON.parse(req.body.brief || '{}');
+        if (!Array.isArray(req.body.artworks) || req.body.artworks.length !== req.files.length) throw new Error('Artwork details do not match uploaded files.');
+        if (req.files.reduce((n,f)=>n+f.size,0)>50*1024*1024) throw new Error('Artwork uploads exceed 50 MB.');
+        const {PDFDocument} = require('pdf-lib');
+        const {prepareArtwork} = require('../services/proofArtwork');
+        const pdf = await PDFDocument.create();
+        for (const [index,file] of req.files.entries()) {
+          const asset = await prepareArtwork(pdf,{file,backgroundMode:'auto'});
+          const png = await require('sharp')(Buffer.from(asset.preview.split(',')[1],'base64')).resize({width:768,height:768,fit:'inside',withoutEnlargement:true}).png().toBuffer();
+          artworkImages.push({id:req.body.artworks[index].id,url:`data:image/png;base64,${png.toString('base64')}`});
+        }
+      }
+      const brief = await parse(req.body, {artworkImages});
       if(String(req.body.customer||'').trim())brief.customer=String(req.body.customer).trim().slice(0,200);
       if(String(req.body.jobTitle||'').trim())brief.jobTitle=String(req.body.jobTitle).trim().slice(0,200);
       recoverProductCodes(brief, req.body);
@@ -206,7 +221,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       const savedProducts=retained?.source?.brief?.products||[];
       await enrich(brief);
       for(const product of brief.products){
-        const saved=savedProducts.find(item=>item.code===product.code&&item.colour===product.colour);
+        const saved=savedProducts.find(item=>item.code===product.code&&item.colour===product.colour&&item.supplier===product.supplier);
         if(saved?.visual?.matched)product.visual=saved.visual;
       }
       await generateViews(brief, { allowGenerate: false });
