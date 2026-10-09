@@ -750,4 +750,4 @@ No external work-management token, OAuth, board, column, or webhook environment 
 
 - The proof request form no longer includes the Use AC Solutions example control.
 
-- Proof request and Clothing proof share the same 22px white title styling and light-blue divider underneath.
+- Proof request, Clothing proof, Artwork and Special instructions share the same 22px white title styling and light-blue divider underneath.

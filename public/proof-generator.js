@@ -52,13 +52,13 @@
             <textarea id="proof-request" class="proof-textarea proof-main-request" maxlength="20000"></textarea>
           </section>
           <section class="proof-card">
-            <div class="proof-card-heading"><div><h2>Artwork</h2></div></div>
+            <div class="proof-review-title proof-section-title"><h2>Artwork</h2></div>
             <input id="proof-file-input" type="file" accept=".png,.jpg,.jpeg,.webp,.svg,.pdf,.eps,.ai" multiple hidden>
             <button id="proof-dropzone" class="proof-dropzone" type="button"><span class="proof-upload-icon" aria-hidden="true">↥</span><strong>Choose artwork files</strong></button>
             <div id="proof-artworks" class="proof-artwork-list"></div>
           </section>
           <section class="proof-card">
-            <div class="proof-card-heading"><div><h2>Special instructions</h2></div></div>
+            <div class="proof-review-title proof-section-title"><h2>Special instructions</h2></div>
             <label class="proof-label" for="proof-instructions">Instructions</label>
             <textarea id="proof-instructions" class="proof-textarea" maxlength="5000"></textarea>
           </section>
