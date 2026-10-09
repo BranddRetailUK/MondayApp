@@ -217,3 +217,15 @@ body.proof-preview .proof-preview-badge{display:block}
 
 .proof-section-title{border-bottom-color:#94cafa}
 .proof-section-title h2{color:#fff}
+
+.proof-list-controls{display:flex;flex-direction:column;align-items:flex-end;gap:10px}
+.proof-view-toggle{display:flex;gap:4px}
+.proof-view-toggle .proof-secondary-button{padding:6px 12px}
+.proof-view-toggle [aria-pressed="true"]{background:#94cafa;border-color:#94cafa;color:#17212b}
+.proof-history-list.is-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:20px}
+.proof-history-list.is-grid .proof-history-row{display:flex;flex-direction:column;align-items:stretch;gap:16px;padding:14px;min-width:0}
+.proof-history-list.is-grid .proof-history-thumb{width:100%;max-width:none;height:auto;aspect-ratio:1.414;flex-shrink:0}
+.proof-history-list.is-grid .proof-history-image{height:100%;display:grid;place-items:center}
+.proof-history-list.is-grid .proof-history-thumb img,.proof-history-list.is-grid .proof-history-thumb canvas{width:100%;height:100%;object-fit:contain}
+.proof-history-list.is-grid .proof-history-info{width:100%;gap:12px}
+.proof-history-list.is-grid .proof-history-state{margin-top:auto;min-width:0}

@@ -16,7 +16,13 @@
           <h1>Proof Generator</h1>
 
         </div>
-        <button id="proof-create-new" class="proof-primary-button" type="button">Create proof</button>
+        <div id="proof-list-controls" class="proof-list-controls">
+          <button id="proof-create-new" class="proof-primary-button" type="button">Create proof</button>
+          <div class="proof-view-toggle" role="group" aria-label="Proof list view">
+            <button type="button" class="proof-secondary-button" data-proof-view="list" aria-pressed="true">List</button>
+            <button type="button" class="proof-secondary-button" data-proof-view="grid" aria-pressed="false">Grid</button>
+          </div>
+        </div>
       </header>
       <section id="proof-history">
         <div id="proof-history-status" role="status"></div>
@@ -98,6 +104,16 @@
   const createNew=root.querySelector('#proof-create-new'),loadMore=root.querySelector('#proof-history-more');
   let progressChain=Promise.resolve();
   let historyRows=[],nextOffset=null,historyLimit=50,historyLoading=false,lastHistory='',progressMessage='',progressError=false;
+  const listControls=root.querySelector('#proof-list-controls');
+  const viewButtons=[...root.querySelectorAll('[data-proof-view]')];
+  function setHistoryView(view){
+    const grid=view==='grid';historyList.classList.toggle('is-grid',grid);
+    for(const button of viewButtons)button.setAttribute('aria-pressed',String(button.dataset.proofView===(grid?'grid':'list')));
+    try{localStorage.setItem('proof-history-view',grid?'grid':'list');}catch(_){}
+  }
+  let savedView='list';try{savedView=localStorage.getItem('proof-history-view')||'list';}catch(_){}
+  setHistoryView(savedView);
+  for(const button of viewButtons)button.addEventListener('click',()=>setHistoryView(button.dataset.proofView));
   let selectedLinkJob=null;
   window.openLinkedProof=async({design:linkedDesign,job})=>{
     if(busy)throw new Error('Wait for the current proof to finish.');
@@ -107,9 +123,9 @@
     selectedLinkJob=job;
   };
   function showProofList(){
-    editorScreen.hidden=true;historyScreen.hidden=false;createNew.hidden=false;renderHistory();refreshHistory();
+    editorScreen.hidden=true;historyScreen.hidden=false;listControls.hidden=false;renderHistory();refreshHistory();
   }
-  function showProofEditor(){historyScreen.hidden=true;editorScreen.hidden=false;createNew.hidden=true;}
+  function showProofEditor(){historyScreen.hidden=true;editorScreen.hidden=false;listControls.hidden=true;}
   root.querySelector('#proof-back-list').addEventListener('click',showProofList);
   createNew.addEventListener('click',()=>{if(busy)return;startNewProof();showProofEditor();});
   loadMore.addEventListener('click',()=>{historyLimit+=50;refreshHistory();});
