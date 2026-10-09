@@ -1,5 +1,5 @@
 (async function () {
-  const {colourName}=window.ProofDisplay;
+  const {colourName,reviewMessage}=window.ProofDisplay;
   const root = document.getElementById('proof-generator-root');
   if (!root) return;
   const localPreview = document.body.classList.contains('proof-preview');
@@ -154,7 +154,7 @@
       }
       const state=document.createElement('div');state.className='proof-history-state';const [label,message]=historyState(job);
       if(label!=='Saved'){const status=document.createElement('strong');status.textContent=label;state.append(status);}
-      if(message){const detail=document.createElement('p');detail.textContent=message;state.append(detail);}
+      if(message){const detail=document.createElement('p');detail.textContent=reviewMessage(message);state.append(detail);}
 
       const actions=document.createElement('div');actions.className='proof-history-actions';
       if(job.hasPdf){const download=document.createElement('a');download.className='proof-secondary-button';download.textContent='Download';download.href=`/api/proof-generator/designs/${encodeURIComponent(job.id)}/pdf?download=1`;actions.append(download);}
@@ -294,7 +294,7 @@
     if(busy||!selectedProduct||!productColour.value)return;
     const lines=request.value.split('\n'),index=lines.lastIndexOf(selectedProduct.line);
     if(index<0){productStatus.textContent='The product line has been edited. Select the product again to add its colour.';return;}
-    const line=`${selectedProduct.title}, ${productColour.value}`;lines[index]=line;
+    const line=`${selectedProduct.title}, ${colourName(productColour.value)}`;lines[index]=line;
     const updated=lines.join('\n');
     if(updated.length>request.maxLength){productStatus.textContent='The request is full. Shorten it before adding the colour.';return;}
     request.value=updated;selectedProduct.line=line;sourceChanged();productStatus.textContent='';
@@ -325,7 +325,7 @@
             request.value=updated;sourceChanged();request.focus();request.setSelectionRange(updated.length,updated.length);
             selectedProduct={title:line,line};productQuery.value=product.code;
             productColour.replaceChildren(new Option('Select a colour',''));
-            for(const colour of [...new Set(product.colours||[])])productColour.append(new Option(colour,colour));
+            for(const colour of [...new Set(product.colours||[])])productColour.append(new Option(colourName(colour),colour));
             productColour.disabled=productColour.options.length<2;
             productResults.replaceChildren();productStatus.textContent=productColour.disabled?'No active catalogue colours available.':'';
             if(!productColour.disabled)productColour.focus({preventScroll:true});
@@ -630,7 +630,7 @@
     const blockers=(currentPreview?.issues || []).filter(issue=>issue.blocking);
     if(blockers.length){
       const list=document.createElement('ul');list.className='proof-issues';
-      for(const issue of blockers){const li=document.createElement('li');li.className=issue.blocking?'blocking':'';const product=currentBrief.products[issue.productIndex];const mark=product.decorations.find(d=>d.id===issue.decorationId);li.textContent=`${product.code || product.name}${mark?' / '+mark.position:''}: ${issue.message}`;list.append(li);}
+      for(const issue of blockers){const li=document.createElement('li');li.className=issue.blocking?'blocking':'';const product=currentBrief.products[issue.productIndex];const mark=product.decorations.find(d=>d.id===issue.decorationId);li.textContent=`${product.code || product.name}${mark?' / '+mark.position:''}: ${reviewMessage(issue.message)}`;list.append(li);}
       results.append(list);
     }
     const wasFallbackOpen=results.dataset.fallbackOpen==='true';
