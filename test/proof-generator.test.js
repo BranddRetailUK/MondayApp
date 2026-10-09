@@ -374,7 +374,7 @@ All decoration to be transfer print.`};
  assert.equal(b.products.flatMap(p=>p.decorations).length,7);
  for(const p of b.products)for(const d of p.decorations){
   if(d.position==='right sleeve'){assert.equal(d.widthMm,'');assert.equal(d.heightMm,'70');}
-  else {assert.equal(d.heightMm,'');assert.equal(d.widthMm,d.position==='back'?'250':'100');}
+  else {assert.equal(d.heightMm,'');assert.equal(d.widthMm,d.position==='back'?'250':p.code==='GD57B'?'80':'100');}
   assert.deepEqual(d.dimensionIssues,[]);assert.doesNotThrow(()=>layout.artworkSize(d,3));
  }
 });
@@ -411,4 +411,29 @@ test('repaired single-axis brief renders artwork and permits strict export',asyn
  const p={x:.5,y:.3,width:.1,height:.1,region:{left:0,top:0,width:1,height:1}};
  const fitted=artwork.fitSleeve(g,p);assert.ok(Math.abs(fitted.x-.4158)<1e-9);assert.equal(fitted.y,p.y);
  g.view='left';assert.ok(Math.abs(artwork.fitSleeve(g,p).x-.5742)<1e-9);
+ });
+
+ test('shared adult breast widths become 80mm for kids once; explicit sizes and manual changes win',()=>{
+ const requestText='Logo left breast of all garments 100mm wide.';
+ const make=()=>({products:[{code:'AD1',name:'Adult tee',decorations:[]},{code:'KD1',name:'Kids tee',decorations:[]}],sharedDecorations:[mark()]});
+ const b=make();layout.prepareBrief(b,{requestText});
+ assert.equal(b.products[0].decorations[0].widthMm,'100');assert.equal(b.products[1].decorations[0].widthMm,'80');
+ layout.prepareBrief(b,{requestText});layout.repairRetainedDimensions(b,{request:requestText});assert.equal(b.products[1].decorations[0].widthMm,'80');
+ b.products[1].decorations[0].widthMm='100';layout.repairRetainedDimensions(b,{request:requestText});assert.equal(b.products[1].decorations[0].widthMm,'100');
+ for(const scope of ['KD1','Kids']){
+  const explicit=make();explicit.products[1].decorations=[mark({widthMm:'90'})];
+  layout.prepareBrief(explicit,{requestText:requestText+'\n'+scope+' left breast 90mm wide.'});
+  assert.equal(explicit.products[1].decorations[0].widthMm,'90');assert.deepEqual(explicit.products[1].decorations[0].dimensionIssues,[]);
+  assert.equal(explicit.products[0].decorations[0].widthMm,'100');
+ }
+ const retained=make();retained.products[1].decorations=[mark()];layout.repairRetainedDimensions(retained,{request:requestText});assert.equal(retained.products[1].decorations[0].widthMm,'80');
+ });
+ test('approved garment references apply to future styles, not only the example codes',()=>{
+ const {placementProfile,automaticPrintScale,automaticTop}=require('../src/services/proofPlacementProfiles');
+ const tee=placementProfile({code:'NEW1',name:'T-shirt'});assert.equal(tee.sideSleeveAcross,.46);assert.equal(tee.neckRight,.62);
+ const vest=placementProfile({code:'NEW2',name:'Padded bodywarmer'});assert.equal(vest.neckRight,.70);
+ const hoodie=placementProfile({code:'NEW3',name:'Adult hoodie'});assert.equal(hoodie.neckRight,.62);
+ assert.equal(automaticPrintScale('left breast',{placementProfile:hoodie}),1.08);assert.equal(automaticPrintScale('right sleeve',{placementProfile:hoodie}),1.035);
+ assert.equal(automaticTop('right sleeve','right',.1,hoodie),.32);
+ const child=placementProfile({code:'NEW4',name:'Kids hoodie'});assert.equal(automaticPrintScale('back',{placementProfile:child,sizeCategory:'child'}),.85);
  });

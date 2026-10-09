@@ -124,7 +124,8 @@ function fitSleeve(garment,p) {
   if(['left','right'].includes(garment.view)) {
     const y=Math.max(0,Math.min(garment.height-1,Math.round((p.y+p.height/2)*garment.height)));
     const xs=[];for(let x=0;x<garment.width;x++)if(garment.mask[y*garment.width+x])xs.push(x);
-    if(xs.length)centre=(xs[0]+(xs.at(-1)-xs[0])*(garment.view==='right'?.42:.58))/garment.width;
+    const across=garment.placementProfile?.sideSleeveAcross ?? .42;
+    if(xs.length)centre=(xs[0]+(xs.at(-1)-xs[0])*(garment.view==='right'?across:1-across))/garment.width;
   }
   let best={...p},score=-Infinity;
   for(let dx=-.08;dx<=.0801;dx+=.005){

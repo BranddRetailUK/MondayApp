@@ -4,7 +4,7 @@
 // AC Solutions: RX350, AFP2, LV290, LV370, SS8, 03824 (all six pages).
 // Opal, Rons March and AT&T: small breast, full chest/back and side sleeves.
 const PROFILES = {
-  tee: { neckRight: 0.62, breastCentre: 0.26, sleeveCentre: 0.32, hoodClearance: 0 },
+  tee: { sideSleeveAcross: 0.46, neckRight: 0.62, breastCentre: 0.26, sleeveCentre: 0.32, hoodClearance: 0 },
   polo: { neckRight: 0.62, breastCentre: 0.275, sleeveCentre: 0.35, hoodClearance: 0 },
   sweatshirt: { neckRight: 0.62, breastCentre: 0.275, sleeveCentre: 0.335, hoodClearance: 0 },
   fleece: { neckRight: 0.66, breastCentre: 0.295, sleeveCentre: 0.345, hoodClearance: 0 },
@@ -37,12 +37,14 @@ function placementProfile(product = {}) {
     : outer ? 'outerwear' : 'tee');
   // Gildan's supplied hoodie images have a deeper hood/neck opening.
   const breast = /^GD0?57B?$/.test(code) ? {breastCentre:0.40} : {};
+  if (family==='hoodie' && garmentSizeProfile(product).sizeCategory==='adult') Object.assign(breast,{neckRight:0.62,breastScale:1.08,sleeveScale:1.035,sideSleeveCentre:0.37});
+  if (/bodywarmer|gilet/.test(name)) breast.neckRight=0.70;
   return { family, ...PROFILES[family], ...breast };
 }
 
 function automaticPrintScale(position, garment) {
-  if (/breast/.test(position)) return 1.2;
-  if (/sleeve/.test(position)) return 1.15;
+  if (/breast/.test(position)) return garment.placementProfile?.breastScale ?? 1.2;
+  if (/sleeve/.test(position)) return garment.placementProfile?.sleeveScale ?? 1.15;
   if (garment.sizeCategory === 'child' && /^(back|upper back)$/.test(position)) return 0.85;
   return 1;
 }
@@ -50,7 +52,7 @@ function automaticPrintScale(position, garment) {
 function automaticTop(position, view, height, profile = PROFILES.tee) {
   if (/breast/.test(position)) return profile.breastCentre - height / 2;
   if (/sleeve/.test(position)) {
-    const centre = ['left', 'right'].includes(view) ? 0.335 : profile.sleeveCentre;
+    const centre = ['left', 'right'].includes(view) ? (profile.sideSleeveCentre ?? 0.335) : profile.sleeveCentre;
     return centre - height / 2;
   }
   if (position === 'front') return 0.20 + profile.hoodClearance;

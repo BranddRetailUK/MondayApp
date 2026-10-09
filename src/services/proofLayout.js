@@ -1,6 +1,6 @@
 // Deterministic brief resolution and geometry. All coordinates refer to the
 // visible garment bounds, not the supplier photograph's surrounding canvas.
-const { automaticTop, automaticPrintScale } = require('./proofPlacementProfiles');
+const { automaticTop, automaticPrintScale, garmentSizeProfile } = require('./proofPlacementProfiles');
 const POSITIONS = ['left breast', 'right breast', 'front', 'back', 'upper back', 'nape', 'left sleeve', 'right sleeve', 'left hem', 'right hem'];
 const ALIASES = { lb: 'left breast', rb: 'right breast', ls: 'left sleeve', rs: 'right sleeve', 'left chest': 'left breast', 'right chest': 'right breast', chest: 'front', 'centre chest': 'front', 'center chest': 'front', 'full chest': 'front', 'front chest': 'front', 'centre front': 'front', 'center front': 'front', 'full front': 'front', 'centre back': 'back', 'center back': 'back', 'full back': 'back', rear: 'back', 'back neck': 'nape' };
 function normalise(value) { return String(value || '').toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim(); }
@@ -49,7 +49,7 @@ function mentionsPosition(text, position) {
 function recoverDimensions(decoration, input = {}, product = {}, products = []) {
   const assigned = (input.artworks || []).find(a => a.id && a.id === decoration.artworkId);
   const position = positionName(decoration.position);
-  const scoped = textClauses([input.requestText,input.specialInstructions].filter(Boolean).join('\n')).filter(clause => {
+  let scoped = textClauses([input.requestText,input.specialInstructions].filter(Boolean).join('\n')).filter(clause => {
     if (!mentionsPosition(clause, position)) return false;
     // Never recover another product's numbers into this product's decoration.
     const canonical=code=>String(code||'').toUpperCase().replace(/^([A-Z]+)0+(?=\d)/,'$1');
@@ -57,6 +57,12 @@ function recoverDimensions(decoration, input = {}, product = {}, products = []) 
     const codes = products.filter(p => p.code && tokens.includes(canonical(p.code)));
     return !codes.length || codes.some(p => canonical(p.code) === canonical(product.code));
   });
+  const childClause=c=>/\b(kids?|children|child|youth|junior)\b/i.test(c);
+  const canonicalCode=value=>String(value||'').toUpperCase().replace(/^([A-Z]+)0+(?=\d)/,'$1');
+  const thisProduct=c=>[...c.matchAll(/\b[A-Z]+\d[A-Z0-9]*\b/gi)].some(m=>canonicalCode(m[0])===canonicalCode(product.code));
+  scoped=scoped.filter(c=>!childClause(c) || garmentSizeProfile(product).sizeCategory==='child');
+  const specific=scoped.filter(c=>thisProduct(c) || childClause(c));
+  if(specific.some(c=>{const d=dimensionsInText(c);return d.width.length || d.height.length;})) scoped=specific;
   const assignedClauses=textClauses(assigned?.notes);
   const scopedNotes=assignedClauses.filter(clause=>mentionsPosition(clause, position));
   const notesHavePositions=assignedClauses.some(clause=>[...POSITIONS,...Object.keys(ALIASES)].some(p=>new RegExp('\\b'+p+'\\b','i').test(clause)));
@@ -119,6 +125,23 @@ function recoverProductCodes(brief, input = {}) {
   return brief;
 }
 
+// A shared adult breast width has a child default; explicit child sizes win.
+function applyChildBreastSize(d, product, input = {}, inherited = false) {
+  if (d.childSizeAdjustment || garmentSizeProfile(product).sizeCategory !== 'child' || !/breast/.test(positionName(d.position)) || d.placement) return;
+  const assigned=(input.artworks || []).find(a=>a.id===d.artworkId);
+  const noteDimensions=dimensionsInText(assigned?.notes);
+  if(noteDimensions.width.length || noteDimensions.height.length)return;
+  const clauses=textClauses([input.requestText,input.specialInstructions].filter(Boolean).join('\n')).filter(c=>mentionsPosition(c,positionName(d.position)));
+  const canonical=value=>String(value||'').toUpperCase().replace(/^([A-Z]+)0+(?=\d)/,'$1');
+  const explicit=clauses.filter(c=>/\b(kids?|children|child|youth|junior)\b/i.test(c) || [...c.matchAll(/\b[A-Z]+\d[A-Z0-9]*\b/gi)].some(m=>canonical(m[0])===canonical(product.code)));
+  if(explicit.some(c=>{const dims=dimensionsInText(c);return dims.width.length || dims.height.length;}))return;
+  const shared=clauses.filter(c=>/\b(all|every|each)\s+(?:the\s+)?(?:garments?|products?|items?)\b/i.test(c));
+  if(!inherited && !shared.some(c=>dimensionsInText(c).width.includes(100)))return;
+  if(dimension(d.widthMm)!==100 || dimension(d.heightMm)!=null)return;
+  d.widthMm='80';
+  d.childSizeAdjustment={inheritedWidthMm:100,widthMm:80};
+}
+
 function prepareBrief(brief, input = {}) {
   if (!Array.isArray(brief?.products) || !brief.products.length || brief.products.length > 20) throw new Error('A proof needs 1-20 products.');
   brief.products.forEach((product, pi) => {
@@ -129,7 +152,8 @@ function prepareBrief(brief, input = {}) {
       d.method = d.method || product.method || brief.method || '';
       const artwork = findArtwork(d, input.artworks || []);
       if (artwork) d.artworkId = artwork.id;
-      recoverDimensions(d, {...input,enforceSuppliedAxis:true}, product, brief.products);
+      if(!(d.childSizeAdjustment && dimension(d.widthMm)===80))recoverDimensions(d, {...input,enforceSuppliedAxis:true}, product, brief.products);
+      applyChildBreastSize(d,product,input,(brief.sharedDecorations || []).includes(original));
       return d;
     });
     if (product.decorations.length > 6) throw new Error(`${product.code || 'Product'} has more than six decorations.`);
@@ -143,6 +167,7 @@ function repairRetainedDimensions(brief, source) {
   if(!source?.request)return;
   for(const product of brief.products || [])for(const d of product.decorations || []) {
     recoverDimensions(d,{requestText:source.request,specialInstructions:source.instructions,enforceSuppliedAxis:true,repairOnly:true},product,brief.products);
+    applyChildBreastSize(d,product,{requestText:source.request,specialInstructions:source.instructions});
   }
 }
 
