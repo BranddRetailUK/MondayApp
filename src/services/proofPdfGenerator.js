@@ -2,7 +2,7 @@ const {colourName,printMethod}=require('../../public/proof-display');
 const {proofFileName}=require('../../tools/print-worker/proof-filename');
 const fs = require('fs/promises');
 const path = require('path');
-const { PDFDocument, PDFName, StandardFonts, rgb } = require('pdf-lib');
+const { PDFDocument, PDFName, StandardFonts, rgb, pushGraphicsState, popGraphicsState, concatTransformationMatrix } = require('pdf-lib');
 const { createHash } = require('crypto');
 const { fetchGarment } = require('./proofImageFetch');
 const { findArtwork, resolveDecorations, preferredView, placementFor, fitsRegion, positionName, artworkSize } = require('./proofLayout');
@@ -172,6 +172,12 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
     if (!groups.size) groups.set('front', []);
     const [page] = await pdf.copyPages(template,[0]); pdf.addPage(page);
     drawHeader(page,brief,product,regular,bold,dateLabel);
+    // Centre the entire proof body between the header and page foot. Move it
+    // as one unit so garment overlays and all internal spacing remain intact.
+    const bodyTop=104, headerBottom=98;
+    const bodyBottom=decorations.length>3 ? 572 : 562;
+    const bodyShift=((PAGE_H-bodyBottom)-(bodyTop-headerBottom))/2;
+    page.pushOperators(pushGraphicsState(),concatTransformationMatrix(1,0,0,1,0,-bodyShift));
     let garmentColour;
     const orderedGroups=[...groups].sort((a,b)=>['front','back','left','right'].indexOf(a[0])-['front','back','left','right'].indexOf(b[0]));
     for (const [viewIndex,[view, marks]] of orderedGroups.entries()) {
@@ -260,6 +266,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
       pages.push(pageData);
     }
     decorations.forEach((d,index)=>{const artwork=findArtwork(d,artworks);drawCallout(page,d,artwork&&embedded.get(artwork.id),regular,bold,index,decorations.length,garmentColour);});
+    page.pushOperators(popGraphicsState());
 
   }
   const uniqueIssues=issues.filter((item,index)=>issues.findIndex(other=>JSON.stringify(other)===JSON.stringify(item))===index);

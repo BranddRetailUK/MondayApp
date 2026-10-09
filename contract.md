@@ -722,3 +722,7 @@ No external work-management token, OAuth, board, column, or webhook environment 
 ### Preserve white artwork (2026-10-09)
 - Automatic artwork cleanup no longer flood-fills white connected to the canvas edge. Opaque artwork only loses rectangular outer white margins; all pixels inside that rectangle remain unchanged, including edge-connected white lettering panels. Existing transparency is preserved and all-white opaque designs remain valid. Explicit white-removal mode retains flood-fill behaviour; garment background analysis is unchanged.
 - Verified the supplied RS_70mmh_DTF.png pixels remain unchanged during automatic bounds detection and its white BOROUGH panel is retained in both garment and bottom-callout previews. The existing 47.8 x 70mm callout, placement profiles and PDF layout remain unchanged. All 111 proof tests pass, including an edge-connected white-band regression.
+
+### Balanced proof body spacing (2026-10-09)
+- The full PDF body, from view headings through bottom artwork callouts, is translated down as one unit to balance the space below the header against the page-foot margin. Standard sheets move 13.6375pt; compact four-to-six-decoration sheets move 8.6375pt. Header, internal spacing, garment sizes, overlay geometry and dimension labels are unchanged.
+- Visually checked the revised layout and passed all 111 proof tests.
