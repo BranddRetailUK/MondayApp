@@ -28,7 +28,7 @@
       <div class="proof-layout">
         <div class="proof-form-column">
           <section class="proof-card">
-            <div class="proof-card-heading"><div><h2>Proof request</h2></div></div>
+            <div class="proof-review-title proof-section-title"><h2>Proof request</h2></div>
             <div class="proof-product-search">
               <div class="proof-product-picker">
                 <div><label class="proof-label" for="proof-product-query">Find a product</label>
