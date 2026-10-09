@@ -171,13 +171,21 @@
           const link=document.createElement('button');link.type='button';link.className='design-folder-link';link.textContent=value;
           link.title=`Open design folder ${value} on the Windows design computer`;link.addEventListener('click',event=>window.openDesignFolder(value,event));valueNode.replaceChildren(link);
         }
-        field.append(name,valueNode);info.append(field);
+        field.append(name,valueNode);
+        if(label==='Ref'){
+          const references=document.createElement('div');references.className='proof-history-references';references.append(field);
+          for(const linkedOrder of job.linkedOrders||[]){
+            const jobField=document.createElement('div'),jobLabel=document.createElement('span'),jobValue=document.createElement('strong');
+            jobLabel.textContent='Job';
+            const id=linkedOrder.sourceOrderId,link=document.createElement('a');link.className='design-folder-link';link.href=`/database-job.html?id=${id}`;link.textContent=linkedOrder.orderNo||id;
+            link.addEventListener('click',event=>{if(window.ultimateHubOpenDatabaseOrder){event.preventDefault();window.ultimateHubOpenDatabaseOrder(id,'details');}});
+            jobValue.append(link);jobField.append(jobLabel,jobValue);references.append(jobField);
+          }
+          info.append(references);
+        }else info.append(field);
       }
-      const jobLinks=document.createElement('div');
-      for(const linkedOrder of job.linkedOrders||[]){const id=linkedOrder.sourceOrderId;const link=document.createElement('a');link.href=`/database-job.html?id=${id}`;link.textContent=`Job: ${linkedOrder.orderNo||id}`;link.addEventListener('click',event=>{if(window.ultimateHubOpenDatabaseOrder){event.preventDefault();window.ultimateHubOpenDatabaseOrder(id,'proof');}});jobLinks.append(link,document.createTextNode(' '));}
       const linkButton=document.createElement('button');linkButton.type='button';linkButton.className='proof-secondary-button';linkButton.textContent='Link to job';linkButton.disabled=busy||['save_queued','saving','allocating'].includes(job.status);
       linkButton.addEventListener('click',async()=>{try{const target=await window.ProofLinks.picker('jobs',{customer:job.customer});if(!target)return;await window.ProofLinks.api(`/designs/${job.id}/link`,{sourceOrderId:target.source_order_id});if(designId===job.id){design=null;designId=null;}await refreshHistory();window.ProofLinks.refresh();}catch(error){historyStatus.textContent=error.message;}});
-      info.append(jobLinks);
       const state=document.createElement('div');state.className='proof-history-state';const [label,message]=historyState(job);
       if(label!=='Saved'){const status=document.createElement('strong');status.textContent=label;state.append(status);}
       if(message){const detail=document.createElement('p');detail.textContent=reviewMessage(message);state.append(detail);}

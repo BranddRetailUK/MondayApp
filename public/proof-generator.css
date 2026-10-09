@@ -194,3 +194,8 @@ body.proof-preview .proof-preview-badge{display:block}
 .proof-job-link { margin-bottom: 12px; }
 .test-row-action-menu [data-proof-job-controls] { flex-direction: column; align-items: stretch; }
 .test-row-action-menu [data-proof-job-controls] button { text-align: left; border: 0; background: transparent; padding: 10px 12px; }
+
+.proof-history-info>.proof-history-references{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:start}
+.proof-history-references>div{display:grid;gap:4px}
+.proof-history-references a.design-folder-link{color:inherit}
+.proof-history-references a.design-folder-link:hover,.proof-history-references a.design-folder-link:focus-visible{color:#94cafa}
