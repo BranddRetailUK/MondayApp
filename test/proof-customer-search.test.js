@@ -6,7 +6,7 @@ const source=fs.readFileSync(require.resolve('../public/proof-generator.js'),'ut
 function element(){return {children:[],listeners:{},value:'',append(...items){this.children.push(...items);},replaceChildren(){this.children=[];},addEventListener(event,fn){this.listeners[event]=fn;},focus(){}};}
 function harness(){
   const customer=element(),results=element(),status=element(),requests=[];let timer,changed=0;
-  const context={customer,localPreview:false,AbortController,root:{querySelector:selector=>selector.endsWith('results')?results:status},document:{createElement:element},setTimeout(fn){timer=fn;},clearTimeout(){timer=null;},metadataChanged(){changed++;},fetch(url,options){return new Promise(resolve=>requests.push({url,options,resolve}));}};
+  const context={customer,localPreview:false,AbortController,root:{addEventListener(){},querySelector:selector=>selector.endsWith('results')?results:status},document:{createElement:element},setTimeout(fn){timer=fn;},clearTimeout(){timer=null;},metadataChanged(){changed++;},fetch(url,options){return new Promise(resolve=>requests.push({url,options,resolve}));}};
   vm.createContext(context);vm.runInContext(source.slice(source.indexOf('  const customerResults='),source.indexOf("  customer.addEventListener('input',metadataChanged);")),context);
   return {customer,results,status,requests,changed:()=>changed,type(value){customer.value=value;customer.listeners.input();},run(){return timer();},reset(){vm.runInContext('clearCustomerSearch()',context);}};
 }

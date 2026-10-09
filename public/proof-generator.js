@@ -302,13 +302,13 @@
         for(const match of matches){
           const button=document.createElement('button');button.type='button';button.className='proof-search-result';
           const name=document.createElement('strong');name.textContent=match.business_name;button.append(name);
-          if(match.customer_code){const code=document.createElement('span');code.textContent=match.customer_code;button.append(code);}
           button.addEventListener('click',()=>{customer.value=match.business_name;clearCustomerSearch();metadataChanged();customer.focus();});
           customerResults.append(button);
         }
       }catch(error){if(version===customerSearchVersion&&error.name!=='AbortError')customerStatus.textContent='Customer search unavailable. You can still enter the customer name manually.';}
     },250);
   });
+  root.addEventListener('pointerdown',event=>{if(!event.target.closest('.proof-customer-picker'))clearCustomerSearch();});
   customer.addEventListener('keydown',event=>{
     if(event.key==='Escape')clearCustomerSearch();
     if(event.key==='ArrowDown'){const first=customerResults.querySelector('button');if(first){event.preventDefault();first.focus();}}

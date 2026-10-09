@@ -209,3 +209,8 @@ body.proof-preview .proof-preview-badge{display:block}
 .proof-editor>.proof-history-large{width:100%;max-width:100%;height:auto}
 .proof-editor-toolbar #proof-review,.proof-editor-toolbar #proof-back-list{margin-top:0;margin-bottom:0}
 .proof-job-fields{align-items:start}
+
+.proof-customer-picker{position:relative;min-width:0}
+#proof-customer-results:not(:empty){position:absolute;top:100%;left:0;right:0;z-index:30;padding:6px;background:#202327;border:1px solid #46515c;border-radius:8px;box-shadow:0 10px 24px #0006}
+#proof-customer-status{position:absolute;left:0;right:0;top:100%;z-index:29;background:#202327}
+#proof-customer-status:has(+ #proof-customer-results:not(:empty)){position:static;height:0;min-height:0;margin:0;overflow:hidden}
