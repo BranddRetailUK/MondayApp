@@ -102,7 +102,7 @@
     const label=document.createElement('span');label.textContent=selectedLinkJob?`Job: ${selectedLinkJob.order_no||selectedLinkJob.source_order_id}`:'No job linked';linkControl.append(label);
     if(!selectedLinkJob){const select=document.createElement('button');select.type='button';select.className='proof-secondary-button';select.textContent='Link to job';select.disabled=busy;
       select.addEventListener('click',async()=>{try{
-        const job=await window.ProofLinks.picker('jobs');if(!job)return;
+        const job=await window.ProofLinks.picker('jobs',{customer:customer.value});if(!job)return;
         if(designId){const data=await window.ProofLinks.api(`/designs/${designId}/link`,{sourceOrderId:job.source_order_id});design=data.design;}
         selectedLinkJob=job;customer.value=job.customer_name||'';jobTitle.value=job.job_title||'';metadataChanged();showLinkControl();
       }catch(error){setFeedback(error.message,true);}});linkControl.append(select);}
@@ -178,7 +178,7 @@
       const jobLinks=document.createElement('div');
       for(const linkedOrder of job.linkedOrders||[]){const id=linkedOrder.sourceOrderId;const link=document.createElement('a');link.href=`/database-job.html?id=${id}`;link.textContent=`Job: ${linkedOrder.orderNo||id}`;link.addEventListener('click',event=>{if(window.ultimateHubOpenDatabaseOrder){event.preventDefault();window.ultimateHubOpenDatabaseOrder(id,'proof');}});jobLinks.append(link,document.createTextNode(' '));}
       const linkButton=document.createElement('button');linkButton.type='button';linkButton.className='proof-secondary-button';linkButton.textContent='Link to job';linkButton.disabled=busy||['save_queued','saving','allocating'].includes(job.status);
-      linkButton.addEventListener('click',async()=>{try{const target=await window.ProofLinks.picker('jobs');if(!target)return;await window.ProofLinks.api(`/designs/${job.id}/link`,{sourceOrderId:target.source_order_id});if(designId===job.id){design=null;designId=null;}await refreshHistory();window.ProofLinks.refresh();}catch(error){historyStatus.textContent=error.message;}});
+      linkButton.addEventListener('click',async()=>{try{const target=await window.ProofLinks.picker('jobs',{customer:job.customer});if(!target)return;await window.ProofLinks.api(`/designs/${job.id}/link`,{sourceOrderId:target.source_order_id});if(designId===job.id){design=null;designId=null;}await refreshHistory();window.ProofLinks.refresh();}catch(error){historyStatus.textContent=error.message;}});
       jobLinks.append(linkButton);info.append(jobLinks);
       const state=document.createElement('div');state.className='proof-history-state';const [label,message]=historyState(job);
       if(label!=='Saved'){const status=document.createElement('strong');status.textContent=label;state.append(status);}
