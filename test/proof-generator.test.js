@@ -166,10 +166,10 @@ test('recovery scopes artwork notes, garment codes and compound positions',()=>{
  const d=mark({widthMm:''});layout.recoverDimensions(d,input,{code:'AA1'},[{code:'AA1'},{code:'BB2'}]);assert.equal(d.widthMm,'100');assert.deepEqual(d.dimensionIssues,[]);
  const back=mark({position:'upper back',widthMm:''});layout.recoverDimensions(back,{requestText:'upper back 200 mm wide'});assert.equal(back.widthMm,'200');
 });
-test('white-background detection is edge connected and keep mode preserves intentional backgrounds',async()=>{
+test('automatic white margins are cropped and keep mode preserves the full canvas',async()=>{
  const bytes=await sharp({create:{width:100,height:100,channels:4,background:'#fff'}}).composite([{input:await sharp({create:{width:40,height:20,channels:4,background:'#222'}}).png().toBuffer(),left:30,top:40}]).png().toBuffer();
  const pdf=await PDFDocument.create();
- const clean=await artwork.prepareArtwork(pdf,{file:{buffer:bytes},backgroundMode:'auto'});assert.equal(clean.width,40);assert.equal(clean.height,20);assert.ok(clean.warnings.some(w=>/White edge/.test(w)));
+ const clean=await artwork.prepareArtwork(pdf,{file:{buffer:bytes},backgroundMode:'auto'});assert.equal(clean.width,40);assert.equal(clean.height,20);assert.equal(clean.warnings.length,0);
  const keep=await artwork.prepareArtwork(pdf,{file:{buffer:bytes},backgroundMode:'keep'});assert.equal(keep.width,100);assert.equal(keep.height,100);
 });
 test('rotated PDFs retain the intended visible aspect ratio',async()=>{
@@ -469,4 +469,16 @@ test('PDF shows view dimensions and wraps long garment names',async()=>{
  assert.ok(content.items.some(i=>i.str==='Dimensions: 100 x 50 mm'));
  assert.ok(content.items.some(i=>i.str.includes('ringspun shirt')));
  }finally{await doc.destroy();}
+});
+
+test('automatic artwork cleanup preserves edge-connected white lettering backgrounds',async()=>{
+ const bytes=await sharp(Buffer.from('<svg width="100" height="100"><rect width="100" height="100" fill="white"/><rect x="10" y="10" width="80" height="80" fill="green"/><rect x="0" y="65" width="100" height="10" fill="white"/></svg>')).png().toBuffer();
+ const pdf=await PDFDocument.create();
+ const auto=await artwork.prepareArtwork(pdf,{file:{buffer:bytes},backgroundMode:'auto'});
+ assert.equal(auto.width,80);assert.equal(auto.height,80);
+ const raw=await sharp(Buffer.from(auto.preview.split(',')[1],'base64')).ensureAlpha().raw().toBuffer();
+ assert.deepEqual([...raw.subarray((60*80+40)*4,(60*80+40)*4+4)],[255,255,255,255]);
+ const explicit=await artwork.prepareArtwork(pdf,{file:{buffer:bytes},backgroundMode:'white'});
+ const removed=await sharp(Buffer.from(explicit.preview.split(',')[1],'base64')).ensureAlpha().raw().toBuffer();
+ assert.equal(removed[(60*80+40)*4+3],0);
 });

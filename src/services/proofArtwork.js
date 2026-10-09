@@ -2,11 +2,22 @@ const sharp = require('sharp');
 const { PDFDocument } = require('pdf-lib');
 const { placementProfile, garmentSizeProfile } = require('./proofPlacementProfiles');
 
-// Remove only edge-connected white background. Interior white marks are retained.
+// Auto crops rectangular white margins without erasing white inside the artwork.
+// Only explicit white mode flood-fills edge-connected white (also used for garments).
 // The original upload is never changed; callers may explicitly keep its background.
 function visibleBounds(data, width, height, mode = 'auto') {
   const transparent = data.some((value, index) => index % 4 === 3 && value < 250);
-  const removeWhite = mode === 'white' || (mode === 'auto' && !transparent);
+  if(mode==='auto' && !transparent){
+    let left=width,top=height,right=-1,bottom=-1;
+    for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+      const i=(y*width+x)*4;
+      if(Math.min(data[i],data[i+1],data[i+2])<250){left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);}
+    }
+    // An opaque all-white design is artwork too; keep its full rectangle.
+    if(right<left)return {left:0,top:0,width,height,removedWhite:false};
+    return {left,top,width:right-left+1,height:bottom-top+1,removedWhite:false};
+  }
+  const removeWhite = mode === 'white';
   let removedWhite = false;
   if (removeWhite) {
     const queue = new Int32Array(width * height);
