@@ -199,3 +199,7 @@ body.proof-preview .proof-preview-badge{display:block}
 .proof-history-references>div{display:grid;gap:4px}
 .proof-history-references a.design-folder-link{color:inherit}
 .proof-history-references a.design-folder-link:hover,.proof-history-references a.design-folder-link:focus-visible{color:#94cafa}
+
+.proof-history-actions .proof-history-link-button{background:#94cafa;border-color:#94cafa;color:#17212b}
+.proof-history-actions .proof-history-link-button:hover{background:#b4dcff;border-color:#b4dcff}
+@media(min-width:1101px){.proof-history-row{grid-template-columns:130px minmax(0,1fr) max-content}}
