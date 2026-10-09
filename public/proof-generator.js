@@ -17,11 +17,12 @@
 
         </div>
         <div id="proof-list-controls" class="proof-list-controls">
-          <button id="proof-create-new" class="proof-primary-button" type="button">Create proof</button>
-          <div class="proof-view-toggle" role="group" aria-label="Proof list view">
-            <button type="button" class="proof-secondary-button" data-proof-view="list" aria-pressed="true">List</button>
-            <button type="button" class="proof-secondary-button" data-proof-view="grid" aria-pressed="false">Grid</button>
+          <div class="proof-view-toggle" role="group" aria-label="Proof list view" data-view="list">
+            <span class="proof-view-highlight" aria-hidden="true"></span>
+            <button type="button" data-proof-view="list" aria-label="List view" title="List view" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h1M3 12h1M3 18h1"/></svg></button>
+            <button type="button" data-proof-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
           </div>
+          <button id="proof-create-new" class="proof-primary-button" type="button">Create proof</button>
         </div>
       </header>
       <section id="proof-history">
@@ -108,6 +109,7 @@
   const viewButtons=[...root.querySelectorAll('[data-proof-view]')];
   function setHistoryView(view){
     const grid=view==='grid';historyList.classList.toggle('is-grid',grid);
+    root.querySelector('.proof-view-toggle').dataset.view=grid?'grid':'list';
     for(const button of viewButtons)button.setAttribute('aria-pressed',String(button.dataset.proofView===(grid?'grid':'list')));
     try{localStorage.setItem('proof-history-view',grid?'grid':'list');}catch(_){}
   }
