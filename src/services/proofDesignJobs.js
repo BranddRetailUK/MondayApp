@@ -1,13 +1,13 @@
 const {originalArtworkName}=require('../../tools/print-worker/proof-filename');
 const {randomUUID,createHash}=require('node:crypto');
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-const publicJob=row=>row&&({id:row.id,customer:row.customer,jobTitle:row.job_title,designNumber:row.design_number&&String(row.design_number),folderName:row.folder_name,status:row.status,revision:row.revision,savedRevision:row.saved_revision,message:row.message,reference:row.reference||'',createdAt:row.created_at,updatedAt:row.updated_at,hasPreview:!!row.has_preview,hasPdf:!!row.has_pdf,hasSource:!!row.has_source,generationStatus:row.generation_status==='generating'&&Date.now()-new Date(row.generation_updated_at).getTime()>120000?'interrupted':row.generation_status||'',generationMessage:row.generation_message||''});
-const columns='id,customer,job_title,design_number,folder_name,status,revision,saved_revision,message,save_key,pdf_hash,reference,created_at,updated_at,generation_status,generation_message,generation_updated_at,(preview_png IS NOT NULL) AS has_preview,(proof_pdf IS NOT NULL AND proof_ready) AS has_pdf,(source IS NOT NULL) AS has_source';
+const publicJob=row=>row&&({id:row.id,customer:row.customer,jobTitle:row.job_title,designNumber:row.design_number&&String(row.design_number),folderName:row.folder_name,status:row.status,revision:row.revision,savedRevision:row.saved_revision,message:row.message,sourceOrderId:row.active_source_order_id||null,linkedOrders:row.linked_orders||[],linkedJobs:row.linked_jobs||[],linkPending:!!row.link_pending,reference:row.reference||'',createdAt:row.created_at,updatedAt:row.updated_at,hasPreview:!!row.has_preview,hasPdf:!!row.has_pdf,hasSource:!!row.has_source,generationStatus:row.generation_status==='generating'&&Date.now()-new Date(row.generation_updated_at).getTime()>120000?'interrupted':row.generation_status||'',generationMessage:row.generation_message||''});
+const columns="(SELECT COALESCE(jsonb_agg(jsonb_build_object('sourceOrderId',l.source_order_id,'orderNo',l.order_no) ORDER BY l.source_order_id), '[]'::jsonb) FROM proof_job_links l WHERE l.proof_id=proof_design_jobs.id) AS linked_orders,EXISTS(SELECT 1 FROM proof_job_links l WHERE l.proof_id=proof_design_jobs.id AND l.source_order_id=proof_design_jobs.active_source_order_id AND l.saved_revision<proof_design_jobs.saved_revision) AS link_pending,active_source_order_id,(SELECT COALESCE(jsonb_agg(l.source_order_id ORDER BY l.source_order_id), '[]'::jsonb) FROM proof_job_links l WHERE l.proof_id=proof_design_jobs.id) AS linked_jobs,id,customer,job_title,design_number,folder_name,status,revision,saved_revision,message,save_key,pdf_hash,reference,created_at,updated_at,generation_status,generation_message,generation_updated_at,(preview_png IS NOT NULL) AS has_preview,(proof_pdf IS NOT NULL AND proof_ready) AS has_pdf,(source IS NOT NULL) AS has_source";
 function createService(pool){
   const query=(text,values=[])=>pool.query(text,values);
   async function get(id){if(!UUID.test(id||''))throw new Error('Invalid proof ID.');const r=await query(`SELECT ${columns} FROM proof_design_jobs WHERE id=$1 AND status<>'archived'`,[id]);if(!r.rows[0])throw new Error('Proof design not found.');return publicJob(r.rows[0]);}
-  async function list(offset=0){
-    const result=await query(`SELECT ${columns} FROM proof_design_jobs WHERE status<>'archived' ORDER BY created_at DESC,id DESC LIMIT 51 OFFSET $1`,[offset]);
+  async function list(offset=0,unlinked=false,q=''){
+    const result=await query(`SELECT ${columns} FROM proof_design_jobs WHERE status<>'archived' AND (NOT $2 OR NOT EXISTS(SELECT 1 FROM proof_job_links l WHERE l.proof_id=proof_design_jobs.id)) AND ($3='' OR concat_ws(' ',customer,job_title,design_number) ILIKE '%' || $3 || '%') ORDER BY created_at DESC,id DESC LIMIT 51 OFFSET $1`,[offset,unlinked,String(q).slice(0,200)]);
     return {designs:result.rows.slice(0,50).map(publicJob),nextOffset:result.rows.length>50?offset+50:null};
   }
   async function progress(id,{state,message='',customer,jobTitle,reference}={}){
@@ -27,7 +27,8 @@ function createService(pool){
     await get(id);return (await query('SELECT preview_png FROM proof_design_jobs WHERE id=$1',[id])).rows[0]?.preview_png;
   }
   async function saveSource(id,source,files,details){
-    await get(id);
+    const design=await get(id);
+    if(String(design.sourceOrderId||'')!==String(source?.proofSourceOrderId||''))throw new Error('The linked job changed. Reopen this proof from the job.');
     if(!source||typeof source.request!=='string'||source.request.length>20000||String(source.instructions||'').length>5000)throw new Error('Invalid proof source.');
     if(!Array.isArray(details)||details.length!==files.length||files.length>20||files.reduce((sum,file)=>sum+file.buffer.length,0)>50*1024*1024)throw new Error('Artwork originals must total less than 50 MB.');
     const originals=files.map((file,index)=>({id:String(details[index].id||'').slice(0,100),name:originalArtworkName(details[index].originalName||file.originalname),type:file.mimetype,backgroundMode:details[index].backgroundMode||'auto',assignment:String(details[index].assignment||'').slice(0,500),notes:String(details[index].notes||'').slice(0,1000),data:file.buffer.toString('base64')}));
@@ -60,6 +61,9 @@ function createService(pool){
   }
   async function queueSave(id,key,expectedRevision,bytes,brief,artworks=[]){
     if(!UUID.test(key||'')||!Number.isInteger(expectedRevision)||expectedRevision<0)throw new Error('Invalid proof revision.');
+    const target=(await query('SELECT active_source_order_id FROM proof_design_jobs WHERE id=$1',[id])).rows[0]?.active_source_order_id;
+    if(String(target||'')!==String(brief.proofSourceOrderId||''))throw new Error('The linked job changed. Reopen this proof from the job before saving.');
+    if(target && (await query('SELECT proof_approved FROM database_jobs WHERE source_order_id=$1',[target])).rows[0]?.proof_approved)throw new Error('Clear JOB approval before changing its proof.');
     if(bytes.length>50*1024*1024)throw new Error('The saved proof must be smaller than 50 MB.');
     if(artworks.length>20||artworks.reduce((sum,file)=>sum+file.buffer.length,0)>50*1024*1024)throw new Error('Artwork originals must total less than 50 MB.');
     const originals=artworks.map(file=>({name:originalArtworkName(file.originalname),hash:createHash('sha256').update(file.buffer).digest('hex'),data:file.buffer.toString('base64')}));
@@ -67,7 +71,7 @@ function createService(pool){
     const r=await query(`UPDATE proof_design_jobs SET pdf=$4,pdf_hash=$5,save_key=$2,revision=revision+1,status='save_queued',
       customer=$6,job_title=$7,artworks=$8::jsonb,proof_pdf=$4,proof_ready=true,source=CASE WHEN source IS NULL THEN NULL ELSE jsonb_set(source,'{brief}',$9::jsonb) END,claim_token=NULL,lease_until=NULL,message='Waiting for ARTWORK-PC to save the proof',updated_at=NOW()
       WHERE id=$1 AND design_number IS NOT NULL AND folder_name IS NOT NULL AND revision=$3 AND status IN ('folder_ready','saved','error')
-      AND (save_key IS NULL OR save_key<>$2) RETURNING *`,[id,key,expectedRevision,bytes,hash,String(brief.customer||'').slice(0,200),String(brief.jobTitle||'').slice(0,200),JSON.stringify(originals),JSON.stringify(brief)]);
+      AND active_source_order_id IS NOT DISTINCT FROM $10::integer AND (save_key IS NULL OR save_key<>$2) RETURNING *`,[id,key,expectedRevision,bytes,hash,String(brief.customer||'').slice(0,200),String(brief.jobTitle||'').slice(0,200),JSON.stringify(originals),JSON.stringify(brief),target||null]);
     if(r.rows[0])return publicJob(r.rows[0]);
     const current=await query(`SELECT ${columns} FROM proof_design_jobs WHERE id=$1`,[id]);
     if(current.rows[0]?.save_key===key)return publicJob(current.rows[0]);
@@ -123,7 +127,7 @@ function createService(pool){
       const folder=result.folderName==null?row.folder_name:String(result.folderName);
       const expected=`${row.design_number} ${require('../../tools/print-worker/proof-files').cleanCustomer(row.customer)}`;
       if(result.folderName!=null&&folder!==expected)throw new Error('Invalid saved design folder result.');
-      await query("UPDATE proof_design_jobs SET folder_name=$3,status='saved',generation_status='complete',generation_message='',saved_revision=revision,pdf=NULL,artworks='[]'::jsonb,message='Saved in DESIGN FILES',lease_until=NULL,updated_at=NOW() WHERE id=$1 AND claim_token=$2",[id,token,folder]);
+      await query("UPDATE proof_design_jobs SET folder_name=$3,status='saved',generation_status='complete',generation_message='',saved_revision=revision,saved_proof_pdf=pdf,saved_snapshot=jsonb_build_object('source',source,'source_artworks',source_artworks,'garment_assets',garment_assets,'customer',customer,'job_title',job_title),pdf=NULL,artworks='[]'::jsonb,message='Saved in DESIGN FILES',lease_until=NULL,updated_at=NOW() WHERE id=$1 AND claim_token=$2",[id,token,folder]);
     }else throw new Error('Invalid file worker result.');
     return {accepted:true};
   }

@@ -2495,6 +2495,7 @@ function ensureTestRowMenu() {
         <button type="button" role="menuitem" data-test-row-move-group="PRE-PRODUCTION">Pre-Production</button>
       </div>
     </div>
+    <div data-proof-job-controls></div>
     <button class="test-row-action-button danger" type="button" role="menuitem" data-test-row-remove-proof="true">REMOVE VISUAL</button>
     <button class="test-row-action-button danger" type="button" role="menuitem" data-test-row-delete-private="true" hidden>Delete</button>
   `;
@@ -2523,6 +2524,7 @@ function openTestRowMenu(anchor, item) {
     privateJob: isTestDashboardPrivateItem(item),
     visualFiles: getTestDashboardVisualFiles(item),
   };
+  window.ProofLinks?.controls(menu.querySelector('[data-proof-job-controls]'),__testRowMenuState.privateJob?'':String(item.id).replace(/__split_(print|embroidery)$/,''))?.then(()=>{if(__testRowMenuState?.anchor===anchor)positionTestRowMenu(anchor,menu);});
   const deleteButton = menu.querySelector('[data-test-row-delete-private]');
   syncTestRowMenuDeleteAction(deleteButton, __testRowMenuState.privateJob);
   menu.classList.remove('hidden');
@@ -2592,6 +2594,7 @@ function closeTestRowMenu() {
 }
 
 function handleTestRowMenuClick(event) {
+  if(event.target.closest('[data-proof-job-controls] button')){closeTestRowMenu();return;}
   const removeProofButton = event.target.closest('[data-test-row-remove-proof]');
   if (removeProofButton) {
     event.preventDefault();

@@ -23,6 +23,7 @@ function isProofGeneratorUser(user) {
 function createRouter({ requireProduction = true, parse = parseProofBrief, enrich = enrichProofProducts, build = buildProof, status = proofRuntimeStatus, generateViews = ensureGeneratedViews, searchProducts = searchProofProducts, convertEps = require('../services/dtfCloudinary').createEpsPng, designs } = {}) {
   const router = express.Router();
   const designJobs=()=>designs || (designs=designService(require('../db/pool')));
+  const links=()=>require('../services/proofJobLinks').createService(require('../db/pool'));
   const upload = multer({ storage: multer.memoryStorage(), limits: { files: 40, fields: 2, parts: 42, fileSize: 10 * 1024 * 1024, fieldSize: 100 * 1024 } });
   let active = false;
   const uploadLanes={source:false,eps:false};
@@ -34,11 +35,31 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
     }
     return true;
   };
+  router.get('/link-jobs',async(req,res)=>{
+    if(!allowed(req,res))return;res.set('Cache-Control','no-store');
+    try{res.json({jobs:await links().jobs(req.query.q)});}catch(error){res.status(400).json({error:error.message});}
+  });
+  router.get('/link-jobs/:id',async(req,res)=>{
+    if(!allowed(req,res))return;res.set('Cache-Control','no-store');
+    try{res.json({job:await links().job(req.params.id)});}catch(error){res.status(400).json({error:error.message});}
+  });
+  router.post('/link-jobs/:id/edit',async(req,res)=>{
+    if(!allowed(req,res))return;
+    try{const id=await links().activate(req.params.id);res.json({design:await designJobs().get(id)});}catch(error){res.status(409).json({error:error.message});}
+  });
+  router.post('/link-jobs/:id/unlink',async(req,res)=>{
+    if(!allowed(req,res))return;
+    try{await links().unlink(req.params.id);res.json({ok:true});}catch(error){res.status(409).json({error:error.message});}
+  });
+  router.post('/designs/:id/link',async(req,res)=>{
+    if(!allowed(req,res))return;
+    try{await links().link(req.params.id,req.body.sourceOrderId);res.json({design:await designJobs().get(req.params.id)});}catch(error){res.status(409).json({error:error.message});}
+  });
   router.get('/designs',async(req,res)=>{
     if(!allowed(req,res))return;res.set('Cache-Control','no-store');
     const offset=String(req.query.offset||'0');
     if(!/^\d{1,7}$/.test(offset))return res.status(400).json({error:'Invalid history page.'});
-    try{return res.json(await designJobs().list(Number(offset)));}
+    try{return res.json(await designJobs().list(Number(offset),req.query.unlinked==='1',req.query.q||''));}
     catch(error){return res.status(503).json({error:'Could not load proof history.'});}
   });
   router.get('/designs/:id/preview',async(req,res)=>{
@@ -74,6 +95,10 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
   router.get('/designs/:id',async(req,res)=>{
     if(!allowed(req,res))return;res.set('Cache-Control','no-store');
     try{return res.json({design:await designJobs().get(req.params.id)});}catch(error){return res.status(404).json({error:'Proof design not found.'});}
+  });
+  router.post('/designs/:id/sync',async(req,res)=>{
+    if(!allowed(req,res))return;
+    try{await links().publish(req.params.id);res.json({design:await designJobs().get(req.params.id)});}catch(error){res.status(409).json({error:error.message});}
   });
   router.post('/designs/:id/retry',async(req,res)=>{
     if(!allowed(req,res))return;res.set('Cache-Control','no-store');
@@ -196,7 +221,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
         return res.status(400).json({ error: 'A proof needs 1-20 products.' });
       }
       let design;
-      if(brief.proofDesignId){design=await designJobs().get(brief.proofDesignId);if(!design.designNumber||!design.folderName)throw new Error('The design folder is still being prepared.');brief.reference=design.designNumber;}
+      if(brief.proofDesignId){design=await designJobs().get(brief.proofDesignId);if(String(design.sourceOrderId||'')!==String(brief.proofSourceOrderId||''))throw new Error('The linked job changed. Reopen this proof from the job.');if(!design.designNumber||!design.folderName)throw new Error('The design folder is still being prepared.');brief.reference=design.designNumber;}
       if(req.path==='/save'&&!design)throw new Error('Reserve a design folder before saving.');
       if (!Array.isArray(details) || details.length !== (req.files || []).length) {
         return res.status(400).json({ error: 'Artwork details do not match uploaded files.' });

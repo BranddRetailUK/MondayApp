@@ -23,8 +23,8 @@ test('hosted access denies every endpoint to anonymous, ordinary and DTF-only ac
   let calls = 0;
   await serve(createRouter({ parse: async () => { calls++; }, status: async () => { calls++; } }), async url => {
     for (const [headers, expected] of [[{}, 401], [{ 'x-test-email': 'office@ultimatepromotions.co.uk' }, 403], [{ ...production, 'x-test-scope': 'dtf_only' }, 403], [{ 'x-test-email': 'production@ultimatepromotions.co.uk.attacker.test' }, 403]]) {
-      for (const endpoint of ['products?q=RX350', 'designs', 'designs/unknown', 'designs/unknown/retry', 'save', 'status', 'views/unknown', 'views', 'renderer/pdf.mjs', 'renderer/pdf.worker.mjs', 'parse', 'preview', 'create']) {
-        const res = await fetch(`${url}/${endpoint}`, { method: ['parse', 'preview', 'create', 'views', 'designs', 'save','designs/unknown/retry'].includes(endpoint) ? 'POST' : 'GET', headers });
+      for (const endpoint of ['link-jobs', 'link-jobs/1', 'link-jobs/1/edit', 'link-jobs/1/unlink', 'designs/unknown/link', 'designs/unknown/sync', 'products?q=RX350', 'designs', 'designs/unknown', 'designs/unknown/retry', 'save', 'status', 'views/unknown', 'views', 'renderer/pdf.mjs', 'renderer/pdf.worker.mjs', 'parse', 'preview', 'create']) {
+        const res = await fetch(`${url}/${endpoint}`, { method: ['link-jobs/1/edit','link-jobs/1/unlink','designs/unknown/link','designs/unknown/sync','parse', 'preview', 'create', 'views', 'designs', 'save','designs/unknown/retry'].includes(endpoint) ? 'POST' : 'GET', headers });
         assert.equal(res.status, expected, endpoint);
       }
     }

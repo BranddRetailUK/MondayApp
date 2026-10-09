@@ -181,3 +181,16 @@ body.proof-preview .proof-preview-badge{display:block}
 .proof-placement-views{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
 .proof-placement-views .proof-view-editor{min-width:0}
 @media(max-width:650px){.proof-placement-views{grid-template-columns:1fr}}
+
+.proof-link-dialog { width: min(720px, 90vw); max-height: 85vh; border: 1px solid #8ec7e3; border-radius: 10px; padding: 24px; background: #172129; color: #fff; }
+.proof-link-dialog::backdrop { background: rgb(0 0 0 / 65%); }
+.proof-link-dialog input[type=search] { width: 100%; box-sizing: border-box; padding: 10px; margin-bottom: 12px; }
+.proof-link-results { max-height: 55vh; overflow: auto; }
+.proof-link-choice { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid #46616f; }
+.proof-link-choice img { width: 90px; height: 65px; object-fit: contain; background: white; }
+.proof-link-choice a, .proof-history-info a { color: #8ec7e3; }
+.proof-link-choice button { text-align: left; white-space: normal; }
+.proof-job-link, [data-proof-job-controls] { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.proof-job-link { margin-bottom: 12px; }
+.test-row-action-menu [data-proof-job-controls] { flex-direction: column; align-items: stretch; }
+.test-row-action-menu [data-proof-job-controls] button { text-align: left; border: 0; background: transparent; padding: 10px 12px; }

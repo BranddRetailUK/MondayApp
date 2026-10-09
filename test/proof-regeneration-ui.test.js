@@ -9,7 +9,7 @@ function harness({ fail=false }={}) {
   let release;
   const gate=new Promise(resolve=>{release=resolve;});
   const calls=[];
-  const context={busy:false,generatingProof:false,designId:'existing-design',design:{id:'existing-design',status:'saved',revision:4},localPreview:false,
+  const context={selectedLinkJob:null,busy:false,generatingProof:false,designId:'existing-design',design:{id:'existing-design',status:'saved',revision:4},localPreview:false,
     request:{value:'Print artwork'},customer:{value:'Customer'},jobTitle:{value:'Updated job'},instructions:{value:'Special instruction'},
     artworks:[{id:'art-1',file:{name:'art.png'},assignment:'front',notes:'Keep colour'}],
     currentBrief:{products:[{decorations:[{id:'mark',artworkId:'art-1',placement:{x:.37,y:.22},widthMm:125}]}]},currentPreview:null,

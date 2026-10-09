@@ -19,6 +19,7 @@
         <button id="proof-create-new" class="proof-primary-button" type="button">Create proof</button>
       </header>
       <section id="proof-history">
+        <label><input id="proof-unlinked-only" type="checkbox"> Unlinked only</label>
         <div id="proof-history-status" role="status"></div>
         <div id="proof-history-list" class="proof-history-list"></div>
         <button id="proof-history-more" class="proof-secondary-button" type="button" hidden>Load more</button>
@@ -39,6 +40,7 @@
               <div id="proof-product-status" class="proof-search-status" role="status" aria-live="polite"></div>
               <div id="proof-product-results" class="proof-search-results"></div>
             </div>
+            <div id="proof-job-link" class="proof-job-link"></div>
             <div class="proof-job-fields">
               <label class="proof-control">Customer name<input id="proof-customer" type="text" maxlength="200" autocomplete="off"></label>
               <label class="proof-control">Job title<input id="proof-job-title" autocomplete="off" type="text" maxlength="200"></label>
@@ -93,10 +95,30 @@
   const createNew=root.querySelector('#proof-create-new'),loadMore=root.querySelector('#proof-history-more');
   let progressChain=Promise.resolve();
   let historyRows=[],nextOffset=null,historyLimit=50,historyLoading=false,lastHistory='',progressMessage='',progressError=false;
+  let selectedLinkJob=null;
+  const linkControl=root.querySelector('#proof-job-link');
+  function showLinkControl(){
+    if(localPreview)return;linkControl.replaceChildren();
+    const label=document.createElement('span');label.textContent=selectedLinkJob?`Job: ${selectedLinkJob.order_no||selectedLinkJob.source_order_id}`:'No job linked';linkControl.append(label);
+    if(!selectedLinkJob){const select=document.createElement('button');select.type='button';select.className='proof-secondary-button';select.textContent='Link to job';select.disabled=busy;
+      select.addEventListener('click',async()=>{try{
+        const job=await window.ProofLinks.picker('jobs');if(!job)return;
+        if(designId){const data=await window.ProofLinks.api(`/designs/${designId}/link`,{sourceOrderId:job.source_order_id});design=data.design;}
+        selectedLinkJob=job;customer.value=job.customer_name||'';jobTitle.value=job.job_title||'';metadataChanged();showLinkControl();
+      }catch(error){setFeedback(error.message,true);}});linkControl.append(select);}
+  }
+  window.openLinkedProof=async({design:linkedDesign,job})=>{
+    if(busy)throw new Error('Wait for the current proof to finish.');
+    startNewProof();
+    if(linkedDesign)await openHistoryProof(linkedDesign);
+    else{customer.value=job.customer_name||'';jobTitle.value=job.job_title||'';showProofEditor();}
+    selectedLinkJob=job;showLinkControl();
+  };
+  root.querySelector('#proof-unlinked-only').addEventListener('change',()=>{historyLimit=50;refreshHistory();});
   function showProofList(){
     editorScreen.hidden=true;historyScreen.hidden=false;createNew.hidden=false;renderHistory();refreshHistory();
   }
-  function showProofEditor(){historyScreen.hidden=true;editorScreen.hidden=false;createNew.hidden=true;}
+  function showProofEditor(){showLinkControl();historyScreen.hidden=true;editorScreen.hidden=false;createNew.hidden=true;}
   root.querySelector('#proof-back-list').addEventListener('click',showProofList);
   createNew.addEventListener('click',()=>{if(busy)return;startNewProof();showProofEditor();});
   loadMore.addEventListener('click',()=>{historyLimit+=50;refreshHistory();});
@@ -106,7 +128,7 @@
     try{
       let offset=0,rows=[],more=null;
       do{
-        const response=await fetch(`/api/proof-generator/designs?offset=${offset}`,{cache:'no-store'});
+        const response=await fetch(`/api/proof-generator/designs?offset=${offset}&unlinked=${root.querySelector('#proof-unlinked-only').checked?'1':'0'}`,{cache:'no-store'});
         const data=await response.json();if(!response.ok)throw new Error(data.error||'Could not load proof history.');
         rows.push(...data.designs);more=data.nextOffset;offset=more;
       }while(more!==null&&rows.length<historyLimit);
@@ -121,6 +143,7 @@
     if(job.generationStatus==='review')return ['Needs review',job.generationMessage];
     if(job.generationStatus==='interrupted')return ['Interrupted','Generation stopped before saving. Reopen the proof to continue.'];
     if(job.generationStatus==='generating')return ['Pending',job.generationMessage];
+    if(job.status==='saved'&&job.linkPending)return ['Sync pending','The saved proof still needs to be added to Dashboard.'];
     if(job.status==='saved')return ['Saved',''];
     if(job.status==='save_queued'||job.status==='saving')return ['Saving',job.message];
     return ['Pending',job.message];
@@ -128,7 +151,7 @@
   function renderHistory(){
     createNew.disabled=busy;loadMore.hidden=nextOffset===null;loadMore.disabled=historyLoading;
     let rows=[...historyRows];
-    if(design&&!rows.some(job=>job.id===design.id))rows.unshift(design);
+    if(design&&(!root.querySelector('#proof-unlinked-only').checked||!design.linkedJobs?.length)&&!rows.some(job=>job.id===design.id))rows.unshift(design);
     rows.sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))||b.id.localeCompare(a.id));
     const signature=JSON.stringify([rows,design,busy,progressMessage,progressError,!!currentBrief,!!currentPreview]);
     if(signature===lastHistory)return;lastHistory=signature;historyList.replaceChildren();
@@ -152,15 +175,21 @@
         }
         field.append(name,valueNode);info.append(field);
       }
+      const jobLinks=document.createElement('div');
+      for(const linkedOrder of job.linkedOrders||[]){const id=linkedOrder.sourceOrderId;const link=document.createElement('a');link.href=`/database-job.html?id=${id}`;link.textContent=`Job: ${linkedOrder.orderNo||id}`;link.addEventListener('click',event=>{if(window.ultimateHubOpenDatabaseOrder){event.preventDefault();window.ultimateHubOpenDatabaseOrder(id,'proof');}});jobLinks.append(link,document.createTextNode(' '));}
+      const linkButton=document.createElement('button');linkButton.type='button';linkButton.className='proof-secondary-button';linkButton.textContent='Link to job';linkButton.disabled=busy||['save_queued','saving','allocating'].includes(job.status);
+      linkButton.addEventListener('click',async()=>{try{const target=await window.ProofLinks.picker('jobs');if(!target)return;await window.ProofLinks.api(`/designs/${job.id}/link`,{sourceOrderId:target.source_order_id});if(designId===job.id){design=null;designId=null;}await refreshHistory();window.ProofLinks.refresh();}catch(error){historyStatus.textContent=error.message;}});
+      jobLinks.append(linkButton);info.append(jobLinks);
       const state=document.createElement('div');state.className='proof-history-state';const [label,message]=historyState(job);
       if(label!=='Saved'){const status=document.createElement('strong');status.textContent=label;state.append(status);}
       if(message){const detail=document.createElement('p');detail.textContent=reviewMessage(message);state.append(detail);}
 
       const actions=document.createElement('div');actions.className='proof-history-actions';
+      if(job.linkPending){const sync=document.createElement('button');sync.type='button';sync.className='proof-secondary-button';sync.textContent='Retry proof sync';sync.onclick=async()=>{sync.disabled=true;try{await window.ProofLinks.api(`/designs/${job.id}/sync`,{});await refreshHistory();window.ProofLinks.refresh();}catch(error){historyStatus.textContent=error.message;}finally{sync.disabled=false;}};actions.append(sync);}
       if(job.hasPdf){const download=document.createElement('a');download.className='proof-secondary-button';download.textContent='Download';download.href=`/api/proof-generator/designs/${encodeURIComponent(job.id)}/pdf?download=1`;actions.append(download);}
       else{const download=document.createElement('button');download.type='button';download.className='proof-secondary-button';download.textContent='Download';download.disabled=true;download.title='Available after a proof PDF has been generated and retained.';actions.append(download);}
       const regenerate=document.createElement('button');regenerate.type='button';regenerate.className='proof-secondary-button';regenerate.textContent='Regenerate proof';regenerate.disabled=busy;
-      regenerate.addEventListener('click',()=>openHistoryProof(job));actions.append(regenerate);state.append(actions);
+      regenerate.addEventListener('click',async()=>{try{if(job.sourceOrderId)await window.ProofLinks.edit(job.sourceOrderId);else await openHistoryProof(job);}catch(error){historyStatus.textContent=error.message;}});actions.append(regenerate);state.append(actions);
       item.append(thumb,info,state);
       const generating=label==='Pending'||label==='Saving';
       item.classList.toggle('proof-history-generating',generating);
@@ -190,7 +219,7 @@
   }
   async function saveProofSource(){
     if(localPreview)return;
-    const form=new FormData();form.append('brief',JSON.stringify({request:request.value,instructions:instructions.value,customer:customer.value,jobTitle:jobTitle.value,brief:currentBrief}));
+    const form=new FormData();form.append('brief',JSON.stringify({proofSourceOrderId:selectedLinkJob?.source_order_id||null,request:request.value,instructions:instructions.value,customer:customer.value,jobTitle:jobTitle.value,brief:currentBrief}));
     form.append('artworkDetails',JSON.stringify(artworks.map(item=>({id:item.id,originalName:item.file.name,backgroundMode:item.backgroundMode,assignment:item.assignment,notes:item.notes}))));
     for(const item of artworks)form.append('artworks',item.file,item.file.name);
     const response=await fetch(`/api/proof-generator/designs/${designId}/source`,{method:'POST',body:form});
@@ -199,7 +228,7 @@
   async function openHistoryProof(job){
     if(busy)return;
     if(job.id===designId&&artworks.length){showProofEditor();return;}
-    startNewProof();designId=job.id;design=job;try{sessionStorage.setItem('proof-design-id',designId);}catch(_){}
+    startNewProof();selectedLinkJob=job.sourceOrderId?{source_order_id:job.sourceOrderId,order_no:job.linkedOrders?.find(order=>order.sourceOrderId===job.sourceOrderId)?.orderNo}:null;designId=job.id;design=job;try{sessionStorage.setItem('proof-design-id',designId);}catch(_){}
     customer.value=job.customer||'';jobTitle.value=job.jobTitle||'';showProofEditor();showDesign();busy=true;setCreating(true);
     try{
       const response=await fetch(`/api/proof-generator/designs/${encodeURIComponent(job.id)}/source`,{cache:'no-store'});const data=await response.json();
@@ -210,7 +239,7 @@
         const item={id:saved.id,file,assignment:saved.assignment||'',notes:saved.notes||'',backgroundMode:saved.backgroundMode||'auto',url:file.type.startsWith('image/')?URL.createObjectURL(file):''};artworks.push(item);renderArtwork(item);
       }
       currentBrief=data.source.brief;currentPreview=null;dirty=true;
-      if(currentBrief){currentBrief.proofRevision=job.revision;currentBrief.proofDesignId=job.id;renderEditor();await updatePreview(false,false);}
+      if(currentBrief){currentBrief.proofSourceOrderId=job.sourceOrderId||null;currentBrief.proofRevision=job.revision;currentBrief.proofDesignId=job.id;renderEditor();await updatePreview(false,false);}
       else setFeedback('Ready to regenerate.');
     }catch(error){setFeedback(error.message,true);}
     finally{busy=false;setCreating(false);renderHistory();}
@@ -251,6 +280,7 @@
     while(Date.now()-started<90000){
       if(id!==designId)return;
       design=await designRequest(`/${id}`);showDesign();
+      if(saved&&design.status==='saved'&&design.sourceOrderId){try{await window.ProofLinks.api(`/designs/${id}/sync`,{});window.ProofLinks.refresh();}catch(error){throw new Error('Proof saved, but Dashboard sync needs attention: '+error.message);}}
       if(design.status==='error')throw new Error(design.message||'The design folder needs attention.');
       if(saved?design.status==='saved':!!(design.designNumber&&design.folderName))return;
       setFeedback(saved?'Waiting for ARTWORK-PC to save the proof…':'Waiting for ARTWORK-PC to reserve the next design number…');
@@ -265,10 +295,10 @@
     if(design.status==='error')design=await designRequest(`/${designId}/retry`,{});
     await awaitDesign();
     if(['save_queued','saving'].includes(design.status))await awaitDesign(true);
-    brief.proofDesignId=design.id;brief.reference=design.designNumber;brief.proofRevision=design.revision;
+    brief.proofSourceOrderId=selectedLinkJob?.source_order_id||null;brief.proofDesignId=design.id;brief.reference=design.designNumber;brief.proofRevision=design.revision;
   }
   function startNewProof(){
-    if(busy)return;design=null;designId=null;try{sessionStorage.removeItem('proof-design-id');}catch(_){}
+    if(busy)return;selectedLinkJob=null;showLinkControl();design=null;designId=null;try{sessionStorage.removeItem('proof-design-id');}catch(_){}
     request.value='';customer.value='';jobTitle.value='';instructions.value='';
     for(const art of artworks)if(art.url)URL.revokeObjectURL(art.url);artworks.length=0;artworksNode.replaceChildren();
     resetProductPicker();productQuery.value='';productResults.replaceChildren();productStatus.textContent='';
@@ -460,6 +490,9 @@
     setFeedback('Reading the brief and resolving artwork assignments…');
     try {
       design=localPreview?{id:designId,customer:customer.value,jobTitle:jobTitle.value,status:'folder_ready',createdAt:new Date().toISOString()}:await designRequest('',{id:designId,customer:customer.value,jobTitle:jobTitle.value,deferAllocation:true});
+      if(!localPreview&&selectedLinkJob&&!design.linkedJobs?.includes(selectedLinkJob.source_order_id)){
+        const linked=await window.ProofLinks.api(`/designs/${designId}/link`,{sourceOrderId:selectedLinkJob.source_order_id});design=linked.design;
+      }
       await recordProgress('generating','Preparing artwork…');
       setFeedback('Preparing artwork…');
       await Promise.all(artworks.map(item=>prepareArtworkFile(item.file)));
@@ -542,7 +575,7 @@
     const blockers=payload.issues.filter(issue=>issue.blocking);
     setFeedback(blockers.length?blockers.map(issue=>[currentBrief.products[issue.productIndex]?.code,issue.message].filter(Boolean).join(': ')).filter((text,index,all)=>all.indexOf(text)===index).join(' '):!hasGarment?'No garment preview is available.':'Preview ready.');
     if(save&&!localPreview&&designId&&!payload.issues.some(i=>i.blocking)){
-      const saveTarget=currentBrief;saveTarget.proofSaveKey=crypto.randomUUID();saveTarget.proofRevision=design.revision;
+      const saveTarget=currentBrief;saveTarget.proofSourceOrderId=selectedLinkJob?.source_order_id||null;saveTarget.proofSaveKey=crypto.randomUUID();saveTarget.proofRevision=design.revision;
       setFeedback('Saving the proof to its design folder…');
       const saved=await fetch('/api/proof-generator/save',{method:'POST',body:await uploadForm(saveTarget,true)});const savedData=await saved.json();
       if(!saved.ok)throw new Error(savedData.error||'Could not save proof.');

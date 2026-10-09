@@ -11,7 +11,11 @@ function createRouter(pool){
   });
   router.post('/tasks/:id',async(req,res,next)=>{
     if(!UUID.test(req.params.id)||!UUID.test(req.body?.claimToken||''))return res.status(400).json({error:'Invalid worker claim'});
-    try{res.json(await service.report(req.params.id,req.body.claimToken,req.body));}catch(error){next(error);}
+    try{const result=await service.report(req.params.id,req.body.claimToken,req.body);
+      if(result.accepted && req.body.status==='saved'){
+        try{await require('../services/proofJobLinks').createService(pool).publish(req.params.id);}catch(error){console.error('Proof visual publication pending:',error.message);}
+      }
+      res.json(result);}catch(error){next(error);}
   });
   return router;
 }

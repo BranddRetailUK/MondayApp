@@ -1295,6 +1295,11 @@ router.post('/api/database/visuals/:fileId/attach', async (req, res) => {
     }
 
     const targetJob = targetResult.rows[0];
+    if((await client.query('SELECT 1 FROM proof_job_links WHERE source_order_id=$1',[targetSourceOrderId])).rows.length){
+      await client.query('ROLLBACK');
+      return res.status(409).json({error:'This job has a generated proof. Edit or unlink that proof before attaching another visual.'});
+    }
+
     if (!isOpenDatabaseVisualJob(targetJob)) {
       await client.query('ROLLBACK');
       return res.status(400).json({
@@ -3583,6 +3588,7 @@ router.delete('/api/database/customers/:key/contacts/:contactId', async (req, re
 
 router.post('/api/database/jobs', async (req, res) => {
   const payload = req.body || {};
+  if(payload.proof_design_id&&!require('../services/proofJobLinks').isProduction(req.hubUser))return res.status(403).json({error:'Proof Generator access required.'});
   const customerName = cleanNullable(payload.customer_name);
   const contactName = cleanNullable(payload.contact_name);
   const customerId = nullableInt(payload.customer_id);
@@ -3746,12 +3752,16 @@ router.post('/api/database/jobs', async (req, res) => {
       ]
     );
 
+    if(payload.proof_design_id){
+      if(!require('../services/proofJobLinks').isProduction(req.hubUser))throw new Error('Proof Generator access required.');
+      await require('../services/proofJobLinks').createService(pool).linkWithClient(client,payload.proof_design_id,job.source_order_id);
+    }
     await client.query('COMMIT');
     res.status(201).json({ job });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     console.error('POST /api/database/jobs', err);
-    res.status(500).json({ error: 'Failed to create database job' });
+    res.status(payload.proof_design_id ? 400 : 500).json({ error: payload.proof_design_id ? err.message : 'Failed to create database job' });
   } finally {
     client.release();
   }
@@ -4148,6 +4158,9 @@ router.post('/api/database/jobs/:id/repeat', async (req, res) => {
     // Hold a share lock on the source proof rows until the repeat commits. This
     // keeps proof deletion from destroying a shared Cloudinary asset between
     // copying its metadata and committing the new reference.
+    await client.query(`INSERT INTO proof_job_links(source_order_id,proof_id,saved_revision,file_public_id,snapshot,order_no)
+      SELECT $1,proof_id,saved_revision,file_public_id,snapshot,$3 FROM proof_job_links WHERE source_order_id=$2`,[newSourceOrderId,sourceOrderId,job.order_no]);
+
     await client.query(
       `SELECT id
        FROM test_dashboard_files
