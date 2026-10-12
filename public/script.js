@@ -433,6 +433,7 @@ function renderBoard(payload, options = {}) {
   boardDiv.style.setProperty('--mobile-closed-group-width', `${mobileClosedGroupWidth}px`);
   const boardSortPlan = getBoardSortPlan(boardColumns);
   const allBoardItems = getAllBoardItems(board.groups || []);
+  const productionParentIds = new Set(allBoardItems.filter(item => item.dashboard_production_parent).map(item => String(item.id)));
   const globalJobNameWidth = buildJobNameColumnWidth(allBoardItems);
   const globalMobileJobTitleWidth = buildMobileJobTitleColumnWidth(allBoardItems);
   const parentTotalColumn = buildParentTotalColumnSpec(allBoardItems, subitemColumns);
@@ -443,7 +444,7 @@ function renderBoard(payload, options = {}) {
   for (const group of visibleGroups) {
     const collectionName = group.title || 'Untitled Group';
     const items = (group.items_page && group.items_page.items) || [];
-    const sortedItems = sortItemsForBoard(items, boardSortPlan);
+    const sortedItems = groupProductionChildren(sortItemsForBoard(items, boardSortPlan));
     const groupColumnWidths = buildBoardColumnWidthOverrides(boardColumns, sortedItems);
     const groupGridSpec = buildDashboardGridSpec(boardColumns, {
       subitem: false,
@@ -533,6 +534,13 @@ function renderBoard(payload, options = {}) {
       const row = document.createElement('div');
       row.dataset.itemId = itemId;
       row.className = 'grid-row job-row';
+      const productionParentId = String(item.dashboard_production_parent_id || '');
+      const childCollapsed = productionParentIds.has(productionParentId) && !uiState.openSubitems.has(productionParentId);
+      if (productionParentId) {
+        row.dataset.productionParent = productionParentId;
+        row.classList.add('production-child-row');
+        row.classList.toggle('production-collapsed', childCollapsed);
+      }
       if (context === BOARD_CONTEXT_TEST && item?.dashboard_split_job) {
         row.classList.add('dashboard-split-job-row');
       }
@@ -548,7 +556,7 @@ function renderBoard(payload, options = {}) {
       }
       grid.appendChild(row);
 
-      if (subitems.length > 0) {
+      if (subitems.length > 0 && !item.dashboard_production_parent) {
         const subitemGridSpec = buildDashboardGridSpec(subitemColumns, {
           subitem: true,
           brandWidth: buildSubitemBrandColumnWidth(subitems),
@@ -558,6 +566,10 @@ function renderBoard(payload, options = {}) {
         const subPanel = document.createElement('div');
         subPanel.className = `subitem-panel ${subitemsOpen ? '' : 'hidden'}`.trim();
         subPanel.dataset.parent = itemId;
+        if (productionParentId) {
+          subPanel.dataset.productionParent = productionParentId;
+          subPanel.classList.toggle('production-collapsed', childCollapsed);
+        }
         subPanel.style.setProperty('--mobile-board-min-width', `${subitemGridSpec.mobileMinWidth}px`);
         subPanel.style.minWidth = `calc(${subitemGridSpec.minWidth}px + var(--subitem-connector-width, 32px))`;
 
@@ -597,6 +609,28 @@ function renderBoard(payload, options = {}) {
   }
 
   syncTestDashboardMobileJobOverview(payload);
+}
+
+// Keep children next to their parent within a status group without changing groups.
+function groupProductionChildren(items) {
+  const parentIds = new Set(items.filter(item => item.dashboard_production_parent).map(item => String(item.id)));
+  const children = new Map();
+  for (const item of items) {
+    const parentId = String(item.dashboard_production_parent_id || '');
+    if (!parentIds.has(parentId)) continue;
+    if (!children.has(parentId)) children.set(parentId, []);
+    children.get(parentId).push(item);
+  }
+  return items.flatMap(item => {
+    if (parentIds.has(String(item.dashboard_production_parent_id || ''))) return [];
+    return [item, ...(children.get(String(item.id)) || [])];
+  });
+}
+
+function toggleProductionRows(parentId, open) {
+  document.querySelectorAll(`[data-production-parent="${CSS.escape(parentId)}"]`).forEach(row => {
+    row.classList.toggle('production-collapsed', !open);
+  });
 }
 
 function collectBoardUiState(boardDiv) {
@@ -1674,18 +1708,19 @@ function buildNameCell(item, initiallyOpen = false, { context = BOARD_CONTEXT_TE
   const titleWrap = document.createElement('div');
   titleWrap.className = 'title-wrap job-title-wrap';
 
-  if (subitems.length > 0) {
+  if (subitems.length > 0 || item.dashboard_production_parent) {
     const rowToggle = document.createElement('button');
     rowToggle.className = 'row-toggle';
     rowToggle.type = 'button';
-    rowToggle.setAttribute('aria-label', 'Toggle subitems');
+    rowToggle.setAttribute('aria-label', item.dashboard_production_parent ? 'Toggle child jobs' : 'Toggle subitems');
     rowToggle.classList.toggle('open', initiallyOpen);
     rowToggle.setAttribute('aria-expanded', initiallyOpen ? 'true' : 'false');
     rowToggle.addEventListener('click', (e) => {
       e.stopPropagation();
       const isOpen = rowToggle.classList.toggle('open');
       rowToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-      toggleSubRows(itemId, isOpen);
+      if (item.dashboard_production_parent) toggleProductionRows(itemId, isOpen);
+      else toggleSubRows(itemId, isOpen);
     });
     titleWrap.appendChild(rowToggle);
   } else {

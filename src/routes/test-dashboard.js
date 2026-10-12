@@ -1147,7 +1147,6 @@ async function buildTestDashboardBoardPayload() {
   const productionParentIds = new Set(productionLinks.map(link => link.source_order_id));
   const grouped = new Map(groups.map(group => [group.id, []]));
   for (const job of candidateJobs) {
-    if (productionParentIds.has(job.source_order_id)) continue;
     const state = states.get(job.source_order_id) || null;
     const scan = scans.get(String(job.source_order_id)) || null;
     if (!shouldRenderDashboardJob(job, state, scan)) continue;
@@ -1163,7 +1162,7 @@ async function buildTestDashboardBoardPayload() {
       samplingHistory: samplingHistory.get(job.source_order_id),
     };
     const splitState = resolveDashboardSplitState(job, state?.column_values || {});
-    if (splitState) {
+    if (splitState && !productionParentIds.has(job.source_order_id)) {
       const baseItem = buildBoardItem(itemArgs);
       for (const branch of DASHBOARD_SPLIT_BRANCHES) {
         const splitItem = buildDashboardSplitBoardItem({
@@ -1179,6 +1178,7 @@ async function buildTestDashboardBoardPayload() {
       continue;
     }
     const item = buildBoardItem(itemArgs);
+    item.dashboard_production_parent = productionParentIds.has(job.source_order_id);
     const groupId = resolveDashboardGroupId(job, state, scan);
     if (!grouped.has(groupId)) grouped.set(groupId, []);
     grouped.get(groupId).push(item);
@@ -1191,6 +1191,7 @@ async function buildTestDashboardBoardPayload() {
     if (link) {
       item.dashboard_private_job = false;
       item.dashboard_production_job = true;
+      item.dashboard_production_parent_id = String(link.source_order_id);
       item.database_job = { source_order_id: link.source_order_id, order_no: link.order_no,
         customer_name: link.customer_name, job_title: link.colour_notes || link.position_name };
       item.subitems = [buildSubitem(link.line, subitemColumns)];

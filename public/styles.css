@@ -9810,3 +9810,7 @@ input.db-custom-line-input{
     page-break-inside:avoid;
   }
 }
+
+/* Linked production parents expand full dashboard rows, across status groups. */
+.production-collapsed{display:none !important}
+.production-child-row .job-title-wrap{padding-left:18px;border-left:3px solid #9aa7b8}
