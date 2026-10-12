@@ -725,6 +725,10 @@
       if(!product)continue;
       const section=document.createElement('section');section.className='proof-product-editor';
       const heading=document.createElement('h3');heading.textContent=[product.code,product.name,colourName(product.colour)].filter(Boolean).join(' · ');section.append(heading);
+      if(page.view==='front' || !currentPreview.pages.some(other=>other.productIndex===page.productIndex && other.view==='front')){
+        section.append(inputField('Flat chest width (mm, optional)',product.measurements?.flatChestWidthMm,value=>{product.measurements||={};product.measurements.flatChestWidthMm=value;},{min:150,max:1500}));
+        const basis=document.createElement('p');basis.textContent=page.calibration?.referenceMm ? 'Scale uses the saved measured image calibration.' : page.scaleSource==='flat-chest-measurement' ? 'Scale uses the supplied flat chest measurement.' : 'Estimated scale. Use the flat chest width of the size shown for greater accuracy.';section.append(basis);
+      }
       section.append(viewEditor(product,page));
       views.append(section);
     }
@@ -814,10 +818,11 @@
         }
       }
       const hit=[...page.placements].reverse().find(p=>{const pos=bounds(p);return q.x>=pos.x-pos.width/2&&q.x<=pos.x+pos.width/2&&q.y>=pos.y&&q.y<=pos.y+pos.height;});
-      if(hit){event.preventDefault();canvas.focus({preventScroll:true});selected=hit.id;const d=product.decorations.find(d=>d.id===hit.id);const pos=bounds(hit);drag={mode:'move',d,dx:q.x-pos.x,dy:q.y-pos.y};canvas.setPointerCapture(event.pointerId);paint();}
+      if(hit){event.preventDefault();canvas.focus({preventScroll:true});selected=hit.id;const d=product.decorations.find(d=>d.id===hit.id);const pos=bounds(hit);drag={mode:'move',d,p:hit,dx:q.x-pos.x,dy:q.y-pos.y};canvas.setPointerCapture(event.pointerId);paint();}
     });
     canvas.addEventListener('pointermove',event=>{
       if(!drag)return;const q=point(event);
+      drag.d.manualScale={widthPerMm:drag.p.width/drag.p.size.width,sourceHash:page.sourceHash,view:page.view};
       if(drag.mode==='scale'){
         const {p,left,top}=drag;
         // Project onto the artwork diagonal in pixel space to preserve its aspect ratio.

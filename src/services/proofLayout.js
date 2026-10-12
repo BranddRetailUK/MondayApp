@@ -1,6 +1,6 @@
 // Deterministic brief resolution and geometry. All coordinates refer to the
 // visible garment bounds, not the supplier photograph's surrounding canvas.
-const { automaticTop, automaticPrintScale, garmentSizeProfile } = require('./proofPlacementProfiles');
+const { automaticTop, garmentSizeProfile } = require('./proofPlacementProfiles');
 const POSITIONS = ['left breast', 'right breast', 'front', 'back', 'upper back', 'nape', 'left sleeve', 'right sleeve', 'left hem', 'right hem'];
 const ALIASES = { lb: 'left breast', rb: 'right breast', ls: 'left sleeve', rs: 'right sleeve', 'left chest': 'left breast', 'right chest': 'right breast', chest: 'front', 'centre chest': 'front', 'center chest': 'front', 'full chest': 'front', 'front chest': 'front', 'centre front': 'front', 'center front': 'front', 'full front': 'front', 'centre back': 'back', 'center back': 'back', 'full back': 'back', rear: 'back', 'back neck': 'nape' };
 function normalise(value) { return String(value || '').toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim(); }
@@ -125,7 +125,7 @@ function recoverProductCodes(brief, input = {}) {
   return brief;
 }
 
-// A shared adult breast width has a child default; explicit child sizes win.
+// Migrate historical inherited child dimensions; never scale preview artwork.
 function applyChildBreastSize(d, product, input = {}, inherited = false) {
   delete d.childPreviewScale;
   if (garmentSizeProfile(product).sizeCategory !== 'child' || !/breast/.test(positionName(d.position)) || d.placement) return;
@@ -141,8 +141,6 @@ function applyChildBreastSize(d, product, input = {}, inherited = false) {
   if(d.childSizeAdjustment?.inheritedWidthMm===100 && dimension(d.widthMm)===80) {
     d.widthMm='100'; delete d.childSizeAdjustment;
   }
-  if(dimension(d.widthMm)!==100 || dimension(d.heightMm)!=null)return;
-  d.childPreviewScale=0.8;
 }
 
 function prepareBrief(brief, input = {}) {
@@ -150,6 +148,7 @@ function prepareBrief(brief, input = {}) {
   brief.products.forEach((product, pi) => {
     product.decorations = resolveDecorations(brief, product).map((original, di) => {
       const d = JSON.parse(JSON.stringify(original));
+      if(!d.placement)d.scaleVersion=2;
       d.id = d.id || `product-${pi}-decoration-${di}`;
       d.position = positionName(d.position);
       d.method = d.method || product.method || brief.method || '';
@@ -233,8 +232,15 @@ function placementFor(d, asset, garment, calibration = {}) {
     if (distance < 5) throw new Error('Calibration reference points are too close together.');
     pxPerMm = distance/mm; calibrated = true;
   }
-  const automatic = !calibrated && !d.placement && !custom && (!d.anchor || d.anchor === 'region') && !Number(d.offsetXmm) && !Number(d.offsetYmm);
-  if(automatic)pxPerMm *= automaticPrintScale(position,garment)*(d.childPreviewScale===0.8 ? 0.8 : 1);
+  const manual = d.placement || custom || (d.anchor && d.anchor !== 'region') || Number(d.offsetXmm) || Number(d.offsetYmm);
+  if (!calibrated && manual) {
+    const snapshot=d.manualScale;
+    if(snapshot){
+      if(snapshot.sourceHash!==garment.sourceHash || snapshot.view!==garment.view)throw new Error('Manual artwork scale belongs to a different garment image. Restore that view before regenerating.');
+      if(!Number.isFinite(snapshot.widthPerMm) || snapshot.widthPerMm<=0 || snapshot.widthPerMm>1)throw new Error('Invalid saved manual artwork scale.');
+      pxPerMm=snapshot.widthPerMm*garment.width;
+    } else if(d.scaleVersion!==2) pxPerMm=garment.legacyPxPerMm || pxPerMm;
+  }
   const width = size.width * pxPerMm / garment.width;
   const height = size.height * pxPerMm / garment.height;
   const explicit = d.placement != null;
@@ -247,6 +253,8 @@ function placementFor(d, asset, garment, calibration = {}) {
       const edge=calibration.neckRight || garment.landmarks?.neckRight;
       const right=edge?.x ?? garment.placementProfile?.neckRight;
       if(Number.isFinite(right))x=position==='left breast'?right:1-right;
+      const bodyAnchor=garment.landmarks?.[position==='left breast'?'leftBreast':'rightBreast'];
+      if(!calibrated && !manual && Number.isFinite(bodyAnchor?.x))x=bodyAnchor.x;
     }
   }
   if (!explicit && d.anchor && d.anchor !== 'region') {

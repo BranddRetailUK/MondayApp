@@ -203,7 +203,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
         calibration = {};
       }
       const pageData = {productIndex,pdfPageIndex:productIndex,view,sourceHash:garment?.sourceHash || '',width:garment?.width || 400,height:garment?.height || 500,
-        image:garment ? `data:image/png;base64,${garment.bytes.toString('base64')}` : '',generatedView:Boolean(source?.generated),calibration,landmarks:garment?.landmarks,placements:[]};
+        image:garment ? `data:image/png;base64,${garment.bytes.toString('base64')}` : '',generatedView:Boolean(source?.generated),calibration,scaleSource:garment?.scaleSource,flatChestWidthMm:garment?.estimatedTorsoMm,landmarks:garment?.landmarks,placements:[]};
       const cellWidth=774/groups.size, cellX=34+viewIndex*cellWidth;
       const garmentBox = garment ? drawAsset(page,garment,cellX+8,148,cellWidth-16,decorations.length>3?288:300) : null;
       drawText(page,`${view.toUpperCase()} VIEW`,cellX+8,104,10,bold,NAVY,cellWidth-16);
@@ -246,8 +246,15 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
           // Both region-anchored and explicit placements keep exactly the same size.
           if (!fitsRegion(p)) issue(productIndex,d.id,`${d.position}: artwork exceeds the printable region. Adjust its placement, region or calibration; its size has been preserved.`,true);
           if (garment.confident && coverage(garment,p) < .96) issue(productIndex,d.id,`${d.position}: artwork crosses the detected garment edge.`,true);
-          if (!p.calibrated) issue(productIndex,d.id,'Automatic scale estimate. A saved measured garment template can refine the mockup scale if needed.');
+          if (!p.calibrated && garment.scaleSource !== 'flat-chest-measurement') issue(productIndex,d.id,'Estimated garment scale. Supply a flat chest measurement or measured image calibration for a physical reference.');
           if (!p.size.confirmed) issue(productIndex,d.id,'Size to confirm: an 80 mm estimated width is used only for the preview.');
+          const retained=product.decorations?.find(item=>item.id===d.id);
+          if(retained){
+            if((d.placement || calibration.regions?.[positionName(d.position)] || (d.anchor && d.anchor!=='region') || Number(d.offsetXmm) || Number(d.offsetYmm)) && !d.manualScale){
+              retained.manualScale={widthPerMm:p.width/p.size.width,sourceHash:garment.sourceHash,view};
+            }
+            retained.scaleVersion=2;
+          }
           pageData.placements.push({...p,id:d.id,artworkId:artwork.id,preview:asset.preview});
           // Avoid drawing an invalid oversized overlay through the callouts/header.
           // It stays visible in the interactive editor, with a blocking warning.

@@ -159,8 +159,11 @@ function automaticGarmentProfile(product, garment, view, referenceGarment) {
   const hood=['hoodie','hoodedOuterwear'].includes(profile.family), outer=['outerwear','hoodedOuterwear'].includes(profile.family);
   const sizing=garmentSizeProfile(product);
   // Representative flat body widths, not supplier-confirmed measurements.
-  const torsoMm=(outer?600:550)*sizing.garmentScale;
-  const rows=[];
+  const supplied=product.measurements?.flatChestWidthMm;
+  const measured=supplied!==undefined && supplied!==null && supplied!=='';
+  const torsoMm=measured ? Number(supplied) : 550*sizing.garmentScale;
+  if(!Number.isFinite(torsoMm) || torsoMm<150 || torsoMm>1500)throw new Error('Flat chest width must be between 150 and 1500 mm.');
+  const rows=[],centres=[];
   for(let y=Math.floor(garment.height*.5);y<garment.height*.66;y+=Math.max(1,Math.floor(garment.height*.025))){
     const runs=[];let start=-1;
     for(let x=0;x<=garment.width;x++){
@@ -169,16 +172,29 @@ function automaticGarmentProfile(product, garment, view, referenceGarment) {
       if(!on&&start>=0){runs.push({start,end:x});start=-1;}
     }
     const central=runs.find(r=>r.start<=garment.width*.5&&r.end>=garment.width*.5);
-    if(central)rows.push(central.end-central.start);
+    if(central){rows.push(central.end-central.start);centres.push((central.start+central.end)/2);}
   }
   rows.sort((a,b)=>a-b);
   const torsoPx=rows[Math.floor(rows.length/2)];
+  centres.sort((a,b)=>a-b);
+  const torsoCentre=centres[Math.floor(centres.length/2)];
+  const breastAnchors=garment.confident && torsoPx && ['front','back'].includes(view) ? {
+    leftBreast:{x:(torsoCentre+torsoPx*.15)/garment.width},
+    rightBreast:{x:(torsoCentre-torsoPx*.15)/garment.width}
+  } : {};
+  // Historical manual placements had no scale snapshot. Preserve their old
+  // conversion only during migration; new automatic proofs never use it.
+  let legacyPxPerMm=garment.confident&&torsoPx&&['front','back'].includes(view)?torsoPx/((outer?600:550)*sizing.garmentScale):garment.width/(700*sizing.garmentScale);
+  let scaleSource=measured && garment.confident && torsoPx && ['front','back'].includes(view) ? 'flat-chest-measurement' : 'estimated';
   // Side views use an explicit estimate; a torso width cannot calibrate depth.
   let estimatedPxPerMm=garment.confident&&torsoPx&&['front','back'].includes(view)?torsoPx/torsoMm:garment.width/(700*sizing.garmentScale);
   // Full-length views depict the same physical garment height. Transfer the
   // front estimate by height; a side silhouette's width represents depth.
   if(['left','right'].includes(view)&&garment.confident&&referenceGarment?.confident&&referenceGarment.height>0&&referenceGarment.estimatedPxPerMm>0){
     estimatedPxPerMm=referenceGarment.estimatedPxPerMm*garment.height/referenceGarment.height;
+    legacyPxPerMm=(referenceGarment.legacyPxPerMm || referenceGarment.estimatedPxPerMm)*garment.height/referenceGarment.height;
+    // Transferring scale to a generated/different angle remains an estimate.
+    scaleSource='front-height-estimate';
   }
   let collarY = hood ? 0.22 : outer ? 0.14 : 0.09;
   if(!hood&&garment.confident&&['front','back'].includes(view)){
@@ -186,6 +202,6 @@ function automaticGarmentProfile(product, garment, view, referenceGarment) {
       if(garment.mask[y*garment.width+Math.floor(garment.width*.5)]){collarY=y/garment.height;break;}
     }
   }
-  return {estimatedPxPerMm,estimatedTorsoMm:torsoMm,...sizing,placementProfile:profile,landmarks:{neckRight:{x:profile.neckRight,y:collarY},collar:{x:.5,y:collarY},hem:{x:.5,y:.97}}};
+  return {estimatedPxPerMm,legacyPxPerMm,scaleSource,estimatedTorsoMm:torsoMm,...sizing,placementProfile:profile,landmarks:{...breastAnchors,neckRight:{x:profile.neckRight,y:collarY},collar:{x:.5,y:collarY},hem:{x:.5,y:.97}}};
 }
 module.exports={visibleBounds,rasterPdf,prepareArtwork,analyseGarment,coverage,fitSleeve,automaticGarmentProfile};

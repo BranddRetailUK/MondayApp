@@ -48,7 +48,7 @@ test('height-only sizing preserves actual proportions',()=>{
 });
 test('large and tall artwork have no silent width or height caps',()=>{
  const g={width:700,height:850,view:'front'};const a={width:100,height:400};
- const p=layout.placementFor(mark(),a,g);assert.equal(p.width*700,120);assert.equal(p.height*850,480);assert.equal(p.size.width,100);
+ const p=layout.placementFor(mark(),a,g);assert.equal(p.width*700,100);assert.equal(p.height*850,400);assert.equal(p.size.width,100);
  const p2=layout.placementFor(mark({widthMm:'300'}),a,g);assert.ok(Math.abs(p2.width/p.width-3)<1e-9);
  assert.equal(layout.fitsRegion(p2),false);
 });
@@ -347,8 +347,8 @@ test('child mockups enlarge the relative print while preserving millimetres and 
  const asset={width:200,height:100};
  const a=layout.placementFor(mark({position:'back',widthMm:'250'}),asset,adult,{});
  const c=layout.placementFor(mark({position:'back',widthMm:'250'}),asset,child,{});
- assert.equal(c.size.width,250);assert.ok(Math.abs(c.width/a.width-1.0625)<1e-9);
- const proportionate=layout.placementFor(mark({position:'back',widthMm:String(200/.85)}),asset,child,{});
+ assert.equal(c.size.width,250);assert.ok(Math.abs(c.width/a.width-1.25)<1e-9);
+ const proportionate=layout.placementFor(mark({position:'back',widthMm:String(200)}),asset,child,{});
  assert.ok(Math.abs(proportionate.width-a.width)<1e-9);assert.ok(Math.abs(proportionate.y-a.y)<1e-9);assert.equal(c.x,a.x);
  assert.ok(layout.fitsRegion(c));
  const calibration={referenceMm:500,start:{x:.2,y:.5},end:{x:.8,y:.5}};
@@ -399,7 +399,7 @@ test('repaired single-axis brief renders artwork and permits strict export',asyn
 
  test('automatic preview tuning preserves calibrated and manual sizing',()=>{
  const asset={width:100,height:100},g={width:700,height:850,view:'front'};
- for(const [position,factor] of [['left breast',1.2],['right sleeve',1.15]]){
+ for(const [position,factor] of [['left breast',1],['right sleeve',1]]){
   const auto=layout.placementFor(mark({position}),asset,g);
   const manual=layout.placementFor(mark({position,placement:{x:.6,y:.3}}),asset,g);
   assert.ok(Math.abs(auto.width/manual.width-factor)<1e-9);assert.equal(auto.size.width,100);
@@ -430,25 +430,22 @@ test('repaired single-axis brief renders artwork and permits strict export',asyn
  const retained=make();retained.products[1].decorations=[mark()];layout.repairRetainedDimensions(retained,{request:requestText});assert.equal(retained.products[1].decorations[0].widthMm,'100');
  });
  test('approved garment references apply to future styles, not only the example codes',()=>{
- const {placementProfile,automaticPrintScale,automaticTop}=require('../src/services/proofPlacementProfiles');
+ const {placementProfile,automaticTop}=require('../src/services/proofPlacementProfiles');
  const tee=placementProfile({code:'NEW1',name:'T-shirt'});assert.equal(tee.sideSleeveAcross,.46);assert.equal(tee.neckRight,.62);
  const vest=placementProfile({code:'NEW2',name:'Padded bodywarmer'});assert.equal(vest.neckRight,.70);
  const hoodie=placementProfile({code:'NEW3',name:'Adult hoodie'});assert.equal(hoodie.neckRight,.62);
- assert.equal(automaticPrintScale('left breast',{placementProfile:hoodie}),1.08*.95);assert.equal(automaticPrintScale('right sleeve',{placementProfile:hoodie}),1.035);
  assert.equal(automaticTop('right sleeve','right',.1,hoodie),.32);
  const child=placementProfile({code:'NEW4',name:'Kids hoodie'});
- assert.equal(automaticPrintScale('left breast',{placementProfile:child}),1.2*.95);
  assert.ok(Math.abs(child.breastCentre-.365)<1e-9);
  assert.ok(Math.abs(placementProfile({code:'GD57B'}).breastCentre-.42)<1e-9);
- assert.equal(automaticPrintScale('back',{placementProfile:child,sizeCategory:'child'}),.85);
  });
 
-test('legacy child size adjustment migrates to preview-only scaling without changing explicit kids sizes',()=>{
+test('legacy child size adjustment restores requested millimetres without preview multipliers without changing explicit kids sizes',()=>{
  const b=brief([mark({widthMm:'80',childSizeAdjustment:{inheritedWidthMm:100,widthMm:80}})]);b.products[0].name='Kids hoodie';
  layout.repairRetainedDimensions(b,{request:'Logo left breast of all garments 100mm wide.'});
- const d=b.products[0].decorations[0];assert.equal(d.widthMm,'100');assert.equal(d.childPreviewScale,.8);
+ const d=b.products[0].decorations[0];assert.equal(d.widthMm,'100');assert.equal(d.childPreviewScale,undefined);
  const g={view:'front',width:700,height:850};
- const scaled=layout.placementFor(d,{width:200,height:100},g),old=layout.placementFor(mark({widthMm:'80'}),{width:200,height:100},g);
+ const scaled=layout.placementFor(d,{width:200,height:100},g),old=layout.placementFor(mark({widthMm:'100'}),{width:200,height:100},g);
  assert.ok(Math.abs(scaled.width-old.width)<1e-9);assert.equal(scaled.size.width,100);
  layout.repairRetainedDimensions(b,{request:'Kids left breast 100mm wide.'});assert.equal(d.childPreviewScale,undefined);
 });
@@ -483,31 +480,52 @@ test('automatic artwork cleanup preserves edge-connected white lettering backgro
  assert.equal(removed[(60*80+40)*4+3],0);
 });
 
-test('29140 JC001 global reference matches screenshot scale without changing print sizes or approved profiles',()=>{
- const {placementProfile}=require('../src/services/proofPlacementProfiles');
- const asset={width:2835,height:1345};
- // Geometry measured from the actual proof's cropped supplier images and PDF transforms.
- for(const [position,view,w,h,estimate,mm,target] of [
-  ['left breast','front',580,734,28.714391875154817/300*734/100/1.2,100,.135],
-  ['back','back',533,670,65.94301221166891/300*670/270,270,.313],
- ]){
-  const base={width:w,height:h,view,estimatedPxPerMm:estimate,sizeCategory:'adult'};
-  const d=mark({position,widthMm:String(mm)});
-  for(const code of ['JC001','JC01','JC1',' jc001 ']){
-   const g={...base,placementProfile:placementProfile({code,name:'Cool T'})};
-   const p=layout.placementFor(d,asset,g);
-   assert.ok(Math.abs(p.width*w/h-target)<.002);assert.equal(p.size.width,mm);assert.ok(layout.fitsRegion(p));
-   const unchanged={...base,placementProfile:placementProfile({code:'GD001',name:'T-shirt'})};
-   for(const [decoration,calibration] of [
-    [{...d,placement:{x:.62,y:.25}},{}],
-    [{...d,offsetXmm:'5'},{}],
-    [d,{referenceMm:550,start:{x:0,y:.5},end:{x:1,y:.5}}],
-    [d,{regions:{[position]:layout.regionFor(position,view)}}],
-   ])assert.deepEqual(layout.placementFor(decoration,asset,g,calibration),layout.placementFor(decoration,asset,unchanged,calibration));
+
+test('shared flat-chest measurement gives every product and position the same mm conversion',async()=>{
+ const base=await artwork.analyseGarment(await garmentBytes());
+ const products=[{code:'JC001',name:'Cool T'},{code:'GD001',name:'T-shirt'},{code:'J265M',name:'Authentic hooded sweatshirt'},{code:'J441M',name:'Nano bodywarmer'},{code:'GD57B',name:'Kids hoodie'}];
+ let expected;
+ for(const product of products){
+  const g={...base,view:'front',...artwork.automaticGarmentProfile({...product,measurements:{flatChestWidthMm:500}},base,'front')};
+  assert.equal(g.scaleSource,'flat-chest-measurement');
+  const small=layout.placementFor(mark(),{width:200,height:100},g);
+  expected ??=small.width;assert.equal(small.width,expected);
+  for(const position of ['back','right sleeve','front','upper back']){
+   const p=layout.placementFor(mark({position,widthMm:'270',childPreviewScale:.8}),{width:200,height:100},g);
+   assert.ok(Math.abs(p.width/small.width-2.7)<1e-10);assert.equal(p.size.width,270);
   }
+  const calibration={referenceMm:250,start:{x:0,y:.5},end:{x:1,y:.5}};
+  assert.equal(layout.placementFor(mark(),{width:200,height:100},g,calibration).width,.4);
  }
- for(const product of [{code:'GD001',name:'T-shirt'},{code:'J265M',name:'Authentic hooded sweatshirt'},{code:'J441M',name:'Nano bodywarmer'},{code:'JC001B',name:'Kids Cool T'},{code:'JC001',name:'Kids Cool T'}])assert.equal(placementProfile(product).referenceScale,undefined);
- const {automaticPrintScale}=require('../src/services/proofPlacementProfiles');
- const g={placementProfile:placementProfile({code:'JC001'})};
- assert.equal(automaticPrintScale('right sleeve',g),1.15);assert.equal(automaticPrintScale('front',g),1);
+ for(const value of [0,-5,'abc',Infinity,149,1501])assert.throws(()=>artwork.automaticGarmentProfile({measurements:{flatChestWidthMm:value}},base,'front'),/Flat chest/);
+ const uncertain=artwork.automaticGarmentProfile({measurements:{flatChestWidthMm:500}},{...base,confident:false},'front');assert.equal(uncertain.scaleSource,'estimated');
+});
+
+test('old manual outerwear sizing survives migration; new manual scale is image-bound and round-trips',async()=>{
+ const base=await artwork.analyseGarment(await garmentBytes());
+ const product={name:'Bodywarmer'};
+ const g={...base,view:'front',sourceHash:'same',...artwork.automaticGarmentProfile(product,base,'front')};
+ const d=mark({placement:{x:.7,y:.3}}),asset={width:200,height:100};
+ const old=layout.placementFor(d,asset,g);
+ assert.equal(old.width,100*g.legacyPxPerMm/g.width);
+ const auto=layout.placementFor(mark({scaleVersion:2}),asset,g);
+ const manual={...d,scaleVersion:2,manualScale:{widthPerMm:auto.width/100,sourceHash:'same',view:'front'}};
+ assert.equal(layout.placementFor(manual,asset,g).width,auto.width);
+ assert.equal(layout.placementFor({...manual,widthMm:'150'},asset,g).width,auto.width*1.5);
+ assert.throws(()=>layout.placementFor(manual,asset,{...g,sourceHash:'changed'}),/different garment/);
+ const b=brief([d]);b.products[0].name='Bodywarmer';
+ const out=await buildProof(b,[await artFile()],{fetchImpl:await fixtureFetch(),strict:true});
+ const again=await buildProof(JSON.parse(JSON.stringify(b)),[await artFile()],{fetchImpl:await fixtureFetch(),strict:true});
+ assert.deepEqual(again.pages[0].placements,out.pages[0].placements);
+ assert.equal(b.products[0].decorations[0].scaleVersion,2);assert.ok(b.products[0].decorations[0].manualScale.widthPerMm>0);
+});
+
+test('breast anchors follow torso centre instead of sleeve-inclusive image width',async()=>{
+ const base=await artwork.analyseGarment(await garmentBytes());
+ const g={...base,view:'front',...artwork.automaticGarmentProfile({name:'T-shirt'},base,'front')};
+ const asset={width:200,height:100};
+ const left=layout.placementFor(mark(),asset,g),right=layout.placementFor(mark({position:'right breast'}),asset,g);
+ assert.ok(left.x<.62);assert.ok(left.x>.5);assert.ok(Math.abs(left.x+right.x-1)<.005);
+ const manual=layout.placementFor(mark({placement:{x:.7,y:.25}}),asset,g);assert.equal(manual.x,.7);
+ const calibrated=layout.placementFor(mark(),asset,g,{referenceMm:550,start:{x:0,y:.5},end:{x:1,y:.5},neckRight:{x:.68}});assert.equal(calibrated.x,.68);
 });

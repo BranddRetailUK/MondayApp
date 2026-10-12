@@ -46,7 +46,7 @@ function element(tag) {
 test('placement tiles share one grid across products without per-decoration dropdowns',()=>{
   const results=element('div');
   const context={results,currentBrief:{products:[{code:'GD010',colour:'Grey',decorations:[]},{code:'GD001',colour:'Orange',decorations:[]}]},currentPreview:{issues:[],pages:[{productIndex:0,image:'front'},{productIndex:1,image:'front'}]},dirty:false,
-    document:{createElement:element},colourName:x=>x,action:()=>element('button'),viewEditor:()=>element('canvas')};
+    document:{createElement:element},colourName:x=>x,action:()=>element('button'),inputField:()=>element('label'),viewEditor:()=>element('canvas')};
   vm.createContext(context);
   const render=source.slice(source.indexOf('  function renderEditor()'),source.indexOf('  function openProofPreview('));
   vm.runInContext(render+'\nrenderEditor();',context);
@@ -55,7 +55,7 @@ test('placement tiles share one grid across products without per-decoration drop
   assert.equal(grid.children.length,2);
   assert.equal(grid.children[0].children[0].textContent,'GD010 · Grey');
   assert.equal(grid.children[1].children[0].textContent,'GD001 · Orange');
-  assert.ok(grid.children.every(tile=>tile.children.length===2 && tile.children[1].tag==='canvas'));
+  assert.ok(grid.children.every(tile=>tile.children.length===4 && tile.children[1].tag==='label' && tile.children[3].tag==='canvas'));
 });
 test('canvas movement and corner scaling still update placement without numeric controls',()=>{
   const canvas=element('canvas');let dirtyCount=0;
@@ -71,7 +71,7 @@ test('canvas movement and corner scaling still update placement without numeric 
   assert.ok(Math.abs(product.decorations[0].placement.x-.55)<.0001);
   assert.ok(Math.abs(product.decorations[0].placement.y-.35)<.0001);
   canvas.listeners.pointerdown(event(390,270));canvas.listeners.pointermove(event(450,300));canvas.listeners.pointerup(event(450,300));
-  assert.ok(product.decorations[0].widthMm>100);assert.equal(product.decorations[0].heightMm,'');assert.equal(dirtyCount,2);
+  assert.ok(product.decorations[0].widthMm>100);assert.equal(product.decorations[0].heightMm,'');assert.equal(dirtyCount,2);assert.equal(product.decorations[0].manualScale.widthPerMm,.002);assert.equal(product.decorations[0].manualScale.view,'front');
 });
 
 test('customer and title edits retain manual geometry while updating the saved brief names',()=>{
