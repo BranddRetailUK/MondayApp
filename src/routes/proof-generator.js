@@ -37,7 +37,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
   };
   router.get('/link-jobs',async(req,res)=>{
     if(!allowed(req,res))return;res.set('Cache-Control','no-store');
-    try{res.json({jobs:await links().jobs(req.query.q)});}catch(error){res.status(400).json({error:error.message});}
+    try{res.json({jobs:await (req.query.office==='1'?links().officeJobs(req.query.q):links().jobs(req.query.q))});}catch(error){res.status(400).json({error:error.message});}
   });
   router.get('/link-jobs/:id',async(req,res)=>{
     if(!allowed(req,res))return;res.set('Cache-Control','no-store');
@@ -89,8 +89,11 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
   router.post('/designs',async(req,res)=>{
     if(!allowed(req,res))return;res.set('Cache-Control','no-store');
     if(!UUID.test(req.body?.id||''))return res.status(400).json({error:'Invalid proof ID.'});
-    try{return res.json({design:await designJobs().reserve(req.body.id,req.body.customer,req.body.jobTitle,req.body.deferAllocation===true)});}
-    catch(error){console.error('Proof design reservation:',error.message);return res.status(503).json({error:'Could not reserve the design folder. Please try again.'});}
+    try{
+      if(req.body.sourceOrderId)await links().reserveForJob(req.body.id,req.body.sourceOrderId,req.body.designReference);
+      return res.json({design:await designJobs().reserve(req.body.id,req.body.customer,req.body.jobTitle,req.body.deferAllocation===true)});
+    }
+    catch(error){console.error('Proof design reservation:',error.message);return res.status(409).json({error:error.message});}
   });
   router.get('/designs/:id',async(req,res)=>{
     if(!allowed(req,res))return;res.set('Cache-Control','no-store');

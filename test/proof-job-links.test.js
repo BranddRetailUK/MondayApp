@@ -174,3 +174,35 @@ test('approved jobs reject unsaved proof links without reserving an association'
     assert.equal((await f.db.query('SELECT * FROM proof_job_links')).rows.length,0);
   }finally{await f.db.close();}
 });
+
+test('selected OFFICE job reserves its existing reference atomically and only capable workers can claim it',async()=>{
+  const f=await fixture();try{
+    await f.db.exec("INSERT INTO database_job_positions(source_order_position_id,source_order_id,design_ref) VALUES(1,1,'29123'),(2,1,'PSG1234'),(3,1,'29124')");
+    const rows=await f.links.officeJobs('10001');assert.deepEqual(rows[0].designRefs,['29123','29124']);
+    const id=randomUUID();
+    await assert.rejects(()=>f.links.reserveForJob(id,1,''),/Select an existing/);
+    assert.equal((await f.db.query('SELECT id FROM proof_design_jobs WHERE id=$1',[id])).rows.length,0);
+    await assert.rejects(()=>f.links.reserveForJob(id,1,'30001'),/Select an existing/);
+    await f.links.reserveForJob(id,1,'29123');await f.links.reserveForJob(id,1,'29123');
+    const proof=await f.designs.get(id);assert.equal(proof.designNumber,'29123');assert.equal(proof.reuseExisting,true);assert.equal(proof.sourceOrderId,1);
+    await assert.rejects(()=>f.links.reserveForJob(id,2,'29123'),/changed/);
+    await f.designs.reserve(id,'Customer A','First order');
+    assert.equal(await f.designs.claim('old-worker',4),null);
+    const task=await f.designs.claim('updated-worker',5);assert.equal(task.operation,'adopt');assert.equal(task.designNumber,'29123');assert.equal(task.reuseExisting,true);
+    await f.designs.report(id,task.claimToken,{status:'allocated',designNumber:'29123',folderName:'29123 Historical customer'});
+    assert.equal((await f.designs.get(id)).folderName,'29123 Historical customer');
+  }finally{await f.db.close();}
+});
+test('selected jobs without numeric refs allocate normally; invalid office targets and existing generator numbers roll back',async()=>{
+  const f=await fixture();try{
+    await f.db.exec("INSERT INTO database_job_positions(source_order_position_id,source_order_id,design_ref) VALUES(1,1,'30001'),(2,2,'PSG1234')");
+    await assert.rejects(()=>f.links.reserveForJob(randomUUID(),1,'30001'),/already has a generator/);
+    await assert.rejects(()=>f.links.reserveForJob(randomUUID(),3,''),/already has a visual/);
+    await f.db.exec('UPDATE database_jobs SET proof_approved=true WHERE source_order_id=4');
+    await assert.rejects(()=>f.links.reserveForJob(randomUUID(),4,''),/OFFICE/);
+    const id=randomUUID();await f.links.reserveForJob(id,2,'');await f.designs.reserve(id,'Customer A','Repeat');
+    assert.equal((await f.designs.get(id)).sourceOrderId,2);
+    const task=await f.designs.claim('old-worker',4);assert.equal(task.operation,'allocate');assert.equal(task.designNumber,null);
+    assert.deepEqual((await f.links.officeJobs()).map(row=>row.source_order_id),[1]);
+  }finally{await f.db.close();}
+});

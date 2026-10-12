@@ -46,6 +46,12 @@
               <div id="proof-product-status" class="proof-search-status" role="status" aria-live="polite"></div>
               <div id="proof-product-results" class="proof-search-results"></div>
             </div>
+            <div id="proof-job-picker">
+              <label class="proof-control">Find an OFFICE job (optional)<input id="proof-office-search" type="search" autocomplete="off" placeholder="Search job number, customer or title"></label>
+              <label class="proof-control">Link to job<select id="proof-office-job"><option value="">No job selected — create a new design</option></select></label>
+              <label id="proof-reference-control" class="proof-control" hidden>Design reference<select id="proof-existing-reference"></select></label>
+              <div id="proof-office-status" class="proof-search-status" role="status"></div>
+            </div>
             <div class="proof-job-fields">
               <div class="proof-customer-picker">
                 <label class="proof-control">Customer name<input id="proof-customer" type="search" maxlength="200" autocomplete="off" aria-controls="proof-customer-results" aria-describedby="proof-customer-status"></label>
@@ -117,17 +123,51 @@
   setHistoryView(savedView);
   for(const button of viewButtons)button.addEventListener('click',()=>setHistoryView(button.dataset.proofView));
   let selectedLinkJob=null;
+  const officeSearch=root.querySelector('#proof-office-search'),officeSelect=root.querySelector('#proof-office-job'),existingReference=root.querySelector('#proof-existing-reference'),referenceControl=root.querySelector('#proof-reference-control'),officeStatus=root.querySelector('#proof-office-status');
+  let officeRows=[],officeRequest=0,officeTimer;
+  function showJobSelection(){
+    officeSelect.replaceChildren(new Option('No job selected — create a new design',''));
+    const rows=selectedLinkJob?[selectedLinkJob,...officeRows.filter(row=>row.source_order_id!==selectedLinkJob.source_order_id)]:officeRows;
+    for(const row of rows)officeSelect.add(new Option(`${row.order_no||row.source_order_id} · ${row.customer_name||''} · ${row.job_title||''}${row.designRefs?.length?' · '+row.designRefs.join(', '):''}`,String(row.source_order_id)));
+    officeSelect.value=selectedLinkJob?String(selectedLinkJob.source_order_id):'';
+    referenceControl.hidden=!selectedLinkJob?.designRefs?.length;
+    const previous=existingReference.value;existingReference.replaceChildren();
+    const refs=selectedLinkJob?.designRefs||[];
+    if(refs.length>1)existingReference.add(new Option('Select a design reference',''));
+    for(const ref of refs)existingReference.add(new Option(ref,ref));
+    if(refs.includes(previous))existingReference.value=previous;
+    for(const control of [officeSearch,officeSelect,existingReference])control.disabled=busy||!!designId;
+    root.querySelector('#proof-job-picker').hidden=localPreview;
+  }
+  async function loadOfficeJobs(){
+    if(localPreview||designId)return;
+    const token=++officeRequest;officeStatus.textContent='Loading OFFICE jobs…';
+    try{
+      const data=await window.ProofLinks.api(`/link-jobs?office=1&q=${encodeURIComponent(officeSearch.value)}`);
+      if(token!==officeRequest||designId)return;
+      officeRows=data.jobs;showJobSelection();officeStatus.textContent=officeRows.length===100?'Showing 100 jobs. Type to narrow the list.':officeRows.length?'':'No eligible OFFICE jobs found.';
+    }catch(error){if(token===officeRequest)officeStatus.textContent=error.message;}
+  }
+  officeSearch.addEventListener('input',()=>{clearTimeout(officeTimer);++officeRequest;officeTimer=setTimeout(loadOfficeJobs,250);});
+  officeSelect.addEventListener('change',()=>{
+    selectedLinkJob=officeRows.find(row=>String(row.source_order_id)===officeSelect.value)||null;
+    existingReference.replaceChildren();
+    if(selectedLinkJob){customer.value=selectedLinkJob.customer_name||'';jobTitle.value=selectedLinkJob.job_title||'';clearCustomerSearch();sourceChanged();}
+    showJobSelection();officeStatus.textContent=selectedLinkJob?(selectedLinkJob.designRefs.length?'The proof will use this job’s existing design folder.':'This job has no numeric design reference. A new design will be created.') : '';
+  });
+  function jobReservation(){return selectedLinkJob&&!design?.sourceOrderId?{sourceOrderId:selectedLinkJob.source_order_id,designReference:existingReference.value}:{};}
+
   window.openLinkedProof=async({design:linkedDesign,job})=>{
     if(busy)throw new Error('Wait for the current proof to finish.');
     startNewProof();
     if(linkedDesign)await openHistoryProof(linkedDesign);
     else{customer.value=job.customer_name||'';jobTitle.value=job.job_title||'';showProofEditor();}
-    selectedLinkJob=job;
+    selectedLinkJob=job;showJobSelection();
   };
   function showProofList(){
     editorScreen.hidden=true;historyScreen.hidden=false;listControls.hidden=false;renderHistory();refreshHistory();
   }
-  function showProofEditor(){historyScreen.hidden=true;editorScreen.hidden=false;listControls.hidden=true;}
+  function showProofEditor(){historyScreen.hidden=true;editorScreen.hidden=false;listControls.hidden=true;showJobSelection();loadOfficeJobs();}
   root.querySelector('#proof-back-list').addEventListener('click',showProofList);
   createNew.addEventListener('click',()=>{if(busy)return;startNewProof();showProofEditor();});
   loadMore.addEventListener('click',()=>{historyLimit+=50;refreshHistory();});
@@ -320,6 +360,7 @@
   });
   customer.addEventListener('input',metadataChanged);jobTitle.addEventListener('input',metadataChanged);
   function showDesign(){
+    showJobSelection();
     if(designId)editorToolbar.append(reviewButton);else formActions.prepend(reviewButton);
     reviewButton.querySelector('[data-proof-button-arrow]').hidden=busy||Boolean(designId);
     newProof.hidden=!designId;retrySave.hidden=!designId||['saved','folder_ready'].includes(design?.status);
@@ -346,7 +387,7 @@
   async function reserveDesign(brief){
     if(localPreview)return;
     if(!designId){designId=crypto.randomUUID();try{sessionStorage.setItem('proof-design-id',designId);}catch(_){}showDesign();}
-    design=await designRequest('',{id:designId,customer:brief.customer,jobTitle:brief.jobTitle});
+    design=await designRequest('',{id:designId,customer:brief.customer,jobTitle:brief.jobTitle,...jobReservation()});
     if(design.status==='error')design=await designRequest(`/${designId}/retry`,{});
     await awaitDesign();
     if(['save_queued','saving'].includes(design.status))await awaitDesign(true);
@@ -354,6 +395,7 @@
   }
   function startNewProof(){
     if(busy)return;selectedLinkJob=null;design=null;designId=null;try{sessionStorage.removeItem('proof-design-id');}catch(_){}
+    ++officeRequest;officeSearch.value='';officeStatus.textContent='';existingReference.replaceChildren();showJobSelection();
     request.value='';customer.value='';clearCustomerSearch();jobTitle.value='';instructions.value='';
     for(const art of artworks)if(art.url)URL.revokeObjectURL(art.url);artworks.length=0;artworksNode.replaceChildren();
     resetProductPicker();productQuery.value='';productResults.replaceChildren();productStatus.textContent='';
@@ -525,10 +567,12 @@
     newProof.disabled=creating;retrySave.disabled=creating;createNew.disabled=creating;
     editorScreen.querySelectorAll('input,textarea,select,#proof-dropzone,.proof-remove').forEach(control=>{control.disabled=creating;});
     productColour.disabled=creating||!selectedProduct||productColour.options.length<2;
+    showJobSelection();
   }
 
   async function reviewBrief() {
     if (busy) return;
+    if(selectedLinkJob?.designRefs?.length&&!existingReference.value&&!designId){setFeedback('Select the design reference for this job.',true);existingReference.focus();return;}
     if (!request.value.trim()) { request.focus(); setFeedback('Enter the proof request first.', true); return; }
     if (!artworks.length) { setFeedback('Attach artwork first so each decoration can be assigned to a file.', true); return; }
     busy = true; generatingProof = true; setCreating(true);
@@ -538,7 +582,7 @@
     const submittedSource=JSON.stringify([customer.value,jobTitle.value,request.value,instructions.value,artworks.map(a=>[a.id,a.assignment,a.notes])]);
     setFeedback('Reading the brief and resolving artwork assignments…');
     try {
-      design=localPreview?{id:designId,customer:customer.value,jobTitle:jobTitle.value,status:'folder_ready',createdAt:new Date().toISOString()}:await designRequest('',{id:designId,customer:customer.value,jobTitle:jobTitle.value,deferAllocation:true});
+      design=localPreview?{id:designId,customer:customer.value,jobTitle:jobTitle.value,status:'folder_ready',createdAt:new Date().toISOString()}:await designRequest('',{id:designId,customer:customer.value,jobTitle:jobTitle.value,deferAllocation:true,...jobReservation()});
       if(!localPreview&&selectedLinkJob&&!design.linkedJobs?.includes(selectedLinkJob.source_order_id)){
         const linked=await window.ProofLinks.api(`/designs/${designId}/link`,{sourceOrderId:selectedLinkJob.source_order_id});design=linked.design;
       }

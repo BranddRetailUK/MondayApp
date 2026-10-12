@@ -1,7 +1,7 @@
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const crypto=require('node:crypto');
-const {folderMatches}=require('./local-files');
+const {folderMatches,findDesignFolder}=require('./local-files');
 const {proofFileName,originalArtworkName}=require('./proof-filename');
 const {acquireWorkerLock}=require('./worker-lock');
 const UUID=/^[a-f0-9-]{36}$/i;
@@ -42,6 +42,55 @@ async function scan(root,id,onProgress){
     }
   }
   await visit(root,0);return {highest,existing};
+}
+async function adoptDesign(root,stateDir,task,onProgress=()=>{},assertClaim=async()=>{}){
+  if(!UUID.test(task.id)||!/^\d{5,10}$/.test(task.designNumber||'')||!task.reuseExisting)throw new Error('Invalid existing design request.');
+  root=await directory(await fs.realpath(root));await fs.mkdir(stateDir,{recursive:true});
+  const release=await acquireWorkerLock(path.join(stateDir,'proof-files.lock'));
+  try{
+    const folder=await directory(await findDesignFolder(root,task.designNumber,onProgress)),folderName=path.basename(folder);
+    if(!folderName.startsWith(task.designNumber+' ')||folderName.length>160)throw new Error('Existing design folder must start with its number followed by a space.');
+    for(const entry of await fs.readdir(stateDir)){
+      if(!/^proof-.*-state\.json$/.test(entry))continue;
+      const owner=await safeRead(path.join(stateDir,entry));
+      if(owner?.designNumber===task.designNumber&&owner.id!==task.id)throw new Error('This design folder already belongs to another generator proof.');
+    }
+    const marker=await loadMarker(folder,stateDir,{...task,folderName});
+    if(marker&&!marker.reuseExisting)throw new Error('Existing folder ownership does not match this request.');
+    await assertClaim();
+    if(!marker)await atomicJson(stateMarker(stateDir,task.id),{id:task.id,designNumber:task.designNumber,folderName,revision:0,reuseExisting:true});
+    return {designNumber:task.designNumber,folderName};
+  }finally{await release();}
+}
+// Retain legacy proofs below the design folder so artwork export sees one current proof.
+// The hashed manifest is written before moves and survives interruption/retry.
+async function archiveLegacyProofs(folder,marker,markerPath,assertClaim){
+  if(!marker.reuseExisting||marker.hash||marker.legacyArchived)return marker;
+  const hashFile=async file=>{
+    const stat=await fs.lstat(file).catch(e=>{if(e.code==='ENOENT')return null;throw e;});
+    if(!stat)return null;
+    if(!stat.isFile()||stat.isSymbolicLink())throw new Error('Unsafe legacy proof file.');
+    return crypto.createHash('sha256').update(await fs.readFile(file)).digest('hex');
+  };
+  if(!marker.legacyProofs){
+    const names=(await fs.readdir(folder)).filter(name=>/proof\.(pdf|ai)$/i.test(name));
+    marker={...marker,legacyProofs:await Promise.all(names.map(async name=>({name,hash:await hashFile(path.join(folder,name))})))};
+    await atomicJson(markerPath,marker);
+  }
+  if(marker.legacyProofs.length){
+    const history=path.join(folder,'proof-history');await fs.mkdir(history,{recursive:true});await directory(history);
+    const backup=path.join(history,marker.id);await fs.mkdir(backup,{recursive:true});await directory(backup);
+    for(const entry of marker.legacyProofs){
+      if(entry.name!==path.basename(entry.name)||/[\\/]/.test(entry.name))throw new Error('Unsafe legacy proof filename.');
+      const from=path.join(folder,entry.name),to=path.join(backup,entry.name);
+      const current=await hashFile(from),saved=await hashFile(to);
+      if(current){
+        if(current!==entry.hash||saved)throw new Error('Legacy proof changed while saving; review the existing files.');
+        await assertClaim();await fs.rename(from,to);
+      }else if(saved!==entry.hash)throw new Error('Legacy proof backup could not be verified.');
+    }
+  }
+  marker={...marker,legacyArchived:true};await atomicJson(markerPath,marker);return marker;
 }
 async function allocateDesign(root,stateDir,task,onProgress=()=>{},reserveNumber){
   if(!UUID.test(task.id))throw new Error('Invalid proof job.');
@@ -156,7 +205,7 @@ async function saveDesignProof(root,stateDir,task,assertClaim=async()=>{}){
   root=await directory(await fs.realpath(root));await fs.mkdir(stateDir,{recursive:true});
   const release=await acquireWorkerLock(path.join(stateDir,'proof-files.lock'));
   try{
-    const parent=await directory(path.join(root,rangeFor(task.designNumber)));
+    const parent=task.reuseExisting?path.dirname(await directory(await findDesignFolder(root,task.designNumber))):await directory(path.join(root,rangeFor(task.designNumber)));
     const markerPath=stateMarker(stateDir,task.id);
     let retained=await safeRead(markerPath);
     if(retained){
@@ -170,7 +219,8 @@ async function saveDesignProof(root,stateDir,task,assertClaim=async()=>{}){
     let marker=await loadMarker(folder,stateDir,task);
     if(marker?.id!==task.id||marker.designNumber!==task.designNumber)throw new Error('This folder is not owned by the requested proof.');
     if(marker.revision>task.revision)throw new Error('A newer proof is already saved.');
-    const desiredFolder=task.customer===undefined?task.folderName:`${task.designNumber} ${cleanCustomer(task.customer)}`;
+    if(!!marker.reuseExisting!==!!task.reuseExisting)throw new Error('Existing folder mode changed.');
+    const desiredFolder=marker.reuseExisting||task.customer===undefined?task.folderName:`${task.designNumber} ${cleanCustomer(task.customer)}`;
     if(desiredFolder!==task.folderName){
       const collision=await fs.lstat(path.join(parent,desiredFolder)).catch(error=>{if(error.code==='ENOENT')return null;throw error;});
       if(collision)throw new Error('The updated customer design folder already exists. It has not been overwritten.');
@@ -181,6 +231,7 @@ async function saveDesignProof(root,stateDir,task,assertClaim=async()=>{}){
       return path.join(parent,marker.folderName,filename);
     };
     await saveOriginals(folder,task.artworks||[],assertClaim);
+    marker=await archiveLegacyProofs(folder,marker,markerPath,assertClaim);
     const safeName=name=>typeof name==='string'&&name===path.basename(name)&&!/[\\/<>:"|?*\x00-\x1f]/.test(name)&&name.startsWith(task.designNumber+' ')&&name.endsWith('PROOF.pdf');
     const fileHash=async name=>{
       if(!safeName(name))throw new Error('Unsafe proof filename.');
@@ -221,4 +272,4 @@ async function saveDesignProof(root,stateDir,task,assertClaim=async()=>{}){
     return await finishSave(filename);
   }finally{await release();}
 }
-module.exports={allocateDesign,saveDesignProof,cleanCustomer,rangeFor};
+module.exports={adoptDesign,allocateDesign,saveDesignProof,cleanCustomer,rangeFor};

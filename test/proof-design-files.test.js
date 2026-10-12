@@ -271,3 +271,25 @@ test('customer folder rename recovers a crash between filesystem rename and jour
   assert.equal(JSON.parse(await fs.readFile(path.join(state,`proof-${id}.json`),'utf8')).folderName,'29199 After');
  }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
+
+test('existing design adoption retains folder and artwork, archives legacy proofs and safely retries',async()=>{
+ const {adoptDesign}=require('../tools/print-worker/proof-files');
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'proof-adopt-')),root=path.join(dir,'designs'),state=path.join(dir,'state');
+ try{
+  const folder=path.join(root,'Archive','29100-29199','29123 Original customer');await fs.mkdir(folder,{recursive:true});
+  const original=await pdfBytes('Legacy proof');await fs.writeFile(path.join(folder,'Old PROOF.pdf'),original);await fs.writeFile(path.join(folder,'artwork.eps'),'original artwork');
+  const id=randomUUID(),task={id,designNumber:'29123',reuseExisting:true,customer:'Updated customer',jobTitle:'New order'};
+  const adopted=await adoptDesign(root,state,task);assert.equal(adopted.folderName,'29123 Original customer');
+  assert.deepEqual(await adoptDesign(root,state,task),adopted);
+  await assert.rejects(()=>adoptDesign(root,state,{...task,id:randomUUID()}),/another generator/);
+  assert.deepEqual(await fs.readFile(path.join(folder,'Old PROOF.pdf')),original);
+  const bytes=await pdfBytes('New proof');const save={...task,...adopted,revision:1,pdf:bytes.toString('base64'),hash:createHash('sha256').update(bytes).digest('hex')};
+  const result=await saveDesignProof(root,state,save);assert.equal(path.dirname(result),await fs.realpath(folder));
+  assert.deepEqual(await fs.readFile(path.join(folder,'proof-history',id,'Old PROOF.pdf')),original);
+  assert.equal(await fs.readFile(path.join(folder,'artwork.eps'),'utf8'),'original artwork');
+  assert.deepEqual(await fs.readFile(result),bytes);assert.equal(await saveDesignProof(root,state,save),result);
+  assert.equal((await fs.readdir(folder)).filter(name=>/proof\.(pdf|ai)$/i.test(name)).length,1);
+  await assert.rejects(()=>adoptDesign(root,state,{...task,id:randomUUID(),designNumber:'29124'}),/found 0/);
+  await fs.mkdir(path.join(root,'29123 Duplicate'));await assert.rejects(()=>adoptDesign(root,state,task),/found 2/);
+ }finally{await fs.rm(dir,{recursive:true,force:true});}
+});

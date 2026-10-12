@@ -15,6 +15,7 @@ function harness({ fail=false }={}) {
     currentBrief:{products:[{decorations:[{id:'mark',artworkId:'art-1',placement:{x:.37,y:.22},widthMm:125}]}]},currentPreview:null,
     progressMessage:'',setCreating(){},setFeedback(message){context.progressMessage=message;},
     showProofList(){calls.push('list');},renderHistory(){},refreshHistory(){},
+    jobReservation(){return {};},
     async designRequest(){calls.push('reserve-request');await gate;if(fail)throw Error('Service unavailable');return {id:'existing-design',revision:4,status:'saved'};},
     async recordProgress(state){calls.push(state);},async prepareArtworkFile(){},async saveProofSource(){calls.push('source');},
     async reserveDesign(brief){calls.push('identity');brief.proofDesignId=context.designId;brief.proofRevision=4;},
@@ -101,4 +102,14 @@ test('opening a saved proof restores the editor without generating or saving',as
   const requests=calls.filter(Array.isArray);assert.equal(requests.length,1);
   assert.equal(requests[0][0],'/api/proof-generator/designs/saved-proof/source');assert.equal(requests[0][1].method,undefined);
   assert.equal(context.results.children[0].alt,'Previously saved proof');
+});
+
+test('optional job selection sends a reference only when explicitly starting a job-linked proof',()=>{
+  const fn=source.slice(source.indexOf('  function jobReservation()'),source.indexOf('  window.openLinkedProof='));
+  const context={selectedLinkJob:null,design:null,existingReference:{value:'29123'}};vm.createContext(context);
+  vm.runInContext(fn+'\nthis.reservation=jobReservation;',context);
+  assert.equal(JSON.stringify(context.reservation()),'{}');
+  context.selectedLinkJob={source_order_id:50600};
+  assert.equal(JSON.stringify(context.reservation()),JSON.stringify({sourceOrderId:50600,designReference:'29123'}));
+  context.design={sourceOrderId:50600};assert.equal(JSON.stringify(context.reservation()),'{}');
 });

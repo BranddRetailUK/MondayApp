@@ -20,12 +20,52 @@ function createService(pool, {upload = require('./cloudinaryDashboard').uploadBu
       AND ($1='' OR concat_ws(' ',j.order_no,j.customer_name,j.job_title) ILIKE '%' || $1 || '%')
       ORDER BY j.source_order_id DESC LIMIT 100`,[String(q).trim().slice(0,200)])).rows;
   }
+  const officeJob = row => {
+    const {resolveDashboardGroupId,resolveJobApproved}=require('./dashboardAutomation');
+    return !resolveJobApproved(row,row.column_values||{}) && resolveDashboardGroupId(row,row,null)===GROUP.OFFICE;
+  };
+  async function designRefs(db,id){
+    const rows=(await db.query('SELECT design_ref FROM database_job_positions WHERE source_order_id=$1 ORDER BY position_sort_order,source_order_position_id',[id])).rows;
+    return [...new Set(rows.map(row=>String(row.design_ref||'').trim()).filter(ref=>/^[1-9]\d{4,9}$/.test(ref)))];
+  }
+  async function officeJobs(q=''){
+    const rows=(await pool.query(`SELECT j.*,s.group_id,s.column_values FROM database_jobs j
+      LEFT JOIN test_dashboard_job_state s USING(source_order_id)
+      WHERE ${eligible} AND j.proof_approved IS NOT TRUE
+      AND NOT EXISTS(SELECT 1 FROM test_dashboard_files WHERE source_order_id=j.source_order_id AND ${VISUAL})
+      AND NOT EXISTS(SELECT 1 FROM proof_job_links WHERE source_order_id=j.source_order_id)
+      AND ($1='' OR concat_ws(' ',j.order_no,j.customer_name,j.job_title) ILIKE '%' || $1 || '%')
+      ORDER BY j.source_order_id DESC`,[String(q).trim().slice(0,200)])).rows.filter(officeJob).slice(0,100);
+    return Promise.all(rows.map(async row=>({source_order_id:row.source_order_id,order_no:row.order_no,customer_name:row.customer_name,job_title:row.job_title,designRefs:await designRefs(pool,row.source_order_id)})));
+  }
+  async function reserveForJob(proofId,sourceOrderId,reference){
+    if(!require('./proofDesignJobs').UUID.test(proofId||''))throw new Error('Invalid proof ID.');
+    const id=orderId(sourceOrderId);
+    return transaction(async db=>{
+      await db.query("INSERT INTO proof_design_jobs(id,status) VALUES($1,'preparing') ON CONFLICT(id) DO NOTHING",[proofId]);
+      const proof=(await db.query('SELECT * FROM proof_design_jobs WHERE id=$1 FOR UPDATE',[proofId])).rows[0];
+      const ref=String(reference||'').trim();
+      if(proof.active_source_order_id){
+        if(proof.active_source_order_id!==id || (proof.reuse_existing?String(proof.design_number):'')!==ref)throw new Error('The proof job or design reference changed. Start a new proof.');
+        return;
+      }
+      if(proof.status!=='preparing'||proof.design_number||proof.revision)throw new Error('Select the job before creating the proof.');
+      const target=(await db.query(`SELECT j.*,s.group_id,s.column_values FROM database_jobs j LEFT JOIN test_dashboard_job_state s USING(source_order_id)
+        WHERE j.source_order_id=$1 AND ${eligible} FOR UPDATE OF j`,[id])).rows[0];
+      if(!target||!officeJob(target))throw new Error('Select an unapproved OFFICE job.');
+      const refs=await designRefs(db,id);
+      if(refs.length ? !refs.includes(ref) : !!ref)throw new Error('Select an existing design reference from this job.');
+      if(ref && (await db.query('SELECT id FROM proof_design_jobs WHERE design_number=$1',[ref])).rows.length)throw new Error('This design already has a generator proof. Open its existing proof instead.');
+      await linkWithClient(db,proofId,id);
+      await db.query('UPDATE proof_design_jobs SET customer=$2,job_title=$3,design_number=$4,reuse_existing=$5 WHERE id=$1',[proofId,target.customer_name||'',target.job_title||'',ref||null,!!ref]);
+    });
+  }
   async function job(id) {
     id=orderId(id);
     const row=(await pool.query(`SELECT j.source_order_id,j.order_no,j.customer_name,j.job_title,j.proof_approved,
       l.proof_id, l.saved_revision, EXISTS(SELECT 1 FROM test_dashboard_files WHERE source_order_id=j.source_order_id AND ${VISUAL}) AS has_visual
       FROM database_jobs j LEFT JOIN proof_job_links l USING(source_order_id) WHERE j.source_order_id=$1`,[id])).rows[0];
-    if(!row)throw new Error('Job not found.');return row;
+    if(!row)throw new Error('Job not found.');return {...row,designRefs:await designRefs(pool,id)};
   }
   async function checkTargetSwitch(db,proof,id){
     if(proof.publish_source_order_id && proof.publish_source_order_id!==id){
@@ -152,6 +192,6 @@ function createService(pool, {upload = require('./cloudinaryDashboard').uploadBu
       await db.query('UPDATE proof_design_jobs SET active_source_order_id=NULL WHERE id=$1 AND active_source_order_id=$2',[proof.id,id]);
     });
   }
-  return {jobs,job,link,linkWithClient,activate,publish,unlink,autoLink,sync};
+  return {jobs,officeJobs,reserveForJob,job,link,linkWithClient,activate,publish,unlink,autoLink,sync};
 }
 module.exports={createService,isProduction,VISUAL};

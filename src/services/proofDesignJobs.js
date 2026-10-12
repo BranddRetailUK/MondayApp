@@ -1,8 +1,8 @@
 const {originalArtworkName}=require('../../tools/print-worker/proof-filename');
 const {randomUUID,createHash}=require('node:crypto');
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-const publicJob=row=>row&&({id:row.id,customer:row.customer,jobTitle:row.job_title,designNumber:row.design_number&&String(row.design_number),folderName:row.folder_name,status:row.status,revision:row.revision,savedRevision:row.saved_revision,message:row.message,sourceOrderId:row.active_source_order_id||null,linkedOrders:row.linked_orders||[],linkedJobs:row.linked_jobs||[],linkPending:!!row.link_pending,reference:row.reference||'',createdAt:row.created_at,updatedAt:row.updated_at,hasPreview:!!row.has_preview,hasPdf:!!row.has_pdf,hasSource:!!row.has_source,generationStatus:row.generation_status==='generating'&&Date.now()-new Date(row.generation_updated_at).getTime()>120000?'interrupted':row.generation_status||'',generationMessage:row.generation_message||''});
-const columns="(SELECT COALESCE(jsonb_agg(jsonb_build_object('sourceOrderId',l.source_order_id,'orderNo',l.order_no) ORDER BY l.source_order_id), '[]'::jsonb) FROM proof_job_links l WHERE l.proof_id=proof_design_jobs.id) AS linked_orders,EXISTS(SELECT 1 FROM proof_job_links l WHERE l.proof_id=proof_design_jobs.id AND l.source_order_id=proof_design_jobs.publish_source_order_id AND l.saved_revision<proof_design_jobs.saved_revision) AS link_pending,active_source_order_id,(SELECT COALESCE(jsonb_agg(l.source_order_id ORDER BY l.source_order_id), '[]'::jsonb) FROM proof_job_links l WHERE l.proof_id=proof_design_jobs.id) AS linked_jobs,id,customer,job_title,design_number,folder_name,status,revision,saved_revision,message,save_key,pdf_hash,reference,created_at,updated_at,generation_status,generation_message,generation_updated_at,(preview_png IS NOT NULL) AS has_preview,(proof_pdf IS NOT NULL AND proof_ready) AS has_pdf,(source IS NOT NULL) AS has_source";
+const publicJob=row=>row&&({id:row.id,customer:row.customer,jobTitle:row.job_title,designNumber:row.design_number&&String(row.design_number),folderName:row.folder_name,status:row.status,revision:row.revision,savedRevision:row.saved_revision,message:row.message,sourceOrderId:row.active_source_order_id||null,linkedOrders:row.linked_orders||[],linkedJobs:row.linked_jobs||[],linkPending:!!row.link_pending,reuseExisting:!!row.reuse_existing,reference:row.reference||'',createdAt:row.created_at,updatedAt:row.updated_at,hasPreview:!!row.has_preview,hasPdf:!!row.has_pdf,hasSource:!!row.has_source,generationStatus:row.generation_status==='generating'&&Date.now()-new Date(row.generation_updated_at).getTime()>120000?'interrupted':row.generation_status||'',generationMessage:row.generation_message||''});
+const columns="(SELECT COALESCE(jsonb_agg(jsonb_build_object('sourceOrderId',l.source_order_id,'orderNo',l.order_no) ORDER BY l.source_order_id), '[]'::jsonb) FROM proof_job_links l WHERE l.proof_id=proof_design_jobs.id) AS linked_orders,EXISTS(SELECT 1 FROM proof_job_links l WHERE l.proof_id=proof_design_jobs.id AND l.source_order_id=proof_design_jobs.publish_source_order_id AND l.saved_revision<proof_design_jobs.saved_revision) AS link_pending,reuse_existing,active_source_order_id,(SELECT COALESCE(jsonb_agg(l.source_order_id ORDER BY l.source_order_id), '[]'::jsonb) FROM proof_job_links l WHERE l.proof_id=proof_design_jobs.id) AS linked_jobs,id,customer,job_title,design_number,folder_name,status,revision,saved_revision,message,save_key,pdf_hash,reference,created_at,updated_at,generation_status,generation_message,generation_updated_at,(preview_png IS NOT NULL) AS has_preview,(proof_pdf IS NOT NULL AND proof_ready) AS has_pdf,(source IS NOT NULL) AS has_source";
 function createService(pool){
   const query=(text,values=[])=>pool.query(text,values);
   async function get(id){if(!UUID.test(id||''))throw new Error('Invalid proof ID.');const r=await query(`SELECT ${columns} FROM proof_design_jobs WHERE id=$1 AND status<>'archived'`,[id]);if(!r.rows[0])throw new Error('Proof design not found.');return publicJob(r.rows[0]);}
@@ -78,19 +78,19 @@ function createService(pool){
     throw new Error('The proof has changed or is still being saved. Wait for the current save, then regenerate.');
   }
   async function retry(id){await get(id);await query(`UPDATE proof_design_jobs SET status=CASE WHEN folder_name IS NULL THEN 'awaiting_folder' WHEN pdf IS NOT NULL THEN 'save_queued' ELSE 'folder_ready' END,message='',claim_token=NULL,lease_until=NULL WHERE id=$1 AND status='error'`,[id]);return get(id);}
-  async function claim(workerId){
+  async function claim(workerId,proofFilesVersion=5){
     const db=await pool.connect();
     try{
       await db.query('BEGIN');await db.query('SELECT pg_advisory_xact_lock(731092)');
       const active=await db.query("SELECT id FROM proof_design_jobs WHERE status IN ('allocating','saving') AND lease_until>NOW() LIMIT 1");
       if(active.rows.length){await db.query('COMMIT');return null;}
-      const result=await db.query(`SELECT * FROM proof_design_jobs WHERE status IN ('awaiting_folder','save_queued') OR
-        (status IN ('allocating','saving') AND lease_until<=NOW()) ORDER BY created_at LIMIT 1 FOR UPDATE`);
+      const result=await db.query(`SELECT * FROM proof_design_jobs WHERE (NOT reuse_existing OR $1>=5) AND (status IN ('awaiting_folder','save_queued') OR
+        (status IN ('allocating','saving') AND lease_until<=NOW())) ORDER BY created_at LIMIT 1 FOR UPDATE`,[proofFilesVersion]);
       const job=result.rows[0];if(!job){await db.query('COMMIT');return null;}
-      const token=randomUUID(),operation=job.folder_name?'save':'allocate';
+      const token=randomUUID(),operation=job.folder_name?'save':job.reuse_existing?'adopt':'allocate';
       await db.query(`UPDATE proof_design_jobs SET status=$2,claim_token=$3,worker_id=$4,lease_until=NOW()+INTERVAL '120 seconds',updated_at=NOW() WHERE id=$1`,[job.id,operation==='save'?'saving':'allocating',token,workerId]);
       await db.query('COMMIT');
-      return {id:job.id,operation,claimToken:token,customer:job.customer,jobTitle:job.job_title,designNumber:job.design_number&&String(job.design_number),folderName:job.folder_name,revision:job.revision,hash:job.pdf_hash,artworks:job.artworks||[],pdf:job.pdf&&Buffer.from(job.pdf).toString('base64')};
+      return {id:job.id,operation,claimToken:token,reuseExisting:!!job.reuse_existing,customer:job.customer,jobTitle:job.job_title,designNumber:job.design_number&&String(job.design_number),folderName:job.folder_name,revision:job.revision,hash:job.pdf_hash,artworks:job.artworks||[],pdf:job.pdf&&Buffer.from(job.pdf).toString('base64')};
     }catch(error){await db.query('ROLLBACK');throw error;}finally{db.release();}
   }
   async function reserveNumber(id,token,proposed){
@@ -125,7 +125,7 @@ function createService(pool){
       await query("UPDATE proof_design_jobs SET design_number=$3,folder_name=$4,status='folder_ready',message='',lease_until=NULL,updated_at=NOW() WHERE id=$1 AND claim_token=$2",[id,token,n,folder]);
     }else if(result.status==='saved'&&row.status==='saving'&&result.hash===row.pdf_hash&&result.revision===row.revision){
       const folder=result.folderName==null?row.folder_name:String(result.folderName);
-      const expected=`${row.design_number} ${require('../../tools/print-worker/proof-files').cleanCustomer(row.customer)}`;
+      const expected=row.reuse_existing?row.folder_name:`${row.design_number} ${require('../../tools/print-worker/proof-files').cleanCustomer(row.customer)}`;
       if(result.folderName!=null&&folder!==expected)throw new Error('Invalid saved design folder result.');
       await query("UPDATE proof_design_jobs SET folder_name=$3,status='saved',generation_status='complete',generation_message='',saved_revision=revision,saved_proof_pdf=pdf,saved_snapshot=jsonb_build_object('source',source,'source_artworks',source_artworks,'garment_assets',garment_assets,'customer',customer,'job_title',job_title),pdf=NULL,artworks='[]'::jsonb,message='Saved in DESIGN FILES',lease_until=NULL,updated_at=NOW() WHERE id=$1 AND claim_token=$2",[id,token,folder]);
     }else throw new Error('Invalid file worker result.');
