@@ -767,3 +767,5 @@ No external work-management token, OAuth, board, column, or webhook environment 
 - Validation: `test/dashboard-production-jobs.test.js` uses PostgreSQL semantics via PGlite to cover all eleven transitions, premature parent completion, reopening, design relinking and deletion/ownership protection.
 
 - Designs tab layout (2026-10-12): the desktop design-table frame scrolls vertically/horizontally with sticky column headers; rows are 32px with 30px textareas instead of 50px rows. The unused 220px filler is hidden so scrolling ends after the editable rows. Mobile design fields retain a compact 44px touch target rather than the previous 82px minimum.
+
+- Linked production child titles show only the design name; quantities remain in TOTAL and the linked stock subitem. For catalogue-backed lines, children's-clothing VAT inference uses catalogue garment fields/size and ignores custom design descriptions (e.g. Sonic Youth is not a youth garment). Legacy unlinked descriptions retain existing fallback behavior; explicit zero VAT and actual junior product metadata remain supported. Covered by `test/database-catalogue-vat.test.js`.

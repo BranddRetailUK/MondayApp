@@ -1205,7 +1205,7 @@ async function buildTestDashboardBoardPayload() {
       item.dashboard_private_job = false;
       item.dashboard_production_job = true;
       item.database_job = { source_order_id: link.source_order_id, order_no: link.order_no,
-        customer_name: link.customer_name, job_title: `${link.colour_notes || link.position_name} · ${link.line.quantity} beanies` };
+        customer_name: link.customer_name, job_title: link.colour_notes || link.position_name };
       item.subitems = [buildSubitem(link.line, subitemColumns)];
       item.column_values = item.column_values.filter(value => value.id !== TEST_DASHBOARD_COLUMN_IDS.DESIGN);
       item.column_values.push(textValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.DESIGN), designDisplayTextFromRawValue(link.design_ref)));

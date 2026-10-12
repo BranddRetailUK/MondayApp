@@ -11338,8 +11338,9 @@
       return true;
     }
 
+    // A design title (for example Sonic Youth) is not the catalogue garment age.
     const titleText = normalizeChildProductText([
-      item.line_description,
+      item.ralawise_catalog_variant_id ? null : item.line_description,
       item.style_name,
       item.product_type,
       item.style_code,
