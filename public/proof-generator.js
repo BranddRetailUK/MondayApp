@@ -46,12 +46,6 @@
               <div id="proof-product-status" class="proof-search-status" role="status" aria-live="polite"></div>
               <div id="proof-product-results" class="proof-search-results"></div>
             </div>
-            <div id="proof-job-picker">
-              <label class="proof-control">Find an OFFICE job (optional)<input id="proof-office-search" type="search" autocomplete="off" placeholder="Search job number, customer or title"></label>
-              <label class="proof-control">Link to job<select id="proof-office-job"><option value="">No job selected — create a new design</option></select></label>
-              <label id="proof-reference-control" class="proof-control" hidden>Design reference<select id="proof-existing-reference"></select></label>
-              <div id="proof-office-status" class="proof-search-status" role="status"></div>
-            </div>
             <div class="proof-job-fields">
               <div class="proof-customer-picker">
                 <label class="proof-control">Customer name<input id="proof-customer" type="search" maxlength="200" autocomplete="off" aria-controls="proof-customer-results" aria-describedby="proof-customer-status"></label>
@@ -78,6 +72,13 @@
           <div class="proof-form-actions"><button id="proof-review" class="proof-primary-button" type="button"><span class="proof-button-spinner" aria-hidden="true" hidden></span><span data-proof-button-label>Create proof</span><span data-proof-button-arrow aria-hidden="true">→</span></button><button id="proof-new" class="proof-secondary-button" type="button" hidden>New proof</button><button id="proof-retry-save" class="proof-secondary-button" type="button" hidden>Retry folder/save</button><span id="proof-feedback" role="status" aria-live="polite"></span></div>
         </div>
         <aside class="proof-review-column">
+            <section id="proof-job-picker" class="proof-card">
+              <div class="proof-review-title proof-section-title"><h2>Link to existing job</h2></div>
+              <label class="proof-control">Find an OFFICE job (optional)<input id="proof-office-search" type="search" autocomplete="off" placeholder="Search job number, customer or title"></label>
+              <label class="proof-control">Link to job<select id="proof-office-job"><option value="">No job selected — create a new design</option></select></label>
+              <label id="proof-reference-control" class="proof-control" hidden>Design reference<select id="proof-existing-reference"></select></label>
+              <div id="proof-office-status" class="proof-search-status" role="status"></div>
+            </section>
           <section class="proof-card proof-review-card" aria-live="polite">
             <div class="proof-review-title proof-section-title"><h2>Clothing proof</h2></div>
             <div id="proof-results" class="proof-results-empty"><div class="proof-empty-mark" aria-hidden="true">✦</div><strong>Ready when you are</strong></div>
