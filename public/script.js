@@ -4615,9 +4615,8 @@ async function renderProofPdf(file, token) {
   try {
     const pdfjs = await ensurePdfJs();
     const src = buildAssetSrc(file);
-    const resp = await fetch(src, { credentials: 'include', cache: 'no-store' });
-    if (!resp.ok) throw new Error(`PDF fetch failed (${resp.status})`);
-    const buffer = await resp.arrayBuffer();
+    const blob = await fetchProofDownloadBlob(src);
+    const buffer = await blob.arrayBuffer();
     if (token !== __proofModalState.renderToken) return;
 
     const loadingTask = pdfjs.getDocument({
