@@ -253,7 +253,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
             if((d.placement || calibration.regions?.[positionName(d.position)] || (d.anchor && d.anchor!=='region') || Number(d.offsetXmm) || Number(d.offsetYmm)) && !d.manualScale){
               retained.manualScale={widthPerMm:p.width/p.size.width,sourceHash:garment.sourceHash,view};
             }
-            retained.scaleVersion=2;
+            retained.scaleVersion=3;
           }
           pageData.placements.push({...p,id:d.id,artworkId:artwork.id,preview:asset.preview});
           // Avoid drawing an invalid oversized overlay through the callouts/header.

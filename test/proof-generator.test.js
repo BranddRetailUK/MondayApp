@@ -510,14 +510,14 @@ test('old manual outerwear sizing survives migration; new manual scale is image-
  assert.equal(old.width,100*g.legacyPxPerMm/g.width);
  const auto=layout.placementFor(mark({scaleVersion:2}),asset,g);
  const manual={...d,scaleVersion:2,manualScale:{widthPerMm:auto.width/100,sourceHash:'same',view:'front'}};
- assert.equal(layout.placementFor(manual,asset,g).width,auto.width);
- assert.equal(layout.placementFor({...manual,widthMm:'150'},asset,g).width,auto.width*1.5);
+ assert.ok(Math.abs(layout.placementFor(manual,asset,g).width-auto.width)<1e-12);
+ assert.ok(Math.abs(layout.placementFor({...manual,widthMm:'150'},asset,g).width-auto.width*1.5)<1e-12);
  assert.throws(()=>layout.placementFor(manual,asset,{...g,sourceHash:'changed'}),/different garment/);
  const b=brief([d]);b.products[0].name='Bodywarmer';
  const out=await buildProof(b,[await artFile()],{fetchImpl:await fixtureFetch(),strict:true});
  const again=await buildProof(JSON.parse(JSON.stringify(b)),[await artFile()],{fetchImpl:await fixtureFetch(),strict:true});
  assert.deepEqual(again.pages[0].placements,out.pages[0].placements);
- assert.equal(b.products[0].decorations[0].scaleVersion,2);assert.ok(b.products[0].decorations[0].manualScale.widthPerMm>0);
+ assert.equal(b.products[0].decorations[0].scaleVersion,3);assert.ok(b.products[0].decorations[0].manualScale.widthPerMm>0);
 });
 
 test('breast anchors follow torso centre instead of sleeve-inclusive image width',async()=>{
@@ -533,8 +533,44 @@ test('breast anchors follow torso centre instead of sleeve-inclusive image width
 test('enclosed white sleeve gaps are excluded from dark-garment torso measurement without changing legacy manual scale',async()=>{
  const bytes=await sharp(Buffer.from('<svg width="700" height="850"><path fill="#263953" d="M200 60 L290 30 Q350 100 410 30 L500 60 L680 160 L680 800 L20 800 L20 160 Z"/><rect x="130" y="300" width="40" height="460" fill="white"/><rect x="530" y="300" width="40" height="460" fill="white"/></svg>')).png().toBuffer();
  const base=await artwork.analyseGarment(bytes),g=artwork.automaticGarmentProfile({name:'Hoodie'},base,'front');
- assert.ok(Math.abs(g.estimatedPxPerMm-360/550)<.01);
- assert.ok(g.legacyPxPerMm>g.estimatedPxPerMm*1.5);
+ assert.ok(Math.abs(g.estimatedPxPerMm-360/550*1.55)<.01);
+ assert.ok(g.legacyPxPerMm>g.unrefinedPxPerMm*1.5);
  const a=layout.placementFor(mark(),{width:200,height:100},{...base,...g,view:'front'});
  assert.ok(a.x<.60);
+});
+
+test('shared unmeasured reference moves both 29140 artwork widths closer without product/position exceptions',async()=>{
+ // Normalised visible widths from the supplied screenshot, not physical garment measurements.
+ for(const [view,width,height,torsoPx,printMm,target] of [['front',580,734,322,100,.135],['back',533,670,300,270,.313]]){
+  const mask=new Uint8Array(width*height);const start=Math.floor((width-torsoPx)/2);
+  for(let y=0;y<height;y++)mask.fill(1,y*width+start,y*width+start+torsoPx);
+  const base={width,height,mask,confident:true,view};
+  for(const code of ['JC001','GD001','J265M','J441M','NEW-CODE']){
+   const g={...base,...artwork.automaticGarmentProfile({code},base,view)};
+   const p=layout.placementFor(mark({position:view==='front'?'left breast':'back',widthMm:String(printMm)}),{width:2835,height:1345},g);
+   const ratio=p.width*width/height,old=printMm*g.unrefinedPxPerMm/height;
+   assert.ok(Math.abs(ratio-target)<Math.abs(old-target));assert.ok(Math.abs(ratio/target-1)<.10);assert.equal(p.size.width,printMm);
+   assert.ok(Math.abs(g.estimatedPxPerMm/g.unrefinedPxPerMm-1.55)<1e-12);
+   const existing=layout.placementFor(mark({scaleVersion:2,placement:{x:.6,y:.25}}),{width:200,height:100},g);
+   assert.equal(existing.width,100*g.unrefinedPxPerMm/width);
+   const measured=artwork.automaticGarmentProfile({code,measurements:{flatChestWidthMm:550}},base,view);
+   assert.equal(measured.estimatedPxPerMm,g.unrefinedPxPerMm);
+  }
+ }
+});
+
+test('automatic body-print safety box follows torso width while manual regions stay unchanged',async()=>{
+ const base={width:500,height:850,mask:new Uint8Array(500*850).fill(1),confident:true,view:'back'};
+ const g={...base,...artwork.automaticGarmentProfile({},base,'back')};
+ const d=mark({position:'back',widthMm:'270'}),asset={width:270,height:128};
+ const p=layout.placementFor(d,asset,g);assert.ok(layout.fitsRegion(p));assert.equal(p.region.width,.9);
+ const manual=layout.placementFor({...d,placement:{x:.5,y:.2}},asset,g);assert.equal(manual.region.width,.52);
+});
+
+test('enlarged automatic breast artwork clears the torso centre line without moving manual artwork',()=>{
+ const g={width:500,height:800,view:'front',estimatedPxPerMm:1.4,torsoRegion:{left:.05,width:.9},landmarks:{leftBreast:{x:.65},rightBreast:{x:.35}}};
+ const asset={width:200,height:100};
+ const left=layout.placementFor(mark({widthMm:'120'}),asset,g),right=layout.placementFor(mark({position:'right breast',widthMm:'120'}),asset,g);
+ assert.ok(left.x-left.width/2>=.518-1e-12);assert.ok(right.x+right.width/2<=.482+1e-12);
+ assert.equal(layout.placementFor(mark({placement:{x:.6,y:.3},widthMm:'120'}),asset,g).x,.6);
 });
