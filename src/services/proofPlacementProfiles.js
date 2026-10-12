@@ -17,6 +17,13 @@ const STYLE_PROFILES = {
   RX350: 'hoodie', AFP2: 'hoodedOuterwear', LV290: 'tee',
   LV370: 'polo', SS8: 'sweatshirt', '03824': 'fleece',
 };
+// Global, style-scoped feedback: do not retune already approved garment families.
+// 29140 / PC Bespoke Joinery (2026-10-12): the JC001 screenshot shows
+// breast/back widths of ~0.135/~0.313 of garment height versus ~0.096/~0.220
+// in the supplied proof. Preview multipliers of 1.40/1.42 match both within ~1%.
+const STYLE_SCALE_REFERENCES = {
+  JC1: { sizeCategory: 'adult', positions: { 'left breast': 1.4, 'right breast': 1.4, back: 1.42, 'upper back': 1.42 } },
+};
 
 function garmentSizeProfile(product = {}) {
   const code = String(product.code || '').toUpperCase().replace(/^([A-Z]+)0+(?=\d)/,'$1');
@@ -44,14 +51,17 @@ function placementProfile(product = {}) {
     breast.breastCentre=(breast.breastCentre ?? PROFILES.hoodie.breastCentre)+0.02;
   }
   if (/bodywarmer|gilet/.test(name)) breast.neckRight=0.70;
-  return { family, ...PROFILES[family], ...breast };
+  const scaleReference=STYLE_SCALE_REFERENCES[code.replace(/^([A-Z]+)0+(?=\d)/,'$1')];
+  const referenceScale=scaleReference?.sizeCategory===garmentSizeProfile(product).sizeCategory ? scaleReference.positions : undefined;
+  return { family, ...PROFILES[family], ...breast, ...(referenceScale ? {referenceScale} : {}) };
 }
 
 function automaticPrintScale(position, garment) {
-  if (/breast/.test(position)) return garment.placementProfile?.breastScale ?? 1.2;
-  if (/sleeve/.test(position)) return garment.placementProfile?.sleeveScale ?? 1.15;
-  if (garment.sizeCategory === 'child' && /^(back|upper back)$/.test(position)) return 0.85;
-  return 1;
+  let scale=1;
+  if (/breast/.test(position)) scale=garment.placementProfile?.breastScale ?? 1.2;
+  else if (/sleeve/.test(position)) scale=garment.placementProfile?.sleeveScale ?? 1.15;
+  else if (garment.sizeCategory === 'child' && /^(back|upper back)$/.test(position)) scale=0.85;
+  return scale*(garment.placementProfile?.referenceScale?.[position] ?? 1);
 }
 
 function automaticTop(position, view, height, profile = PROFILES.tee) {

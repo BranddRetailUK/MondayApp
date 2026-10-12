@@ -482,3 +482,32 @@ test('automatic artwork cleanup preserves edge-connected white lettering backgro
  const removed=await sharp(Buffer.from(explicit.preview.split(',')[1],'base64')).ensureAlpha().raw().toBuffer();
  assert.equal(removed[(60*80+40)*4+3],0);
 });
+
+test('29140 JC001 global reference matches screenshot scale without changing print sizes or approved profiles',()=>{
+ const {placementProfile}=require('../src/services/proofPlacementProfiles');
+ const asset={width:2835,height:1345};
+ // Geometry measured from the actual proof's cropped supplier images and PDF transforms.
+ for(const [position,view,w,h,estimate,mm,target] of [
+  ['left breast','front',580,734,28.714391875154817/300*734/100/1.2,100,.135],
+  ['back','back',533,670,65.94301221166891/300*670/270,270,.313],
+ ]){
+  const base={width:w,height:h,view,estimatedPxPerMm:estimate,sizeCategory:'adult'};
+  const d=mark({position,widthMm:String(mm)});
+  for(const code of ['JC001','JC01','JC1',' jc001 ']){
+   const g={...base,placementProfile:placementProfile({code,name:'Cool T'})};
+   const p=layout.placementFor(d,asset,g);
+   assert.ok(Math.abs(p.width*w/h-target)<.002);assert.equal(p.size.width,mm);assert.ok(layout.fitsRegion(p));
+   const unchanged={...base,placementProfile:placementProfile({code:'GD001',name:'T-shirt'})};
+   for(const [decoration,calibration] of [
+    [{...d,placement:{x:.62,y:.25}},{}],
+    [{...d,offsetXmm:'5'},{}],
+    [d,{referenceMm:550,start:{x:0,y:.5},end:{x:1,y:.5}}],
+    [d,{regions:{[position]:layout.regionFor(position,view)}}],
+   ])assert.deepEqual(layout.placementFor(decoration,asset,g,calibration),layout.placementFor(decoration,asset,unchanged,calibration));
+  }
+ }
+ for(const product of [{code:'GD001',name:'T-shirt'},{code:'J265M',name:'Authentic hooded sweatshirt'},{code:'J441M',name:'Nano bodywarmer'},{code:'JC001B',name:'Kids Cool T'},{code:'JC001',name:'Kids Cool T'}])assert.equal(placementProfile(product).referenceScale,undefined);
+ const {automaticPrintScale}=require('../src/services/proofPlacementProfiles');
+ const g={placementProfile:placementProfile({code:'JC001'})};
+ assert.equal(automaticPrintScale('right sleeve',g),1.15);assert.equal(automaticPrintScale('front',g),1);
+});
