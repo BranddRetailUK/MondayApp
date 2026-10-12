@@ -1144,17 +1144,10 @@ async function buildTestDashboardBoardPayload() {
   }
 
   const linksById = new Map(productionLinks.map(link => [link.dashboard_job_id, link]));
-  const progressByOrder = new Map();
-  for (const child of privateJobs) {
-    const link = linksById.get(child.id);
-    if (!link) continue;
-    const progress = progressByOrder.get(link.source_order_id) || { completed: 0, total: 0 };
-    progress.total++;
-    if (getColumnText(child.column_values?.[TEST_DASHBOARD_COLUMN_IDS.STATUS]).toUpperCase() === 'COMPLETED') progress.completed++;
-    progressByOrder.set(link.source_order_id, progress);
-  }
+  const productionParentIds = new Set(productionLinks.map(link => link.source_order_id));
   const grouped = new Map(groups.map(group => [group.id, []]));
   for (const job of candidateJobs) {
+    if (productionParentIds.has(job.source_order_id)) continue;
     const state = states.get(job.source_order_id) || null;
     const scan = scans.get(String(job.source_order_id)) || null;
     if (!shouldRenderDashboardJob(job, state, scan)) continue;
@@ -1186,12 +1179,6 @@ async function buildTestDashboardBoardPayload() {
       continue;
     }
     const item = buildBoardItem(itemArgs);
-    const progress = progressByOrder.get(job.source_order_id);
-    if (progress) {
-      item.dashboard_production_parent = true;
-      item.dashboard_production_progress = progress;
-      item.database_job.job_title += ` (${progress.completed}/${progress.total} completed)`;
-    }
     const groupId = resolveDashboardGroupId(job, state, scan);
     if (!grouped.has(groupId)) grouped.set(groupId, []);
     grouped.get(groupId).push(item);
