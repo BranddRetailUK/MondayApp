@@ -100,6 +100,7 @@ test('individual file deletion removes one visual from a private dashboard job',
   const destroyed = [];
   const { router, restore } = loadTestDashboardRouter({
     async query(sql, values = []) {
+      if (sql.includes('FROM dashboard_production_jobs')) return { rows: [] };
       if (sql.includes('FROM test_dashboard_private_jobs') && sql.includes('WHERE id = $1')) {
         return { rowCount: 1, rows: [job] };
       }
@@ -155,6 +156,7 @@ test('individual file deletion removes the exact database-order visual and clean
   const destroyed = [];
   const { router, restore } = loadTestDashboardRouter({
     async query(sql, values = []) {
+      if (sql.includes('FROM dashboard_production_jobs')) return { rows: [] };
       queries.push({ sql, values });
       if (sql.includes('DELETE FROM test_dashboard_files')) {
         return { rowCount: 1, rows: [deletedFile] };

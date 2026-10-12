@@ -879,6 +879,7 @@ async function ensureTestDashboardTables(db) {
   await db.query('DROP INDEX IF EXISTS test_dashboard_files_public_id_idx;');
   await db.query('CREATE UNIQUE INDEX IF NOT EXISTS test_dashboard_files_job_public_id_idx ON test_dashboard_files(source_order_id, public_id);');
   await db.query('CREATE INDEX IF NOT EXISTS test_dashboard_private_jobs_group_idx ON test_dashboard_private_jobs(group_id);');
+  await require('../services/dashboardProductionJobs').ensureProductionJobTables(db);
 
   await db.query(`
     INSERT INTO database_job_status_updates (

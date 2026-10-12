@@ -1,5 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
+const { fetchProductionLinks, productionLink, saveLinkedProductionJob } = require('../services/dashboardProductionJobs');
 const pool = require('../db/pool');
 const { fullName } = require('../services/hubAuth');
 const { signPayload, advanceScan } = require('../services/scanner');
@@ -138,6 +139,7 @@ protectedRouter.delete('/api/test-dashboard/private-jobs/:jobId', async (req, re
     const job = await fetchPrivateDashboardJob(jobId);
     if (!job) return res.status(404).json({ error: 'Private dashboard job not found' });
 
+    if (await productionLink(pool, jobId)) return res.status(409).json({ error: 'Linked production jobs cannot be deleted independently of their order' });
     const deleted = await pool.query(
       `DELETE FROM test_dashboard_private_jobs
        WHERE id = $1
@@ -356,6 +358,14 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
         error: DASHBOARD_COMPLETION_BLOCK_MESSAGE,
         code: 'dashboard_completed_status_blocked',
       });
+    }
+
+    if (!privateJob && ['COMPLETED', 'INVOICED'].includes(requestedLabel.toUpperCase())) {
+      const children = await pool.query(`SELECT 1 FROM dashboard_production_jobs p
+        JOIN test_dashboard_private_jobs d ON d.id=p.dashboard_job_id
+        WHERE p.source_order_id=$1 AND COALESCE(UPPER(d.column_values->$2->>'text'),'') <> 'COMPLETED' LIMIT 1`,
+      [sourceOrderId, TEST_DASHBOARD_COLUMN_IDS.STATUS]);
+      if (children.rows.length) return res.status(409).json({ error: 'Complete all linked production jobs before completing this order' });
     }
 
     const state = privateJob ? job : await fetchJobState(job.source_order_id);
@@ -702,7 +712,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/design-column', async (req
         item_name: job.item_name || '',
         column_values: columnValues,
         archived: Boolean(job.archived),
-      });
+      }, { designChanged: true });
       return res.json({
         ok: true,
         itemId: job.id,
@@ -1110,12 +1120,13 @@ publicRouter.get('/test-scan', async (req, res) => {
 });
 
 async function buildTestDashboardBoardPayload() {
-  const [columns, subitemColumns, groups, jobs, privateJobs] = await Promise.all([
+  const [columns, subitemColumns, groups, jobs, privateJobs, productionLinks] = await Promise.all([
     fetchDashboardColumns(false),
     fetchDashboardColumns(true),
     fetchDashboardGroups(),
     fetchOpenDashboardJobs(),
     fetchPrivateDashboardJobs(),
+    fetchProductionLinks(pool),
   ]);
   const candidateJobs = jobs.filter(job => deriveJobCategory(job) !== 'gifts');
   const sourceOrderIds = candidateJobs.map(job => job.source_order_id);
@@ -1132,6 +1143,16 @@ async function buildTestDashboardBoardPayload() {
     positions = await fetchPositionMap(sourceOrderIds);
   }
 
+  const linksById = new Map(productionLinks.map(link => [link.dashboard_job_id, link]));
+  const progressByOrder = new Map();
+  for (const child of privateJobs) {
+    const link = linksById.get(child.id);
+    if (!link) continue;
+    const progress = progressByOrder.get(link.source_order_id) || { completed: 0, total: 0 };
+    progress.total++;
+    if (getColumnText(child.column_values?.[TEST_DASHBOARD_COLUMN_IDS.STATUS]).toUpperCase() === 'COMPLETED') progress.completed++;
+    progressByOrder.set(link.source_order_id, progress);
+  }
   const grouped = new Map(groups.map(group => [group.id, []]));
   for (const job of candidateJobs) {
     const state = states.get(job.source_order_id) || null;
@@ -1165,13 +1186,30 @@ async function buildTestDashboardBoardPayload() {
       continue;
     }
     const item = buildBoardItem(itemArgs);
+    const progress = progressByOrder.get(job.source_order_id);
+    if (progress) {
+      item.dashboard_production_parent = true;
+      item.dashboard_production_progress = progress;
+      item.database_job.job_title += ` (${progress.completed}/${progress.total} completed)`;
+    }
     const groupId = resolveDashboardGroupId(job, state, scan);
     if (!grouped.has(groupId)) grouped.set(groupId, []);
     grouped.get(groupId).push(item);
   }
   for (const privateJob of privateJobs) {
     if (privateJob.archived) continue;
+    const link = linksById.get(privateJob.id);
+    if (link && (link.invoice_printed || link.pf_invoice_printed || (link.invoice_required === false && link.closed_without_invoice))) continue;
     const item = buildPrivateBoardItem(privateJob, columns);
+    if (link) {
+      item.dashboard_private_job = false;
+      item.dashboard_production_job = true;
+      item.database_job = { source_order_id: link.source_order_id, order_no: link.order_no,
+        customer_name: link.customer_name, job_title: `${link.colour_notes || link.position_name} · ${link.line.quantity} beanies` };
+      item.subitems = [buildSubitem(link.line, subitemColumns)];
+      item.column_values = item.column_values.filter(value => value.id !== TEST_DASHBOARD_COLUMN_IDS.DESIGN);
+      item.column_values.push(textValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.DESIGN), designDisplayTextFromRawValue(link.design_ref)));
+    }
     const groupId = resolvePrivateDashboardGroupId(privateJob);
     if (!grouped.has(groupId)) grouped.set(groupId, []);
     grouped.get(groupId).push(item);
@@ -1801,9 +1839,10 @@ async function createPrivateDashboardJob({ groupId, title, columns, user }) {
   return result.rows[0];
 }
 
-async function updatePrivateDashboardJob(jobId, state) {
+async function updatePrivateDashboardJob(jobId, state, options = {}) {
   state = rememberPrivateDashboardSampling(state);
-  const result = await pool.query(
+  return saveLinkedProductionJob(pool, jobId, state, async db => {
+  const result = await db.query(
     `UPDATE test_dashboard_private_jobs
      SET group_id = $2,
          item_name = $3,
@@ -1821,6 +1860,7 @@ async function updatePrivateDashboardJob(jobId, state) {
     ]
   );
   return result.rows[0];
+  }, options);
 }
 
 async function fetchJobState(sourceOrderId) {
