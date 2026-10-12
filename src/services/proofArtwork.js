@@ -196,9 +196,16 @@ function automaticGarmentProfile(product, garment, view, referenceGarment) {
   const torsoRegion=garment.confident && torsoPx && ['front','back'].includes(view) ? {
     left:(torsoCentre-torsoPx*.45)/garment.width,width:torsoPx*.9/garment.width
   } : undefined;
+  // A compact silhouette exposes the chest panel edges without projecting sleeves.
+  const exposedPanels=torsoPx/garment.width>.85;
+  const breastFraction=exposedPanels ? .25 : .15;
+  const chestPanels=exposedPanels && garment.confident && view==='front' ? {
+    'left breast':{left:(torsoCentre+torsoPx*.02)/garment.width,width:torsoPx*.46/garment.width},
+    'right breast':{left:(torsoCentre-torsoPx*.48)/garment.width,width:torsoPx*.46/garment.width}
+  } : undefined;
   const breastAnchors=garment.confident && torsoPx && ['front','back'].includes(view) ? {
-    leftBreast:{x:(torsoCentre+torsoPx*.15)/garment.width},
-    rightBreast:{x:(torsoCentre-torsoPx*.15)/garment.width}
+    leftBreast:{x:(torsoCentre+torsoPx*breastFraction)/garment.width},
+    rightBreast:{x:(torsoCentre-torsoPx*breastFraction)/garment.width}
   } : {};
   // Historical manual placements had no scale snapshot. Preserve their old
   // conversion only during migration; new automatic proofs never use it.
@@ -207,12 +214,19 @@ function automaticGarmentProfile(product, garment, view, referenceGarment) {
   // Side views use an explicit estimate; a torso width cannot calibrate depth.
   let estimatedPxPerMm=garment.confident&&torsoPx&&['front','back'].includes(view)?torsoPx/torsoMm:garment.width/(700*sizing.garmentScale);
   let unrefinedPxPerMm=estimatedPxPerMm;
-  if(scaleSource==='estimated')estimatedPxPerMm*=UNMEASURED_REFERENCE_SCALE;
+  let referencePxPerMm=estimatedPxPerMm*(scaleSource==='estimated'?UNMEASURED_REFERENCE_SCALE:1);
+  if(scaleSource==='estimated'){
+    // Shared height guard prevents unusually broad silhouettes inflating the
+    // width-only estimate. Confirmed tee/hoodie ratios remain below this limit.
+    if(garment.confident && torsoPx && ['front','back'].includes(view))estimatedPxPerMm=Math.min(torsoPx,garment.height*.46)/torsoMm;
+    estimatedPxPerMm*=UNMEASURED_REFERENCE_SCALE;
+  }
   // Full-length views depict the same physical garment height. Transfer the
   // front estimate by height; a side silhouette's width represents depth.
   if(['left','right'].includes(view)&&garment.confident&&referenceGarment?.confident&&referenceGarment.height>0&&referenceGarment.estimatedPxPerMm>0){
     estimatedPxPerMm=referenceGarment.estimatedPxPerMm*garment.height/referenceGarment.height;
     unrefinedPxPerMm=(referenceGarment.unrefinedPxPerMm || referenceGarment.estimatedPxPerMm)*garment.height/referenceGarment.height;
+    referencePxPerMm=(referenceGarment.referencePxPerMm || referenceGarment.estimatedPxPerMm)*garment.height/referenceGarment.height;
     legacyPxPerMm=(referenceGarment.legacyPxPerMm || referenceGarment.estimatedPxPerMm)*garment.height/referenceGarment.height;
     // Transferring scale to a generated/different angle remains an estimate.
     scaleSource='front-height-estimate';
@@ -223,6 +237,6 @@ function automaticGarmentProfile(product, garment, view, referenceGarment) {
       if(garment.mask[y*garment.width+Math.floor(garment.width*.5)]){collarY=y/garment.height;break;}
     }
   }
-  return {torsoRegion,estimatedPxPerMm,unrefinedPxPerMm,legacyPxPerMm,scaleSource,estimatedTorsoMm:torsoMm,...sizing,placementProfile:profile,landmarks:{...breastAnchors,neckRight:{x:profile.neckRight,y:collarY},collar:{x:.5,y:collarY},hem:{x:.5,y:.97}}};
+  return {torsoRegion,chestPanels,referencePxPerMm,estimatedPxPerMm,unrefinedPxPerMm,legacyPxPerMm,scaleSource,estimatedTorsoMm:torsoMm,...sizing,placementProfile:profile,landmarks:{...breastAnchors,neckRight:{x:profile.neckRight,y:collarY},collar:{x:.5,y:collarY},hem:{x:.5,y:.97}}};
 }
 module.exports={visibleBounds,rasterPdf,prepareArtwork,analyseGarment,coverage,fitSleeve,automaticGarmentProfile};

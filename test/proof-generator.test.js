@@ -517,7 +517,7 @@ test('old manual outerwear sizing survives migration; new manual scale is image-
  const out=await buildProof(b,[await artFile()],{fetchImpl:await fixtureFetch(),strict:true});
  const again=await buildProof(JSON.parse(JSON.stringify(b)),[await artFile()],{fetchImpl:await fixtureFetch(),strict:true});
  assert.deepEqual(again.pages[0].placements,out.pages[0].placements);
- assert.equal(b.products[0].decorations[0].scaleVersion,3);assert.ok(b.products[0].decorations[0].manualScale.widthPerMm>0);
+ assert.equal(b.products[0].decorations[0].scaleVersion,4);assert.ok(b.products[0].decorations[0].manualScale.widthPerMm>0);
 });
 
 test('breast anchors follow torso centre instead of sleeve-inclusive image width',async()=>{
@@ -533,7 +533,7 @@ test('breast anchors follow torso centre instead of sleeve-inclusive image width
 test('enclosed white sleeve gaps are excluded from dark-garment torso measurement without changing legacy manual scale',async()=>{
  const bytes=await sharp(Buffer.from('<svg width="700" height="850"><path fill="#263953" d="M200 60 L290 30 Q350 100 410 30 L500 60 L680 160 L680 800 L20 800 L20 160 Z"/><rect x="130" y="300" width="40" height="460" fill="white"/><rect x="530" y="300" width="40" height="460" fill="white"/></svg>')).png().toBuffer();
  const base=await artwork.analyseGarment(bytes),g=artwork.automaticGarmentProfile({name:'Hoodie'},base,'front');
- assert.ok(Math.abs(g.estimatedPxPerMm-360/550*1.55)<.01);
+ assert.ok(Math.abs(g.unrefinedPxPerMm-360/550)<.01);
  assert.ok(g.legacyPxPerMm>g.unrefinedPxPerMm*1.5);
  const a=layout.placementFor(mark(),{width:200,height:100},{...base,...g,view:'front'});
  assert.ok(a.x<.60);
@@ -573,4 +573,28 @@ test('enlarged automatic breast artwork clears the torso centre line without mov
  const left=layout.placementFor(mark({widthMm:'120'}),asset,g),right=layout.placementFor(mark({position:'right breast',widthMm:'120'}),asset,g);
  assert.ok(left.x-left.width/2>=.518-1e-12);assert.ok(right.x+right.width/2<=.482+1e-12);
  assert.equal(layout.placementFor(mark({placement:{x:.6,y:.3},widthMm:'120'}),asset,g).x,.6);
+});
+
+test('confirmed 29140 tee/hoodie scales are unchanged; broad silhouettes use shared height guard and panel midpoint',()=>{
+ for(const [width,height,torso,unchanged] of [[580,734,322,true],[533,670,300,true],[634,811,355,true],[534,691,291,true],[466,821,439,false],[415,793,381,false]]){
+  const mask=new Uint8Array(width*height),left=Math.floor((width-torso)/2);
+  for(let y=0;y<height;y++)mask.fill(1,y*width+left,y*width+left+torso);
+  const base={width,height,mask,confident:true,view:'front'};
+  for(const name of ['Unknown product','T-shirt','Bodywarmer']){
+   const g={...base,...artwork.automaticGarmentProfile({name},base,'front')};
+   const old=torso/550*1.55;
+   if(unchanged)assert.equal(g.estimatedPxPerMm,old);
+   else{
+    assert.ok(g.estimatedPxPerMm<old);assert.ok(g.estimatedPxPerMm/old>.85);
+    const p=layout.placementFor(mark(),{width:100,height:47.4},g);
+    const centre=(left+torso/2)/width,edge=(left+torso)/width;
+    assert.ok(Math.abs((p.x-p.width/2-centre)-(edge-p.x-p.width/2))<1e-12);
+    assert.ok(p.x-p.width/2>centre);assert.ok(layout.fitsRegion(p));
+   }
+   const manual=layout.placementFor(mark({scaleVersion:3,placement:{x:.7,y:.3}}),{width:100,height:47.4},g);
+   assert.ok(Math.abs(manual.width-100*old/width)<1e-12);assert.equal(manual.x,.7);
+   const measured=artwork.automaticGarmentProfile({name,measurements:{flatChestWidthMm:550}},base,'front');
+   assert.equal(measured.estimatedPxPerMm,torso/550);
+  }
+ }
 });

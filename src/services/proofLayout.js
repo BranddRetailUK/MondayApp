@@ -148,7 +148,8 @@ function prepareBrief(brief, input = {}) {
   brief.products.forEach((product, pi) => {
     product.decorations = resolveDecorations(brief, product).map((original, di) => {
       const d = JSON.parse(JSON.stringify(original));
-      if(!d.placement)d.scaleVersion=3;
+      const savedManual=d.placement || d.manualScale || (d.anchor && d.anchor!=='region') || Number(d.offsetXmm) || Number(d.offsetYmm) || Object.values(product.calibrations || {}).some(c=>c.regions?.[positionName(d.position)]);
+      if(!savedManual)d.scaleVersion=4;
       d.id = d.id || `product-${pi}-decoration-${di}`;
       d.position = positionName(d.position);
       d.method = d.method || product.method || brief.method || '';
@@ -221,6 +222,7 @@ function placementFor(d, asset, garment, calibration = {}) {
   // Automatic body prints use the detected torso's safe width, not a box
   // proportional to the sleeve-inclusive photograph. Never change custom/manual regions.
   if(garment.torsoRegion && !custom && !d.placement && !calibration.referenceMm && (!d.anchor || d.anchor==='region') && !Number(d.offsetXmm) && !Number(d.offsetYmm) && ['front','back','upper back'].includes(position))region={...region,...garment.torsoRegion};
+  if(garment.chestPanels?.[position] && !custom && !d.placement && !calibration.referenceMm && (!d.anchor || d.anchor==='region') && !Number(d.offsetXmm) && !Number(d.offsetYmm))region={...region,...garment.chestPanels[position]};
   if (!region) throw new Error(`Unsupported position "${d.position}". Choose a supported position or define its printable region.`);
   for (const key of ['x','y','left','top','width','height']) if (!Number.isFinite(region[key]) || region[key] < 0 || region[key] > 1) throw new Error('Printable region coordinates must be between 0 and 1.');
   if (region.width <= 0 || region.height <= 0 || region.left+region.width>1.001 || region.top+region.height>1.001) throw new Error('Printable region must fit inside the garment.');
@@ -243,7 +245,8 @@ function placementFor(d, asset, garment, calibration = {}) {
       if(!Number.isFinite(snapshot.widthPerMm) || snapshot.widthPerMm<=0 || snapshot.widthPerMm>1)throw new Error('Invalid saved manual artwork scale.');
       pxPerMm=snapshot.widthPerMm*garment.width;
     } else if(d.scaleVersion===2) pxPerMm=garment.unrefinedPxPerMm || pxPerMm;
-    else if(d.scaleVersion!==3) pxPerMm=garment.legacyPxPerMm || pxPerMm;
+    else if(d.scaleVersion===3) pxPerMm=garment.referencePxPerMm || pxPerMm;
+    else if(d.scaleVersion!==4) pxPerMm=garment.legacyPxPerMm || pxPerMm;
   }
   const width = size.width * pxPerMm / garment.width;
   const height = size.height * pxPerMm / garment.height;
