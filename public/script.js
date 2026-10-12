@@ -887,9 +887,7 @@ function buildDashboardGridSpec(dashboardColumns, {
     ? dashboardColumns.filter(column => column.id !== subitemCodeColumn.id)
     : dashboardColumns;
   const columns = [
-    !subitem && isProductionArtworkUser()
-      ? { kind: 'artworkAction', title: 'ARTWORK', width: 96 }
-      : !subitem && isUltimatePackingUser()
+    !subitem && isUltimatePackingUser()
       ? { kind: 'print', title: 'LABEL', width: 82 }
       : null,
     subitem ? null : { kind: 'jobNumber', title: '', width: 64, mobileWidth: 72 },

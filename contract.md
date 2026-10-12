@@ -813,3 +813,5 @@ No external work-management token, OAuth, board, column, or webhook environment 
 - Validation covers existing-reference inheritance, transactional rollback, multiple references, no-reference allocation, old-worker exclusion, exact folder resolution, unchanged names/artwork, legacy-proof retention, repeated saves and unchanged no-job request payloads. Browser fixture checks cover single/multiple/no-reference jobs and clearing selection.
 
 - Proof editor layout (2026-10-12): the optional OFFICE job search, job dropdown and design-reference selector occupy their own “Link to existing job” card immediately above Clothing proof in the right-hand column (stacked with it on narrow screens). Selection and allocation behaviour are unchanged.
+
+- Dashboard artwork-column visibility (2026-10-12): the production@ultimatepromotions.co.uk account no longer receives the ARTWORK action column in the dashboard grid, on desktop or mobile. Its reserved width is removed with the column. Existing proof access, artwork-export services and packing LABEL column remain unchanged.
