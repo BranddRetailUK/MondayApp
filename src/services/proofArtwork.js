@@ -119,7 +119,14 @@ async function analyseGarment(bytes) {
   const channels=[[],[],[]];
   for(let i=0;i<mask.length;i+=7)if(mask[i])for(let c=0;c<3;c++)channels[c].push(crop.data[i*4+c]);
   const colour=channels.map(values=>{values.sort((a,b)=>a-b);return (values[Math.floor(values.length/2)] ?? 128)/255;});
-  return {colour,bytes:png,width:crop.info.width,height:crop.info.height,mask,confident,bounds};
+  // Dark garments can enclose white background between sleeve and body. The
+  // outer-edge flood fill cannot reach those holes. Exclude them from torso
+  // measurement only; preserve image pixels and the historical mask.
+  const torsoMask=mask.slice();
+  if(Math.max(...colour)<.75)for(let i=0;i<torsoMask.length;i++){
+    if(Math.min(crop.data[i*4],crop.data[i*4+1],crop.data[i*4+2])>=245)torsoMask[i]=0;
+  }
+  return {colour,torsoMask,bytes:png,width:crop.info.width,height:crop.info.height,mask,confident,bounds};
 }
 
 function coverage(garment,p) {
@@ -163,11 +170,12 @@ function automaticGarmentProfile(product, garment, view, referenceGarment) {
   const measured=supplied!==undefined && supplied!==null && supplied!=='';
   const torsoMm=measured ? Number(supplied) : 550*sizing.garmentScale;
   if(!Number.isFinite(torsoMm) || torsoMm<150 || torsoMm>1500)throw new Error('Flat chest width must be between 150 and 1500 mm.');
+  const measureTorso=mask=>{
   const rows=[],centres=[];
   for(let y=Math.floor(garment.height*.5);y<garment.height*.66;y+=Math.max(1,Math.floor(garment.height*.025))){
     const runs=[];let start=-1;
     for(let x=0;x<=garment.width;x++){
-      const on=x<garment.width&&garment.mask[y*garment.width+x];
+      const on=x<garment.width&&mask[y*garment.width+x];
       if(on&&start<0)start=x;
       if(!on&&start>=0){runs.push({start,end:x});start=-1;}
     }
@@ -178,13 +186,17 @@ function automaticGarmentProfile(product, garment, view, referenceGarment) {
   const torsoPx=rows[Math.floor(rows.length/2)];
   centres.sort((a,b)=>a-b);
   const torsoCentre=centres[Math.floor(centres.length/2)];
+  return {torsoPx,torsoCentre};
+  };
+  const {torsoPx,torsoCentre}=measureTorso(garment.torsoMask || garment.mask);
+  const legacyTorsoPx=measureTorso(garment.mask).torsoPx;
   const breastAnchors=garment.confident && torsoPx && ['front','back'].includes(view) ? {
     leftBreast:{x:(torsoCentre+torsoPx*.15)/garment.width},
     rightBreast:{x:(torsoCentre-torsoPx*.15)/garment.width}
   } : {};
   // Historical manual placements had no scale snapshot. Preserve their old
   // conversion only during migration; new automatic proofs never use it.
-  let legacyPxPerMm=garment.confident&&torsoPx&&['front','back'].includes(view)?torsoPx/((outer?600:550)*sizing.garmentScale):garment.width/(700*sizing.garmentScale);
+  let legacyPxPerMm=garment.confident&&legacyTorsoPx&&['front','back'].includes(view)?legacyTorsoPx/((outer?600:550)*sizing.garmentScale):garment.width/(700*sizing.garmentScale);
   let scaleSource=measured && garment.confident && torsoPx && ['front','back'].includes(view) ? 'flat-chest-measurement' : 'estimated';
   // Side views use an explicit estimate; a torso width cannot calibrate depth.
   let estimatedPxPerMm=garment.confident&&torsoPx&&['front','back'].includes(view)?torsoPx/torsoMm:garment.width/(700*sizing.garmentScale);

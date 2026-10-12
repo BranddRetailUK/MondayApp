@@ -529,3 +529,12 @@ test('breast anchors follow torso centre instead of sleeve-inclusive image width
  const manual=layout.placementFor(mark({placement:{x:.7,y:.25}}),asset,g);assert.equal(manual.x,.7);
  const calibrated=layout.placementFor(mark(),asset,g,{referenceMm:550,start:{x:0,y:.5},end:{x:1,y:.5},neckRight:{x:.68}});assert.equal(calibrated.x,.68);
 });
+
+test('enclosed white sleeve gaps are excluded from dark-garment torso measurement without changing legacy manual scale',async()=>{
+ const bytes=await sharp(Buffer.from('<svg width="700" height="850"><path fill="#263953" d="M200 60 L290 30 Q350 100 410 30 L500 60 L680 160 L680 800 L20 800 L20 160 Z"/><rect x="130" y="300" width="40" height="460" fill="white"/><rect x="530" y="300" width="40" height="460" fill="white"/></svg>')).png().toBuffer();
+ const base=await artwork.analyseGarment(bytes),g=artwork.automaticGarmentProfile({name:'Hoodie'},base,'front');
+ assert.ok(Math.abs(g.estimatedPxPerMm-360/550)<.01);
+ assert.ok(g.legacyPxPerMm>g.estimatedPxPerMm*1.5);
+ const a=layout.placementFor(mark(),{width:200,height:100},{...base,...g,view:'front'});
+ assert.ok(a.x<.60);
+});
