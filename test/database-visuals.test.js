@@ -376,3 +376,26 @@ function createResponse() {
     },
   };
 }
+
+test('order ZIP download resolves the order and includes only its visual column files', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => new Response('original-pdf-bytes');
+  const { router, calls, restore } = loadDatabaseRouter({
+    async query(sql) {
+      if (sql.includes('FROM database_jobs')) return { rows: [{ source_order_id: 50593, order_no: 51346 }] };
+      return { rows: [visualRow(1)] };
+    },
+  });
+  try {
+    const res = createResponse();
+    res.set = () => res;
+    res.attachment = name => { res.filename = name; return res; };
+    res.send = data => { res.body = data; return res; };
+    await findRoute(router, '/api/database/jobs/:id/visuals/download', 'get').route.stack[0].handle({ params: { id: '51346' } }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.filename, 'order-51346-visuals.zip');
+    assert.equal(res.body.readUInt32LE(), 0x04034b50);
+    assert.equal(calls[1].values[0], 50593);
+    assert.match(calls[1].text, /column_id=\$2 OR UPPER\(TRIM\(column_title\)\)='PROOF'/);
+  } finally { global.fetch = originalFetch; restore(); }
+});

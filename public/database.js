@@ -954,6 +954,11 @@
       return;
     }
 
+    if (button.dataset.dbProofDownloadAll !== undefined) {
+      await downloadAllDatabaseVisuals(button);
+      return;
+    }
+
     const proofZoomDelta = button.dataset.dbProofZoom;
     if (proofZoomDelta !== undefined) {
       changeDatabaseProofZoom(Number.parseFloat(proofZoomDelta));
@@ -8059,6 +8064,8 @@
         <span class="db-proof-drop-hint">Drag and drop PDF, JPEG or PNG files here</span>
         ${uploadMessage}
         ${uploadButton}
+        <button class="db-toolbar-button db-blue-link" type="button" data-db-proof-download-all>Download all</button>
+        <span data-db-proof-download-status role="status" aria-live="polite"></span>
       </div>
       <div class="db-order-proof-grid-shell">
         <div class="db-visuals-grid db-order-proof-grid" role="list">
@@ -8073,6 +8080,41 @@
       </div>
     `;
     window.ProofLinks?.controls(els.proofPanel.querySelector('[data-proof-job-controls]'),state.selectedJob?.source_order_id,{showLinkedActions:false});
+  }
+
+  async function downloadAllDatabaseVisuals(button) {
+    if (button.disabled || !state.selectedJob?.source_order_id) return;
+    const job = state.selectedJob;
+    const message = els.proofPanel?.querySelector('[data-db-proof-download-status]');
+    button.disabled = true;
+    button.textContent = 'Preparing download…';
+    if (message) message.textContent = '';
+    try {
+      const response = await fetch(`/api/database/jobs/${encodeURIComponent(job.source_order_id)}/visuals/download`, {
+        credentials: 'include', cache: 'no-store',
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || 'Could not download all visuals. Please try again.');
+      }
+      if (!response.headers.get('content-type')?.includes('application/zip')) {
+        throw new Error('Please sign in again to download the visuals.');
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `order-${job.order_no || job.source_order_id}-visuals.zip`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      if (message) message.textContent = 'Download ready.';
+    } catch (err) {
+      if (message) message.textContent = err.message || 'Could not download all visuals.';
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Download all';
+    }
   }
 
   function orderVisualFromFile(file) {

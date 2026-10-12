@@ -5827,6 +5827,28 @@ router.delete('/api/database/jobs/:id/line-items/:lineItemId', async (req, res) 
   }
 });
 
+router.get('/api/database/jobs/:id/visuals/download', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id)) return res.status(400).json({ error: 'Invalid job id' });
+  try {
+    const job = await pool.query(`SELECT source_order_id, order_no FROM database_jobs
+      WHERE source_order_id=$1 OR order_no=$1
+      ORDER BY CASE WHEN source_order_id=$1 THEN 0 ELSE 1 END LIMIT 1`, [id]);
+    if (!job.rows.length) return res.status(404).json({ error: 'Database job not found' });
+    const selected = job.rows[0];
+    const files = await pool.query(`SELECT * FROM test_dashboard_files
+      WHERE source_order_id=$1 AND (column_id=$2 OR UPPER(TRIM(column_title))='PROOF')
+      ORDER BY created_at, id`, [selected.source_order_id, TEST_DASHBOARD_COLUMN_IDS.PROOF]);
+    const archive = await require('../services/databaseVisualDownload').buildVisualArchive(files.rows);
+    res.set('Cache-Control', 'no-store');
+    res.attachment(`order-${selected.order_no || selected.source_order_id}-visuals.zip`);
+    res.send(archive);
+  } catch (err) {
+    console.error('GET /api/database/jobs/:id/visuals/download', err.message);
+    res.status(err.status || 502).json({ error: err.status ? err.message : 'Could not download all visuals. Please try again.' });
+  }
+});
+
 router.get('/api/database/jobs/:id', async (req, res) => {
   const id = Number.parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) {

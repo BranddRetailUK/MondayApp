@@ -154,3 +154,33 @@ test('finishing an upload after navigating to another order does not attach it t
   assert.equal(ui.uploaded[0].jobId, 8001);
   assert.equal(ui.state.selectedProofFiles.length, 0);
 });
+
+test('Download all saves one ZIP, prevents duplicate clicks and restores the button after errors', async () => {
+  const button = { disabled: false, textContent: 'Download all' };
+  const message = { textContent: '' };
+  let requests = 0, downloads = 0, resolveFetch;
+  const link = { click() { downloads++; }, remove() {} };
+  const context = vm.createContext({
+    state: { selectedJob: { source_order_id: 50593, order_no: 51346 } },
+    els: { proofPanel: { querySelector: () => message } },
+    fetch: async url => { assert.equal(url, '/api/database/jobs/50593/visuals/download'); requests++; return new Promise(resolve => { resolveFetch = resolve; }); },
+    URL: { createObjectURL: () => 'blob:test', revokeObjectURL() {} },
+    document: { createElement: () => link, body: { appendChild() {} } },
+    setTimeout() {},
+  });
+  vm.runInContext(section('async function downloadAllDatabaseVisuals', 'function orderVisualFromFile'), context);
+  const pending = context.downloadAllDatabaseVisuals(button);
+  await context.downloadAllDatabaseVisuals(button);
+  assert.equal(requests, 1);
+  assert.equal(button.disabled, true);
+  resolveFetch({ ok: true, headers: { get: () => 'application/zip' }, blob: async () => ({}) });
+  await pending;
+  assert.equal(downloads, 1);
+  assert.equal(link.download, 'order-51346-visuals.zip');
+  assert.equal(button.disabled, false);
+  context.fetch = async () => ({ ok: false, json: async () => ({ error: 'File unavailable' }) });
+  await context.downloadAllDatabaseVisuals(button);
+  assert.equal(downloads, 1);
+  assert.equal(message.textContent, 'File unavailable');
+  assert.equal(button.textContent, 'Download all');
+});
