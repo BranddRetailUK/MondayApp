@@ -598,3 +598,18 @@ test('confirmed 29140 tee/hoodie scales are unchanged; broad silhouettes use sha
   }
  }
 });
+
+test('user-confirmed 29140 preserves all six artwork sizes and positions',()=>{
+ const fixture=require('./fixtures/proof-29140-confirmed.json');
+ const {inflateSync}=require('node:zlib');
+ const pdf=require('node:fs').readFileSync(require.resolve('../docs/proof-references/29140-confirmed.pdf'));
+ assert.equal(require('node:crypto').createHash('sha256').update(pdf).digest('hex'),fixture.pdfSha256);
+ assert.equal(fixture.views.length,6);
+ for(const ref of fixture.views){
+  const base={...ref.garment,mask:inflateSync(Buffer.from(ref.garment.mask,'base64')),torsoMask:inflateSync(Buffer.from(ref.garment.torsoMask,'base64'))};
+  const garment={...base,view:ref.view,...artwork.automaticGarmentProfile(ref.product,base,ref.view)};
+  const p=layout.placementFor(mark({position:ref.position,widthMm:ref.widthMm}),ref.artwork,garment);
+  for(const key of ['x','y','width','height'])assert.ok(Math.abs(p[key]-ref.expected[key])<1e-9,`${ref.product.code} ${ref.view} ${key} changed from confirmed proof`);
+  assert.ok(layout.fitsRegion(p));
+ }
+});

@@ -3870,6 +3870,8 @@ function renderPreviewFileButton(cell, files, index, text, column, { showHoverPr
 let __dashboardFileHoverPreview = null;
 let __dashboardFileHoverTimer = 0;
 let __dashboardFileHoverTarget = null;
+let __dashboardFileHoverToken = 0;
+let __dashboardFileHoverUrl = null;
 
 function attachDashboardFileHoverPreview(target, file, { showHoverPreview = true } = {}) {
   target.addEventListener('pointerenter', (event) => {
@@ -3902,18 +3904,38 @@ function ensureDashboardFileHoverPreview() {
   return preview;
 }
 
+function clearDashboardFileHoverSource() {
+  __dashboardFileHoverToken++;
+  if (__dashboardFileHoverUrl) URL.revokeObjectURL(__dashboardFileHoverUrl);
+  __dashboardFileHoverUrl = null;
+}
+
+async function loadDashboardPdfHover(file, frame, token) {
+  try {
+    // Match the clicked preview's no-store fetch instead of the native PDF
+    // viewer's persistent URL cache. Each hover owns its temporary blob URL.
+    const blob = await fetchProofDownloadBlob(buildAssetSrc(file));
+    if (token !== __dashboardFileHoverToken) return;
+    __dashboardFileHoverUrl = URL.createObjectURL(blob);
+    const viewer = document.createElement('iframe');
+    viewer.src = `${__dashboardFileHoverUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`;
+    viewer.title = file.name || 'PDF preview';
+    frame.replaceChildren(viewer);
+  } catch (_) {
+    if (token === __dashboardFileHoverToken) frame.textContent = 'Preview unavailable — click to open';
+  }
+}
+
 function showDashboardFileHoverPreview(file, x, y) {
+  clearDashboardFileHoverSource();
   const preview = ensureDashboardFileHoverPreview();
   preview.replaceChildren();
   const frame = document.createElement('div');
   frame.className = 'dashboard-file-hover-frame';
   const src = buildAssetSrc(file, { stripPdfUi: true });
   if (src && isPdfFile(file.name, file.mime)) {
-    const viewer = document.createElement('iframe');
-    viewer.src = src;
-    viewer.title = file.name || 'PDF preview';
-    viewer.loading = 'eager';
-    frame.appendChild(viewer);
+    frame.textContent = 'Loading preview…';
+    loadDashboardPdfHover(file, frame, __dashboardFileHoverToken);
   } else if (src && isImageFile(file)) {
     const image = document.createElement('img');
     image.src = src;
@@ -3950,6 +3972,7 @@ function positionDashboardFileHoverPreview(x, y) {
 }
 
 function hideDashboardFileHoverPreview() {
+  clearDashboardFileHoverSource();
   clearTimeout(__dashboardFileHoverTimer);
   __dashboardFileHoverTarget = null;
   if (__dashboardFileHoverPreview) {
