@@ -815,3 +815,5 @@ No external work-management token, OAuth, board, column, or webhook environment 
 - Proof editor layout (2026-10-12): the optional OFFICE job search, job dropdown and design-reference selector occupy their own “Link to existing job” card immediately above Clothing proof in the right-hand column (stacked with it on narrow screens). Selection and allocation behaviour are unchanged.
 
 - Dashboard artwork-column visibility (2026-10-12): the production@ultimatepromotions.co.uk account no longer receives the ARTWORK action column in the dashboard grid, on desktop or mobile. Its reserved width is removed with the column. Existing proof access, artwork-export services and packing LABEL column remain unchanged.
+
+- The ARTWORK export-result tick/cross column (`artwork_result`) is also hidden for production@ultimatepromotions.co.uk on desktop and mobile. Other accounts retain it; export results and processing remain unchanged.

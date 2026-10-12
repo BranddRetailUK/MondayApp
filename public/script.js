@@ -831,7 +831,8 @@ function getRenderableBoardColumns(columns) {
     column.id !== 'name' &&
     !isHiddenBoardColumnTitle(column.title) &&
     !HIDDEN_BOARD_COLUMN_IDS.has(column.id) &&
-    !HIDDEN_BOARD_COLUMN_TYPES.has(column.type)
+    !HIDDEN_BOARD_COLUMN_TYPES.has(column.type) &&
+    !(column.type === 'artwork_result' && isProductionArtworkUser())
   );
 }
 
