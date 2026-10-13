@@ -130,7 +130,7 @@
   const historyList=root.querySelector('#proof-history-list'),historyStatus=root.querySelector('#proof-history-status');
   const createNew=root.querySelector('#proof-create-new'),loadMore=root.querySelector('#proof-history-more');
   let progressChain=Promise.resolve();
-  let historyRows=[],nextOffset=null,historyLimit=50,historyLoading=false,lastHistory='',progressMessage='',progressError=false;
+  let historyRows=[],nextOffset=null,historyLimit=50,historyLoading=false,historyWaiting=false,historyLoaded=false,lastHistory='',progressMessage='',progressError=false;
   const listControls=root.querySelector('#proof-list-controls');
   const viewButtons=[...root.querySelectorAll('[data-proof-view]')];
   function setHistoryView(view){
@@ -185,15 +185,22 @@
     selectedLinkJob=job;showJobSelection();
   };
   function showProofList(){
-    editorScreen.hidden=true;historyScreen.hidden=false;listControls.hidden=false;renderHistory();refreshHistory();
+    editorScreen.hidden=true;historyScreen.hidden=false;listControls.hidden=false;renderHistory();refreshHistory(true);
   }
   function showProofEditor(){historyScreen.hidden=true;editorScreen.hidden=false;listControls.hidden=true;showJobSelection();loadOfficeJobs();}
   root.querySelector('#proof-back-list').addEventListener('click',showProofList);
   createNew.addEventListener('click',()=>{if(busy)return;startNewProof();showProofEditor();});
-  loadMore.addEventListener('click',()=>{historyLimit+=50;refreshHistory();});
-  async function refreshHistory(){
+  loadMore.addEventListener('click',()=>{historyLimit+=50;refreshHistory(true);});
+  function showHistoryLoading(waiting){
+    historyWaiting=waiting;
+    historyList.hidden=waiting;
+    historyStatus.innerHTML=waiting?'<div class="workspace-loading" role="status" aria-label="Loading proofs"><span class="board-loading-spinner" aria-hidden="true"></span></div>':'';
+    loadMore.hidden=waiting||nextOffset===null;
+  }
+  async function refreshHistory(foreground=false){
     if(localPreview||historyLoading)return;
     historyLoading=true;
+    if(foreground||!historyLoaded)showHistoryLoading(true);
     try{
       let offset=0,rows=[],more=null;
       do{
@@ -201,8 +208,8 @@
         const data=await proofJson(response);if(!response.ok)throw new Error(data.error||'Could not load proof history.');
         rows.push(...data.designs);more=data.nextOffset;offset=more;
       }while(more!==null&&rows.length<historyLimit);
-      historyRows=rows;if(!busy&&design){const latest=rows.find(job=>job.id===design.id);if(latest)design=latest;}nextOffset=more;historyStatus.textContent='';renderHistory();
-    }catch(error){historyStatus.textContent=error.message;}
+      historyRows=rows;historyLoaded=true;if(!busy&&design){const latest=rows.find(job=>job.id===design.id);if(latest)design=latest;}nextOffset=more;showHistoryLoading(false);renderHistory();
+    }catch(error){console.warn('Proof history load failed',error);showHistoryLoading(true);}
     finally{historyLoading=false;loadMore.disabled=false;}
   }
   function historyState(job){
@@ -218,13 +225,13 @@
     return ['Pending',job.message];
   }
   function renderHistory(){
-    createNew.disabled=busy;loadMore.hidden=nextOffset===null;loadMore.disabled=historyLoading;
+    createNew.disabled=busy;loadMore.hidden=historyWaiting||nextOffset===null;loadMore.disabled=historyLoading;
     let rows=[...historyRows];
     if(design&&!rows.some(job=>job.id===design.id))rows.unshift(design);
     rows.sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))||b.id.localeCompare(a.id));
     const signature=JSON.stringify([rows,design,busy,progressMessage,progressError,!!currentBrief,!!currentPreview]);
     if(signature===lastHistory)return;lastHistory=signature;historyList.replaceChildren();
-    if(!rows.length){const empty=document.createElement('p');empty.textContent='No proofs yet.';historyList.append(empty);return;}
+    if(!rows.length)return;
     for(const row of rows){
       const job=row.id===designId&&design?{...row,...design}:row;
       const item=document.createElement('article');item.className='proof-history-row';
@@ -284,7 +291,7 @@
     const title=document.createElement('strong');title.textContent=[job.designNumber,job.customer,job.jobTitle].filter(Boolean).join(' · ');bar.append(title);
     if(job.hasPdf){const download=document.createElement('a');download.className='proof-secondary-button';download.textContent='Download PDF';download.href=`/api/proof-generator/designs/${encodeURIComponent(job.id)}/pdf?download=1`;bar.append(download);}
     const close=document.createElement('button');close.type='button';close.className='proof-secondary-button';close.textContent='Close preview';close.addEventListener('click',()=>dialog.close());bar.append(close);
-    const viewer=document.createElement('div');viewer.className='proof-fullscreen-pages';viewer.textContent='Loading proof…';dialog.append(bar,viewer);document.body.append(dialog);
+    const viewer=document.createElement('div');viewer.className='proof-fullscreen-pages';viewer.innerHTML='<div class="workspace-loading" role="status" aria-label="Loading proof"><span class="board-loading-spinner" aria-hidden="true"></span></div>';dialog.append(bar,viewer);document.body.append(dialog);
     dialog.addEventListener('close',()=>{dialog.remove();previousFocus?.focus();});dialog.showModal();close.focus();
     try{
       if(!job.hasPdf){const img=document.createElement('img');img.className='proof-history-large';img.src=`/api/proof-generator/designs/${encodeURIComponent(job.id)}/preview`;img.alt='Draft proof preview';viewer.replaceChildren(img);return;}

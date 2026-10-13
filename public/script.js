@@ -347,7 +347,7 @@ async function loadTestBoard(options = {}) {
   const showInitialLoading = !boardDiv.querySelector('.group, .board-loading');
   try {
     __testBoardLoading = true;
-    if (showInitialLoading) renderBoardLoadingState(boardDiv, 'Loading Tuesday Dashboard...');
+    if (showInitialLoading) renderBoardLoadingState(boardDiv);
     const response = await fetch(boardUrl, {
       cache: 'no-store',
       credentials: 'include',
@@ -355,7 +355,8 @@ async function loadTestBoard(options = {}) {
     });
     if (!response.ok) {
       const error = await readApiError(response);
-      boardDiv.textContent = `Failed to load Tuesday Dashboard: ${error}`;
+      console.warn('Tuesday Dashboard load failed', error);
+      renderBoardLoadingState(boardDiv);
       return;
     }
     const payload = await response.json();
@@ -365,17 +366,16 @@ async function loadTestBoard(options = {}) {
     renderBoard(payload, { context: BOARD_CONTEXT_TEST, boardDiv });
   } catch (err) {
     console.warn('Tuesday Dashboard load failed', err);
-    boardDiv.textContent = 'Failed to load Tuesday Dashboard: fetch error';
+    renderBoardLoadingState(boardDiv);
   } finally {
     __testBoardLoading = false;
   }
 }
 
-function renderBoardLoadingState(boardDiv, message = 'Loading Tuesday Dashboard...') {
+function renderBoardLoadingState(boardDiv) {
   boardDiv.innerHTML = `
-    <div class="board-loading" role="status" aria-live="polite">
+    <div class="board-loading workspace-loading" role="status" aria-label="Loading dashboard" aria-live="polite">
       <span class="board-loading-spinner" aria-hidden="true"></span>
-      <span class="board-loading-text">${escapeHtml(message)}</span>
     </div>
   `;
 }
@@ -400,11 +400,8 @@ function renderBoard(payload, options = {}) {
   boardDiv.innerHTML = '';
   const board = unwrapFirstBoard(payload);
   if (!board) {
-    if (payload && payload.errors && payload.errors.length) {
-      boardDiv.textContent = `Dashboard error: ${payload.errors.map(e => e.message || e).join('; ')}`;
-    } else {
-      boardDiv.textContent = 'No board data.';
-    }
+    if (payload?.errors?.length) console.warn('Dashboard data unavailable', payload.errors);
+    renderBoardLoadingState(boardDiv);
     return;
   }
 
@@ -3923,7 +3920,7 @@ function showDashboardFileHoverPreview(file, x, y) {
   frame.className = 'dashboard-file-hover-frame';
   const src = buildAssetSrc(file, { stripPdfUi: true });
   if (src && isPdfFile(file.name, file.mime)) {
-    frame.textContent = 'Loading preview…';
+    frame.innerHTML = '<span class="board-loading-spinner" role="status" aria-label="Loading preview"></span>';
     loadDashboardPdfHover(file, frame, __dashboardFileHoverToken);
   } else if (src && isImageFile(file)) {
     const image = document.createElement('img');
@@ -4584,7 +4581,9 @@ function setProofLoading(message) {
   body.innerHTML = '';
   const loader = document.createElement('div');
   loader.className = 'proof-modal-loading';
-  loader.textContent = message;
+  loader.setAttribute('role', 'status');
+  loader.setAttribute('aria-label', message);
+  loader.innerHTML = '<span class="board-loading-spinner" aria-hidden="true"></span>';
   body.appendChild(loader);
 }
 

@@ -169,7 +169,7 @@ body.proof-preview .proof-preview-badge{display:block}
 
 .proof-history-row{position:relative}
 .proof-history-generating>div{opacity:.3;filter:grayscale(1);pointer-events:none}
-.proof-history-spinner{position:absolute;left:calc(50% - 20px);top:calc(50% - 20px);width:40px;height:40px;box-sizing:border-box;border:4px solid #66727e;border-top-color:#fff;border-radius:50%;animation:proof-button-spin .8s linear infinite}
+.proof-history-spinner{position:absolute;left:calc(50% - 20px);top:calc(50% - 20px);width:40px;height:40px;box-sizing:border-box;border:4px solid #66727e;border-top-color:#94cafa;border-radius:50%;animation:proof-button-spin .8s linear infinite}
 @media(prefers-reduced-motion:reduce){.proof-history-spinner{animation-duration:2s}}
 
 .proof-product-picker{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}

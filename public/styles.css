@@ -452,10 +452,12 @@ body{
   font-weight:700;
 }
 .board-loading-spinner{
+  display:inline-block;
+  flex-shrink:0;
   width:34px;
   height:34px;
   border:4px solid #3c3e44;
-  border-top-color:var(--accent);
+  border-top-color:#94cafa;
   border-radius:50%;
   animation:board-spin .75s linear infinite;
 }
@@ -9809,3 +9811,9 @@ input.db-custom-line-input{
 /* Linked production parents expand full dashboard rows, across status groups. */
 .production-collapsed{display:none !important}
 .production-child-row .job-title-wrap{padding-left:18px;border-left:3px solid #9aa7b8}
+
+/* Shared page wait indicator, centred within the available workspace. */
+.workspace-loading{display:grid;place-items:center;width:100%;min-height:calc(100dvh - 190px)}
+#test-board > .workspace-loading{min-height:calc(100dvh - 70px)}
+#proof-history-list[hidden]{display:none}
+@media(prefers-reduced-motion:reduce){.board-loading-spinner{animation-duration:2s}}
