@@ -116,6 +116,7 @@ async function prepare(png, config) {
   }
   const sourceIds=elementIds.slice(),sourceElements=elements.map(e=>({...e}));
   partition(elementIds,elements,w,h,config.sections);
+  if(config.autoSections)require('./digitisingSegmentation').separate(elementIds,elements,w,config.widthMm/(config.sourceAspect?w:right-left),config.elementOptions);
   left=w;top=h;right=-1;bottom=-1;
   for(let i=0;i<elementIds.length;i++){if(config.elementOptions?.[elementIds[i]]?.type==='skip')elementIds[i]=-1;if(elementIds[i]>=0){left=Math.min(left,i%w);right=Math.max(right,i%w);top=Math.min(top,Math.floor(i/w));bottom=Math.max(bottom,Math.floor(i/w));}}
   if(right<=left||bottom<=top)throw Error('Select at least one usable element.');
@@ -148,35 +149,24 @@ async function generate(png, config) {
     if(Math.hypot(b[0]-a[0],b[1]-a[1])*scale<.8){shortRuns++;return;}
     const old=[x/(scale*10)+(left+right)/2,y/(scale*10)+(top+bottom)/2];
     const distance=Math.hypot(old[0]-a[0],old[1]-a[1]);
-    let connect=commands.length>0 && distance*scale<4;
-    for(let t=0;connect && t<=Math.ceil(distance);t++){
-      const f=t/Math.max(1,Math.ceil(distance)),xx=Math.round(old[0]+(a[0]-old[0])*f),yy=Math.round(old[1]+(a[1]-old[1])*f);
-      if(xx<left||xx>right||yy<top||yy>bottom||ids[yy*w+xx]!==activeColour)connect=false;
-    }
+    // DST quantises endpoints to 0.1 mm. Allow that rounding margin when
+    // checking an edge connector, rather than snapping it back with tiny stitches.
+    let connect=commands.length>0&&distance*scale<4&&segmentInside(ids,w,activeColour,old,a,scale,.1);
     if(!connect&&commands.length&&distance*scale<8){
-      const start=Math.round(old[1])*w+Math.round(old[0]),target=Math.round(a[1])*w+Math.round(a[0]);
-      if(ids[start]===activeColour){
-        const previous=new Map([[start,start]]),queue=[start],limit=Math.ceil(10/scale);
-        for(let q=0;q<queue.length&&q<12000&&!previous.has(target);q++){
-          const k=queue[q],xx=k%w,yy=Math.floor(k/w);
-          for(const n of [k-1,k+1,k-w,k+w])if(Math.abs(n%w-xx)+Math.abs(Math.floor(n/w)-yy)===1&&ids[n]===activeColour&&!previous.has(n)&&Math.hypot(n%w-old[0],Math.floor(n/w)-old[1])<=limit){previous.set(n,k);queue.push(n);}
-        }
-        if(previous.has(target)){
-          const route=[];for(let k=target;k!==start;k=previous.get(k))route.push([k%w,Math.floor(k/w)]);route.reverse();
-          // Shortcut only when the whole connector remains inside this region.
-          let from=old;
-          for(let i=0;i<route.length;){let best=i;
-            for(let j=i+1;j<route.length;j++){const to=route[j],d=Math.hypot(to[0]-from[0],to[1]-from[1]);if(d*scale>config.length)break;let safe=true;for(let k=0;k<=Math.ceil(d*2);k++){const t=k/Math.max(1,Math.ceil(d*2));if(ids[Math.round(from[1]+(to[1]-from[1])*t)*w+Math.round(from[0]+(to[0]-from[0])*t)]!==activeColour){safe=false;break;}}if(safe)best=j;}
-            move(...route[best]);from=route[best];i=best+1;
-          }
-          connect=true;
-        }
-      }
+      const route=routeInside(ids,w,activeColour,old,a,scale);
+      if(route){for(const point of route)move(...point);connect=true;}
+    }
+    // Blend a nearby row transition into its first full stitch rather than
+    // punching a sub-density stitch along the same edge on every row.
+    const rowLength=Math.hypot(b[0]-a[0],b[1]-a[1])*scale;
+    if(connect&&distance*scale<.65&&rowLength>config.length){
+      const lead=a.map((v,i)=>v+(b[i]-v)*config.length/rowLength);
+      const here=[x/(scale*10)+(left+right)/2,y/(scale*10)+(top+bottom)/2];
+      if(segmentInside(ids,w,activeColour,here,lead,scale,.1)){move(...lead);move(...b);return;}
     }
     if(connect)move(...a);else{trim();move(...a,'jump');}
     const d=Math.hypot(b[0]-a[0],b[1]-a[1]), tie=[a[0]+(b[0]-a[0])/d*.6/scale,a[1]+(b[1]-a[1])/d*.6/scale];
     if(!connect){move(...tie);move(...a);move(...tie);}move(...b);
-    const back=[b[0]-(b[0]-a[0])/d*.6/scale,b[1]-(b[1]-a[1])/d*.6/scale];move(...back);move(...b);
   }
   const ordered=elements.filter(el=>config.elementOptions?.[el.id]?.type!=='skip').sort((a,b)=>(config.elementOptions?.[a.id]?.order??a.id)-(config.elementOptions?.[b.id]?.order??b.id));
   const narrowByElement=new Map();
@@ -200,7 +190,7 @@ async function generate(png, config) {
     const start=commands.length;
     const stitchType=config.elementOptions?.[colour]?.type;
     const satin=stitchType==='satin'||stitchType==='satin-branches';
-    if(!element.guide)lastSourceId=null;
+    if(!element.guide&&lastSourceId!==(element.sourceId??element.id))lastSourceId=null;
     if(element.guide){
       const angle=sectionAngle(element);
       for(const edge of edged.has(element.sourceId)?[]:contours(sourceIds,w,sourceElements[element.sourceId])){
@@ -276,24 +266,15 @@ async function generate(png, config) {
           const side=i%2,p=rails[i][side],other=rails[i][1-side],width=widths[i];
           const compensation=Math.min(config.pullCompensation||0,width*.15),distance=Math.hypot(p[0]-other[0],p[1]-other[1]);
           const target=distance?p.map((v,a)=>v+(v-other[a])/distance*compensation/scale):p;
-          safeMove(target,7,Math.max(.15,compensation+scale));
+          safeMove(target,9.5,Math.max(.15,compensation+scale));
         }
         // Tie off locally, without cutting across a curve to an earlier rail.
         const end=rails.at(-1),c=centre(end);safeMove(c);safeMove(end[(rails.length-1)%2],7,.15);
       }
-    } else for(const vertical of [true,false]){
-      const pending=[];
-      const step=(vertical?config.underlay:config.spacing)/scale;
-      const max=vertical?right:bottom, min=vertical?left:top, lo=vertical?top:left, hi=vertical?bottom:right;
-      let row=0;
-      for(let v=min;v<=max;v+=Math.max(1,step),row++){
-        const fixed=Math.round(v);let from=null;
-        for(let u=lo;u<=hi+1;u++){
-          const match=u<=hi && ids[vertical?u*w+fixed:fixed*w+u]===colour;
-          if(match && from===null)from=u;
-          if(!match && from!==null){let a=vertical?[fixed,from]:[from,fixed],b=vertical?[fixed,u-1]:[u-1,fixed];if(row%2)[a,b]=[b,a];pending.push([a,b]);if(pending.length>4000)throw Error('Too many fill fragments; simplify the artwork.');from=null;}
-        }
-      }
+    } else for(const underlay of [true,false]){
+      const angle=(config.fillAngle??0)+(underlay?90:0);
+      const pending=spans(ids,w,element,scale,underlay?config.underlay:config.spacing,angle);
+      if(pending.length>4000)throw Error('Too many fill fragments; simplify the artwork.');
       // Visit nearby spans first to avoid trimming across a hole on every row.
       while(pending.length){
         const here=[x/(scale*10)+(left+right)/2,y/(scale*10)+(top+bottom)/2];
@@ -330,7 +311,7 @@ async function generate(png, config) {
       if(commands.length>borderStart){commands.splice(borderStart,0,{kind:'colour'});}
     }
     if(commands.length>start){
-      const thread=config.mode==='white'?'#ffffff':config.mode==='black'?'#000000':config.elementColours[colour]||elements[colour].colour;
+      const thread=config.mode==='white'?'#ffffff':config.mode==='black'?'#000000':config.elementColours[colour]||config.elementColours[element.sourceId]||element.colour;
       const sameThread=!config.border&&threads.at(-1)===thread&&(threadPlan.at(-1)?.thread||'')===(config.threadNotes?.[colour]||'');
       if(!sameThread){if(threads.length)commands.splice(start,0,{kind:'colour'});threads.push(thread);}
       threadPlan.push({step:threads.length,element:colour+1,role:element.guide?'directional section':satin?'underlay and satin':'underlay and fill',angle:element.guide?sectionAngle(element):undefined,colour:threads[threads.length-1],thread:config.threadNotes?.[colour]||''});

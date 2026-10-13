@@ -22,7 +22,7 @@ async function plan(input,body={},options={}){
   const source=await engine.artwork(input,{maxSide:2000});
   const size=await sourceSize(input);
   const png=await removeBackground(source);
-  const config=engine.settings({garment,border:String(body.border)==='true'?'true':'false',widthMm:100,hoopMm:360,spacing:engine.PRESETS[garment].spacing,length:2.5,colours:8,removeWhite:'false'});
+  const config=engine.settings({garment,border:String(body.border)==='true'?'true':'false',widthMm:100,hoopMm:360,spacing:engine.PRESETS[garment].spacing,length:3.8,colours:8,removeWhite:'false'});
   config.sourceAspect=size.aspect;
   config.hoopMm=Math.max(360,Math.ceil(100*size.aspect+10));
   config.whiteMatte=true;
@@ -53,17 +53,28 @@ async function plan(input,body={},options={}){
   config.widthMm=width||(height?height/aspect:Math.min(300,size.widthMm));
   if(config.widthMm>300)throw Error('Width must be no more than 300 mm.');
   config.hoopMm=Math.max(150,Math.ceil(Math.max(config.widthMm,config.widthMm*aspect)+10));
+  config.autoSections=true;
+  config.fillAngle=35;
   prepared=await engine.prepare(png,config);
   if(config.border&&body.outlineColour!==undefined&&!/^#[0-9a-f]{6}$/i.test(body.outlineColour))throw Error('Choose an outline colour.');
   config.garmentColour=body.outlineColour||'#000000';
-  const ordered=prepared.elements.filter(el=>config.elementOptions[el.id]?.type!=='skip').sort((a,b)=>a.pixels-b.pixels);
-  // Keep equal thread colours together, with smaller enclosed regions sewn first.
-  const roles=new Map((interpretation?.regions||[]).map(r=>[r.id,r.role]));
-  const colours=[...new Set(ordered.map(el=>el.colour))];
-  const base=el=>prepared.sourceElements[el.sourceId??el.id];
-  const role=el=>roles.get(el.sourceId??el.id);
-  ordered.sort((a,b)=>(role(a)==='lettering')-(role(b)==='lettering')||colours.indexOf(a.colour)-colours.indexOf(b.colour)||(role(a)==='lettering'?base(a).x-base(b).x:base(a).pixels-base(b).pixels)||(a.sourceId??a.id)-(b.sourceId??b.id)||a.id-b.id);
-  ordered.forEach((el,order)=>{config.elementOptions[el.id]={order,type:el.guide?'fill':column(prepared.ids,prepared.info.width,el,prepared.scale,config.satinSpacing)?'satin':branchedColumns(prepared.ids,prepared.info.width,el,prepared.scale,config.satinSpacing)?'satin-branches':'fill'};});
+  const ordered=prepared.elements.filter(el=>config.elementOptions[el.sourceId??el.id]?.type!=='skip');
+  // Sew spatial bands in order, permitting a return to a thread colour. A shared
+  // colour above and below a large object is not necessarily one sewing block.
+  const bands=[];
+  for(const el of ordered.filter(e=>e.pixels*prepared.scale**2>=.3).sort((a,b)=>a.y+a.height/2-b.y-b.height/2)){
+    const cy=el.y+el.height/2;
+    const band=bands.find(b=>Math.abs(cy-b.cy)<Math.min(el.height,b.height)*.6);
+    if(band){band.items.push(el);band.cy=band.items.reduce((n,e)=>n+e.y+e.height/2,0)/band.items.length;band.height=Math.min(band.height,el.height);}
+    else bands.push({cy,height:el.height,items:[el]});
+  }
+  for(const el of ordered.filter(e=>e.pixels*prepared.scale**2<.3)){
+    const same=bands.filter(b=>b.items.some(e=>e.colour===el.colour));
+    const band=(same.length?same:bands).slice().sort((a,b)=>Math.abs(a.cy-el.y-el.height/2)-Math.abs(b.cy-el.y-el.height/2))[0];
+    if(band)band.items.push(el);else bands.push({cy:el.y+el.height/2,height:el.height,items:[el]});
+  }
+  const sequence=bands.sort((a,b)=>a.cy-b.cy).flatMap(b=>b.items.sort((a,b)=>a.x-b.x));
+  sequence.forEach((el,order)=>{config.elementOptions[el.id]={order,type:el.guide?'fill':column(prepared.ids,prepared.info.width,el,prepared.scale,config.satinSpacing)?'satin':branchedColumns(prepared.ids,prepared.info.width,el,prepared.scale,config.satinSpacing)?'satin-branches':'fill'};});
   return {png,config,interpretation,preview:source};
 }
 module.exports={plan,removeBackground};

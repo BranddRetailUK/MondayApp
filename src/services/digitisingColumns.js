@@ -47,6 +47,7 @@ function railsFor(path,shape,scale,spacing,widthMm=0,extend=true){
   });
   if(closed)smooth.push(smooth[0]);
   else if(extend)for(const end of [0,smooth.length-1]){
+    if(Array.isArray(extend)&&!extend[end===0?0:1])continue;
     const other=end===0?Math.min(radius*2,smooth.length-1):Math.max(0,end-radius*2),dx=smooth[end][0]-smooth[other][0],dy=smooth[end][1]-smooth[other][1],len=Math.hypot(dx,dy);
     if(len){const tip=smooth[end].slice();for(let d=.25;d<7/scale;d+=.25){const q=[tip[0]+dx/len*d,tip[1]+dy/len*d];if(!inside(...q))break;smooth[end]=q;}}
   }
@@ -66,7 +67,7 @@ function railsFor(path,shape,scale,spacing,widthMm=0,extend=true){
     const nx=-dy/len,ny=dx/len,pair=[];
     for(const sign of [-1,1]){let d=0;while(d<Math.min(8/scale,Math.max(.3/scale,shape.distance[Math.round(p[1])*W+Math.round(p[0])]*1.6))&&inside(p[0]+nx*(d+.2)*sign,p[1]+ny*(d+.2)*sign))d+=.2;pair.push([p[0]+nx*d*sign+ox,p[1]+ny*d*sign+oy]);}
     const width=Math.hypot(pair[0][0]-pair[1][0],pair[0][1]-pair[1][1])*scale;
-    if(width>7)wide++;
+    if(width>9)wide++;
     // Preserve fine lettering and tapered ends as crosswise columns.
     const target=widthMm||Math.max(.3,width);
     if(target!==width){const mid=[(pair[0][0]+pair[1][0])/2,(pair[0][1]+pair[1][1])/2],half=target/(2*scale);pair[0]=[mid[0]-nx*half,mid[1]-ny*half];pair[1]=[mid[0]+nx*half,mid[1]+ny*half];}
@@ -103,13 +104,34 @@ function branchedColumns(ids,w,element,scale,spacing){
     if(path.length>=2)paths.push(path);
   }
   if(!paths.length||paths.length>80)return null;
-  const rails=[],covered=new Set();
-  for(const path of paths){const rail=railsFor(path.map(k=>[k%W,Math.floor(k/W)]),shape,scale,spacing,0,false);if(rail){for(const k of path)covered.add(k);rails.push(rail);}}
+  // Medial axes grow short diagonal twigs into the corners of a flat cap.
+  // Remove those twigs, merge the remaining graph edges, then extend the main
+  // centre line to the cap. Otherwise a rectangular stem gets a starburst end.
+  const discarded=new Set(),kept=[],capCandidates=new Map();
+  for(const path of paths){
+    const terminal=adjacent(path[0]).length===1?0:adjacent(path.at(-1)).length===1?path.length-1:-1;
+    const root=terminal===0?path.at(-1):path[0];
+    let length=0;for(let i=1;i<path.length;i++)length+=Math.hypot(path[i]%W-path[i-1]%W,Math.floor(path[i]/W)-Math.floor(path[i-1]/W));
+    if(terminal>=0&&adjacent(root).length>2&&length<shape.distance[root]*1.7){if(!capCandidates.has(root))capCandidates.set(root,[]);capCandidates.get(root).push(path);}else kept.push(path);
+  }
+  for(const candidates of capCandidates.values()){if(candidates.length<2)kept.push(...candidates);else for(const path of candidates)for(const k of path)discarded.add(k);}
+  // Do not prune an object made entirely from short branches.
+  if(!kept.length){kept.push(...paths);discarded.clear();}
+  let merged=true;
+  while(merged){merged=false;const ends=new Map();
+    kept.forEach((p,i)=>{for(const k of [p[0],p.at(-1)]){if(!ends.has(k))ends.set(k,[]);ends.get(k).push(i);}});
+    for(const [k,indices]of ends)if(indices.length===2&&indices[0]!==indices[1]){
+      const [i,j]=indices;let a=kept[i],b=kept[j];if(a.at(-1)!==k)a=a.slice().reverse();if(b[0]!==k)b=b.slice().reverse();
+      kept[i]=a.concat(b.slice(1));kept.splice(j,1);merged=true;break;
+    }
+  }
+  const rails=[],covered=new Set(discarded);
+  for(const path of kept){const extend=[path[0],path.at(-1)].map(k=>discarded.has(k));const rail=railsFor(path.map(k=>[k%W,Math.floor(k/W)]),shape,scale,spacing,0,extend);if(rail){for(const k of path)covered.add(k);rails.push(rail);}}
   // Reject partial reconstructions rather than silently losing branches.
   if(covered.size<points.length*.98||!rails.length)return null;
   return rails;
 }
-module.exports={column,branchedColumns};
+module.exports={column,branchedColumns,skeleton,invalidate:ids=>skeletonCache.delete(ids)};
 
 // Detect local narrow branches from the source mask, independently of AI section angles.
 function thinColumns(ids,w,element,scale,spacing,threadWidth=.3){

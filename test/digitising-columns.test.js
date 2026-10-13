@@ -65,3 +65,39 @@ test('sub-thread closed details fail cleanly without invalid tangent indexes',()
   for(let y=0;y<w;y++)for(let x=0;x<w;x++){const r=Math.hypot(x-15,y-15);if(r>=6&&r<=8)ids[y*w+x]=0;}
   assert.doesNotThrow(()=>branchedColumns(ids,w,{id:0,x:7,y:7,width:17,height:17},.001,.34));
 });
+
+test('thin necks separate broad and satin regions without changing source pixels',async()=>{
+  for(const rotation of [0,90]){
+    const input=svg(`<g transform="rotate(${rotation} 60 60)" fill="#123456"><rect x="10" y="10" width="45" height="85"/><rect x="80" y="10" width="8" height="85"/><rect x="50" y="52" width="35" height=".5"/></g>`);
+    const p=await plan(input,{widthMm:48}),m=await engine.prepare(p.png,p.config);
+    assert.ok(m.elements.length>=2);assert.ok(Object.values(p.config.elementOptions).some(o=>o.type==='fill'));assert.ok(Object.values(p.config.elementOptions).some(o=>o.type.startsWith('satin')));
+    for(let k=0;k<m.ids.length;k++)assert.equal(m.ids[k]>=0,m.sourceIds[k]>=0,'partition must not erode or add pixels');
+  }
+});
+test('medium-width loops remain satin while enlarged broad strokes become fill',async()=>{
+  const input=svg('<ellipse cx="60" cy="60" rx="36" ry="42" fill="none" stroke="red" stroke-width="16"/>');
+  const a=await plan(input,{widthMm:60}),b=await plan(input,{widthMm:120});
+  assert.equal(a.config.elementOptions[0].type,'satin-branches');assert.equal(b.config.elementOptions[0].type,'fill');
+});
+test('spatial thread sequencing can return to a colour without artwork-specific labels',async()=>{
+  const input=svg('<rect x="15" y="5" width="70" height="6" fill="red"/><rect x="10" y="30" width="90" height="45" fill="blue"/><rect x="15" y="98" width="70" height="6" fill="red"/>');
+  const p=await plan(input,{widthMm:48}),g=await engine.generate(p.png,p.config);
+  assert.deepEqual(g.threads,['#ff0000','#0000ff','#ff0000']);assert.equal(g.stats.colourChanges,2);
+});
+test('diagonal fill remains inside counters and connects nearby rows without repeated trims',async()=>{
+  const input=svg('<path fill="red" fill-rule="evenodd" d="M10 10H110V110H10Z M40 40H80V80H40Z"/>');
+  const p=await plan(input,{widthMm:60}),g=await engine.generate(p.png,p.config),m=await engine.prepare(p.png,p.config);
+  assert.ok(g.stats.trims<10);const {parseDst}=await import('../public/embroidery-viewer.mjs'),d=parseDst(Buffer.from(g.dst,'base64'));
+  for(const [x,y,a,b]of d.segments){const point=(x,y)=>[x/(m.scale*10)+(m.left+m.right)/2,y/(m.scale*10)+(m.top+m.bottom)/2];assert.ok(segmentInside(m.sourceIds,m.info.width,0,point(x,y),point(a,b),m.scale,.2),'fill or connecting travel crossed a counter');}
+});
+test('segmentation invalidates original geometry and retains exclusions',()=>{
+  const {separate}=require('../src/services/digitisingSegmentation'),{skeleton}=require('../src/services/digitisingColumns');
+  const w=90,ids=new Int16Array(w*50).fill(-1);
+  for(let y=5;y<45;y++)for(let x=5;x<85;x++)if(x<30||x>59||y===25)ids[y*w+x]=0;
+  const element={id:0,colour:'#ff0000',x:5,y:5,width:80,height:40,pixels:ids.filter(v=>v===0).length},els=[{...element}];
+  const before=skeleton(ids,w,element);separate(ids,els,w,.1);
+  assert.equal(els.length,2);const after=skeleton(ids,w,els[0]);assert.notEqual(after,before);
+  assert.ok(after.W<before.W);assert.equal(els.reduce((sum,e)=>sum+e.pixels,0),element.pixels);
+  const excluded=new Int16Array(w*50).fill(-1);for(let y=5;y<45;y++)for(let x=5;x<85;x++)if(x<30||x>59||y===25)excluded[y*w+x]=0;
+  const skipped=[{...element}];separate(excluded,skipped,w,.1,{0:{type:'skip'}});assert.equal(skipped.length,1);
+});

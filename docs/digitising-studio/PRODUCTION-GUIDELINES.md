@@ -57,3 +57,29 @@ Route connecting support stitches inside the original same-thread source region.
 - Skeleton edges become arc-length sampled paired rails, with closed-loop tangents and distance-to-boundary bounds at forks. Thin satin tapers retain at least the provisional 0.30mm thread width.
 - Underlay, rail transitions and same-region travel are mask-checked to preserve holes. Separate regions jump; adjacent branches choose nearby endpoints. Satin columns do not receive the separate thin-feature overlay again.
 - Narrow columns use centre-run underlay; wider columns add an inset zigzag. Automatic per-edge satin pull compensation is bounded by 15% of local width and garment maxima of 0.10/0.15/0.08mm (T-shirt/hoodie/woven). These are provisional starting values, requiring fabric-specific sew-out calibration.
+
+### Geometry and sequencing (2026-10-13)
+
+Automatic planning separates substantial regions connected by a neck narrower than
+0.5 mm, then grows their ownership back across the unchanged source pixels. Broad
+and narrow regions can therefore choose different stitch types. Original source
+masks remain the authority for holes and hidden connecting travel. Explicitly
+excluded regions and supplied directional guides are not repartitioned.
+
+Satin columns support measured cross-stroke widths up to 9 mm; larger regions
+remain fill. Short terminal medial-axis twigs are pruned and the main column
+extended to flat caps, rather than treating each cap corner as a separate stroke.
+This remains a geometric approximation, particularly at complex touching loops
+and sharp joins. The satin limit is provisional, not a fabric calibration.
+
+Automatic broad fill uses a 35-degree default top direction, perpendicular sparse
+underlay and a 3.8 mm maximum fill stitch. Density remains garment-derived in
+physical units. Mask-routed nearby rows do not each receive an extra tie-off.
+Spatial bands may return to a thread colour instead of combining distant objects
+only to avoid a colour change. Isolated specks smaller than 0.025 square mm and
+0.4 mm in both dimensions are omitted; longer fine strokes are retained.
+
+Regression fixtures cover rotated joined shapes, broad and narrow regions in one
+source component, loop counters, medium-width satin versus enlarged fill, and
+returning to a thread colour. Reference DSTs are comparison inputs only; no logo
+names, coordinates, target commands or private artwork are embedded in the engine.

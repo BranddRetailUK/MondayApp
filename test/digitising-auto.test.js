@@ -33,7 +33,13 @@ test('resizing regenerates fill and satin at physical density instead of scaling
     for(const widthMm of [70,100]){const p=await plan(shape,{widthMm});assert.equal(p.config.elementOptions[0].type,i?'satin':'fill');outputs.push(await engine.generate(p.png,p.config));}
     const ratio=outputs[1].stats.stitches/outputs[0].stats.stitches;assert.ok(ratio>(i?1.25:1.7),`new stitch count must grow, ratio ${ratio}`);
     const {parseDst}=await import('../public/embroidery-viewer.mjs');
-    if(!i)for(const output of outputs){const d=parseDst(Buffer.from(output.dst,'base64'));const rows=[...new Set(d.segments.filter(s=>s[1]===s[3]&&Math.abs(s[2]-s[0])>10).map(s=>s[1]))].sort((a,b)=>a-b);const gaps=rows.slice(1).map((v,j)=>(v-rows[j])/10).sort((a,b)=>a-b);assert.ok(Math.abs(gaps[Math.floor(gaps.length/2)]-.42)<.12);}
+    if(!i)for(const output of outputs){
+      const d=parseDst(Buffer.from(output.dst,'base64')),angle=output.config.fillAngle*Math.PI/180;
+      const rows=d.segments.filter(([x,y,a,b])=>Math.hypot(a-x,b-y)>15&&Math.abs(-(a-x)*Math.sin(angle)+(b-y)*Math.cos(angle))<1.2).map(([x,y])=>(-x*Math.sin(angle)+y*Math.cos(angle))/10).sort((a,b)=>a-b);
+      const distinct=[];for(const v of rows)if(!distinct.length||v-distinct.at(-1)>.2)distinct.push(v);
+      const gaps=distinct.slice(1).map((v,j)=>v-distinct[j]).sort((a,b)=>a-b);
+      assert.ok(gaps.length>20);assert.ok(Math.abs(gaps[Math.floor(gaps.length/2)]-.42)<.12,'physical row density must survive angle and size changes');
+    }
   }
 });
 test('dense coverage policy is garment-derived and cannot be overridden by customer fields',async()=>{
