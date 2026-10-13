@@ -74,7 +74,9 @@ and sharp joins. The satin limit is provisional, not a fabric calibration.
 
 Automatic broad fill uses a 35-degree default top direction, perpendicular sparse
 underlay and a 3.8 mm maximum fill stitch. Density remains garment-derived in
-physical units. Mask-routed nearby rows do not each receive an extra tie-off.
+physical units. Mask-routed nearby rows do not each receive an extra tie-off. Fill locks remain
+at actual breaks and object ends. A 0.1 mm edge margin accounts for DST endpoint
+rounding during connector checks.
 Spatial bands may return to a thread colour instead of combining distant objects
 only to avoid a colour change. Isolated specks smaller than 0.025 square mm and
 0.4 mm in both dimensions are omitted; longer fine strokes are retained.

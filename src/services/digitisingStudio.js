@@ -137,7 +137,17 @@ async function generate(png, config) {
     for(let i=1;i<=steps;i++){const nx=Math.round(sx+(tx-sx)*i/steps),ny=Math.round(sy+(ty-sy)*i/steps);if(nx===x&&ny===y)continue;commands.push({kind,x:nx,y:ny});x=nx;y=ny;}
     if(commands.length>150000)throw Error('Design exceeds 150,000 commands. Simplify artwork.');
   }
-  function trim(){if(!commands.length)return;commands.push({kind:'jump',x:x+2,y:y+2},{kind:'jump',x:x-2,y:y-2},{kind:'jump',x,y});trims++;}
+  let needsFillTie=false;
+  function finishFill(){
+    if(!needsFillTie)return;needsFillTie=false;
+    const last=commands.at(-1),previous=commands.at(-2);
+    if(last?.kind!=='stitch'||previous?.kind!=='stitch')return;
+    const dx=x-previous.x,dy=y-previous.y,d=Math.hypot(dx,dy);
+    if(d<3)return;
+    const fraction=Math.min(4/d,.5),px=x-Math.round(dx*fraction),py=y-Math.round(dy*fraction);
+    if(px!==x||py!==y)commands.push({kind:'stitch',x:px,y:py},{kind:'stitch',x,y});
+  }
+  function trim(){finishFill();if(!commands.length)return;commands.push({kind:'jump',x:x+2,y:y+2},{kind:'jump',x:x-2,y:y-2},{kind:'jump',x,y});trims++;}
   let activeColour=-1,lastSourceId=null;
   function sourceTravel(p,sourceId){
     const old=[x/(scale*10)+(left+right)/2,y/(scale*10)+(top+bottom)/2];
@@ -162,11 +172,11 @@ async function generate(png, config) {
     if(connect&&distance*scale<.65&&rowLength>config.length){
       const lead=a.map((v,i)=>v+(b[i]-v)*config.length/rowLength);
       const here=[x/(scale*10)+(left+right)/2,y/(scale*10)+(top+bottom)/2];
-      if(segmentInside(ids,w,activeColour,here,lead,scale,.1)){move(...lead);move(...b);return;}
+      if(segmentInside(ids,w,activeColour,here,lead,scale,.1)){move(...lead);move(...b);needsFillTie=true;return;}
     }
     if(connect)move(...a);else{trim();move(...a,'jump');}
     const d=Math.hypot(b[0]-a[0],b[1]-a[1]), tie=[a[0]+(b[0]-a[0])/d*.6/scale,a[1]+(b[1]-a[1])/d*.6/scale];
-    if(!connect){move(...tie);move(...a);move(...tie);}move(...b);
+    if(!connect){move(...tie);move(...a);move(...tie);}move(...b);needsFillTie=true;
   }
   const ordered=elements.filter(el=>config.elementOptions?.[el.id]?.type!=='skip').sort((a,b)=>(config.elementOptions?.[a.id]?.order??a.id)-(config.elementOptions?.[b.id]?.order??b.id));
   const narrowByElement=new Map();
@@ -286,6 +296,7 @@ async function generate(png, config) {
         const pair=pending.splice(best,1)[0];if(reverse)pair.reverse();run(...pair);
       }
     }
+    finishFill();
     // Finish narrow-feature top stitches beside their adjoining broad section.
     const sourceId=element.sourceId??element.id;
     {
