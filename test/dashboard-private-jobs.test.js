@@ -264,6 +264,9 @@ async function withFixture(options, run) {
       async saveTotal(value) {
         return request('/api/test-dashboard/items/:jobId/text-column', { columnId: totalColumn.id, value });
       },
+      async printLabel() {
+        return request('/api/test-dashboard/items/:jobId/label-printed', {}, 'post');
+      },
       async boardItem() {
         const response = await request('/api/test-dashboard/board', null, 'get');
         assert.equal(response.statusCode, 200);
@@ -276,6 +279,35 @@ async function withFixture(options, run) {
     });
   }
 }
+
+test('label printing checks in private jobs and manual completion survives reprinting', async () => {
+  await withFixture({}, async fixture => {
+    const original = fixture.snapshot();
+    const printed = await fixture.printLabel();
+    assert.equal(printed.statusCode, 200);
+    assert.equal(printed.body.status, 'CHECKED IN');
+    assert.equal(fixture.snapshot().group_id, original.group_id);
+    assert.equal(fixture.snapshot().column_values[ids.JOB], original.column_values[ids.JOB]);
+    assert.equal((await fixture.select(ids.STATUS, 'COMPLETED')).statusCode, 200);
+    assert.equal(fixture.snapshot().group_id, groups.COMPLETED);
+    const reprinted = await fixture.printLabel();
+    assert.equal(reprinted.body.status, 'COMPLETED');
+    assert.equal(reprinted.body.statusPreserved, true);
+    assert.equal(fixture.databaseWrites(), 0);
+  });
+});
+
+test('printing a ready private production job retains readiness and group', async () => {
+  await withFixture({}, async fixture => {
+    await fixture.select(ids.TYPE, 'PRINT');
+    await fixture.select(ids.STATUS, 'READY TO PRINT');
+    const printed = await fixture.printLabel();
+    assert.equal(printed.statusCode, 200);
+    assert.equal(printed.body.status, 'READY TO PRINT');
+    assert.equal(printed.body.statusPreserved, true);
+    assert.equal(fixture.snapshot().group_id, groups.PRINT);
+  });
+});
 
 function loadFrontend() {
   const ui = {

@@ -53,7 +53,6 @@ app.use(require('./routes/design-folders').createRouter(require('./db/pool')));
 app.use('/api/proof-generator', require('./routes/proof-generator').createRouter());
 
 // Routers
-app.use(testDashboardRoutes.publicRouter);
 app.use(requireHubApiAuth, dtfRoutes);
 app.use(requireHubFullApiAccess, require('./routes/database'));
 app.use(requireHubFullApiAccess, testDashboardRoutes.protectedRouter);

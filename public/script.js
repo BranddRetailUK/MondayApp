@@ -1,6 +1,5 @@
 // --- Tuesday Dashboard Frontend (DB-backed grid + collapsible groups/subitems) ---
 
-const PROD_ORIGIN = window.location.origin;
 const ENDPOINTS = {
   testData: '/api/test-dashboard/board',
   testStatusColumn: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/status-column`,
@@ -14,7 +13,6 @@ const ENDPOINTS = {
   testPrivateJob: (itemId) => `/api/test-dashboard/private-jobs/${encodeURIComponent(itemId)}`,
   testProofFiles: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/proof-files`,
   testFile: (itemId, fileId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/files/${encodeURIComponent(fileId)}`,
-  testScanUrl: (itemId) => `/api/test-dashboard/scan-url?jobId=${encodeURIComponent(itemId)}`,
   testLabelPrinted: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/label-printed`,
   testUploadSignature: '/api/test-dashboard/uploads/signature',
   testFiles: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/files`
@@ -144,20 +142,8 @@ let __proofModalState = {
   renderToken: 0
 };
 
-// --- Serial globals ---
-let __serialPort = null;
-let __serialReader = null;
-let __decoder = null;
-let __inputDone = null;
-let __serialBuffer = '';
-let __idleTimer = null;
-const __IDLE_MS = 140;
-const __BUFFER_HARD_LIMIT = 8192;
-
 document.addEventListener('DOMContentLoaded', () => {
   ensureSidebarToggle();
-  addSerialScannerUI();
-  attachSerialEvents();
   initDashboardPinchZoom();
   Promise.resolve(window.ultimateHubUserPromise).then((user) => {
     refreshPackingControlVisibility();
@@ -5641,35 +5627,6 @@ async function printLabel(item, trigger) {
   }
 }
 
-// --------------------------- SERIAL UI (unchanged core) ---------------------------
-
-function addSerialScannerUI() {
-  const bar = document.getElementById('sidebarDashboardControls') || document.getElementById('labels-toolbar');
-  let btn = document.getElementById('connectScannerBtn');
-
-  // Connect Scanner button
-  if (!isUltimatePackingUser()) {
-    btn?.remove();
-  } else if (!btn) {
-    btn = document.createElement('button');
-    btn.id = 'connectScannerBtn';
-    btn.textContent = 'Connect Scanner';
-    btn.className = 'btn success';
-    btn.onclick = connectSerialScanner;
-    if (bar) bar.appendChild(btn);
-  } else if (bar && btn.parentElement !== bar) {
-    bar.appendChild(btn);
-  }
-
-  const logoutBtn = document.getElementById('logoutButton');
-  if (bar && btn?.parentElement === bar && logoutBtn?.parentElement === bar && btn.nextElementSibling !== logoutBtn) {
-    bar.insertBefore(btn, logoutBtn);
-  }
-
-  document.getElementById('priorityHighlightBtn')?.remove();
-  document.getElementById('scanPill')?.remove();
-}
-
 function isUltimatePackingUser(user = window.ultimateHubUser) {
   const fullName = String(
     user?.full_name || [user?.first_name, user?.last_name].filter(Boolean).join(' ')
@@ -5678,158 +5635,8 @@ function isUltimatePackingUser(user = window.ultimateHubUser) {
 }
 
 function refreshPackingControlVisibility() {
-  addSerialScannerUI();
   rerenderBoardContext(BOARD_CONTEXT_TEST);
 }
-
-function attachSerialEvents() {
-  if (!('serial' in navigator)) return;
-  navigator.serial.addEventListener('connect', () => updateScanPill('scanner connected'));
-  navigator.serial.addEventListener('disconnect', async () => {
-    updateScanPill('scanner disconnected');
-    await disconnectSerialScanner();
-  });
-}
-
-function updateScanPill(msg) {
-  const pill = document.getElementById('scanPill') || document.querySelector('.scan-pill-text');
-  if (pill) {
-    pill.textContent = msg;
-    if (!/connected|disconnected/i.test(msg)) {
-      setTimeout(() => { pill.textContent = 'ready'; }, 900);
-    }
-  }
-}
-
-// --------------------------- SERIAL CORE ---------------------------
-
-async function connectSerialScanner() {
-  if (!('serial' in navigator)) {
-    alert('Web Serial API not supported. Use Chrome or Edge.');
-    return;
-  }
-  if (__serialPort) { updateScanPill('already connected'); return; }
-
-  try {
-    const port = await navigator.serial.requestPort();
-    await port.open({ baudRate: 115200, dataBits: 8, stopBits: 1, parity: 'none', flowControl: 'none', bufferSize: 255 });
-    try { await port.setSignals({ dataTerminalReady: true, requestToSend: true }); } catch {}
-
-    __serialPort = port;
-    updateScanPill('scanner connected');
-    startSerialReadLoop(port);
-  } catch (e) {
-    console.error('Serial connect failed', e);
-    alert('Could not open scanner port. Ensure no other program is using it, then try again.');
-  }
-}
-
-async function disconnectSerialScanner() {
-  try {
-    if (__serialReader) { try { await __serialReader.cancel(); } catch {} try { __serialReader.releaseLock(); } catch {} }
-    if (__inputDone) { try { await __inputDone.catch(() => {}); } catch {} }
-    if (__decoder) { try { __decoder.readable.cancel(); } catch {} }
-    if (__serialPort) { try { await __serialPort.close(); } catch {} }
-  } finally {
-    __serialReader = null; __decoder = null; __inputDone = null; __serialPort = null; __serialBuffer = '';
-    clearTimeout(__idleTimer);
-  }
-}
-
-function startSerialReadLoop(port) {
-  __decoder = new TextDecoderStream();
-  __inputDone = port.readable.pipeTo(__decoder.writable).catch(() => {});
-  const inputStream = __decoder.readable;
-  __serialReader = inputStream.getReader();
-
-  const flush = () => {
-    const line = __serialBuffer.trim();
-    __serialBuffer = '';
-    if (!line) return;
-    handleSerialScan(line);
-  };
-
-  (async () => {
-    try {
-      while (true) {
-        const { value, done } = await __serialReader.read();
-        if (done) break;
-        if (value) {
-          __serialBuffer += value;
-          if (__serialBuffer.length > __BUFFER_HARD_LIMIT) flush();
-
-          let parts = __serialBuffer.split(/[\r\n]+/);
-          __serialBuffer = parts.pop();
-          for (const part of parts) {
-            const line = part.trim();
-            if (line) handleSerialScan(line);
-          }
-
-          if (/([?&]i=\d+).+([?&]sig=[a-f0-9]+)/i.test(__serialBuffer) && !/[\r\n]/.test(__serialBuffer)) {
-            const line = __serialBuffer.trim();
-            __serialBuffer = '';
-            handleSerialScan(line);
-          }
-
-          clearTimeout(__idleTimer);
-          __idleTimer = setTimeout(flush, __IDLE_MS);
-        }
-      }
-    } catch (err) {
-      console.warn('Serial read loop ended:', err);
-    } finally {
-      try { __serialReader.releaseLock(); } catch {}
-    }
-  })();
-}
-
-async function handleSerialScan(text) {
-  let scanUrl = normalizeTestScanUrl(text);
-  if (!scanUrl && /^\d+$/.test(text)) {
-    try {
-      const r = await fetch(ENDPOINTS.testScanUrl(text), { cache: 'no-store', credentials: 'include' });
-      if (r.ok) {
-        const j = await r.json();
-        if (j && j.url) scanUrl = j.url;
-      }
-    } catch {}
-  }
-  if (!scanUrl) { updateScanPill('unrecognized code'); return; }
-  await postScannerResult(scanUrl);
-}
-
-async function postScannerResult(scanText) {
-  const endpoint = '/api/test-dashboard/scanner';
-  try {
-    const r2 = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ scan: scanText })
-    });
-    updateScanPill(r2.ok ? 'status: ok' : 'status: error');
-    if (r2.ok) loadTestBoard({ forceRefresh: true });
-  } catch (e) {
-    console.warn(`POST ${endpoint} failed:`, e);
-    updateScanPill('status: error');
-  }
-}
-
-function normalizeTestScanUrl(input) {
-  const value = String(input || '').trim();
-  if (!value) return null;
-  if (/^https?:\/\/.+\/test-scan\?.*(j|i)=\d+.*ts=\d+.*sig=[a-f0-9]+/i.test(value)) return value;
-  if (/\/test-scan\?/i.test(value) && /(^|[?&])(j|i)=\d+/.test(value) && /ts=\d+/.test(value) && /sig=/.test(value)) {
-    return `${PROD_ORIGIN}${value.startsWith('/') ? value : `/test-scan?${value.replace(/^[^?]*\?/, '')}`}`;
-  }
-  return null;
-}
-
-// --------------------------- CLEANUP ---------------------------
-
-window.addEventListener('beforeunload', async () => {
-  await disconnectSerialScanner();
-});
 
 // --------------------------- TAB NAVIGATION (sidebar) ---------------------------
 

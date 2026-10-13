@@ -22,7 +22,7 @@ function createService(pool, {upload = require('./cloudinaryDashboard').uploadBu
   }
   const officeJob = row => {
     const {resolveDashboardGroupId,resolveJobApproved}=require('./dashboardAutomation');
-    return !resolveJobApproved(row,row.column_values||{}) && resolveDashboardGroupId(row,row,null)===GROUP.OFFICE;
+    return !resolveJobApproved(row,row.column_values||{}) && resolveDashboardGroupId(row,row)===GROUP.OFFICE;
   };
   async function designRefs(db,id){
     const rows=(await db.query('SELECT design_ref FROM database_job_positions WHERE source_order_id=$1 ORDER BY position_sort_order,source_order_position_id',[id])).rows;
@@ -130,7 +130,7 @@ function createService(pool, {upload = require('./cloudinaryDashboard').uploadBu
         AND NOT EXISTS(SELECT 1 FROM proof_job_links l WHERE l.source_order_id=j.source_order_id)
         FOR UPDATE OF j`,[name])).rows;
       const {resolveDashboardGroupId,resolveJobApproved}=require('./dashboardAutomation');
-      const matches=candidates.filter(job=>!resolveJobApproved(job,job.column_values||{}) && resolveDashboardGroupId(job,job,null)===GROUP.OFFICE);
+      const matches=candidates.filter(job=>!resolveJobApproved(job,job.column_values||{}) && resolveDashboardGroupId(job,job)===GROUP.OFFICE);
       if(matches.length!==1)return null;
       await linkWithClient(db,proofId,matches[0].source_order_id);
       return matches[0].source_order_id;

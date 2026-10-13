@@ -353,7 +353,7 @@ body{
 .btn.icon-only{padding:8px 10px;width:38px;text-align:center}
 .btn.small{padding:7px 10px;font-size:12px;border-radius:8px}
 .btn.pill-btn{background:rgba(255,255,255,.06);border:1px solid var(--border)}
-.pill,.scan-pill-text{
+.pill{
   background:#1a2231;
   color:#d3ddf6;
   padding:6px 10px;
@@ -2549,7 +2549,6 @@ body.modal-open{overflow:hidden}
 .mt-8 { margin-top: 8px; }
 
 /* Compatibility helpers still used by scripts */
-.scan-pill-text{margin-left:12px}
 .colour-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
 .mt { margin-top: 18px; }
 .btn:disabled{opacity:.45;cursor:not-allowed;filter:none}
@@ -7892,10 +7891,6 @@ input.db-custom-line-input{
   #test-labels-toolbar .btn{
     flex:1 1 145px;
     min-height:38px;
-  }
-  #connectScannerBtn,
-  #testConnectScannerBtn{
-    display:none!important;
   }
   #tab-test-dashboard #test-board{
     padding:8px 0 14px;

@@ -10,7 +10,7 @@ async function initDb() {
     await pool.query(sql);
   };
 
-  // Scanner tables
+  // Retired scanner history: retained for archival records and order-deletion cleanup.
   await run(`
     CREATE TABLE IF NOT EXISTS job_scans (
       id SERIAL PRIMARY KEY,

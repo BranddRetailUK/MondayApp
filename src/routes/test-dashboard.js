@@ -3,7 +3,6 @@ const crypto = require('crypto');
 const { fetchProductionLinks, productionLink, saveLinkedProductionJob } = require('../services/dashboardProductionJobs');
 const pool = require('../db/pool');
 const { fullName } = require('../services/hubAuth');
-const { signPayload, advanceScan } = require('../services/scanner');
 const {
   TEST_DASHBOARD_BOARD_ID,
   TEST_DASHBOARD_GROUPS,
@@ -81,7 +80,6 @@ const {
   statusLabelForMoveGroup,
 } = require('../services/dashboardAutomation');
 
-const publicRouter = express.Router();
 const protectedRouter = express.Router();
 
 const EDITABLE_STATUS_TITLES = new Set(['STATUS', 'PRIORITY']);
@@ -291,7 +289,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/date-column', async (req, 
     }
 
     const nextState = {
-      group_id: state?.group_id || (privateJob ? TEST_DASHBOARD_GROUP_IDS.OFFICE : resolveDashboardGroupId(job, state, null)),
+      group_id: state?.group_id || (privateJob ? TEST_DASHBOARD_GROUP_IDS.OFFICE : resolveDashboardGroupId(job, state)),
       item_name: privateJob ? state?.item_name || '' : state?.item_name || formatJobName(job),
       column_values: columnValues,
       archived: Boolean(state?.archived),
@@ -590,7 +588,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (r
     } else {
       columnValues[column.id] = checkboxValue(column, checked);
       nextState = {
-        group_id: state?.group_id || (privateJob ? TEST_DASHBOARD_GROUP_IDS.OFFICE : resolveDashboardGroupId(job, state, null)),
+        group_id: state?.group_id || (privateJob ? TEST_DASHBOARD_GROUP_IDS.OFFICE : resolveDashboardGroupId(job, state)),
         item_name: privateJob ? state?.item_name || '' : state?.item_name || formatJobName(job),
         column_values: columnValues,
         archived: Boolean(state?.archived),
@@ -660,7 +658,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/text-column', async (req, 
     columnValues[column.id] = textValue(column, value);
 
     const nextState = {
-      group_id: state?.group_id || (privateJob ? TEST_DASHBOARD_GROUP_IDS.OFFICE : resolveDashboardGroupId(job, state, null)),
+      group_id: state?.group_id || (privateJob ? TEST_DASHBOARD_GROUP_IDS.OFFICE : resolveDashboardGroupId(job, state)),
       item_name: privateJob ? state?.item_name || '' : state?.item_name || formatJobName(job),
       column_values: columnValues,
       archived: Boolean(state?.archived),
@@ -780,7 +778,7 @@ protectedRouter.post('/api/test-dashboard/items/:jobId/label-printed', async (re
     );
     const currentGroupId = privateJob
       ? resolvePrivateDashboardGroupId(job)
-      : resolveDashboardGroupId(job, state, null);
+      : resolveDashboardGroupId(job, state);
     const statusPreserved = shouldPreserveStatusAfterLabelPrint(previousStatus, currentGroupId);
     let saved = state;
 
@@ -816,26 +814,6 @@ protectedRouter.post('/api/test-dashboard/items/:jobId/label-printed', async (re
   } catch (err) {
     console.error('POST /api/test-dashboard/items/:jobId/label-printed', err);
     res.status(500).json({ error: 'Failed to prepare the label and update Tuesday Dashboard status' });
-  }
-});
-
-protectedRouter.get('/api/test-dashboard/scan-url', (req, res) => {
-  const jobId = clean(req.query.jobId || req.query.itemId);
-  if (!jobId) return res.status(400).json({ error: 'jobId required' });
-  res.json({ url: buildTestDashboardScanUrl(req, jobId) });
-});
-
-protectedRouter.post('/api/test-dashboard/scanner', async (req, res) => {
-  try {
-    const { scan } = req.body || {};
-    if (!scan || typeof scan !== 'string') return res.status(400).json({ error: 'No scan data' });
-    const parsed = parseTestScan(scan);
-    if (!parsed.jobId) return res.status(400).json({ error: 'Invalid Tuesday Dashboard scan string' });
-    const result = await recordTestDashboardScan(parsed.jobId);
-    res.json({ ok: true, item: parsed.jobId, ...result });
-  } catch (err) {
-    console.error('POST /api/test-dashboard/scanner', err);
-    res.status(500).json({ error: 'Failed to process Tuesday Dashboard scan' });
   }
 });
 
@@ -1095,30 +1073,6 @@ protectedRouter.delete('/api/test-dashboard/items/:jobId/files/:fileId', async (
   }
 });
 
-publicRouter.get('/test-scan', async (req, res) => {
-  const jobId = clean(req.query.j || req.query.i);
-  const ts = clean(req.query.ts);
-  const sig = clean(req.query.sig);
-  const wantsJson = Boolean(req.query.json);
-  if (!jobId || !ts || !sig) return sendScanError(res, wantsJson, 400, 'Invalid scan URL');
-  if (signPayload(jobId, ts) !== sig) return sendScanError(res, wantsJson, 403, 'Signature check failed');
-
-  try {
-    const result = await recordTestDashboardScan(jobId);
-    if (wantsJson) return res.json({ ok: true, ...result });
-    return res.send(
-      `<html><body style="font-family:Arial;padding:20px">
-        <div>Tuesday Dashboard scan recorded</div>
-        <div>Count: ${result.scan_count} - Status: <b>${escapeHtml(result.status)}</b></div>
-        <script>setTimeout(()=>{ try{window.close()}catch(e){} }, 1200)</script>
-      </body></html>`
-    );
-  } catch (err) {
-    console.error('GET /test-scan', err);
-    return sendScanError(res, wantsJson, 500, 'Failed to update Tuesday Dashboard scan');
-  }
-});
-
 async function buildTestDashboardBoardPayload() {
   const [columns, subitemColumns, groups, jobs, privateJobs, productionLinks] = await Promise.all([
     fetchDashboardColumns(false),
@@ -1130,16 +1084,15 @@ async function buildTestDashboardBoardPayload() {
   ]);
   const candidateJobs = jobs.filter(job => deriveJobCategory(job) !== 'gifts');
   const sourceOrderIds = candidateJobs.map(job => job.source_order_id);
-  const [states, lineItems, initialPositions, files, scans, samplingHistory] = await Promise.all([
+  const [states, lineItems, initialPositions, files, samplingHistory] = await Promise.all([
     fetchStateMap(sourceOrderIds),
     fetchLineItemMap(sourceOrderIds),
     fetchPositionMap(sourceOrderIds),
     fetchFileMap(sourceOrderIds),
-    fetchScanMap(sourceOrderIds),
     fetchDashboardSamplingHistory(pool, sourceOrderIds),
   ]);
   let positions = initialPositions;
-  if (await backfillDashboardDesignPositions(candidateJobs, states, positions, scans)) {
+  if (await backfillDashboardDesignPositions(candidateJobs, states, positions)) {
     positions = await fetchPositionMap(sourceOrderIds);
   }
 
@@ -1148,8 +1101,7 @@ async function buildTestDashboardBoardPayload() {
   const grouped = new Map(groups.map(group => [group.id, []]));
   for (const job of candidateJobs) {
     const state = states.get(job.source_order_id) || null;
-    const scan = scans.get(String(job.source_order_id)) || null;
-    if (!shouldRenderDashboardJob(job, state, scan)) continue;
+    if (!shouldRenderDashboardJob(job, state)) continue;
     const itemArgs = {
       job,
       state,
@@ -1158,7 +1110,6 @@ async function buildTestDashboardBoardPayload() {
       lineItems: lineItems.get(job.source_order_id) || [],
       positions: positions.get(job.source_order_id) || [],
       files: files.get(job.source_order_id) || new Map(),
-      scan,
       samplingHistory: samplingHistory.get(job.source_order_id),
     };
     const splitState = resolveDashboardSplitState(job, state?.column_values || {});
@@ -1179,7 +1130,7 @@ async function buildTestDashboardBoardPayload() {
     }
     const item = buildBoardItem(itemArgs);
     item.dashboard_production_parent = productionParentIds.has(job.source_order_id);
-    const groupId = resolveDashboardGroupId(job, state, scan);
+    const groupId = resolveDashboardGroupId(job, state);
     if (!grouped.has(groupId)) grouped.set(groupId, []);
     grouped.get(groupId).push(item);
   }
@@ -1220,19 +1171,19 @@ async function buildTestDashboardBoardPayload() {
   };
 }
 
-function shouldRenderDashboardJob(job, state, scan) {
+function shouldRenderDashboardJob(job, state) {
   if (deriveJobCategory(job) === 'gifts') return false;
   if (state?.archived) return false;
   const stateValues = state?.column_values || {};
   const statusText = normalizeColumnTitle(
-    job.dashboard_status || getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]) || scan?.status || ''
+    job.dashboard_status || getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]) || ''
   );
   if ((statusText === 'INVOICED' || statusText === 'COMPLETED')
     && isDashboardJobCompleted(job, statusText)
     && isDashboardJobFinalized(job)) {
     return false;
   }
-  return hasDashboardIdentity(job, state, scan);
+  return hasDashboardIdentity(job, state);
 }
 
 function isDashboardJobFinalized(job) {
@@ -1250,12 +1201,11 @@ function isDashboardJobCompleted(job, statusText = '') {
   );
 }
 
-function hasDashboardIdentity(job, state, scan) {
+function hasDashboardIdentity(job, state) {
   const stateValues = state?.column_values || {};
   return Boolean(
     clean(job.dashboard_status) ||
     clean(job.dashboard_priority) ||
-    clean(scan?.status) ||
     Boolean(state) ||
     clean(state?.group_id) ||
     clean(getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS])) ||
@@ -1263,11 +1213,11 @@ function hasDashboardIdentity(job, state, scan) {
   );
 }
 
-function buildBoardItem({ job, state, columns, subitemColumns, lineItems, positions, files, scan, samplingHistory }) {
+function buildBoardItem({ job, state, columns, subitemColumns, lineItems, positions, files, samplingHistory }) {
   const stateValues = state?.column_values || {};
   const values = new Map();
   const itemName = state?.item_name || formatJobName(job);
-  const groupId = resolveDashboardGroupId(job, state, scan);
+  const groupId = resolveDashboardGroupId(job, state);
   const typeLabel = deriveTypeLabel(job);
   const designText = designTextFromPositions(positions, job);
   const fallbackDesignText = designDisplayTextFromRawValue(
@@ -1283,12 +1233,12 @@ function buildBoardItem({ job, state, columns, subitemColumns, lineItems, positi
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.TRANS, stateValues[TEST_DASHBOARD_COLUMN_IDS.TRANS] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.TRANS), false));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JAQ, stateValues[TEST_DASHBOARD_COLUMN_IDS.JAQ] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JAQ), Boolean(job.has_screens || job.screen_numbers)));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, jobApproved
-    ? (statusValueFromJobOrState(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, job.dashboard_status, stateValues) || statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, scan?.status || ''))
+    ? statusValueFromJobOrState(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS, job.dashboard_status, stateValues)
     : unapprovedStatusValue(columns, job, stateValues));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.TYPE, statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.TYPE, typeLabel) || stateValues[TEST_DASHBOARD_COLUMN_IDS.TYPE] || statusValueByLabel(columns, TEST_DASHBOARD_COLUMN_IDS.TYPE, job.dashboard_type));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.DESIGN, textValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.DESIGN), designText || fallbackDesignText));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.NOTES, stateValues[TEST_DASHBOARD_COLUMN_IDS.NOTES] || textValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.NOTES), job.comments || ''));
-  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN, stateValues[TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN), Boolean(scan?.scan_count >= 1)));
+  putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN, stateValues[TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN] || checkboxValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN), false));
   putIfColumn(values, columns, TEST_DASHBOARD_COLUMN_IDS.JOB_OWNER, stateValues[TEST_DASHBOARD_COLUMN_IDS.JOB_OWNER] || textValue(columnById(columns, TEST_DASHBOARD_COLUMN_IDS.JOB_OWNER), job.order_owner_name || job.order_taken_by || ''));
 
   for (const column of columns) {
@@ -1748,7 +1698,6 @@ async function fetchOpenDashboardJobs() {
     SELECT j.*
     FROM database_jobs j
     LEFT JOIN test_dashboard_job_state td_state ON td_state.source_order_id = j.source_order_id
-    LEFT JOIN job_scans scan ON scan.item_id = j.source_order_id::text
     WHERE (
         (
           j.is_complete IS NOT TRUE
@@ -1758,7 +1707,6 @@ async function fetchOpenDashboardJobs() {
         OR j.dashboard_status IS NOT NULL
         OR j.dashboard_priority IS NOT NULL
         OR td_state.source_order_id IS NOT NULL
-        OR scan.item_id IS NOT NULL
       )
     ORDER BY COALESCE(order_date, created_at_source, updated_at_source) DESC NULLS LAST,
              order_no DESC
@@ -1865,7 +1813,6 @@ async function updateDashboardSplitBranchStatus({
   column,
   branch,
   selectedOption,
-  markCheckedIn = false,
 }) {
   const client = await pool.connect();
   try {
@@ -1887,12 +1834,6 @@ async function updateDashboardSplitBranchStatus({
     const currentJob = jobResult.rows[0] || job;
     const currentState = stateResult.rows[0] || null;
     const columnValues = { ...(currentState?.column_values || {}) };
-    if (markCheckedIn) {
-      const checkedColumn = columnById(columns, TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN);
-      if (checkedColumn) {
-        columnValues[TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN] = checkboxValue(checkedColumn, true);
-      }
-    }
     const splitState = resolveDashboardSplitState(currentJob, columnValues);
     if (!splitState) {
       await client.query('ROLLBACK');
@@ -1936,8 +1877,7 @@ async function updateDashboardSplitBranchStatus({
       nextState = {
         group_id: currentState?.group_id || resolveDashboardGroupId(
           { ...currentJob, dashboard_status: DASHBOARD_SPLIT_READY_STATUS },
-          currentState,
-          null
+          currentState
         ),
         item_name: currentState?.item_name || formatJobName(currentJob),
         column_values: columnValues,
@@ -2087,18 +2027,6 @@ async function fetchFileMap(sourceOrderIds) {
   return map;
 }
 
-async function fetchScanMap(sourceOrderIds) {
-  const map = new Map();
-  if (!sourceOrderIds.length) return map;
-  const ids = sourceOrderIds.map(String);
-  const result = await pool.query(
-    'SELECT item_id, scan_count, status FROM job_scans WHERE item_id = ANY($1::text[])',
-    [ids]
-  );
-  for (const row of result.rows) map.set(String(row.item_id), row);
-  return map;
-}
-
 async function upsertJobState(sourceOrderId, state, db = pool) {
   const result = await db.query(
     `INSERT INTO test_dashboard_job_state (
@@ -2147,104 +2075,11 @@ function applyPrivateDashboardAutomations(args) {
   });
 }
 
-async function recordTestDashboardScan(jobId) {
-  const splitItem = parseSplitDashboardItemId(jobId);
-  const sourceOrderId = splitItem?.sourceOrderId ?? Number.parseInt(jobId, 10);
-  if (!Number.isFinite(sourceOrderId)) throw new Error('Invalid Tuesday Dashboard job id');
-  await ensureTestDashboardDefaults(pool);
-  const job = await fetchDashboardJob(sourceOrderId);
-  if (!job) throw new Error('Database job not found');
-
-  const columns = await fetchDashboardColumns(false);
-  const state = await fetchJobState(job.source_order_id);
-  const currentSplitState = resolveDashboardSplitState(job, state?.column_values || {});
-  if (currentSplitState && !splitItem) {
-    throw new Error('Use the Print or Embroidery split-job label for this scan');
-  }
-
-  const scanItemId = splitItem
-    ? splitDashboardItemId(job.source_order_id, splitItem.branch)
-    : String(job.source_order_id);
-  const result = await advanceScan(scanItemId);
-  if (splitItem && currentSplitState) {
-    const statusColumn = columnById(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS);
-    const selectedOption = findStatusOption(statusColumn, result.status);
-    if (!statusColumn || !selectedOption) {
-      throw new Error(`Tuesday Dashboard status is not configured for ${result.status}`);
-    }
-    const updated = await updateDashboardSplitBranchStatus({
-      job,
-      columns,
-      column: statusColumn,
-      branch: splitItem.branch,
-      selectedOption,
-      markCheckedIn: result.scan_count >= 1,
-    });
-    if (!updated) throw new Error('This split job is no longer active');
-    return result;
-  }
-
-  const columnValues = { ...(state?.column_values || {}) };
-  const statusColumn = columnById(columns, TEST_DASHBOARD_COLUMN_IDS.STATUS);
-  const checkedColumn = columnById(columns, TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN);
-
-  if (result.scan_count >= 1 && checkedColumn) {
-    columnValues[TEST_DASHBOARD_COLUMN_IDS.CHECKED_IN] = checkboxValue(checkedColumn, true);
-  }
-  if (statusColumn) {
-    const label = result.scan_count === 1
-      ? 'CHECKED IN'
-      : result.scan_count === 2
-        ? 'IN PRODUCTION'
-        : 'COMPLETED';
-    const option = findStatusOption(statusColumn, label);
-    if (option) columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS] = statusValue(statusColumn, option.label, option.index);
-  }
-
-  const nextState = applyDashboardAutomations({
-    job,
-    currentState: state,
-    column: statusColumn || { title: 'STATUS' },
-    columnValues,
-    changedLabel: getColumnText(columnValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]),
-    clearRequested: false,
-  });
-  await upsertJobState(job.source_order_id, nextState);
-  await updateDatabaseJobDashboardFields(pool, job.source_order_id, {
-    status: getColumnText(nextState.column_values[TEST_DASHBOARD_COLUMN_IDS.STATUS]),
-  });
-  return result;
-}
-
-function parseTestScan(raw) {
-  const value = String(raw || '').trim();
-  if (/^\d+$/.test(value)) return { jobId: value };
-  try {
-    const url = new URL(value, 'http://dummy.local');
-    return { jobId: clean(url.searchParams.get('j') || url.searchParams.get('i')) };
-  } catch {
-    return { jobId: '' };
-  }
-}
-
-function buildTestDashboardScanUrl(req, jobId) {
-  const normalizedJobId = clean(jobId);
-  const ts = Date.now().toString();
-  const sig = signPayload(normalizedJobId, ts);
-  const base = `${req.protocol}://${req.get('host')}`;
-  return `${base}/test-scan?j=${encodeURIComponent(normalizedJobId)}&ts=${ts}&sig=${sig}`;
-}
-
 function shouldPreserveStatusAfterLabelPrint(statusText, groupId) {
   const normalizedStatus = normalizeColumnTitle(statusText);
   if (normalizedStatus === COMPLETED_LABEL) return true;
   return normalizedStatus === READY_TO_PRINT_LABEL &&
     groupId !== TEST_DASHBOARD_GROUP_IDS.PRE_PRODUCTION;
-}
-
-function sendScanError(res, wantsJson, status, message) {
-  if (wantsJson) return res.status(status).json({ ok: false, error: message });
-  return res.status(status).send(message);
 }
 
 function formatJobName(job) {
@@ -2265,13 +2100,12 @@ function designDisplayTextFromRawValue(value) {
   return designTextFromPositions([{ design_ref: rawValue }], {});
 }
 
-async function backfillDashboardDesignPositions(jobs, states, positionMap, scans) {
+async function backfillDashboardDesignPositions(jobs, states, positionMap) {
   const candidates = [];
   const stateOnlyCleanupIds = [];
   for (const job of jobs || []) {
     const state = states.get(job.source_order_id) || null;
-    const scan = scans.get(String(job.source_order_id)) || null;
-    if (!shouldRenderDashboardJob(job, state, scan)) continue;
+    if (!shouldRenderDashboardJob(job, state)) continue;
     const stateValues = state?.column_values || {};
     const stateDesignText = cleanDesignColumnText(getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.DESIGN]));
     if (!stateDesignText) continue;
@@ -3058,17 +2892,7 @@ function clean(value) {
   return String(value || '').trim();
 }
 
-function escapeHtml(value) {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 module.exports = {
-  publicRouter,
   protectedRouter,
   ensureTestDashboardDefaults,
   buildTestDashboardBoardPayload,

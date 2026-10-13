@@ -6127,7 +6127,7 @@ function databaseVisualJobStatus(job) {
 }
 
 function databaseVisualJobGroupId(job) {
-  return resolveDashboardGroupId(job, databaseVisualJobState(job), null);
+  return resolveDashboardGroupId(job, databaseVisualJobState(job));
 }
 
 function cleanQuery(value) {

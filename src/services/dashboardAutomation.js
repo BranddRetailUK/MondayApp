@@ -295,10 +295,10 @@ function clearCompletedProductionColumns(columnValues) {
   delete columnValues[TEST_DASHBOARD_COLUMN_IDS.JAQ];
 }
 
-function resolveDashboardGroupId(job, state, scan, defaultGroupId = TEST_DASHBOARD_GROUP_IDS.OFFICE) {
+function resolveDashboardGroupId(job, state, defaultGroupId = TEST_DASHBOARD_GROUP_IDS.OFFICE) {
   const stateValues = state?.column_values || {};
   const statusText = normalizeColumnTitle(
-    job?.dashboard_status || getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]) || scan?.status || ''
+    job?.dashboard_status || getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.STATUS]) || ''
   );
   const typeText = normalizeColumnTitle(
     deriveTypeLabel(job) || getColumnText(stateValues[TEST_DASHBOARD_COLUMN_IDS.TYPE]) || job?.dashboard_type
