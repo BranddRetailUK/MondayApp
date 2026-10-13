@@ -1,6 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
-const { fetchProductionLinks, productionLink, saveLinkedProductionJob } = require('../services/dashboardProductionJobs');
+const { fetchProductionLinks, productionLink, saveLinkedProductionJob, readyLinkedProductionParent } = require('../services/dashboardProductionJobs');
 const pool = require('../db/pool');
 const { fullName } = require('../services/hubAuth');
 const {
@@ -405,6 +405,14 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
       if (!privateJob && !resolveJobApproved(job, columnValues)) {
         return res.status(400).json({ error: JOB_APPROVAL_REQUIRED_MESSAGE, code: 'job_approval_required' });
       }
+      if (!privateJob) {
+        const released = await readyLinkedProductionParent(pool, job.source_order_id);
+        if (released) return res.json({
+          ok: true, itemId: String(job.source_order_id), columnId, columnTitle: column.title,
+          label: READY_TO_PRINT_LABEL, cleared: false, groupId: released.group_id,
+          archived: released.archived, releasedChildren: released.releasedChildren,
+        });
+      }
     }
 
     if (
@@ -497,6 +505,7 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
     });
   } catch (err) {
     console.error('PUT /api/test-dashboard/items/:jobId/status-column', err);
+    if (err.code === 'production_release_blocked') return res.status(err.statusCode).json({ error: err.message, code: err.code });
     res.status(500).json({ error: 'Failed to update Tuesday Dashboard status column' });
   }
 });

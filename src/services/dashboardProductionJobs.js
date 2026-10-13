@@ -1,5 +1,8 @@
 const { TEST_DASHBOARD_COLUMN_IDS: C, TEST_DASHBOARD_GROUP_IDS: G } = require('./testDashboardDefaults');
-const { dashboardStatusValue } = require('./dashboardAutomation');
+const { dashboardStatusValue, resolveJobApproved, resolveDashboardGroupId, groupIdForStatusAndType, getColumnText } = require('./dashboardAutomation');
+const { dashboardSamplingState, fetchDashboardSamplingHistory } = require('./dashboardSampling');
+const { DASHBOARD_SPLIT_STATE_KEY } = require('./dashboardSplitJobs');
+const { updateDatabaseJobDashboardFields } = require('./testDashboardDbFields');
 
 // Reuse the independent dashboard-row storage and its existing editing endpoints.
 // The link owns no financial data: the order's line and design remain authoritative.
@@ -131,4 +134,57 @@ async function saveLinkedProductionJob(pool, id, state, save, { designChanged = 
   } finally { client.release(); }
 }
 
-module.exports = { ensureProductionJobTables, fetchProductionLinks, productionLink, syncProductionParent, saveLinkedProductionJob };
+// Release the linked family as one transaction; completion remains per child.
+async function readyLinkedProductionParent(pool, sourceOrderId) {
+  const links = await pool.query('SELECT dashboard_job_id FROM dashboard_production_jobs WHERE source_order_id=$1', [sourceOrderId]);
+  if (!links.rows.length) return null;
+  const client = await pool.connect();
+  const reject = message => { throw Object.assign(new Error(message), { statusCode: 409, code: 'production_release_blocked' }); };
+  try {
+    await client.query('BEGIN');
+    const job = (await client.query('SELECT * FROM database_jobs WHERE source_order_id=$1 FOR UPDATE', [sourceOrderId])).rows[0];
+    const state = (await client.query('SELECT * FROM test_dashboard_job_state WHERE source_order_id=$1 FOR UPDATE', [sourceOrderId])).rows[0];
+    const children = (await client.query(`SELECT d.* FROM dashboard_production_jobs p
+      JOIN test_dashboard_private_jobs d ON d.id=p.dashboard_job_id
+      WHERE p.source_order_id=$1 ORDER BY d.id FOR UPDATE OF d`, [sourceOrderId])).rows;
+    if (!job || !children.length) reject('The linked production jobs have changed; refresh the dashboard.');
+    if (job.invoice_printed || job.pf_invoice_printed || job.closed_without_invoice || job.is_complete || state?.archived) {
+      reject('Reopen the order or a completed child before releasing these production jobs.');
+    }
+    if (!resolveJobApproved(job, state?.column_values || {})) reject('Approve the parent job before releasing its production jobs.');
+    const history = await fetchDashboardSamplingHistory(client, [sourceOrderId]);
+    if (dashboardSamplingState(job, state, history.get(sourceOrderId)).blocked) reject('Set the parent job to SAMPLED before releasing its production jobs.');
+    const updates = [];
+    for (const child of children) {
+      const values = child.column_values || {};
+      const status = getColumnText(values[C.STATUS]).toUpperCase();
+      if (['COMPLETED', 'IN PRODUCTION'].includes(status)) continue;
+      if (child.archived || status === 'INVOICED') reject('A linked production job is archived; reopen it before releasing the order.');
+      if (!resolveJobApproved({}, values)) reject(`Approve ${child.item_name || 'every child job'} before releasing the order.`);
+      if (dashboardSamplingState({}, child).blocked) reject(`Set ${child.item_name || 'every child job'} to SAMPLED before releasing the order.`);
+      const group = groupIdForStatusAndType('READY TO PRINT', getColumnText(values[C.TYPE]).toUpperCase());
+      if (!group) reject(`Set the production type for ${child.item_name || 'every child job'} before releasing the order.`);
+      updates.push({ child, group });
+    }
+    for (const { child, group } of updates) {
+      await client.query(`UPDATE test_dashboard_private_jobs SET group_id=$2,
+        column_values=jsonb_set(column_values, ARRAY[$3]::text[], $4::jsonb), updated_at=NOW() WHERE id=$1`,
+      [child.id, group, C.STATUS, JSON.stringify(dashboardStatusValue('READY TO PRINT'))]);
+    }
+    const values = { ...(state?.column_values || {}), [C.STATUS]: dashboardStatusValue('READY TO PRINT') };
+    delete values[DASHBOARD_SPLIT_STATE_KEY];
+    const group = resolveDashboardGroupId({ ...job, dashboard_status: 'READY TO PRINT' }, { ...state, column_values: values });
+    const saved = (await client.query(`INSERT INTO test_dashboard_job_state(source_order_id,group_id,item_name,column_values,archived,updated_at)
+      VALUES($1,$2,$3,$4,false,NOW()) ON CONFLICT(source_order_id) DO UPDATE SET
+      group_id=EXCLUDED.group_id,column_values=EXCLUDED.column_values,updated_at=NOW() RETURNING *`,
+    [sourceOrderId, group, state?.item_name || [job.order_no, job.customer_name, job.job_title].filter(Boolean).join(' - '), JSON.stringify(values)])).rows[0];
+    await updateDatabaseJobDashboardFields(client, sourceOrderId, { status: 'READY TO PRINT' });
+    await client.query('COMMIT');
+    return { ...saved, releasedChildren: updates.length };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally { client.release(); }
+}
+
+module.exports = { ensureProductionJobTables, fetchProductionLinks, productionLink, syncProductionParent, saveLinkedProductionJob, readyLinkedProductionParent };
