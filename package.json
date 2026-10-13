@@ -5,6 +5,8 @@
   "engines": { "node": "22.x" },
   "scripts": {
     "start": "node server.js",
+    "preview:digitising-studio": "node scripts/preview-digitising-studio.js",
+    "test:digitising-studio": "node --test test/digitising-studio.test.js",
     "preview:proof-generator": "node scripts/preview-proof-generator.js",
     "import:database-mdb": "node scripts/import-database-mdb.js",
     "verify:mdb-invoices": "node scripts/verify-mdb-invoice-numbers.js",
