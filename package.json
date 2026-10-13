@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "preview:digitising-studio": "node scripts/preview-digitising-studio.js",
-    "test:digitising-studio": "node --test test/digitising-studio.test.js test/digitising-auto.test.js test/digitising-interpretation.test.js test/digitising-sections.test.js test/digitising-access.test.js test/digitising-eps.test.js test/digitising-travel.test.js test/digitising-columns.test.js test/digitising-project.test.js",
+    "test:digitising-studio": "node --test test/digitising-studio.test.js test/digitising-auto.test.js test/digitising-interpretation.test.js test/digitising-sections.test.js test/digitising-access.test.js test/digitising-eps.test.js test/digitising-travel.test.js test/digitising-columns.test.js test/digitising-project.test.js test/digitising-semantic.test.js",
     "compile:digitising-project": "node scripts/compile-digitising-project.js",
     "benchmark:digitising-project": "node scripts/benchmark-digitising-project.js",
     "preview:proof-generator": "node scripts/preview-proof-generator.js",

@@ -1,6 +1,6 @@
 // Editable physical embroidery objects. This module has no network or model dependency.
 const VERSION=1;
-const PROFILES={tshirt:{fillSpacing:.42,satinSpacing:.34,underlaySpacing:1.8,stitchLength:3.8,pullCompensation:.1},hoodie:{fillSpacing:.4,satinSpacing:.32,underlaySpacing:1.3,stitchLength:3.8,pullCompensation:.15},woven:{fillSpacing:.45,satinSpacing:.36,underlaySpacing:2.2,stitchLength:3.8,pullCompensation:.08}};
+const PROFILES={tshirt:{fillSpacing:.2,satinSpacing:.3,underlaySpacing:1.8,fillUnderlaySpacing:.55,stitchLength:6,pullCompensation:.1},hoodie:{fillSpacing:.2,satinSpacing:.3,underlaySpacing:1.3,fillUnderlaySpacing:.5,stitchLength:6,pullCompensation:.15},woven:{fillSpacing:.22,satinSpacing:.32,underlaySpacing:2.2,fillUnderlaySpacing:.65,stitchLength:6,pullCompensation:.08}};
 const dist=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]);
 const mix=(a,b,t)=>a.map((v,i)=>v+(b[i]-v)*t);
 const centre=r=>mix(r[0],r[1],.5);
@@ -21,8 +21,9 @@ function intersects(a,b,c,d){
 function ringEdges(ring){return ring.map((p,i)=>[p,ring[(i+1)%ring.length]]);}
 function satinRings(object){
   const a=object.rungs.map(r=>r[0]),b=object.rungs.map(r=>r[1]);
-  if(object.closed){a.pop();b.pop();return area(a)>area(b)?[a,b]:[b,a];}
-  return [[...a,...b.reverse()]];
+  const clean=ring=>ring.filter((p,i)=>dist(p,ring[(i+ring.length-1)%ring.length])>1e-6);
+  if(object.closed){a.pop();b.pop();return (area(a)>area(b)?[a,b]:[b,a]).map(clean);}
+  return [clean([...a,...b.reverse()])];
 }
 function outline(object){return object.type==='satin'?satinRings(object)[0]:object.outline;}
 function holes(object){return object.type==='satin'?satinRings(object).slice(1):(object.holes||[]);}
@@ -59,12 +60,21 @@ function validate(input){
       for(let j=i+2;j<edges.length;j++)if(!(i===0&&j===edges.length-1)&&intersects(...edges[i],...edges[j]))fail('self-intersecting contour.');
     }
   };
+  const regions=new Set();p.travelRegions=p.travelRegions||[];
+  if(!Array.isArray(p.travelRegions)||p.travelRegions.length>128)fail('too many travel regions.');
+  for(const r of p.travelRegions){
+    if(!r||typeof r.id!=='string'||!/^[-\w]{1,64}$/.test(r.id)||regions.has(r.id))fail('invalid travel region ID.');regions.add(r.id);
+    // Reuse fill validation for the exact same boundary and counter guarantees.
+    const checked=validate({...p,travelRegions:[],objects:[{...r,type:'fill',colour:'#000000',angle:0}]}).objects[0];
+    r.outline=checked.outline;r.holes=checked.holes;ring(r.outline);r.holes.forEach(ring);
+  }
   for(const o of p.objects){
     if(!o||typeof o.id!=='string'||!/^[-\w]{1,64}$/.test(o.id)||ids.has(o.id))fail('object IDs must be unique.');ids.add(o.id);
     if(!/^#[\da-f]{6}$/i.test(o.colour)||!['satin','fill','run'].includes(o.type))fail('invalid colour or object type.');
+    if(o.regionId!==undefined&&!regions.has(o.regionId))fail('unknown travel region.');
     o.entry=o.entry||'start';if(!['start','end'].includes(o.entry))fail('invalid entry direction.');
     o.settings={...PROFILES[p.garment],underlay:o.type==='run'?'none':'centre',...o.settings};
-    const s=o.settings;number(s.fillSpacing,.2,.6,'fill spacing');number(s.satinSpacing,.2,.6,'satin spacing');number(s.underlaySpacing,.8,4,'underlay spacing');number(s.stitchLength,1,4,'stitch length');number(s.pullCompensation,0,.3,'pull compensation');
+    const s=o.settings;number(s.fillSpacing,.15,.6,'fill spacing');number(s.satinSpacing,.2,.6,'satin spacing');number(s.underlaySpacing,.8,4,'underlay spacing');number(s.fillUnderlaySpacing,.4,4,'fill underlay spacing');number(s.stitchLength,1,7,'stitch length');number(s.pullCompensation,0,.3,'pull compensation');
     if(!['none','centre','zigzag'].includes(s.underlay))fail('unsupported underlay.');
     if(o.type==='satin'){
       if(!Array.isArray(o.rungs)||o.rungs.length<2||o.rungs.length>256)fail('satin needs 2–256 paired direction rungs.');
@@ -123,6 +133,7 @@ function edit(project,id,operation,value){
 function resize(project,widthMm){
   const p=validate(project);number(widthMm,1,300,'width');const scale=widthMm/p.widthMm;
   p.widthMm=widthMm;p.heightMm*=scale;const point=q=>q.map(n=>n*scale);
+  for(const r of p.travelRegions){r.outline=r.outline.map(point);r.holes=r.holes.map(h=>h.map(point));}
   for(const o of p.objects){
     if(o.type==='satin')o.rungs=o.rungs.map(r=>r.map(point));
     else if(o.type==='fill'){o.outline=o.outline.map(point);o.holes=o.holes.map(r=>r.map(point));}

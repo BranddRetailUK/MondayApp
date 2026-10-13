@@ -2,7 +2,9 @@
 const {prepare}=require('./digitisingStudio');
 const {column,branchedColumns}=require('./digitisingColumns');
 const {contours,simplify,sectionAngle}=require('./digitisingSections');
-const {validate,dist,centre}=require('./digitisingProject');
+const {validate,dist,centre,segmentInside,satinRows}=require('./digitisingProject');
+const {counterColumns}=require('./digitisingCounterColumns');
+const {components,straightColumns,linearGuides,guidedSections}=require('./digitisingStrokeTools');
 
 // Simplify both rails together: retaining a point on just one rail would change
 // the pairing and therefore the intended stitch direction.
@@ -15,10 +17,12 @@ function simplifyRungs(rows,tolerance=.06){
   }
   return [...keep].sort((a,b)=>a-b).map(i=>rows[i]);
 }
-async function propose(png,config){
+async function propose(png,config,options={}){
   if(config.border)throw Error('Object pipeline: running outlines need an explicit run object.');
   const prepared=await prepare(png,config),{ids,info,scale,heightMm}=prepared;
-  const project={version:1,units:'mm',garment:config.garment,widthMm:config.widthMm,heightMm,objects:[]},warnings=[];
+  const strokePlan=options.strokePlan||(options.interpret?await require('./digitisingStrokePlanner').planStrokes(png,prepared,options):null);
+  const plans=new Map((strokePlan?.regions||[]).map(r=>[r.id,r]));
+  const project={version:1,units:'mm',garment:config.garment,widthMm:config.widthMm,heightMm,objects:[],travelRegions:[]},warnings=[];
   const physical=p=>p.map((v,k)=>Math.max(0,Math.min(k?heightMm:config.widthMm,(v+.5)*scale)));
   const verify=o=>validate({...project,objects:[o]});
   const area=r=>Math.abs(r.reduce((sum,p,i)=>{const q=r[(i+1)%r.length];return sum+p[0]*q[1]-q[0]*p[1];},0))/2;
@@ -29,17 +33,55 @@ async function propose(png,config){
       warnings.push(`${base.id}: isolated detail below 0.05 mm² and 0.6 mm extent omitted; review at actual size.`);continue;
     }
     let proposed=[];
-    if(choice?.type==='satin'||choice?.type==='satin-branches'){
+    const selected=plans.get(el.id),toolPlan=selected?{...selected,construction:selected.tool?(selected.tool==='fill'?'fill':'columns'):selected.construction}:null;
+    const semantic=toolPlan?.tool&&require('./digitisingSemanticTools').fit(ids,info.width,el,scale,toolPlan.tool);
+    if(semantic){
+      for(const [i,part]of semantic.entries()){
+        const o={...base,id:base.id+`-tool-${i}`,type:'satin',...part,rungs:simplifyRungs(part.rungs)};
+        try{verify(o);}catch(error){throw Error(`${o.id}: ${error.message}`);}proposed.push(o);
+      }
+    }else if(toolPlan?.construction!=='fill'&&(toolPlan?.tool||choice?.type==='satin'||choice?.type==='satin-branches')){
       const single=column(ids,info.width,el,scale,config.satinSpacing);
       const paths=single?[single]:branchedColumns(ids,info.width,el,scale,config.satinSpacing);
       try{
         if(!paths)throw Error('no stable paired rails');
-        proposed=paths.map((path,i)=>{
-          let rungs=simplifyRungs(path.map(r=>r.map(physical)));
-          const closed=dist(centre(rungs[0]),centre(rungs.at(-1)))<.35&&rungs[0].every((p,j)=>dist(p,rungs.at(-1)[j])<.6);
-          if(closed)rungs[rungs.length-1]=rungs[0].map(p=>p.slice());
-          const o={...base,id:base.id+`-stroke-${i}`,type:'satin',rungs,closed};verify(o);return o;
-        });
+        const counters=counterColumns(ids,info.width,el,scale);
+        if(counters.length){
+          proposed=counters.map((path,i)=>{const o={...base,id:base.id+`-counter-${i}`,type:'satin',rungs:simplifyRungs(path.map(r=>r.map(physical))),closed:true};verify(o);return o;});
+          const remaining=components(ids,info.width,el,scale,proposed);
+          for(const part of remaining.elements){
+            if(part.pixels*scale*scale<.2)continue;
+            const columns=straightColumns(remaining.ids,info.width,part,scale,config.satinSpacing);
+            for(const rungs of columns){if(rungs.length<2)continue;const o={...base,id:base.id+`-limb-${proposed.length}`,type:'satin',rungs:simplifyRungs(rungs)};verify(o);proposed.push(o);}
+          }
+        }else{
+          const guides=linearGuides(paths,scale);
+          const curved=paths.filter(path=>{let length=0;for(let i=1;i<path.length;i++)length+=dist(centre(path[i-1]),centre(path[i]));return length>dist(centre(path[0]),centre(path.at(-1)))*1.5&&length*scale>5;});
+          if(guides.length>=2&&!curved.length){
+            const sections=guidedSections(ids,info.width,el,guides);
+            for(const part of sections.elements)for(const rungs of straightColumns(sections.ids,info.width,part,scale,config.satinSpacing,part.axis)){
+              if(rungs.length<2)continue;const o={...base,id:base.id+`-section-${proposed.length}`,type:'satin',rungs:simplifyRungs(rungs)};verify(o);proposed.push(o);
+            }
+          }else {
+            for(const [i,path] of (curved.length?curved:paths).entries()){
+              let rungs=path.map(r=>r.map(physical));
+              const closed=dist(centre(rungs[0]),centre(rungs.at(-1)))<.8&&rungs[0].every((p,j)=>dist(p,rungs.at(-1)[j])<1.2)&&rungs.length>20;
+              if(closed)rungs[rungs.length-1]=rungs[0].map(p=>p.slice());
+              rungs=simplifyRungs(require('./digitisingSatinGeometry').stabilise(rungs).rungs);
+              const o={...base,id:base.id+`-stroke-${i}`,type:'satin',rungs,closed};verify(o);
+              const checked=validate({...project,objects:[o]}).objects[0];
+              if(satinRows(checked).some(r=>!segmentInside(r[0],r[1],checked,.08)))throw Error('paired controls leave the stroke');
+              proposed.push(o);
+            }
+            if(curved.length){const remaining=components(ids,info.width,el,scale,proposed);
+              for(const part of remaining.elements){if(part.pixels*scale*scale<.2)continue;
+                for(const rungs of straightColumns(remaining.ids,info.width,part,scale,config.satinSpacing)){
+                  if(rungs.length<2)continue;const o={...base,id:base.id+`-limb-${proposed.length}`,type:'satin',rungs:simplifyRungs(rungs)};verify(o);proposed.push(o);
+                }
+              }
+            }
+          }
+        }
       }catch(error){warnings.push(`${base.id}: satin proposal needs review (${error.message}); provisional fill used.`);proposed=[];}
     }
     if(!proposed.length){
@@ -52,8 +94,14 @@ async function propose(png,config){
       try{verify(o);}catch(error){throw Error(`${base.id}: ${error.message} Review source segmentation before compiling.`);}
       proposed=[o];
     }
+    if(proposed.length>1){
+      const rings=contours(ids,info.width,el).map(r=>simplify(r.map(physical),.08).slice(0,-1)).filter(r=>r.length>=3&&area(r)>=.001).sort((a,b)=>area(b)-area(a));
+      const region={id:base.id,outline:rings[0],holes:rings.slice(1)};
+      validate({...project,travelRegions:[...project.travelRegions,region],objects:proposed.map(o=>({...o,regionId:region.id}))});
+      project.travelRegions.push(region);proposed.forEach(o=>{o.regionId=region.id;});
+    }
     project.objects.push(...proposed);
   }
-  return {project:validate(project),warnings,reviewRequired:warnings.length>0};
+  return {project:validate(project),warnings,reviewRequired:warnings.length>0,strokePlan};
 }
 module.exports={propose,simplifyRungs};

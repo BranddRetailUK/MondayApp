@@ -11,7 +11,7 @@ const {compile,preview}=require('../src/services/digitisingCompiler');
   if(!request||Array.isArray(request)||Object.keys(request).some(k=>!allowed.includes(k)))throw Error('Use customer inputs only.');
   const artwork=await fs.readFile(source);
   const planned=await plan(artwork,request,{interpret:true,cacheDirectory:cacheDirectory||path.join(directory,'interpretations')});
-  const proposal=await propose(planned.png,planned.config);
+  const proposal=await propose(planned.png,planned.config,{interpret:true,cacheDirectory:cacheDirectory||path.join(directory,'interpretations')});
   await fs.mkdir(directory,{recursive:true});
   await fs.writeFile(path.join(directory,'proposal.json'),JSON.stringify(proposal,null,2));
   await fs.writeFile(path.join(directory,'project.json'),JSON.stringify(proposal.project,null,2));

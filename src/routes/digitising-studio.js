@@ -23,7 +23,7 @@ function createRouter(options={}){
       if(!req.file)throw Error('Choose PNG, EPS or SVG artwork.');
       if(req.body.psgNumber)throw Error('This job already has a PSG reference. Use its existing embroidery file.');
       const {config,png,interpretation,preview}=await plan(req.file.buffer,req.body,{...options,interpret:req.path!=='/prepare'});
-      if(req.path==='/project')return res.json({...await require('../services/digitisingObjectPlan').propose(png,config),interpretation});
+      if(req.path==='/project')return res.json({...await require('../services/digitisingObjectPlan').propose(png,config,{...options,interpret:true}),interpretation});
       if(req.path==='/prepare'){
         const prepared=await engine.prepare(png,config);
         return res.json({elements:prepared.elements,widthMm:config.widthMm,heightMm:prepared.heightMm,png:preview.toString('base64')});

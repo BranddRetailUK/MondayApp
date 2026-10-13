@@ -4,6 +4,7 @@ const {chains,route}=require('./digitisingObjectTravel');
 // Compile a reviewed physical object plan; no artwork recognition or external APIs.
 function compile(input){
   const project=validate(input),commands=[],threads=[],objectStats=[],warnings=[];
+  const regions=new Map(project.travelRegions.map(r=>[r.id,{...r,type:'fill'}]));
   let current=[project.widthMm/2,project.heightMm/2],colour=null,trims=0,phase='travel',objectId=null,locked=false,trimmed=true;
   const rounded=p=>p.map((v,i)=>Math.round((v-[project.widthMm,project.heightMm][i]/2)*10));
   const quantised=p=>rounded(p).map((v,i)=>v/10+[project.widthMm,project.heightMm][i]/2);
@@ -23,6 +24,11 @@ function compile(input){
   const trim=()=>{if(!commands.length||trimmed)return;lock();const [x,y]=rounded(current);commands.push({kind:'jump',x:x+2,y:y+2,objectId,phase:'trim'},{kind:'jump',x:x-2,y:y-2,objectId,phase:'trim'},{kind:'jump',x,y,objectId,phase:'trim'});trims++;trimmed=true;};
   const travel=(p,o,margin=0)=>{
     if(commands.length&&o.type!=='run'&&segmentInside(current,p,o,margin)){append(p,'stitch',o.settings.stitchLength);return;}
+    const region=regions.get(o.regionId);
+    if(!trimmed&&region){
+      const allowance=o.settings.pullCompensation+.08,path=route(current,p,region,allowance)?.map(quantised);
+      if(path&&path.every((q,i)=>segmentInside(i?path[i-1]:current,q,region,allowance))){const old=phase;phase='connection';for(const q of path)append(q,'stitch',o.settings.stitchLength);phase=old;return;}
+    }
     trim();const old=phase;phase='travel';append(p,'jump',7);phase=old;
   };
   const safe=(p,o,max=o.settings.stitchLength,margin=0)=>{
@@ -39,7 +45,7 @@ function compile(input){
       const rows=satinRows(o),stride=Math.max(1,Math.round(o.settings.underlaySpacing/(o.settings.satinSpacing/2)));
       travel(centre(rows[0]),o);
       if(o.settings.underlay!=='none'){
-        phase='underlay';const spine=o.rungs.map(centre);if(o.entry==='end')spine.reverse();
+        phase='underlay';const spine=require('./digitisingSections').simplify(o.rungs.map(centre),.15);if(o.entry==='end')spine.reverse();
         for(const p of spine.slice(1))safe(p,o);
         if(o.settings.underlay==='centre')rows.reverse();
         else{
@@ -54,12 +60,13 @@ function compile(input){
       phase='satin';
       for(let i=0;i<rows.length;i++){
         const pair=rows[i],c=centre(pair),edge=pair[i%2],half=dist(c,edge),comp=Math.min(o.settings.pullCompensation,half*.3),target=mix(c,edge,1+comp/half);
-        safe(target,o,9.6,comp);
+        if(!segmentInside(current,quantised(target),o,o.settings.pullCompensation+.08))safe(c,o,9.6,o.settings.pullCompensation);
+        safe(target,o,9.6,o.settings.pullCompensation);
       }
       lock();
     }else{
       for(const underlay of o.settings.underlay==='none'?[false]:[true,false]){
-        phase=underlay?'underlay':'fill';const spacing=underlay?o.settings.underlaySpacing:o.settings.fillSpacing,angle=o.angle+(underlay?90:0);
+        phase=underlay?'underlay':'fill';const spacing=underlay?o.settings.fillUnderlaySpacing:o.settings.fillSpacing,angle=o.angle+(underlay?90:0);
         const strips=chains(fillRows(o,spacing,angle),angle,spacing);
         let first=true;
         while(strips.length){
@@ -67,6 +74,7 @@ function compile(input){
           const strip=strips.shift();if(!first&&Math.min(...strip.at(-1).map(p=>dist(current,p)))<Math.min(...strip[0].map(p=>dist(current,p))))strip.reverse();first=false;
           for(let [a,b] of strip){
             if(dist(current,b)<dist(current,a))[a,b]=[b,a];
+            if(!trimmed&&dist(current,a)<.5&&segmentInside(current,quantised(b),o,.08)){safe(b,o);continue;}
             let path=!trimmed?route(current,a,o):null;
             if(path){path=path.map(quantised);if(path.some((p,i)=>!segmentInside(i?path[i-1]:current,p,o,.08)))path=null;}
             if(path)for(const p of path)safe(p,o);else travel(a,o,.08);
