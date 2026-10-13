@@ -8,6 +8,25 @@
     if (!user || user.access_scope === 'dtf_only' || String(user.email || '').trim().toLowerCase() !== 'production@ultimatepromotions.co.uk') return;
   }
 
+  // Retry only reads: a failed response must never replay generation or a save.
+  async function proofFetch(url, options={}) {
+    const attempts=(!options.method || options.method==='GET')?3:1;
+    for(let attempt=0;attempt<attempts;attempt++){
+      try{
+        const response=await fetch(url,options);
+        if(![502,503,504].includes(response.status)||attempt===attempts-1)return response;
+        await response.body?.cancel();
+      }catch(error){
+        if(error.name==='AbortError'||attempt===attempts-1)throw error;
+      }
+      await new Promise(resolve=>setTimeout(resolve,1000*(attempt+1)));
+    }
+  }
+  async function proofJson(response) {
+    try{return await response.json();}
+    catch(_){throw new Error(`Proof service returned an unreadable response (HTTP ${response.status}). Refresh the proof history to check whether saving completed before regenerating.`);}
+  }
+
   root.innerHTML = `
     <div class="proof-page">
       <header class="proof-page-header">
@@ -178,8 +197,8 @@
     try{
       let offset=0,rows=[],more=null;
       do{
-        const response=await fetch(`/api/proof-generator/designs?offset=${offset}`,{cache:'no-store'});
-        const data=await response.json();if(!response.ok)throw new Error(data.error||'Could not load proof history.');
+        const response=await proofFetch(`/api/proof-generator/designs?offset=${offset}`,{cache:'no-store'});
+        const data=await proofJson(response);if(!response.ok)throw new Error(data.error||'Could not load proof history.');
         rows.push(...data.designs);more=data.nextOffset;offset=more;
       }while(more!==null&&rows.length<historyLimit);
       historyRows=rows;if(!busy&&design){const latest=rows.find(job=>job.id===design.id);if(latest)design=latest;}nextOffset=more;historyStatus.textContent='';renderHistory();
@@ -269,7 +288,7 @@
     dialog.addEventListener('close',()=>{dialog.remove();previousFocus?.focus();});dialog.showModal();close.focus();
     try{
       if(!job.hasPdf){const img=document.createElement('img');img.className='proof-history-large';img.src=`/api/proof-generator/designs/${encodeURIComponent(job.id)}/preview`;img.alt='Draft proof preview';viewer.replaceChildren(img);return;}
-      const response=await fetch(`/api/proof-generator/designs/${encodeURIComponent(job.id)}/pdf`,{cache:'no-store'});
+      const response=await proofFetch(`/api/proof-generator/designs/${encodeURIComponent(job.id)}/pdf`,{cache:'no-store'});
       if(!response.ok)throw new Error('Proof PDF is unavailable.');
       const encoded=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=reject;response.blob().then(blob=>reader.readAsDataURL(blob),reject);});
       if(!dialog.isConnected)return;viewer.replaceChildren();await renderDocument(encoded,viewer,[],{clickable:false});
@@ -280,8 +299,8 @@
     const form=new FormData();form.append('brief',JSON.stringify({proofSourceOrderId:selectedLinkJob?.source_order_id||null,request:request.value,instructions:instructions.value,customer:customer.value,jobTitle:jobTitle.value,brief:currentBrief}));
     form.append('artworkDetails',JSON.stringify(artworks.map(item=>({id:item.id,originalName:item.file.name,backgroundMode:item.backgroundMode,assignment:item.assignment,notes:item.notes}))));
     for(const item of artworks)form.append('artworks',item.file,item.file.name);
-    const response=await fetch(`/api/proof-generator/designs/${designId}/source`,{method:'POST',body:form});
-    if(!response.ok){const data=await response.json();throw new Error(data.error||'Could not retain proof source.');}
+    const response=await proofFetch(`/api/proof-generator/designs/${designId}/source`,{method:'POST',body:form});
+    if(!response.ok){const data=await proofJson(response);throw new Error(data.error||'Could not retain proof source.');}
   }
   async function openHistoryProof(job){
     if(busy)return;
@@ -289,7 +308,7 @@
     startNewProof();selectedLinkJob=job.sourceOrderId?{source_order_id:job.sourceOrderId,order_no:job.linkedOrders?.find(order=>order.sourceOrderId===job.sourceOrderId)?.orderNo}:null;designId=job.id;design=job;try{sessionStorage.setItem('proof-design-id',designId);}catch(_){}
     customer.value=job.customer||'';jobTitle.value=job.jobTitle||'';showProofEditor();showDesign();busy=true;setCreating(true);reviewButton.querySelector('[data-proof-button-label]').textContent='Loading proof…';
     try{
-      const response=await fetch(`/api/proof-generator/designs/${encodeURIComponent(job.id)}/source`,{cache:'no-store'});const data=await response.json();
+      const response=await proofFetch(`/api/proof-generator/designs/${encodeURIComponent(job.id)}/source`,{cache:'no-store'});const data=await proofJson(response);
       if(!response.ok)throw new Error(data.error||'Proof source is unavailable.');
       request.value=data.source.request||'';instructions.value=data.source.instructions||'';customer.value=data.source.customer||job.customer||'';jobTitle.value=data.source.jobTitle||job.jobTitle||'';
       for(const saved of data.artworks){
@@ -369,8 +388,8 @@
     if(!busy)reviewButton.querySelector('[data-proof-button-label]').textContent=designId?'Regenerate proof':'Create proof';
   }
   async function designRequest(path,body){
-    const response=await fetch(`/api/proof-generator/designs${path}`,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{cache:'no-store'});
-    const data=await response.json();if(!response.ok)throw new Error(data.error||'Design folder request failed.');return data.design;
+    const response=await proofFetch(`/api/proof-generator/designs${path}`,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{cache:'no-store'});
+    const data=await proofJson(response);if(!response.ok)throw new Error(data.error||'Design folder request failed.');return data.design;
   }
   async function awaitDesign(saved=false){
     const id=designId,started=Date.now();
@@ -437,8 +456,8 @@
     searchTimer=setTimeout(async()=>{
       const controller=new AbortController();searchController=controller;
       try{
-        const response=await fetch(`/api/proof-generator/products?q=${encodeURIComponent(query)}`,{signal:controller.signal});
-        const data=await response.json();
+        const response=await proofFetch(`/api/proof-generator/products?q=${encodeURIComponent(query)}`,{signal:controller.signal});
+        const data=await proofJson(response);
         if(version!==searchVersion)return;
         if(!response.ok)throw new Error(data.error || 'Catalogue search is unavailable.');
         productStatus.textContent=data.products.length?'':'No matching products.';
@@ -571,6 +590,7 @@
     showJobSelection();
   }
 
+  let savedThisRun = false;
   async function reviewBrief() {
     if (busy) return;
     if(selectedLinkJob?.designRefs?.length&&!existingReference.value&&!designId){setFeedback('Select the design reference for this job.',true);existingReference.focus();return;}
@@ -582,7 +602,7 @@
       catch(error){setFeedback(error.message,true);return;}
       finally{busy=false;setCreating(false);}
     }
-    busy = true; generatingProof = true; setCreating(true);
+    busy = true; generatingProof = true; savedThisRun = false; setCreating(true);
     if(!designId){designId=crypto.randomUUID();try{sessionStorage.setItem('proof-design-id',designId);}catch(_){} }
     design={...design,id:designId,customer:customer.value,jobTitle:jobTitle.value,createdAt:design?.createdAt||new Date().toISOString(),generationStatus:'generating'};
     showProofList();
@@ -604,8 +624,8 @@
         if(localPreview)design.status='saved';
         return;
       }
-      const readinessResponse = await fetch('/api/proof-generator/status', { cache: 'no-store' });
-      const readiness = await readinessResponse.json();
+      const readinessResponse = await proofFetch('/api/proof-generator/status', { cache: 'no-store' });
+      const readiness = await proofJson(readinessResponse);
       if (!readinessResponse.ok || !readiness.ready) {
         throw new Error(readiness.error || 'Proof Generator is temporarily unavailable. Ask an administrator to check the AI and PDF service configuration.');
       }
@@ -613,8 +633,8 @@
         customer:customer.value,jobTitle:jobTitle.value,requestText:request.value, specialInstructions:instructions.value,
         artworks:artworks.map(({id,file,assignment,notes})=>({id,fileName:file.name,assignment,notes})), answers:[],
       });
-      const response = await fetch('/api/proof-generator/parse', { method: 'POST', body: parseForm });
-      const payload = await response.json();
+      const response = await proofFetch('/api/proof-generator/parse', { method: 'POST', body: parseForm });
+      const payload = await proofJson(response);
       if (!response.ok) throw new Error(payload.error || 'Could not read the brief.');
       if(submittedSource!==JSON.stringify([customer.value,jobTitle.value,request.value,instructions.value,artworks.map(a=>[a.id,a.assignment,a.notes])]))throw new Error('The request changed while it was being read. Create the proof again to apply it.');
       await recordProgress('generating','Preparing design folder…',{customer:payload.brief.customer,jobTitle:payload.brief.jobTitle,reference:payload.brief.reference||''});
@@ -626,6 +646,11 @@
       await recordProgress(currentPreview?.issues.some(issue=>issue.blocking)?'review':'complete');
       if(localPreview)design.status='saved';
     } catch(error) {
+      if(savedThisRun){
+        design={...design,generationStatus:'complete',generationMessage:''};
+        setFeedback(`Proof saved under design ${design.designNumber}. History confirmation was interrupted; refresh to check its status.`);
+        return;
+      }
       if(design)design={...design,generationStatus:'error',generationMessage:error.message};
       setFeedback(error.message, true);try{await recordProgress('error',error.message);}catch(_){}
     }
@@ -652,8 +677,8 @@
     const targetBrief = currentBrief;
     const requestFiles = artworks.map(a=>a.id).join(',');
     setFeedback('Measuring visible artwork and preparing garment views…');
-    const response = await fetch('/api/proof-generator/preview', {method:'POST',body:await uploadForm(targetBrief)});
-    const payload = await response.json();
+    const response = await proofFetch('/api/proof-generator/preview', {method:'POST',body:await uploadForm(targetBrief)});
+    const payload = await proofJson(response);
     if (!response.ok) throw new Error(payload.error || 'Could not prepare the preview.');
     if (targetBrief !== currentBrief || snapshot !== JSON.stringify(currentBrief) || requestFiles !== artworks.map(a=>a.id).join(',')) return;
     currentBrief = payload.brief; currentPreview = payload;
@@ -677,9 +702,9 @@
     if(save&&!localPreview&&designId&&!payload.issues.some(i=>i.blocking)){
       const saveTarget=currentBrief;saveTarget.proofSourceOrderId=selectedLinkJob?.source_order_id||null;saveTarget.proofSaveKey=crypto.randomUUID();saveTarget.proofRevision=design.revision;
       setFeedback('Saving the proof to its design folder…');
-      const saved=await fetch('/api/proof-generator/save',{method:'POST',body:await uploadForm(saveTarget,true)});const savedData=await saved.json();
+      const saved=await proofFetch('/api/proof-generator/save',{method:'POST',body:await uploadForm(saveTarget,true)});const savedData=await proofJson(saved);
       if(!saved.ok)throw new Error(savedData.error||'Could not save proof.');
-      design=savedData.design;showDesign();await awaitDesign(true);
+      design=savedData.design;showDesign();await awaitDesign(true);savedThisRun=true;
       if(currentBrief===saveTarget){currentBrief.proofRevision=design.revision;setFeedback(`Proof saved under design ${design.designNumber}.`);}
     }
   }
@@ -688,15 +713,15 @@
     const target = currentBrief;
     const snapshot = JSON.stringify(target);
     setFeedback('Loading garment views and checking for missing angles…');
-    const response = await fetch('/api/proof-generator/views', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brief:target})});
-    const task = await response.json();
+    const response = await proofFetch('/api/proof-generator/views', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brief:target})});
+    const task = await proofJson(response);
     if(!response.ok)throw new Error(task.error || 'Could not prepare garment views.');
     const started = Date.now();
     while(Date.now()-started<40*60*1000){
       if(currentBrief!==target || JSON.stringify(target)!==snapshot)return;
       await new Promise(resolve=>setTimeout(resolve,2000));
-      const poll = await fetch(`/api/proof-generator/views/${encodeURIComponent(task.jobId)}`,{cache:'no-store'});
-      const job = await poll.json();
+      const poll = await proofFetch(`/api/proof-generator/views/${encodeURIComponent(task.jobId)}`,{cache:'no-store'});
+      const job = await proofJson(poll);
       if(!poll.ok || job.state==='failed')throw new Error(job.error || 'Could not prepare garment views.');
       if(currentBrief!==target || JSON.stringify(target)!==snapshot)return;
       setFeedback(job.message || 'Generating missing garment views…');
@@ -741,8 +766,8 @@
     if(dirty || !currentBrief)throw new Error('Update the preview before downloading.');
     const snapshot=JSON.stringify(currentBrief);
     const suffix=productIndex===undefined?'':`?productIndex=${productIndex}`;
-    const response=await fetch(`/api/proof-generator/create${suffix}`,{method:'POST',body:await uploadForm(currentBrief)});
-    if(!response.ok){const payload=await response.json();throw new Error(payload.error || 'Could not create PDF.');}
+    const response=await proofFetch(`/api/proof-generator/create${suffix}`,{method:'POST',body:await uploadForm(currentBrief)});
+    if(!response.ok){const payload=await proofJson(response);throw new Error(payload.error || 'Could not create PDF.');}
     if(dirty || snapshot!==JSON.stringify(currentBrief))throw new Error('The brief changed during export. Update the preview and download again.');
     const url=URL.createObjectURL(await response.blob());const link=document.createElement('a');link.href=url;
     const productDocument=currentPreview.documents?.find(item=>item.productIndex===productIndex);
@@ -921,8 +946,8 @@
     if(!epsPreviews.has(file)){
       const pending=epsQueue.then(async()=>{
       const form=new FormData();form.append('artwork',file,file.name);
-      const response=await fetch('/api/proof-generator/artwork/eps-preview',{method:'POST',body:form});
-      if(!response.ok){const data=await response.json();throw new Error(data.error||'EPS conversion failed.');}
+      const response=await proofFetch('/api/proof-generator/artwork/eps-preview',{method:'POST',body:form});
+      if(!response.ok){const data=await proofJson(response);throw new Error(data.error||'EPS conversion failed.');}
       return new File([await response.blob()],file.name.replace(/\.eps$/i,'.png'),{type:'image/png'});
       });
       epsQueue=pending.catch(()=>{});

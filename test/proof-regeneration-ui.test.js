@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(require.resolve('../public/proof-generator.js'), 'utf8');
 const review = source.slice(source.indexOf('  async function reviewBrief()'), source.indexOf('  async function uploadForm('));
+const http = source.slice(source.indexOf('  // Retry only reads:'),source.indexOf('  root.innerHTML'));
 const history = source.slice(source.indexOf('  function historyState(job)'), source.indexOf('  function renderHistory()'));
 function harness({ fail=false }={}) {
   let release;
@@ -95,7 +96,7 @@ test('opening a saved proof restores the editor without generating or saving',as
   };
   vm.createContext(context);
   const open=source.slice(source.indexOf('  async function openHistoryProof(job)'),source.indexOf('  async function recordProgress('));
-  vm.runInContext(open+'\nthis.open=openHistoryProof;',context);
+  vm.runInContext(http+open+'\nthis.open=openHistoryProof;',context);
   await context.open({id:'saved-proof',revision:6,hasPreview:true});
   assert.equal(context.request.value,'Saved request');assert.equal(context.currentBrief.proofRevision,6);
   assert.equal(context.busy,false);assert.ok(calls.includes('restore'));
@@ -132,4 +133,40 @@ for(const failed of [false,true])test(`regeneration ${failed?'approval-save fail
   assert.equal(h.context.design.status,'saved');assert.equal(h.context.design.generationStatus,undefined);
   assert.equal(h.context.savedBrief,undefined);
   if(failed)assert.equal(h.context.progressMessage,'Approval save failed');
+});
+
+test('temporary gateway and network failures retry reads and recover the saved status',async()=>{
+  for(const failure of [502,503,504,'network']){
+    let count=0;
+    const context={setTimeout:fn=>fn(),fetch:async()=>{count++;if(count===1){if(failure==='network')throw new TypeError('Failed to fetch');return new Response('upstream error',{status:failure});}return Response.json({design:{status:'saved'}});}};
+    vm.createContext(context);vm.runInContext(http,context);
+    const response=await context.proofFetch('/api/proof-generator/designs/id');
+    assert.equal((await context.proofJson(response)).design.status,'saved');assert.equal(count,2);
+  }
+});
+test('gateway retries are bounded and save POSTs are never replayed',async()=>{
+  for(const method of ['GET','POST']){
+    let count=0;const context={setTimeout:fn=>fn(),fetch:async()=>{count++;return new Response('upstream error',{status:502});}};
+    vm.createContext(context);vm.runInContext(http,context);
+    const response=await context.proofFetch('/api/proof-generator/save',{method});
+    await assert.rejects(context.proofJson(response),/HTTP 502.*check whether saving completed/);
+    assert.equal(count,method==='GET'?3:1);
+  }
+});
+test('valid application errors are preserved and do not retry',async()=>{
+  let count=0;const context={fetch:async()=>{count++;return Response.json({error:'Artwork needs attention'},{status:422});}};
+  vm.createContext(context);vm.runInContext(http,context);
+  assert.equal((await context.proofJson(await context.proofFetch('/proof'))).error,'Artwork needs attention');assert.equal(count,1);
+});
+test('failed completion notification cannot mark an acknowledged save as failed',async()=>{
+  const h=harness();h.context.updatePreview=async()=>{h.context.savedThisRun=true;h.context.design={...h.context.design,designNumber:'29144',status:'saved'};h.context.currentPreview={issues:[]};};
+  h.context.recordProgress=async state=>{h.calls.push(state);if(state==='complete')throw Error('upstream error');};
+  const pending=h.context.run();h.release();await pending;
+  assert.equal(h.context.design.generationStatus,'complete');assert.ok(!h.calls.includes('error'));assert.match(h.context.progressMessage,/Proof saved under design 29144/);
+});
+test('cancelled requests are not retried',async()=>{
+  let count=0;const error=new Error('Cancelled');error.name='AbortError';
+  const context={fetch:async()=>{count++;throw error;}};
+  vm.createContext(context);vm.runInContext(http,context);
+  await assert.rejects(context.proofFetch('/proof'),{name:'AbortError'});assert.equal(count,1);
 });
