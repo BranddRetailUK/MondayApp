@@ -19,7 +19,7 @@ async function plan(input,body={},options={}){
   const garment=body.garment||'tshirt';
   if(!engine.PRESETS[garment])throw Error('Choose a garment.');
   if(garment==='cap')throw Error('Cap digitising is not available yet.');
-  const source=await engine.artwork(input);
+  const source=await engine.artwork(input,{maxSide:2000});
   const size=await sourceSize(input);
   const png=await removeBackground(source);
   const config=engine.settings({garment,border:String(body.border)==='true'?'true':'false',widthMm:100,hoopMm:360,spacing:engine.PRESETS[garment].spacing,length:2.5,colours:8,removeWhite:'false'});
@@ -29,6 +29,7 @@ async function plan(input,body={},options={}){
   // Dense coverage is a server policy; never accept customer density overrides.
   config.satinSpacing={tshirt:.34,hoodie:.32,woven:.36}[garment];
   config.coverageMargin={tshirt:.15,hoodie:.2,woven:.1}[garment];
+  config.pullCompensation={tshirt:.10,hoodie:.15,woven:.08}[garment];
   const raw=await sharp(png).ensureAlpha().raw().toBuffer(),counts=new Map();let visible=0;
   for(let p=0;p<raw.length;p+=4)if(raw[p+3]>=128){const key=[raw[p],raw[p+1],raw[p+2]].join(',');counts.set(key,(counts.get(key)||0)+1);visible++;}
   const dominant=[];
@@ -62,7 +63,7 @@ async function plan(input,body={},options={}){
   const base=el=>prepared.sourceElements[el.sourceId??el.id];
   const role=el=>roles.get(el.sourceId??el.id);
   ordered.sort((a,b)=>(role(a)==='lettering')-(role(b)==='lettering')||colours.indexOf(a.colour)-colours.indexOf(b.colour)||(role(a)==='lettering'?base(a).x-base(b).x:base(a).pixels-base(b).pixels)||(a.sourceId??a.id)-(b.sourceId??b.id)||a.id-b.id);
-  ordered.forEach((el,order)=>{config.elementOptions[el.id]={order,type:el.guide?'fill':column(prepared.ids,prepared.info.width,el,prepared.scale,config.spacing)?'satin':Math.min(el.width,el.height)*prepared.scale<12&&branchedColumns(prepared.ids,prepared.info.width,el,prepared.scale,config.spacing)?'satin-branches':'fill'};});
+  ordered.forEach((el,order)=>{config.elementOptions[el.id]={order,type:el.guide?'fill':column(prepared.ids,prepared.info.width,el,prepared.scale,config.satinSpacing)?'satin':branchedColumns(prepared.ids,prepared.info.width,el,prepared.scale,config.satinSpacing)?'satin-branches':'fill'};});
   return {png,config,interpretation,preview:source};
 }
 module.exports={plan,removeBackground};

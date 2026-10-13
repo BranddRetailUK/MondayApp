@@ -15,7 +15,7 @@ async function rasterize(buffer){
   if(!match)throw Error('EPS needs a numeric bounding box. Re-export the artwork as EPS or SVG.');
   const [x,y,right,bottom]=match.slice(1).map(Number),width=right-x,height=bottom-y;
   if(![x,y,right,bottom].every(Number.isFinite)||width<=0||height<=0||Math.max(width,height)>100000)throw Error('Invalid EPS artwork bounds.');
-  const factor=1200/Math.max(width,height),w=Math.max(1,Math.round(width*factor)),h=Math.max(1,Math.round(height*factor));
+  const factor=2000/Math.max(width,height),w=Math.max(1,Math.round(width*factor)),h=Math.max(1,Math.round(height*factor));
   const directory=await fs.mkdtemp(path.join(os.tmpdir(),'digitising-eps-'));
   try{
     const input=path.join(directory,'artwork.eps'),output=path.join(directory,'artwork.png');await fs.writeFile(input,eps);

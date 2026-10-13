@@ -1,4 +1,4 @@
-const {routeInside}=require('./digitisingTravel');
+const {routeInside,segmentInside}=require('./digitisingTravel');
 const sharp = require('sharp');
 const {partition,spans,sectionAngle,contours,simplify}=require('./digitisingSections');
 const {column,branchedColumns,thinColumns}=require('./digitisingColumns');
@@ -49,7 +49,7 @@ function encode(commands, name = 'STUDIO SAMPLE') {
   header.write(`LA:${name.replace(/[^a-z0-9 -]/gi,'').slice(0,16).padEnd(16)}\r`+field('ST',commands.length+1,7)+field('CO',colours,3)+field('+X',maxX,5)+field('-X',-minX,5)+field('+Y',-minY,5)+field('-Y',maxY,5)+`AX:${x<0?'-':'+'}${String(Math.abs(x)).padStart(5)}\rAY:${y>0?'-':'+'}${String(Math.abs(y)).padStart(5)}\rMX:+    0\rMY:+    0\rPD:******\r\x1a`,'ascii');
   return Buffer.concat([header,Buffer.from([...bytes,0,0,243])]);
 }
-async function artwork(buffer) {
+async function artwork(buffer, {maxSide=800}={}) {
   const eps=require('./digitisingEps');
   if(eps.extractEps(buffer))buffer=await eps.rasterize(buffer);
   const png=buffer.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
@@ -57,7 +57,7 @@ async function artwork(buffer) {
   if (!png && (!/<svg[\s>]/i.test(text) || /<!DOCTYPE|<!ENTITY|<\s*(?:script|image|use|foreignObject|text)\b|\bhref\s*=|url\s*\(|@import/i.test(text))) {
     throw Error('Upload PNG, EPS or a self-contained SVG with text converted to paths (no embedded images or external resources).');
   }
-  return sharp(buffer,{limitInputPixels:16000000}).resize({width:800,height:800,fit:'inside'}).ensureAlpha().png().toBuffer();
+  return sharp(buffer,{limitInputPixels:16000000}).resize({width:maxSide,height:maxSide,fit:'inside'}).ensureAlpha().png().toBuffer();
 }
 async function assess(png, config, fetchImpl = fetch) {
   if (!process.env.OPENAI_API_KEY) throw Error('OPENAI_API_KEY is not configured on the server.');
@@ -142,7 +142,7 @@ async function generate(png, config) {
     const old=[x/(scale*10)+(left+right)/2,y/(scale*10)+(top+bottom)/2];
     const path=commands.length&&lastSourceId===sourceId?routeInside(sourceIds,w,sourceId,old,p,scale):null;
     if(path){for(const point of path)move(...point,'stitch',1.8);}else{trim();move(...p,'jump');}
-    lastSourceId=sourceId;
+    lastSourceId=sourceId;return !path;
   }
   function run(a,b){
     if(Math.hypot(b[0]-a[0],b[1]-a[1])*scale<.8){shortRuns++;return;}
@@ -181,6 +181,7 @@ async function generate(png, config) {
   const ordered=elements.filter(el=>config.elementOptions?.[el.id]?.type!=='skip').sort((a,b)=>(config.elementOptions?.[a.id]?.order??a.id)-(config.elementOptions?.[b.id]?.order??b.id));
   const narrowByElement=new Map();
   for(const sourceId of new Set(ordered.map(e=>e.sourceId??e.id))){
+    if(ordered.filter(e=>(e.sourceId??e.id)===sourceId).every(e=>['satin','satin-branches'].includes(config.elementOptions?.[e.id]?.type)))continue;
     const narrow=thinColumns(sourceIds,w,sourceElements[sourceId],scale,config.satinSpacing||config.spacing,guidelines.assumedThreadWidthMm);
     for(const rails of narrow){
       // Attach a tapered branch to the section at its wider root, rather than
@@ -248,15 +249,37 @@ async function generate(png, config) {
     } else if(satin){
       const paths=stitchType==='satin-branches'?branchedColumns(ids,w,element,scale,config.satinSpacing||config.spacing):[column(ids,w,element,scale,config.satinSpacing||config.spacing,config.elementOptions?.[colour]?.widthMm||0)];
       if(!paths?.length||paths.some(path=>!path))throw Error(`Element ${colour+1} needs manual satin segmentation; choose fill or edit its artwork.`);
-      for(const rails of paths){
+      const pending=paths.slice(),sourceId=element.sourceId??element.id;
       const centre=pair=>[(pair[0][0]+pair[1][0])/2,(pair[0][1]+pair[1][1])/2];
-      trim();move(...centre(rails[0]),'jump');
-      move(...centre(rails[Math.min(4,rails.length-1)]));move(...centre(rails[0]));
-      // Centre-run underlay, then return with a sparse inset zigzag before top satin.
-      for(let i=1;i<rails.length;i+=Math.max(1,Math.round(config.underlay/((config.satinSpacing||config.spacing)/2))))move(...centre(rails[i]));
-      for(let i=rails.length-1,side=0;i>=0;i-=Math.max(1,Math.round(config.underlay/((config.satinSpacing||config.spacing)/2))),side++){const c=centre(rails[i]),r=rails[i][side%2];move(c[0]+(r[0]-c[0])*.6,c[1]+(r[1]-c[1])*.6);}
-      for(let i=0;i<rails.length;i++)move(...rails[i][i%2],'stitch',7);
-      const last=rails.length-1;move(...rails[Math.max(0,last-2)][last%2],'stitch',7);move(...rails[last][last%2],'stitch',7);
+      const current=()=>[x/(scale*10)+(left+right)/2,y/(scale*10)+(top+bottom)/2];
+      const safeMove=(p,maximum=config.length,tolerance=0)=>{
+        if(segmentInside(sourceIds,w,sourceId,current(),p,scale,tolerance))move(...p,'stitch',maximum);
+        else sourceTravel(p,sourceId);
+      };
+      while(pending.length){
+        const here=current();let best=0,reverse=false,distance=Infinity;
+        for(let i=0;i<pending.length;i++)for(const end of [0,pending[i].length-1]){const p=centre(pending[i][end]),d=Math.hypot(p[0]-here[0],p[1]-here[1]);if(d<distance){distance=d;best=i;reverse=end!==0;}}
+        const rails=pending.splice(best,1)[0];if(reverse)rails.reverse();
+        const jumped=sourceTravel(centre(rails[0]),sourceId);
+        if(jumped){const tie=centre(rails[Math.min(3,rails.length-1)]);safeMove(tie);safeMove(centre(rails[0]));safeMove(tie);}
+        // Underlay never shortcuts a curve or crosses a letter counter.
+        const stride=Math.max(1,Math.round(config.underlay/((config.satinSpacing||config.spacing)/2)));
+        for(let i=0;i<rails.length;i+=stride)safeMove(centre(rails[i]));
+        safeMove(centre(rails.at(-1)));
+        const widths=rails.map(pair=>Math.hypot(pair[1][0]-pair[0][0],pair[1][1]-pair[0][1])*scale);
+        for(let i=rails.length-1,j=0;i>=0;i-=stride,j++){
+          const c=centre(rails[i]),r=rails[i][j%2];
+          // Fine lettering needs only a centre run, not bulky zigzag underlay.
+          safeMove(widths[i]<1.2?c:[c[0]+(r[0]-c[0])*.5,c[1]+(r[1]-c[1])*.5]);
+        }
+        for(let i=0;i<rails.length;i++){
+          const side=i%2,p=rails[i][side],other=rails[i][1-side],width=widths[i];
+          const compensation=Math.min(config.pullCompensation||0,width*.15),distance=Math.hypot(p[0]-other[0],p[1]-other[1]);
+          const target=distance?p.map((v,a)=>v+(v-other[a])/distance*compensation/scale):p;
+          safeMove(target,7,Math.max(.15,compensation+scale));
+        }
+        // Tie off locally, without cutting across a curve to an earlier rail.
+        const end=rails.at(-1),c=centre(end);safeMove(c);safeMove(end[(rails.length-1)%2],7,.15);
       }
     } else for(const vertical of [true,false]){
       const pending=[];
@@ -320,6 +343,6 @@ async function generate(png, config) {
   const {parseDst}=await import('../../public/embroidery-viewer.mjs');const parsed=parseDst(dst);
   if(Math.max(parsed.widthMm,parsed.heightMm)>config.hoopMm-10)throw Error('Generated satin or outline exceeds the hoop clearance.');
   return {dst:dst.toString('base64'),threads,threadPlan,elements, stats:{stitches:parsed.stitches,widthMm:parsed.widthMm,heightMm:parsed.heightMm,colourChanges:parsed.colourChanges,trims,shortRuns,thinColumns:thinColumnsSewn,thinCrossStitches},
-    warnings:['Experimental sample; not production approved.','Disconnected fill runs request a three-jump trim. Confirm trim recognition on your Tajima controller. Running outlines are experimental and may omit tiny boundary fragments.', 'Automatic section directions and branched satin remain experimental; no automatic pull compensation or cap strategy. Thread colours are approximate; assign real cones in order.',...(shortRuns?[`${shortRuns} sub-0.8 mm runs were omitted. Fine detail requires manual digitising.`]:[])],config};
+    warnings:['Experimental sample; not production approved.','Disconnected fill runs request a three-jump trim. Confirm trim recognition on your Tajima controller. Running outlines are experimental and may omit tiny boundary fragments.', 'Automatic section directions and branched satin remain experimental; bounded provisional satin pull compensation; no validated cap strategy. Thread colours are approximate; assign real cones in order.',...(shortRuns?[`${shortRuns} sub-0.8 mm runs were omitted. Fine detail requires manual digitising.`]:[])],config};
 }
 module.exports={settings,artwork,assess,prepare,generate,record,encode,PRESETS};

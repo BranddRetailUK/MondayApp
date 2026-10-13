@@ -2,6 +2,14 @@
 
 These describe the required finish, not a claim that the prototype is production approved.
 
+## Stroke direction
+
+- Top stitching must cross the local stroke path, perpendicular to its tangent.
+- An L's vertical stem has horizontal top stitches; its horizontal arm has vertical top stitches.
+- Script, curves and closed loops turn their paired stitch rails continuously with the path.
+- Longitudinal runs are permitted for underlay and hidden connecting travel only.
+- Split branches into local columns at junctions; a whole object's bounding box or a fixed global fill angle must not dictate the finish of its narrow strokes.
+
 ## Thin features
 
 - Areas approximately **one to three thread widths** wide must use top stitches
@@ -42,3 +50,10 @@ Keep production references separate during generation and compare afterwards.
 ## Connected sections and fine branches
 
 Route connecting support stitches inside the original same-thread source region. Preserve jumps where regions are disconnected; never shortcut across holes. Finish a narrow branch beside its adjoining broad section, retaining crosswise top stitches. Direction transitions between guided ribbon sections are eased by a bounded source-derived axial adjustment. These routing/style rules remain experimental pending sew-out verification.
+
+## Geometry and routing implementation
+
+- Automatic preparation uses a bounded 2000px raster (EPS is rasterised at that bound before normalisation), preserving more source geometry than the former 800px pass. This remains raster-derived geometry, not exact recovery of a source vector.
+- Skeleton edges become arc-length sampled paired rails, with closed-loop tangents and distance-to-boundary bounds at forks. Thin satin tapers retain at least the provisional 0.30mm thread width.
+- Underlay, rail transitions and same-region travel are mask-checked to preserve holes. Separate regions jump; adjacent branches choose nearby endpoints. Satin columns do not receive the separate thin-feature overlay again.
+- Narrow columns use centre-run underlay; wider columns add an inset zigzag. Automatic per-edge satin pull compensation is bounded by 15% of local width and garment maxima of 0.10/0.15/0.08mm (T-shirt/hoodie/woven). These are provisional starting values, requiring fabric-specific sew-out calibration.
