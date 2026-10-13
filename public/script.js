@@ -431,7 +431,7 @@ function renderBoard(payload, options = {}) {
   const groupSummaryTitleWidth = buildGroupSummaryTitleWidth(visibleGroups);
   const mobileClosedGroupWidth = buildMobileClosedGroupSummaryWidth(visibleGroups);
   boardDiv.style.setProperty('--mobile-closed-group-width', `${mobileClosedGroupWidth}px`);
-  const boardSortPlan = getBoardSortPlan(boardColumns);
+  const boardSortPlan = getBoardSortPlan(normalizeColumns(board.columns || []));
   const allBoardItems = getAllBoardItems(board.groups || []);
   const productionParentIds = new Set(allBoardItems.filter(item => item.dashboard_production_parent).map(item => String(item.id)));
   const globalJobNameWidth = buildJobNameColumnWidth(allBoardItems);
@@ -832,8 +832,14 @@ function getRenderableBoardColumns(columns) {
     !isHiddenBoardColumnTitle(column.title) &&
     !HIDDEN_BOARD_COLUMN_IDS.has(column.id) &&
     !HIDDEN_BOARD_COLUMN_TYPES.has(column.type) &&
+    !(isPriorityColumn(column) && isPriorityColumnHiddenForUser()) &&
     !(column.type === 'artwork_result' && isProductionArtworkUser())
   );
+}
+
+function isPriorityColumnHiddenForUser(user = window.ultimateHubUser) {
+  const email = String(user?.email || '').trim().toLowerCase();
+  return ['production', 'lubos', 'packing'].some(name => email === `${name}@ultimatepromotions.co.uk`);
 }
 
 function getRenderableSubitemColumns(columns) {

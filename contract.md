@@ -817,3 +817,5 @@ No external work-management token, OAuth, board, column, or webhook environment 
 - Dashboard artwork-column visibility (2026-10-12): the production@ultimatepromotions.co.uk account no longer receives the ARTWORK action column in the dashboard grid, on desktop or mobile. Its reserved width is removed with the column. Existing proof access, artwork-export services and packing LABEL column remain unchanged.
 
 - The ARTWORK export-result tick/cross column (`artwork_result`) is also hidden for production@ultimatepromotions.co.uk on desktop and mobile. Other accounts retain it; export results and processing remain unchanged.
+
+- Dashboard priority-column visibility (2026-10-13): PRIORITY and its reserved grid width are hidden on desktop and mobile for the normalized account emails production@ultimatepromotions.co.uk, lubos@ultimatepromotions.co.uk and packing@ultimatepromotions.co.uk. Other accounts retain the column. Priority values, automation and default priority/date sorting remain active; sorting uses the full board column definitions independently of display visibility.
