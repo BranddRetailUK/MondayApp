@@ -111,7 +111,6 @@ const __testCheckboxOptimisticValues = new Map();
 let __testCheckboxOptimisticSeq = 0;
 let __testDesignEditInFlight = 0;
 let __testTextEditInFlight = 0;
-let __boardSortState = null;
 let __dashboardZoom = 1;
 let __dashboardPinchState = null;
 let __statusDropdownState = null;
@@ -519,7 +518,7 @@ function renderBoard(payload, options = {}) {
     const headRow = document.createElement('div');
     headRow.className = 'grid-row grid-head';
     for (const spec of groupGridSpec.columns) {
-      headRow.appendChild(buildHeaderCell(spec, { sortable: true, context }));
+      headRow.appendChild(buildHeaderCell(spec));
     }
     grid.appendChild(headRow);
 
@@ -582,7 +581,7 @@ function renderBoard(payload, options = {}) {
         const subHead = document.createElement('div');
         subHead.className = 'subitem-row sub-head';
         for (const spec of subitemGridSpec.columns) {
-          subHead.appendChild(buildHeaderCell(spec, { sortable: false, context }));
+          subHead.appendChild(buildHeaderCell(spec));
         }
         subGrid.appendChild(subHead);
 
@@ -1001,23 +1000,9 @@ function getColumnWidth(column) {
   return 150;
 }
 
-function getActiveSortColumn(columns) {
-  if (!__boardSortState?.columnId) return null;
-  return (columns || []).find(column => column.id === __boardSortState.columnId) || null;
-}
-
 function getBoardSortPlan(columns) {
-  const activeSortColumn = getActiveSortColumn(columns);
-  if (activeSortColumn && __boardSortState?.direction) {
-    return [{ column: activeSortColumn, direction: __boardSortState.direction }];
-  }
-
-  const priorityColumn = (columns || []).find(isPriorityColumn);
   const dateColumn = getDueDateColumn(columns);
-  return [
-    priorityColumn ? { column: priorityColumn, direction: 'desc' } : null,
-    dateColumn ? { column: dateColumn, direction: 'desc' } : null
-  ].filter(Boolean);
+  return dateColumn ? [{ column: dateColumn, direction: 'desc' }] : [];
 }
 
 function isPriorityColumn(column) {
@@ -1133,7 +1118,7 @@ function getItemSortValue(item, column) {
   if (column.type === 'date' || column.type === 'timeline') {
     const timestamp = parseSortDate(value, text);
     if (Number.isFinite(timestamp)) {
-      // Earlier dates are treated as higher priority so first click is most urgent first.
+      // Descending urgency puts the earliest due dates first.
       return { empty: false, type: 'number', value: -timestamp };
     }
   }
@@ -1515,7 +1500,7 @@ function measureBoardTextWidth(text, font = "14px Manrope, 'Segoe UI', system-ui
   return String(text || '').length * 7.5;
 }
 
-function buildHeaderCell(spec, { sortable = false, context = BOARD_CONTEXT_TEST } = {}) {
+function buildHeaderCell(spec) {
   const cell = document.createElement('div');
   cell.className = `grid-cell head ${spec.kind}-head`;
   if (spec.kind === 'jobNumber') cell.classList.add('job-number-head');
@@ -1525,41 +1510,7 @@ function buildHeaderCell(spec, { sortable = false, context = BOARD_CONTEXT_TEST 
   title.textContent = spec.title || '';
   cell.appendChild(title);
 
-  if (sortable && spec.kind === 'column' && spec.column?.id) {
-    cell.classList.add('sortable-head');
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'column-sort-btn';
-    if (__boardSortState?.columnId === spec.column.id) button.classList.add('active');
-    button.title = getColumnSortButtonTitle(spec.column);
-    button.setAttribute('aria-label', button.title);
-    button.textContent = '↕';
-    button.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      toggleBoardColumnSort(spec.column, context);
-    });
-    cell.appendChild(button);
-  }
-
   return cell;
-}
-
-function getColumnSortButtonTitle(column) {
-  const active = __boardSortState?.columnId === column.id;
-  if (!active) return `Sort ${column.title || 'column'} high to low`;
-  return __boardSortState.direction === 'desc'
-    ? `Sort ${column.title || 'column'} low to high`
-    : `Sort ${column.title || 'column'} high to low`;
-}
-
-function toggleBoardColumnSort(column, context = BOARD_CONTEXT_TEST) {
-  const currentDirection = __boardSortState?.columnId === column.id ? __boardSortState.direction : '';
-  __boardSortState = {
-    columnId: column.id,
-    direction: currentDirection === 'desc' ? 'asc' : 'desc'
-  };
-  rerenderBoardContext(context);
 }
 
 function rerenderBoardContext(context = BOARD_CONTEXT_TEST) {

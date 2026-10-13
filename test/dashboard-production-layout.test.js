@@ -72,3 +72,26 @@ test('parent collapse hides full child rows and their open stock panels without 
   assert.equal(rows[1].has('hidden'), false);
   assert.equal(rows[2].has('hidden'), true);
 });
+
+test('each group sorts by earliest due date regardless of priority, with undated jobs last', () => {
+  const ui = loadDashboardFrontend();
+  const columns = [
+    { id: 'priority', title: 'PRIORITY', type: 'status' },
+    { id: 'date', title: 'DATE', type: 'date' },
+  ];
+  const job = (id, date, priority = '') => ({ id, column_values: [
+    { id: 'date', text: date, value: date ? JSON.stringify({ date }) : '' },
+    { id: 'priority', text: priority },
+  ] });
+  const plan = ui.getBoardSortPlan(columns);
+  assert.equal(plan.length, 1);
+  assert.equal(plan[0].column.id, 'date');
+  const first = [job('late', '2026-10-30', 'Critical'), job('empty', ''),
+    job('soon', '2026-10-14', 'Low'), job('overdue', '2026-10-01'), job('same', '2026-10-14')];
+  const second = [job('other-late', '2026-11-01'), job('other-soon', '2026-10-15')];
+  assert.deepEqual(Array.from(ui.sortItemsForBoard(first, plan), row => row.id),
+    ['overdue', 'soon', 'same', 'late', 'empty']);
+  assert.deepEqual(Array.from(ui.sortItemsForBoard(second, plan), row => row.id),
+    ['other-soon', 'other-late']);
+  assert.equal(first[0].id, 'late');
+});

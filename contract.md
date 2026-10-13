@@ -148,7 +148,7 @@ Scanner progression:
 
 ### Tuesday Dashboard UI
 
-- The production dashboard sidebar tab is labeled `Tuesday Dashboard`, sits below DATABASE, and uses the DB-backed renderer for group layout, subitem expansion, local sorting, preview modal, print-label layout, and mobile pinch zoom. Priority values and priority/date sorting remain active, but priority-based row background highlights are disabled for every user and no highlight toggle is shown.
+- The production dashboard sidebar tab is labeled `Tuesday Dashboard`, sits below DATABASE, and uses the DB-backed renderer for group layout, subitem expansion, local sorting, preview modal, print-label layout, and mobile pinch zoom. Priority values remain active and each group sorts by earliest due date first (undated jobs last), but priority-based row background highlights are disabled for every user and no highlight toggle is shown.
 - When no `PRIORITY` is selected, its empty badge is transparent so the cell matches the ordinary dark grey (`#2b2b2c`) dashboard column background, including immediately after clearing a priority.
 - Tuesday Dashboard reads only `/api/test-dashboard/board` and writes only `/api/test-dashboard` routes for status, priority, scanner, label, group, approval, design, text, date, and file actions. The removed legacy board, OAuth, scanner, asset-proxy, camera-upload, and visual routes are not mounted.
 - Tuesday Dashboard hides groups with no parent job rows and shows them again when a job enters the group. OFFICE remains visible when empty so its manual `+` job control is always reachable.
@@ -818,4 +818,6 @@ No external work-management token, OAuth, board, column, or webhook environment 
 
 - The ARTWORK export-result tick/cross column (`artwork_result`) is also hidden for production@ultimatepromotions.co.uk on desktop and mobile. Other accounts retain it; export results and processing remain unchanged.
 
-- Dashboard priority-column visibility (2026-10-13): PRIORITY and its reserved grid width are hidden on desktop and mobile for the normalized account emails production@ultimatepromotions.co.uk, lubos@ultimatepromotions.co.uk and packing@ultimatepromotions.co.uk. Other accounts retain the column. Priority values, automation and default priority/date sorting remain active; sorting uses the full board column definitions independently of display visibility.
+- Dashboard priority-column visibility (2026-10-13): PRIORITY and its reserved grid width are hidden on desktop and mobile for the normalized account emails production@ultimatepromotions.co.uk, lubos@ultimatepromotions.co.uk and packing@ultimatepromotions.co.uk. Other accounts retain the column. Priority values and automation remain active; sorting uses the full board column definitions independently of display visibility.
+
+- Dashboard date sorting (2026-10-13): every group always sorts by earliest DATE first (overdue jobs first, then nearest upcoming dates, with undated jobs last), without PRIORITY precedence or manual column-sort overrides. Equal dates retain their incoming order. Linked production children stay directly beneath their parent in the same group, ordered by date within that family; children in other groups retain their own group. Applies to all accounts on desktop and mobile.
