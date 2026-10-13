@@ -52,3 +52,28 @@ test('rendered preview is bounded, contains stitches and leaves jumps transparen
   assert.equal(ctx.getImageData(130,24,1,1).data[3],0);
   assert.ok(ctx.getImageData(200,24,1,1).data[3]>0);
 });
+
+test('PXF extracts the saved colour PNG intact and renders its pixels', async () => {
+  const { extractPxfPreview } = await modulePromise;
+  const { createCanvas, loadImage } = require('@napi-rs/canvas');
+  const c=createCanvas(200,200);const ctx=c.getContext('2d');
+  ctx.fillStyle='#ff0000';ctx.fillRect(20,20,50,50);
+  const png=c.toBuffer('image/png');
+  const pxf=Buffer.concat([Buffer.from('PMLPXF01'),Buffer.alloc(165),png,Buffer.from('other design data')]);
+  const extracted=extractPxfPreview(pxf);
+  assert.deepEqual(Buffer.from(extracted),png);
+  const img=await loadImage(Buffer.from(extracted));assert.equal(img.width,200);
+});
+test('PXF rejects missing, truncated and oversized embedded previews', async () => {
+  const { extractPxfPreview } = await modulePromise;
+  const { createCanvas } = require('@napi-rs/canvas');
+  const png=createCanvas(10,10).toBuffer('image/png');
+  const wrap=body=>Buffer.concat([Buffer.from('PMLPXF01'),body]);
+  assert.throws(()=>extractPxfPreview(Buffer.from('not pxf')), /supported Pulse/);
+  assert.throws(()=>extractPxfPreview(wrap(Buffer.alloc(30))), /no supported embedded/);
+  assert.throws(()=>extractPxfPreview(wrap(png.subarray(0,png.length-8))), /no supported embedded/);
+  const huge=Buffer.from(png);huge.writeUInt32BE(50000,16);
+  assert.throws(()=>extractPxfPreview(wrap(huge)), /no supported embedded/);
+  const corrupt=Buffer.from(png);corrupt.writeUInt32BE(0xffffffff,8);
+  assert.throws(()=>extractPxfPreview(wrap(corrupt)), /no supported embedded/);
+});

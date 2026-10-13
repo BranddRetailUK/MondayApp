@@ -62,3 +62,36 @@ export function renderDst(design, createCanvas = () => document.createElement('c
   ctx.stroke();
   return canvas;
 }
+
+// Pulse PXF versions with an embedded PNG can be previewed without a stitch engine.
+// This is the saved design thumbnail, not a reconstruction of editable PXF objects.
+export function extractPxfPreview(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const unsupported = 'This PXF has no supported embedded preview. Export a PDF or DST from Pulse Ambassador and open it here.';
+  if (bytes.length > 25 * 1024 * 1024) throw Error('Maximum file size is 25 MB.');
+  if (new TextDecoder().decode(bytes.subarray(0, 6)) !== 'PMLPXF') throw Error('This is not a supported Pulse PXF file.');
+  const signature = [137,80,78,71,13,10,26,10];
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  for (let start = 8; start <= bytes.length - 33; start++) {
+    if (!signature.every((value, index) => bytes[start + index] === value)) continue;
+    let offset = start + 8, hasData = false, first = true;
+    while (offset + 12 <= bytes.length) {
+      const length = view.getUint32(offset);
+      if (length > bytes.length - offset - 12) break;
+      const type = String.fromCharCode(...bytes.subarray(offset + 4, offset + 8));
+      if (first) {
+        if (type !== 'IHDR' || length !== 13) break;
+        const width = view.getUint32(offset + 8), height = view.getUint32(offset + 12);
+        if (!width || !height || width > 4096 || height > 4096) break;
+        first = false;
+      } else if (type === 'IHDR') break;
+      if (type === 'IDAT') hasData = true;
+      offset += length + 12;
+      if (type === 'IEND') {
+        if (length === 0 && hasData) return bytes.slice(start, offset);
+        break;
+      }
+    }
+  }
+  throw Error(unsupported);
+}
