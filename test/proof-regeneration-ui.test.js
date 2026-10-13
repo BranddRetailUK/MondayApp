@@ -113,3 +113,23 @@ test('optional job selection sends a reference only when explicitly starting a j
   assert.equal(JSON.stringify(context.reservation()),JSON.stringify({sourceOrderId:50600,designReference:'29123'}));
   context.design={sourceOrderId:50600};assert.equal(JSON.stringify(context.reservation()),'{}');
 });
+
+test('approved linked proofs reach the approval gate only when submitting regeneration',async()=>{
+  const h=harness();h.context.design.sourceOrderId=50587;let resolveApproval;
+  h.context.window={ProofLinks:{beginRegeneration:async(id,proofId)=>{
+    assert.equal(id,50587);assert.equal(proofId,'existing-design');h.calls.push('approval');
+    return new Promise(resolve=>{resolveApproval=resolve;});
+  }}};
+  const pending=h.context.run();assert.deepEqual(h.calls,['approval']);assert.equal(h.context.busy,true);
+  await h.context.run();assert.deepEqual(h.calls,['approval']); // Repeated clicks cannot start a second action.
+  resolveApproval(true);h.release();await pending;
+  assert.equal(h.calls[0],'approval');assert.ok(h.calls.includes('save'));assert.equal(h.context.busy,false);
+});
+for(const failed of [false,true])test(`regeneration ${failed?'approval-save failure':'cancel'} leaves the editor and saved proof alone`,async()=>{
+  const h=harness();h.context.design.sourceOrderId=50587;
+  h.context.window={ProofLinks:{beginRegeneration:async()=>{if(failed)throw Error('Approval save failed');return false;}}};
+  await h.context.run();assert.deepEqual(h.calls,[]);assert.equal(h.context.busy,false);
+  assert.equal(h.context.design.status,'saved');assert.equal(h.context.design.generationStatus,undefined);
+  assert.equal(h.context.savedBrief,undefined);
+  if(failed)assert.equal(h.context.progressMessage,'Approval save failed');
+});

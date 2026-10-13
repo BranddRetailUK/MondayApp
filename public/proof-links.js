@@ -49,13 +49,38 @@
   }
   async function edit(id){
     if(!allowed())return;const {job}=await api(`/link-jobs/${id}`);
-    if(job.proof_approved){
-      if(!window.confirm(`Job ${job.order_no||id} is already approved. Continue to regenerate and relink its proof? This will clear JOB approval. When you regenerate and save, the new proof will replace this job’s linked visual and require approval again. Cancel keeps the approved proof unchanged.`))return;
-      const response=await fetch(`/api/test-dashboard/items/${id}/checkbox-column`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({columnId:'checkbox1__1',checked:false})});
-      const data=await response.json();if(!response.ok)throw new Error(data.error||'Could not clear approval.');
-    }
     const {design}=await api(`/link-jobs/${id}/edit`,{});
     activateDashboardTab('proof-generator');await window.openLinkedProof({design,job});
+  }
+  function confirmRegeneration(job){
+    return new Promise(resolve=>{
+      const previousFocus=document.activeElement;
+      const dialog=document.createElement('dialog');dialog.className='proof-regeneration-warning';
+      dialog.setAttribute('aria-labelledby','proof-regeneration-warning-title');
+      dialog.setAttribute('aria-describedby','proof-regeneration-warning-message');
+      const title=document.createElement('h2');title.id='proof-regeneration-warning-title';title.textContent='Regenerate an approved proof?';
+      const message=document.createElement('p');message.id='proof-regeneration-warning-message';
+      message.textContent=`Job ${job.order_no||job.source_order_id} is already approved. Regenerating will clear JOB approval and return this job to OFFICE. Saving the new proof will replace its linked visual and require approval again.`;
+      const note=document.createElement('p');note.textContent='Cancel keeps the job approved and leaves the saved proof unchanged.';
+      const actions=document.createElement('div');actions.className='proof-regeneration-warning-actions';
+      const cancel=button('Cancel',()=>dialog.close('cancel'));
+      const confirm=button('Regenerate proof',()=>dialog.close('regenerate'));confirm.classList.add('proof-regeneration-confirm');
+      actions.append(cancel,confirm);dialog.append(title,message,note,actions);
+      dialog.addEventListener('close',()=>{const confirmed=dialog.returnValue==='regenerate';dialog.remove();previousFocus?.focus();resolve(confirmed);},{once:true});
+      document.body.append(dialog);dialog.showModal();cancel.focus();
+    });
+  }
+  async function beginRegeneration(id,proofId){
+    if(!allowed())return false;
+    const {job}=await api(`/link-jobs/${id}`);
+    if(job.proof_id!==proofId)throw new Error('The linked proof changed. Reopen it from the job before regenerating.');
+    if(job.proof_approved){
+      if(!await confirmRegeneration(job))return false;
+      const response=await fetch(`/api/test-dashboard/items/${id}/checkbox-column`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({columnId:'checkbox1__1',checked:false})});
+      const data=await response.json();if(!response.ok)throw new Error(data.error||'Could not clear approval.');
+      refresh();
+    }
+    return true;
   }
   async function create(id){
     if(!allowed())return;const {job}=await api(`/link-jobs/${id}`);
@@ -72,5 +97,5 @@
       }else if(!job.has_visual){container.append(button('Create proof',()=>create(id)),button('Attach existing proof',()=>attach(id,job.customer_name)));}
     }catch(error){container.textContent=error.message;}
   }
-  window.ProofLinks={allowed,api,picker,link,attach,edit,create,controls,refresh};
+  window.ProofLinks={allowed,api,picker,link,attach,edit,beginRegeneration,create,controls,refresh};
 })();

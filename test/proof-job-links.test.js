@@ -86,7 +86,7 @@ test('approval, conflicting visuals and failed publication preserve job data and
     assert.equal((await f.db.query('SELECT * FROM test_dashboard_files WHERE source_order_id=1')).rows.length,0);
     f.fail(false);await f.links.publish(f.id);
     await f.db.query('UPDATE database_jobs SET proof_approved=true WHERE source_order_id=1');
-    await assert.rejects(()=>f.links.activate(1),/approval/);await assert.rejects(()=>f.links.unlink(1),/approval/);
+    await f.links.activate(1);assert.equal((await f.links.job(1)).proof_approved,true);await assert.rejects(()=>f.links.unlink(1),/approval/);
     await f.db.query('UPDATE proof_design_jobs SET saved_revision=2 WHERE id=$1',[f.id]);
     await assert.rejects(()=>f.links.publish(f.id),/Approved proofs/);
     await f.db.query('UPDATE database_jobs SET proof_approved=false WHERE source_order_id=1');
@@ -158,7 +158,7 @@ test('approved jobs accept an initial saved proof without clearing approval but 
     assert.equal((await f.db.query('SELECT saved_revision FROM proof_job_links WHERE source_order_id=1')).rows[0].saved_revision,1);
     assert.equal((await f.db.query('SELECT proof_approved FROM database_jobs WHERE source_order_id=1')).rows[0].proof_approved,true);
     assert.equal(f.uploads.length,1);
-    await assert.rejects(()=>f.links.activate(1),/approval/);
+    await f.links.activate(1);assert.equal((await f.links.job(1)).proof_approved,true);
     await f.db.query('UPDATE proof_design_jobs SET saved_revision=2 WHERE id=$1',[f.id]);
     await assert.rejects(()=>f.links.publish(f.id),/Approved proofs/);
     await f.db.query('DELETE FROM test_dashboard_files WHERE source_order_id=1');
@@ -204,5 +204,25 @@ test('selected jobs without numeric refs allocate normally; invalid office targe
     assert.equal((await f.designs.get(id)).sourceOrderId,2);
     const task=await f.designs.claim('old-worker',4);assert.equal(task.operation,'allocate');assert.equal(task.designNumber,null);
     assert.deepEqual((await f.links.officeJobs()).map(row=>row.source_order_id),[1]);
+  }finally{await f.db.close();}
+});
+
+test('opening and leaving an approved proof preserves the complete job, dashboard and visual',async()=>{
+  const f=await fixture();try{
+    await f.links.link(f.id,1);
+    await f.db.exec("UPDATE database_jobs SET proof_approved=true,dashboard_status='READY TO PRINT' WHERE source_order_id=1");
+    await f.db.query(`INSERT INTO test_dashboard_job_state(source_order_id,group_id,column_values) VALUES(1,'production',$1)`,[{date:{text:'2026-10-23'},priority:{text:'Urgent'},checkbox1__1:{text:'v'}}]);
+    const snapshot=async()=>({
+      job:(await f.db.query('SELECT * FROM database_jobs WHERE source_order_id=1')).rows,
+      dashboard:(await f.db.query('SELECT * FROM test_dashboard_job_state WHERE source_order_id=1')).rows,
+      visual:(await f.db.query('SELECT * FROM test_dashboard_files WHERE source_order_id=1')).rows,
+      link:(await f.db.query('SELECT * FROM proof_job_links WHERE source_order_id=1')).rows,
+      proof:(await f.db.query('SELECT source,revision,saved_revision,saved_proof_pdf,proof_pdf FROM proof_design_jobs WHERE id=$1',[f.id])).rows,
+    });
+    const before=await snapshot();
+    await f.links.activate(1);await f.designs.source(f.id);
+    assert.deepEqual(await snapshot(),before);
+    await assert.rejects(()=>f.designs.queueSave(f.id,randomUUID(),1,Buffer.from('replacement'),{proofSourceOrderId:1}),/Clear JOB approval/);
+    assert.deepEqual(await snapshot(),before);
   }finally{await f.db.close();}
 });

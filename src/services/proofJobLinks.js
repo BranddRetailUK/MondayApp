@@ -105,7 +105,8 @@ function createService(pool, {upload = require('./cloudinaryDashboard').uploadBu
       const target=(await db.query('SELECT * FROM database_jobs WHERE source_order_id=$1 FOR UPDATE',[id])).rows[0];
       if(!target)throw new Error('Job not found.');
       await checkTargetSwitch(db,proof,id);
-      if(target.proof_approved)throw new Error('Clear JOB approval before editing this proof. The changed proof will need approval again.');
+      // Opening the editor preserves approval; the explicit regeneration action clears it.
+      // queueSave and publication still reject replacement while the job is approved.
       if(proof.active_source_order_id!==id && link.snapshot){
         const s=link.snapshot;
         await db.query(`UPDATE proof_design_jobs SET source=$2,source_artworks=$3,garment_assets=$4,

@@ -576,6 +576,12 @@
     if(selectedLinkJob?.designRefs?.length&&!existingReference.value&&!designId){setFeedback('Select the design reference for this job.',true);existingReference.focus();return;}
     if (!request.value.trim()) { request.focus(); setFeedback('Enter the proof request first.', true); return; }
     if (!artworks.length) { setFeedback('Attach artwork first so each decoration can be assigned to a file.', true); return; }
+    if(!localPreview&&design?.sourceOrderId){
+      busy=true;setCreating(true);
+      try{if(!await window.ProofLinks.beginRegeneration(design.sourceOrderId,designId))return;}
+      catch(error){setFeedback(error.message,true);return;}
+      finally{busy=false;setCreating(false);}
+    }
     busy = true; generatingProof = true; setCreating(true);
     if(!designId){designId=crypto.randomUUID();try{sessionStorage.setItem('proof-design-id',designId);}catch(_){} }
     design={...design,id:designId,customer:customer.value,jobTitle:jobTitle.value,createdAt:design?.createdAt||new Date().toISOString(),generationStatus:'generating'};
