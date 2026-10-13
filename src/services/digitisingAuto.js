@@ -1,0 +1,47 @@
+const sharp=require('sharp');
+const engine=require('./digitisingStudio');
+const {column}=require('./digitisingColumns');
+
+// Remove only near-white pixels connected to the image edge; enclosed white artwork stays.
+async function removeBackground(png){
+  const {data,info}=await sharp(png).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+  const {width:w,height:h}=info,seen=new Uint8Array(w*h),queue=[];
+  const add=k=>{if(seen[k])return;seen[k]=1;const p=k*4;if(data[p+3]<128||Math.min(data[p],data[p+1],data[p+2])>235)queue.push(k);};
+  for(let x=0;x<w;x++){add(x);add((h-1)*w+x);}for(let y=0;y<h;y++){add(y*w);add(y*w+w-1);}
+  for(let q=0;q<queue.length;q++){const k=queue[q],x=k%w,y=Math.floor(k/w);data[k*4+3]=0;if(x)add(k-1);if(x<w-1)add(k+1);if(y)add(k-w);if(y<h-1)add(k+w);}
+  return sharp(data,{raw:info}).png().toBuffer();
+}
+async function plan(input,body={}){
+  const garment=body.garment||'tshirt';
+  if(!engine.PRESETS[garment])throw Error('Choose a garment.');
+  if(garment==='cap')throw Error('Cap digitising is not available yet.');
+  const png=await removeBackground(await engine.artwork(input));
+  const config=engine.settings({garment,border:String(body.border)==='true'?'true':'false',widthMm:100,hoopMm:360,spacing:engine.PRESETS[garment].spacing,length:2.5,colours:8,removeWhite:'false'});
+  config.whiteMatte=true;
+  const raw=await sharp(png).ensureAlpha().raw().toBuffer(),counts=new Map();let visible=0;
+  for(let p=0;p<raw.length;p+=4)if(raw[p+3]>=128){const key=[raw[p],raw[p+1],raw[p+2]].join(',');counts.set(key,(counts.get(key)||0)+1);visible++;}
+  const dominant=[];
+  for(const [key,count] of [...counts].sort((a,b)=>b[1]-a[1])){if(count<visible*.005)break;const colour=key.split(',').map(Number);if(!dominant.some(c=>Math.hypot(...c.map((v,k)=>v-colour[k]))<32))dominant.push(colour);if(dominant.length===8)break;}
+  if((counts.get('255,255,255')||0)>0&&!dominant.some(c=>Math.min(...c)>235)&&dominant.length<8)dominant.push([255,255,255]);
+  config.colours=Math.max(1,dominant.length);
+  config.palette=dominant.map(c=>'#'+c.map(v=>v.toString(16).padStart(2,'0')).join(''));
+  if(!config.palette.length)delete config.palette;
+  let prepared=await engine.prepare(png,config);
+  const aspect=prepared.heightMm/config.widthMm;
+  const dimension=(value,name)=>{if(value===undefined||value==='')return null;const n=Number(value);if(!Number.isFinite(n)||n<10||n>200)throw Error(`${name} must be between 10 and 200 mm.`);return n;};
+  const width=dimension(body.widthMm,'Width'),height=dimension(body.heightMm,'Height');
+  if(width&&height&&Math.abs(width*aspect-height)>.25)throw Error('Width and height must preserve the artwork proportions.');
+  config.widthMm=width||(height?height/aspect:Math.min(100,100/aspect));
+  if(Math.max(config.widthMm,config.widthMm*aspect)>200.25)throw Error('The design must fit within 200 × 200 mm.');
+  prepared=await engine.prepare(png,config);
+  config.hoopMm=Math.max(150,Math.ceil(Math.max(config.widthMm,prepared.heightMm)+10));
+  if(config.border&&body.outlineColour!==undefined&&!/^#[0-9a-f]{6}$/i.test(body.outlineColour))throw Error('Choose an outline colour.');
+  config.garmentColour=body.outlineColour||'#000000';
+  const ordered=[...prepared.elements].sort((a,b)=>a.pixels-b.pixels);
+  // Keep equal thread colours together, with smaller enclosed regions sewn first.
+  const colours=[...new Set(ordered.map(el=>el.colour))];
+  ordered.sort((a,b)=>colours.indexOf(a.colour)-colours.indexOf(b.colour)||a.pixels-b.pixels);
+  ordered.forEach((el,order)=>{config.elementOptions[el.id]={order,type:column(prepared.ids,prepared.info.width,el,prepared.scale,config.spacing)?'satin':'fill'};});
+  return {png,config};
+}
+module.exports={plan,removeBackground};

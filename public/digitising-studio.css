@@ -6,3 +6,6 @@
 .ds-element select{grid-column:1/-1}.ds-element input[type=number]{grid-column:span 1;min-width:0}.ds-element{padding:10px 0;border-bottom:1px solid #344357}.ds-element input[type=number]{grid-column:1/-1}
 
 .ds-element>span{grid-column:1/-1;color:#a7b4c7;font-size:11px}
+.ds-outline{margin-top:24px}.ds-stats:not(:empty){margin-top:18px}
+
+.ds label[hidden]{display:none}#ds-outline-colour-label{margin-top:16px}

@@ -75,8 +75,8 @@ async function prepare(png, config) {
   const hex=p=>'#'+[data[p],data[p+1],data[p+2]].map(n=>n.toString(16).padStart(2,'0')).join('');
   const excluded=p=>data[p+3]<128 || config.removeWhite && Math.min(data[p],data[p+1],data[p+2])>235;
   for(let p=0;p<data.length;p+=4)if(!excluded(p)){const c=hex(p);histogram.set(c,(histogram.get(c)||0)+1);}
-  const palette=[];
-  for(const [c] of [...histogram].sort((a,b)=>b[1]-a[1])){const rgb=[1,3,5].map(i=>parseInt(c.slice(i,i+2),16));if(!palette.some(old=>Math.sqrt([1,3,5].reduce((n,i,k)=>n+(parseInt(old.slice(i,i+2),16)-rgb[k])**2,0))<24))palette.push(c);if(palette.length===config.colours)break;}
+  const palette=config.palette?[...config.palette]:[];
+  for(const [c] of (config.palette?[]:[...histogram]).sort((a,b)=>b[1]-a[1])){const rgb=[1,3,5].map(i=>parseInt(c.slice(i,i+2),16));if(!palette.some(old=>Math.sqrt([1,3,5].reduce((n,i,k)=>n+(parseInt(old.slice(i,i+2),16)-rgb[k])**2,0))<24))palette.push(c);if(palette.length===config.colours)break;}
   const rgb=palette.map(c=>[1,3,5].map(i=>parseInt(c.slice(i,i+2),16)));
   let left=w,top=h,right=-1,bottom=-1;
   for(let i=0;i<w*h;i++) {
@@ -85,7 +85,7 @@ async function prepare(png, config) {
     let coverage=1;
     rgb.forEach((c,j)=>{
       let a=1;
-      if(config.removeWhite){const norm=c.reduce((sum,v)=>sum+(255-v)**2,0);a=norm?Math.max(0,Math.min(1,c.reduce((sum,v,k)=>sum+(255-v)*(255-data[p+k]),0)/norm)):0;}
+      if(config.removeWhite||(config.whiteMatte&&Math.min(data[p],data[p+1],data[p+2])<=235)){const norm=c.reduce((sum,v)=>sum+(255-v)**2,0);a=norm?Math.max(0,Math.min(1,c.reduce((sum,v,k)=>sum+(255-v)*(255-data[p+k]),0)/norm)):0;}
       const d=c.reduce((sum,v,k)=>sum+(255-(255-v)*a-data[p+k])**2,0);
       if(d<distance){distance=d;best=j;coverage=a;}
     });
@@ -221,7 +221,7 @@ async function generate(png, config) {
       const sameThread=!config.border&&threads.at(-1)===thread&&(threadPlan.at(-1)?.thread||'')===(config.threadNotes?.[colour]||'');
       if(!sameThread){if(threads.length)commands.splice(start,0,{kind:'colour'});threads.push(thread);}
       threadPlan.push({step:threads.length,element:colour+1,role:satin?'underlay and satin':'underlay and fill',colour:threads[threads.length-1],thread:config.threadNotes?.[colour]||''});
-      if(config.border){threads.push(config.garmentColour);threadPlan.push({step:threads.length,element:colour+1,role:'running outline',colour:config.garmentColour,thread:'Match garment — assign actual thread'});}
+      if(config.border){threads.push(config.outlineColourMode==='artwork'?thread:config.garmentColour);threadPlan.push({step:threads.length,element:colour+1,role:'running outline',colour:threads.at(-1),thread:config.outlineColourMode==='artwork'?(config.threadNotes?.[colour]||''):'Match garment — assign actual thread'});}
     }
   }
   if(!threads.length)throw Error('Artwork features are too small to stitch.');

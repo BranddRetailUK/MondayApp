@@ -68,3 +68,13 @@ This writes a regenerated candidate, its setup and a benchmark report. Exact com
 and path comparison is deliberately strict; a matching silhouette, colour count or
 stitch total alone does not pass. The benchmark still requires further engine work;
 no exact-match or physical sew-out acceptance has been claimed.
+
+### Automatic customer flow (supersedes the technical editor above)
+
+The page now offers upload, garment, proportional width/height and optional coloured
+running outline only. Its API derives stitch settings through `digitisingAuto.plan`;
+clients cannot select density, hoop, palette, stitch type or element order. Default
+sizing fits a 100 mm envelope; requested dimensions fit a 200 mm envelope. Simple
+column detection selects satin automatically, with fill fallback. Caps are unavailable.
+The original fixture and benchmark scripts remain developer tools, outside the UI.
+Automatic settings are experimental and do not imply production approval.
