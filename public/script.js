@@ -5662,7 +5662,7 @@ function activateDashboardTab(target) {
   const dtfOnly = window.ultimateHubUser?.access_scope === 'dtf_only';
   const fallbackTab = dtfOnly ? 'dtf-uploader' : 'test-dashboard';
   const proofAllowed = isProductionArtworkUser(window.ultimateHubUser);
-  const allowedTarget = target !== 'proof-generator' || proofAllowed;
+  const allowedTarget = !['proof-generator','digitising-studio'].includes(target) || proofAllowed;
   const requestedTab = !dtfOnly && allowedTarget && isValidDashboardTab(target)
     ? target
     : (target === 'dtf-uploader' ? target : fallbackTab);

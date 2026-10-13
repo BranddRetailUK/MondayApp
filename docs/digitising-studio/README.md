@@ -1,6 +1,6 @@
 # Digitising Studio — local experiment
 
-Start with `npm run preview:digitising-studio`, then open http://127.0.0.1:3110/?tab=digitising-studio. The server binds loopback only and rejects other Host/Origin values. It does not connect to Postgres, mount production APIs, write library files, or save uploads. The production application does not mount its API; its navigation entry stays hidden there.
+Available in the live dashboard only to `production@ultimatepromotions.co.uk`, enforced by Hub session authentication on every API route. For local testing run `npm run preview:digitising-studio` and sign in at http://127.0.0.1:3110/?tab=digitising-studio using the same Hub account. The loopback server uses the configured database for authentication, rejects foreign Host/Origin values and does not persist artwork uploads.
 
 Server credentials: existing `OPENAI_API_KEY`, optional `OPENAI_DIGITISING_MODEL` (default `gpt-5-mini`). Only the explicitly uploaded artwork and setup go to OpenAI, with `store:false`. The API key never reaches the browser. OpenAI gives a design assessment; deterministic code generates stitches. This is not model training or learned professional digitising.
 
@@ -115,3 +115,7 @@ applied by geometry code independently of cached AI section guides. The assumed
 0.30 mm effective thread width remains provisional. Output counts identify the
 thin columns/cross-stitches; before/after comparison does not pass the still-open
 whole-design production benchmark.
+
+### Live uploads and EPS
+
+PNG, EPS and self-contained SVG use the same preparation endpoint before size and Create controls unlock. EPS requires Ghostscript (Railway runtime package in `railpack.json`; locally `/opt/homebrew/bin/gs`, or `GHOSTSCRIPT_BIN`). Conversion uses SAFER mode, bounded raster dimensions, a 15-second timeout and temporary-file cleanup. The local preview no longer exposes private reference/fixture endpoints. Earlier local-only/no-database notes describe the initial prototype and are superseded.

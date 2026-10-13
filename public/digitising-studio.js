@@ -1,21 +1,25 @@
-(() => {
+(async () => {
   const root=document.getElementById('digitising-studio-root');if(!root)return;
+  const user=await window.ultimateHubUserPromise;
+  if(!user||user.access_scope==='dtf_only'||String(user.email||'').trim().toLowerCase()!=='production@ultimatepromotions.co.uk')return;
+  try{const response=await fetch('/api/digitising-studio/status');if(!response.ok)return;const status=await response.json();if(!status.enabled)return;}catch{return;}
+  const nav=document.getElementById('digitising-studio-nav');nav.dataset.available='true';nav.hidden=false;
   root.innerHTML=`<div class="ds"><header class="ds-header"><h1>Digitising Studio</h1><span class="ds-badge">Test version</span></header>
   <div class="ds-layout"><form id="ds-form" class="ds-card"><h2>Your artwork</h2>
-  <label class="ds-drop" id="ds-drop"><span>＋</span><strong>Upload artwork</strong><small>PNG or SVG · up to 8 MB</small><input id="ds-file" type="file" accept=".png,.svg"></label><p id="ds-filename"></p>
+  <label class="ds-drop" id="ds-drop"><span>＋</span><strong>Upload artwork</strong><small>PNG, EPS or SVG · up to 8 MB</small><input id="ds-file" type="file" accept=".png,.eps,.svg"></label><p id="ds-filename"></p>
   <div class="ds-pair"><label>Width · mm<input id="ds-width" type="number" min="10" max="200" step=".1" disabled></label><label>Height · mm<input id="ds-height" type="number" min="10" max="200" step=".1" disabled></label></div><label>Garment<select id="ds-garment"><option value="tshirt">T-shirt</option><option value="hoodie">Hoodie / sweatshirt</option><option value="woven">Shirt</option><option value="cap" disabled>Cap · coming soon</option></select></label>
   <label class="ds-check ds-outline"><input id="ds-border" type="checkbox"> Add running outline</label>
   <label id="ds-outline-colour-label" hidden>Outline colour<input id="ds-outline-colour" type="color" value="#000000"></label>
   <button id="ds-generate" type="submit" disabled>Create embroidery</button></form>
   <section class="ds-card"><h2>Preview</h2><div id="ds-stage" class="ds-stage"></div><div id="ds-stats" class="ds-stats"></div><p id="ds-status" role="status" aria-live="polite"></p><div class="ds-actions"><button id="ds-download" disabled>Download DST</button></div></section></div></div>`;
   const $=name=>document.getElementById('ds-'+name);
-  let file=null,result=null,version=0,busy=false,previewUrl=null,ratio=null;
-  function showArtwork(){if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null;}$('stage').replaceChildren();if(file){previewUrl=URL.createObjectURL(file);const image=new Image();image.src=previewUrl;image.alt='Uploaded artwork';$('stage').append(image);}}
+  let file=null,result=null,version=0,busy=false,previewUrl=null,rasterPreview=null,ratio=null;
+  function showArtwork(){if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null;}$('stage').replaceChildren();if(file&&(rasterPreview||!/\.eps$/i.test(file.name))){if(!rasterPreview)previewUrl=URL.createObjectURL(file);const image=new Image();image.src=rasterPreview||previewUrl;image.alt='Uploaded artwork';$('stage').append(image);}}
   function invalidate(){version++;result=null;$('download').disabled=true;$('stats').textContent='';$('status').textContent='';showArtwork();}
   async function select(f){
-    if(!f||busy)return;if(f.size>8*1024*1024){$('status').textContent='Maximum artwork size is 8 MB.';return;}if(!/\.(png|svg)$/i.test(f.name)){$('status').textContent='Choose a PNG or SVG file.';return;}
-    file=f;ratio=null;$('filename').textContent=f.name;invalidate();const token=version;busy=true;$('form').querySelectorAll('input,select,button').forEach(el=>el.disabled=true);$('generate').disabled=true;$('width').disabled=$('height').disabled=true;$('status').textContent='Preparing artwork…';
-    try{const data=new FormData();data.append('artwork',file);data.append('garment',$('garment').value);const response=await fetch('/api/digitising-studio/prepare',{method:'POST',body:data}),j=await response.json();if(!response.ok)throw Error(j.error||'Unable to read artwork.');if(token!==version)return;ratio=j.heightMm/j.widthMm;$('width').value=j.widthMm.toFixed(1);$('height').value=j.heightMm.toFixed(1);$('width').disabled=$('height').disabled=false;$('status').textContent='';}catch(error){$('status').textContent=error.message;}finally{busy=false;$('form').querySelectorAll('input,select,button').forEach(el=>el.disabled=false);$('width').disabled=$('height').disabled=!ratio;$('generate').disabled=!ratio;}
+    if(!f||busy)return;if(f.size>8*1024*1024){$('status').textContent='Maximum artwork size is 8 MB.';return;}if(!/\.(png|eps|svg)$/i.test(f.name)){$('status').textContent='Choose a PNG, EPS or SVG file.';return;}
+    file=f;ratio=null;rasterPreview=null;$('filename').textContent=f.name;invalidate();const token=version;busy=true;$('form').querySelectorAll('input,select,button').forEach(el=>el.disabled=true);$('generate').disabled=true;$('width').disabled=$('height').disabled=true;$('status').textContent='Preparing artwork…';
+    try{const data=new FormData();data.append('artwork',file);data.append('garment',$('garment').value);const response=await fetch('/api/digitising-studio/prepare',{method:'POST',body:data}),j=await response.json();if(!response.ok)throw Error(j.error||'Unable to read artwork.');if(token!==version)return;rasterPreview='data:image/png;base64,'+j.png;showArtwork();ratio=j.heightMm/j.widthMm;$('width').value=j.widthMm.toFixed(1);$('height').value=j.heightMm.toFixed(1);$('width').disabled=$('height').disabled=false;$('status').textContent='';}catch(error){$('status').textContent=error.message;}finally{busy=false;$('form').querySelectorAll('input,select,button').forEach(el=>el.disabled=false);$('width').disabled=$('height').disabled=!ratio;$('generate').disabled=!ratio;}
   }
   $('file').addEventListener('change',()=>select($('file').files[0]));
   $('drop').addEventListener('dragover',e=>e.preventDefault());
@@ -37,5 +41,4 @@
     }catch(error){$('status').textContent=error.message;}finally{busy=false;$('form').querySelectorAll('input,select,button').forEach(el=>el.disabled=false);$('generate').disabled=!file||!ratio;$('generate').textContent='Create embroidery';}
   });
   $('download').addEventListener('click',()=>{if(!result)return;const url=URL.createObjectURL(new Blob([Uint8Array.from(atob(result.dst),c=>c.charCodeAt(0))])),a=document.createElement('a');a.href=url;a.download='embroidery-sample.dst';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
-  fetch('/api/digitising-studio/status').then(r=>r.json()).then(s=>{if(s.enabled)document.getElementById('digitising-studio-nav').hidden=false;}).catch(()=>{$('status').textContent='Studio is unavailable.';});
 })();

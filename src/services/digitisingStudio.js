@@ -49,10 +49,12 @@ function encode(commands, name = 'STUDIO SAMPLE') {
   return Buffer.concat([header,Buffer.from([...bytes,0,0,243])]);
 }
 async function artwork(buffer) {
+  const eps=require('./digitisingEps');
+  if(eps.extractEps(buffer))buffer=await eps.rasterize(buffer);
   const png=buffer.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
   const text=png?'':buffer.toString('utf8');
   if (!png && (!/<svg[\s>]/i.test(text) || /<!DOCTYPE|<!ENTITY|<\s*(?:script|image|use|foreignObject|text)\b|\bhref\s*=|url\s*\(|@import/i.test(text))) {
-    throw Error('Upload PNG or a self-contained SVG with text converted to paths (no embedded images or external resources).');
+    throw Error('Upload PNG, EPS or a self-contained SVG with text converted to paths (no embedded images or external resources).');
   }
   return sharp(buffer,{limitInputPixels:16000000}).resize({width:800,height:800,fit:'inside'}).ensureAlpha().png().toBuffer();
 }
