@@ -60,7 +60,7 @@
           </section>
           <section class="proof-card">
             <div class="proof-review-title proof-section-title"><h2>Artwork</h2></div>
-            <input id="proof-file-input" type="file" accept=".png,.jpg,.jpeg,.webp,.svg,.pdf,.eps,.ai" multiple hidden>
+            <input id="proof-file-input" type="file" accept=".png,.jpg,.jpeg,.webp,.svg,.pdf,.eps,.ai,.ttf,.otf" multiple hidden>
             <button id="proof-dropzone" class="proof-dropzone" type="button"><span class="proof-upload-icon" aria-hidden="true">↥</span><strong>Choose artwork files</strong></button>
             <div id="proof-artworks" class="proof-artwork-list"></div>
           </section>
@@ -478,7 +478,7 @@
   function addFiles(files) {
     for (const file of Array.from(files || [])) {
       if (artworks.length >= 20) { setFeedback('Add no more than 20 artwork files.', true); break; }
-      if (!/\.(png|jpe?g|webp|svg|pdf|eps|ai)$/i.test(file.name)) { setFeedback(`Unsupported file: ${file.name}`, true); continue; }
+      if (!/\.(png|jpe?g|webp|svg|pdf|eps|ai|ttf|otf)$/i.test(file.name)) { setFeedback(`Unsupported file: ${file.name}`, true); continue; }
       const item = { id: crypto.randomUUID(), backgroundMode: 'auto', file, assignment: '', notes: '', url: file.type.startsWith('image/') ? URL.createObjectURL(file) : '' };
       if (file.size > 10 * 1024 * 1024) { setFeedback('Each artwork must be no larger than 10 MB.', true); continue; }
       sourceChanged();
@@ -702,7 +702,7 @@
   function markDirty(showFeedback = true) {
     dirty = true;
     results.querySelectorAll('[data-download]').forEach(button=>{button.disabled=true;});
-    if(showFeedback)setFeedback('Placement changed. Regenerate proof to save your position and scale edits.');
+    if(showFeedback)setFeedback('Proof changed. Regenerate proof to save your edits.');
   }
 
   function inputField(label, value, change, {min, max, step='any'} = {}) {
@@ -760,6 +760,23 @@
       for(const issue of blockers){const li=document.createElement('li');li.className=issue.blocking?'blocking':'';const product=currentBrief.products[issue.productIndex];const mark=product.decorations.find(d=>d.id===issue.decorationId);li.textContent=`${product.code || product.name}${mark?' / '+mark.position:''}: ${reviewMessage(issue.message)}`;list.append(li);}
       results.append(list);
     }
+    const names=document.createElement('section');names.className='proof-product-editor';
+    const heading=document.createElement('h3');heading.textContent='Individual names';names.append(heading);
+    let count=0;
+    for(const product of currentBrief.products){
+      for(const d of product.decorations||[]){
+        if(!d.text)continue;count++;
+        const row=document.createElement('div');row.className='proof-question-actions';
+        for(const [label,value,change] of [
+          ['Name',d.text,v=>{d.text=v;product.personalisation=v;}],
+          ['Garment size',product.size,v=>{product.size=v;}],
+          ['Ink colour (hex)',d.textColour,v=>{d.textColour=v;d.printColours=[v];}]
+        ]){const wrap=document.createElement('label');wrap.className='proof-control';wrap.textContent=label;const input=document.createElement('input');input.type='text';input.value=value||'';input.maxLength=100;input.addEventListener('input',()=>{change(input.value);markDirty();});wrap.append(input);row.append(wrap);}
+        row.append(selectField('Name font',artworks.filter(a=>/\.(ttf|otf)$/i.test(a.file.name)).map(a=>[a.id,a.file.name]),d.fontArtworkId,v=>{d.fontArtworkId=v;}));
+        names.append(row);
+      }
+    }
+    if(count)results.append(names);
     const wasFallbackOpen=results.dataset.fallbackOpen==='true';
     const fallback=document.createElement('details');fallback.open=wasFallbackOpen;fallback.addEventListener('toggle',()=>{results.dataset.fallbackOpen=String(fallback.open);});fallback.className='proof-fallback';
     const fallbackTitle=document.createElement('summary');fallbackTitle.textContent='Adjust placement (fallback)';fallback.append(fallbackTitle);

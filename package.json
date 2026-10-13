@@ -24,11 +24,12 @@
     "test:holiday-board": "node --test test/holiday-board.test.js test/holiday-reference.test.js",
     "verify:holiday-board": "node scripts/verify-holiday-board.js",
     "test:print-exports": "node --test test/print-exports*.test.js test/dashboard-approval-status.test.js test/dashboard-sampling.test.js test/dashboard-private-jobs.test.js test/dashboard-design-display.test.js",
-    "test:proof-generator": "node --test test/proof-generator.test.js test/proof-generator-hosted.test.js test/proof-generator-views.test.js test/proof-design-files.test.js test/proof-regeneration-ui.test.js test/proof-job-links.test.js test/proof-pencarrie-catalogue.test.js",
+    "test:proof-generator": "node --test test/proof-personalisation.test.js test/proof-generator.test.js test/proof-generator-hosted.test.js test/proof-generator-views.test.js test/proof-design-files.test.js test/proof-regeneration-ui.test.js test/proof-job-links.test.js test/proof-pencarrie-catalogue.test.js",
     "smoke:proof-generator": "node scripts/smoke-proof-generator.js"
   },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.80",
+    "@pdf-lib/fontkit": "^1.1.1",
     "cloudinary": "^2.10.0",
     "cors": "^2.8.5",
     "csv-parse": "^6.2.1",

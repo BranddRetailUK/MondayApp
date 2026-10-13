@@ -8,6 +8,8 @@ const { fetchGarment } = require('./proofImageFetch');
 const { findArtwork, resolveDecorations, preferredView, placementFor, fitsRegion, positionName, artworkSize } = require('./proofLayout');
 const { prepareArtwork, analyseGarment, coverage, fitSleeve, automaticGarmentProfile } = require('./proofArtwork');
 
+const {isFont,renderName}=require('./proofPersonalisation');
+
 const TEMPLATE_PATH = path.join(__dirname, '..', '..', 'assets', 'proof-generator', 'template.pdf');
 const PAGE_W = 841.89;
 const PAGE_H = 595.275;
@@ -107,6 +109,18 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
   if (!Array.isArray(brief?.products) || !brief.products.length || brief.products.length > 20) throw new Error('A proof needs 1-20 products.');
   const ids = artworks.map(a => a.id);
   if (ids.some(id => !id) || new Set(ids).size !== ids.length) throw new Error('Each uploaded artwork needs a unique ID.');
+  artworks=[...artworks];
+  const textArtworks=new Map();
+  for(const product of brief.products){
+    for(const d of resolveDecorations(brief,product)){
+      if(!d.text)continue;
+      const key=JSON.stringify([d.text,d.fontArtworkId,d.textColour]);
+      if(!textArtworks.has(key)){
+        const id='name-'+createHash('sha256').update(key).digest('hex');
+        artworks.push({id,file:{originalname:id+'.pdf',buffer:await renderName(d,artworks)}});textArtworks.set(key,id);
+      }
+    }
+  }
   const template = await PDFDocument.load(await fs.readFile(TEMPLATE_PATH));
   // Illustrator otherwise reopens the template's private native document and
   // ignores the proof content added below. Remove it before copyPages so its
@@ -131,6 +145,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
     return garments.get(source.url);
   };
   for (const artwork of artworks) {
+    if(isFont(artwork.file))continue;
     try { embedded.set(artwork.id, await prepareArtwork(pdf, artwork)); }
     catch (error) { assetErrors.set(artwork.id, error.message); }
   }
@@ -140,7 +155,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
     issues.push(item); return item;
   };
   for (const [productIndex, product] of brief.products.entries()) {
-    const decorations = resolveDecorations(brief, product).map(d => ({...d, method:d.method || product.method || brief.method || ''}));
+    const decorations = resolveDecorations(brief, product).map(d => ({...d, ...(d.text?{artworkId:textArtworks.get(JSON.stringify([d.text,d.fontArtworkId,d.textColour]))}:{}), method:d.method || product.method || brief.method || ''}));
     if (decorations.length > 6) throw new Error(`${product.code} has more than six decoration positions.`);
     const views = product.visual?.views || [];
     const lookupIssue = product.visual?.lookupIssue;
@@ -274,6 +289,9 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
     }
     decorations.forEach((d,index)=>{const artwork=findArtwork(d,artworks);drawCallout(page,d,artwork&&embedded.get(artwork.id),regular,bold,index,decorations.length,garmentColour);});
     page.pushOperators(popGraphicsState());
+    if(product.personalisation)drawText(page,[product.personalisation,product.size,product.quantity?'Qty '+product.quantity:''].filter(Boolean).join(' | '),34,98,8,bold);
+    if(brief.productionNotes)drawText(page,brief.productionNotes,34,574,7,regular,GREY,774);
+    if(product.referenceOnly)drawText(page,'Garment image is a placement reference; exact style not confirmed. Scale and position are indicative.',34,584,7,regular,GREY,774);
 
   }
   const uniqueIssues=issues.filter((item,index)=>issues.findIndex(other=>JSON.stringify(other)===JSON.stringify(item))===index);

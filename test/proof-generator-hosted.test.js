@@ -209,3 +209,19 @@ test('AI input labels images and defines global method and supplier inheritance'
   }
  });
 });
+
+test('name fonts survive multipart parsing and repeat styles retain each person’s own garment',async()=>{
+ const products=[{code:'',name:'Hoodie',colour:'Black',instanceId:'adult',visual:{matched:true,views:[{view:'front',url:'adult'}]}},{code:'',name:'Hoodie',colour:'Black',instanceId:'child',visual:{matched:true,views:[{view:'front',url:'child'}]}}];
+ const font=require('node:fs').readFileSync(require.resolve('pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf'));
+ const form=()=>{const f=new FormData();f.append('brief',JSON.stringify({proofDesignId:'saved',products}));f.append('artworkDetails',JSON.stringify([{id:'font'}]));f.append('artworks',new Blob([font]),'name.ttf');return f;};
+ await serve(createRouter({
+  designs:{get:async()=>({id:'saved',designNumber:'123',folderName:'123 Test'}),source:async()=>({source:{brief:{products}}}),setPreview:async()=>{}},
+  enrich:async b=>{b.products.forEach(p=>p.visual={matched:false});},generateViews:async()=>{},
+  build:async(b,a)=>{assert.deepEqual(b.products.map(p=>p.visual.views[0].url),['adult','child']);assert.equal(a[0].id,'font');assert.equal(a[0].file.buffer.length,font.length);return {bytes:Buffer.from('pdf'),pages:[],issues:[]};},
+  parse:async(body,{artworkImages})=>{assert.equal(artworkImages.length,0);assert.equal(body.artworks[0].id,'font');return {products:[{code:'RX350',decorations:[]}],sharedDecorations:[]};}
+ }),async url=>{
+  assert.equal((await fetch(url+'/preview',{method:'POST',headers:production,body:form()})).status,200);
+  const f=new FormData();f.append('brief',JSON.stringify({requestText:'Names in attached font',artworks:[{id:'font',fileName:'name.ttf'}]}));f.append('artworks',new Blob([font]),'name.ttf');
+  assert.equal((await fetch(url+'/parse',{method:'POST',headers:production,body:f})).status,200);
+ });
+});

@@ -194,6 +194,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
         const {prepareArtwork} = require('../services/proofArtwork');
         const pdf = await PDFDocument.create();
         for (const [index,file] of req.files.entries()) {
+          if(require('../services/proofPersonalisation').isFont(file))continue;
           const asset = await prepareArtwork(pdf,{file,backgroundMode:'auto'});
           const png = await require('sharp')(Buffer.from(asset.preview.split(',')[1],'base64')).resize({width:768,height:768,fit:'inside',withoutEnlargement:true}).png().toBuffer();
           artworkImages.push({id:req.body.artworks[index].id,url:`data:image/png;base64,${png.toString('base64')}`});
@@ -241,8 +242,8 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
         backgroundMode: String(details[index]?.backgroundMode || 'auto'),
         assignment: String(details[index]?.assignment || '').slice(0, 500),
         notes: String(details[index]?.notes || '').slice(0, 1000) }));
-      const supported = artworks.every(({ file }) => /\.(png|jpe?g|webp|pdf)$/i.test(file.originalname) || file.buffer.subarray(0, 4).toString() === '%PDF');
-      if (!supported) return res.status(400).json({ error: 'Artwork must be prepared as PNG, JPG, WebP or a single-page PDF before proof creation.' });
+      const supported = artworks.every(({ file }) => /\.(png|jpe?g|webp|pdf|ttf|otf)$/i.test(file.originalname) || file.buffer.subarray(0, 4).toString() === '%PDF');
+      if (!supported) return res.status(400).json({ error: 'Artwork must be prepared as PNG, JPG, WebP, a single-page PDF or a TTF/OTF name font before proof creation.' });
       // Reuse the saved supplier selection when reopening an unchanged product.
       // Only server-retained visuals are trusted; changed products are resolved normally.
       const retained=design&&designJobs().source?await designJobs().source(design.id):null;
@@ -250,7 +251,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       repairRetainedDimensions(brief,retained?.source);
       await enrich(brief);
       for(const product of brief.products){
-        const saved=savedProducts.find(item=>item.code===product.code&&item.colour===product.colour&&item.supplier===product.supplier);
+        const saved=savedProducts.find(item=>item.code===product.code&&item.colour===product.colour&&item.supplier===product.supplier&&(product.instanceId?item.instanceId===product.instanceId:item.name===product.name));
         if(saved?.visual?.matched)product.visual=saved.visual;
       }
       await generateViews(brief, { allowGenerate: false });
