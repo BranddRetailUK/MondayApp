@@ -1197,7 +1197,8 @@ function buildBoardColumnWidthOverrides(columns, items) {
     const valueFont = isDesignColumn
       ? "700 14px Manrope, 'Segoe UI', system-ui, sans-serif"
       : "14px Manrope, 'Segoe UI', system-ui, sans-serif";
-    const maxTextWidth = getMaxColumnTextWidth(items, column.id, valueFont);
+    const visibleItems = isDesignColumn ? items.filter(item => !item.dashboard_production_parent) : items;
+    const maxTextWidth = getMaxColumnTextWidth(visibleItems, column.id, valueFont);
     const titleWidth = measureBoardTextWidth(column.title || column.id || '', "700 13px Manrope, 'Segoe UI', system-ui, sans-serif");
     const widestText = Math.max(titleWidth, maxTextWidth);
     overrides.set(column.id, Math.max(72, Math.ceil(widestText + (isDesignColumn ? 58 : 34))));
@@ -1868,7 +1869,7 @@ function renderTestDashboardMobileJobOverview(payload = window.__latestTestBoard
     TEST_DASHBOARD_CLIENT_COLUMN_IDS.DESIGN,
     'DESPSG'
   );
-  const designNumbers = designColumn
+  const designNumbers = designColumn && !item.dashboard_production_parent
     ? normalizeCellText(findColumnValue(item, designColumn.id)?.text || '')
     : '';
   const statusColumn = findBoardColumnByIdOrCompactTitle(
@@ -2195,6 +2196,7 @@ function buildColumnValueCell(entity, column, { subitem = false, context = BOARD
   cell.className = `grid-cell dashboard-value-cell ${subitem ? 'subitem-value-cell' : ''} column-${column.type}`;
   cell.dataset.columnId = column.id;
   if (entity?.id) cell.dataset.itemId = String(entity.id);
+  if (!subitem && entity?.dashboard_production_parent && isDesignBoardTextWidthColumn(column.title)) return cell;
   const value = findColumnValue(entity, column.id);
   const text = normalizeCellText(value?.text || '');
   if (text) cell.title = text;
