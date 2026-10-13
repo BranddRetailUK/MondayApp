@@ -1,6 +1,7 @@
 const sharp=require('sharp');
 const engine=require('./digitisingStudio');
-const {column}=require('./digitisingColumns');
+const {interpret}=require('./digitisingInterpretation');
+const {column,branchedColumns}=require('./digitisingColumns');
 
 // Remove only near-white pixels connected to the image edge; enclosed white artwork stays.
 async function removeBackground(png){
@@ -11,13 +12,17 @@ async function removeBackground(png){
   for(let q=0;q<queue.length;q++){const k=queue[q],x=k%w,y=Math.floor(k/w);data[k*4+3]=0;if(x)add(k-1);if(x<w-1)add(k+1);if(y)add(k-w);if(y<h-1)add(k+w);}
   return sharp(data,{raw:info}).png().toBuffer();
 }
-async function plan(input,body={}){
+async function plan(input,body={},options={}){
   const garment=body.garment||'tshirt';
   if(!engine.PRESETS[garment])throw Error('Choose a garment.');
   if(garment==='cap')throw Error('Cap digitising is not available yet.');
-  const png=await removeBackground(await engine.artwork(input));
+  const source=await engine.artwork(input);
+  const png=await removeBackground(source);
   const config=engine.settings({garment,border:String(body.border)==='true'?'true':'false',widthMm:100,hoopMm:360,spacing:engine.PRESETS[garment].spacing,length:2.5,colours:8,removeWhite:'false'});
   config.whiteMatte=true;
+  // Dense coverage is a server policy; never accept customer density overrides.
+  config.satinSpacing={tshirt:.34,hoodie:.32,woven:.36}[garment];
+  config.coverageMargin={tshirt:.15,hoodie:.2,woven:.1}[garment];
   const raw=await sharp(png).ensureAlpha().raw().toBuffer(),counts=new Map();let visible=0;
   for(let p=0;p<raw.length;p+=4)if(raw[p+3]>=128){const key=[raw[p],raw[p+1],raw[p+2]].join(',');counts.set(key,(counts.get(key)||0)+1);visible++;}
   const dominant=[];
@@ -27,6 +32,13 @@ async function plan(input,body={}){
   config.palette=dominant.map(c=>'#'+c.map(v=>v.toString(16).padStart(2,'0')).join(''));
   if(!config.palette.length)delete config.palette;
   let prepared=await engine.prepare(png,config);
+  let interpretation=null;
+  if(options.interpret){
+    interpretation=await interpret(png,prepared,options);
+    for(const region of interpretation.regions){if(!region.include)config.elementOptions[region.id]={type:'skip',order:region.id};else config.elementColours[region.id]=region.colour;}
+    config.sections=Object.fromEntries(interpretation.regions.filter(r=>r.include&&r.sections.length).map(r=>[r.id,r.sections.map(g=>[[g.startX,g.startY],[g.endX,g.endY]])]));
+    prepared=await engine.prepare(png,config);
+  }
   const aspect=prepared.heightMm/config.widthMm;
   const dimension=(value,name)=>{if(value===undefined||value==='')return null;const n=Number(value);if(!Number.isFinite(n)||n<10||n>200)throw Error(`${name} must be between 10 and 200 mm.`);return n;};
   const width=dimension(body.widthMm,'Width'),height=dimension(body.heightMm,'Height');
@@ -37,11 +49,14 @@ async function plan(input,body={}){
   config.hoopMm=Math.max(150,Math.ceil(Math.max(config.widthMm,prepared.heightMm)+10));
   if(config.border&&body.outlineColour!==undefined&&!/^#[0-9a-f]{6}$/i.test(body.outlineColour))throw Error('Choose an outline colour.');
   config.garmentColour=body.outlineColour||'#000000';
-  const ordered=[...prepared.elements].sort((a,b)=>a.pixels-b.pixels);
+  const ordered=prepared.elements.filter(el=>config.elementOptions[el.id]?.type!=='skip').sort((a,b)=>a.pixels-b.pixels);
   // Keep equal thread colours together, with smaller enclosed regions sewn first.
+  const roles=new Map((interpretation?.regions||[]).map(r=>[r.id,r.role]));
   const colours=[...new Set(ordered.map(el=>el.colour))];
-  ordered.sort((a,b)=>colours.indexOf(a.colour)-colours.indexOf(b.colour)||a.pixels-b.pixels);
-  ordered.forEach((el,order)=>{config.elementOptions[el.id]={order,type:column(prepared.ids,prepared.info.width,el,prepared.scale,config.spacing)?'satin':'fill'};});
-  return {png,config};
+  const base=el=>prepared.sourceElements[el.sourceId??el.id];
+  const role=el=>roles.get(el.sourceId??el.id);
+  ordered.sort((a,b)=>(role(a)==='lettering')-(role(b)==='lettering')||colours.indexOf(a.colour)-colours.indexOf(b.colour)||(role(a)==='lettering'?base(a).x-base(b).x:base(a).pixels-base(b).pixels)||(a.sourceId??a.id)-(b.sourceId??b.id)||a.id-b.id);
+  ordered.forEach((el,order)=>{config.elementOptions[el.id]={order,type:el.guide?'fill':column(prepared.ids,prepared.info.width,el,prepared.scale,config.spacing)?'satin':Math.min(el.width,el.height)*prepared.scale<12&&branchedColumns(prepared.ids,prepared.info.width,el,prepared.scale,config.spacing)?'satin-branches':'fill'};});
+  return {png,config,interpretation};
 }
 module.exports={plan,removeBackground};

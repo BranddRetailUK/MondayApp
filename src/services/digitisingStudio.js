@@ -1,5 +1,7 @@
 const sharp = require('sharp');
-const {column}=require('./digitisingColumns');
+const {partition,spans,sectionAngle,contours,simplify}=require('./digitisingSections');
+const {column,branchedColumns,thinColumns}=require('./digitisingColumns');
+const guidelines=require('./digitisingGuidelines');
 
 function number(value, min, max, name) {
   const n = Number(value);
@@ -13,7 +15,7 @@ function settings(body) {
   let overrides,threadNotes,elementOptions; try { overrides = JSON.parse(body.elementColours || '{}'); threadNotes=JSON.parse(body.threadNotes || '{}'); elementOptions=JSON.parse(body.elementOptions || '{}'); } catch { throw Error('Invalid element colours.'); }
   if (!overrides || Array.isArray(overrides) || typeof overrides !== 'object' || Object.keys(overrides).length > 128 || Object.values(overrides).some(c=>!/^#[0-9a-f]{6}$/i.test(c))) throw Error('Invalid element colours.');
   if(!threadNotes || typeof threadNotes!=='object' || Array.isArray(threadNotes) || Object.keys(threadNotes).length>128 || Object.values(threadNotes).some(v=>typeof v!=='string'||v.length>80))throw Error('Invalid thread notes.');
-  if(!elementOptions||Array.isArray(elementOptions)||typeof elementOptions!=='object'||Object.keys(elementOptions).length>128||Object.values(elementOptions).some(o=>!o||typeof o!=='object'||!['fill','satin','skip'].includes(o.type)||!Number.isInteger(o.order)||o.order<0||o.order>127||(o.widthMm!==undefined&&(!Number.isFinite(o.widthMm)||o.widthMm<0||o.widthMm>7))))throw Error('Invalid element stitch settings.');
+  if(!elementOptions||Array.isArray(elementOptions)||typeof elementOptions!=='object'||Object.keys(elementOptions).length>128||Object.values(elementOptions).some(o=>!o||typeof o!=='object'||!['fill','satin','satin-branches','skip'].includes(o.type)||!Number.isInteger(o.order)||o.order<0||o.order>127||(o.widthMm!==undefined&&(!Number.isFinite(o.widthMm)||o.widthMm<0||o.widthMm>7))))throw Error('Invalid element stitch settings.');
   return { elementOptions, threadNotes, garment, underlay: PRESETS[garment].underlay, mode: ['original','white','black'].includes(body.mode) ? body.mode : 'original', elementColours: overrides, border: body.border === 'true', garmentColour: /^#[0-9a-f]{6}$/i.test(body.garmentColour) ? body.garmentColour : '#ffffff', widthMm: number(body.widthMm, 20, 200, 'Width (mm)'), hoopMm: number(body.hoopMm, 50, 360, 'Hoop (mm)'),
     spacing: number(body.spacing, .3, .6, 'Row spacing'), length: number(body.length, 1.5, 4, 'Stitch length'),
     colours: Math.round(number(body.colours, 1, 8, 'Colours')), removeWhite: body.removeWhite === 'true',
@@ -109,18 +111,21 @@ async function prepare(png, config) {
     let x0=w,y0=h,x1=0,y1=0;for(const k of queue){x0=Math.min(x0,k%w);x1=Math.max(x1,k%w);y0=Math.min(y0,Math.floor(k/w));y1=Math.max(y1,Math.floor(k/w));}
     elements.push({id,colour:palette[source],pixels:queue.length,x:x0,y:y0,width:x1-x0+1,height:y1-y0+1});
   }
+  const sourceIds=elementIds.slice(),sourceElements=elements.map(e=>({...e}));
+  partition(elementIds,elements,w,h,config.sections);
   left=w;top=h;right=-1;bottom=-1;
   for(let i=0;i<elementIds.length;i++){if(config.elementOptions?.[elementIds[i]]?.type==='skip')elementIds[i]=-1;if(elementIds[i]>=0){left=Math.min(left,i%w);right=Math.max(right,i%w);top=Math.min(top,Math.floor(i/w));bottom=Math.max(bottom,Math.floor(i/w));}}
   if(right<=left||bottom<=top)throw Error('Select at least one usable element.');
   const scale=config.widthMm/(right-left),heightMm=(bottom-top+1)*scale;
   if(Math.max(config.widthMm,heightMm)>config.hoopMm-10)throw Error('Design exceeds hoop with 5 mm clearance on each side.');
-  return {data,info,ids:elementIds,elements,left,right,top,bottom,scale,heightMm};
+  return {data,info,ids:elementIds,elements,sourceIds,sourceElements,left,right,top,bottom,scale,heightMm};
 }
 async function generate(png, config) {
   if(config.garment==='cap')throw Error('Cap generation is not validated: curved frames need centre-out sequencing. Select a flat garment for this proof of concept.');
-  const {info,ids,elements,left,right,top,bottom,scale}=await prepare(png,config);
+  const {info,ids,elements,sourceIds,sourceElements,left,right,top,bottom,scale}=await prepare(png,config);
   const {width:w}=info;
-  const commands=[], threads=[],threadPlan=[];let x=0,y=0, trims=0, shortRuns=0;
+  const edged=new Set();
+  const commands=[], threads=[],threadPlan=[];let x=0,y=0, trims=0, shortRuns=0, thinColumnsSewn=0, thinCrossStitches=0;
   function move(px,py,kind='stitch',maximum=config.length) {
     const tx=Math.round((px-(left+right)/2)*scale*10),ty=Math.round((py-(top+bottom)/2)*scale*10);
     const steps=Math.max(1,Math.ceil(Math.hypot(tx-x,ty-y)/(kind==='jump'?70:maximum*10)));
@@ -169,18 +174,68 @@ async function generate(png, config) {
     const colour=element.id;
     activeColour=colour;
     const start=commands.length;
-    const satin=config.elementOptions?.[colour]?.type==='satin';
-    if(satin){
-      const rails=column(ids,w,element,scale,config.spacing,config.elementOptions?.[colour]?.widthMm||0);
-      if(!rails)throw Error(`Element ${colour+1} needs manual satin segmentation; choose fill or edit its artwork.`);
+    const stitchType=config.elementOptions?.[colour]?.type;
+    const satin=stitchType==='satin'||stitchType==='satin-branches';
+    if(element.guide){
+      const angle=sectionAngle(element);
+      for(const edge of edged.has(element.sourceId)?[]:contours(sourceIds,w,sourceElements[element.sourceId])){
+        if(edge.length*scale<1.5)continue;
+        const start=edge[0],old=[x/(scale*10)+(left+right)/2,y/(scale*10)+(top+bottom)/2],gap=Math.hypot(start[0]-old[0],start[1]-old[1]);let connected=commands.length>0&&gap*scale<4;
+        for(let t=0;connected&&t<=Math.ceil(gap*2);t++){const f=t/Math.max(1,Math.ceil(gap*2)),xx=Math.round(old[0]+(start[0]-old[0])*f),yy=Math.round(old[1]+(start[1]-old[1])*f);if(sourceIds[yy*w+xx]!==element.sourceId)connected=false;}
+        if(connected)move(...start);else{trim();move(...start,'jump');}
+        for(const point of simplify(edge,.1/scale).slice(1))move(...point,'stitch',1.8);
+      }
+      edged.add(element.sourceId);
+      const allRows=spans(ids,w,element,scale,(config.satinSpacing||config.spacing)/2,angle),grouped=new Map(),details=[];
+      const extent=p=>Math.hypot(p[1][0]-p[0][0],p[1][1]-p[0][1]);
+      for(const pair of allRows){const old=grouped.get(pair.row);if(!old||extent(pair)>extent(old)){if(old)details.push(old);grouped.set(pair.row,pair);}else details.push(pair);}
+      const rows=[...grouped.values()];
+      const direction=element.guide[1].map((v,i)=>v-element.guide[0][i]);
+      if(rows.length>1){const first=rows[0][0],last=rows.at(-1)[0];if((last[0]-first[0])*direction[0]+(last[1]-first[1])*direction[1]<0)rows.reverse();}
+      // Smooth raster stair-steps along each rail, retaining the row coordinate.
+      const rad=angle*Math.PI/180,axis=[Math.cos(rad),Math.sin(rad)];
+      const original=rows.map(pair=>pair.map(p=>[...p]));
+      for(let i=0;i<rows.length;i++)for(let side=0;side<2;side++){
+        const values=original.slice(Math.max(0,i-2),Math.min(original.length,i+3)).map(pair=>pair[side][0]*axis[0]+pair[side][1]*axis[1]).sort((a,b)=>a-b);
+        const p=rows[i][side],current=p[0]*axis[0]+p[1]*axis[1],median=values[Math.floor(values.length/2)];
+        const correction=Math.max(-.15/scale,Math.min(.15/scale,median-current))+(side?1:-1)*(config.coverageMargin||0)/scale;
+        p[0]+=axis[0]*correction;p[1]+=axis[1]*correction;
+      }
+      const centre=pair=>[(pair[0][0]+pair[1][0])/2,(pair[0][1]+pair[1][1])/2];
+      const tolerance=Math.ceil(((config.coverageMargin||0)+.2)/scale);
+      const nearMask=(xx,yy)=>{for(let dy=-tolerance;dy<=tolerance;dy++)for(let dx=-tolerance;dx<=tolerance;dx++)if(dx*dx+dy*dy<=tolerance*tolerance&&xx+dx>=0&&xx+dx<w&&yy+dy>=0&&yy+dy<info.height&&ids[(yy+dy)*w+xx+dx]===colour)return true;return false;};
+      const insideMove=(p,maximum=config.length)=>{
+        const old=[x/(scale*10)+(left+right)/2,y/(scale*10)+(top+bottom)/2],distance=Math.hypot(p[0]-old[0],p[1]-old[1]);let safe=true;
+        for(let t=0;t<=Math.ceil(distance*2);t++){const f=t/Math.max(1,Math.ceil(distance*2)),xx=Math.round(old[0]+(p[0]-old[0])*f),yy=Math.round(old[1]+(p[1]-old[1])*f);if(xx<0||xx>=w||yy<0||yy>=info.height||!nearMask(xx,yy)){safe=false;break;}}
+        if(!safe){trim();move(...p,'jump');}else move(...p,'stitch',maximum);
+      };
+      if(rows.length){
+        trim();move(...centre(rows[0]),'jump');
+        // Centre run and inset zigzag underlay follow this section, not a global fill axis.
+        const stride=Math.max(1,Math.round(config.underlay/((config.satinSpacing||config.spacing)/2)));
+        for(let i=0;i<rows.length;i+=stride)insideMove(centre(rows[i]));
+        for(let i=rows.length-1,j=0;i>=0;i-=stride,j++){const c=centre(rows[i]),r=rows[i][j%2];insideMove([c[0]+(r[0]-c[0])*.6,c[1]+(r[1]-c[1])*.6]);}
+        for(let i=0;i<rows.length;i++){
+          const pair=rows[i],width=Math.hypot(pair[1][0]-pair[0][0],pair[1][1]-pair[0][1])*scale;
+          // Wide areas receive split satin, never uncontrolled long stitches.
+          insideMove(pair[i%2],width<=11?11:config.length);
+        }
+        insideMove(centre(rows.at(-1)));insideMove(rows.at(-1)[(rows.length-1)%2]);
+        for(const pair of details)run(...pair);
+      }
+    } else if(satin){
+      const paths=stitchType==='satin-branches'?branchedColumns(ids,w,element,scale,config.satinSpacing||config.spacing):[column(ids,w,element,scale,config.satinSpacing||config.spacing,config.elementOptions?.[colour]?.widthMm||0)];
+      if(!paths?.length||paths.some(path=>!path))throw Error(`Element ${colour+1} needs manual satin segmentation; choose fill or edit its artwork.`);
+      for(const rails of paths){
       const centre=pair=>[(pair[0][0]+pair[1][0])/2,(pair[0][1]+pair[1][1])/2];
       trim();move(...centre(rails[0]),'jump');
       move(...centre(rails[Math.min(4,rails.length-1)]));move(...centre(rails[0]));
       // Centre-run underlay, then return with a sparse inset zigzag before top satin.
-      for(let i=1;i<rails.length;i+=Math.max(1,Math.round(config.underlay/(config.spacing/2))))move(...centre(rails[i]));
-      for(let i=rails.length-1,side=0;i>=0;i-=Math.max(1,Math.round(config.underlay/(config.spacing/2))),side++){const c=centre(rails[i]),r=rails[i][side%2];move(c[0]+(r[0]-c[0])*.6,c[1]+(r[1]-c[1])*.6);}
+      for(let i=1;i<rails.length;i+=Math.max(1,Math.round(config.underlay/((config.satinSpacing||config.spacing)/2))))move(...centre(rails[i]));
+      for(let i=rails.length-1,side=0;i>=0;i-=Math.max(1,Math.round(config.underlay/((config.satinSpacing||config.spacing)/2))),side++){const c=centre(rails[i]),r=rails[i][side%2];move(c[0]+(r[0]-c[0])*.6,c[1]+(r[1]-c[1])*.6);}
       for(let i=0;i<rails.length;i++)move(...rails[i][i%2],'stitch',7);
       const last=rails.length-1;move(...rails[Math.max(0,last-2)][last%2],'stitch',7);move(...rails[last][last%2],'stitch',7);
+      }
     } else for(const vertical of [true,false]){
       const pending=[];
       const step=(vertical?config.underlay:config.spacing)/scale;
@@ -205,6 +260,19 @@ async function generate(png, config) {
         const pair=pending.splice(best,1)[0];if(reverse)pair.reverse();run(...pair);
       }
     }
+    // Apply narrow-feature top stitches last for each source region, after its broad sections.
+    const sourceId=element.sourceId??element.id;
+    if(!ordered.slice(ordered.indexOf(element)+1).some(e=>(e.sourceId??e.id)===sourceId)){
+      const narrow=thinColumns(sourceIds,w,sourceElements[sourceId],scale,config.satinSpacing||config.spacing,guidelines.assumedThreadWidthMm);
+      for(const rails of narrow){
+        trim();move(...rails[0][0],'jump');
+        for(let i=0;i<rails.length;i++){
+          // Alternate rails to sew across the taper; never replace a short cross-stitch with a run.
+          move(...rails[i][(i+1)%2]);thinCrossStitches++;
+        }
+        thinColumnsSewn++;
+      }
+    }
     if(config.border){
       // Three-pass edge running stitch, restricted to adjacent boundary pixels.
       const boundary=new Set();
@@ -220,7 +288,7 @@ async function generate(png, config) {
       const thread=config.mode==='white'?'#ffffff':config.mode==='black'?'#000000':config.elementColours[colour]||elements[colour].colour;
       const sameThread=!config.border&&threads.at(-1)===thread&&(threadPlan.at(-1)?.thread||'')===(config.threadNotes?.[colour]||'');
       if(!sameThread){if(threads.length)commands.splice(start,0,{kind:'colour'});threads.push(thread);}
-      threadPlan.push({step:threads.length,element:colour+1,role:satin?'underlay and satin':'underlay and fill',colour:threads[threads.length-1],thread:config.threadNotes?.[colour]||''});
+      threadPlan.push({step:threads.length,element:colour+1,role:element.guide?'directional section':satin?'underlay and satin':'underlay and fill',angle:element.guide?sectionAngle(element):undefined,colour:threads[threads.length-1],thread:config.threadNotes?.[colour]||''});
       if(config.border){threads.push(config.outlineColourMode==='artwork'?thread:config.garmentColour);threadPlan.push({step:threads.length,element:colour+1,role:'running outline',colour:threads.at(-1),thread:config.outlineColourMode==='artwork'?(config.threadNotes?.[colour]||''):'Match garment — assign actual thread'});}
     }
   }
@@ -229,7 +297,7 @@ async function generate(png, config) {
   const dst=encode(commands);
   const {parseDst}=await import('../../public/embroidery-viewer.mjs');const parsed=parseDst(dst);
   if(Math.max(parsed.widthMm,parsed.heightMm)>config.hoopMm-10)throw Error('Generated satin or outline exceeds the hoop clearance.');
-  return {dst:dst.toString('base64'),threads,threadPlan,elements, stats:{stitches:parsed.stitches,widthMm:parsed.widthMm,heightMm:parsed.heightMm,colourChanges:parsed.colourChanges,trims,shortRuns},
-    warnings:['Experimental sample; not production approved.','Disconnected fill runs request a three-jump trim. Confirm trim recognition on your Tajima controller. Running outlines are experimental and may omit tiny boundary fragments.', 'Simple satin columns only; no complex text reconstruction, automatic pull compensation, or cap strategy. Thread colours are approximate; assign real cones in order.',...(shortRuns?[`${shortRuns} sub-0.8 mm runs were omitted. Fine detail requires manual digitising.`]:[])],config};
+  return {dst:dst.toString('base64'),threads,threadPlan,elements, stats:{stitches:parsed.stitches,widthMm:parsed.widthMm,heightMm:parsed.heightMm,colourChanges:parsed.colourChanges,trims,shortRuns,thinColumns:thinColumnsSewn,thinCrossStitches},
+    warnings:['Experimental sample; not production approved.','Disconnected fill runs request a three-jump trim. Confirm trim recognition on your Tajima controller. Running outlines are experimental and may omit tiny boundary fragments.', 'Automatic section directions and branched satin remain experimental; no automatic pull compensation or cap strategy. Thread colours are approximate; assign real cones in order.',...(shortRuns?[`${shortRuns} sub-0.8 mm runs were omitted. Fine detail requires manual digitising.`]:[])],config};
 }
 module.exports={settings,artwork,assess,prepare,generate,record,encode,PRESETS};

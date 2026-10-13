@@ -10,7 +10,7 @@ app.use((req,res,next)=>{
   res.set('Cache-Control','no-store'); next();
 });
 app.get('/api/auth/me',(_req,res)=>res.json({user:{id:0,first_name:'Local',last_name:'Studio',access_scope:'full'}}));
-app.use('/api/digitising-studio',require('../src/routes/digitising-studio').createRouter());
+app.use('/api/digitising-studio',require('../src/routes/digitising-studio').createRouter({cacheDirectory:'/tmp/digitising-studio/interpretations'}));
 app.get('/api/digitising-reference',(_req,res)=>{
   const file='/tmp/digitising-studio/library-audit.json';
   if(!fs.existsSync(file))return res.json({available:false});

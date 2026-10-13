@@ -78,3 +78,40 @@ sizing fits a 100 mm envelope; requested dimensions fit a 200 mm envelope. Simpl
 column detection selects satin automatically, with fill fallback. Caps are unavailable.
 The original fixture and benchmark scripts remain developer tools, outside the UI.
 Automatic settings are experimental and do not imply production approval.
+
+### Source-only interpretation and directional finish
+
+`/generate` now interprets the uploaded source with structured OpenAI output instead
+of an advisory review. It retains source colours and artwork, can exclude white
+paper/counters, and proposes centre-line guides for natural angular ribbon limbs.
+Those guides are refined using the source pixels; each pixel belongs to exactly one
+section. Directional satin rows, split wide stitches, centre-run/inset underlay and
+boundary support are generated in physical millimetres. Simple and branched satin
+remain geometry-derived. Customer technical overrides are ignored.
+
+The generator never receives a production DST or target preview. Its local cache
+is source/context/model/version keyed. Existing PSG jobs should use their saved
+files; an explicit PSG value is rejected, but automatic job lookup is not wired in.
+The benchmark SETUP.json now accepts customer fields only (`garment`, `widthMm`,
+`heightMm`, `border`, `outlineColour`); manual stitch options are rejected.
+
+Mountain testing uses the supplied original PNG at 102.2 mm width. OpenAI identifies
+six limbs without reference data. Several iterations improved guide fitting,
+section underlay, edge support and gap handling. This does not yet reproduce the
+production file's joins, travel and full physical finish. The strict benchmark
+remains failing, and no physical sew-out has been validated. Source PNG, original
+DST, AI cache and comparisons remain private under `/tmp/digitising-studio/mountain`.
+
+Run `npm run test:digitising-studio` for encoding, geometry, AI validation, section
+coverage/direction and 70/100 mm density checks. A passing unit suite does not mean
+the private production benchmark or physical sew-out has passed.
+
+### Thin-area rule
+
+See [Production guidelines](PRODUCTION-GUIDELINES.md). Local narrow-feature
+extraction now adds tapered crosswise top stitches after each source region, so
+thin brush tips cannot be left with longitudinal boundary runs alone. The rule is
+applied by geometry code independently of cached AI section guides. The assumed
+0.30 mm effective thread width remains provisional. Output counts identify the
+thin columns/cross-stitches; before/after comparison does not pass the still-open
+whole-design production benchmark.

@@ -20,3 +20,23 @@ test('customer dimensions preserve proportions and outline colour is validated',
   const b=await plan(art,{heightMm:'90'}),p=await engine.prepare(b.png,b.config);assert.ok(Math.abs(p.heightMm-90)<.01);
   await assert.rejects(plan(art,{widthMm:80,heightMm:80}),/proportions/);await assert.rejects(plan(art,{widthMm:250}),/Width/);await assert.rejects(plan(art,{border:'true',outlineColour:'bad'}),/outline colour/);
 });
+test('branched narrow lettering is digitised automatically without a reference',async()=>{
+  const letter=Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><path fill="black" d="M20 10H80V22H34V44H72V56H34V78H80V90H20Z"/></svg>');
+  const p=await plan(letter,{widthMm:10});assert.equal(p.config.elementOptions[0].type,'satin-branches');
+  const r=await engine.generate(p.png,p.config);assert.ok(r.stats.stitches>100);assert.equal(r.threads.length,1);assert.equal(r.stats.shortRuns,0);
+});
+
+test('resizing regenerates fill and satin at physical density instead of scaling commands',async()=>{
+  const shapes=[Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="120"><rect x="5" y="5" width="190" height="110" fill="red"/></svg>'),Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="120"><path d="M10 105V45Q100 -20 190 45V105" fill="none" stroke="red" stroke-width="5"/></svg>')];
+  for(const [i,shape] of shapes.entries()){
+    const outputs=[];
+    for(const widthMm of [70,100]){const p=await plan(shape,{widthMm});assert.equal(p.config.elementOptions[0].type,i?'satin':'fill');outputs.push(await engine.generate(p.png,p.config));}
+    const ratio=outputs[1].stats.stitches/outputs[0].stats.stitches;assert.ok(ratio>(i?1.25:1.7),`new stitch count must grow, ratio ${ratio}`);
+    const {parseDst}=await import('../public/embroidery-viewer.mjs');
+    if(!i)for(const output of outputs){const d=parseDst(Buffer.from(output.dst,'base64'));const rows=[...new Set(d.segments.filter(s=>s[1]===s[3]&&Math.abs(s[2]-s[0])>10).map(s=>s[1]))].sort((a,b)=>a-b);const gaps=rows.slice(1).map((v,j)=>(v-rows[j])/10).sort((a,b)=>a-b);assert.ok(Math.abs(gaps[Math.floor(gaps.length/2)]-.42)<.12);}
+  }
+});
+test('dense coverage policy is garment-derived and cannot be overridden by customer fields',async()=>{
+ const a=await plan(art,{garment:'tshirt',satinSpacing:.01,coverageMargin:5});assert.equal(a.config.satinSpacing,.34);assert.equal(a.config.coverageMargin,.15);
+ const b=await plan(art,{garment:'hoodie'});assert.equal(b.config.satinSpacing,.32);assert.equal(b.config.coverageMargin,.2);
+});
