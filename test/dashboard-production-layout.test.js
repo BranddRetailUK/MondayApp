@@ -95,3 +95,26 @@ test('each group sorts by earliest due date regardless of priority, with undated
     ['other-soon', 'other-late']);
   assert.equal(first[0].id, 'late');
 });
+
+test('notes widths shrink after clearing parent notes and exclude collapsed children across groups', () => {
+  const ui = loadDashboardFrontend();
+  const column = { id: 'notes', title: 'NOTES', type: 'text' };
+  const parent = { id: 'parent', dashboard_production_parent: true,
+    column_values: [{ id: 'notes', text: 'Long parent note '.repeat(30) }] };
+  const child = { id: 'child', dashboard_production_parent_id: 'parent',
+    column_values: [{ id: 'notes', text: 'Long child note '.repeat(20) }] };
+  const ordinary = { id: 'ordinary', column_values: [{ id: 'notes', text: 'Short note' }] };
+  const state = { productionParentIds: new Set(['parent']), openSubitems: new Set() };
+  const width = rows => ui.buildBoardColumnWidthOverrides([column], rows, state).get('notes');
+  const before = width([parent, child, ordinary]);
+  parent.column_values[0].text = '';
+  assert.ok(width([parent, child, ordinary]) < before);
+  assert.equal(width([parent, child, ordinary]), width([ordinary]));
+  assert.equal(width([child, ordinary]), width([ordinary]));
+  state.openSubitems.add('parent');
+  assert.ok(width([child, ordinary]) > width([ordinary]));
+  state.openSubitems.clear();
+  assert.equal(width([child, ordinary]), width([ordinary]));
+  state.productionParentIds.clear();
+  assert.ok(width([child, ordinary]) > width([ordinary]));
+});

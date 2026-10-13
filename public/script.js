@@ -444,7 +444,10 @@ function renderBoard(payload, options = {}) {
     const collectionName = group.title || 'Untitled Group';
     const items = (group.items_page && group.items_page.items) || [];
     const sortedItems = groupProductionChildren(sortItemsForBoard(items, boardSortPlan));
-    const groupColumnWidths = buildBoardColumnWidthOverrides(boardColumns, sortedItems);
+    const groupColumnWidths = buildBoardColumnWidthOverrides(boardColumns, sortedItems, {
+      productionParentIds,
+      openSubitems: uiState.openSubitems
+    });
     const groupGridSpec = buildDashboardGridSpec(boardColumns, {
       subitem: false,
       widthOverrides: groupColumnWidths,
@@ -1188,7 +1191,11 @@ function getStatusSortIndex(value) {
   return Number.isFinite(index) ? index : null;
 }
 
-function buildBoardColumnWidthOverrides(columns, items) {
+function buildBoardColumnWidthOverrides(columns, items, { productionParentIds = new Set(), openSubitems = new Set() } = {}) {
+  const visibleRows = items.filter(item => {
+    const parentId = String(item.dashboard_production_parent_id || '');
+    return !productionParentIds.has(parentId) || openSubitems.has(parentId);
+  });
   const overrides = new Map();
   for (const column of columns) {
     const title = String(column.title || '').trim().toUpperCase();
@@ -1197,7 +1204,7 @@ function buildBoardColumnWidthOverrides(columns, items) {
     const valueFont = isDesignColumn
       ? "700 14px Manrope, 'Segoe UI', system-ui, sans-serif"
       : "14px Manrope, 'Segoe UI', system-ui, sans-serif";
-    const visibleItems = isDesignColumn ? items.filter(item => !item.dashboard_production_parent) : items;
+    const visibleItems = isDesignColumn ? visibleRows.filter(item => !item.dashboard_production_parent) : visibleRows;
     const maxTextWidth = getMaxColumnTextWidth(visibleItems, column.id, valueFont);
     const titleWidth = measureBoardTextWidth(column.title || column.id || '', "700 13px Manrope, 'Segoe UI', system-ui, sans-serif");
     const widestText = Math.max(titleWidth, maxTextWidth);
@@ -1676,7 +1683,10 @@ function buildNameCell(item, initiallyOpen = false, { context = BOARD_CONTEXT_TE
       e.stopPropagation();
       const isOpen = rowToggle.classList.toggle('open');
       rowToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-      if (item.dashboard_production_parent) toggleProductionRows(itemId, isOpen);
+      if (item.dashboard_production_parent) {
+        toggleProductionRows(itemId, isOpen);
+        rerenderBoardContext(context);
+      }
       else toggleSubRows(itemId, isOpen);
     });
     titleWrap.appendChild(rowToggle);
