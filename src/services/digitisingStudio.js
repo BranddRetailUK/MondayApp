@@ -119,7 +119,7 @@ async function prepare(png, config) {
   left=w;top=h;right=-1;bottom=-1;
   for(let i=0;i<elementIds.length;i++){if(config.elementOptions?.[elementIds[i]]?.type==='skip')elementIds[i]=-1;if(elementIds[i]>=0){left=Math.min(left,i%w);right=Math.max(right,i%w);top=Math.min(top,Math.floor(i/w));bottom=Math.max(bottom,Math.floor(i/w));}}
   if(right<=left||bottom<=top)throw Error('Select at least one usable element.');
-  const scale=config.widthMm/(right-left),heightMm=(bottom-top+1)*scale;
+  const scale=config.widthMm/(config.sourceAspect?w:right-left),heightMm=config.sourceAspect?config.widthMm*config.sourceAspect:(bottom-top+1)*scale;
   if(Math.max(config.widthMm,heightMm)>config.hoopMm-10)throw Error('Design exceeds hoop with 5 mm clearance on each side.');
   return {data,info,ids:elementIds,elements,sourceIds,sourceElements,left,right,top,bottom,scale,heightMm};
 }

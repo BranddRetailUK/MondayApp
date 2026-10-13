@@ -1,11 +1,14 @@
 const sharp=require('sharp');
 const engine=require('./digitisingStudio');
 const {interpret}=require('./digitisingInterpretation');
+const {sourceSize}=require('./digitisingSize');
 const {column,branchedColumns}=require('./digitisingColumns');
 
 // Remove only near-white pixels connected to the image edge; enclosed white artwork stays.
 async function removeBackground(png){
   const {data,info}=await sharp(png).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+  // Transparency already identifies the background; white pixels are artwork.
+  for(let p=3;p<data.length;p+=4)if(data[p]<128)return png;
   const {width:w,height:h}=info,seen=new Uint8Array(w*h),queue=[];
   const add=k=>{if(seen[k])return;seen[k]=1;const p=k*4;if(data[p+3]<128||Math.min(data[p],data[p+1],data[p+2])>235)queue.push(k);};
   for(let x=0;x<w;x++){add(x);add((h-1)*w+x);}for(let y=0;y<h;y++){add(y*w);add(y*w+w-1);}
@@ -17,8 +20,11 @@ async function plan(input,body={},options={}){
   if(!engine.PRESETS[garment])throw Error('Choose a garment.');
   if(garment==='cap')throw Error('Cap digitising is not available yet.');
   const source=await engine.artwork(input);
+  const size=await sourceSize(input);
   const png=await removeBackground(source);
   const config=engine.settings({garment,border:String(body.border)==='true'?'true':'false',widthMm:100,hoopMm:360,spacing:engine.PRESETS[garment].spacing,length:2.5,colours:8,removeWhite:'false'});
+  config.sourceAspect=size.aspect;
+  config.hoopMm=Math.max(360,Math.ceil(100*size.aspect+10));
   config.whiteMatte=true;
   // Dense coverage is a server policy; never accept customer density overrides.
   config.satinSpacing={tshirt:.34,hoodie:.32,woven:.36}[garment];
@@ -39,14 +45,14 @@ async function plan(input,body={},options={}){
     config.sections=Object.fromEntries(interpretation.regions.filter(r=>r.include&&r.sections.length).map(r=>[r.id,r.sections.map(g=>[[g.startX,g.startY],[g.endX,g.endY]])]));
     prepared=await engine.prepare(png,config);
   }
-  const aspect=prepared.heightMm/config.widthMm;
-  const dimension=(value,name)=>{if(value===undefined||value==='')return null;const n=Number(value);if(!Number.isFinite(n)||n<10||n>200)throw Error(`${name} must be between 10 and 200 mm.`);return n;};
+  const aspect=size.aspect;
+  const dimension=(value,name)=>{if(value===undefined||value==='')return null;const n=Number(value);if(!Number.isFinite(n)||n<=0)throw Error(`${name} must be greater than zero.`);return n;};
   const width=dimension(body.widthMm,'Width'),height=dimension(body.heightMm,'Height');
   if(width&&height&&Math.abs(width*aspect-height)>.25)throw Error('Width and height must preserve the artwork proportions.');
-  config.widthMm=width||(height?height/aspect:Math.min(100,100/aspect));
-  if(Math.max(config.widthMm,config.widthMm*aspect)>200.25)throw Error('The design must fit within 200 × 200 mm.');
+  config.widthMm=width||(height?height/aspect:Math.min(300,size.widthMm));
+  if(config.widthMm>300)throw Error('Width must be no more than 300 mm.');
+  config.hoopMm=Math.max(150,Math.ceil(Math.max(config.widthMm,config.widthMm*aspect)+10));
   prepared=await engine.prepare(png,config);
-  config.hoopMm=Math.max(150,Math.ceil(Math.max(config.widthMm,prepared.heightMm)+10));
   if(config.border&&body.outlineColour!==undefined&&!/^#[0-9a-f]{6}$/i.test(body.outlineColour))throw Error('Choose an outline colour.');
   config.garmentColour=body.outlineColour||'#000000';
   const ordered=prepared.elements.filter(el=>config.elementOptions[el.id]?.type!=='skip').sort((a,b)=>a.pixels-b.pixels);
@@ -57,6 +63,6 @@ async function plan(input,body={},options={}){
   const role=el=>roles.get(el.sourceId??el.id);
   ordered.sort((a,b)=>(role(a)==='lettering')-(role(b)==='lettering')||colours.indexOf(a.colour)-colours.indexOf(b.colour)||(role(a)==='lettering'?base(a).x-base(b).x:base(a).pixels-base(b).pixels)||(a.sourceId??a.id)-(b.sourceId??b.id)||a.id-b.id);
   ordered.forEach((el,order)=>{config.elementOptions[el.id]={order,type:el.guide?'fill':column(prepared.ids,prepared.info.width,el,prepared.scale,config.spacing)?'satin':Math.min(el.width,el.height)*prepared.scale<12&&branchedColumns(prepared.ids,prepared.info.width,el,prepared.scale,config.spacing)?'satin-branches':'fill'};});
-  return {png,config,interpretation};
+  return {png,config,interpretation,preview:source};
 }
 module.exports={plan,removeBackground};

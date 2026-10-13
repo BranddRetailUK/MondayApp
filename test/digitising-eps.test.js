@@ -11,3 +11,7 @@ test('EPS converts to bounded artwork and passes automatic preparation',async()=
  const png=await engine.artwork(artwork),metadata=await sharp(png).metadata();assert.equal(metadata.format,'png');assert.equal(metadata.width,800);assert.equal(metadata.height,400);
  const p=await plan(artwork,{widthMm:70});assert.equal(p.config.widthMm,70);
 });
+test('EPS default size uses source points rather than raster pixels',async()=>{
+ const {plan}=require('../src/services/digitisingAuto');
+ const p=await plan(artwork);assert.ok(Math.abs(p.config.widthMm-100*25.4/72)<.0001);assert.equal(p.config.sourceAspect,.5);
+});

@@ -20,3 +20,24 @@ test('live app mounts studio API and authentication precedes studio initializati
  assert.match(app,/app.use\('\/api\/digitising-studio', require\('\.\/routes\/digitising-studio'\).createRouter\(\)\)/);
  assert.ok(html.indexOf('src="auth-session.js"')<html.indexOf('src="digitising-studio.js"'));
 });
+test('upload preview persists and width/height edits stay locked to source proportions',async()=>{
+ const vm=require('node:vm'),elements=new Map();
+ const get=id=>{if(!elements.has(id))elements.set(id,{value:'',dataset:{},listeners:{},children:[],addEventListener(event,fn){this.listeners[event]=fn;},replaceChildren(...children){this.children=children;},append(child){this.children.push(child);},querySelectorAll(){return [];}});return elements.get(id);};
+ let submitted;
+ const context={document:{getElementById:get},window:{ultimateHubUserPromise:Promise.resolve({email:'production@ultimatepromotions.co.uk'})},Image:class {},FormData,URL:{createObjectURL:()=> 'blob:source',revokeObjectURL(){}},fetch:async(url,options)=>{
+  if(url.endsWith('/status'))return {ok:true,json:async()=>({enabled:true})};
+  if(url.endsWith('/prepare'))return {ok:true,json:async()=>({widthMm:270,heightMm:213.6,png:'preserved-source'})};
+  submitted=options.body;return {ok:false,json:async()=>({error:'Stopped after validating request'})};
+ }};
+ await vm.runInNewContext(fs.readFileSync('public/digitising-studio.js','utf8'),context);
+ get('ds-garment').value='tshirt';get('ds-file').files=[Object.assign(new Blob(['image']),{name:'art.png'})];
+ get('ds-file').listeners.change();await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(get('ds-width').value,'270.0');assert.equal(get('ds-height').value,'213.6');
+ const preview=()=>get('ds-stage').children[0].src;
+ assert.equal(preview(),'data:image/png;base64,preserved-source');
+ get('ds-width').value='150';get('ds-width').listeners.input();assert.equal(get('ds-height').value,'118.7');assert.equal(preview(),'data:image/png;base64,preserved-source');
+ get('ds-height').value='158.2';get('ds-height').listeners.input();assert.equal(get('ds-width').value,'200.0');
+ await get('ds-form').listeners.submit({preventDefault(){}});
+ assert.equal(Number(submitted.get('heightMm'))/Number(submitted.get('widthMm')),213.6/270);
+ assert.equal(preview(),'data:image/png;base64,preserved-source');
+});

@@ -14,10 +14,10 @@ function createRouter(options={}){
       if(err)throw Error(err.code==='LIMIT_FILE_SIZE'?'Maximum artwork size is 8 MB.':'Invalid upload.');
       if(!req.file)throw Error('Choose PNG, EPS or SVG artwork.');
       if(req.body.psgNumber)throw Error('This job already has a PSG reference. Use its existing embroidery file.');
-      const {config,png,interpretation}=await plan(req.file.buffer,req.body,{...options,interpret:req.path==='/generate'});
+      const {config,png,interpretation,preview}=await plan(req.file.buffer,req.body,{...options,interpret:req.path==='/generate'});
       if(req.path==='/prepare'){
         const prepared=await engine.prepare(png,config);
-        return res.json({elements:prepared.elements,widthMm:config.widthMm,heightMm:prepared.heightMm,png:png.toString('base64')});
+        return res.json({elements:prepared.elements,widthMm:config.widthMm,heightMm:prepared.heightMm,png:preview.toString('base64')});
       }
       if(config.garment==='cap')throw Error('Cap generation needs a separately validated centre-out strategy. Choose a flat garment for this test.');
       const result=await engine.generate(png,config);

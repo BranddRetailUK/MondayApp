@@ -18,7 +18,7 @@ test('automatic background removal preserves enclosed white design regions',asyn
 test('customer dimensions preserve proportions and outline colour is validated',async()=>{
   const a=await plan(art,{widthMm:'40',outlineColour:'#abcdef',border:'true'});assert.equal(a.config.widthMm,40);assert.equal(a.config.garmentColour,'#abcdef');
   const b=await plan(art,{heightMm:'90'}),p=await engine.prepare(b.png,b.config);assert.ok(Math.abs(p.heightMm-90)<.01);
-  await assert.rejects(plan(art,{widthMm:80,heightMm:80}),/proportions/);await assert.rejects(plan(art,{widthMm:250}),/Width/);await assert.rejects(plan(art,{border:'true',outlineColour:'bad'}),/outline colour/);
+  await assert.rejects(plan(art,{widthMm:80,heightMm:80}),/proportions/);await assert.rejects(plan(art,{widthMm:301}),/Width/);await assert.rejects(plan(art,{border:'true',outlineColour:'bad'}),/outline colour/);
 });
 test('branched narrow lettering is digitised automatically without a reference',async()=>{
   const letter=Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><path fill="black" d="M20 10H80V22H34V44H72V56H34V78H80V90H20Z"/></svg>');
@@ -39,4 +39,30 @@ test('resizing regenerates fill and satin at physical density instead of scaling
 test('dense coverage policy is garment-derived and cannot be overridden by customer fields',async()=>{
  const a=await plan(art,{garment:'tshirt',satinSpacing:.01,coverageMargin:5});assert.equal(a.config.satinSpacing,.34);assert.equal(a.config.coverageMargin,.15);
  const b=await plan(art,{garment:'hoodie'});assert.equal(b.config.satinSpacing,.32);assert.equal(b.config.coverageMargin,.2);
+});
+
+test('upload sizing uses PNG resolution, caps width at 300 and keeps canvas proportions',async()=>{
+  for(const [pixels,density,expected] of [[3189,300,270],[4000,300,300],[900,null,76.2]]){
+    let image=sharp({create:{width:pixels,height:Math.round(pixels/2),channels:4,background:'#ff0000'}});
+    if(density)image=image.withMetadata({density});
+    let input=await image.png().toBuffer();
+    if(!density){const chunks=[input.subarray(0,8)];for(let offset=8;offset<input.length;){const end=offset+12+input.readUInt32BE(offset);if(input.toString('ascii',offset+4,offset+8)!=='pHYs')chunks.push(input.subarray(offset,end));offset=end;}input=Buffer.concat(chunks);}
+    const p=await plan(input),prepared=await engine.prepare(p.png,p.config);
+    assert.ok(Math.abs(p.config.widthMm-expected)<.01);
+    assert.ok(Math.abs(prepared.heightMm/p.config.widthMm-Math.round(pixels/2)/pixels)<.00001);
+  }
+});
+test('transparent white artwork and margins survive preparation and preview',async()=>{
+  const input=await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="240"><rect x="20" y="30" width="80" height="170" fill="white"/></svg>')).png().toBuffer();
+  const source=await engine.artwork(input);assert.deepEqual(await removeBackground(source),source);
+  const p=await plan(input,{widthMm:150,heightMm:300}),prepared=await engine.prepare(p.png,p.config);
+  assert.equal(prepared.heightMm,300);assert.equal(prepared.elements[0].colour,'#ffffff');assert.deepEqual(p.preview,source);
+  const resized=await plan(input,{heightMm:500});assert.equal(resized.config.widthMm,250);
+  await assert.rejects(plan(input,{heightMm:602}),/Width/);
+  // Excluding an element cannot change the image's coordinate scale or proportions.
+  assert.equal(prepared.scale,150/prepared.info.width);
+});
+test('SVG physical units set upload size before rasterising',async()=>{
+  const input=Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="270mm" height="135mm" viewBox="0 0 270 135"><rect width="270" height="135" fill="red"/></svg>');
+  const p=await plan(input);assert.ok(Math.abs(p.config.widthMm-270)<.2);assert.ok(Math.abs(p.config.sourceAspect-.5)<.001);
 });
