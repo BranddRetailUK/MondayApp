@@ -1,3 +1,4 @@
+const {routeInside}=require('./digitisingTravel');
 const sharp = require('sharp');
 const {partition,spans,sectionAngle,contours,simplify}=require('./digitisingSections');
 const {column,branchedColumns,thinColumns}=require('./digitisingColumns');
@@ -136,7 +137,13 @@ async function generate(png, config) {
     if(commands.length>150000)throw Error('Design exceeds 150,000 commands. Simplify artwork.');
   }
   function trim(){if(!commands.length)return;commands.push({kind:'jump',x:x+2,y:y+2},{kind:'jump',x:x-2,y:y-2},{kind:'jump',x,y});trims++;}
-  let activeColour=-1;
+  let activeColour=-1,lastSourceId=null;
+  function sourceTravel(p,sourceId){
+    const old=[x/(scale*10)+(left+right)/2,y/(scale*10)+(top+bottom)/2];
+    const path=commands.length&&lastSourceId===sourceId?routeInside(sourceIds,w,sourceId,old,p,scale):null;
+    if(path){for(const point of path)move(...point,'stitch',1.8);}else{trim();move(...p,'jump');}
+    lastSourceId=sourceId;
+  }
   function run(a,b){
     if(Math.hypot(b[0]-a[0],b[1]-a[1])*scale<.8){shortRuns++;return;}
     const old=[x/(scale*10)+(left+right)/2,y/(scale*10)+(top+bottom)/2];
@@ -172,19 +179,32 @@ async function generate(png, config) {
     const back=[b[0]-(b[0]-a[0])/d*.6/scale,b[1]-(b[1]-a[1])/d*.6/scale];move(...back);move(...b);
   }
   const ordered=elements.filter(el=>config.elementOptions?.[el.id]?.type!=='skip').sort((a,b)=>(config.elementOptions?.[a.id]?.order??a.id)-(config.elementOptions?.[b.id]?.order??b.id));
+  const narrowByElement=new Map();
+  for(const sourceId of new Set(ordered.map(e=>e.sourceId??e.id))){
+    const narrow=thinColumns(sourceIds,w,sourceElements[sourceId],scale,config.satinSpacing||config.spacing,guidelines.assumedThreadWidthMm);
+    for(const rails of narrow){
+      // Attach a tapered branch to the section at its wider root, rather than
+      // finishing every tip after traversing the complete source shape.
+      const width=p=>Math.hypot(p[1][0]-p[0][0],p[1][1]-p[0][1]);
+      if(width(rails[0])<width(rails.at(-1)))rails.reverse();
+      const root=rails[0],cx=(root[0][0]+root[1][0])/2,cy=(root[0][1]+root[1][1])/2;
+      const owner=ids[Math.round(cy)*w+Math.round(cx)];
+      const target=ordered.some(e=>e.id===owner&&(e.sourceId??e.id)===sourceId)?owner:ordered.find(e=>(e.sourceId??e.id)===sourceId).id;
+      if(!narrowByElement.has(target))narrowByElement.set(target,[]);narrowByElement.get(target).push(rails);
+    }
+  }
   for(const element of ordered){
     const colour=element.id;
     activeColour=colour;
     const start=commands.length;
     const stitchType=config.elementOptions?.[colour]?.type;
     const satin=stitchType==='satin'||stitchType==='satin-branches';
+    if(!element.guide)lastSourceId=null;
     if(element.guide){
       const angle=sectionAngle(element);
       for(const edge of edged.has(element.sourceId)?[]:contours(sourceIds,w,sourceElements[element.sourceId])){
         if(edge.length*scale<1.5)continue;
-        const start=edge[0],old=[x/(scale*10)+(left+right)/2,y/(scale*10)+(top+bottom)/2],gap=Math.hypot(start[0]-old[0],start[1]-old[1]);let connected=commands.length>0&&gap*scale<4;
-        for(let t=0;connected&&t<=Math.ceil(gap*2);t++){const f=t/Math.max(1,Math.ceil(gap*2)),xx=Math.round(old[0]+(start[0]-old[0])*f),yy=Math.round(old[1]+(start[1]-old[1])*f);if(sourceIds[yy*w+xx]!==element.sourceId)connected=false;}
-        if(connected)move(...start);else{trim();move(...start,'jump');}
+        sourceTravel(edge[0],element.sourceId);
         for(const point of simplify(edge,.1/scale).slice(1))move(...point,'stitch',1.8);
       }
       edged.add(element.sourceId);
@@ -209,10 +229,10 @@ async function generate(png, config) {
       const insideMove=(p,maximum=config.length)=>{
         const old=[x/(scale*10)+(left+right)/2,y/(scale*10)+(top+bottom)/2],distance=Math.hypot(p[0]-old[0],p[1]-old[1]);let safe=true;
         for(let t=0;t<=Math.ceil(distance*2);t++){const f=t/Math.max(1,Math.ceil(distance*2)),xx=Math.round(old[0]+(p[0]-old[0])*f),yy=Math.round(old[1]+(p[1]-old[1])*f);if(xx<0||xx>=w||yy<0||yy>=info.height||!nearMask(xx,yy)){safe=false;break;}}
-        if(!safe){trim();move(...p,'jump');}else move(...p,'stitch',maximum);
+        if(!safe){sourceTravel(p,element.sourceId);}else move(...p,'stitch',maximum);
       };
       if(rows.length){
-        trim();move(...centre(rows[0]),'jump');
+        sourceTravel(centre(rows[0]),element.sourceId);
         // Centre run and inset zigzag underlay follow this section, not a global fill axis.
         const stride=Math.max(1,Math.round(config.underlay/((config.satinSpacing||config.spacing)/2)));
         for(let i=0;i<rows.length;i+=stride)insideMove(centre(rows[i]));
@@ -262,12 +282,12 @@ async function generate(png, config) {
         const pair=pending.splice(best,1)[0];if(reverse)pair.reverse();run(...pair);
       }
     }
-    // Apply narrow-feature top stitches last for each source region, after its broad sections.
+    // Finish narrow-feature top stitches beside their adjoining broad section.
     const sourceId=element.sourceId??element.id;
-    if(!ordered.slice(ordered.indexOf(element)+1).some(e=>(e.sourceId??e.id)===sourceId)){
-      const narrow=thinColumns(sourceIds,w,sourceElements[sourceId],scale,config.satinSpacing||config.spacing,guidelines.assumedThreadWidthMm);
+    {
+      const narrow=narrowByElement.get(element.id)||[];
       for(const rails of narrow){
-        trim();move(...rails[0][0],'jump');
+        sourceTravel(rails[0][0],sourceId);
         for(let i=0;i<rails.length;i++){
           // Alternate rails to sew across the taper; never replace a short cross-stitch with a run.
           move(...rails[i][(i+1)%2]);thinCrossStitches++;

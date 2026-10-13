@@ -1,4 +1,6 @@
 require('dotenv').config();
+// Local connections use Railway's public database address when configured.
+process.env.DATABASE_URL=process.env.DATABASE_PUBLIC_URL||process.env.DATABASE_URL;
 const express=require('express');
 const path=require('node:path');
 const app=express();

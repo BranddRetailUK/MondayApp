@@ -38,3 +38,7 @@ A render or stitch-count match alone does not establish a professional sewn fini
 Use saved production files for known PSG jobs. New artwork can use learned general
 principles, but comparison references must not be substituted for generated output.
 Keep production references separate during generation and compare afterwards.
+
+## Connected sections and fine branches
+
+Route connecting support stitches inside the original same-thread source region. Preserve jumps where regions are disconnected; never shortcut across holes. Finish a narrow branch beside its adjoining broad section, retaining crosswise top stitches. Direction transitions between guided ribbon sections are eased by a bounded source-derived axial adjustment. These routing/style rules remain experimental pending sew-out verification.

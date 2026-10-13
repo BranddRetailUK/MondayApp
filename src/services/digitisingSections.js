@@ -25,6 +25,14 @@ function partition(ids,elements,w,h,plans){
     for(const e of targets){e.width=e.right-e.x+1;e.height=e.bottom-e.y+1;delete e.right;delete e.bottom;}
     // Parallel limbs share the dominant long-limb direction for consistent sheen.
     for(const e of targets){const angle=sectionAngle(e);const family=targets.filter(t=>{const d=Math.abs(sectionAngle(t)-angle);return Math.min(d,180-d)<25;});const dominant=family.reduce((a,b)=>Math.hypot(...[0,1].map(i=>b.guide[1][i]-b.guide[0][i]))>Math.hypot(...[0,1].map(i=>a.guide[1][i]-a.guide[0][i]))?b:a);e.stitchAngle=sectionAngle(dominant);}
+    // Ease opposing ribbon directions toward their shared axial mean. This
+    // reduces the abrupt change in sheen at mitred joins without flattening
+    // the individual sections or changing any artwork geometry.
+    if(targets.length>1){
+      const sx=targets.reduce((n,e)=>n+Math.cos(e.stitchAngle*Math.PI/90),0),sy=targets.reduce((n,e)=>n+Math.sin(e.stitchAngle*Math.PI/90),0);
+      const mean=Math.atan2(sy,sx)*90/Math.PI;
+      for(const e of targets){const delta=((mean-e.stitchAngle+270)%180)-90;e.stitchAngle=(e.stitchAngle+Math.max(-8,Math.min(8,delta*.2))+180)%180;}
+    }
     elements[id]=targets[0];elements.push(...targets.slice(1));
   }
 }
