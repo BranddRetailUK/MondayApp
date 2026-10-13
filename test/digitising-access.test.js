@@ -9,6 +9,12 @@ test('studio is production-only, including direct API calls and client-spoofed i
  try{
   for(const [identity,status] of [['',401],['other',403],['limited',403],['production',200]]){const response=await fetch(base+'/status',{headers:{'test-identity':identity}});assert.equal(response.status,status);}
   assert.equal((await fetch(base+'/generate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:users.production.email})})).status,401);
+  for(const endpoint of ['/project','/compile-project'])assert.equal((await fetch(base+endpoint,{method:'POST',headers:{'content-type':'application/json'},body:'{}'})).status,401);
+  const project=require('./fixtures/digitising/object-tools.json');
+  const compiled=await fetch(base+'/compile-project',{method:'POST',headers:{'test-identity':'production','content-type':'application/json'},body:JSON.stringify(project)});
+  assert.equal(compiled.status,200);assert.ok((await compiled.json()).dst);
+  const invalid=await fetch(base+'/compile-project',{method:'POST',headers:{'test-identity':'production','content-type':'application/json'},body:'{}'});
+  assert.equal(invalid.status,400);
   const png=await require('sharp')({create:{width:100,height:50,channels:4,background:'#ff0000'}}).png().toBuffer();
   const form=new FormData();form.append('artwork',new Blob([png],{type:'image/png'}),'design.png');
   const response=await fetch(base+'/prepare',{method:'POST',headers:{'test-identity':'production'},body:form}),data=await response.json();assert.equal(response.status,200);assert.ok(data.widthMm>0&&data.heightMm>0&&data.png);
