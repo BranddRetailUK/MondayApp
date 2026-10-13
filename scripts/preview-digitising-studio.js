@@ -16,6 +16,10 @@ app.get('/api/digitising-reference',(_req,res)=>{
   if(!fs.existsSync(file))return res.json({available:false});
   const data=JSON.parse(fs.readFileSync(file));res.json({available:true,totalDst:data.totalDst,sampled:data.sampled,read:data.read,summary:data.summary,benchmark:'PSG7000 run sheet: 85.8 × 79.6 mm · 8,313 stitches · thread order 1366 → 1297 → 1249 → 1068 → 1278 → 1147 → 1001. Railway links print design 28516 to PSG6893 (9,163 stitches) on jobs 50151, 50436 and 50659; PSG7000 is a separate reference, not a confirmed replacement.'});
 });
+app.get('/api/digitising-example',(_req,res)=>{
+  try{const saved=JSON.parse(fs.readFileSync('/tmp/digitising-studio/rainbow-iteration.json'));res.json({png:fs.readFileSync('/tmp/digitising-studio/rainbow-flat-panel.png').toString('base64'),config:saved.config});}catch{res.status(404).json({error:'Local rainbow artwork/setup is unavailable.'});}
+});
+app.get('/digitising-reference.dst',(_req,res)=>res.sendFile('/tmp/digitising-studio/psg7000-reference.dst'));
 app.get('/digitising-source.png',(_req,res)=>res.sendFile('/tmp/digitising-studio/psg7000-source.png'));
 app.get('/digitising-reference.png',(_req,res)=>res.sendFile('/tmp/digitising-studio/psg7000.png'));
 app.use('/api',(_req,res)=>res.status(404).json({error:'Local Digitising Studio only.'}));

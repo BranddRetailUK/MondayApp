@@ -42,3 +42,29 @@ Success means a repeatable acceptable physical sew-out. That condition has not y
 Design 28516 maps to Over The Rainbow jobs 50151, 50436, 50659, 50875 and 51299. The first three explicitly pair DTF with strapline (28516) with left-breast fleece embroidery PSG6893, 9,163 stitches. Their embroidery notes list navy 1366, blue 1297, green 1249, yellow 1068, orange 1278, red 1147, black and white. The queried rows do not establish PSG7000 as the replacement. Keep PSG6893 and PSG7000 distinct until their design history is confirmed.
 
 Twelve locally available production PDFs were text-inspected, and the PSG7026 sheet was visually rendered. They demonstrate explicit thread brands/codes, ordered needle assignments, trims, garment-specific variants (e.g. beanie), and garment-coloured thread steps. They do not supply enough information to reconstruct Pulse object parameters.
+
+### Reference export and satin iteration
+
+PSG7000 was opened in the user's signed-in Ambassador account and exported as
+`psg7000-reference.dst`, saved alongside its PXF in OneDrive. The private reference
+is not bundled or used as a generator input. Pulse's stitch total includes records
+that our preview does not draw; comparisons must use the same decoder on both files.
+
+The local page now loads the extracted original artwork PNG and saved experiment
+settings with **Load rainbow test artwork & setup**. These private files live under
+`/tmp/digitising-studio` and must be restored after temporary-file cleanup. Per-region
+controls support exclusion, order, simple satin versus fill, and an optional satin
+width. Excluded components retain stable ids for editing but do not affect bounds.
+Satin uses a skeleton-derived centre line and alternating rails; branch/loop shapes
+are rejected for manual segmentation. This is not a general lettering digitiser.
+
+To rerun a strict private benchmark:
+
+```sh
+node scripts/benchmark-digitising-studio.js SOURCE.png SETUP.json REFERENCE.dst OUTPUT_DIR
+```
+
+This writes a regenerated candidate, its setup and a benchmark report. Exact command
+and path comparison is deliberately strict; a matching silhouette, colour count or
+stitch total alone does not pass. The benchmark still requires further engine work;
+no exact-match or physical sew-out acceptance has been claimed.
