@@ -1,3 +1,8 @@
+function validateThreadColours(value) {
+  if(value==null)return [];
+  if(!Array.isArray(value)||value.length>100||value.some(c=>!/^#[a-f\d]{6}$/i.test(c)))throw new Error('Invalid embroidery thread colours.');
+  return value;
+}
 const {originalArtworkName}=require('../../tools/print-worker/proof-filename');
 const {randomUUID,createHash}=require('node:crypto');
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -31,7 +36,7 @@ function createService(pool){
     if(String(design.sourceOrderId||'')!==String(source?.proofSourceOrderId||''))throw new Error('The linked job changed. Reopen this proof from the job.');
     if(!source||typeof source.request!=='string'||source.request.length>20000||String(source.instructions||'').length>5000)throw new Error('Invalid proof source.');
     if(!Array.isArray(details)||details.length!==files.length||files.length>20||files.reduce((sum,file)=>sum+file.buffer.length,0)>50*1024*1024)throw new Error('Artwork originals must total less than 50 MB.');
-    const originals=files.map((file,index)=>({id:String(details[index].id||'').slice(0,100),name:originalArtworkName(details[index].originalName||file.originalname),type:file.mimetype,backgroundMode:details[index].backgroundMode||'auto',assignment:String(details[index].assignment||'').slice(0,500),notes:String(details[index].notes||'').slice(0,1000),data:file.buffer.toString('base64')}));
+    const originals=files.map((file,index)=>({id:String(details[index].id||'').slice(0,100),name:originalArtworkName(details[index].originalName||file.originalname),type:file.mimetype,backgroundMode:details[index].backgroundMode||'auto',threadColours:validateThreadColours(details[index].threadColours),assignment:String(details[index].assignment||'').slice(0,500),notes:String(details[index].notes||'').slice(0,1000),data:file.buffer.toString('base64')}));
     await query('UPDATE proof_design_jobs SET source=$2::jsonb,source_artworks=$3::jsonb WHERE id=$1',[id,JSON.stringify({request:source.request,instructions:String(source.instructions||''),customer:String(source.customer||'').slice(0,200),jobTitle:String(source.jobTitle||'').slice(0,200),brief:source.brief||null}),JSON.stringify(originals)]);
   }
   async function source(id){

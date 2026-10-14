@@ -293,3 +293,19 @@ test('existing design adoption retains folder and artwork, archives legacy proof
   await fs.mkdir(path.join(root,'29123 Duplicate'));await assert.rejects(()=>adoptDesign(root,state,task),/found 2/);
  }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
+
+test('embroidery originals and thread palette survive proof source reopening',async()=>{
+ const db=new PGlite(),pool={query:(...args)=>db.query(...args)};
+ try{
+  await ensureProofGeneratorTables(db);const service=createService(pool),id=randomUUID();
+  await service.reserve(id,'Embroidery','Sleeve');
+  const source={request:'Right sleeve embroidery',instructions:''};
+  const files=[{originalname:'logo.dst',mimetype:'application/octet-stream',buffer:Buffer.from('original DST')}];
+  const details=[{id:'emb',originalName:'logo.dst',threadColours:['#ffffff','#c02030']}];
+  await service.saveSource(id,source,files,details);
+  const saved=await service.source(id);
+  assert.deepEqual(saved.artworks[0].threadColours,details[0].threadColours);
+  assert.equal(Buffer.from(saved.artworks[0].data,'base64').toString(),'original DST');
+  await assert.rejects(()=>service.saveSource(id,source,files,[{...details[0],threadColours:['red']}]),/thread colours/);
+ }finally{await db.close();}
+});

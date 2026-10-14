@@ -77,3 +77,19 @@ test('PXF rejects missing, truncated and oversized embedded previews', async () 
   const corrupt=Buffer.from(png);corrupt.writeUInt32BE(0xffffffff,8);
   assert.throws(()=>extractPxfPreview(wrap(corrupt)), /no supported embedded/);
 });
+
+test('proof embroidery shading preserves selected colours, transparency and jumps', async()=>{
+  const {renderThreadPreview}=await import('../public/proof-embroidery.mjs');
+  const {parseDst}=await modulePromise;
+  const {createCanvas}=require('@napi-rs/canvas');
+  const design=parseDst(dst([[4,0,3],[4,0,0x83],[0,0,0xc3],[4,0,3]]));
+  assert.throws(()=>renderThreadPreview(design,[]),/every DST/);
+  assert.throws(()=>renderThreadPreview(design,['#ffffff','red']),/every DST/);
+  const canvas=renderThreadPreview(design,['#ff0000','#0000ff'],()=>createCanvas(1,1));
+  const ctx=canvas.getContext('2d');
+  const red=ctx.getImageData(70,16,1,1).data,blue=ctx.getImageData(370,16,1,1).data;
+  assert.ok(red[0]>red[2]);assert.ok(blue[2]>blue[0]);
+  assert.equal(ctx.getImageData(230,16,1,1).data[3],0);
+  assert.equal(ctx.getImageData(0,0,1,1).data[3],0);
+  assert.ok(canvas.width<=2032&&canvas.height<=2032);
+});

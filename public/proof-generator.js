@@ -79,7 +79,7 @@
           </section>
           <section class="proof-card">
             <div class="proof-review-title proof-section-title"><h2>Artwork</h2></div>
-            <input id="proof-file-input" type="file" accept=".png,.jpg,.jpeg,.webp,.svg,.pdf,.eps,.ai,.ttf,.otf" multiple hidden>
+            <input id="proof-file-input" type="file" accept=".png,.jpg,.jpeg,.webp,.svg,.pdf,.eps,.ai,.ttf,.otf,.pxf,.dst" multiple hidden>
             <button id="proof-dropzone" class="proof-dropzone" type="button"><span class="proof-upload-icon" aria-hidden="true">↥</span><strong>Choose artwork files</strong></button>
             <div id="proof-artworks" class="proof-artwork-list"></div>
           </section>
@@ -304,7 +304,7 @@
   async function saveProofSource(){
     if(localPreview)return;
     const form=new FormData();form.append('brief',JSON.stringify({proofSourceOrderId:selectedLinkJob?.source_order_id||null,request:request.value,instructions:instructions.value,customer:customer.value,jobTitle:jobTitle.value,brief:currentBrief}));
-    form.append('artworkDetails',JSON.stringify(artworks.map(item=>({id:item.id,originalName:item.file.name,backgroundMode:item.backgroundMode,assignment:item.assignment,notes:item.notes}))));
+    form.append('artworkDetails',JSON.stringify(artworks.map(item=>({id:item.id,originalName:item.file.name,backgroundMode:item.backgroundMode,threadColours:item.threadColours,assignment:item.assignment,notes:item.notes}))));
     for(const item of artworks)form.append('artworks',item.file,item.file.name);
     const response=await proofFetch(`/api/proof-generator/designs/${designId}/source`,{method:'POST',body:form});
     if(!response.ok){const data=await proofJson(response);throw new Error(data.error||'Could not retain proof source.');}
@@ -320,7 +320,7 @@
       request.value=data.source.request||'';instructions.value=data.source.instructions||'';customer.value=data.source.customer||job.customer||'';jobTitle.value=data.source.jobTitle||job.jobTitle||'';
       for(const saved of data.artworks){
         const file=new File([Uint8Array.from(atob(saved.data),c=>c.charCodeAt(0))],saved.name,{type:saved.type||''});
-        const item={id:saved.id,file,assignment:saved.assignment||'',notes:saved.notes||'',backgroundMode:saved.backgroundMode||'auto',url:file.type.startsWith('image/')?URL.createObjectURL(file):''};artworks.push(item);renderArtwork(item);
+        const item={id:saved.id,file,assignment:saved.assignment||'',notes:saved.notes||'',backgroundMode:saved.backgroundMode||'auto',threadColours:saved.threadColours||[],url:file.type.startsWith('image/')?URL.createObjectURL(file):''};artworks.push(item);renderArtwork(item);
       }
       currentBrief=data.source.brief;currentPreview=null;dirty=true;
       if(currentBrief){currentBrief.proofSourceOrderId=job.sourceOrderId||null;currentBrief.proofRevision=job.revision;currentBrief.proofDesignId=job.id;renderEditor();
@@ -504,7 +504,7 @@
   function addFiles(files) {
     for (const file of Array.from(files || [])) {
       if (artworks.length >= 20) { setFeedback('Add no more than 20 artwork files.', true); break; }
-      if (!/\.(png|jpe?g|webp|svg|pdf|eps|ai|ttf|otf)$/i.test(file.name)) { setFeedback(`Unsupported file: ${file.name}`, true); continue; }
+      if (!/\.(png|jpe?g|webp|svg|pdf|eps|ai|ttf|otf|pxf|dst)$/i.test(file.name)) { setFeedback(`Unsupported file: ${file.name}`, true); continue; }
       const item = { id: crypto.randomUUID(), backgroundMode: 'auto', file, assignment: '', notes: '', url: file.type.startsWith('image/') ? URL.createObjectURL(file) : '' };
       if (file.size > 10 * 1024 * 1024) { setFeedback('Each artwork must be no larger than 10 MB.', true); continue; }
       sourceChanged();
@@ -518,7 +518,7 @@
     card.className = 'proof-artwork-card';
     const thumb = document.createElement('div');
     thumb.className = 'proof-artwork-thumb';
-    if (/\.(svg|eps)$/i.test(item.file.name)) {
+    if (/\.(svg|eps|pxf)$/i.test(item.file.name)) {
       prepareArtworkFile(item.file).then(file=>{
         if(!card.isConnected)return;
         if(item.url)URL.revokeObjectURL(item.url);
@@ -560,6 +560,39 @@
     fileType.className = 'proof-artwork-type';
     fileType.textContent = item.file.name.split('.').pop().toUpperCase();
     body.append(title, fileType);
+    if (/\.(pxf|dst)$/i.test(item.file.name)) {
+      const status=document.createElement('p');body.append(status);
+      const refresh=async()=>{
+        const prepared=await prepareArtworkFile(item.file);
+        if(!card.isConnected)return;
+        if(item.url)URL.revokeObjectURL(item.url);
+        item.url=URL.createObjectURL(prepared);
+        const image=document.createElement('img');image.src=item.url;image.alt='Embroidery preview';thumb.replaceChildren(image);
+      };
+      if(/\.pxf$/i.test(item.file.name)){
+        status.textContent='Saved PXF preview; specify embroidery width in the request. Small previews retain their original detail.';
+        const label=document.createElement('label');label.className='proof-control';label.textContent='Preview background';
+        const select=document.createElement('select');
+        for(const [value,text] of [['auto','Keep saved background'],['white','Remove white edge background']])select.add(new Option(text,value));
+        select.value=item.backgroundMode;select.onchange=()=>{item.backgroundMode=select.value;if(currentBrief)markDirty(false);else sourceChanged();};label.append(select);body.append(label);
+      }else{
+        import('/proof-embroidery.mjs').then(async module=>{
+          const design=module.parseDst(await item.file.arrayBuffer());if(!card.isConnected)return;
+          status.textContent=`${design.widthMm.toFixed(1)} × ${design.heightMm.toFixed(1)} mm sewn size. Select each thread colour; colours are not stored in DST.`;
+          if(design.colourChanges>=100)throw Error('Proof embroidery supports up to 100 thread colour blocks.');
+          const saved=item.threadColours||[];
+          item.threadColours=Array.from({length:design.colourChanges+1},(_,i)=>saved[i]||'');
+          item.threadColours.forEach((colour,index)=>{
+            const label=document.createElement('label');label.className='proof-control';label.textContent=`Thread ${index+1}`;
+            const input=document.createElement('input');input.type='color';input.value=colour||'#ffffff';input.disabled=busy;
+            const confirm=document.createElement('button');confirm.type='button';confirm.className='proof-secondary-button';confirm.textContent=colour?'Selected':'Use colour';confirm.disabled=false;
+            const change=()=>{if(busy)return;item.threadColours[index]=input.value;confirm.textContent='Selected';if(currentBrief)markDirty(false);else sourceChanged();if(item.threadColours.every(Boolean))refresh().catch(error=>setFeedback(error.message,true));};
+            input.addEventListener('input',change);confirm.onclick=change;label.append(input,confirm);body.append(label);
+          });
+          if(item.threadColours.every(Boolean))await refresh();
+        }).catch(error=>{status.textContent=error.message;setFeedback(error.message,true);});
+      }
+    }
     card.append(thumb, body);
     artworksNode.append(card);
   }
@@ -948,6 +981,11 @@
   const epsPreviews=new WeakMap();
   let epsQueue=Promise.resolve();
   async function prepareArtworkFile(file) {
+    if(/\.(pxf|dst)$/i.test(file.name)){
+      const item=artworks.find(a=>a.file===file);
+      const module=await import('/proof-embroidery.mjs');
+      return module.prepareEmbroidery(file,item?.threadColours||[]);
+    }
     if(/\.svg$/i.test(file.name))return window.ProofSvg.prepare(file);
     if(!/\.eps$/i.test(file.name))return file;
     if(!epsPreviews.has(file)){
