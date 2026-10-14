@@ -498,3 +498,54 @@ compile stats and decoded preview). Good Game's current-compiler stitches remain
 identical. Regression coverage includes raster noise, preservation of alpha and
 substantial islands, dark-colour separation, diagonal fill islands, expanded
 complexity bounds and safe fallback travel. Rollout activation is unchanged.
+
+### API-enabled complex-artwork interpretation (2026-10-14)
+
+The follow-up live failure occurred after preparation, in model interpretation.
+Both interpretation and construction-tool selection now use batches of at most
+24 regions with at most two concurrent requests. Each batch retains the full
+source image for context; stroke batches add only their own labelled crops.
+Token-budget truncation splits the affected batch recursively; incomplete JSON
+is never consumed, single-region failures remain explicit, and content-filter
+or other errors are not bypassed. Stroke output budget is now 8,000 tokens per
+batch. Validated batches are combined and checked again for complete identity.
+Completed batches can be reused from the existing optional local cache.
+
+A real source-artwork API reproduction also exposed invalid nonwhite exclusions,
+a white arch mistaken for background, excessive optional section guides, and a
+model-selected satin column that failed physical width validation. The response
+schema now binds ids to source colours and requires inclusion of nonwhite regions.
+When the original prepared upload already has transparency, alpha defines
+negative space and **all white artwork must also be included**. This policy is
+in cache context and validation; older cache entries are reusable only if they
+satisfy the current policy. Opaque paper-background handling remains available.
+
+Optional interpretation guides that would exceed the 128-section budget are
+not applied; their complete source geometry continues through automatic
+construction with a review warning. Semantic satin proposals are validated and
+locally compiled before acceptance. Failed model constructions receive a flagged
+source-geometry fallback instead of aborting the whole generation. These changes
+do not relax width, containment, object or command limits and do not silently
+remove source regions.
+
+Validation: 100 digitising tests pass, including bounded batching, truncation,
+source-bound schemas, preservation of transparent white artwork, section budgets
+and invalid-satin recovery. Good Game's current-compiler DST remains identical.
+Private real-API evidence is under `output/digitising-studio/soul-disciples/`,
+including `interpreted-plan.json`, cached validated responses and diagnostic
+JSON drafts. Only approved source artwork is sent with `store:false`; no DST or
+reference proof is sent. Hosted deployment verification remains separate from
+the local run through the real API.
+
+The real API-enabled Soul Disciples reproduction completed after these fixes:
+126 interpreted source regions, no excluded artwork, 157 sewing objects, 50,767
+stitches, 161 trims, 33 colour changes, independently decoded 195.7 × 199.8 mm.
+The decoded preview was inspected: the white arch and complete O silhouette are
+retained. A model-selected closed-column proposal had compiled successfully but
+covered only the O's centre; semantic acceptance now additionally requires at
+least 97% sampled source-mask coverage before local compilation. Rejected
+proposals retain explicit review warnings and use automatic source construction.
+This is a local end-to-end run using real API responses and their validated
+cache, not a hosted-deployment or physical sew-out confirmation. Its DST and
+preview are `interpreted-candidate.dst` and `interpreted-preview.png` in the
+private evidence directory.

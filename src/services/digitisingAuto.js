@@ -16,6 +16,15 @@ async function removeBackground(png){
   for(let q=0;q<queue.length;q++){const k=queue[q],x=k%w,y=Math.floor(k/w);data[k*4+3]=0;if(x)add(k-1);if(x<w-1)add(k+1);if(y)add(k-w);if(y<h-1)add(k+w);}
   return sharp(data,{raw:info}).png().toBuffer();
 }
+function sectionPlan(regions,sectionCount){
+  const sections={},planningWarnings=[];
+  for(const region of regions.filter(r=>r.include&&r.sections.length)){
+    const extra=region.sections.length-1;
+    if(sectionCount+extra>128){planningWarnings.push(`region-${region.id}: model section guides exceed the section budget; source geometry retained for automatic construction.`);continue;}
+    sections[region.id]=region.sections.map(g=>[[g.startX,g.startY],[g.endX,g.endY]]);sectionCount+=extra;
+  }
+  return {sections,planningWarnings};
+}
 async function plan(input,body={},options={}){
   const garment=body.garment||'tshirt';
   if(!engine.PRESETS[garment])throw Error('Choose a garment.');
@@ -25,6 +34,7 @@ async function plan(input,body={},options={}){
   const png=await removeBackground(source);
   const config=engine.settings({garment,border:String(body.border)==='true'?'true':'false',widthMm:100,hoopMm:360,spacing:engine.PRESETS[garment].spacing,length:3.8,colours:8,removeWhite:'false'});
   config.sourceAspect=size.aspect;
+  config.preserveWhiteArtwork=png===source; // Existing alpha already defines negative space.
   config.hoopMm=Math.max(360,Math.ceil(100*size.aspect+10));
   config.whiteMatte=true;
   // Dense coverage is a server policy; never accept customer density overrides.
@@ -44,7 +54,7 @@ async function plan(input,body={},options={}){
   if(options.interpret){
     interpretation=await interpret(png,prepared,options);
     for(const region of interpretation.regions){if(!region.include)config.elementOptions[region.id]={type:'skip',order:region.id};else config.elementColours[region.id]=region.colour;}
-    config.sections=Object.fromEntries(interpretation.regions.filter(r=>r.include&&r.sections.length).map(r=>[r.id,r.sections.map(g=>[[g.startX,g.startY],[g.endX,g.endY]])]));
+    Object.assign(config,sectionPlan(interpretation.regions,prepared.elements.length));
     prepared=await engine.prepare(png,config);
   }
   const aspect=size.aspect;
@@ -78,4 +88,4 @@ async function plan(input,body={},options={}){
   sequence.forEach((el,order)=>{config.elementOptions[el.id]={order,type:el.guide?'fill':column(prepared.ids,prepared.info.width,el,prepared.scale,config.satinSpacing)?'satin':branchedColumns(prepared.ids,prepared.info.width,el,prepared.scale,config.satinSpacing)?'satin-branches':'fill'};});
   return {png,config,interpretation,preview:source};
 }
-module.exports={plan,removeBackground};
+module.exports={plan,removeBackground,sectionPlan};

@@ -123,7 +123,7 @@ async function prepare(png, config) {
   if(right<=left||bottom<=top)throw Error('Select at least one usable element.');
   const scale=config.widthMm/(config.sourceAspect?w:right-left),heightMm=config.sourceAspect?config.widthMm*config.sourceAspect:(bottom-top+1)*scale;
   if(Math.max(config.widthMm,heightMm)>config.hoopMm-10)throw Error('Design exceeds hoop with 5 mm clearance on each side.');
-  return {data,info,consolidatedPixels,ids:elementIds,elements,sourceIds,sourceElements,left,right,top,bottom,scale,heightMm};
+  return {data,info,preserveWhiteArtwork:!!config.preserveWhiteArtwork,consolidatedPixels,ids:elementIds,elements,sourceIds,sourceElements,left,right,top,bottom,scale,heightMm};
 }
 async function generate(png, config) {
   if(config.garment==='cap')throw Error('Cap generation is not validated: curved frames need centre-out sequencing. Select a flat garment for this proof of concept.');
@@ -336,6 +336,6 @@ async function generate(png, config) {
   const {parseDst}=await import('../../public/embroidery-viewer.mjs');const parsed=parseDst(dst);
   if(Math.max(parsed.widthMm,parsed.heightMm)>config.hoopMm-10)throw Error('Generated satin or outline exceeds the hoop clearance.');
   return {dst:dst.toString('base64'),threads,threadPlan,elements, stats:{stitches:parsed.stitches,widthMm:parsed.widthMm,heightMm:parsed.heightMm,colourChanges:parsed.colourChanges,trims,shortRuns,thinColumns:thinColumnsSewn,thinCrossStitches},
-    warnings:[...(consolidatedPixels?[`${consolidatedPixels} raster pixels consolidated or omitted; review fine details.`]:[]),'Experimental sample; not production approved.','Disconnected fill runs request a three-jump trim. Confirm trim recognition on your Tajima controller. Running outlines are experimental and may omit tiny boundary fragments.', 'Automatic section directions and branched satin remain experimental; bounded provisional satin pull compensation; no validated cap strategy. Thread colours are approximate; assign real cones in order.',...(shortRuns?[`${shortRuns} sub-0.8 mm runs were omitted. Fine detail requires manual digitising.`]:[])],config};
+    warnings:[...(config.planningWarnings||[]),...(consolidatedPixels?[`${consolidatedPixels} raster pixels consolidated or omitted; review fine details.`]:[]),'Experimental sample; not production approved.','Disconnected fill runs request a three-jump trim. Confirm trim recognition on your Tajima controller. Running outlines are experimental and may omit tiny boundary fragments.', 'Automatic section directions and branched satin remain experimental; bounded provisional satin pull compensation; no validated cap strategy. Thread colours are approximate; assign real cones in order.',...(shortRuns?[`${shortRuns} sub-0.8 mm runs were omitted. Fine detail requires manual digitising.`]:[])],config};
 }
 module.exports={settings,artwork,assess,prepare,generate,record,encode,PRESETS};

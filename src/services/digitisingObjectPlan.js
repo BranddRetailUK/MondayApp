@@ -49,7 +49,7 @@ async function propose(png,config,options={}){
   const panels=new Map(prepared.elements.filter(e=>plans.get(e.id)?.tool==='finished-panel').map(e=>[e.id,require('./digitisingPanel').measure(prepared,e)]));
   if([...panels.values()].some(p=>!p))throw Error('Finished panel does not fit source geometry.');
   const coveredGround=new Set(prepared.elements.filter(e=>[...panels].some(([id,p])=>p.enclosed.includes(e.id)&&prepared.elements.find(el=>el.id===id).colour===e.colour)).map(e=>e.id));
-  const project={version:1,units:'mm',garment:config.garment,widthMm:config.widthMm,heightMm,objects:[],travelRegions:[]},warnings=[],includedSources=new Set();
+  const project={version:1,units:'mm',garment:config.garment,widthMm:config.widthMm,heightMm,objects:[],travelRegions:[]},warnings=[...(config.planningWarnings||[])],includedSources=new Set();
   if(prepared.consolidatedPixels)warnings.push(`${prepared.consolidatedPixels} raster pixels consolidated or omitted to remove tiny colour fragments; review fine details.`);
   const physical=p=>p.map((v,k)=>Math.max(0,Math.min(k?heightMm:config.widthMm,(v+.5)*scale)));
   const verify=o=>validate({...project,objects:[o]});
@@ -103,7 +103,7 @@ async function propose(png,config,options={}){
       // existing source-only generic construction, retaining an explicit flag.
       warnings.push(`${base.id}: ${toolPlan.tool} does not fit source geometry (${error.message}); generic source construction requires review.`);
     }
-    if(semantic){
+    if(semantic){try{
       for(const [i,part]of semantic.entries()){
         let o={...base,id:base.id+`-tool-${i}`,type:'satin',...part,...(part.rungs.some(r=>dist(...r)>9)?{splitSatin:true}:{}),rungs:simplifyRungs(part.rungs)};
         if(!part.closed&&part.rungs.some(r=>dist(...r)>12)){
@@ -115,7 +115,16 @@ async function propose(png,config,options={}){
         }
         try{verify(o);}catch(error){throw Error(`${o.id}: ${error.message}`);}proposed.push(o);
       }
-    }else if(toolPlan?.construction!=='fill'&&(toolPlan?.tool||choice?.type==='satin'||choice?.type==='satin-branches')){
+      // A valid ribbon can still cover only a counter edge of a broad letter.
+      // Check the source mask before accepting any model-selected construction.
+      const stride=Math.max(2,Math.ceil(Math.sqrt(el.pixels/2000)));let sampled=0,covered=0;
+      for(let y=el.y;y<el.y+el.height;y+=stride)for(let x=el.x;x<el.x+el.width;x+=stride)if(ids[y*info.width+x]===el.id){
+        sampled++;if(proposed.some(o=>require('./digitisingProject').inside(physical([x,y]),o,.08)))covered++;
+      }
+      if(sampled&&covered<sampled*.97)throw Error('construction omits source coverage');
+      require('./digitisingCompiler').compile({...project,travelRegions:[],objects:proposed});
+    }catch(error){proposed=[];warnings.push(`${base.id}: model-selected satin construction failed validation (${error.message}); automatic source construction retained.`);}}
+    if(!proposed.length&&toolPlan?.construction!=='fill'&&(toolPlan?.tool||choice?.type==='satin'||choice?.type==='satin-branches')){
       const single=column(ids,info.width,el,scale,config.satinSpacing);
       const paths=single?[single]:branchedColumns(ids,info.width,el,scale,config.satinSpacing);
       try{

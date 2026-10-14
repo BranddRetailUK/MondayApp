@@ -62,7 +62,7 @@ test('transparent white artwork and margins survive preparation and preview',asy
   const input=await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="240"><rect x="20" y="30" width="80" height="170" fill="white"/></svg>')).png().toBuffer();
   const source=await engine.artwork(input,{maxSide:2000});assert.deepEqual(await removeBackground(source),source);
   const p=await plan(input,{widthMm:150,heightMm:300}),prepared=await engine.prepare(p.png,p.config);
-  assert.equal(prepared.heightMm,300);assert.equal(prepared.elements[0].colour,'#ffffff');assert.deepEqual(p.preview,source);
+  assert.equal(prepared.preserveWhiteArtwork,true);assert.equal(prepared.heightMm,300);assert.equal(prepared.elements[0].colour,'#ffffff');assert.deepEqual(p.preview,source);
   const resized=await plan(input,{heightMm:500});assert.equal(resized.config.widthMm,250);
   await assert.rejects(plan(input,{heightMm:602}),/Width/);
   // Excluding an element cannot change the image's coordinate scale or proportions.
@@ -96,4 +96,10 @@ test('neutral near-black variants share a thread without collapsing dark chromat
   assert.equal(sameThreadColour([0,0,0],[0,0,48]),false);
   assert.equal(sameThreadColour([0,0,0],[48,0,0]),false);
   assert.equal(sameThreadColour([0,0,0],[80,80,80]),false);
+});
+test('optional model guides stay within the section budget without dropping source artwork',()=>{
+  const {sectionPlan}=require('../src/services/digitisingAuto'),guide={startX:0,startY:0,endX:10,endY:10};
+  const regions=[{id:0,include:true,sections:[guide,guide,guide]},{id:1,include:true,sections:[guide,guide]},{id:2,include:true,sections:[guide]}];
+  const before=JSON.stringify(regions),r=sectionPlan(regions,127);
+  assert.equal(r.sections[0],undefined);assert.equal(r.sections[1].length,2);assert.equal(r.sections[2].length,1);assert.equal(r.planningWarnings.length,1);assert.match(r.planningWarnings[0],/source geometry retained/);assert.equal(JSON.stringify(regions),before);
 });

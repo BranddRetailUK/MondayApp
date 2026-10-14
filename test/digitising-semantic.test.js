@@ -247,7 +247,35 @@ test('optical panel centring is bounded, reviewable and preserves the input proj
 test('source fill separates diagonal islands and reviews unsewable raster fragments',async()=>{
   const {propose}=require('../src/services/digitisingObjectPlan'),engine=require('../src/services/digitisingStudio');
   const png=await sharp(Buffer.from('<svg width="200" height="200"><path fill="black" d="M20 20H120V120H20Z M120 120H122V121H120Z"/></svg>')).png().toBuffer();
-  const config={...engine.settings({widthMm:20,hoopMm:150,spacing:.4,length:3,colours:1}),sourceAspect:1};
+  const config={...engine.settings({widthMm:20,hoopMm:150,spacing:.4,length:3,colours:1}),sourceAspect:1,satinSpacing:.3};
   const p=await propose(png,config,{strokePlan:{regions:[{id:0,tool:'fill'}]}});
   assert.ok(p.warnings.some(w=>w.includes('isolated fill island')));assert.equal(p.project.objects.length,1);assert.ok(compile(p.project).stats.stitches>50);
+});
+test('stroke planning batches complex sources and validates every returned tool',async()=>{
+  const {planStrokes}=require('../src/services/digitisingStrokePlanner');const old=process.env.OPENAI_API_KEY;process.env.OPENAI_API_KEY='test';
+  try{
+    const width=180,height=20,ids=new Int16Array(width*height).fill(-1),elements=[];
+    for(let id=0;id<26;id++){const x=2+id*6;elements.push({id,x,y:2,width:4,height:10,pixels:40,colour:'#000000'});for(let y=2;y<12;y++)for(let xx=x;xx<x+4;xx++)ids[y*width+xx]=id;}
+    const png=await sharp({create:{width,height,channels:4,background:'#ffffff'}}).png().toBuffer(),sizes=[];
+    const result=await planStrokes(png,{elements,ids,info:{width,height},scale:.1},{fetchImpl:async(url,args)=>{
+      const body=JSON.parse(args.body),regions=JSON.parse(body.input[0].content[0].text).regions;sizes.push(regions.length);
+      assert.equal(body.store,false);assert.ok(body.input[0].content.filter(c=>c.type==='input_image').length<=25);
+      return {ok:true,json:async()=>({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify({regions:regions.map(r=>({id:r.id,tool:'auto-column'}))})}]}]})};
+    }});
+    assert.deepEqual(sizes.sort((a,b)=>a-b),[2,24]);assert.equal(result.regions.length,26);assert.deepEqual(result.regions.map(r=>r.id),elements.map(r=>r.id));
+  }finally{if(old===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=old;}
+});
+test('invalid model-selected satin geometry falls back to validated source construction',async()=>{
+  const tools=require('../src/services/digitisingSemanticTools'),original=tools.fit;
+  const {propose}=require('../src/services/digitisingObjectPlan'),engine=require('../src/services/digitisingStudio');
+  const png=await sharp(Buffer.from('<svg width="100" height="100"><rect x="20" y="10" width="10" height="80" fill="black"/></svg>')).png().toBuffer();
+  const config={...engine.settings({widthMm:20,hoopMm:150,spacing:.4,length:3,colours:1}),sourceAspect:1,satinSpacing:.3};
+  try{
+    for(const width of [.1,.5]){
+    tools.fit=()=>[{rungs:[[[4,2],[4+width,2]],[[4,18],[4+width,18]]]}];
+    const p=await propose(png,config,{strokePlan:{regions:[{id:0,tool:'straight-column'}]}});
+    assert.ok(p.warnings.some(w=>w.includes('model-selected satin construction failed validation')));assert.ok(compile(p.project).stats.stitches>50);assert.ok(p.project.objects.every(o=>!o.id.includes('-tool-')));
+    if(width===.5)assert.ok(p.warnings.some(w=>w.includes('omits source coverage')));
+    }
+  }finally{tools.fit=original;}
 });
