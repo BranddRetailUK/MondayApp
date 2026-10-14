@@ -20,7 +20,7 @@ function isProofGeneratorUser(user) {
     && String(user?.email || '').trim().toLowerCase() === PRODUCTION_EMAIL;
 }
 
-function createRouter({ requireProduction = true, parse = parseProofBrief, enrich = enrichProofProducts, build = buildProof, status = proofRuntimeStatus, generateViews = ensureGeneratedViews, searchProducts = searchProofProducts, convertEps = require('../services/dtfCloudinary').createEpsPng, designs } = {}) {
+function createRouter({ requireProduction = true, parse = parseProofBrief, enrich = enrichProofProducts, build = buildProof, status = proofRuntimeStatus, generateViews = ensureGeneratedViews, searchProducts = searchProofProducts, convertEps = require('../services/digitisingEps').rasterize, designs } = {}) {
   const router = express.Router();
   const designJobs=()=>designs || (designs=designService(require('../db/pool')));
   const links=()=>require('../services/proofJobLinks').createService(require('../db/pool'));

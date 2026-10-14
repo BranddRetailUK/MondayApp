@@ -111,9 +111,10 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
   if (ids.some(id => !id) || new Set(ids).size !== ids.length) throw new Error('Each uploaded artwork needs a unique ID.');
   artworks=[...artworks];
   const textArtworks=new Map();
+  const hasUploadedArtwork=d=>{const asset=findArtwork(d,artworks);return asset && !isFont(asset.file);};
   for(const product of brief.products){
     for(const d of resolveDecorations(brief,product)){
-      if(!d.text)continue;
+      if(!d.text || hasUploadedArtwork(d))continue;
       const key=JSON.stringify([d.text,d.fontArtworkId,d.textColour]);
       if(!textArtworks.has(key)){
         const id='name-'+createHash('sha256').update(key).digest('hex');
@@ -155,7 +156,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
     issues.push(item); return item;
   };
   for (const [productIndex, product] of brief.products.entries()) {
-    const decorations = resolveDecorations(brief, product).map(d => ({...d, ...(d.text?{artworkId:textArtworks.get(JSON.stringify([d.text,d.fontArtworkId,d.textColour]))}:{}), method:d.method || product.method || brief.method || ''}));
+    const decorations = resolveDecorations(brief, product).map(d => ({...d, ...(!hasUploadedArtwork(d) && textArtworks.has(JSON.stringify([d.text,d.fontArtworkId,d.textColour]))?{artworkId:textArtworks.get(JSON.stringify([d.text,d.fontArtworkId,d.textColour]))}:{}), method:d.method || product.method || brief.method || ''}));
     if (decorations.length > 6) throw new Error(`${product.code} has more than six decoration positions.`);
     const views = product.visual?.views || [];
     const lookupIssue = product.visual?.lookupIssue;
@@ -170,6 +171,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
       pencarrie_colour_not_found: 'This colour is not available.',
       ambiguous_code: 'This manufacturer code matches several Ralawise garments. Include the exact Ralawise style code in the brief.',
       colour_not_found: 'This colour is not available.',
+      colour_ambiguous: `Choose an exact garment colour: ${(product.visual?.availableColours || []).join(', ')}.`,
     };
     const catalogueIssue = catalogueMessages[lookupIssue];
     if (supplierUnavailable) issue(productIndex,null,product.visual?.supplierHttpStatus === 403 ? 'PenCarrie refused the catalogue lookup (HTTP 403). Its server access or product-data connection needs resolving.' : 'Garment image lookup is unavailable. The supplier connection needs attention before this proof can be completed. Your artwork and placement settings do not need changing.',true);

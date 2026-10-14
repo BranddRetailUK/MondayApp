@@ -225,3 +225,21 @@ test('name fonts survive multipart parsing and repeat styles retain each personâ
   assert.equal((await fetch(url+'/parse',{method:'POST',headers:production,body:f})).status,200);
  });
 });
+
+test('proof EPS conversion preserves white artwork and transparent negative space',async()=>{
+ const {rasterize}=require('../src/services/digitisingEps');
+ const sharp=require('sharp');
+ const eps=Buffer.from('%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 100 50\n1 setgray\n10 10 30 30 rectfill\n60 10 30 30 rectfill\nshowpage\n%%EOF\n');
+ const bytes=await rasterize(eps);
+ const {data,info}=await sharp(bytes).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+ const pixel=(x,y)=>data.subarray((y*info.width+x)*4,(y*info.width+x)*4+4);
+ let opaque=0,transparent=0,firstOpaque=-1;
+ for(let i=0;i<data.length;i+=4){if(data[i+3]===255){opaque++;if(firstOpaque<0)firstOpaque=i;assert.equal(data[i],255);}if(data[i+3]===0)transparent++;}
+ assert.ok(opaque>100&&transparent>100);
+ const y=Math.floor(firstOpaque/4/info.width)+2;
+ const occupied=Array.from({length:info.width},(_,x)=>x).filter(x=>pixel(x,y)[3]>0);
+ assert.ok(occupied.length>0);
+ const middle=Math.round((occupied[0]+occupied.at(-1))/2);
+ assert.equal(pixel(middle,y)[3],0);
+ assert.equal(pixel(0,0)[3],0);
+});

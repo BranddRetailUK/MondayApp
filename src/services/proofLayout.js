@@ -154,7 +154,11 @@ function prepareBrief(brief, input = {}) {
       d.position = positionName(d.position);
       d.method = d.method || product.method || brief.method || '';
       const artwork = findArtwork(d, input.artworks || []);
-      if (artwork) d.artworkId = artwork.id;
+      if (artwork) {
+        d.artworkId = artwork.id;
+        // A supplied logo may contain lettering; it is not a request to typeset it.
+        if(!/\.(ttf|otf)$/i.test(artwork.fileName || artwork.file?.originalname || ''))d.text='';
+      }
       applyChildBreastSize(d,product,input,(brief.sharedDecorations || []).includes(original));
       recoverDimensions(d, {...input,enforceSuppliedAxis:true}, product, brief.products);
       applyChildBreastSize(d,product,input,(brief.sharedDecorations || []).includes(original));

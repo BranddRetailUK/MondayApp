@@ -65,7 +65,11 @@ function selectRalawiseVisual(rows, code, requestedColour, matchColour, requeste
     && colours.some(c => /^royal[\s*†‡]*$/i.test(c.name))
     && !colours.some(c => /^royal blue[\s*†‡]*$/i.test(c.name)) ? 'Royal' : requestedColour;
   const match = matchColour(colours, colourRequest)?.row;
-  if (!match) return { ...base, name: candidates[0].style_name, lookupIssue: 'colour_not_found', availableColours: candidates.map(row=>row.colour_name), requestedColour };
+  if (!match) {
+    const requested=String(colourRequest).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+    const related=colours.filter(c=>(' '+c.name.toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()+' ').includes(' '+requested+' '));
+    return { ...base, name: candidates[0].style_name, lookupIssue: requested && related.length>1 ? 'colour_ambiguous' : 'colour_not_found', availableColours: (related.length>1?related:colours).map(c=>c.name), requestedColour };
+  }
   const views = new Map();
   const assets = [{ url: match.colour_image_url, filename: match.colour_image_filename, colour_id: match.colour_id }, ...(match.images || [])];
   for (const asset of assets) {

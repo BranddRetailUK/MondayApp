@@ -11,7 +11,9 @@ function matchColour(colours, requested) {
   const exact = colours.find((item) => normaliseColour(item.name) === target);
   if (exact) return exact;
   const starts = colours.filter((item) => normaliseColour(item.name).startsWith(`${target} `));
-  return starts.length === 1 ? starts[0] : null;
+  // A lone prefix match is still ambiguous if another shade ends with the requested colour.
+  const alternatives=colours.filter(item=>(' '+normaliseColour(item.name)+' ').includes(' '+target+' '));
+  return starts.length === 1 && alternatives.length === 1 ? starts[0] : null;
 }
 
 function imageUrl(path) {

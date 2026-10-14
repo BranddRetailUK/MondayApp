@@ -173,3 +173,12 @@ test('PenCarrie access rejection preserves the upstream status for a useful revi
  assert.equal(brief.products[0].visual.lookupIssue,'supplier_unavailable');
  assert.equal(brief.products[0].visual.supplierHttpStatus,403);
 });
+
+test('generic black cannot silently choose Black Smoke over Jet or Deep Black',()=>{
+ const colours=['Black Smoke','Jet Black*','Deep Black*'].map(name=>({name}));
+ assert.equal(matchColour(colours,'Black'),null);
+ const result=selectRalawiseVisual(colours.map((c,i)=>({...row,colour_id:i,colour_name:c.name})),'RX350','Black',matchColour);
+ assert.equal(result.lookupIssue,'colour_ambiguous');
+ assert.equal(result.availableColours.length,3);
+ assert.equal(matchColour(colours,'Jet Black').name,'Jet Black*');
+});

@@ -613,3 +613,15 @@ test('user-confirmed 29140 preserves all six artwork sizes and positions',()=>{
   assert.ok(layout.fitsRegion(p));
  }
 });
+
+test('uploaded logo lettering wins over erroneous parsed typed text',async()=>{
+ const {prepareBrief}=require('../src/services/proofLayout');
+ const b=brief([{...mark(),text:'Everyone Active',fontArtworkId:'',textColour:''}]);
+ const files=[await artFile()];
+ const input={artworks:files.map(a=>({id:a.id,fileName:a.file.originalname}))};
+ const prepared=prepareBrief(structuredClone(b),input);
+ assert.equal(prepared.products[0].decorations[0].text,'');
+ const result=await buildProof(b,files,{fetchImpl:async()=>({ok:true,arrayBuffer:async()=>await garmentBytes()})});
+ assert.ok(result.bytes.length>0);
+ assert.ok(!result.issues.some(i=>/font/.test(i.message)));
+});
