@@ -23,7 +23,7 @@ test('studio is production-only, including direct API calls and client-spoofed i
 });
 test('live app mounts studio API and authentication precedes studio initialization',()=>{
  const app=fs.readFileSync('src/app.js','utf8'),html=fs.readFileSync('public/index.html','utf8');
- assert.match(app,/app.use\('\/api\/digitising-studio', require\('\.\/routes\/digitising-studio'\).createRouter\(\)\)/);
+ assert.match(app,/app.use\('\/api\/digitising-studio', require\('\.\/routes\/digitising-studio'\).createRouter\(\{ history:.*\}\)\)/);
  assert.ok(html.indexOf('src="auth-session.js"')<html.indexOf('src="digitising-studio.js"'));
 });
 test('upload preview persists and width/height edits stay locked to source proportions',async()=>{
@@ -31,11 +31,14 @@ test('upload preview persists and width/height edits stay locked to source propo
  const get=id=>{if(!elements.has(id))elements.set(id,{value:'',dataset:{},listeners:{},children:[],addEventListener(event,fn){this.listeners[event]=fn;},replaceChildren(...children){this.children=children;},append(child){this.children.push(child);},querySelectorAll(){return [];}});return elements.get(id);};
  let submitted;
  const context={document:{getElementById:get},window:{ultimateHubUserPromise:Promise.resolve({email:'production@ultimatepromotions.co.uk'})},Image:class {},FormData,URL:{createObjectURL:()=> 'blob:source',revokeObjectURL(){}},fetch:async(url,options)=>{
+  if(url.includes('/jobs?'))return {ok:true,json:async()=>({jobs:[],hasMore:false})};
   if(url.endsWith('/status'))return {ok:true,json:async()=>({enabled:true})};
   if(url.endsWith('/prepare'))return {ok:true,json:async()=>({widthMm:270,heightMm:213.6,png:'preserved-source'})};
   submitted=options.body;return {ok:false,json:async()=>({error:'Stopped after validating request'})};
  }};
  await vm.runInNewContext(fs.readFileSync('public/digitising-studio.js','utf8'),context);
+ get('ds-create').listeners.click();assert.equal(get('ds-editor').hidden,false);assert.equal(get('ds-history').hidden,true);
+ get('ds-previous').listeners.click();await new Promise(resolve=>setImmediate(resolve));assert.equal(get('ds-editor').hidden,true);assert.equal(get('ds-history').hidden,false);
  get('ds-garment').value='tshirt';get('ds-file').files=[Object.assign(new Blob(['image']),{name:'art.png'})];
  get('ds-file').listeners.change();await new Promise(resolve=>setImmediate(resolve));
  assert.equal(get('ds-width').value,'270.0');assert.equal(get('ds-height').value,'213.6');

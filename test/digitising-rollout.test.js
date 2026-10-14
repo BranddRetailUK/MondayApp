@@ -7,9 +7,9 @@ const designs=[
   ['disconnected tiles','<rect fill="#8844aa" x="10" y="10" width="35" height="30"/><rect fill="#8844aa" x="75" y="55" width="35" height="35"/>']
 ];
 test('Create object rollout compiles unrelated uploads, source outlines, sizes and preview dimensions',async t=>{
- const old=process.env.OPENAI_API_KEY;process.env.OPENAI_API_KEY='test-only';let calls=0;
+ const old=process.env.OPENAI_API_KEY;process.env.OPENAI_API_KEY='test-only';let calls=0,saved=null;
  const app=express();app.use((req,res,next)=>{req.hubUser={email:'production@ultimatepromotions.co.uk',access_scope:'full'};next();});
- app.use('/studio',createRouter({fetchImpl:async(_url,request)=>{
+ app.use('/studio',createRouter({history:{save:async value=>{saved=value;return 'saved-fixture';}},fetchImpl:async(_url,request)=>{
    calls++;const body=JSON.parse(request.body),context=JSON.parse(body.input[0].content[0].text);
    assert.equal(body.store,false);
    const stroke=body.text.format.name==='embroidery_stroke_tools';
@@ -17,7 +17,7 @@ test('Create object rollout compiles unrelated uploads, source outlines, sizes a
    return {ok:true,json:async()=>({output:[{content:[{type:'output_text',text:JSON.stringify({regions})}]}]})};
  }}));
  const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
- const request=async(png,fields)=>{const form=new FormData();form.append('artwork',new Blob([png]),'fixture.png');for(const [key,value]of Object.entries(fields))form.append(key,String(value));const response=await fetch(`http://127.0.0.1:${server.address().port}/studio/generate`,{method:'POST',body:form});const data=await response.json();assert.equal(response.status,200,data.error);return data;};
+ const request=async(png,fields)=>{const form=new FormData();form.append('artwork',new Blob([png]),'fixture.png');for(const [key,value]of Object.entries(fields))form.append(key,String(value));const response=await fetch(`http://127.0.0.1:${server.address().port}/studio/generate`,{method:'POST',body:form});const data=await response.json();assert.equal(response.status,200,data.error);assert.equal(data.historyId,'saved-fixture');assert.equal(saved.result.dst,data.dst);assert.equal(saved.filename,'fixture.png');assert.ok(Buffer.isBuffer(saved.preview));return data;};
  try{
   for(const [index,[name,art]]of designs.entries())for(const widthMm of [60,90])await t.test(`${name} at ${widthMm} mm`,async()=>{
    const png=await sharp(Buffer.from(`<svg width="120" height="100" xmlns="http://www.w3.org/2000/svg">${art}</svg>`)).png().toBuffer();
