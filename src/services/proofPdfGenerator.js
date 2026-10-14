@@ -289,7 +289,8 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
       }
       pages.push(pageData);
     }
-    decorations.forEach((d,index)=>{const artwork=findArtwork(d,artworks);drawCallout(page,d,artwork&&embedded.get(artwork.id),regular,bold,index,decorations.length,garmentColour);});
+    // Match the garment view order, not the order positions appeared in the request.
+    orderedGroups.flatMap(([,marks])=>marks).forEach((d,index)=>{const artwork=findArtwork(d,artworks);drawCallout(page,d,artwork&&embedded.get(artwork.id),regular,bold,index,decorations.length,garmentColour);});
     page.pushOperators(popGraphicsState());
     if(product.personalisation)drawText(page,[product.personalisation,product.size,product.quantity?'Qty '+product.quantity:''].filter(Boolean).join(' | '),34,98,8,bold);
     if(brief.productionNotes)drawText(page,brief.productionNotes,34,574,7,regular,GREY,774);

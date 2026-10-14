@@ -625,3 +625,19 @@ test('uploaded logo lettering wins over erroneous parsed typed text',async()=>{
  assert.ok(result.bytes.length>0);
  assert.ok(!result.issues.some(i=>/font/.test(i.message)));
 });
+
+test('back and right-sleeve callouts follow their garment columns despite sleeve-first brief',async()=>{
+ const b=brief([mark({id:'sleeve',position:'right sleeve',widthMm:'90'}),mark({id:'back',position:'back',widthMm:'240'})]);
+ const out=await buildProof(b,[await artFile()],{fetchImpl:await fixtureFetch()});
+ const pdfjs=await import('pdfjs-dist/legacy/build/pdf.mjs');
+ const doc=await pdfjs.getDocument({data:new Uint8Array(out.bytes),isEvalSupported:false,useSystemFonts:true}).promise;
+ try{
+  const text=(await (await doc.getPage(1)).getTextContent()).items;
+  const back=text.find(i=>/^01\s+BACK$/.test(i.str)),sleeve=text.find(i=>/^02\s+RIGHT SLEEVE$/.test(i.str));
+  assert.ok(back&&sleeve);
+  const backView=text.find(i=>i.str==='BACK VIEW'),rightView=text.find(i=>i.str==='RIGHT VIEW');
+  assert.ok(Math.abs(back.transform[4]-backView.transform[4])<10);
+  assert.ok(Math.abs(sleeve.transform[4]-rightView.transform[4])<10);
+  assert.ok(back.transform[4]<sleeve.transform[4]);
+ }finally{await doc.destroy();}
+});
