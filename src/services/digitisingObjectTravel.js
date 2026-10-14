@@ -25,6 +25,9 @@ function chains(rows,angle,spacing){
 // If no verified route exists the caller emits a trim/jump, never a blind stitch.
 function route(a,b,o,margin=.08){
   if(segmentInside(a,b,o,margin))return [b];
+  // Dense raster contours can make repeated boundary detours quadratic.
+  // Direct safe connections were checked above; use a cut/jump otherwise.
+  if([outline(o),...holes(o)].reduce((n,r)=>n+r.length,0)>1024)return null;
   let best=null,bestLength=Infinity;
   for(const ring of [outline(o),...holes(o)]){
     const nearest=p=>ring.map((q,i)=>({i,d:dist(p,q)})).sort((a,b)=>a.d-b.d).slice(0,6).map(x=>x.i);

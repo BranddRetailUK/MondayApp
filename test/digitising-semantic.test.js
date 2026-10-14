@@ -244,3 +244,10 @@ test('optical panel centring is bounded, reviewable and preserves the input proj
   assert.equal(opticalProposal({...prepared,elements:[prepared.elements[0],prepared.elements[1],{id:2,colour:'#000000'}]},panel,0,project,owners),null);
   const offset={...panel,points:panel.points.map(([x,y])=>[x+1,y])};assert.equal(opticalProposal(prepared,offset,0,project,owners),null);
 });
+test('source fill separates diagonal islands and reviews unsewable raster fragments',async()=>{
+  const {propose}=require('../src/services/digitisingObjectPlan'),engine=require('../src/services/digitisingStudio');
+  const png=await sharp(Buffer.from('<svg width="200" height="200"><path fill="black" d="M20 20H120V120H20Z M120 120H122V121H120Z"/></svg>')).png().toBuffer();
+  const config={...engine.settings({widthMm:20,hoopMm:150,spacing:.4,length:3,colours:1}),sourceAspect:1};
+  const p=await propose(png,config,{strokePlan:{regions:[{id:0,tool:'fill'}]}});
+  assert.ok(p.warnings.some(w=>w.includes('isolated fill island')));assert.equal(p.project.objects.length,1);assert.ok(compile(p.project).stats.stitches>50);
+});

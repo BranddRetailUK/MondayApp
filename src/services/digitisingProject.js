@@ -7,9 +7,9 @@ const centre=r=>mix(r[0],r[1],.5);
 const fail=message=>{throw Error(`Embroidery project: ${message}`);};
 const number=(n,min,max,label)=>{if(!Number.isFinite(n)||n<min||n>max)fail(`${label} must be ${min}–${max}.`);};
 function area(ring){return Math.abs(ring.reduce((sum,p,i)=>{const q=ring[(i+1)%ring.length];return sum+p[0]*q[1]-q[0]*p[1];},0))/2;}
-function edgeDistance(p,a,b){const den=dist(a,b)**2,t=den?Math.max(0,Math.min(1,((p[0]-a[0])*(b[0]-a[0])+(p[1]-a[1])*(b[1]-a[1]))/den)):0;return dist(p,mix(a,b,t));}
+function edgeDistance(p,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],den=dx*dx+dy*dy,t=den?Math.max(0,Math.min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/den)):0;return Math.hypot(p[0]-a[0]-dx*t,p[1]-a[1]-dy*t);}
 function inRing(p,ring){let yes=false;for(let i=0,j=ring.length-1;i<ring.length;j=i++){
-  const a=ring[j],b=ring[i];if(edgeDistance(p,a,b)<1e-7)return true;
+  const a=ring[j],b=ring[i];if(p[0]>=Math.min(a[0],b[0])-1e-7&&p[0]<=Math.max(a[0],b[0])+1e-7&&p[1]>=Math.min(a[1],b[1])-1e-7&&p[1]<=Math.max(a[1],b[1])+1e-7&&edgeDistance(p,a,b)<1e-7)return true;
   if((a[1]>p[1])!==(b[1]>p[1])&&p[0]<(b[0]-a[0])*(p[1]-a[1])/(b[1]-a[1])+a[0])yes=!yes;
 }return yes;}
 function cross(a,b,c){return (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);}
@@ -49,9 +49,9 @@ function validate(input){
   const p=structuredClone(input);
   if(!p||p.version!==VERSION||p.units!=='mm'||!PROFILES[p.garment])fail('unsupported version, units or garment.');
   number(p.widthMm,1,300,'width');number(p.heightMm,1,360,'height');
-  if(!Array.isArray(p.objects)||!p.objects.length||p.objects.length>128)fail('provide 1–128 ordered objects.');
+  if(!Array.isArray(p.objects)||!p.objects.length||p.objects.length>512)fail('provide 1–512 ordered objects.');
   const ids=new Set();let points=0;
-  const point=q=>{if(!Array.isArray(q)||q.length!==2)fail('invalid point.');number(q[0],0,p.widthMm,'point X');number(q[1],0,p.heightMm,'point Y');if(++points>12000)fail('too many control points.');};
+  const point=q=>{if(!Array.isArray(q)||q.length!==2)fail('invalid point.');number(q[0],0,p.widthMm,'point X');number(q[1],0,p.heightMm,'point Y');if(++points>48000)fail('too many control points.');};
   const ring=r=>{
     if(!Array.isArray(r)||r.length<3||r.length>512)fail('a contour needs 3–512 vertices.');r.forEach(point);
     if(area(r)<.001)fail('degenerate contour.');

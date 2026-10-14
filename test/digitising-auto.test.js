@@ -72,3 +72,28 @@ test('SVG physical units set upload size before rasterising',async()=>{
   const input=Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="270mm" height="135mm" viewBox="0 0 270 135"><rect width="270" height="135" fill="red"/></svg>');
   const p=await plan(input);assert.ok(Math.abs(p.config.widthMm-270)<.2);assert.ok(Math.abs(p.config.sourceAspect-.5)<.001);
 });
+
+test('overloaded raster cleanup merges tiny colour chatter without filling transparency',()=>{
+  const {consolidate}=require('../src/services/digitisingPalette');
+  const w=100,ids=new Int16Array(w*w).fill(0);for(let y=3;y<97;y+=6)for(let x=3;x<97;x+=6)ids[y*w+x]=1;
+  for(let y=30;y<60;y++)for(let x=30;x<60;x++)ids[y*w+x]=-1;
+  const before=ids.slice();assert.ok(consolidate(ids,w)>0);
+  for(let i=0;i<ids.length;i++)if(before[i]===-1)assert.equal(ids[i],-1);
+  assert.ok(ids.filter(x=>x===1).length<5);
+  const simple=new Int16Array(100).fill(0);simple[55]=1;const original=simple.slice();assert.equal(consolidate(simple,10),0);assert.deepEqual(simple,original);
+});
+test('overloaded cleanup preserves substantial detached artwork and the region limit',async()=>{
+  const w=200,ids=new Int16Array(w*w).fill(-1);
+  for(let y=0;y<180;y+=12)for(let x=0;x<180;x+=12)for(let dy=0;dy<5;dy++)for(let dx=0;dx<5;dx++)ids[(y+dy)*w+x+dx]=0;
+  const original=ids.slice();require('../src/services/digitisingPalette').consolidate(ids,w);assert.deepEqual(ids,original);
+  const rgba=Buffer.alloc(w*w*4);for(let k=0;k<ids.length;k++)if(ids[k]>=0)rgba[k*4+3]=255;
+  const png=await sharp(rgba,{raw:{width:w,height:w,channels:4}}).png().toBuffer();await assert.rejects(engine.prepare(png,engine.settings({widthMm:100,hoopMm:200,colours:1,spacing:.4,length:3})),/More than 128/);
+});
+
+test('neutral near-black variants share a thread without collapsing dark chromatic colours',()=>{
+  const {sameThreadColour}=require('../src/services/digitisingPalette');
+  assert.equal(sameThreadColour([1,2,4],[29,29,27]),true);
+  assert.equal(sameThreadColour([0,0,0],[0,0,48]),false);
+  assert.equal(sameThreadColour([0,0,0],[48,0,0]),false);
+  assert.equal(sameThreadColour([0,0,0],[80,80,80]),false);
+});

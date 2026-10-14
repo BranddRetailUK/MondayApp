@@ -459,3 +459,42 @@ report includes all inventory entries and `round2/trident-direction-updated.png`
 shows decoded reference/generated stitch angles. These are development metrics,
 not a claim of unseen-design accuracy, trained model weights or physical sew-out
 quality. Source-only cached interpretation and unchanged rollout gating remain.
+
+### Complex raster artwork: Soul Disciples (2026-10-14)
+
+The supplied 200 mm PNG failed before interpretation because quantisation made
+1,293 connected regions, including hundreds of tiny islands between near-black
+variants. Automatic palette selection now merges neutral near-black variants
+(maximum channel 48, channel spread below 12) while retaining chromatic dark
+colours and ordinary greys. Only when the raster exceeds 128 regions, a bounded
+one-pixel majority pass consolidates colour-edge chatter; islands of at most
+four pixels may merge into a dominant neighbouring colour. Remaining islands
+of at most four pixels within a 3×3 raster box may be omitted. Alpha is never
+filled, substantial disconnected artwork is retained, and the 128 source-region
+limit remains enforced. Both generators report the changed-pixel count.
+
+Fill contours distinguish diagonal outer islands from holes. Overlong contours
+may simplify up to 0.2 mm with a review warning; invalid geometry still fails.
+Tiny disconnected fill islands use the existing 0.05 mm² / 0.6 mm omission
+policy. Additional islands below 0.2 mm² and 1 mm extent are omitted only if
+isolated compilation confirms that no sewable fill rows exist, with a warning.
+
+Complex designs can use up to 512 sewing objects and 48,000 validated control
+points. Per-contour, satin-width, counter-containment and 150,000-command limits
+remain intact. Boundary detours above 1,024 contour vertices fall back to cuts
+and jumps when a direct contained connection is unavailable; the compiler flags
+the trim count for review. Point-in-ring bounding checks and allocation-free
+edge distances reduce geometry overhead without changing containment rules.
+
+The private source-only local reproduction now exports 172 objects / 51,289
+stitches, with 194 trims and 33 colour changes (four colours reused across 34
+stages). Independent DST decoding reports 195.7 × 199.8 mm. The original artwork
+is unchanged. This reproduction used deterministic local planning without new
+OpenAI calls; the hosted interpretation path was not exercised. The shaded
+record highlights, fine lettering and trim strategy still require review; export
+success is not a known-good fidelity score or sew-out approval. Private evidence
+is under `output/digitising-studio/soul-disciples/` (proposal, candidate DST,
+compile stats and decoded preview). Good Game's current-compiler stitches remain
+identical. Regression coverage includes raster noise, preservation of alpha and
+substantial islands, dark-colour separation, diagonal fill islands, expanded
+complexity bounds and safe fallback travel. Rollout activation is unchanged.

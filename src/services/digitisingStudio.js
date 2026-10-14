@@ -100,6 +100,7 @@ async function prepare(png, config) {
   if(right<=left || bottom<=top)throw Error('No usable artwork after background removal.');
   if(palette.length>8)throw Error('Too many thread colours. Reduce the palette.');
 
+  const consolidatedPixels=require('./digitisingPalette').consolidate(ids,w);
   const elementIds=new Int16Array(w*h).fill(-1), elements=[];
   for(let i=0;i<ids.length;i++){
     if(ids[i]<0 || elementIds[i]>=0)continue;
@@ -122,11 +123,11 @@ async function prepare(png, config) {
   if(right<=left||bottom<=top)throw Error('Select at least one usable element.');
   const scale=config.widthMm/(config.sourceAspect?w:right-left),heightMm=config.sourceAspect?config.widthMm*config.sourceAspect:(bottom-top+1)*scale;
   if(Math.max(config.widthMm,heightMm)>config.hoopMm-10)throw Error('Design exceeds hoop with 5 mm clearance on each side.');
-  return {data,info,ids:elementIds,elements,sourceIds,sourceElements,left,right,top,bottom,scale,heightMm};
+  return {data,info,consolidatedPixels,ids:elementIds,elements,sourceIds,sourceElements,left,right,top,bottom,scale,heightMm};
 }
 async function generate(png, config) {
   if(config.garment==='cap')throw Error('Cap generation is not validated: curved frames need centre-out sequencing. Select a flat garment for this proof of concept.');
-  const {info,ids,elements,sourceIds,sourceElements,left,right,top,bottom,scale}=await prepare(png,config);
+  const {info,ids,elements,sourceIds,sourceElements,left,right,top,bottom,scale,consolidatedPixels}=await prepare(png,config);
   const {width:w}=info;
   const edged=new Set();
   const commands=[], threads=[],threadPlan=[];let x=0,y=0, trims=0, shortRuns=0, thinColumnsSewn=0, thinCrossStitches=0;
@@ -335,6 +336,6 @@ async function generate(png, config) {
   const {parseDst}=await import('../../public/embroidery-viewer.mjs');const parsed=parseDst(dst);
   if(Math.max(parsed.widthMm,parsed.heightMm)>config.hoopMm-10)throw Error('Generated satin or outline exceeds the hoop clearance.');
   return {dst:dst.toString('base64'),threads,threadPlan,elements, stats:{stitches:parsed.stitches,widthMm:parsed.widthMm,heightMm:parsed.heightMm,colourChanges:parsed.colourChanges,trims,shortRuns,thinColumns:thinColumnsSewn,thinCrossStitches},
-    warnings:['Experimental sample; not production approved.','Disconnected fill runs request a three-jump trim. Confirm trim recognition on your Tajima controller. Running outlines are experimental and may omit tiny boundary fragments.', 'Automatic section directions and branched satin remain experimental; bounded provisional satin pull compensation; no validated cap strategy. Thread colours are approximate; assign real cones in order.',...(shortRuns?[`${shortRuns} sub-0.8 mm runs were omitted. Fine detail requires manual digitising.`]:[])],config};
+    warnings:[...(consolidatedPixels?[`${consolidatedPixels} raster pixels consolidated or omitted; review fine details.`]:[]),'Experimental sample; not production approved.','Disconnected fill runs request a three-jump trim. Confirm trim recognition on your Tajima controller. Running outlines are experimental and may omit tiny boundary fragments.', 'Automatic section directions and branched satin remain experimental; bounded provisional satin pull compensation; no validated cap strategy. Thread colours are approximate; assign real cones in order.',...(shortRuns?[`${shortRuns} sub-0.8 mm runs were omitted. Fine detail requires manual digitising.`]:[])],config};
 }
 module.exports={settings,artwork,assess,prepare,generate,record,encode,PRESETS};

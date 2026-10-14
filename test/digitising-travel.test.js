@@ -11,3 +11,10 @@ test('travel does not join separate islands or another thread region',()=>{
  assert.equal(routeInside(ids,20,0,[4,8],[15,8],.1),null);
  ids.fill(1);assert.equal(routeInside(ids,20,0,[4,8],[15,8],.1),null);
 });
+test('complex contour travel keeps safe direct runs and declines expensive counter detours',()=>{
+ const {route}=require('../src/services/digitisingObjectTravel');
+ const hole=Array.from({length:1021},(_,i)=>[10+5*Math.cos(i*2*Math.PI/1021),10+5*Math.sin(i*2*Math.PI/1021)]);
+ const o={type:'fill',outline:[[0,0],[20,0],[20,20],[0,20]],holes:[hole]};
+ assert.deepEqual(route([2,2],[18,2],o),[[18,2]]);
+ assert.equal(route([2,10],[18,10],o),null);
+});

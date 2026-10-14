@@ -39,6 +39,7 @@ function compile(input){
     append(p,'stitch',max);
   };
   for(const o of project.objects){
+    if(o.type==='fill'&&[o.outline,...o.holes].reduce((n,r)=>n+r.length,0)>1024)warnings.push(`${o.id}: complex raster contour uses trim/jump travel where a direct connection is not contained; review trim count.`);
     const start=commands.length;objectId=o.id;phase='travel';
     if(o.colour!==colour){trim();if(colour!==null)commands.push({kind:'colour',objectId,phase:'colour'});threads.push(o.colour);colour=o.colour;}
     if(o.type==='run'){

@@ -84,3 +84,10 @@ test('three-pass runs retrace every segment and reject unsupported pass counts',
   assert.equal(sewn.length,30);assert.ok(sewn.every(s=>s.a[0]===s.b[0]||s.a[1]===s.b[1]));
   assert.throws(()=>compile(only([{...run,passes:2}])),/passes/);
 });
+
+test('complex artwork can use 512 bounded sewing objects while rejecting excess',()=>{
+  const project={version:1,units:'mm',garment:'tshirt',widthMm:100,heightMm:100,objects:Array.from({length:512},(_,i)=>({id:'detail-'+i,type:'run',colour:'#000000',path:[[10,10],[11,10]]}))};
+  assert.equal(validate(project).objects.length,512);
+  assert.throws(()=>validate({...project,objects:project.objects.map(o=>({...o,path:Array.from({length:100},(_,i)=>[10+i*.01,10])}))}),/too many control points/);
+  assert.throws(()=>validate({...project,objects:[...project.objects,{...project.objects[0],id:'excess'}]}),/1–512/);
+});

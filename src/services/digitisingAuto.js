@@ -3,6 +3,7 @@ const engine=require('./digitisingStudio');
 const {interpret}=require('./digitisingInterpretation');
 const {sourceSize}=require('./digitisingSize');
 const {column,branchedColumns}=require('./digitisingColumns');
+const {sameThreadColour}=require('./digitisingPalette');
 
 // Remove only near-white pixels connected to the image edge; enclosed white artwork stays.
 async function removeBackground(png){
@@ -33,7 +34,7 @@ async function plan(input,body={},options={}){
   const raw=await sharp(png).ensureAlpha().raw().toBuffer(),counts=new Map();let visible=0;
   for(let p=0;p<raw.length;p+=4)if(raw[p+3]>=128){const key=[raw[p],raw[p+1],raw[p+2]].join(',');counts.set(key,(counts.get(key)||0)+1);visible++;}
   const dominant=[];
-  for(const [key,count] of [...counts].sort((a,b)=>b[1]-a[1])){if(count<visible*.005)break;const colour=key.split(',').map(Number);if(!dominant.some(c=>Math.hypot(...c.map((v,k)=>v-colour[k]))<32))dominant.push(colour);if(dominant.length===8)break;}
+  for(const [key,count] of [...counts].sort((a,b)=>b[1]-a[1])){if(count<visible*.005)break;const colour=key.split(',').map(Number);if(!dominant.some(c=>sameThreadColour(c,colour)))dominant.push(colour);if(dominant.length===8)break;}
   if((counts.get('255,255,255')||0)>0&&!dominant.some(c=>Math.min(...c)>235)&&dominant.length<8)dominant.push([255,255,255]);
   config.colours=Math.max(1,dominant.length);
   config.palette=dominant.map(c=>'#'+c.map(v=>v.toString(16).padStart(2,'0')).join(''));

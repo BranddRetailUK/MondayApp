@@ -50,6 +50,7 @@ async function propose(png,config,options={}){
   if([...panels.values()].some(p=>!p))throw Error('Finished panel does not fit source geometry.');
   const coveredGround=new Set(prepared.elements.filter(e=>[...panels].some(([id,p])=>p.enclosed.includes(e.id)&&prepared.elements.find(el=>el.id===id).colour===e.colour)).map(e=>e.id));
   const project={version:1,units:'mm',garment:config.garment,widthMm:config.widthMm,heightMm,objects:[],travelRegions:[]},warnings=[],includedSources=new Set();
+  if(prepared.consolidatedPixels)warnings.push(`${prepared.consolidatedPixels} raster pixels consolidated or omitted to remove tiny colour fragments; review fine details.`);
   const physical=p=>p.map((v,k)=>Math.max(0,Math.min(k?heightMm:config.widthMm,(v+.5)*scale)));
   const verify=o=>validate({...project,objects:[o]});
   const area=r=>Math.abs(r.reduce((sum,p,i)=>{const q=r[(i+1)%r.length];return sum+p[0]*q[1]-q[0]*p[1];},0))/2;
@@ -209,18 +210,33 @@ async function propose(png,config,options={}){
       }
     }
     if(!proposed.length){
-      const rings=contours(ids,info.width,el).map(r=>{
+      const rings=contours(ids,info.width,el,true).map(r=>{
         const points=r.map(physical),tolerance=Math.min(.08,Math.sqrt(area(points))/12);
-        return simplify(points,tolerance).slice(0,-1);
+        let ring=simplify(points,tolerance).slice(0,-1);
+        if(ring.length>512)warnings.push(`${base.id}: raster contour simplified within 0.2 mm to fit the control-point limit; review edges.`);
+        for(const bound of [.12,.16,.2])if(ring.length>512)ring=simplify(points,bound).slice(0,-1);
+        return ring;
       }).filter(r=>r.length>=3&&area(r)>=.001).sort((a,b)=>area(b)-area(a));
       if(!rings.length)throw Error(`${base.id}: no valid physical contour; review artwork.`);
       // Repeated small counters describe a perforated texture, rather than a
       // solid ground. Use a crosswise grain for that construction only; preserve
       // the established diagonal policy for ordinary broad fills.
       const textured=toolPlan?.construction==='fill'&&rings.slice(1).filter(r=>area(r)<area(rings[0])*.05).length>=6;
-      const o={...base,type:'fill',outline:rings[0],holes:rings.slice(1),angle:el.guide?sectionAngle(el):textured?(require('./digitisingStrokeTools').principal(ids,info.width,el)+270)%180:(config.fillAngle??35)};
-      try{verify(o);}catch(error){throw Error(`${base.id}: ${error.message} Review source segmentation before compiling.`);}
-      proposed=[o];
+      const signed=r=>r.reduce((sum,p,i)=>{const q=r[(i+1)%r.length];return sum+p[0]*q[1]-q[0]*p[1];},0);
+      const outers=rings.filter(r=>signed(r)>0).filter(r=>{
+        const extent=Math.max(...[0,1].map(axis=>Math.max(...r.map(p=>p[axis]))-Math.min(...r.map(p=>p[axis]))));
+        if(area(r)<.05&&extent<.6){warnings.push(`${base.id}: isolated fill island below 0.05 mm² and 0.6 mm extent omitted; review at actual size.`);return false;}return true;
+      }),holes=rings.filter(r=>signed(r)<0);
+      proposed=outers.map((outline,i)=>{
+        const o={...base,id:i?base.id+'-island-'+i:base.id,type:'fill',outline,holes:holes.filter(h=>require('./digitisingProject').inside(h[0],{type:'fill',outline,holes:[]})),angle:el.guide?sectionAngle(el):textured?(require('./digitisingStrokeTools').principal(ids,info.width,el)+270)%180:(config.fillAngle??35)};
+        try{verify(o);}catch(error){throw Error(`${base.id}: ${error.message} Review source segmentation before compiling.`);}
+        const extent=Math.max(...[0,1].map(axis=>Math.max(...outline.map(p=>p[axis]))-Math.min(...outline.map(p=>p[axis]))));
+        if(area(outline)<.2&&extent<1){
+          try{require('./digitisingCompiler').compile({...project,travelRegions:[],objects:[o]});}
+          catch(error){if(!error.message.includes('no sewable stitches'))throw error;warnings.push(`${o.id}: sub-millimetre raster island has no sewable fill rows; omitted for review.`);return null;}
+        }
+        return o;
+      }).filter(Boolean);
     }
     if(proposed.length>1){
       const rings=contours(ids,info.width,el).map(r=>simplify(r.map(physical),.08).slice(0,-1)).filter(r=>r.length>=3&&area(r)>=.001).sort((a,b)=>area(b)-area(a));
