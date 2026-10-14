@@ -218,6 +218,17 @@ async function propose(png,config,options={}){
         if(!proposed.length)warnings.push(`${base.id}: satin proposal needs review (${error.message}); provisional fill used.`);
       }
     }
+    if(!proposed.length||proposed.some(o=>o.type==='fill')){
+      try{
+        const rounded=require('./digitisingRoundedColumns').recover(ids,info.width,el,scale,base,project);
+        if(rounded?.length){
+          require('./digitisingCompiler').compile({...project,travelRegions:[],objects:rounded});
+          proposed=rounded;
+          for(let i=warnings.length-1;i>=0;i--)if(warnings[i].startsWith(base.id+':')&&/provisional fill used|branched reconstruction requires review|branch recovery failed/.test(warnings[i]))warnings.splice(i,1);
+          warnings.push(`${base.id}: source-fitted rounded columns replace provisional fill; review curves and joins.`);
+        }
+      }catch(error){warnings.push(`${base.id}: rounded source recovery needs review (${error.message}).`);}
+    }
     if(!proposed.length){
       const rings=contours(ids,info.width,el,true).map(r=>{
         const points=r.map(physical),tolerance=Math.min(.08,Math.sqrt(area(points))/12);
@@ -248,7 +259,12 @@ async function propose(png,config,options={}){
       }).filter(Boolean);
     }
     if(proposed.length>1){
-      const rings=contours(ids,info.width,el).map(r=>simplify(r.map(physical),.08).slice(0,-1)).filter(r=>r.length>=3&&area(r)>=.001).sort((a,b)=>area(b)-area(a));
+      const rings=contours(ids,info.width,el).map(r=>{
+        const points=r.map(physical);let ring=simplify(points,.08).slice(0,-1);
+        if(ring.length>512)warnings.push(`${base.id}: shared travel contour simplified within 0.2 mm; review joins.`);
+        for(const tolerance of [.12,.16,.2])if(ring.length>512)ring=simplify(points,tolerance).slice(0,-1);
+        return ring;
+      }).filter(r=>r.length>=3&&area(r)>=.001).sort((a,b)=>area(b)-area(a));
       const region={id:base.id,outline:rings[0],holes:rings.slice(1)};
       attachSharedTravel(project,proposed,region,warnings);
     }
@@ -278,6 +294,6 @@ async function propose(png,config,options={}){
       project.objects.push({id:`outline-${el.id}-${i}`,type:'run',colour:config.garmentColour,path,passes:3,settings:{stitchLength:1}});
     }
   }
-  return {project:validate(project),warnings,reviewRequired:warnings.length>0,strokePlan};
+  return {project:validate(project),warnings:[...new Set(warnings)],reviewRequired:warnings.length>0,strokePlan};
 }
 module.exports={propose,simplifyRungs,attachSharedTravel};

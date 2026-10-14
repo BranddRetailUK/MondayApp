@@ -588,3 +588,81 @@ metrics/preview and a lettering crop. Customer artwork and these artifacts are n
 committed. Without a professional Soul Disciples reference or physical sew-out, no
 90–95% accuracy or fabric-quality claim is made. Mixed broad fills/narrow columns,
 small curved-letter inner turns and tonal simplification still require sew-out review.
+
+
+### Rounded satin recovery: Smiley (2026-10-14)
+
+This pass addresses narrow rounded shapes whose original skeleton failed and
+therefore selected or fell back to broad diagonal fill. It does not replace
+already successful satin tools. `digitisingRoundedColumns.js` measures nearly
+convex islands with a stable principal axis, large circular counters with
+attached branches, and open curved bands via `digitisingArcColumns.js`.
+The open-arc circle is a direction guide only: both rails are measured against
+the actual source pixels. Closed curves use source-contour radial samples and
+a smoothed, bounded normal field; cap widths separate attached limbs from the
+main curve. Branches/caps sew before the continuous ring/arc. Fine convex details
+below an 8 mm advancing extent retain their existing construction.
+
+Acceptance requires 99% sampled source-pixel coverage, sampled rail containment
+within 0.2 mm of the source, unchanged project geometry/width validation and
+successful quantised compilation. Ordinary satin remains limited to 9 mm;
+explicit split satin retains the existing 12 mm control/9.6 mm movement limits.
+Large/unstable/unsupported reconstructions retain the prior validated fallback
+with review warnings. Sub-0.3 mm² residual fragments may be omitted within the
+coverage guard; this remains a reviewed approximation, not exact source identity.
+Travel contours exceeding 512 vertices can simplify within the existing 0.2 mm
+bound before validation, keeping connected curves from requiring needless cuts.
+
+Smiley was generated from the supplied flat PNG. The user explicitly authorised
+OpenAI source-only calls with `store:false`; neither the designer DST nor its
+geometry enters planning or compilation. The existing physical-field-v1
+registration, metrics and thresholds are unchanged. For the controlled stitch
+comparison, only transparent margins were cropped and a fixed 83.4 mm nominal
+width was supplied before generation. Uploaded-artwork defaults remain unchanged.
+The same prepared input/tool plan is also run through the pre-change planner.
+
+| Matched-input result | Shape | Direction | Density | Minimum |
+|---|---:|---:|---:|---:|
+| Before recovery | 90.620 | 55.182 | 90.641 | 55.182 |
+| Source-only AI / current engine | 90.950 | 92.350 | 90.849 | 90.849 |
+
+**The requested 95% target remains unmet.** The new result passes the existing
+90% engineering gate only. Boundary details, directions at joins and local
+thread-length distribution still differ. Alternative source-normal fields,
+column directions, support spacing and compensation were tested; unsuccessful
+variants were retained privately and did not alter the evaluator. This design
+is calibration data, not unseen validation. No percentage implies sew-out quality.
+
+A separate real Create-engine run used the original untrimmed PNG with normal
+upload defaults. It produces 4,265 sewing movements, six compiler trim requests,
+zero colour changes and 42 short movements, with satin for the principal forms.
+This is distinct from the controlled comparison output (3,606 movements, nine
+trim requests). No production history row was written by these local tests.
+
+Periodic regression checkpoints regenerated proposals from the saved source
+rasters/configurations and source-only tool plans, then recompiled. All six
+accepted benchmark files are byte-identical to the pre-change baseline:
+Good Game 90.395, Lips 93.894, tridents 55/80/100 90.345/92.235/91.972, and
+LEGION 90.217. Soul Disciples is independently regenerated from its source with
+its saved interpretation/tool plan and also remains byte-identical (51,067
+movements, 104 trims, 16 colour changes). This isolates geometry/compiler changes
+from stochastic new model decisions; it is not a claim that every fresh model
+response will be identical.
+
+Private evidence lives in `output/digitising-studio/smiley-quality/`:
+`matched-baseline/`, `ai-cropped-final/`, `guarded-final/`, `default-create/`,
+`regression-baseline/`, `regression-round1/`, `regression-round9/`,
+`regression-round12/`, `regression-final/`, `soul-regression/`, the private
+`regress.cjs`, manifests, source interpretations and individual iterations.
+To repeat the accepted-design checkpoint without new model calls:
+
+```sh
+node output/digitising-studio/smiley-quality/regress.cjs new-checkpoint-name
+node output/digitising-studio/smiley-quality/soul-regress.cjs
+```
+
+Keep private artwork, reference DSTs, generated files and these private runners
+out of Git. `npm run test:digitising-studio` passes 113 tests, including rotated
+islands, rotated counters/branches, flared open arcs and width-limit rejection;
+the two evaluator controls also pass. Hosted deployment and physical sew-out
+verification are outstanding.
