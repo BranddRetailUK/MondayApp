@@ -11,10 +11,13 @@ test('travel does not join separate islands or another thread region',()=>{
  assert.equal(routeInside(ids,20,0,[4,8],[15,8],.1),null);
  ids.fill(1);assert.equal(routeInside(ids,20,0,[4,8],[15,8],.1),null);
 });
-test('complex contour travel keeps safe direct runs and declines expensive counter detours',()=>{
+test('complex contour travel routes around counters without sacrificing containment',()=>{
  const {route}=require('../src/services/digitisingObjectTravel');
  const hole=Array.from({length:1021},(_,i)=>[10+5*Math.cos(i*2*Math.PI/1021),10+5*Math.sin(i*2*Math.PI/1021)]);
  const o={type:'fill',outline:[[0,0],[20,0],[20,20],[0,20]],holes:[hole]};
  assert.deepEqual(route([2,2],[18,2],o),[[18,2]]);
- assert.equal(route([2,10],[18,10],o),null);
+ const path=route([2,10],[18,10],o);assert.ok(path);
+ const {segmentInside}=require('../src/services/digitisingProject');
+ assert.ok(path.every((p,i)=>segmentInside(i?path[i-1]:[2,10],p,o,.08)));
+ assert.equal(route([-2,10],[18,10],o),null,'outside endpoints cannot use a contour shortcut');
 });

@@ -25,14 +25,19 @@ function chains(rows,angle,spacing){
 // If no verified route exists the caller emits a trim/jump, never a blind stitch.
 function route(a,b,o,margin=.08){
   if(segmentInside(a,b,o,margin))return [b];
-  // Dense raster contours can make repeated boundary detours quadratic.
-  // Direct safe connections were checked above; use a cut/jump otherwise.
-  if([outline(o),...holes(o)].reduce((n,r)=>n+r.length,0)>1024)return null;
+  // Search finite contour detours even on complex panels: many letter
+  // counters do not make a contained boundary route unsafe.
   let best=null,bestLength=Infinity;
-  for(const ring of [outline(o),...holes(o)]){
-    const nearest=p=>ring.map((q,i)=>({i,d:dist(p,q)})).sort((a,b)=>a.d-b.d).slice(0,6).map(x=>x.i);
-    const starts=nearest(a).filter(i=>segmentInside(a,ring[i],o,margin));
-    const ends=nearest(b).filter(i=>segmentInside(ring[i],b,o,margin));
+  const candidates=[outline(o),...holes(o)].map(ring=>{
+    const nearest=p=>ring.map((q,i)=>({i,d:dist(p,q)})).sort((a,b)=>a.d-b.d).slice(0,6);
+    const starts=nearest(a),ends=nearest(b);
+    return {ring,starts,ends,lowerBound:starts[0].d+ends[0].d};
+  }).sort((a,b)=>a.lowerBound-b.lowerBound);
+  for(const candidate of candidates){
+    if(candidate.lowerBound>=bestLength)continue;
+    const {ring}=candidate;
+    const starts=candidate.starts.map(x=>x.i).filter(i=>segmentInside(a,ring[i],o,margin));
+    const ends=candidate.ends.map(x=>x.i).filter(i=>segmentInside(ring[i],b,o,margin));
     for(const i of starts)for(const j of ends)for(const sign of [-1,1]){
       const path=[ring[i]];let at=i,length=dist(a,ring[i]);
       while(at!==j&&length<bestLength){const next=(at+sign+ring.length)%ring.length;length+=dist(ring[at],ring[next]);path.push(ring[next]);at=next;}

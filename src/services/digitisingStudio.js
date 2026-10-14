@@ -88,13 +88,32 @@ async function prepare(png, config) {
     const p=i*4; if(excluded(p))continue;
     let best=0,distance=Infinity;
     let coverage=1;
+    const neutral=config.preserveWhiteArtwork&&Math.max(data[p],data[p+1],data[p+2])-Math.min(data[p],data[p+1],data[p+2])<12;
+    const hasNeutral=neutral&&rgb.some(c=>Math.max(...c)-Math.min(...c)<12);
     rgb.forEach((c,j)=>{
+      // Neutral shading must not become a chromatic thread simply because its
+      // RGB distance to red is shorter than its distance to black or white.
+      if(hasNeutral&&Math.max(...c)-Math.min(...c)>=12)return;
       let a=1;
-      if(config.removeWhite||(config.whiteMatte&&Math.min(data[p],data[p+1],data[p+2])<=235)){const norm=c.reduce((sum,v)=>sum+(255-v)**2,0);a=norm?Math.max(0,Math.min(1,c.reduce((sum,v,k)=>sum+(255-v)*(255-data[p+k]),0)/norm)):0;}
+      if(config.removeWhite||(config.whiteMatte&&!config.preserveWhiteArtwork&&Math.min(data[p],data[p+1],data[p+2])<=235)){const norm=c.reduce((sum,v)=>sum+(255-v)**2,0);a=norm?Math.max(0,Math.min(1,c.reduce((sum,v,k)=>sum+(255-v)*(255-data[p+k]),0)/norm)):0;}
       const d=c.reduce((sum,v,k)=>sum+(255-(255-v)*a-data[p+k])**2,0);
       if(d<distance){distance=d;best=j;coverage=a;}
     });
-    if(coverage<.5)continue;ids[i]=best;
+    if(config.preserveWhiteArtwork){
+      // Antialiasing lies between two ink colours. Fit that mixture before
+      // choosing its dominant thread, rather than inventing a third colour
+      // (e.g. red specks along a black/white gradient).
+      for(let j=0;j<rgb.length;j++)for(let k=j+1;k<rgb.length;k++){
+        if(hasNeutral&&[rgb[j],rgb[k]].some(c=>Math.max(...c)-Math.min(...c)>=12))continue;
+        const delta=rgb[k].map((v,n)=>v-rgb[j][n]),norm=delta.reduce((sum,v)=>sum+v*v,0);
+        if(!norm)continue;
+        const t=Math.max(0,Math.min(1,delta.reduce((sum,v,n)=>sum+v*(data[p+n]-rgb[j][n]),0)/norm));
+        const error=delta.reduce((sum,v,n)=>sum+(rgb[j][n]+t*v-data[p+n])**2,0);
+        if(error<distance-1e-6){distance=error;best=t<.5?j:k;coverage=1;}
+      }
+    }
+    // Existing alpha defines coverage; shaded opaque ink is not a matte hole.
+    if(coverage<.5&&!config.preserveWhiteArtwork)continue;ids[i]=best;
     left=Math.min(left,i%w);right=Math.max(right,i%w);top=Math.min(top,Math.floor(i/w));bottom=Math.max(bottom,Math.floor(i/w));
   }
   if(right<=left || bottom<=top)throw Error('No usable artwork after background removal.');

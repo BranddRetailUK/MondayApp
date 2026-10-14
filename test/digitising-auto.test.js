@@ -103,3 +103,20 @@ test('optional model guides stay within the section budget without dropping sour
   const before=JSON.stringify(regions),r=sectionPlan(regions,127);
   assert.equal(r.sections[0],undefined);assert.equal(r.sections[1].length,2);assert.equal(r.sections[2].length,1);assert.equal(r.planningWarnings.length,1);assert.match(r.planningWarnings[0],/source geometry retained/);assert.equal(JSON.stringify(regions),before);
 });
+
+test('opaque neutral highlights remain sewn ink when source alpha defines the background',async()=>{
+ const png=await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect x="10" y="10" width="80" height="80" fill="black"/><circle cx="45" cy="45" r="15" fill="#b0b0b0"/><rect x="65" y="65" width="10" height="10" fill="white"/></svg>')).png().toBuffer();
+ const config={...engine.settings({widthMm:100,hoopMm:150,colours:3,spacing:.4,length:3}),palette:['#000000','#dd3333','#ffffff'],whiteMatte:true,preserveWhiteArtwork:true};
+ const p=await engine.prepare(png,config);
+ assert.equal(p.ids[0],-1);assert.ok(p.ids[45*100+45]>=0,'opaque highlight must not become a hole');
+ assert.equal(p.elements[p.ids[45*100+45]].colour,'#ffffff','neutral highlight uses a neutral thread, never red');
+ assert.equal(p.elements[p.ids[70*100+70]].colour,'#ffffff','actual white artwork stays white');
+});
+
+test('antialiased two-thread edges do not invent a third chromatic thread',async()=>{
+ const png=await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50"><rect x="5" y="5" width="40" height="40" fill="#f4c311"/><rect x="15" y="15" width="20" height="20" fill="#826809"/></svg>')).png().toBuffer();
+ const config={...engine.settings({widthMm:50,hoopMm:100,colours:4,spacing:.4,length:3}),palette:['#010204','#dc3336','#f4c311','#ffffff'],whiteMatte:true,preserveWhiteArtwork:true};
+ const prepared=await engine.prepare(png,config);
+ assert.equal(prepared.elements[prepared.ids[25*50+25]].colour,'#f4c311','black/yellow antialiasing belongs to its dominant ink, not nearby red');
+ assert.equal(prepared.ids[0],-1);
+});

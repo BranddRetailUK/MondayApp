@@ -1,5 +1,6 @@
 // Consolidate raster-sized colour islands only when they exhaust the region
-// budget. Alpha is never filled. Remaining islands no larger than 3×3
+// budget. Merge at most nine pixels into a dominant neighbouring colour.
+// Alpha is never filled. Remaining islands no larger than 3×3
 // raster pixels are omitted and reported as a review warning.
 function consolidate(ids,w){
   const seen=new Uint8Array(ids.length),small=[];let count=0;
@@ -7,7 +8,6 @@ function consolidate(ids,w){
   for(let i=0;i<ids.length;i++)if(ids[i]>=0&&!seen[i]){
     const group=[i];seen[i]=1;count++;
     for(let q=0;q<group.length;q++)for(const n of neighbours(group[q]))if(!seen[n]&&ids[n]===ids[i]){seen[n]=1;group.push(n);}
-    if(group.length<=4)small.push(group);
   }
   if(count<=128)return 0;
   // A one-pixel majority pass removes colour chatter along raster edges.
@@ -17,6 +17,16 @@ function consolidate(ids,w){
     const votes=new Map();for(const n of neighbours(k))if(ids[n]>=0)votes.set(ids[n],(votes.get(ids[n])||0)+1);
     for(const [label,votesFor]of votes)if(label!==ids[k]&&votesFor>=6){smooth.push([k,label]);break;}
   }
+  // Smoothing can split a larger fringe into new tiny islands. Measure those
+  // on the smoothed labels, without repeating or cascading the majority pass.
+  const original=new Map(smooth.map(([k])=>[k,ids[k]]));
+  for(const [k,label]of smooth)ids[k]=label;
+  seen.fill(0);small.length=0;
+  for(let i=0;i<ids.length;i++)if(ids[i]>=0&&!seen[i]){
+    const group=[i];seen[i]=1;
+    for(let q=0;q<group.length;q++)for(const n of neighbours(group[q]))if(!seen[n]&&ids[n]===ids[i]){seen[n]=1;group.push(n);}
+    if(group.length<=9)small.push(group);
+  }
   const changes=[];
   for(const group of small){
     const boundary=new Map();
@@ -25,9 +35,7 @@ function consolidate(ids,w){
     if(ranked.length&&ranked[0][1]>=total*.75)changes.push([group,ranked[0][0]]);
     else if(Math.max(...group.map(k=>k%w))-Math.min(...group.map(k=>k%w))<3&&Math.max(...group.map(k=>Math.floor(k/w)))-Math.min(...group.map(k=>Math.floor(k/w)))<3)changes.push([group,-1]);
   }
-  const original=new Map(smooth.map(([k])=>[k,ids[k]]));
-  for(const [group]of changes)for(const k of group)original.set(k,ids[k]);
-  for(const [k,label]of smooth)ids[k]=label;
+  for(const [group]of changes)for(const k of group)if(!original.has(k))original.set(k,ids[k]);
   for(const [group,label]of changes)for(const k of group)ids[k]=label;
   return [...original].filter(([k,label])=>ids[k]!==label).length;
 }

@@ -7,8 +7,9 @@ function createRouter(options={}){
   router.use(require('../services/digitisingAccess').requireStudioUser);
   const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:8*1024*1024,files:1,fields:20,fieldSize:16384}}).single('artwork');
   router.get('/status',(_req,res)=>res.json({enabled:true,openai:!!process.env.OPENAI_API_KEY,presets:engine.PRESETS}));
-  // Server-only rollout switch: request fields cannot choose the engine.
-  const objectPipeline=options.objectPipeline??(process.env.DIGITISING_OBJECT_PIPELINE==='true');
+  // Use validated object construction for Create; an explicit server false
+  // retains the legacy rollback. Request fields cannot choose the engine.
+  const objectPipeline=options.objectPipeline??(process.env.DIGITISING_OBJECT_PIPELINE!=='false');
   router.post('/compile-project',express.json({limit:'1mb'}),(req,res)=>{
     if(busy)return res.status(429).json({error:'A design is processing. Try again shortly.'});
     busy=true;

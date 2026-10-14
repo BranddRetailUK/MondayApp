@@ -151,12 +151,12 @@ acceptance steps.
 
 ## Create integration and routing audit (2026-10-14)
 
-`DIGITISING_OBJECT_PIPELINE=true` is a server-side opt-in that sends the existing
-Create `/generate` request through source interpretation, named tool selection,
-object proposal and the local compiler. It defaults off pending broader real-design
-acceptance. Request fields cannot enable it. There is no silent legacy fallback
-on a failed proposal or compile. `/project` and `/compile-project` remain available.
-This change does not activate the switch on Railway.
+`Create /generate` now defaults to source interpretation, named tool selection,
+object proposal and the local compiler. `DIGITISING_OBJECT_PIPELINE=false` is an
+explicit server-side rollback to the legacy generator; an unset value uses the
+object pipeline. Request fields cannot select the engine. There is no silent
+legacy fallback on a failed proposal or compile. `/project` and `/compile-project`
+remain available. This is still a test-version workflow requiring sew-out review.
 
 The adapter preserves source physical sizing, linked aspect ratio, garment and
 outline choices. It independently decodes the exported DST for the existing
@@ -549,3 +549,42 @@ This is a local end-to-end run using real API responses and their validated
 cache, not a hosted-deployment or physical sew-out confirmation. Its DST and
 preview are `interpreted-candidate.dst` and `interpreted-preview.png` in the
 private evidence directory.
+
+
+## Soul Disciples live-output repair (2026-10-14)
+
+The supplied downloaded DST exposed the legacy Create default: its 45,310 stitches
+contained 6,810 sub-0.5 mm movements, 215 trims and 33 colour changes. Create now
+uses the validated object pipeline unless the server explicitly requests legacy
+rollback with `DIGITISING_OBJECT_PIPELINE=false`. This changes the test-version
+engine; it is not physical production approval. Hosted deployment was not verified.
+
+The repair handles transparent-source antialiasing as mixtures of existing thread
+colours, preserves opaque highlights, and cleans newly split microscopic islands
+after a single majority pass. It does not fill transparent pixels. Neutral shading
+uses neutral palette entries; photographic gradients are discretised, not recreated
+as continuous embroidery shading. Source preparation now identifies 79 regions.
+
+Complex fills retain containment-checked routes around counters regardless of the
+total vertex count. Nearest-boundary lower bounds prune the search without bypassing
+geometry checks. Automatic sequences with eight or more colour changes may group
+independent same-colour objects; overlapping bounds plus compensation retain their
+original stacking order. Separate letters still receive cuts. Explicit edited
+projects retain their prescribed object order. Tie-off diagnostics now identify the
+object actually being locked, including at colour/object boundaries.
+
+Development iterations reduced the generated output from 127 trims / 15 colour
+changes / 4.02% short stitches to 104 trims / 16 colour changes / 3.66% short stitches
+after colour-edge cleanup. The final real-interpretation output independently decodes
+to 51,067 stitches, 195.6 × 199.8 mm and a maximum sewing movement of 8.08 mm.
+Small text and counters were visually inspected in the decoded stitch rendering.
+104 regression tests pass, including 6–8 mm satin lettering, contained joins, complex
+counter travel, safe colour sequencing, transparent shading and default Create HTTP
+integration. This is a development example, not held-out accuracy validation.
+
+Private evidence: `output/digitising-studio/soul-disciples/live-review/` contains the
+user-file metrics, intermediate rounds, final `repaired.dst`, `repaired.json`, decoded
+metrics/preview and a lettering crop. Customer artwork and these artifacts are not
+committed. Without a professional Soul Disciples reference or physical sew-out, no
+90–95% accuracy or fabric-quality claim is made. Mixed broad fills/narrow columns,
+small curved-letter inner turns and tonal simplification still require sew-out review.

@@ -279,3 +279,17 @@ test('invalid model-selected satin geometry falls back to validated source const
     }
   }finally{tools.fit=original;}
 });
+
+test('small E and L lettering retains crosswise arms and contained joins at 6–8 mm height',async()=>{
+ for(const [tool,path]of [['stem-foot','M80 50 H120 V200 H210 V250 H80Z'],['stem-three-arms','M75 50 H215 V85 H115 V125 H200 V160 H115 V215 H215 V250 H75Z']]){
+  const s=await shape(`<path d="${path}"/>`);
+  for(const scale of [.03,.04]){
+   const p=project(s,tool,scale),result=compile(p);
+   assert.ok(p.objects.every(o=>o.type==='satin'));
+   assert.ok(result.stats.trims<=p.objects.length+1);
+   assert.ok(result.stats.shortStitches/result.stats.stitches<.1);
+   const objects=new Map(p.objects.map(o=>[o.id,o]));let last=[p.widthMm/2,p.heightMm/2];
+   for(const c of result.commands){if(c.kind==='colour')continue;const point=[c.x/10+p.widthMm/2,c.y/10+p.heightMm/2];if(c.kind==='stitch')assert.ok(segmentInside(last,point,objects.get(c.objectId),.18));last=point;}
+  }
+ }
+});

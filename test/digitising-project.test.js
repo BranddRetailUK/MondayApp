@@ -91,3 +91,16 @@ test('complex artwork can use 512 bounded sewing objects while rejecting excess'
   assert.throws(()=>validate({...project,objects:project.objects.map(o=>({...o,path:Array.from({length:100},(_,i)=>[10+i*.01,10])}))}),/too many control points/);
   assert.throws(()=>validate({...project,objects:[...project.objects,{...project.objects[0],id:'excess'}]}),/1–512/);
 });
+
+test('automatic sequencing groups independent colours but preserves overlap and join order',()=>{
+ const {sequence}=require('../src/services/digitisingSequence');
+ const box=(id,colour,x,y)=>({id,colour,type:'fill',outline:[[x,y],[x+4,y],[x+4,y+4],[x,y+4]],holes:[],angle:0});
+ const objects=[box('a','#ff0000',2,2),box('b','#0000ff',12,2),box('c','#ff0000',22,2),box('overprint','#0000ff',3,3),box('join','#ff0000',6,2)];
+ const before=JSON.stringify(objects),ordered=sequence(objects),ids=ordered.map(o=>o.id);
+ assert.equal(JSON.stringify(objects),before);assert.equal(ids.length,objects.length);
+ assert.ok(ids.indexOf('c')<ids.indexOf('b'),'separate red shapes can share a colour block');
+ assert.ok(ids.indexOf('a')<ids.indexOf('overprint'));
+ assert.ok(ids.indexOf('overprint')<ids.indexOf('join'),'touching compensated shapes retain original stacking');
+ const p=only(ordered);const r=compile(p);
+ assert.equal(r.stats.colourChanges,2);assert.ok(r.stats.trims>=objects.length,'separate letters must still be cut');
+});

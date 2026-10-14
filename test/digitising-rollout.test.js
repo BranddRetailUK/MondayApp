@@ -9,7 +9,7 @@ const designs=[
 test('Create object rollout compiles unrelated uploads, source outlines, sizes and preview dimensions',async t=>{
  const old=process.env.OPENAI_API_KEY;process.env.OPENAI_API_KEY='test-only';let calls=0;
  const app=express();app.use((req,res,next)=>{req.hubUser={email:'production@ultimatepromotions.co.uk',access_scope:'full'};next();});
- app.use('/studio',createRouter({objectPipeline:true,fetchImpl:async(_url,request)=>{
+ app.use('/studio',createRouter({fetchImpl:async(_url,request)=>{
    calls++;const body=JSON.parse(request.body),context=JSON.parse(body.input[0].content[0].text);
    assert.equal(body.store,false);
    const stroke=body.text.format.name==='embroidery_stroke_tools';

@@ -240,9 +240,9 @@ async function propose(png,config,options={}){
         const o={...base,id:i?base.id+'-island-'+i:base.id,type:'fill',outline,holes:holes.filter(h=>require('./digitisingProject').inside(h[0],{type:'fill',outline,holes:[]})),angle:el.guide?sectionAngle(el):textured?(require('./digitisingStrokeTools').principal(ids,info.width,el)+270)%180:(config.fillAngle??35)};
         try{verify(o);}catch(error){throw Error(`${base.id}: ${error.message} Review source segmentation before compiling.`);}
         const extent=Math.max(...[0,1].map(axis=>Math.max(...outline.map(p=>p[axis]))-Math.min(...outline.map(p=>p[axis]))));
-        if(area(outline)<.2&&extent<1){
+        if(area(outline)<.2&&extent<1.5){
           try{require('./digitisingCompiler').compile({...project,travelRegions:[],objects:[o]});}
-          catch(error){if(!error.message.includes('no sewable stitches'))throw error;warnings.push(`${o.id}: sub-millimetre raster island has no sewable fill rows; omitted for review.`);return null;}
+          catch(error){if(!error.message.includes('no sewable stitches'))throw error;warnings.push(`${o.id}: raster sliver below 0.2 mm² and 1.5 mm extent has no sewable fill rows; omitted for review.`);return null;}
         }
         return o;
       }).filter(Boolean);
@@ -264,6 +264,9 @@ async function propose(png,config,options={}){
       warnings.push(`region-${id}: foreground optically centred by ${adjustment.shift.map(n=>n.toFixed(3)).join(', ')} mm with satin support over the panel; review the layout adjustment.`);
     }catch(error){warnings.push(`region-${id}: optical layout adjustment could not compile (${error.message}); original placement retained.`);}
   }
+  // Keep established short sewing sequences; consolidate fragmented colour
+  // schedules only when they exceed a complete eight-thread palette cycle.
+  if(project.objects.filter((o,i)=>i&&o.colour!==project.objects[i-1].colour).length>=8)project.objects=require('./digitisingSequence').sequence(project.objects);
   // Outline original included source regions, never artificial section seams.
   // Sew these last so all outlines share the requested garment thread.
   if(config.border)for(const el of prepared.sourceElements.filter(e=>includedSources.has(e.id))){

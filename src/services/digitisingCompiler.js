@@ -19,7 +19,7 @@ function compile(input){
     if(locked)return;
     const a=commands.at(-2),b=commands.at(-1);if(a?.kind!=='stitch'||b?.kind!=='stitch')return;
     const p=[a.x/10+project.widthMm/2,a.y/10+project.heightMm/2],end=[...current],d=dist(p,end);if(d<.3)return;
-    const back=mix(end,p,Math.min(.4/d,.5)),old=phase;phase='lock';append(back);append(end);phase=old;locked=true;
+    const back=mix(end,p,Math.min(.4/d,.5)),old=phase,oldId=objectId;phase='lock';objectId=b.objectId;append(back);append(end);phase=old;objectId=oldId;locked=true;
   };
   // Tie off only when thread is actually cut. Continuous same-colour joins
   // remain sewn and do not need duplicate locks at every object boundary.
@@ -39,7 +39,6 @@ function compile(input){
     append(p,'stitch',max);
   };
   for(const o of project.objects){
-    if(o.type==='fill'&&[o.outline,...o.holes].reduce((n,r)=>n+r.length,0)>1024)warnings.push(`${o.id}: complex raster contour uses trim/jump travel where a direct connection is not contained; review trim count.`);
     const start=commands.length;objectId=o.id;phase='travel';
     if(o.colour!==colour){trim();if(colour!==null)commands.push({kind:'colour',objectId,phase:'colour'});threads.push(o.colour);colour=o.colour;}
     if(o.type==='run'){
