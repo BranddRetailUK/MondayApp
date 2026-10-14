@@ -7,7 +7,7 @@ async function source(art,widthMm=100){
   const config={...settings({widthMm:100,hoopMm:200,colours:1,spacing:.4,length:3}),widthMm,sourceAspect:1,preserveWhiteArtwork:true};
   const p=await prepare(png,config);const el=p.elements.slice().sort((a,b)=>b.pixels-a.pixels)[0];
   const project={version:1,units:'mm',garment:'tshirt',widthMm,heightMm:widthMm,objects:[]};
-  return {p,el,project,objects:()=>recover(p.ids,p.info.width,el,p.scale,{id:'synthetic',colour:'#000000'},project)};
+  return {p,el,project,objects:(overrides={})=>recover(p.ids,p.info.width,el,p.scale,{id:'synthetic',colour:'#000000',...overrides},project)};
 }
 test('rounded islands recover source-fitted split satin without widening the limits',async()=>{
   for(const angle of [0,27,113]){
@@ -32,4 +32,15 @@ test('open curved bands with flared caps recover smooth crosswise satin',async()
   const f=await source('<path d="M25 40A25 25 0 0 0 75 40" fill="none" stroke="black" stroke-width="4"/><ellipse cx="25" cy="40" rx="4" ry="2.5"/><ellipse cx="75" cy="40" rx="4" ry="2.5"/>');
   const objects=f.objects();assert.ok(objects?.some(o=>o.id.endsWith('-arc')));assert.ok(objects.every(o=>o.type==='satin'));
   const c=compile({...f.project,objects});assert.ok(c.stats.stitches>300);assert.ok(c.stats.shortStitches/c.stats.stitches<.05);
+});
+
+test('rounded density calibration respects explicit object settings and other fabrics',async()=>{
+  const f=await source('<ellipse cx="50" cy="50" rx="3" ry="10"/>');
+  const normal=compile({...f.project,objects:f.objects()});
+  assert.equal(normal.project.objects[0].settings.satinSpacing,.31);
+  const custom=compile({...f.project,objects:f.objects({settings:{satinSpacing:.4}})});
+  assert.equal(custom.project.objects[0].settings.satinSpacing,.4);
+  assert.ok(custom.stats.stitches<normal.stats.stitches);
+  f.project.garment='hoodie';
+  assert.equal(compile({...f.project,objects:f.objects()}).project.objects[0].settings.satinSpacing,.3);
 });

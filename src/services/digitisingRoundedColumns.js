@@ -15,7 +15,9 @@ function construct(ids,w,el,scale,base,project){
   const {simplifyRungs}=require('./digitisingObjectPlan');
   const verify=o=>validate({...project,travelRegions:[],objects:[o]});
   const physical=p=>p.map(v=>(v+.5)*scale);
-  const satin=(rows,id,closed=false)=>{rows=rows.map(r=>r.map(p=>p.map((v,k)=>Math.max(0,Math.min(k?project.heightMm:project.widthMm,v)))));const o={...base,id,type:'satin',rungs:simplifyRungs(require('./digitisingSatinGeometry').stabilise(rows).rungs),...(closed?{closed:true}:{}),...(rows.some(r=>dist(...r)>9)?{splitSatin:true}:{})};try{verify(o);}catch(error){throw Error(`${id}: ${error.message}`);}return o;};
+  // A slightly wider pitch reduces crowding in recovered rounded T-shirt
+  // columns. Explicit object settings still take precedence.
+  const satin=(rows,id,closed=false)=>{rows=rows.map(r=>r.map(p=>p.map((v,k)=>Math.max(0,Math.min(k?project.heightMm:project.widthMm,v)))));const o={...base,id,type:'satin',...(project.garment==='tshirt'?{settings:{satinSpacing:.31,...base.settings}}:{}),rungs:simplifyRungs(require('./digitisingSatinGeometry').stabilise(rows).rungs),...(closed?{closed:true}:{}),...(rows.some(r=>dist(...r)>9)?{splitSatin:true}:{})};try{verify(o);}catch(error){throw Error(`${id}: ${error.message}`);}return o;};
   if(!holes.length){
     // A convex rounded island has a stable principal axis even when cap twigs
     // make its medial skeleton fail. Require near-convexity, not a letter guess.

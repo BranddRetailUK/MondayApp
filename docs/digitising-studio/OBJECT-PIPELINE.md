@@ -666,3 +666,11 @@ out of Git. `npm run test:digitising-studio` passes 113 tests, including rotated
 islands, rotated counters/branches, flared open arcs and width-limit rejection;
 the two evaluator controls also pass. Hosted deployment and physical sew-out
 verification are outstanding.
+
+### Smiley density follow-up (2026-10-14)
+
+Recovered rounded T-shirt satin now uses 0.31 mm spacing (previously 0.30), with explicit object settings taking precedence. Other garment profiles and ordinary successful column constructions are unchanged. The unchanged physical-field-v1 controlled Smiley comparison measures 90.922 silhouette, 92.369 direction and 91.520 density (minimum 90.922; **95% remains unmet**), with 3,510 sewing movements. Normal original-upload generation produces 4,139 stitches, 6 trims and 42 short stitches. Six accepted reference cases and Soul Disciples remain byte-identical to their baselines. Full 113-test suite plus four focused rounded tests pass (the focused run includes one new settings-precedence test). Private evidence: `output/digitising-studio/smiley-quality/density-final/`, `density-default-create/`, `regression-density-final/`, `soul-density-regression/`.
+
+The saved live Smiley at 2026-10-14T14:03:33.398Z does not match the earlier refined file: 5,171 stitches/21 trims versus 4,265/6. Railway refinement deployment `e2708cdc-b82f-4f5e-9a57-acf5c574dc1a` for commit `4c76770` reports SUCCESS with updatedAt 14:03:44.615Z, after that job was saved. A fresh post-deployment job is required to verify live output equivalence.
+
+The follow-up rejected local ring-width capping (89.294 minimum), earlier arc-cap transitions (90.284), extra edge runs (density 89.021 and excessive short stitches), stronger normal smoothing (90.774), and extra branch overlap (90.780). Calibration used only source-derived geometry; reference files remained evaluation inputs. Uniform density/compensation sweeps improved density but did not close the outline gap. A separate diagnostic comparing the uploaded source silhouette with the reference shows contour disagreement; it is not a proven upper bound on attainable fidelity. Do not describe this checkpoint as 95% or substitute a new metric.
