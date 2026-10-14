@@ -99,3 +99,43 @@ test('broad open curves use measured end caps without ragged skeleton tips',asyn
   assert.ok(covered/total>.97,`source coverage ${covered/total}`);
  }
 });
+test('source-specific tool schema prevents impossible counter and panel choices',()=>{
+  const {sourceSchema,validate}=require('../src/services/digitisingStrokePlanner');
+  const regions=[{id:4,counterCount:0,satinSuitable:true,panelSuitable:false},{id:8,counterCount:2,satinSuitable:false,panelSuitable:false},{id:12,counterCount:1,satinSuitable:false,panelSuitable:true}];
+  const alternatives=sourceSchema(regions).properties.regions.items.anyOf;
+  assert.deepEqual(alternatives.map(a=>a.properties.id.enum),[[4],[8],[12]]);
+  for(const [i,region]of regions.entries()){
+    const allowed=alternatives[i].properties.tool.enum;
+    for(const tool of allowed)assert.doesNotThrow(()=>validate({regions:[{id:region.id,tool}]},[region]));
+    assert.ok(allowed.includes('auto-column'));
+  }
+  assert.ok(!alternatives[0].properties.tool.enum.includes('legs-crossbar'));
+  assert.ok(!alternatives[0].properties.tool.enum.includes('fill'));
+  assert.ok(!alternatives[1].properties.tool.enum.includes('stem-bowl'));
+  assert.ok(alternatives[1].properties.tool.enum.includes('closed-columns'));
+  assert.ok(alternatives[2].properties.tool.enum.includes('finished-panel'));
+});
+test('invalid optional shared boundaries retain valid satin with jumps, never unsafe hidden sewing',()=>{
+  const {attachSharedTravel}=require('../src/services/digitisingObjectPlan');
+  const project={version:1,units:'mm',garment:'tshirt',widthMm:40,heightMm:30,objects:[],travelRegions:[]};
+  const parts=[{id:'a',type:'satin',colour:'#ffffff',rungs:[[[2,2],[6,2]],[[2,12],[6,12]]]},{id:'b',type:'satin',colour:'#ffffff',rungs:[[[20,2],[24,2]],[[20,12],[24,12]]]}];
+  const warnings=[];attachSharedTravel(project,parts,{id:'pinch',outline:[[0,0],[30,25],[0,25],[30,0]],holes:[]},warnings);
+  assert.equal(project.travelRegions.length,0);assert.ok(parts.every(p=>!p.regionId));assert.equal(warnings.length,1);
+  const result=compile({...project,objects:parts});assert.ok(result.stats.trims>=2);
+  assert.ok(!result.commands.some(c=>c.phase==='connection'));
+  assert.throws(()=>attachSharedTravel(project,[{...parts[0],rungs:[]}],{id:'bad',outline:[],holes:[]},[]),/satin/);
+});
+test('unfittable named construction retries validated source geometry with an explicit review flag',async()=>{
+  const {plan}=require('../src/services/digitisingAuto'),{propose}=require('../src/services/digitisingObjectPlan');
+  const png=await sharp(Buffer.from('<svg width="100" height="200"><rect x="40" y="10" width="20" height="180" fill="red"/></svg>')).png().toBuffer();
+  const planned=await plan(png,{widthMm:20});
+  const result=await propose(planned.png,planned.config,{strokePlan:{regions:[{id:0,tool:'stems-diagonal'}]}});
+  assert.equal(result.reviewRequired,true);assert.ok(result.warnings.some(w=>w.includes('does not fit source geometry')));
+  assert.ok(result.project.objects.every(o=>o.type==='satin'));assert.ok(compile(result.project).stats.stitches>100);
+});
+test('large source schemas group equivalent tool constraints',()=>{
+  const {sourceSchema}=require('../src/services/digitisingStrokePlanner');
+  const regions=Array.from({length:128},(_,id)=>({id,counterCount:0,satinSuitable:true,panelSuitable:false}));
+  const groups=sourceSchema(regions).properties.regions.items.anyOf;
+  assert.equal(groups.length,1);assert.equal(groups[0].properties.id.enum.length,128);
+});

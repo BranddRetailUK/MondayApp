@@ -257,3 +257,88 @@ the current baseline compiler and still achieves the 90.404% minimum against DST
 The PES comparison also remains above 90%, at 90.361%. The earlier saved 6,447-movement file predates the separately committed entry-travel
 fix; the current baseline has 6,446 movements. No new private artwork or reference
 stitches are committed. The live Create rollout switch remains off by default.
+
+## Creator batch calibration (2026-10-14)
+
+The user authorised this reference batch and explicitly approved source-artwork
+interpretation calls to OpenAI (`store:false`). This is deterministic engine/tool
+calibration, not model-weight fine-tuning. Original Dropbox files are read-only;
+private manifests, source rasters, proofs, caches, generated DSTs and the browsable
+report remain uncommitted under `output/digitising-studio/creator-batch/`.
+
+All 17 inventoried DSTs are accounted for. Ten have visually consistent artwork
+candidates: six flat calibration entries (four design families), two reserved
+holdout designs, and two puff-only diagnostic entries. Repeated trident sizes
+stay in one family/split. Two cap references remain unsupported. The heart and
+two running-figure DSTs lack matching source art: the supplied HUTTON crown/name
+and Slow wordmarks are different designs. The TS raster is a stitch rendering,
+not a clean source. TERMITE is excluded at the user's request. Historical proof
+of exactly which file was sent is not established by visual matching.
+
+The initial run exposed invalid model tool choices and invalid optional shared
+travel boundaries. The planner now constrains each source id to tools compatible
+with its measured counters, satin eligibility and panel eligibility, grouping
+identical constraints to bound schema size. Response validation remains in place;
+the planner cache version is advanced. A named tool whose fitting operation fails
+retries the existing generic source construction with an explicit review warning.
+Invalid generated satin geometry still fails validation; no width limit is
+relaxed. An invalid optional shared travel polygon no longer discards individually
+valid sewing objects: those keep ordinary validated travel/trim behaviour and a
+review warning. Invalid sewing objects are never accepted by this recovery.
+
+The existing per-stage evaluator and thresholds are unchanged. Results from the
+revised source-only pipeline:
+
+| Design | Split | Minimum digital score | Outcome |
+| --- | --- | ---: | --- |
+| HUTTON crown/name | Calibration | 63.253% | Below 90; short-movement gate also fails |
+| LIONFACE | Calibration | 77.192% | Below 90; short-movement gate also fails |
+| Trident, nominal 55 mm tall | Calibration | 79.582% | Below 90; size gate also fails |
+| Trident, nominal 80 mm tall | Calibration | 84.591% | Below 90; size gate also fails |
+| Trident, nominal 100 mm tall | Calibration | — | Selected satin geometry exceeds width constraints; no candidate |
+| LEGION | Calibration | 80.830% | Below 90; known source/reference placement discrepancy remains |
+| Worthy | Holdout | 59.990% | Below 90 |
+| Lips | Holdout | 37.682% | Below 90; direction differs despite 93.812% silhouette and 95.835% density |
+
+The two puff diagnostics fail generation on the initial baseline (element limit
+and unfittable named construction); they are not flat-embroidery acceptance tests.
+No scored design passes 90% or 95%. Nominal widths were rounded from reference or
+worksheet dimensions, transparent margins were cropped and very large rasters
+were downsampled to the existing 2000-pixel working resolution. T-shirt settings
+are an explicit baseline assumption because original substrates are undocumented.
+These input choices are recorded, not silently fitted during evaluation. Source
+rasters and reference DSTs remain separate; only the evaluator reads production
+stitches, after candidate generation.
+
+This batch demonstrates that the 90–95% target is **not achieved**. Remaining work
+includes robust curved/branched satin reconstruction, source-contained joins,
+short-movement control and an explicit construction/direction specification for
+broad fills; a source image alone does not encode a digitiser's fill angle or puff
+recipe. No score-driven per-design geometry correction was introduced. Holdout
+results are reported without tuning against them. The prior Good Game proposal
+and current-baseline compiled DST remain byte-identical (6,446 movements). The
+customer rollout switch is unchanged and defaults off.
+
+### Reusable private batch runner
+
+```sh
+npm run benchmark:digitising-batch -- private-manifest.json new-run-directory \
+  --interpret --split=calibration --python=/path/to/evaluation-venv/bin/python
+```
+
+Each manifest entry supplies `id`, `family`, `split`, `source`, `reference`, and
+ordinary customer `settings`. Splits are `calibration`, `holdout`, or `diagnostic`;
+choose one per invocation. Omitting `--interpret` runs locally without model
+calls. The runner rejects families crossing splits, input/output overlap, and
+existing run directories, so a failed rerun cannot leave a stale candidate that
+looks current. It records every selected entry including failures, source and
+reference hashes, engine/evaluator fingerprints, warnings and per-stage scores.
+Reference access occurs only after generation. Additional source provenance and
+assumptions can be retained in the private manifest. This runner does not train
+model weights or automatically promote a live generator.
+
+Validation: digitising regressions, batch split/input isolation and failure
+accounting tests, evaluator negative controls, plus the cached Good Game
+construction/compiler regression. Localhost API tests required normal loopback
+permissions; their first sandbox-only attempts failed with `listen EPERM` and
+passed when rerun with that permission.

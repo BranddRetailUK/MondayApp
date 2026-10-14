@@ -23,6 +23,17 @@ function simplifyRungs(rows,tolerance=.06){
   const simplified=[...keep].sort((a,b)=>a-b).map(i=>rows[i]);
   return simplified.length>256&&tolerance<.15?simplifyRungs(rows,.15):simplified;
 }
+// Optional travel never overrides the validation of individual sewing objects.
+function attachSharedTravel(project,proposed,region,warnings){
+  // Validate these outside the catch: malformed sewing geometry must still fail.
+  validate({...project,objects:proposed});
+  try{
+    validate({...project,travelRegions:[...project.travelRegions,region],objects:proposed.map(o=>({...o,regionId:region.id}))});
+    project.travelRegions.push(region);proposed.forEach(o=>{o.regionId=region.id;});
+  }catch(error){
+    warnings.push(`${region.id}: shared travel boundary is invalid (${error.message}); separate validated objects retained with safe travel.`);
+  }
+}
 async function propose(png,config,options={}){
   const prepared=await prepare(png,config),{ids,info,scale,heightMm}=prepared;
   const strokePlan=options.strokePlan||(options.interpret?await require('./digitisingStrokePlanner').planStrokes(png,prepared,options):null);
@@ -45,7 +56,13 @@ async function propose(png,config,options={}){
     if(panels.has(el.id)){
       project.objects.push(...require('./digitisingPanel').construct(panels.get(el.id),base));includedSources.add(el.sourceId??el.id);continue;
     }
-    const semantic=toolPlan?.tool&&require('./digitisingSemanticTools').fit(ids,info.width,el,scale,toolPlan.tool);
+    let semantic=null;
+    try{semantic=toolPlan?.tool&&require('./digitisingSemanticTools').fit(ids,info.width,el,scale,toolPlan.tool);}
+    catch(error){
+      // A model-selected family may not fit the measured source. Retry the
+      // existing source-only generic construction, retaining an explicit flag.
+      warnings.push(`${base.id}: ${toolPlan.tool} does not fit source geometry (${error.message}); generic source construction requires review.`);
+    }
     if(semantic){
       for(const [i,part]of semantic.entries()){
         const o={...base,id:base.id+`-tool-${i}`,type:'satin',...part,...(part.rungs.some(r=>dist(...r)>9)?{splitSatin:true}:{}),rungs:simplifyRungs(part.rungs)};
@@ -108,8 +125,7 @@ async function propose(png,config,options={}){
     if(proposed.length>1){
       const rings=contours(ids,info.width,el).map(r=>simplify(r.map(physical),.08).slice(0,-1)).filter(r=>r.length>=3&&area(r)>=.001).sort((a,b)=>area(b)-area(a));
       const region={id:base.id,outline:rings[0],holes:rings.slice(1)};
-      validate({...project,travelRegions:[...project.travelRegions,region],objects:proposed.map(o=>({...o,regionId:region.id}))});
-      project.travelRegions.push(region);proposed.forEach(o=>{o.regionId=region.id;});
+      attachSharedTravel(project,proposed,region,warnings);
     }
     project.objects.push(...proposed);
     includedSources.add(el.sourceId??el.id);
@@ -127,4 +143,4 @@ async function propose(png,config,options={}){
   }
   return {project:validate(project),warnings,reviewRequired:warnings.length>0,strokePlan};
 }
-module.exports={propose,simplifyRungs};
+module.exports={propose,simplifyRungs,attachSharedTravel};

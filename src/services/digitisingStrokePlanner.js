@@ -1,10 +1,22 @@
 const fs=require('node:fs/promises'),path=require('node:path'),crypto=require('node:crypto');
 const {contours}=require('./digitisingSections');
-const VERSION=7;
+const VERSION=8;
 const TOOLS=['finished-panel','fill','straight-column','auto-column','closed-columns','legs-crossbar','stem-bowl','stem-bowl-leg','stem-foot','stems-diagonal','stem-three-arms','open-curve-bars'];
 const object=properties=>({type:'object',additionalProperties:false,required:Object.keys(properties),properties});
-const regionSchema=object({id:{type:'integer'},tool:{type:'string',enum:TOOLS}});
-const schema=object({regions:{type:'array',items:regionSchema}});
+// Constrain each source id to constructions that satisfy measured prerequisites.
+// The response validator still checks identity, completeness and geometry rules.
+function toolsFor(region){
+  return TOOLS.filter(tool=>!(tool==='finished-panel'&&!region.panelSuitable)
+    &&!(tool==='fill'&&region.satinSuitable)
+    &&!(tool==='closed-columns'&&region.counterCount<1)
+    &&!(['legs-crossbar','stem-bowl','stem-bowl-leg'].includes(tool)&&region.counterCount!==undefined&&region.counterCount!==1));
+}
+function sourceSchema(regions){
+  // Group identical constraints so large designs do not multiply enum/schema size.
+  const groups=new Map();
+  for(const region of regions){const tools=toolsFor(region),key=tools.join(',');if(!groups.has(key))groups.set(key,{ids:[],tools});groups.get(key).ids.push(region.id);}
+  return object({regions:{type:'array',items:{anyOf:[...groups.values()].map(g=>object({id:{type:'integer',enum:g.ids},tool:{type:'string',enum:g.tools}}))}}});
+}
 function validate(result,elements){
   if(!result||!Array.isArray(result.regions)||result.regions.length!==elements.length)throw Error('Invalid stroke-plan region count.');
   const seen=new Set(),source=new Map(elements.map(e=>[e.id,e]));
@@ -26,6 +38,8 @@ async function planStrokes(png,prepared,options={}){
     const rings=contours(ids,info.width,e),counterCount=rings.filter(r=>r.reduce((s,p,i)=>{const q=r[(i+1)%r.length];return s+p[0]*q[1]-q[0]*p[1];},0)<-.3/scale**2).length;
     return {panelSuitable:!!require('./digitisingPanel').measure(prepared,e),id:e.id,x:e.x,y:e.y,width:e.width,height:e.height,colour:e.colour,widthMm:e.width*scale,heightMm:e.height*scale,satinSuitable:widths.length>0&&widths.at(-1)<=9,medianStrokeWidthMm:widths.length?widths[Math.floor(widths.length/2)]:null,maximumStrokeWidthMm:widths.at(-1)||null,counterCount};
   });
+  if(!regions.length)return {regions:[]};
+  const schema=sourceSchema(regions);
   const context={width:info.width,height:info.height,mmPerPixel:scale,regions};
   const model=process.env.OPENAI_DIGITISING_MODEL||'gpt-5-mini',key=crypto.createHash('sha256').update(png).update(JSON.stringify({VERSION,model,context})).digest('hex');
   const cache=options.cacheDirectory?path.join(options.cacheDirectory,'strokes-'+key+'.json'):null;
@@ -45,4 +59,4 @@ async function planStrokes(png,prepared,options={}){
   if(cache){await fs.mkdir(options.cacheDirectory,{recursive:true});await fs.writeFile(cache+'.draft',text);}
   const result=validate(JSON.parse(text),regions);if(cache)await fs.writeFile(cache,JSON.stringify(result));return result;
 }
-module.exports={planStrokes,validate};
+module.exports={planStrokes,validate,sourceSchema};
