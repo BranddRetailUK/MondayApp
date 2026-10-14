@@ -52,11 +52,12 @@ test('grid renders filenames safely, paginates and opens the existing editor',as
   const element=()=>({dataset:{},children:[],listeners:{},removeAttribute(name){delete this[name];},addEventListener(name,fn){this.listeners[name]=fn;},append(...children){this.children.push(...children);},replaceChildren(...children){this.children=children;}});
   const get=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);};
   const filename='<img onerror=bad>.dst';
-  const context={document:{getElementById:get,createElement:element},window:{ultimateHubUserPromise:Promise.resolve({email:'production@ultimatepromotions.co.uk'})},fetch:async url=>{requests.push(url);return {ok:true,json:async()=>url.endsWith('/status')?{enabled:true}:{jobs:[{id:'saved-id',filename,garment:'tshirt',stats:{widthMm:99,heightMm:60},created_at:'2026-10-14T12:00:00Z'}],hasMore:requests.length===2}};}};
+  const context={document:{getElementById:get,createElement:element},window:{ultimateHubUserPromise:Promise.resolve({email:'production@ultimatepromotions.co.uk'})},fetch:async url=>{requests.push(url);return {ok:true,json:async()=>url.endsWith('/status')?{enabled:true}:{jobs:[{id:'saved-id',filename,garment:'tshirt',stats:{widthMm:99,heightMm:60,stitches:12345},created_at:'2026-10-14T12:00:00Z'}],hasMore:requests.length===2}};}};
   await vm.runInNewContext(fs.readFileSync('public/digitising-studio.js','utf8'),context);
   await new Promise(r=>setImmediate(r));
   const card=get('ds-grid').children[0];
   assert.equal(card.children[1].textContent,filename);
+  assert.equal(card.children[2].textContent,'Stitch count: 12,345');
   assert.equal(card.children[4].href,'/api/digitising-studio/jobs/saved-id/download');
   assert.equal(get('ds-more').hidden,false);
   await get('ds-more').listeners.click();

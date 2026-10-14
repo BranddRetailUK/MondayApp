@@ -29,10 +29,10 @@
         const card=document.createElement('article');card.className='ds-card ds-job';
         const image=document.createElement('img');image.src='/api/digitising-studio/jobs/'+encodeURIComponent(job.id)+'/preview';image.alt=job.filename;image.loading='lazy';
         const title=document.createElement('h3');title.textContent=job.filename;
-        const date=document.createElement('p');date.textContent=new Date(job.created_at).toLocaleString('en-GB',{timeZone:'Europe/London',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+        const stitches=document.createElement('p');stitches.textContent=`Stitch count: ${Number(job.stats.stitches).toLocaleString('en-GB')}`;
         const detail=document.createElement('p');detail.textContent=`${Number(job.stats.widthMm).toFixed(1)} × ${Number(job.stats.heightMm).toFixed(1)} mm · ${{tshirt:'T-shirt',hoodie:'Hoodie / sweatshirt',woven:'Shirt'}[job.garment]||job.garment}`;
         const download=document.createElement('a');download.className='ds-download-link';download.href='/api/digitising-studio/jobs/'+encodeURIComponent(job.id)+'/download';download.textContent='Download DST';download.download=job.filename;
-        card.append(image,title,date,detail,download);$('grid').append(card);
+        card.append(image,title,stitches,detail,download);$('grid').append(card);
       }
       historyOffset+=data.jobs.length;$('more').hidden=!data.hasMore;
       $('history-status').textContent=historyOffset?'':'No saved files yet. Create a DST to get started.';
