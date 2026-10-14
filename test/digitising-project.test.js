@@ -70,3 +70,17 @@ test('independent simple uploads use the same source-to-object pipeline at diffe
     assert.equal(result.project.widthMm,widthMm);assert.ok(Math.abs(result.project.heightMm-widthMm*height/width)<.01);assert.ok(result.stats.stitches>100);
   }
 });
+test('colour changes jump to overlapping geometry instead of sewing a connector after trim',()=>{
+  const box={type:'fill',outline:[[5,5],[45,5],[45,40],[5,40]],holes:[],angle:0,settings:{underlay:'none'}};
+  const result=compile(only([{...box,id:'first',colour:'#ffffff'},{...box,id:'second',colour:'#ff0000'}]));
+  const index=result.commands.findIndex(c=>c.kind==='colour');
+  assert.ok(index>0);assert.equal(result.commands[index+1].kind,'jump');
+  assert.equal(result.commands[index+1].phase,'travel');
+});
+test('three-pass runs retrace every segment and reject unsupported pass counts',()=>{
+  const run={id:'outline',type:'run',colour:'#ff0000',path:[[5,5],[10,5],[10,10]],passes:3,settings:{stitchLength:1}};
+  const result=compile(only([run]));
+  const sewn=segments(result).filter(c=>c.phase==='run');
+  assert.equal(sewn.length,30);assert.ok(sewn.every(s=>s.a[0]===s.b[0]||s.a[1]===s.b[1]));
+  assert.throws(()=>compile(only([{...run,passes:2}])),/passes/);
+});

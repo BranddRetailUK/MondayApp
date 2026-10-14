@@ -18,11 +18,10 @@ function simplifyRungs(rows,tolerance=.06){
   return [...keep].sort((a,b)=>a-b).map(i=>rows[i]);
 }
 async function propose(png,config,options={}){
-  if(config.border)throw Error('Object pipeline: running outlines need an explicit run object.');
   const prepared=await prepare(png,config),{ids,info,scale,heightMm}=prepared;
   const strokePlan=options.strokePlan||(options.interpret?await require('./digitisingStrokePlanner').planStrokes(png,prepared,options):null);
   const plans=new Map((strokePlan?.regions||[]).map(r=>[r.id,r]));
-  const project={version:1,units:'mm',garment:config.garment,widthMm:config.widthMm,heightMm,objects:[],travelRegions:[]},warnings=[];
+  const project={version:1,units:'mm',garment:config.garment,widthMm:config.widthMm,heightMm,objects:[],travelRegions:[]},warnings=[],includedSources=new Set();
   const physical=p=>p.map((v,k)=>Math.max(0,Math.min(k?heightMm:config.widthMm,(v+.5)*scale)));
   const verify=o=>validate({...project,objects:[o]});
   const area=r=>Math.abs(r.reduce((sum,p,i)=>{const q=r[(i+1)%r.length];return sum+p[0]*q[1]-q[0]*p[1];},0))/2;
@@ -101,6 +100,18 @@ async function propose(png,config,options={}){
       project.travelRegions.push(region);proposed.forEach(o=>{o.regionId=region.id;});
     }
     project.objects.push(...proposed);
+    includedSources.add(el.sourceId??el.id);
+  }
+  // Outline original included source regions, never artificial section seams.
+  // Sew these last so all outlines share the requested garment thread.
+  if(config.border)for(const el of prepared.sourceElements.filter(e=>includedSources.has(e.id))){
+    const rings=contours(prepared.sourceIds,info.width,el);
+    for(const [i,ring] of rings.entries()){
+      const path=simplify(ring.map(physical),.05);
+      if(path.length<4)throw Error('Outline is too small to resolve; review artwork.');
+      if(dist(path[0],path.at(-1))>.001)path.push(path[0].slice());
+      project.objects.push({id:`outline-${el.id}-${i}`,type:'run',colour:config.garmentColour,path,passes:3,settings:{stitchLength:1}});
+    }
   }
   return {project:validate(project),warnings,reviewRequired:warnings.length>0,strokePlan};
 }

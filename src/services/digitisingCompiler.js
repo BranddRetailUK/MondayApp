@@ -23,7 +23,7 @@ function compile(input){
   };
   const trim=()=>{if(!commands.length||trimmed)return;lock();const [x,y]=rounded(current);commands.push({kind:'jump',x:x+2,y:y+2,objectId,phase:'trim'},{kind:'jump',x:x-2,y:y-2,objectId,phase:'trim'},{kind:'jump',x,y,objectId,phase:'trim'});trims++;trimmed=true;};
   const travel=(p,o,margin=0)=>{
-    if(commands.length&&o.type!=='run'&&segmentInside(current,p,o,margin)){append(p,'stitch',o.settings.stitchLength);return;}
+    if(!trimmed&&o.type!=='run'&&segmentInside(current,quantised(p),o,margin+.08)){append(p,'stitch',o.settings.stitchLength);return;}
     const region=regions.get(o.regionId);
     if(!trimmed&&region){
       const allowance=o.settings.pullCompensation+.08,path=route(current,p,region,allowance)?.map(quantised);
@@ -40,7 +40,7 @@ function compile(input){
     const start=commands.length;objectId=o.id;phase='travel';
     if(o.colour!==colour){trim();if(colour!==null)commands.push({kind:'colour',objectId,phase:'colour'});threads.push(o.colour);colour=o.colour;}
     if(o.type==='run'){
-      const path=o.entry==='end'?o.path.slice().reverse():o.path;travel(path[0],o);phase='run';for(const p of path.slice(1))append(p,'stitch',o.settings.stitchLength);lock();
+      const path=o.entry==='end'?o.path.slice().reverse():o.path;travel(path[0],o);phase='run';for(const p of path.slice(1)){const a=[...current];append(p,'stitch',o.settings.stitchLength);if(o.passes===3){append(a,'stitch',o.settings.stitchLength);append(p,'stitch',o.settings.stitchLength);}}lock();
     }else if(o.type==='satin'){
       const rows=satinRows(o),stride=Math.max(1,Math.round(o.settings.underlaySpacing/(o.settings.satinSpacing/2)));
       travel(centre(rows[0]),o);

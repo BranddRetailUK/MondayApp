@@ -7,8 +7,8 @@ function createRouter(options={}){
   router.use(require('../services/digitisingAccess').requireStudioUser);
   const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:8*1024*1024,files:1,fields:20,fieldSize:16384}}).single('artwork');
   router.get('/status',(_req,res)=>res.json({enabled:true,openai:!!process.env.OPENAI_API_KEY,presets:engine.PRESETS}));
-  // Explicit experimental tooling; automatic customer output remains on the
-  // existing generator until object-planning quality is validated.
+  // Server-only rollout switch: request fields cannot choose the engine.
+  const objectPipeline=options.objectPipeline??(process.env.DIGITISING_OBJECT_PIPELINE==='true');
   router.post('/compile-project',express.json({limit:'1mb'}),(req,res)=>{
     if(busy)return res.status(429).json({error:'A design is processing. Try again shortly.'});
     busy=true;
@@ -29,7 +29,9 @@ function createRouter(options={}){
         return res.json({elements:prepared.elements,widthMm:config.widthMm,heightMm:prepared.heightMm,png:preview.toString('base64')});
       }
       if(config.garment==='cap')throw Error('Cap generation needs a separately validated centre-out strategy. Choose a flat garment for this test.');
-      const result=await engine.generate(png,config);
+      const result=objectPipeline
+        ?await require('../services/digitisingObjectGenerate').generate(png,config,options)
+        :await engine.generate(png,config);
       res.json({...result,interpretation});
     }catch(error){res.status(400).json({error:error.name==='TimeoutError'?'OpenAI timed out. Retry.':error.message});}finally{busy=false;}});
   });

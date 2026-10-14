@@ -89,7 +89,7 @@ function validate(input){
       for(const h of o.holes){ring(h);if(!h.every(q=>inRing(q,o.outline))||ringEdges(h).some(e=>ringEdges(o.outline).some(f=>intersects(...e,...f))))fail('hole must be strictly inside outline.');}
       for(let i=0;i<o.holes.length;i++)for(let j=i+1;j<o.holes.length;j++)if(inRing(o.holes[i][0],o.holes[j])||inRing(o.holes[j][0],o.holes[i])||ringEdges(o.holes[i]).some(e=>ringEdges(o.holes[j]).some(f=>intersects(...e,...f))))fail('holes overlap.');
       number(o.angle,0,180,'fill angle');
-    }else{if(!Array.isArray(o.path)||o.path.length<2||o.path.length>512)fail('run needs 2–512 points.');o.path.forEach(point);if(o.path.slice(1).every((q,i)=>dist(q,o.path[i])<.01))fail('empty run.');}
+    }else{if(o.passes!==undefined&&![1,3].includes(o.passes))fail('run passes must be 1 or 3.');if(!Array.isArray(o.path)||o.path.length<2||o.path.length>512)fail('run needs 2–512 points.');o.path.forEach(point);if(o.path.slice(1).every((q,i)=>dist(q,o.path[i])<.01))fail('empty run.');}
   }
   return p;
 }

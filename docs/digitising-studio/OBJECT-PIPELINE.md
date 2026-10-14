@@ -72,7 +72,8 @@ Authenticated production-user tools:
 
 The customer Create button and `/generate` still use the existing generator.
 There is no object editor UI yet. These endpoints support development/review.
-Automatic running outlines require an explicit run object in this pipeline.
+Automatic running outlines are supported as explicit run objects; see the gated
+Create integration below.
 
 Run a held-out comparison:
 
@@ -147,3 +148,47 @@ the existing generator while this new path is available through `/project` and
 Private source, reference, intermediate iterations and final comparison files
 remain outside Git. Physical sew-out and additional real designs are the next
 acceptance steps.
+
+## Create integration and routing audit (2026-10-14)
+
+`DIGITISING_OBJECT_PIPELINE=true` is a server-side opt-in that sends the existing
+Create `/generate` request through source interpretation, named tool selection,
+object proposal and the local compiler. It defaults off pending broader real-design
+acceptance. Request fields cannot enable it. There is no silent legacy fallback
+on a failed proposal or compile. `/project` and `/compile-project` remain available.
+This change does not activate the switch on Railway.
+
+The adapter preserves source physical sizing, linked aspect ratio, garment and
+outline choices. It independently decodes the exported DST for the existing
+browser's dimension fields and checks sewn bounds against hoop clearance. The
+upload preview stays the original source raster; stitch preview/download continue
+to use the exported DST and accompanying thread colours.
+
+Optional outlines are explicit three-pass run objects with 1 mm maximum movements.
+They follow original included source contours and counters, not the seams of
+artificial satin/fill sections. All outlines sew last in the selected colour;
+this deliberately differs from the legacy per-element outline sequence. Both
+outline and object limits fail explicitly rather than silently dropping detail.
+
+The routing audit found that an entry connector could sew after a trim/colour
+change when the preceding position was inside the next object's boundary. Such
+entries now jump; continuing same-thread connections retain the existing geometry
+checks. Entry checks use quantised destinations. Regression tests include overlapping
+colour objects and the existing counter/sibling travel cases.
+
+New integration fixtures are a counter badge, a two-colour pennant and disconnected
+tiles, each at 60 and 90 mm canvas width across T-shirt, hoodie and woven profiles.
+They exercise authenticated multipart Create, both AI response schemas, source
+contours, optional outlines, deterministic compilation and independent DST decode.
+AI responses are mocked: these are **synthetic engineering checks**, not held-out
+customer artwork, real-model tool-selection validation or production comparisons.
+No new production-reference percentage is claimed. The evaluator negative controls
+remain necessary but do not establish general quality.
+
+Remaining acceptance work: unrelated real artwork paired with proven DSTs, inspected
+at several physical sizes; bowl/stem overlaps and corner needle concentration;
+coverage of thin curved/branched regions and explicit fallback warnings; actual
+thread coverage of connection routes (being inside a region alone is insufficient);
+controller trim recognition; and physical sew-outs on each intended fabric. Default
+promotion still requires this evidence. No bulk training or reference-stitch copying
+was introduced.
