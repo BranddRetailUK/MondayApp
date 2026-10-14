@@ -21,6 +21,8 @@ function compile(input){
     const p=[a.x/10+project.widthMm/2,a.y/10+project.heightMm/2],end=[...current],d=dist(p,end);if(d<.3)return;
     const back=mix(end,p,Math.min(.4/d,.5)),old=phase;phase='lock';append(back);append(end);phase=old;locked=true;
   };
+  // Tie off only when thread is actually cut. Continuous same-colour joins
+  // remain sewn and do not need duplicate locks at every object boundary.
   const trim=()=>{if(!commands.length||trimmed)return;lock();const [x,y]=rounded(current);commands.push({kind:'jump',x:x+2,y:y+2,objectId,phase:'trim'},{kind:'jump',x:x-2,y:y-2,objectId,phase:'trim'},{kind:'jump',x,y,objectId,phase:'trim'});trims++;trimmed=true;};
   const travel=(p,o,margin=0)=>{
     if(!trimmed&&o.type!=='run'&&segmentInside(current,quantised(p),o,margin+.08)){append(p,'stitch',o.settings.stitchLength);return;}
@@ -40,7 +42,7 @@ function compile(input){
     const start=commands.length;objectId=o.id;phase='travel';
     if(o.colour!==colour){trim();if(colour!==null)commands.push({kind:'colour',objectId,phase:'colour'});threads.push(o.colour);colour=o.colour;}
     if(o.type==='run'){
-      const path=o.entry==='end'?o.path.slice().reverse():o.path;travel(path[0],o);phase='run';for(const p of path.slice(1)){const a=[...current];append(p,'stitch',o.settings.stitchLength);if(o.passes===3){append(a,'stitch',o.settings.stitchLength);append(p,'stitch',o.settings.stitchLength);}}lock();
+      const path=o.entry==='end'?o.path.slice().reverse():o.path;travel(path[0],o);phase='run';for(const p of path.slice(1)){const a=[...current];append(p,'stitch',o.settings.stitchLength);if(o.passes===3){append(a,'stitch',o.settings.stitchLength);append(p,'stitch',o.settings.stitchLength);}}
     }else if(o.type==='satin'){
       const rows=satinRows(o),stride=Math.max(1,Math.round(o.settings.underlaySpacing/(o.settings.satinSpacing/2)));
       travel(centre(rows[0]),o);
@@ -63,7 +65,6 @@ function compile(input){
         if(!segmentInside(current,quantised(target),o,o.settings.pullCompensation+.08))safe(c,o,9.6,o.settings.pullCompensation);
         safe(target,o,9.6,o.settings.pullCompensation);
       }
-      lock();
     }else{
       for(const underlay of o.settings.underlay==='none'?[false]:[true,false]){
         phase=underlay?'underlay':'fill';const spacing=underlay?o.settings.fillUnderlaySpacing:o.settings.fillSpacing,angle=o.angle+(underlay?90:0);
@@ -82,7 +83,6 @@ function compile(input){
           }
         }
       }
-      lock();
     }
     if(!commands.slice(start).some(c=>c.kind==='stitch'))throw Error(`Object ${o.id}: no sewable stitches at this size; review the object.`);
     objectStats.push({id:o.id,type:o.type,commands:commands.length-start,entry:o.entry});

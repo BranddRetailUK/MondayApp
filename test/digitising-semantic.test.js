@@ -139,3 +139,75 @@ test('large source schemas group equivalent tool constraints',()=>{
   const groups=sourceSchema(regions).properties.regions.items.anyOf;
   assert.equal(groups.length,1);assert.equal(groups[0].properties.id.enum.length,128);
 });
+test('continuous same-colour joins tie off at cuts rather than every column',()=>{
+  const p={version:1,units:'mm',garment:'tshirt',widthMm:40,heightMm:30,travelRegions:[{id:'joined',outline:[[2,2],[30,2],[30,22],[2,22]],holes:[]}],objects:[
+    {id:'a',regionId:'joined',type:'satin',colour:'#ffffff',rungs:[[[4,4],[8,4]],[[4,20],[8,20]]]},
+    {id:'b',regionId:'joined',type:'satin',colour:'#ffffff',rungs:[[[12,4],[16,4]],[[12,20],[16,20]]]},
+    {id:'c',type:'satin',colour:'#ff0000',rungs:[[[24,4],[28,4]],[[24,20],[28,20]]]}
+  ]};
+  const result=compile(p),locks=result.commands.filter(c=>c.phase==='lock');
+  assert.equal(result.stats.trims,2);assert.equal(locks.length,4);
+  assert.ok(!locks.some(c=>c.objectId==='a'),'no unnecessary tie at a sewn continuation');
+  for(let i=0;i<result.commands.length;i++)if(result.commands[i].phase==='trim'&&result.commands[i-1]?.phase!=='trim')assert.equal(result.commands[i-1].phase,'lock','each actual cut remains tied off');
+  assert.equal(result.threads.length,2);
+});
+test('branch ownership preserves all source pixels and leaves counters empty',async()=>{
+  const {partition}=require('../src/services/digitisingBranchSections');
+  const source=await shape('<path fill-rule="evenodd" d="M30 30H270V270H30Z M90 90H210V210H90Z"/>');
+  const paths=[[[[40,40],[70,40]],[[40,260],[70,260]]],[[[230,40],[260,40]],[[230,260],[260,260]]],[[[100,40],[100,70]],[[200,40],[200,70]]]];
+  const result=partition(source.ids,source.w,source.e,paths);
+  assert.equal(result.elements.reduce((s,e)=>s+e.pixels,0),source.e.pixels);
+  for(let i=0;i<source.ids.length;i++)assert.equal(result.ids[i]>=0,source.ids[i]>=0);
+  assert.ok(result.elements.every(e=>e.pixels>0&&e.width>0&&e.height>0));
+  assert.throws(()=>partition(source.ids,source.w,source.e,[]),/unowned/);
+});
+test('diagonal contour contacts can be traced as separate simple source boundaries',()=>{
+  const {contours}=require('../src/services/digitisingSections');
+  const ids=new Int16Array(16).fill(-1);for(const k of [0,1,4,5,10,11,14,15])ids[k]=0;
+  const rings=contours(ids,4,{id:0,x:0,y:0,width:4,height:4},true);
+  assert.equal(rings.length,2);
+  for(const ring of rings){assert.deepEqual(ring[0],ring.at(-1));assert.equal(new Set(ring.slice(0,-1).map(p=>p.join(','))).size,ring.length-1);}
+});
+test('oversized source-fitted columns become bounded directional fill without widening satin limits',async()=>{
+  const {plan}=require('../src/services/digitisingAuto'),{propose}=require('../src/services/digitisingObjectPlan');
+  const png=await sharp(Buffer.from('<svg width="100" height="250"><rect width="100" height="250" fill="red"/></svg>')).png().toBuffer();
+  const planned=await plan(png,{widthMm:20});
+  const result=await propose(planned.png,planned.config,{strokePlan:{regions:[{id:0,tool:'straight-column'}]}});
+  assert.ok(result.project.objects.every(o=>o.type==='fill'));
+  assert.ok(result.warnings.some(w=>w.includes('exceeds split-satin width')));
+  assert.ok(compile(result.project).stats.stitches>100);
+  assert.throws(()=>validate({version:1,units:'mm',garment:'tshirt',widthMm:30,heightMm:30,objects:[{id:'too-wide',type:'satin',colour:'#ffffff',splitSatin:true,rungs:[[[2,2],[20,2]],[[2,20],[20,20]]]}]}),/width/);
+});
+test('measured three-prong forks retain turning shoulders at multiple physical sizes',async()=>{
+  const fork=require('../src/services/digitisingFork');
+  const left='<path d="M70 60 L85 190 Q85 218 145 230" fill="none" stroke="white" stroke-width="20" stroke-linecap="round"/>';
+  const source=await shape('<path d="M150 10L164 80H158V240L150 290L142 240V80H136Z"/>'+left+'<g transform="translate(300 0) scale(-1 1)">'+left+'</g>');
+  const measured=fork.measure(source.ids,source.w,source.e);assert.ok(measured);
+  assert.equal(measured.parts.reduce((n,p)=>n+p.pixels,0),source.e.pixels);
+  for(const scale of [.15,.2]){
+    const parts=fork.fit(measured,source.w,scale),p={version:1,units:'mm',garment:'tshirt',widthMm:300*scale,heightMm:300*scale,objects:parts.map((o,i)=>({...o,id:'fork-'+i,type:'satin',colour:'#ffffff',splitSatin:true,rungs:simplifyRungs(o.rungs)}))};
+    const result=compile(p);assert.ok(result.stats.stitches>200);assert.ok(result.stats.shortStitches/result.stats.stitches<.05);
+    for(const o of [p.objects[0],p.objects.at(-1)]){const angles=o.rungs.map(([a,b])=>Math.atan2(b[1]-a[1],b[0]-a[0]));assert.ok(Math.max(...angles)-Math.min(...angles)>.5,'shoulder direction must turn');}
+  }
+  const rgba=Buffer.alloc(source.ids.length*4);for(let i=0;i<source.ids.length;i++)if(source.ids[i]>=0)rgba.fill(255,i*4,i*4+4);
+  const png=await sharp(rgba,{raw:{width:300,height:300,channels:4}}).png().toBuffer();
+  const {plan}=require('../src/services/digitisingAuto'),{propose}=require('../src/services/digitisingObjectPlan');
+  for(const widthMm of [60,90]){
+    const planned=await plan(png,{widthMm}),proposal=await propose(planned.png,planned.config,{strokePlan:{regions:[{id:0,tool:'auto-column'}]}});
+    assert.ok(proposal.project.objects.every(o=>o.id.startsWith('source-0-fork')));
+    assert.ok(compile(proposal.project).stats.stitches>200);
+  }
+  const plain=await shape('<rect x="100" y="10" width="100" height="280"/>');assert.equal(fork.measure(plain.ids,plain.w,plain.e),null);
+  const ring=await shape('<path fill-rule="evenodd" d="M70 10H230V290H70Z M110 80H190V220H110Z"/>');assert.equal(fork.measure(ring.ids,ring.w,ring.e),null);
+});
+test('perforated texture follows its crosswise grain while solid fills keep the configured angle',async()=>{
+  const {plan}=require('../src/services/digitisingAuto'),{propose}=require('../src/services/digitisingObjectPlan');
+  for(const perforated of [false,true]){
+    const holes=perforated?Array.from({length:7},(_,i)=>{const x=75+i*25;return `M${x-4} 150a4 14 0 1 0 8 0a4 14 0 1 0 -8 0Z`;}).join(' '):'';
+    const png=await sharp(Buffer.from(`<svg width="300" height="300"><g transform="rotate(12 150 150)"><path fill="red" fill-rule="evenodd" d="M30 150a120 60 0 1 0 240 0a120 60 0 1 0 -240 0Z ${holes}"/></g></svg>`)).png().toBuffer();
+    const planned=await plan(png,{widthMm:60}),result=await propose(planned.png,planned.config,{strokePlan:{regions:[{id:0,tool:'fill'}]}});
+    assert.equal(result.project.objects.length,1);const o=result.project.objects[0];assert.equal(o.type,'fill');
+    if(perforated){assert.equal(o.holes.length,7);assert.ok(Math.abs(o.angle-102)<2);}else assert.equal(o.angle,35);
+    assert.ok(compile(result.project).stats.stitches>100);
+  }
+});

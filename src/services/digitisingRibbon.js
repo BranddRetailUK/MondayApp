@@ -3,13 +3,22 @@ const {dist,mix}=require('./digitisingProject');
 
 // Match progress along the two boundaries of an open ribbon. Corner points on
 // either rail remain paired controls, spreading a turn across both stroke arms.
-function ribbon(ids,w,element,scale,angle,startCap,endCap,tolerance=.06){
+function ribbon(ids,w,element,scale,angle,startCap,endCap,tolerance=.06,forceAlignment=false,pointedStart=false){
   const rad=angle*Math.PI/180,u=[Math.cos(rad),Math.sin(rad)],v=[-u[1],u[0]];
   const local=p=>[p[0]*u[0]+p[1]*u[1],p[0]*v[0]+p[1]*v[1]];
-  const ring=simplify(contours(ids,w,element)[0],tolerance/scale).slice(0,-1);
+  let ring=simplify(contours(ids,w,element)[0],tolerance/scale).slice(0,-1);
+  if(pointedStart&&Array.isArray(startCap)){
+    const index=ring.map((p,i)=>({i,d:dist(p,startCap)})).sort((a,b)=>a.d-b.d)[0].i;
+    const tip=ring[index],before=ring[(index+ring.length-1)%ring.length],after=ring[(index+1)%ring.length];
+    const lengths=[dist(tip,before),dist(tip,after)],unit=[before,after].map((p,i)=>p.map((v,k)=>(v-tip[k])/lengths[i]));
+    const separation=dist(unit[0],unit[1]),step=.35/(scale*separation);
+    if(Number.isFinite(step)&&step<Math.min(...lengths)*.8){
+      ring.splice(index,1,...unit.map(u=>tip.map((v,k)=>v+u[k]*step)));
+    }
+  }
   const cap=side=>{
     if(Array.isArray(side))return ring.map((p,i)=>({i,d:dist(mix(p,ring[(i+1)%ring.length],.5),side)})).sort((a,b)=>a.d-b.d)[0].i;
-    const axis=side==='right'?0:1,sign=side==='up'?-1:1,edges=[];
+    const axis=['left','right'].includes(side)?0:1,sign=['up','left'].includes(side)?-1:1,edges=[];
     for(let i=0;i<ring.length;i++){const a=local(ring[i]),b=local(ring[(i+1)%ring.length]);
       if(dist(a,b)*scale<.5||Math.abs(b[axis]-a[axis])>Math.abs(b[1-axis]-a[1-axis])*.6)continue;
       edges.push({i,score:sign*(a[axis]+b[axis])/2});
@@ -29,8 +38,8 @@ function ribbon(ids,w,element,scale,angle,startCap,endCap,tolerance=.06){
   // Long/italic arms can make normalized perimeter progress pair distant
   // corners. Keep established valid ribbons unchanged; otherwise align the
   // rails monotonically by source-contained cross-stroke distance.
-  if(rows.some(r=>dist(...r)*scale>9)&&tolerance<.15)return ribbon(ids,w,element,scale,angle,startCap,endCap,.15);
-  if(rows.some(r=>dist(...r)*scale>9))rows=alignRails(rails,ids,w,element.id,scale,tolerance+Math.max(.08,scale*Math.SQRT2/2));
+  if(rows.some(r=>dist(...r)*scale>9)&&tolerance<.15)return ribbon(ids,w,element,scale,angle,startCap,endCap,.15,forceAlignment,pointedStart);
+  if(forceAlignment||rows.some(r=>dist(...r)*scale>9))rows=alignRails(rails,ids,w,element.id,scale,tolerance+Math.max(.08,scale*Math.SQRT2/2));
   return rows.map(r=>r.map(p=>p.map(n=>(n+.5)*scale)));
 
 }

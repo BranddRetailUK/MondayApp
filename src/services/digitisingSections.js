@@ -50,7 +50,7 @@ function spans(ids,w,element,scale,spacing,angle){
 }
 function sectionAngle(element){if(Number.isFinite(element.stitchAngle))return element.stitchAngle;const [a,b]=element.guide;return (Math.atan2(b[1]-a[1],b[0]-a[0])*180/Math.PI+90+180)%180;}
 // Boundary runs retain narrow brush tips that cannot carry a satin row.
-function contours(ids,w,element){
+function contours(ids,w,element,splitTouching=false){
   const edges=new Map(),key=p=>p.join(','),inside=(x,y)=>x>=0&&x<w&&y>=0&&y<ids.length/w&&ids[y*w+x]===element.id;
   const add=(a,b)=>{const k=key(a);if(!edges.has(k))edges.set(k,[]);edges.get(k).push(b);};
   for(let y=element.y;y<element.y+element.height;y++)for(let x=element.x;x<element.x+element.width;x++)if(inside(x,y)){
@@ -61,7 +61,14 @@ function contours(ids,w,element){
   }
   const paths=[];
   while(edges.size){const start=edges.keys().next().value,points=[start.split(',').map(Number)];let at=start;
-    do{const options=edges.get(at);if(!options?.length)break;const next=options.pop();if(!options.length)edges.delete(at);points.push(next);at=key(next);}while(at!==start);
+    do{const options=edges.get(at);if(!options?.length)break;
+      // At a diagonal pixel contact, keep the filled cell on the right instead
+      // of joining two boundaries into a self-touching figure-eight.
+      if(splitTouching&&options.length>1&&points.length>1){const p=points.at(-2),q=points.at(-1),dx=q[0]-p[0],dy=q[1]-p[1];
+        options.sort((a,b)=>Math.atan2(dx*(b[1]-q[1])-dy*(b[0]-q[0]),dx*(b[0]-q[0])+dy*(b[1]-q[1]))-Math.atan2(dx*(a[1]-q[1])-dy*(a[0]-q[0]),dx*(a[0]-q[0])+dy*(a[1]-q[1])));
+      }
+      const next=splitTouching?options.shift():options.pop();if(!options.length)edges.delete(at);points.push(next);at=key(next);
+    }while(at!==start);
     if(points.length>3)paths.push(points);
   }
   return paths.sort((a,b)=>b.length-a.length);

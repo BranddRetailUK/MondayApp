@@ -342,3 +342,78 @@ accounting tests, evaluator negative controls, plus the cached Good Game
 construction/compiler regression. Localhost API tests required normal loopback
 permissions; their first sandbox-only attempts failed with `listen EPERM` and
 passed when rerun with that permission.
+
+### Creator batch: turning columns and joins (2026-10-14, second development pass)
+
+The user requested continued iterations and identified the tridents' changing
+stitch direction as intentional depth. The engine now recognises a bounded,
+upright three-prong source topology and fits turning side ribbons around the
+shoulders with a crosswise centre column. This uses original source pixels,
+not reference stitch coordinates or filename-specific geometry. Pointed caps
+receive a small measured cross-section; monotonic boundary pairing preserves
+turns. Unsupported orientation/topology or an invalid fit retains ordinary
+planning with a review warning. This is not a general arbitrary-fork solver.
+
+The compact T-shirt fork construction (all fitted widths below 7 mm) uses
+0.24 mm satin spacing and 0.3 mm compensation, plus three-pass source-tip runs.
+These are development calibration settings, not a physically validated fabric
+profile. Larger forks retain the existing minimum-width satin cutoff at fine
+tips. Source/reference proportions differ slightly across the trident sizes.
+
+Other accepted changes:
+
+- Invalid curved rails can split into independently validated sections. Branch
+  recovery assigns every source pixel to a section, merges disconnected
+  ownership fragments, and traces diagonal contacts without figure-eight
+  contours. Coverage below 90% triggers reconstruction rather than silently
+  omitting substantial branches. Local ribbon recovery requires both coverage
+  and successful quantised compilation; remaining pieces use reviewed fill.
+- Source-fitted columns wider than the explicit 12 mm split-satin limit become
+  directional fills with review warnings. Width limits are not relaxed.
+- Perforated broad textures with at least six small counters use a transverse
+  grain. Ordinary fills retain the configured angle; a general principal-axis
+  override was rejected because it regressed Good Game.
+- Continuous same-colour joins no longer receive redundant tie-offs. Actual
+  cuts, colour changes and the final cut still use the existing lock operation.
+
+A fresh run of the unchanged `physical-field-v1` evaluator, with current engine
+fingerprints, generated all eight supported flat examples:
+
+| Design | Previous minimum | Current minimum | All 90% gates pass |
+|---|---:|---:|---|
+| WORTHY | 59.990 | 70.564 | No |
+| HUTTON | 63.253 | 76.578 | No |
+| LIPS | 37.682 | 93.894 | Yes |
+| LIONFACE | 77.192 | 77.170 | No |
+| Trident 55 | 79.582 | 84.214 | No |
+| Trident 80 | 84.591 | 90.918 | Yes |
+| Trident 100 | Generation error | 90.444 | Yes |
+| LEGION | 80.830 | 80.829 | No |
+
+The target remains unmet: three of eight pass 90%, none pass 95%. WORTHY still
+fails size; LIONFACE still fails the short-movement gate. HUTTON and LEGION have
+source/reference layout differences; the user confirmed the digitiser may have
+changed the artwork and editable PXF files are unavailable. These discrepancies
+are retained in the score, not registered away or removed from the batch.
+
+WORTHY and LIPS have now been used for development and are **no longer holdouts**.
+The private `manifest-development.json` records previous splits; the original
+manifest and earlier results remain unchanged. There is no independent unseen
+validation in this pass. Unsupported puff/cap designs and missing/mismatched
+originals remain accounted for, including the user-excluded TERMITE. Source-only
+interpretations were reused from the approved cache; no weights were fine-tuned.
+
+Private evidence: `output/digitising-studio/creator-batch/round2/checkpoint/`
+contains the fresh batch, proposals, exported DSTs, warnings and scores;
+`round2/index.html` compares all 17 inventory entries. Individual experiments,
+including unsuccessful direction, support-spacing and geometry changes, remain
+under `round2/`. Private artwork, references and generated files are not committed.
+
+Validation: 84 digitising tests pass with localhost permission, plus two
+independent evaluator negative-control tests. New regressions cover turning
+forks at multiple physical sizes through proposal/compilation, pointed topology
+rejection, source-pixel ownership, diagonal contours, width-limit preservation,
+texture direction and locking at cuts. Good Game still passes at 90.395%, with
+6,412 sewing movements; the reduction from the earlier current-baseline output
+is due to removal of redundant locks. Its current-compiler output from the old
+and new proposals is identical. The object rollout switch remains unchanged.
