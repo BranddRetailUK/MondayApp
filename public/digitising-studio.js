@@ -39,7 +39,14 @@
     }catch(error){$('history-status').textContent=error.message;$('retry').hidden=false;}
     finally{historyLoading=false;$('more').disabled=false;}
   }
-  $('create').addEventListener('click',()=>editorView(true));
+  $('create').addEventListener('click',()=>{
+    if(busy)return;
+    file=null;rasterPreview=null;ratio=null;
+    $('file').value='';$('filename').textContent='';
+    $('width').value=$('height').value='';$('height').removeAttribute('max');
+    $('width').disabled=$('height').disabled=$('generate').disabled=true;
+    invalidate();editorView(true);
+  });
   $('previous').addEventListener('click',()=>{editorView(false);loadHistory(true);});
   $('more').addEventListener('click',()=>loadHistory());
   $('retry').addEventListener('click',()=>loadHistory());

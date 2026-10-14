@@ -49,7 +49,7 @@ test('history and downloads require studio access, validate inputs and preserve 
 
 test('grid renders filenames safely, paginates and opens the existing editor',async()=>{
   const vm=require('node:vm'),fs=require('node:fs'),elements=new Map(),requests=[];
-  const element=()=>({dataset:{},children:[],listeners:{},addEventListener(name,fn){this.listeners[name]=fn;},append(...children){this.children.push(...children);},replaceChildren(...children){this.children=children;}});
+  const element=()=>({dataset:{},children:[],listeners:{},removeAttribute(name){delete this[name];},addEventListener(name,fn){this.listeners[name]=fn;},append(...children){this.children.push(...children);},replaceChildren(...children){this.children=children;}});
   const get=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);};
   const filename='<img onerror=bad>.dst';
   const context={document:{getElementById:get,createElement:element},window:{ultimateHubUserPromise:Promise.resolve({email:'production@ultimatepromotions.co.uk'})},fetch:async url=>{requests.push(url);return {ok:true,json:async()=>url.endsWith('/status')?{enabled:true}:{jobs:[{id:'saved-id',filename,garment:'tshirt',stats:{widthMm:99,heightMm:60},created_at:'2026-10-14T12:00:00Z'}],hasMore:requests.length===2}};}};
@@ -63,4 +63,13 @@ test('grid renders filenames safely, paginates and opens the existing editor',as
   assert.equal(requests.at(-1),'/api/digitising-studio/jobs?offset=1');
   assert.equal(get('ds-grid').children.length,2);assert.equal(get('ds-more').hidden,true);
   get('ds-create').listeners.click();assert.equal(get('ds-editor').hidden,false);assert.equal(get('ds-history').hidden,true);
+  get('ds-stage').append(element());get('ds-stats').textContent='150 × 31.1 mm';get('ds-status').textContent='DST ready.';
+  get('ds-download').disabled=false;get('ds-filename').textContent='old.png';get('ds-file').value='old.png';
+  get('ds-width').value=150;get('ds-height').value=31.1;get('ds-height').max=62.2;
+  get('ds-previous').listeners.click();get('ds-create').listeners.click();
+  assert.equal(get('ds-stage').children.length,0);
+  for(const id of ['stats','status','filename'])assert.equal(get('ds-'+id).textContent,'');
+  for(const id of ['file','width','height'])assert.equal(get('ds-'+id).value,'');
+  for(const id of ['download','width','height','generate'])assert.equal(get('ds-'+id).disabled,true);
+  assert.equal(get('ds-height').max,undefined);
 });

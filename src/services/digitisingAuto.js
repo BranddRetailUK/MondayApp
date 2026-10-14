@@ -63,7 +63,11 @@ async function plan(input,body={},options={}){
   if(width&&height&&Math.abs(width*aspect-height)>.25)throw Error('Width and height must preserve the artwork proportions.');
   config.widthMm=width||(height?height/aspect:Math.min(300,size.widthMm));
   if(config.widthMm>300)throw Error('Width must be no more than 300 mm.');
-  config.hoopMm=Math.max(150,Math.ceil(Math.max(config.widthMm,config.widthMm*aspect)+10));
+  // The automatic hoop must contain the sewn result, not just the source canvas.
+  // Reserve 1 mm per edge for satin compensation (up to 0.3 mm), contour
+  // placement and 0.1 mm DST quantisation, in addition to the 5 mm clearance.
+  // Keep the independent output-bounds check so excessive expansion still fails.
+  config.hoopMm=Math.max(150,Math.ceil(Math.max(config.widthMm,config.widthMm*aspect)+12));
   config.autoSections=true;
   config.fillAngle=35;
   prepared=await engine.prepare(png,config);

@@ -28,7 +28,7 @@ test('live app mounts studio API and authentication precedes studio initializati
 });
 test('upload preview persists and width/height edits stay locked to source proportions',async()=>{
  const vm=require('node:vm'),elements=new Map();
- const get=id=>{if(!elements.has(id))elements.set(id,{value:'',dataset:{},listeners:{},children:[],addEventListener(event,fn){this.listeners[event]=fn;},replaceChildren(...children){this.children=children;},append(child){this.children.push(child);},querySelectorAll(){return [];}});return elements.get(id);};
+ const get=id=>{if(!elements.has(id))elements.set(id,{value:'',dataset:{},listeners:{},children:[],removeAttribute(name){delete this[name];},addEventListener(event,fn){this.listeners[event]=fn;},replaceChildren(...children){this.children=children;},append(child){this.children.push(child);},querySelectorAll(){return [];}});return elements.get(id);};
  let submitted;
  const context={document:{getElementById:get},window:{ultimateHubUserPromise:Promise.resolve({email:'production@ultimatepromotions.co.uk'})},Image:class {},FormData,URL:{createObjectURL:()=> 'blob:source',revokeObjectURL(){}},fetch:async(url,options)=>{
   if(url.includes('/jobs?'))return {ok:true,json:async()=>({jobs:[],hasMore:false})};
@@ -49,4 +49,8 @@ test('upload preview persists and width/height edits stay locked to source propo
  await get('ds-form').listeners.submit({preventDefault(){}});
  assert.equal(Number(submitted.get('heightMm'))/Number(submitted.get('widthMm')),213.6/270);
  assert.equal(preview(),'data:image/png;base64,preserved-source');
+ get('ds-create').listeners.click();
+ assert.equal(get('ds-stage').children.length,0);assert.equal(get('ds-file').value,'');
+ assert.equal(get('ds-download').disabled,true);assert.equal(get('ds-generate').disabled,true);
+ submitted=null;await get('ds-form').listeners.submit({preventDefault(){}});assert.equal(submitted,null);
 });

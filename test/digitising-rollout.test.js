@@ -39,6 +39,18 @@ test('Create object rollout compiles unrelated uploads, source outlines, sizes a
     for(const [x,y,a,b]of decoded.segments){const mx=(x+a)/20+cx,my=(y+b)/20+cy;assert.ok(!(mx>40*s+.2&&mx<80*s-.2&&my>30*s+.2&&my<70*s-.2));}
    }
   });
-  assert.equal(calls,14,'both source interpretation and tool selection run for every upload');
+  for(const [w,h]of [[150,31.1],[31.1,150],[300,62.2]])await t.test(`edge satin at ${w} x ${h} mm retains expansion allowance`,async()=>{
+   const vertical=w>h;
+   const art=vertical?`<rect width="3" height="${h}"/><rect x="${w-3}" width="3" height="${h}"/>`:`<rect width="${w}" height="3"/><rect y="${h-3}" width="${w}" height="3"/>`;
+   const pixelsPerMm=w===300?5:10;
+   const png=await sharp(Buffer.from(`<svg width="${w*pixelsPerMm}" height="${h*pixelsPerMm}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg"><g fill="white">${art}</g></svg>`)).png().toBuffer();
+   const result=await request(png,{widthMm:w,heightMm:h,garment:'hoodie',border:false});
+   const {parseDst}=await import('../public/embroidery-viewer.mjs');const decoded=parseDst(Buffer.from(result.dst,'base64'));
+   assert.ok(result.project.objects.some(o=>o.type==='satin'));
+   const extent=Math.max(decoded.widthMm,decoded.heightMm);
+   assert.ok(extent>Math.max(w,h),`fixture must exercise compensation beyond the canvas: ${extent}`);
+   assert.ok(extent<=result.config.hoopMm-10);
+  });
+  assert.equal(calls,20,'both source interpretation and tool selection run for every upload');
  }finally{await new Promise(r=>server.close(r));if(old===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=old;}
 });
