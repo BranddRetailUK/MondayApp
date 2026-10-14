@@ -578,17 +578,44 @@
       }else{
         import('/proof-embroidery.mjs').then(async module=>{
           const design=module.parseDst(await item.file.arrayBuffer());if(!card.isConnected)return;
-          status.textContent=`${design.widthMm.toFixed(1)} × ${design.heightMm.toFixed(1)} mm sewn size. Select each thread colour; colours are not stored in DST.`;
+          status.textContent=`${design.widthMm.toFixed(1)} × ${design.heightMm.toFixed(1)} mm sewn size (used unless the request specifies a size). Upload a runout PDF or select each thread colour.`;
           if(design.colourChanges>=100)throw Error('Proof embroidery supports up to 100 thread colour blocks.');
           const saved=item.threadColours||[];
           item.threadColours=Array.from({length:design.colourChanges+1},(_,i)=>saved[i]||'');
+          const threadControls=[];
+          const threadGrid=document.createElement('div');threadGrid.className='proof-thread-grid';body.append(threadGrid);
           item.threadColours.forEach((colour,index)=>{
-            const label=document.createElement('label');label.className='proof-control';label.textContent=`Thread ${index+1}`;
-            const input=document.createElement('input');input.type='color';input.value=colour||'#ffffff';input.disabled=busy;
+            const label=document.createElement('div');label.className='proof-thread-cell';
+            const caption=document.createElement('label');caption.textContent=`Thread ${index+1}`;
+            const info=document.createElement('small');info.textContent=colour||'Choose colour';
+            const input=document.createElement('input');input.type='color';input.value=colour||'#ffffff';input.disabled=busy;input.id=`proof-thread-${item.id}-${index}`;caption.htmlFor=input.id;input.setAttribute('aria-label',`Thread ${index+1} colour`);
             const confirm=document.createElement('button');confirm.type='button';confirm.className='proof-secondary-button';confirm.textContent=colour?'Selected':'Use colour';confirm.disabled=false;
-            const change=()=>{if(busy)return;item.threadColours[index]=input.value;confirm.textContent='Selected';if(currentBrief)markDirty(false);else sourceChanged();if(item.threadColours.every(Boolean))refresh().catch(error=>setFeedback(error.message,true));};
-            input.addEventListener('input',change);confirm.onclick=change;label.append(input,confirm);body.append(label);
+            const change=()=>{if(busy)return;item.threadColours[index]=input.value;info.textContent=input.value;confirm.textContent='Selected';if(currentBrief)markDirty(false);else sourceChanged();if(item.threadColours.every(Boolean))refresh().catch(error=>setFeedback(error.message,true));};
+            input.addEventListener('input',change);confirm.onclick=change;label.append(input,caption,info,confirm);threadGrid.append(label);threadControls.push({input,confirm,info});
           });
+          const runoutBox=document.createElement('div');runoutBox.className='proof-runout-upload';
+          const runoutLabel=document.createElement('label');runoutLabel.className='proof-control';runoutLabel.textContent='Upload runout PDF';
+          const runoutInput=document.createElement('input');runoutInput.type='file';runoutInput.accept='.pdf,application/pdf';runoutInput.disabled=busy;
+          const runoutStatus=document.createElement('p');runoutStatus.setAttribute('role','status');runoutStatus.textContent='Fill thread colours from the numbered swatches on your runout sheet. You can still adjust them below.';
+          let runoutVersion=0;
+          runoutInput.addEventListener('change',async()=>{
+            const file=runoutInput.files[0];if(!file||busy)return;
+            const token=++runoutVersion,previous=[...item.threadColours];runoutStatus.textContent='Reading runout colours…';
+            try{
+              const {readRunoutPdf}=await import('/proof-runout.mjs');
+              const blocks=await readRunoutPdf(file,item.threadColours.length,item.file.name);
+              if(!card.isConnected||token!==runoutVersion)return;
+              if(busy||item.threadColours.some((c,i)=>c!==previous[i]))throw Error('Thread colours changed while reading. Upload the runout again to apply it.');
+              item.threadColours=blocks.map(b=>b.colour);
+              threadControls.forEach(({input,confirm,info},i)=>{input.value=blocks[i].colour;info.textContent=[blocks[i].code,blocks[i].colour].filter(Boolean).join(' · ');confirm.textContent='Selected';});
+              if(currentBrief)markDirty(false);else sourceChanged();
+              runoutStatus.textContent=`${file.name}: ${blocks.length} colours applied in sewing order${blocks.some(b=>b.code)?' ('+blocks.map(b=>b.code||b.colour).join(', ')+')':''}. Check the preview; manual adjustments remain available.`;
+              await refresh();
+            }catch(error){if(card.isConnected&&token===runoutVersion)runoutStatus.textContent=error.message;}
+            finally{if(token===runoutVersion)runoutInput.value='';}
+          });
+          runoutLabel.append(runoutInput);runoutBox.append(runoutLabel,runoutStatus);
+          body.insertBefore(runoutBox,threadGrid);
           if(item.threadColours.every(Boolean))await refresh();
         }).catch(error=>{status.textContent=error.message;setFeedback(error.message,true);});
       }
@@ -642,7 +669,7 @@
       if(failures.length){setFeedback(failures.join(' '),true);return false;}
       if(!currentBrief){
         const parseForm=await uploadForm({preflight:true,customer:customer.value,jobTitle:jobTitle.value,requestText:request.value,specialInstructions:instructions.value,
-          artworks:artworks.map(({id,file,assignment,notes})=>({id,fileName:file.name,assignment,notes})),answers:[]},false,true);
+          artworks:artworks.map(({id,file,assignment,notes,dstSize})=>({id,fileName:file.name,assignment,notes,dstSize})),answers:[]},false,true);
         const response=await proofFetch('/api/proof-generator/parse',{method:'POST',body:parseForm}),payload=await proofJson(response);
         if(!response.ok)throw Error(payload.error||'Could not read the brief.');
         if(!unchanged())throw Error('The request changed during review. Check the details again.');
@@ -1017,10 +1044,13 @@
       const item=artworks.find(a=>a.file===file);
       const module=await import('/proof-embroidery.mjs');
       let colours=item?.threadColours||[];
-      if(preflight&&/\.dst$/i.test(file.name)){
+      if(/\.dst$/i.test(file.name)){
         const parsed=module.parseDst(await file.arrayBuffer());
+        if(item)item.dstSize={widthMm:parsed.widthMm,heightMm:parsed.heightMm};
+        if(preflight){
         if(item)item.threadColours=Array.from({length:parsed.colourChanges+1},(_,i)=>colours[i]||'');
         colours=Array.from({length:parsed.colourChanges+1},(_,i)=>colours[i]||'#808080');
+        }
       }
       return module.prepareEmbroidery(file,colours);
     }

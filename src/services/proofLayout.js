@@ -163,6 +163,7 @@ function prepareBrief(brief, input = {}) {
       applyChildBreastSize(d,product,input,(brief.sharedDecorations || []).includes(original));
       recoverDimensions(d, {...input,enforceSuppliedAxis:true}, product, brief.products);
       applyChildBreastSize(d,product,input,(brief.sharedDecorations || []).includes(original));
+      require('./proofDstSize').applyNativeSize(d,artwork);
       return d;
     });
     if (product.decorations.length > 6) throw new Error(`${product.code || 'Product'} has more than six decorations.`);
