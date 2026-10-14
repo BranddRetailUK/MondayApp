@@ -1,0 +1,56 @@
+{
+  "minimumTarget": 90,
+  "acceptedAt": "2026-10-14",
+  "method": "physical-field-v1",
+  "designs": [
+    {
+      "id": "game",
+      "minimumScore": 90.395,
+      "baselineSha256": "88c62d4ebf866902b14a9e7a38e7d3410642e9f5c1b64a703a0e37b594108aaf",
+      "referenceSha256": "8d4fce6c9adc27c2b9572f6f08af423d6e8e819feeeac602595b1ece26df700d"
+    },
+    {
+      "id": "lips",
+      "minimumScore": 93.894,
+      "baselineSha256": "9bebc6ed2d67810882e3df5804c0172995d87af477b9169780d24c2988587066",
+      "referenceSha256": "01a5c916584349712c91993ccbf0631b8f64ae446e7533ebca49dec7234dc8e9"
+    },
+    {
+      "id": "trident55",
+      "minimumScore": 90.345,
+      "baselineSha256": "b42ba8a2353a3913867c387959e0403ec2e336e7ba5ce8a1dcccb4610f59bbfe",
+      "referenceSha256": "f03420297d5c25fa8ab233bbb33ba9376901fe47017ad29f35e4c0653f8733f5"
+    },
+    {
+      "id": "trident80",
+      "minimumScore": 92.235,
+      "baselineSha256": "62bbd69b690153c70d619d1a4375ed73a1b4a8da978b9f2f81ca1548702ce656",
+      "referenceSha256": "a331e61da078b0f91352b2892b00f6f28cf402f784e2a93dd92c5b9b337dd7a3"
+    },
+    {
+      "id": "trident100",
+      "minimumScore": 91.972,
+      "baselineSha256": "7c34f4c7bfdc9a02d28dbdca53b6e563e2e581d98f3198475444e813e7d2dd94",
+      "referenceSha256": "b5f0717c3693ba21c642b2aa5da03ef68354e889888263263da9da8b8606efcd"
+    },
+    {
+      "id": "legion",
+      "minimumScore": 90.217,
+      "baselineSha256": "036e4b0ceea06825cdf964b8999da16e5501344679f0e356f12caa894dbb5efc",
+      "referenceSha256": "74c80dfb35034898638903bf10996525534e11d1bfaed401c5d0d69dabf56570"
+    },
+    {
+      "id": "soul",
+      "minimumScore": null,
+      "baselineSha256": "f2e8797a8669345b761291edbddf897aa1ce7a21f8c9cc335db082281c7b20b8",
+      "mode": "byte-identical",
+      "note": "No designer reference; preserve the accepted source-generated baseline."
+    },
+    {
+      "id": "smiley",
+      "minimumScore": 90.922,
+      "baselineSha256": "ba81cc41e1785e191702d4add73a316db21370e43fbfb83f75fa57765340c345",
+      "referenceSha256": "7ea98019504fc953272ddccafe912914bbd3291d88a6b873c2748ec6e6c426d2"
+    }
+  ]
+}

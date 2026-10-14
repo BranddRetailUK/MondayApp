@@ -6,9 +6,10 @@
   "scripts": {
     "start": "node server.js",
     "preview:digitising-studio": "node scripts/preview-digitising-studio.js",
-    "test:digitising-studio": "node --test test/digitising-history.test.js test/digitising-rounded.test.js test/digitising-studio.test.js test/digitising-auto.test.js test/digitising-interpretation.test.js test/digitising-sections.test.js test/digitising-access.test.js test/digitising-eps.test.js test/digitising-travel.test.js test/digitising-columns.test.js test/digitising-project.test.js test/digitising-semantic.test.js test/digitising-rollout.test.js test/digitising-batch.test.js",
+    "test:digitising-studio": "node --test test/digitising-accepted.test.js test/digitising-history.test.js test/digitising-rounded.test.js test/digitising-studio.test.js test/digitising-auto.test.js test/digitising-interpretation.test.js test/digitising-sections.test.js test/digitising-access.test.js test/digitising-eps.test.js test/digitising-travel.test.js test/digitising-columns.test.js test/digitising-project.test.js test/digitising-semantic.test.js test/digitising-rollout.test.js test/digitising-batch.test.js",
     "compile:digitising-project": "node scripts/compile-digitising-project.js",
     "benchmark:digitising-project": "node scripts/benchmark-digitising-project.js",
+    "check:digitising-accepted": "node scripts/check-digitising-accepted.js",
     "benchmark:digitising-batch": "node scripts/benchmark-digitising-batch.js",
     "test:digitising-batch": "node --test test/digitising-batch.test.js",
     "preview:proof-generator": "node scripts/preview-proof-generator.js",

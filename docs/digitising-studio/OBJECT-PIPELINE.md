@@ -674,3 +674,24 @@ Recovered rounded T-shirt satin now uses 0.31 mm spacing (previously 0.30), with
 The saved live Smiley at 2026-10-14T14:03:33.398Z does not match the earlier refined file: 5,171 stitches/21 trims versus 4,265/6. Railway refinement deployment `e2708cdc-b82f-4f5e-9a57-acf5c574dc1a` for commit `4c76770` reports SUCCESS with updatedAt 14:03:44.615Z, after that job was saved. A fresh post-deployment job is required to verify live output equivalence.
 
 The follow-up rejected local ring-width capping (89.294 minimum), earlier arc-cap transitions (90.284), extra edge runs (density 89.021 and excessive short stitches), stronger normal smoothing (90.774), and extra branch overlap (90.780). Calibration used only source-derived geometry; reference files remained evaluation inputs. Uniform density/compensation sweeps improved density but did not close the outline gap. A separate diagnostic comparing the uploaded source silhouette with the reference shows contour disagreement; it is not a proven upper bound on attainable fidelity. Do not describe this checkpoint as 95% or substitute a new metric.
+
+### Accepted digitising regression set (2026-10-14)
+
+The user accepted Smiley and set **90% as the minimum target going forward**, superseding the earlier 95% target. `docs/digitising-studio/accepted-designs.json` records Good Game, Lips, Trident 55/80/100, LEGION, Smiley (90.922 minimum), and Soul Disciples (byte-identical protection; no designer reference). Every engine refinement must run all eight cases; the new `npm run check:digitising-accepted -- <private-manifest> <fresh-output-dir> [python]` regenerates from frozen source-only inputs/plans, checks pinned reference/baseline hashes, evaluates scored designs with unchanged physical-field-v1 and requires both the 90% floor and their accepted minimum scores. Missing cases, generation failures, failed quality gates or changed Soul output fail the run. Private artwork, references, plans and generated DSTs remain outside Git.
+
+Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:45.899Z) has 4,143 stitches and 6 trims. Against the deployed-refinement local original-upload file (4,139 stitches/6 trims), physical-field-v1 scores are 99.177 silhouette, 99.818 direction and 99.590 density. This verifies close live/local agreement, not byte identity or a new 99% score against the designer reference.
+
+Run every accepted case after meaningful engine changes and before shipping:
+
+```sh
+npm run check:digitising-accepted -- \
+  output/digitising-studio/accepted-fixtures/manifest.json \
+  output/digitising-studio/accepted-check-NEW-RUN \
+  /tmp/digitising-eval-venv/bin/python
+```
+
+Use an unused output directory. The Python environment needs pyembroidery, numpy, scipy and Pillow. The private manifest supplies `id`, `png` (prepared source raster), `config` and `strokePlan` (frozen source-only JSON), `baseline` and, for scored designs, `reference`; paths resolve relative to the manifest. This isolates construction/compiler changes from AI variability. Also run the normal Studio tests for preprocessing/API behavior; new AI interpretations need separate source-only validation. Smiley uses the existing transparent-margin-cropped controlled comparison, preserving its accepted 83.4 mm nominal input and evaluator; normal-upload live equivalence is checked separately. The runner emits a report and returns nonzero for any failed or omitted case. Do not reset accepted baselines automatically.
+
+Current accepted minima: Good Game 90.395, Lips 93.894, Trident 55 90.345, Trident 80 92.235, Trident 100 91.972, LEGION 90.217, Smiley 90.922. Soul retains exact-byte protection. Earlier statements that 95% remains unmet are historical, not the current acceptance requirement.
+
+Validation: `output/digitising-studio/accepted-check-20261014/report.json` passes all eight cases, each byte-identical to its accepted baseline. The two regression-runner tests cover missing/duplicate cases, missing references, the 90% floor, degradation above 90%, failed gates, evaluator identity and exact-byte-only protection. Latest live/local evidence is saved privately under `output/digitising-studio/smiley-quality/live-20261014-142245/`.
