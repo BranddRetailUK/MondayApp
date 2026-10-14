@@ -417,3 +417,45 @@ texture direction and locking at cuts. Good Game still passes at 90.395%, with
 6,412 sewing movements; the reduction from the earlier current-baseline output
 is due to removal of redundant locks. Its current-compiler output from the old
 and new proposals is identical. The object rollout switch remains unchanged.
+
+
+### Trident directional depth refinement (2026-10-14)
+
+A further pass separates source-measured barbed blades from the turning side
+columns. Blade direction follows each blade's own principal axis, avoiding
+asymmetry caused by using a selected concave corner as the axis endpoint.
+A bounded direction field biases monotonic boundary pairing while retaining
+source containment, width limits and ordered rails. Larger stems remain
+crosswise; compact stems are oblique and retain that angle until the shoulder
+fans into its end cap. The compact turn concentration is calibrated on this
+batch and requires unseen-design and sew-out validation. Detailed constructions
+are compiled before acceptance; invalid detailed fits retain the validated
+basic construction with a review flag. Additional source-tip runs preserve
+blade extremities.
+
+Rectangular finished panels may now propose bounded optical centring for an
+already geometrically centred, single-colour satin wordmark. The foreground
+must span at least 60% of panel width, its bounds centre must be within 0.5 mm
+of the panel centre, and its source ink-centroid correction must be within both
+1 mm and 1% of each panel dimension. Deliberate offsets, multiple foreground
+colours, other garments and outlined configurations are excluded. The candidate
+uses 0.24 mm spacing / 0.2 mm compensation, translates associated travel regions,
+compiles before adoption and explicitly flags its millimetre layout adjustment
+for review. This is an intentional layout proposal, not exact original placement.
+
+Latest unchanged physical-field-v1 scores from the fresh `round2/depth-checkpoint`
+run are WORTHY 70.564, HUTTON 76.578, LIPS 93.894, LIONFACE 77.170, trident 55
+90.345, trident 80 92.235, trident 100 91.972 and LEGION 90.217. Five of eight
+flat development examples pass all 90% gates; none reach 95%. The full batch
+objective remains unmet. WORTHY retains its size failure and LIONFACE its
+short-movement failure. No reference coordinates, evaluation registration
+changes or threshold relaxations were introduced. Broader branch/junction
+construction and lettering differences remain unresolved.
+
+Validation: 86 digitising tests and two evaluator controls pass. The Good Game
+regression remains 90.395 with 6,412 movements and identical current-compiler
+DST output from its old and new proposals. The private `round2/index.html`
+report includes all inventory entries and `round2/trident-direction-updated.png`
+shows decoded reference/generated stitch angles. These are development metrics,
+not a claim of unseen-design accuracy, trained model weights or physical sew-out
+quality. Source-only cached interpretation and unchanged rollout gating remain.

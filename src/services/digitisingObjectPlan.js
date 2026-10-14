@@ -53,30 +53,36 @@ async function propose(png,config,options={}){
   const physical=p=>p.map((v,k)=>Math.max(0,Math.min(k?heightMm:config.widthMm,(v+.5)*scale)));
   const verify=o=>validate({...project,objects:[o]});
   const area=r=>Math.abs(r.reduce((sum,p,i)=>{const q=r[(i+1)%r.length];return sum+p[0]*q[1]-q[0]*p[1];},0))/2;
-  const forkSources=new Map();
+  const owners=new Map(),forkSources=new Map();
   for(const source of prepared.sourceElements){
     if(config.elementOptions[source.id]?.type==='skip')continue;
     const measured=require('./digitisingFork').measure(prepared.sourceIds,info.width,source);
     if(!measured)continue;
     try{
       const base={id:`source-${source.id}-fork`,colour:config.elementColours[source.id]||source.colour};
-      const fitted=require('./digitisingFork').fit(measured,info.width,scale);
-      const compact=config.garment==='tshirt'&&Math.max(...fitted.flatMap(p=>p.rungs.map(r=>dist(...r))))<7;
-      const parts=fitted.map((part,i)=>{
-        const o={...base,id:base.id+'-'+i,type:'satin',rungs:simplifyRungs(part.rungs),splitSatin:part.rungs.some(r=>dist(...r)>9),...(compact?{settings:{satinSpacing:.24,pullCompensation:.3}}:{})};verify(o);return o;
-      });
-      // Compact forks need a denser, compensated column and a running finish
-      // for narrow source tips that cannot carry the minimum-width satin.
-      if(compact)for(const [i,path]of require('./digitisingFork').tipPaths(measured,info.width,scale).entries()){
-        const o={...base,id:base.id+'-tip-'+i,type:'run',passes:3,path};verify(o);parts.push(o);
+      const variants=require('./digitisingFork').constructions(measured,info.width,scale,config.garment);
+      let failure=null;
+      for(const variant of variants){
+        try{
+          const parts=variant.parts.map((part,i)=>{
+            const o={...base,id:base.id+'-'+i,type:'satin',rungs:simplifyRungs(part.rungs),splitSatin:part.rungs.some(r=>dist(...r)>9),...(variant.compact?{settings:{satinSpacing:.24,pullCompensation:.3}}:{})};verify(o);return o;
+          });
+          for(const [i,path]of variant.paths.entries()){
+            const o={...base,id:base.id+'-tip-'+i,type:'run',passes:3,path};verify(o);parts.push(o);
+          }
+          require('./digitisingCompiler').compile({...project,travelRegions:[],objects:parts});
+          if(failure)warnings.push(`${base.id}: detailed head/shoulder pairing needs review; validated basic turning ribbons retained.`);
+          forkSources.set(source.id,parts);break;
+        }catch(error){failure=error;}
       }
-      forkSources.set(source.id,parts);
+      if(!forkSources.has(source.id))throw failure;
+
     }catch(error){warnings.push(`source-${source.id}: turning fork construction needs review (${error.message}); ordinary source planning retained.`);}
   }
   for(const el of prepared.elements.slice().sort((a,b)=>Number(panels.has(b.id))-Number(panels.has(a.id))||((config.elementOptions[a.id]?.order??a.id)-(config.elementOptions[b.id]?.order??b.id)))){
     const forkId=el.sourceId??el.id;
     if(forkSources.has(forkId)){
-      if(!includedSources.has(forkId)){project.objects.push(...forkSources.get(forkId));includedSources.add(forkId);}
+      if(!includedSources.has(forkId)){project.objects.push(...forkSources.get(forkId));forkSources.get(forkId).forEach(o=>owners.set(o.id,el.id));includedSources.add(forkId);}
       continue;
     }
     const choice=config.elementOptions[el.id];if(coveredGround.has(el.id))continue;if(choice?.type==='skip'||!ids.includes(el.id))continue;
@@ -87,7 +93,7 @@ async function propose(png,config,options={}){
     let proposed=[];
     const selected=plans.get(el.id),toolPlan=selected?{...selected,construction:selected.tool?(selected.tool==='fill'?'fill':'columns'):selected.construction}:null;
     if(panels.has(el.id)){
-      project.objects.push(...require('./digitisingPanel').construct(panels.get(el.id),base));includedSources.add(el.sourceId??el.id);continue;
+      const parts=require('./digitisingPanel').construct(panels.get(el.id),base);project.objects.push(...parts);parts.forEach(o=>owners.set(o.id,el.id));includedSources.add(el.sourceId??el.id);continue;
     }
     let semantic=null;
     try{semantic=toolPlan?.tool&&require('./digitisingSemanticTools').fit(ids,info.width,el,scale,toolPlan.tool);}
@@ -221,8 +227,17 @@ async function propose(png,config,options={}){
       const region={id:base.id,outline:rings[0],holes:rings.slice(1)};
       attachSharedTravel(project,proposed,region,warnings);
     }
-    project.objects.push(...proposed);
+    project.objects.push(...proposed);proposed.forEach(o=>owners.set(o.id,el.id));
     includedSources.add(el.sourceId??el.id);
+  }
+  if(!config.border)for(const [id,panel]of panels){
+    const adjustment=require('./digitisingPanel').opticalProposal(prepared,panel,id,project,owners);
+    if(!adjustment)continue;
+    try{
+      require('./digitisingCompiler').compile(adjustment.project);
+      project.objects=adjustment.project.objects;project.travelRegions=adjustment.project.travelRegions;
+      warnings.push(`region-${id}: foreground optically centred by ${adjustment.shift.map(n=>n.toFixed(3)).join(', ')} mm with satin support over the panel; review the layout adjustment.`);
+    }catch(error){warnings.push(`region-${id}: optical layout adjustment could not compile (${error.message}); original placement retained.`);}
   }
   // Outline original included source regions, never artificial section seams.
   // Sew these last so all outlines share the requested garment thread.

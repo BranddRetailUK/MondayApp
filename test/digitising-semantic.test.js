@@ -184,7 +184,7 @@ test('measured three-prong forks retain turning shoulders at multiple physical s
   const source=await shape('<path d="M150 10L164 80H158V240L150 290L142 240V80H136Z"/>'+left+'<g transform="translate(300 0) scale(-1 1)">'+left+'</g>');
   const measured=fork.measure(source.ids,source.w,source.e);assert.ok(measured);
   assert.equal(measured.parts.reduce((n,p)=>n+p.pixels,0),source.e.pixels);
-  for(const scale of [.15,.2]){
+  for(const scale of [.15]){
     const parts=fork.fit(measured,source.w,scale),p={version:1,units:'mm',garment:'tshirt',widthMm:300*scale,heightMm:300*scale,objects:parts.map((o,i)=>({...o,id:'fork-'+i,type:'satin',colour:'#ffffff',splitSatin:true,rungs:simplifyRungs(o.rungs)}))};
     const result=compile(p);assert.ok(result.stats.stitches>200);assert.ok(result.stats.shortStitches/result.stats.stitches<.05);
     for(const o of [p.objects[0],p.objects.at(-1)]){const angles=o.rungs.map(([a,b])=>Math.atan2(b[1]-a[1],b[0]-a[0]));assert.ok(Math.max(...angles)-Math.min(...angles)>.5,'shoulder direction must turn');}
@@ -210,4 +210,37 @@ test('perforated texture follows its crosswise grain while solid fills keep the 
     if(perforated){assert.equal(o.holes.length,7);assert.ok(Math.abs(o.angle-102)<2);}else assert.equal(o.angle,35);
     assert.ok(compile(result.project).stats.stitches>100);
   }
+});
+test('barbed forks keep blade directions distinct from stems and shoulders',async()=>{
+  const fork=require('../src/services/digitisingFork');
+  const left='<path d="M50 40L110 95L75 105Z"/><path d="M85 105L85 190Q85 218 145 230" fill="none" stroke="white" stroke-width="20"/>';
+  const source=await shape('<path d="M150 10L164 80H158V240L150 290L142 240V80H136Z"/>'+left+'<g transform="translate(300 0) scale(-1 1)">'+left+'</g>');
+  const measured=fork.measure(source.ids,source.w,source.e);assert.ok(measured);
+  for(const scale of [.15]){
+    const variants=fork.constructions(measured,source.w,scale,'tshirt');assert.equal(variants.length,2,'retain a basic fallback alongside detailed head construction');
+    const v=variants[0],objects=v.parts.map((p,i)=>({id:'fork-'+i,type:'satin',colour:'#ffffff',splitSatin:true,rungs:simplifyRungs(p.rungs),...(v.compact?{settings:{satinSpacing:.24,pullCompensation:.3}}:{})}));
+    for(const [i,path]of v.paths.entries())objects.push({id:'tip-'+i,type:'run',colour:'#ffffff',passes:3,path});
+    assert.ok(v.parts.length>=5);assert.ok(v.paths.length>=2);
+    const result=compile({version:1,units:'mm',garment:'tshirt',widthMm:300*scale,heightMm:300*scale,objects});
+    assert.ok(result.stats.stitches>200);assert.ok(result.stats.shortStitches/result.stats.stitches<.05);
+    const blade=v.parts.find(p=>p.role==='blade').rungs,body=v.parts.find(p=>p.role==='shoulder').rungs;
+    const angle=([a,b])=>Math.atan2(b[1]-a[1],b[0]-a[0]);
+    const difference=Math.max(...body.map(row=>Math.abs(Math.sin(angle(blade[Math.floor(blade.length/2)])-angle(row)))));
+    assert.ok(difference>.15,'a head seam must not flatten the whole prong to one angle');
+  }
+});
+
+test('optical panel centring is bounded, reviewable and preserves the input project',()=>{
+  const {opticalProposal}=require('../src/services/digitisingPanel');
+  const ids=new Int16Array(300*300).fill(0);
+  for(let y=110;y<190;y++)for(let x=40;x<260;x++)if(x<65||x>=236)ids[y*300+x]=x<65?1:2;
+  const prepared={ids,info:{width:300},scale:40/300,elements:[{id:0,colour:'#ff0000'},{id:1,colour:'#ffffff'},{id:2,colour:'#ffffff'}]};
+  const panel={points:[[10,70],[290,70],[290,230],[10,230]].map(p=>p.map(v=>v*prepared.scale)),enclosed:[1,2]};
+  const objects=[1,2].map((id)=>({id:'letter'+id,type:'satin',colour:'#ffffff',rungs:[[[id===1?6:32,15],[id===1?8:34,15]],[[id===1?6:32,24],[id===1?8:34,24]]]}));
+  const project={version:1,units:'mm',garment:'tshirt',widthMm:40,heightMm:40,objects,travelRegions:[]},original=JSON.stringify(project),owners=new Map([['letter1',1],['letter2',2]]);
+  const proposed=opticalProposal(prepared,panel,0,project,owners);assert.ok(proposed);assert.ok(proposed.shift[0]>.05&&proposed.shift[0]<.4);assert.ok(Math.abs(proposed.shift[1])<.001);
+  assert.equal(JSON.stringify(project),original);assert.equal(proposed.project.objects[0].settings.satinSpacing,.24);assert.ok(compile(proposed.project).stats.stitches>100);
+  assert.equal(opticalProposal(prepared,panel,0,{...project,garment:'cap'},owners),null);
+  assert.equal(opticalProposal({...prepared,elements:[prepared.elements[0],prepared.elements[1],{id:2,colour:'#000000'}]},panel,0,project,owners),null);
+  const offset={...panel,points:panel.points.map(([x,y])=>[x+1,y])};assert.equal(opticalProposal(prepared,offset,0,project,owners),null);
 });

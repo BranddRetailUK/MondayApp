@@ -33,4 +33,37 @@ function construct(panel,base){
   return [{...base,id:base.id+'-ground',type:'fill',outline:inset(.6),holes:[],angle,settings:{stitchLength:4}},
     {...base,id:base.id+'-edge',type:'satin',rungs,closed:true,settings:{underlay:'centre'}}];
 }
-module.exports={measure,construct};
+// A bounded optical correction is proposed only for an already centred,
+// single-colour satin wordmark. Deliberately offset or strongly asymmetric
+// artwork is left in its supplied position. The caller must flag the adjustment.
+function opticalProposal(prepared,panel,groundId,project,owners){
+  if(project.garment!=='tshirt')return null;
+  const ground=prepared.elements.find(e=>e.id===groundId);
+  const ids=new Set(panel.enclosed.filter(id=>prepared.elements.find(e=>e.id===id)?.colour!==ground.colour));
+  const colours=new Set(prepared.elements.filter(e=>ids.has(e.id)).map(e=>e.colour));
+  const selected=project.objects.filter(o=>ids.has(owners.get(o.id)));
+  if(ids.size<2||colours.size!==1||!selected.length||selected.some(o=>o.type!=='satin'))return null;
+  const p=panel.points,edges=p.map((a,i)=>({a,b:p[(i+1)%4],length:dist(a,p[(i+1)%4])})).sort((a,b)=>b.length-a.length);
+  const u=edges[0].b.map((v,k)=>(v-edges[0].a[k])/edges[0].length),v=[-u[1],u[0]],dot=(a,b)=>a[0]*b[0]+a[1]*b[1];
+  const limits=[u,v].map(axis=>{const values=p.map(q=>dot(q,axis));return [Math.min(...values),Math.max(...values)];});
+  const sums=[0,0],lo=[Infinity,Infinity],hi=[-Infinity,-Infinity];let count=0;
+  for(let k=0;k<prepared.ids.length;k++)if(ids.has(prepared.ids[k])){
+    const point=[(k%prepared.info.width+.5)*prepared.scale,(Math.floor(k/prepared.info.width)+.5)*prepared.scale];count++;
+    [u,v].forEach((axis,i)=>{const q=dot(point,axis);sums[i]+=q;lo[i]=Math.min(lo[i],q);hi[i]=Math.max(hi[i],q);});
+  }
+  if(!count||hi[0]-lo[0]<(limits[0][1]-limits[0][0])*.6)return null;
+  const centres=limits.map(([a,b])=>(a+b)/2),local=centres.map((c,i)=>c-sums[i]/count);
+  if(local.some((delta,i)=>Math.abs((lo[i]+hi[i])/2-centres[i])>.5||Math.abs(delta)>Math.min(1,(limits[i][1]-limits[i][0])*.01)))return null;
+  const shift=[0,1].map(i=>u[i]*local[0]+v[i]*local[1]);if(Math.hypot(...shift)<.05)return null;
+  const candidate=structuredClone(project),names=new Set(selected.map(o=>o.id)),regions=new Set(selected.map(o=>o.regionId).filter(Boolean));
+  if(candidate.objects.some(o=>regions.has(o.regionId)&&!names.has(o.id)))return null;
+  const move=q=>q.map((n,i)=>n+shift[i]);
+  for(const o of candidate.objects)if(names.has(o.id)){
+    o.rungs=o.rungs.map(r=>r.map(move));
+    if(o.rungs.flat().some(q=>!inside(q,{type:'fill',outline:panel.points,holes:[]})))return null;
+    o.settings={...o.settings,satinSpacing:.24,pullCompensation:.2};
+  }
+  for(const region of candidate.travelRegions)if(regions.has(region.id)){region.outline=region.outline.map(move);region.holes=region.holes.map(r=>r.map(move));}
+  return {project:candidate,shift};
+}
+module.exports={measure,construct,opticalProposal};

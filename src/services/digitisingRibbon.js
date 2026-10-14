@@ -3,7 +3,7 @@ const {dist,mix}=require('./digitisingProject');
 
 // Match progress along the two boundaries of an open ribbon. Corner points on
 // either rail remain paired controls, spreading a turn across both stroke arms.
-function ribbon(ids,w,element,scale,angle,startCap,endCap,tolerance=.06,forceAlignment=false,pointedStart=false){
+function ribbon(ids,w,element,scale,angle,startCap,endCap,tolerance=.06,forceAlignment=false,pointedStart=false,direction=null){
   const rad=angle*Math.PI/180,u=[Math.cos(rad),Math.sin(rad)],v=[-u[1],u[0]];
   const local=p=>[p[0]*u[0]+p[1]*u[1],p[0]*v[0]+p[1]*v[1]];
   let ring=simplify(contours(ids,w,element)[0],tolerance/scale).slice(0,-1);
@@ -38,12 +38,12 @@ function ribbon(ids,w,element,scale,angle,startCap,endCap,tolerance=.06,forceAli
   // Long/italic arms can make normalized perimeter progress pair distant
   // corners. Keep established valid ribbons unchanged; otherwise align the
   // rails monotonically by source-contained cross-stroke distance.
-  if(rows.some(r=>dist(...r)*scale>9)&&tolerance<.15)return ribbon(ids,w,element,scale,angle,startCap,endCap,.15,forceAlignment,pointedStart);
-  if(forceAlignment||rows.some(r=>dist(...r)*scale>9))rows=alignRails(rails,ids,w,element.id,scale,tolerance+Math.max(.08,scale*Math.SQRT2/2));
+  if(rows.some(r=>dist(...r)*scale>9)&&tolerance<.15)return ribbon(ids,w,element,scale,angle,startCap,endCap,.15,forceAlignment,pointedStart,direction);
+  if(forceAlignment||rows.some(r=>dist(...r)*scale>9))rows=alignRails(rails,ids,w,element.id,scale,tolerance+Math.max(.08,scale*Math.SQRT2/2),direction);
   return rows.map(r=>r.map(p=>p.map(n=>(n+.5)*scale)));
 
 }
-function alignRails(rails,ids,w,id,scale,margin){
+function alignRails(rails,ids,w,id,scale,margin,direction){
   const sample=points=>{const out=[points[0]];for(let i=1;i<points.length;i++){
     const n=Math.max(1,Math.ceil(dist(points[i-1],points[i])*scale/.3));
     for(let j=1;j<=n;j++)out.push(mix(points[i-1],points[i],j/n));
@@ -60,10 +60,13 @@ function alignRails(rails,ids,w,id,scale,margin){
   }return true;};
   for(let i=0;i<a.length;i++)for(let j=0;j<cols;j++){
     const width=dist(a[i],b[j])*scale;if(width<.3||width>12||!contained(a[i],b[j]))continue;
+    // A direction field biases the pairing while the same monotonicity,
+    // source-containment and width constraints remain mandatory.
+    const target=direction?direction(a[i],b[j]):null,cost=width*width*(target===null?1:1+6*Math.sin(Math.atan2(b[j][1]-a[i][1],b[j][0]-a[i][0])-target)**2);
     const k=i*cols+j,options=[i&&j?costs[k-cols-1]:Infinity,i?costs[k-cols]:Infinity,j?costs[k-1]:Infinity];
-    if(i===0&&j===0){costs[k]=width*width;continue;}
+    if(i===0&&j===0){costs[k]=cost;continue;}
     const best=Math.min(...options);if(!Number.isFinite(best))continue;
-    costs[k]=best+width*width;back[k]=options.indexOf(best)+1;
+    costs[k]=best+cost;back[k]=options.indexOf(best)+1;
   }
   let i=a.length-1,j=b.length-1;const rows=[];
   if(!Number.isFinite(costs[i*cols+j]))throw Error('Cannot pair source ribbon rails within the split-satin limit.');
