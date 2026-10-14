@@ -263,6 +263,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
         });
       }
       const artworks = (req.files || []).map((file, index) => ({ file,
+        originalName: String(details[index]?.originalName || file.originalname).slice(0,200),
         id: String(details[index]?.id || '').slice(0, 100),
         backgroundMode: String(details[index]?.backgroundMode || 'auto'),
         assignment: String(details[index]?.assignment || '').slice(0, 500),

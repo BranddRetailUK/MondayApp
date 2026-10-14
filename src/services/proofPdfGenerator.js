@@ -135,6 +135,8 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
   const dateLabel = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', day: '2-digit', month: '2-digit', year: '2-digit' }).format(date);
+  const embroidered = new Map();
+  const assetFor=(artwork,d)=>artwork && (/embroidery/i.test(d.method||'')?embroidered.get(artwork.id)||embedded.get(artwork.id):embedded.get(artwork.id));
   const embedded = new Map(), assetErrors = new Map(), garments = new Map();
   const loadGarment = async (source, provider) => {
     if (!garments.has(source.url)) {
@@ -147,8 +149,12 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
   };
   for (const artwork of artworks) {
     if(isFont(artwork.file))continue;
-    try { embedded.set(artwork.id, await prepareArtwork(pdf, artwork)); }
-    catch (error) { assetErrors.set(artwork.id, error.message); }
+    try {
+      embedded.set(artwork.id, await prepareArtwork(pdf, artwork));
+      const usedForEmbroidery=brief.products.some(product=>resolveDecorations(brief,product).some(d=>findArtwork(d,artworks)?.id===artwork.id && /embroidery/i.test(d.method||product.method||brief.method||'')));
+      if(/\.dst$/i.test(artwork.originalName||'')&&usedForEmbroidery)embroidered.set(artwork.id,await prepareArtwork(pdf,artwork,{embroideryFinish:true}));
+    }
+    catch (error) { embedded.delete(artwork.id);embroidered.delete(artwork.id);assetErrors.set(artwork.id, error.message); }
   }
   const pages = [], issues = [];
   const issue = (productIndex, decorationId, message, blocking = false) => {
@@ -240,7 +246,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
         methodX+=bold.widthOfTextAtSize(safeText(method),methodSize);
       }
       const dimensionLabels=marks.map(d=>{
-        const file=findArtwork(d,artworks),asset=file&&embedded.get(file.id);
+        const file=findArtwork(d,artworks),asset=assetFor(file,d);
         try {const size=asset&&artworkSize(d,asset.width/asset.height);return (marks.length>1?`${positionName(d.position)}: `:'')+(size?.confirmed?`${Number(size.width.toFixed(1))} x ${Number(size.height.toFixed(1))} mm`:'To confirm');}
         catch(_){return 'Needs review';}
       });
@@ -248,7 +254,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
       if (!garment) drawText(page,'Matching view unavailable',cellX+8,245,10,bold,GREY,cellWidth-16);
       if (garment && !garment.confident) issue(productIndex,null,'Garment boundary is uncertain. Check printable regions and placement.');
       for (const d of marks) {
-        const artwork = findArtwork(d,artworks), asset = artwork && embedded.get(artwork.id);
+        const artwork = findArtwork(d,artworks), asset = assetFor(artwork,d);
         if (!asset) {
           issue(productIndex,d.id,assetErrors.get(artwork?.id) || `Select the uploaded artwork for ${d.position || 'this decoration'}.`,true);
           continue;
@@ -290,7 +296,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
       pages.push(pageData);
     }
     // Match the garment view order, not the order positions appeared in the request.
-    orderedGroups.flatMap(([,marks])=>marks).forEach((d,index)=>{const artwork=findArtwork(d,artworks);drawCallout(page,d,artwork&&embedded.get(artwork.id),regular,bold,index,decorations.length,garmentColour);});
+    orderedGroups.flatMap(([,marks])=>marks).forEach((d,index)=>{const artwork=findArtwork(d,artworks);drawCallout(page,d,assetFor(artwork,d),regular,bold,index,decorations.length,garmentColour);});
     page.pushOperators(popGraphicsState());
     if(product.personalisation)drawText(page,[product.personalisation,product.size,product.quantity?'Qty '+product.quantity:''].filter(Boolean).join(' | '),34,98,8,bold);
     if(brief.productionNotes)drawText(page,brief.productionNotes,34,574,7,regular,GREY,774);

@@ -67,7 +67,7 @@ async function rasterPdf(bytes) {
   } finally { await doc.destroy(); }
 }
 
-async function prepareArtwork(pdf, artwork) {
+async function prepareArtwork(pdf, artwork, {embroideryFinish=false} = {}) {
   const bytes=artwork.file.buffer;
   const isPdf=bytes.subarray(0,4).toString()==='%PDF';
   let rendered;
@@ -82,7 +82,8 @@ async function prepareArtwork(pdf, artwork) {
   let visible=0,light=0;
   for(let i=0;i<rendered.data.length;i+=4)if(rendered.data[i+3]>80){visible++;if(Math.min(...rendered.data.subarray(i,i+3))>190)light++;}
   const needsContrast=visible>0 && light/visible>.03;
-  const cropped=await sharp(rendered.data,{raw:{width:rendered.width,height:rendered.height,channels:4}}).extract({left:bounds.left,top:bounds.top,width:bounds.width,height:bounds.height}).png().toBuffer();
+  let cropped=await sharp(rendered.data,{raw:{width:rendered.width,height:rendered.height,channels:4}}).extract({left:bounds.left,top:bounds.top,width:bounds.width,height:bounds.height}).png().toBuffer();
+  if(embroideryFinish&&!isPdf)cropped=await require('./proofEmbroideryFinish').finishEmbroidery(cropped);
   const preview=await sharp(cropped).resize({width:500,height:500,fit:'inside',withoutEnlargement:true}).png().toBuffer();
   const warnings=[];
   if(bounds.removedWhite) warnings.push('White edge background removed. Select Keep background if this is intentional artwork.');
