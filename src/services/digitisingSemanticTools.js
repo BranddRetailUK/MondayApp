@@ -26,6 +26,40 @@ function fit(ids,w,element,scale,tool,spacing=.3){
     return {mask,el:{...element,pixels,x:x0,y:y0,width:x1-x0+1,height:y1-y0+1}};
   };
   const sweep=(predicate,axis=angle+90)=>{const {mask,el}=maskWhere(predicate);if(!el.pixels)return [];return straightColumns(mask,w,el,scale,spacing,axis).filter(r=>r.length>=2).map(rungs=>({rungs}));};
+  if(tool==='open-curve-bars'){
+    const {column,branchedColumns}=require('./digitisingColumns');
+    // Preserve established valid generic curves; fit explicit end caps when
+    // broad cap twigs prevent the skeleton from supplying a narrow column.
+    if(column(ids,w,element,scale,spacing)||branchedColumns(ids,w,element,scale,spacing))return null;
+    const tolerance=Math.max(.15,scale*1.5),boundary=simplify(rings[0],tolerance/scale).slice(0,-1),caps=[];
+    const turnAt=i=>{
+      const b=boundary[i],away=sign=>{for(let n=1;n<boundary.length;n++){const p=boundary[(i+sign*n+boundary.length)%boundary.length];if(dist(p,b)*scale>=.8)return p;}return b;};
+      const a=away(-1),c=away(1),u=b.map((v,k)=>v-a[k]),v=c.map((v,k)=>v-b[k]);return Math.atan2(u[0]*v[1]-u[1]*v[0],u[0]*v[0]+u[1]*v[1]);
+    };
+    for(let i=0;i<boundary.length;i++){
+      const j=(i+1)%boundary.length,length=dist(boundary[i],boundary[j])*scale,a=turnAt(i),b=turnAt(j);
+      if(length>=1&&length<=9&&a>.65&&b>.65)caps.push({point:boundary[i].map((v,k)=>(v+boundary[j][k])/2),score:Math.min(a,b)*length});
+    }
+    caps.sort((a,b)=>b.score-a.score);
+    if(caps.length!==2)throw Error('Open curve needs two stable source end caps.');
+    return [{rungs:require('./digitisingRibbon').ribbon(ids,w,element,scale,angle,caps[0].point,caps[1].point,tolerance)}];
+  }
+  if(tool==='stems-diagonal'){
+    const boundary=simplify(rings[0],.18/scale).slice(0,-1).map(local),corners=[],slopes=[],turns=[];
+    for(let i=0;i<boundary.length;i++){
+      const a=boundary[(i+boundary.length-1)%boundary.length],b=boundary[i],c=boundary[(i+1)%boundary.length];
+      const away=sign=>{for(let n=1;n<boundary.length;n++){const p=boundary[(i+sign*n+boundary.length)%boundary.length];if(dist(p,b)*scale>=1)return p;}return b;};
+      const before=away(-1),after=away(1),u=b.map((v,k)=>v-before[k]),v=after.map((v,k)=>v-b[k]);
+      const turn=Math.atan2(u[0]*v[1]-u[1]*v[0],u[0]*v[0]+u[1]*v[1]);if(turn<-.5)turns.push({point:b,turn});
+      const dx=c[0]-b[0],dy=c[1]-b[1];if(Math.abs(dy)*scale>5&&Math.abs(dx/dy)<.5)slopes.push({s:dx/dy,length:dist(b,c)});
+    }
+    for(const t of turns.sort((a,b)=>a.turn-b.turn))if(!corners.some(p=>dist(p,t.point)*scale<2))corners.push(t.point);
+    if(corners.length!==2||!slopes.length)throw Error('Diagonal-stem construction needs two inside corners and stable stems.');
+    slopes.sort((a,b)=>b.length-a.length);const shear=slopes[0].s,across=p=>p[0]-shear*p[1];
+    corners.sort((a,b)=>across(a)-across(b));const lo=across(corners[0]),hi=across(corners[1]);
+    const middle=maskWhere(p=>across(p)>lo&&across(p)<hi);
+    return [...sweep(p=>across(p)<=lo),...straightColumns(middle.mask,w,middle.el,scale,spacing).filter(r=>r.length>=2).map(rungs=>({rungs})),...sweep(p=>across(p)>=hi)];
+  }
   if(tool==='straight-column')return sweep(()=>true,require('./digitisingStrokeTools').principal(ids,w,element));
   if(tool==='closed-columns'){
     if(!holes.length)throw Error('Closed columns need a source counter.');

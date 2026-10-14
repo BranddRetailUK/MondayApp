@@ -63,3 +63,39 @@ test('shared source travel connects sibling columns without crossing a counter',
   const result=compile(p);assert.equal(result.stats.trims,1);assert.ok(result.commands.some(c=>c.phase==='connection'));
   const bad=structuredClone(p);bad.travelRegions[0].holes=[[[1,1],[2,1],[2,2],[1,2]]];assert.throws(()=>compile(bad),/hole must/);
 });
+test('large italic ribbon fallback and diagonal stems remain source-fitted at multiple rotations',async()=>{
+ for(const rotation of [-9,0,9])for(const [markup,tool]of [
+  ['<path d="M90 30H130L98 220H235L228 260H48Z"/>','stem-foot'],
+  ['<path d="M65 40H105L170 180L195 40H235L195 260H155L90 120L65 260H25Z"/>','stems-diagonal']
+ ]){
+  const source=await shape(markup,rotation),parts=fit(source.ids,source.w,source.e,.18,tool);
+  const p={version:1,units:'mm',garment:'tshirt',widthMm:54,heightMm:54,objects:parts.map((o,i)=>({...o,id:`part-${i}`,colour:'#ffffff',type:'satin',splitSatin:o.rungs.some(r=>Math.hypot(r[1][0]-r[0][0],r[1][1]-r[0][1])>9),rungs:simplifyRungs(o.rungs)}))};
+  const result=compile(p);assert.ok(result.stats.stitches>200);assert.ok(result.stats.shortStitches/result.stats.stitches<.05);
+  let total=0,covered=0;for(let k=0;k<source.ids.length;k+=11)if(source.ids[k]===0){total++;if(p.objects.some(o=>inside([(k%300+.5)*.18,(Math.floor(k/300)+.5)*.18],o,.3)))covered++;}
+  assert.ok(covered/total>.97,`retain source silhouette: ${covered/total}`);
+  let last={x:0,y:0};for(const c of result.commands){if(c.kind==='colour')continue;if(c.kind==='stitch')assert.ok(Math.hypot(c.x-last.x,c.y-last.y)<=97);last=c;}
+ }
+});
+test('finished panels derive rotated edges from source and keep broad ground continuous',async()=>{
+ const {measure,construct}=require('../src/services/digitisingPanel');
+ for(const rotation of [-12,0,12])for(const scale of [.1,.15]){
+  const s=await shape('<path fill-rule="evenodd" d="M25 70H275V230H25Z M60 110V190H100V110Z M180 110V190H220V110Z"/>',rotation);
+  const prepared={ids:s.ids,info:{width:300},scale,elements:[s.e,{id:1,x:65,y:135,width:20,height:20,colour:'#ff0000'},{id:2,x:185,y:135,width:20,height:20,colour:'#ff0000'}]};
+  const panel=measure(prepared,s.e);assert.ok(panel);
+  const objects=construct(panel,{id:'ground',colour:'#0044aa'}),result=compile({version:1,units:'mm',garment:'tshirt',widthMm:300*scale,heightMm:300*scale,objects});
+  assert.equal(objects[0].holes.length,0);assert.equal(objects[1].closed,true);assert.equal(result.threads.length,1);
+  assert.ok(result.commands.some(c=>c.objectId==='ground-edge'&&c.phase==='satin'));
+  assert.equal(measure({...prepared,elements:[s.e]},s.e),null,'standalone counter is not silently filled');
+ }
+});
+test('broad open curves use measured end caps without ragged skeleton tips',async()=>{
+ for(const rotation of [-8,8]){
+  const s=await shape('<path d="M220.71 79.29 A100 100 0 1 0 250 150 H160 V180 H213.25 A70 70 0 1 1 199.5 100.5Z"/>',rotation);
+  const parts=fit(s.ids,s.w,s.e,.2,'open-curve-bars');assert.ok(parts?.length,'exercise explicit cap fallback');
+  const p={version:1,units:'mm',garment:'tshirt',widthMm:60,heightMm:60,objects:parts.map((o,i)=>({...o,id:`curve-${i}`,type:'satin',colour:'#ffffff',splitSatin:true,rungs:simplifyRungs(o.rungs)}))};
+  const result=compile(p);assert.equal(parts.length,1);assert.ok(result.stats.shortStitches/result.stats.stitches<.03);
+  const o=result.project.objects[0];let total=0,covered=0;
+  for(let k=0;k<s.ids.length;k+=7)if(s.ids[k]===0){total++;if(inside([(k%300+.5)*.2,(Math.floor(k/300)+.5)*.2],o,.2))covered++;}
+  assert.ok(covered/total>.97,`source coverage ${covered/total}`);
+ }
+});

@@ -26,10 +26,14 @@ def read(file):
             if length>1e-8:
                 segments.append([*last,*q,colour]);short+=length<.5
         last=q
+    if not segments: raise ValueError('No nonzero sewing movements in file')
+    # Some production exports end with a stop encoded as an empty colour block.
+    # Ignore only trailing empty blocks; preserve interior sequence positions.
+    sewn_stages=int(max(s[4] for s in segments))+1
     s=np.array(segments);points=np.concatenate([s[:,:2],s[:,2:4]])
     lo=points.min(axis=0);hi=points.max(axis=0);centre=(lo+hi)/2
     s[:,:2]-=centre;s[:,2:4]-=centre
-    return s,{'stitches':len(s),'widthMm':float(hi[0]-lo[0]),'heightMm':float(hi[1]-lo[1]),'colourStages':colour+1,'jumpCommands':jumps,'shortStitches':short}
+    return s,{'stitches':len(s),'widthMm':float(hi[0]-lo[0]),'heightMm':float(hi[1]-lo[1]),'colourStages':sewn_stages,'trailingEmptyStages':colour+1-sewn_stages,'jumpCommands':jumps,'shortStitches':short}
 
 def fields(segments,shape,origin):
     length=np.zeros(shape);cos=np.zeros(shape);sin=np.zeros(shape)

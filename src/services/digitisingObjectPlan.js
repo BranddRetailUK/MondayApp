@@ -9,34 +9,46 @@ const {components,straightColumns,linearGuides,guidedSections}=require('./digiti
 // Simplify both rails together: retaining a point on just one rail would change
 // the pairing and therefore the intended stitch direction.
 function simplifyRungs(rows,tolerance=.06){
+  const advancing=[rows[0]];
+  for(const r of rows.slice(1,-1))if(dist(centre(r),centre(advancing.at(-1)))>=.01)advancing.push(r);
+  if(dist(centre(advancing.at(-1)),centre(rows.at(-1)))<.01)advancing.pop();
+  advancing.push(rows.at(-1));rows=advancing;
+  if(rows.length<2)throw Error('No advancing satin controls.');
   const keep=new Set([0,rows.length-1]),stack=[[0,rows.length-1]];
   while(stack.length){const [a,b]=stack.pop();let far=tolerance,index=-1;
     const lengths=[0];for(let i=a+1;i<=b;i++)lengths.push(lengths.at(-1)+dist(centre(rows[i-1]),centre(rows[i])));
     for(let i=a+1;i<b;i++){const t=lengths[i-a]/lengths.at(-1),error=Math.max(...[0,1].map(side=>dist(rows[i][side],rows[a][side].map((v,k)=>v+(rows[b][side][k]-v)*t))));if(error>far){far=error;index=i;}}
     if(index>=0){keep.add(index);stack.push([a,index],[index,b]);}
   }
-  return [...keep].sort((a,b)=>a-b).map(i=>rows[i]);
+  const simplified=[...keep].sort((a,b)=>a-b).map(i=>rows[i]);
+  return simplified.length>256&&tolerance<.15?simplifyRungs(rows,.15):simplified;
 }
 async function propose(png,config,options={}){
   const prepared=await prepare(png,config),{ids,info,scale,heightMm}=prepared;
   const strokePlan=options.strokePlan||(options.interpret?await require('./digitisingStrokePlanner').planStrokes(png,prepared,options):null);
   const plans=new Map((strokePlan?.regions||[]).map(r=>[r.id,r]));
+  const panels=new Map(prepared.elements.filter(e=>plans.get(e.id)?.tool==='finished-panel').map(e=>[e.id,require('./digitisingPanel').measure(prepared,e)]));
+  if([...panels.values()].some(p=>!p))throw Error('Finished panel does not fit source geometry.');
+  const coveredGround=new Set(prepared.elements.filter(e=>[...panels].some(([id,p])=>p.enclosed.includes(e.id)&&prepared.elements.find(el=>el.id===id).colour===e.colour)).map(e=>e.id));
   const project={version:1,units:'mm',garment:config.garment,widthMm:config.widthMm,heightMm,objects:[],travelRegions:[]},warnings=[],includedSources=new Set();
   const physical=p=>p.map((v,k)=>Math.max(0,Math.min(k?heightMm:config.widthMm,(v+.5)*scale)));
   const verify=o=>validate({...project,objects:[o]});
   const area=r=>Math.abs(r.reduce((sum,p,i)=>{const q=r[(i+1)%r.length];return sum+p[0]*q[1]-q[0]*p[1];},0))/2;
-  for(const el of prepared.elements.slice().sort((a,b)=>(config.elementOptions[a.id]?.order??a.id)-(config.elementOptions[b.id]?.order??b.id))){
-    const choice=config.elementOptions[el.id];if(choice?.type==='skip'||!ids.includes(el.id))continue;
+  for(const el of prepared.elements.slice().sort((a,b)=>Number(panels.has(b.id))-Number(panels.has(a.id))||((config.elementOptions[a.id]?.order??a.id)-(config.elementOptions[b.id]?.order??b.id)))){
+    const choice=config.elementOptions[el.id];if(coveredGround.has(el.id))continue;if(choice?.type==='skip'||!ids.includes(el.id))continue;
     const base={id:`region-${el.id}`,colour:config.elementColours[el.id]||config.elementColours[el.sourceId]||el.colour};
     if(el.pixels*scale*scale<.05&&Math.max(el.width,el.height)*scale<.6){
       warnings.push(`${base.id}: isolated detail below 0.05 mm² and 0.6 mm extent omitted; review at actual size.`);continue;
     }
     let proposed=[];
     const selected=plans.get(el.id),toolPlan=selected?{...selected,construction:selected.tool?(selected.tool==='fill'?'fill':'columns'):selected.construction}:null;
+    if(panels.has(el.id)){
+      project.objects.push(...require('./digitisingPanel').construct(panels.get(el.id),base));includedSources.add(el.sourceId??el.id);continue;
+    }
     const semantic=toolPlan?.tool&&require('./digitisingSemanticTools').fit(ids,info.width,el,scale,toolPlan.tool);
     if(semantic){
       for(const [i,part]of semantic.entries()){
-        const o={...base,id:base.id+`-tool-${i}`,type:'satin',...part,rungs:simplifyRungs(part.rungs)};
+        const o={...base,id:base.id+`-tool-${i}`,type:'satin',...part,...(part.rungs.some(r=>dist(...r)>9)?{splitSatin:true}:{}),rungs:simplifyRungs(part.rungs)};
         try{verify(o);}catch(error){throw Error(`${o.id}: ${error.message}`);}proposed.push(o);
       }
     }else if(toolPlan?.construction!=='fill'&&(toolPlan?.tool||choice?.type==='satin'||choice?.type==='satin-branches')){

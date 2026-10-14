@@ -77,8 +77,9 @@ function validate(input){
     const s=o.settings;number(s.fillSpacing,.15,.6,'fill spacing');number(s.satinSpacing,.2,.6,'satin spacing');number(s.underlaySpacing,.8,4,'underlay spacing');number(s.fillUnderlaySpacing,.4,4,'fill underlay spacing');number(s.stitchLength,1,7,'stitch length');number(s.pullCompensation,0,.3,'pull compensation');
     if(!['none','centre','zigzag'].includes(s.underlay))fail('unsupported underlay.');
     if(o.type==='satin'){
+      if(o.splitSatin!==undefined&&typeof o.splitSatin!=='boolean')fail('invalid split-satin flag.');
       if(!Array.isArray(o.rungs)||o.rungs.length<2||o.rungs.length>256)fail('satin needs 2–256 paired direction rungs.');
-      for(const r of o.rungs){if(!Array.isArray(r)||r.length!==2)fail('invalid satin rung.');r.forEach(point);number(dist(...r),.3-1e-8,9+1e-8,'satin width');}
+      for(const r of o.rungs){if(!Array.isArray(r)||r.length!==2)fail('invalid satin rung.');r.forEach(point);number(dist(...r),.3-1e-8,(o.splitSatin?12:9)+1e-8,'satin width');}
       for(let i=1;i<o.rungs.length;i++)if(dist(centre(o.rungs[i-1]),centre(o.rungs[i]))<.01)fail('satin rungs must advance along the stroke.');
       if(o.closed!==undefined&&typeof o.closed!=='boolean')fail('invalid closed-column flag.');
       if(o.closed&&(dist(o.rungs[0][0],o.rungs.at(-1)[0])>.001||dist(o.rungs[0][1],o.rungs.at(-1)[1])>.001))fail('closed satin must return to its first rung.');

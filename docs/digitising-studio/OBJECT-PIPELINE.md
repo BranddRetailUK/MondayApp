@@ -192,3 +192,68 @@ thread coverage of connection routes (being inside a region alone is insufficien
 controller trim recognition; and physical sew-outs on each intended fabric. Default
 promotion still requires this evidence. No bulk training or reference-stitch copying
 was introduced.
+
+## Finished panels and LEGION calibration (2026-10-14)
+
+The source-only planner now has `finished-panel` and `stems-diagonal` tools.
+A finished panel requires a measured rectangular perimeter enclosing at least two
+foreground regions. The local tool fits an oriented rectangle from that perimeter,
+sews a continuous ground under the foreground, then a 2 mm inset satin edge in the
+same colour. Its fill has a 0.6 mm inset, 4 mm maximum movement and a 125-degree
+angle relative to the longest side. The ground uses the existing garment density
+and support settings. Redundant same-colour enclosed islands are covered by the
+ground rather than sewn twice. Foreground objects follow the completed panel.
+This is distinct from the optional three-pass running outline. It is not a general
+promise that every polygon, patch, fabric or edge construction is supported.
+
+Long italic ribbons which exceed the ordinary 9 mm limit retry contour fitting
+with bounded raster simplification and monotonic, source-constrained rail pairing.
+Existing valid ribbons retain their prior construction. Explicit split satin
+permits direction rungs up to 12 mm; the compiler subdivides sewing movements at
+its existing 9.6 mm limit. Ordinary satin remains limited to 9 mm. Open curved
+columns with invalid skeleton rails fit measured end caps and paired source
+boundaries; raster-aware tolerances handle rotated, lower-resolution inputs.
+Diagonal-stem tools partition
+source geometry at measured inside corners. Tiny non-advancing control intervals
+are removed without discarding the closed column's seam. Over-detailed controls
+retry paired simplification at a bounded 0.15 mm tolerance before the normal
+256-rung limit is enforced.
+
+LEGION's original PNG was processed by real OpenAI interpretation and tool selection
+(`store:false`) and the local compiler at 150 mm canvas width. The first attempt
+failed satin validation; subsequent iterations repaired the shared tools. No
+reference stitch/coordinate data was passed to generation. LEGION is now a second
+**calibration** design, not an independent held-out test after these iterations.
+
+The resulting DST has 15,516 nonzero sewing movements, 150.2 × 40.1 mm sewn bounds,
+two sewn colour stages, 33 jump commands and 28 movements below 0.5 mm. The reference
+has 14,992 nonzero sewing movements and 150.2 × 40.8 mm bounds. Its trailing empty
+stop block is recorded separately; the evaluator excludes only trailing empty
+colour blocks, retaining interior gaps and sequence positions. Negative controls
+cover this distinction as well as wrong direction, density and size.
+
+| Stage | Shape IoU | Local direction | Thread density |
+| --- | ---: | ---: | ---: |
+| Finished ground | 98.289% | 91.127% | 91.726% |
+| Lettering | 80.830% | 91.413% | 85.388% |
+
+**The complete design fails the existing 90% digital gate.** Size, colour sequence
+and short-movement gates pass; the red panel passes all three field comparisons.
+There are no provisional lettering fills in the final proposal. The original PNG
+and the production DST do not have identical foreground placement: a diagnostic
+foreground-only translation of approximately −0.5 mm X / −0.75 mm Y raises white
+silhouette agreement to about 91.9% (direction 92.3%, density 89.3%). That translation is **not applied to generation
+or to the accepted evaluator score**. The user confirmed this was the original
+artwork but the digitiser may have altered the final design. Remaining density,
+corner/needle texture and placement differences must not be described as a full
+match. Physical sew-out remains unverified, including whether the panel/lettering
+stack and satin edge produce the intended clean finish.
+
+All 70 digitising tests and both evaluator tests pass. Regression checks include
+rotated/resized finished panels, rotated italic ribbons,
+diagonal stems, source coverage, bounded stitch lengths and prior Create behaviour.
+Good Game regenerates byte-identically to recompiling its previous project with
+the current baseline compiler and still achieves the 90.404% minimum against DST.
+The PES comparison also remains above 90%, at 90.361%. The earlier saved 6,447-movement file predates the separately committed entry-travel
+fix; the current baseline has 6,446 movements. No new private artwork or reference
+stitches are committed. The live Create rollout switch remains off by default.

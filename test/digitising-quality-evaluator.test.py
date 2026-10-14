@@ -22,6 +22,19 @@ def sample(file, vertical=False, pitch=2, stretch=1):
     pe.write_dst(pattern, str(file))
 
 class QualityTest(unittest.TestCase):
+    def test_terminal_stop_is_not_an_empty_design_colour(self):
+        with tempfile.TemporaryDirectory() as folder:
+            a,b=Path(folder)/'plain.dst',Path(folder)/'stop.dst'
+            sample(a)
+            data=a.read_bytes();end=data.index(bytes([0,0,243]),512)
+            b.write_bytes(data[:end]+bytes([0,0,195])+data[end:])
+            result=quality.evaluate(a,b)
+            self.assertTrue(result['passed'])
+            self.assertEqual(result['reference']['trailingEmptyStages'],1)
+            # An empty leading/interior block must still fail sequence matching.
+            b.write_bytes(data[:512]+bytes([0,0,195])+data[512:])
+            self.assertFalse(quality.evaluate(a,b)['gates']['colourSequence'])
+
     def test_identical_and_negative_controls(self):
         with tempfile.TemporaryDirectory() as folder:
             a, b = Path(folder)/'reference.dst', Path(folder)/'candidate.dst'
