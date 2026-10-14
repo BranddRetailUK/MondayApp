@@ -170,6 +170,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
     res.status(202).json({jobId});
     Promise.resolve().then(async()=>{
       await enrich(brief);
+      if(brief.preflightVersion===1){const check=require('../services/proofPreflight').assess(brief,brief.preflightAssets||[],brief.preflightRequest);if(!check.ready)throw Error(check.issues.map(i=>i.message).join(' '));}
       await generateViews(brief,{allowGenerate:true,onProgress:progress=>Object.assign(job,progress)});
       job.brief=brief;job.state='complete';
     }).catch(error=>{job.state='failed';job.error=error.message;console.error('Proof garment views failed:',error.message);})
@@ -182,6 +183,24 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
     if(!job)return res.status(404).json({error:'The garment-view task is no longer available. Create the proof again.'});
     return res.json(job);
   });
+  router.post('/preflight', exclusive(async(req,res)=>{
+    try{
+      await new Promise((resolve,reject)=>upload.array('artworks',20)(req,res,error=>error?reject(error):resolve()));
+      const brief=JSON.parse(req.body.brief||'{}'),details=JSON.parse(req.body.artworkDetails||'[]');
+      if(!Array.isArray(brief.products)||!brief.products.length||brief.products.length>20)throw Error('A proof needs 1-20 products.');
+      if(!Array.isArray(details)||details.length!==req.files.length)throw Error('Artwork details do not match uploaded files.');
+      if(req.files.reduce((n,f)=>n+f.size,0)>50*1024*1024)throw Error('Artwork uploads exceed 50 MB.');
+      await enrich(brief);
+      const {assess,inspect}=require('../services/proofPreflight');
+      const assets=await Promise.all(req.files.map((file,i)=>inspect(file,details[i]).catch(error=>({...details[i],error:error.message}))));
+      for(const p of brief.products)for(const d of p.decorations||[]){
+        const asset=assets.find(a=>a.id===d.artworkId);
+        if(asset&&/\.dst$/i.test(asset.originalName))d.threadColours=asset.threadColours||[];
+      }
+      brief.preflightVersion=1;brief.preflightAssets=assets;
+      return res.json({brief,...assess(brief,assets,brief.preflightRequest||'')});
+    }catch(error){return res.status(400).json({error:error.message});}
+  }));
   router.post('/parse', exclusive(async (req, res) => {
     try {
       let artworkImages = [];
@@ -195,9 +214,15 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
         const pdf = await PDFDocument.create();
         for (const [index,file] of req.files.entries()) {
           if(require('../services/proofPersonalisation').isFont(file))continue;
-          const asset = await prepareArtwork(pdf,{file,backgroundMode:'auto'});
-          const png = await require('sharp')(Buffer.from(asset.preview.split(',')[1],'base64')).resize({width:768,height:768,fit:'inside',withoutEnlargement:true}).png().toBuffer();
-          artworkImages.push({id:req.body.artworks[index].id,url:`data:image/png;base64,${png.toString('base64')}`});
+          try{
+            const asset = await prepareArtwork(pdf,{file,backgroundMode:'auto'});
+            const png = await require('sharp')(Buffer.from(asset.preview.split(',')[1],'base64')).resize({width:768,height:768,fit:'inside',withoutEnlargement:true}).png().toBuffer();
+            artworkImages.push({id:req.body.artworks[index].id,url:`data:image/png;base64,${png.toString('base64')}`});
+          }catch(error){
+            // The review flow still parses the rest of the request so all missing
+            // details can be shown alongside an unreadable/blank artwork error.
+            if(req.body.preflight!==true)throw error;
+          }
         }
       }
       const brief = await parse(req.body, {artworkImages});
@@ -253,6 +278,12 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       for(const product of brief.products){
         const saved=savedProducts.find(item=>item.code===product.code&&item.colour===product.colour&&item.supplier===product.supplier&&(product.instanceId?item.instanceId===product.instanceId:item.name===product.name));
         if(saved?.visual?.matched)product.visual=saved.visual;
+      }
+      if(brief.preflightVersion===1){
+        const {assess,inspect}=require('../services/proofPreflight');
+        const assets=await Promise.all(req.files.map((file,i)=>inspect(file,details[i]).catch(error=>({...details[i],error:error.message}))));
+        const check=assess(brief,assets,brief.preflightRequest);
+        if(!check.ready)return res.status(422).json({error:check.issues.map(i=>i.message).join(' '),issues:check.issues});
       }
       await generateViews(brief, { allowGenerate: false });
       const productIndex=req.query.productIndex;

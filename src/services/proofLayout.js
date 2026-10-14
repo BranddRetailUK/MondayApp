@@ -47,6 +47,7 @@ function mentionsPosition(text, position) {
 }
 
 function recoverDimensions(decoration, input = {}, product = {}, products = []) {
+  if(decoration.dimensionSource==='user-confirmed')return;
   const assigned = (input.artworks || []).find(a => a.id && a.id === decoration.artworkId);
   const position = positionName(decoration.position);
   let scoped = textClauses([input.requestText,input.specialInstructions].filter(Boolean).join('\n')).filter(clause => {

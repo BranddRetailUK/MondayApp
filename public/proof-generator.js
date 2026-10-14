@@ -630,12 +630,69 @@
     showJobSelection();
   }
 
+  // Parsing and preflight never allocate a folder, clear approval or generate garment views.
+  async function preflightBrief() {
+    busy=true;setCreating(true);
+    try{
+      const submittedSource=JSON.stringify([request.value,instructions.value,customer.value,jobTitle.value,artworks.map(a=>[a.id,a.file.name,a.assignment,a.notes])]);
+      const unchanged=()=>submittedSource===JSON.stringify([request.value,instructions.value,customer.value,jobTitle.value,artworks.map(a=>[a.id,a.file.name,a.assignment,a.notes])]);
+      setFeedback('Checking all proof details before generation…');
+      const prepared=await Promise.allSettled(artworks.map(a=>prepareArtworkFile(a.file,true)));
+      const failures=prepared.flatMap((r,i)=>r.status==='rejected'?[`${artworks[i].file.name}: ${r.reason.message}`]:[]);
+      if(failures.length){setFeedback(failures.join(' '),true);return false;}
+      if(!currentBrief){
+        const parseForm=await uploadForm({preflight:true,customer:customer.value,jobTitle:jobTitle.value,requestText:request.value,specialInstructions:instructions.value,
+          artworks:artworks.map(({id,file,assignment,notes})=>({id,fileName:file.name,assignment,notes})),answers:[]},false,true);
+        const response=await proofFetch('/api/proof-generator/parse',{method:'POST',body:parseForm}),payload=await proofJson(response);
+        if(!response.ok)throw Error(payload.error||'Could not read the brief.');
+        if(!unchanged())throw Error('The request changed during review. Check the details again.');
+        currentBrief=payload.brief;currentPreview=null;dirty=true;
+      }
+      currentBrief.preflightRequest=[request.value,instructions.value].filter(Boolean).join('\n');
+      const response=await proofFetch('/api/proof-generator/preflight',{method:'POST',body:await uploadForm(currentBrief,false,true)}),payload=await proofJson(response);
+      if(!response.ok)throw Error(payload.error||'Could not check the brief.');
+      if(!unchanged())throw Error('The request changed during review. Check the details again.');
+      currentBrief=payload.brief;
+      if(!payload.ready){renderPreflight(payload.issues);setFeedback('Resolve the details below together, then create the proof. Nothing has been allocated or generated.',true);return false;}
+      return true;
+    }catch(error){setFeedback(error.message,true);return false;}
+    finally{busy=false;setCreating(false);}
+  }
+
+  function renderPreflight(issues){
+    results.replaceChildren();
+    const title=document.createElement('h3');title.textContent='Confirm proof details';results.append(title);
+    const summary=document.createElement('p');summary.textContent=currentBrief.products.map(p=>`${p.code} · ${p.colour||'colour needed'}: ${(p.decorations||[]).map(d=>`${d.position} / ${d.method||'method needed'} / ${artworks.find(a=>a.id===d.artworkId)?.file.name||d.text||'artwork needed'} / ${d.widthMm?d.widthMm+' mm wide':d.heightMm?d.heightMm+' mm high':'size needed'}`).join('; ')}`).join(' — ');results.append(summary);
+    for(const issue of issues){
+      const label=document.createElement('label');label.className='proof-control';label.textContent=issue.message;
+      if(issue.ack){
+        const input=document.createElement('input');input.type='checkbox';input.addEventListener('change',()=>{currentBrief.preflightAcknowledgements=(currentBrief.preflightAcknowledgements||[]).filter(k=>k!==issue.ack);if(input.checked)currentBrief.preflightAcknowledgements.push(issue.ack);});label.append(input);
+      }else if(/^products\.\d+\.(code|colour|decorations\.\d+\.(position|method|widthMm|artworkId|fontArtworkId|textColour))$/.test(issue.path)){
+        const keys=issue.path.split('.'),field=keys.pop();let target=currentBrief;for(const key of keys)target=target[key];
+        const input=document.createElement(issue.options?.length?'select':'input');
+        if(issue.options?.length){const blank=document.createElement('option');blank.value='';blank.textContent='Choose…';input.append(blank);for(const option of issue.options){const o=document.createElement('option');o.value=typeof option==='string'?option:option.value;o.textContent=typeof option==='string'?option:option.label;input.append(o);}}
+        input.value=target[field]||'';
+        if(field==='widthMm')input.placeholder='Width in mm';
+        input.addEventListener('change',()=>{target[field]=input.value;if(field==='widthMm'){target.heightMm='';target.dimensionIssues=[];target.dimensionSource='user-confirmed';delete target.manualScale;}if(field==='artworkId'){target.text='';}dirty=true;currentPreview=null;});label.append(input);
+        if(field==='widthMm'){
+          const height=document.createElement('input');height.placeholder='Or height in mm';height.value=target.heightMm||'';
+          height.addEventListener('change',()=>{target.heightMm=height.value;target.widthMm='';input.value='';target.dimensionIssues=[];target.dimensionSource='user-confirmed';delete target.manualScale;dirty=true;currentPreview=null;});
+          input.addEventListener('change',()=>{height.value='';});label.append(height);
+        }
+      }
+      results.append(label);
+    }
+    const note=document.createElement('p');note.textContent='Replace artwork or choose DST threads in the artwork cards. Correct the request for missing garments or decorations. Width is the visible artwork width; PXF thumbnail pixels never establish sewn size.';results.append(note);
+    results.scrollIntoView({block:'nearest',behavior:'smooth'});
+  }
+
   let savedThisRun = false;
   async function reviewBrief() {
     if (busy) return;
     if(selectedLinkJob?.designRefs?.length&&!existingReference.value&&!designId){setFeedback('Select the design reference for this job.',true);existingReference.focus();return;}
     if (!request.value.trim()) { request.focus(); setFeedback('Enter the proof request first.', true); return; }
     if (!artworks.length) { setFeedback('Attach artwork first so each decoration can be assigned to a file.', true); return; }
+    if(!await preflightBrief())return;
     if(!localPreview&&design?.sourceOrderId){
       busy=true;setCreating(true);
       try{if(!await window.ProofLinks.beginRegeneration(design.sourceOrderId,designId))return;}
@@ -646,8 +703,7 @@
     if(!designId){designId=crypto.randomUUID();try{sessionStorage.setItem('proof-design-id',designId);}catch(_){} }
     design={...design,id:designId,customer:customer.value,jobTitle:jobTitle.value,createdAt:design?.createdAt||new Date().toISOString(),generationStatus:'generating'};
     showProofList();
-    const submittedSource=JSON.stringify([customer.value,jobTitle.value,request.value,instructions.value,artworks.map(a=>[a.id,a.assignment,a.notes])]);
-    setFeedback('Reading the brief and resolving artwork assignments…');
+    setFeedback('Preparing the confirmed proof…');
     try {
       design=localPreview?{id:designId,customer:customer.value,jobTitle:jobTitle.value,status:'folder_ready',createdAt:new Date().toISOString()}:await designRequest('',{id:designId,customer:customer.value,jobTitle:jobTitle.value,deferAllocation:true,...jobReservation()});
       if(!localPreview&&selectedLinkJob&&!design.linkedJobs?.includes(selectedLinkJob.source_order_id)){
@@ -657,31 +713,7 @@
       setFeedback('Preparing artwork…');
       await Promise.all(artworks.map(item=>prepareArtworkFile(item.file)));
       await saveProofSource();
-      if(currentBrief){
-        await reserveDesign(currentBrief);
-        await updatePreview();
-        await recordProgress(currentPreview?.issues.some(issue=>issue.blocking)?'review':'complete');
-        if(localPreview)design.status='saved';
-        return;
-      }
-      const readinessResponse = await proofFetch('/api/proof-generator/status', { cache: 'no-store' });
-      const readiness = await proofJson(readinessResponse);
-      if (!readinessResponse.ok || !readiness.ready) {
-        throw new Error(readiness.error || 'Proof Generator is temporarily unavailable. Ask an administrator to check the AI and PDF service configuration.');
-      }
-      const parseForm = await uploadForm({
-        customer:customer.value,jobTitle:jobTitle.value,requestText:request.value, specialInstructions:instructions.value,
-        artworks:artworks.map(({id,file,assignment,notes})=>({id,fileName:file.name,assignment,notes})), answers:[],
-      });
-      const response = await proofFetch('/api/proof-generator/parse', { method: 'POST', body: parseForm });
-      const payload = await proofJson(response);
-      if (!response.ok) throw new Error(payload.error || 'Could not read the brief.');
-      if(submittedSource!==JSON.stringify([customer.value,jobTitle.value,request.value,instructions.value,artworks.map(a=>[a.id,a.assignment,a.notes])]))throw new Error('The request changed while it was being read. Create the proof again to apply it.');
-      await recordProgress('generating','Preparing design folder…',{customer:payload.brief.customer,jobTitle:payload.brief.jobTitle,reference:payload.brief.reference||''});
-      if(localPreview)Object.assign(design,{customer:payload.brief.customer,jobTitle:payload.brief.jobTitle,reference:payload.brief.reference||''});
-      await reserveDesign(payload.brief);
-      currentBrief = payload.brief; currentPreview = null; dirty = true;
-      renderEditor();
+      await reserveDesign(currentBrief);
       await updatePreview();
       await recordProgress(currentPreview?.issues.some(issue=>issue.blocking)?'review':'complete');
       if(localPreview)design.status='saved';
@@ -697,12 +729,12 @@
     finally { generatingProof = false; busy = false; setCreating(false);renderHistory();refreshHistory(); }
   }
 
-  async function uploadForm(brief,includeOriginals=false) {
+  async function uploadForm(brief,includeOriginals=false,preflight=false) {
     const form = new FormData();
     form.append('brief', JSON.stringify(brief));
-    form.append('artworkDetails', JSON.stringify(artworks.map(({id,file,assignment,notes,backgroundMode})=>({id,originalName:file.name,assignment,notes,backgroundMode}))));
+    form.append('artworkDetails', JSON.stringify(artworks.map(({id,file,assignment,notes,backgroundMode,threadColours})=>({id,originalName:file.name,assignment,notes,backgroundMode,threadColours}))));
     for (const item of artworks) {
-      const file = await prepareArtworkFile(item.file);
+      const file = await prepareArtworkFile(item.file,preflight);
       form.append('artworks', file, file.name);
       if(includeOriginals)form.append('originalArtworks',item.file,item.file.name);
     }
@@ -980,11 +1012,17 @@
 
   const epsPreviews=new WeakMap();
   let epsQueue=Promise.resolve();
-  async function prepareArtworkFile(file) {
+  async function prepareArtworkFile(file,preflight=false) {
     if(/\.(pxf|dst)$/i.test(file.name)){
       const item=artworks.find(a=>a.file===file);
       const module=await import('/proof-embroidery.mjs');
-      return module.prepareEmbroidery(file,item?.threadColours||[]);
+      let colours=item?.threadColours||[];
+      if(preflight&&/\.dst$/i.test(file.name)){
+        const parsed=module.parseDst(await file.arrayBuffer());
+        if(item)item.threadColours=Array.from({length:parsed.colourChanges+1},(_,i)=>colours[i]||'');
+        colours=Array.from({length:parsed.colourChanges+1},(_,i)=>colours[i]||'#808080');
+      }
+      return module.prepareEmbroidery(file,colours);
     }
     if(/\.svg$/i.test(file.name))return window.ProofSvg.prepare(file);
     if(!/\.eps$/i.test(file.name))return file;

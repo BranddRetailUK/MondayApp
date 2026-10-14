@@ -16,7 +16,7 @@ function harness({ fail=false }={}) {
     currentBrief:{products:[{decorations:[{id:'mark',artworkId:'art-1',placement:{x:.37,y:.22},widthMm:125}]}]},currentPreview:null,
     progressMessage:'',setCreating(){},setFeedback(message){context.progressMessage=message;},
     showProofList(){calls.push('list');},renderHistory(){},refreshHistory(){},
-    jobReservation(){return {};},
+    preflightBrief:async()=>true,jobReservation(){return {};},
     async designRequest(){calls.push('reserve-request');await gate;if(fail)throw Error('Service unavailable');return {id:'existing-design',revision:4,status:'saved'};},
     async recordProgress(state){calls.push(state);},async prepareArtworkFile(){},async saveProofSource(){calls.push('source');},
     async reserveDesign(brief){calls.push('identity');brief.proofDesignId=context.designId;brief.proofRevision=4;},
@@ -26,7 +26,7 @@ function harness({ fail=false }={}) {
   return {context,calls,release};
 }
 test('regeneration returns to list before networking and keeps row busy until saving completes',async()=>{
-  const {context,calls,release}=harness();const pending=context.run();
+  const {context,calls,release}=harness();const pending=context.run();await new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(calls,['list','reserve-request']);assert.equal(context.busy,true);
   assert.equal(context.rowState({id:'existing-design',status:'saved'})[0],'Pending');
   release();await pending;
@@ -121,7 +121,7 @@ test('approved linked proofs reach the approval gate only when submitting regene
     assert.equal(id,50587);assert.equal(proofId,'existing-design');h.calls.push('approval');
     return new Promise(resolve=>{resolveApproval=resolve;});
   }}};
-  const pending=h.context.run();assert.deepEqual(h.calls,['approval']);assert.equal(h.context.busy,true);
+  const pending=h.context.run();await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(h.calls,['approval']);assert.equal(h.context.busy,true);
   await h.context.run();assert.deepEqual(h.calls,['approval']); // Repeated clicks cannot start a second action.
   resolveApproval(true);h.release();await pending;
   assert.equal(h.calls[0],'approval');assert.ok(h.calls.includes('save'));assert.equal(h.context.busy,false);
@@ -169,4 +169,20 @@ test('cancelled requests are not retried',async()=>{
   const context={fetch:async()=>{count++;throw error;}};
   vm.createContext(context);vm.runInContext(http,context);
   await assert.rejects(context.proofFetch('/proof'),{name:'AbortError'});assert.equal(count,1);
+});
+
+ test('unresolved preflight stops before approval, reservation and source writes',async()=>{
+  const h=harness();h.context.preflightBrief=async()=>false;
+  h.context.design.sourceOrderId=50587;
+  h.context.window={ProofLinks:{beginRegeneration(){throw Error('Preflight must happen first');}}};
+  await h.context.run();assert.deepEqual(h.calls,[]);assert.equal(h.context.design.status,'saved');
+ });
+
+test('real preflight collects review issues before allocation and retains manual edits',async()=>{
+ const calls=[];
+ const brief={products:[{code:'JH001',colour:'Black',decorations:[{position:'right sleeve',widthMm:'90',placement:{x:.4,y:.3}}]}]};
+ const context={busy:false,request:{value:'Original request'},instructions:{value:''},customer:{value:'Everyone Active'},jobTitle:{value:'Westway'},artworks:[{id:'logo',file:{name:'logo.png'}}],currentBrief:brief,setCreating(){},setFeedback(){},prepareArtworkFile:async()=>{},uploadForm:async b=>b,
+  proofFetch:async(url,options)=>{calls.push(url);return {ok:true,json:async()=>({brief:options.body,ready:false,issues:[{path:'products.0.colour',message:'Choose exact black'}]})};},proofJson:r=>r.json(),renderPreflight:issues=>calls.push(issues[0].message)};
+ vm.createContext(context);const fn=source.slice(source.indexOf('  async function preflightBrief()'),source.indexOf('  function renderPreflight('));vm.runInContext(fn+'\nthis.check=preflightBrief;',context);
+ assert.equal(await context.check(),false);assert.deepEqual(calls,['/api/proof-generator/preflight','Choose exact black']);assert.equal(context.busy,false);assert.deepEqual(brief.products[0].decorations[0].placement,{x:.4,y:.3});assert.equal(brief.products[0].decorations[0].widthMm,'90');
 });

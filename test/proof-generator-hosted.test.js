@@ -23,8 +23,8 @@ test('hosted access denies every endpoint to anonymous, ordinary and DTF-only ac
   let calls = 0;
   await serve(createRouter({ parse: async () => { calls++; }, status: async () => { calls++; } }), async url => {
     for (const [headers, expected] of [[{}, 401], [{ 'x-test-email': 'office@ultimatepromotions.co.uk' }, 403], [{ ...production, 'x-test-scope': 'dtf_only' }, 403], [{ 'x-test-email': 'production@ultimatepromotions.co.uk.attacker.test' }, 403]]) {
-      for (const endpoint of ['link-jobs', 'link-jobs/1', 'link-jobs/1/edit', 'link-jobs/1/unlink', 'designs/unknown/link', 'designs/unknown/sync', 'products?q=RX350', 'designs', 'designs/unknown', 'designs/unknown/retry', 'save', 'status', 'views/unknown', 'views', 'renderer/pdf.mjs', 'renderer/pdf.worker.mjs', 'parse', 'preview', 'create']) {
-        const res = await fetch(`${url}/${endpoint}`, { method: ['link-jobs/1/edit','link-jobs/1/unlink','designs/unknown/link','designs/unknown/sync','parse', 'preview', 'create', 'views', 'designs', 'save','designs/unknown/retry'].includes(endpoint) ? 'POST' : 'GET', headers });
+      for (const endpoint of ['link-jobs', 'link-jobs/1', 'link-jobs/1/edit', 'link-jobs/1/unlink', 'designs/unknown/link', 'designs/unknown/sync', 'products?q=RX350', 'designs', 'designs/unknown', 'designs/unknown/retry', 'save', 'status', 'views/unknown', 'views', 'renderer/pdf.mjs', 'renderer/pdf.worker.mjs', 'parse', 'preflight', 'preview', 'create']) {
+        const res = await fetch(`${url}/${endpoint}`, { method: ['link-jobs/1/edit','link-jobs/1/unlink','designs/unknown/link','designs/unknown/sync','parse', 'preflight', 'preview', 'create', 'views', 'designs', 'save','designs/unknown/retry'].includes(endpoint) ? 'POST' : 'GET', headers });
         assert.equal(res.status, expected, endpoint);
       }
     }
@@ -242,4 +242,25 @@ test('proof EPS conversion preserves white artwork and transparent negative spac
  const middle=Math.round((occupied[0]+occupied.at(-1))/2);
  assert.equal(pixel(middle,y)[3],0);
  assert.equal(pixel(0,0)[3],0);
+});
+
+test('preflight returns all missing details without invoking generation or design storage',async()=>{
+ const sharp=require('sharp');
+ const image=await sharp({create:{width:20,height:20,channels:4,background:'#ff0000'}}).png().toBuffer();
+ const router=createRouter({enrich:async b=>{b.products[0].visual={matched:false,lookupIssue:'colour_ambiguous',availableColours:['Jet Black','Deep Black','Black Smoke']};},generateViews:()=>{throw Error('Must not generate');},build:()=>{throw Error('Must not build');},designs:new Proxy({},{get(){throw Error('Must not access designs');}})});
+ await serve(router,async url=>{
+  const form=new FormData();form.append('brief',JSON.stringify({products:[{code:'JH001',colour:'Black',decorations:[{position:'right sleeve',artworkId:'logo',method:''}]}],preflightRequest:'Right sleeve PSG5547'}));
+  form.append('artworkDetails',JSON.stringify([{id:'logo',originalName:'psg5543.PXF'}]));form.append('artworks',new Blob([image]),'logo.png');
+  const response=await fetch(`${url}/preflight`,{method:'POST',headers:production,body:form});assert.equal(response.status,200);
+  const data=await response.json();assert.equal(data.ready,false);assert.equal(data.issues.length,5);assert.equal(data.brief.preflightVersion,1);
+  assert.ok(data.issues.some(i=>i.message.includes('PSG5547')));assert.ok(data.issues.some(i=>i.path.endsWith('widthMm')));
+ });
+});
+test('rendering a reviewed brief rechecks missing details before generating or saving',async()=>{
+ const sharp=require('sharp');const image=await sharp({create:{width:20,height:20,channels:4,background:'#ff0000'}}).png().toBuffer();let calls=0;
+ await serve(createRouter({enrich:async()=>{},generateViews:async()=>{calls++;},build:async()=>{calls++;}}),async url=>{
+  const form=new FormData();form.append('brief',JSON.stringify({preflightVersion:1,products:[{code:'JH001',colour:'Jet Black',decorations:[{position:'right sleeve',artworkId:'logo',method:'embroidery'}]}]}));
+  form.append('artworkDetails',JSON.stringify([{id:'logo',originalName:'logo.png'}]));form.append('artworks',new Blob([image]),'logo.png');
+  const res=await fetch(`${url}/preview`,{method:'POST',headers:production,body:form});assert.equal(res.status,422);assert.match((await res.json()).error,/width or height/);assert.equal(calls,0);
+ });
 });
