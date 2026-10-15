@@ -1923,6 +1923,23 @@ body.test-dashboard-mobile-job-open{
   text-align:center;
   padding:0 8px;
 }
+.test-notes-cell{position:relative}
+.test-text-input.test-notes-input{
+  position:absolute;
+  left:4px;
+  top:50%;
+  transform:translateY(-50%);
+  width:calc(100% - 8px);
+  height:min(38px, calc(100% - 2px));
+  min-height:0;
+  max-height:38px;
+  padding:0 8px;
+  line-height:18px;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  resize:none;
+  overflow:hidden;
+}
 .test-text-input:focus{
   outline:none;
   border-color:#579bfc;

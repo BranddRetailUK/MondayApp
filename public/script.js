@@ -5181,9 +5181,11 @@ function renderTestDesignInputValue(cell, text, entity, column) {
 }
 
 function renderTestTextInputValue(cell, text, entity, column) {
-  const input = document.createElement('input');
-  input.className = 'test-text-input';
-  input.type = 'text';
+  const isNotes = isTestEditableTextColumn(column);
+  const input = document.createElement(isNotes ? 'textarea' : 'input');
+  input.className = 'test-text-input' + (isNotes ? ' test-notes-input' : '');
+  if (isNotes) { input.rows = 2; cell.classList.add('test-notes-cell'); }
+  else input.type = 'text';
   input.value = text || '';
   input.dataset.originalValue = text || '';
   input.setAttribute('aria-label', `Set ${column?.title || 'text'}`);
