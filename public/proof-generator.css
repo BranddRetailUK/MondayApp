@@ -220,6 +220,8 @@ body.proof-preview .proof-preview-badge{display:block}
 .proof-section-title h2{color:#fff}
 
 .proof-list-controls{display:flex;align-items:center;gap:12px}
+.proof-list-controls .proof-mode-button{display:inline-flex;align-items:center;justify-content:center;border-color:#515d69;background:#242a30;color:#dce7f1;text-decoration:none;box-shadow:0 8px 17px rgba(0,0,0,.18)}
+.proof-list-controls .proof-mode-button:hover{background:#303a43;color:#dce7f1;text-decoration:none}
 .proof-view-toggle{position:relative;display:flex;flex-shrink:0;padding:4px;border:1px solid #46515c;border-radius:10px;background:#202327}
 .proof-view-highlight{position:absolute;top:4px;left:4px;width:38px;height:34px;border-radius:6px;background:#94cafa;transition:transform 180ms ease}
 .proof-view-toggle[data-view="grid"] .proof-view-highlight{transform:translateX(38px)}

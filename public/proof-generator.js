@@ -46,7 +46,7 @@
             <button type="button" data-proof-view="list" aria-label="List view" title="List view" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h1M3 12h1M3 18h1"/></svg></button>
             <button type="button" data-proof-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
           </div>
-          ${!standalonePreview?`<a class="proof-secondary-button" href="?test=1#proof-generator" aria-current="${sandbox?'page':'false'}">Test proofs</a>${!charlie&&sandbox?'<a class="proof-secondary-button" href="?#proof-generator">Production proofs</a>':''}`:''}
+          ${!standalonePreview?`<a class="proof-primary-button proof-mode-button" href="?test=1#proof-generator" aria-current="${sandbox?'page':'false'}">Test proofs</a>${!charlie&&sandbox?'<a class="proof-primary-button proof-mode-button" href="?#proof-generator">Production proofs</a>':''}`:''}
           <button id="proof-create-new" class="proof-primary-button" type="button">Create proof</button>
         </div>
       </header>
