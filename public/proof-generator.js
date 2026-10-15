@@ -318,7 +318,7 @@
   }
   async function openHistoryProof(job){
     if(busy)return;
-    if(job.id===designId&&artworks.length&&currentPreview){showProofEditor();return;}
+    if(job.id===designId&&artworks.length&&currentPreview){design=job;showProofEditor();showDesign();setCreating(false);return;}
     startNewProof();selectedLinkJob=job.sourceOrderId?{source_order_id:job.sourceOrderId,order_no:job.linkedOrders?.find(order=>order.sourceOrderId===job.sourceOrderId)?.orderNo}:null;designId=job.id;design=job;try{if(!localPreview)sessionStorage.setItem('proof-design-id',designId);}catch(_){}
     customer.value=job.customer||'';jobTitle.value=job.jobTitle||'';showProofEditor();showDesign();busy=true;setCreating(true);reviewButton.querySelector('[data-proof-button-label]').textContent='Loading proof…';
     try{

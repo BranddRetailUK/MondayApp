@@ -225,3 +225,14 @@ test('the production render queues the proof once and never waits for the worker
  vm.runInContext(fn+'\nthis.run=()=>updatePreview(true,true,true);',context);await context.run();
  assert.deepEqual(calls,['/api/proof-generator/generate']);assert.equal(context.readyThisRun,true);assert.equal(context.generatingProof,false);assert.equal(context.design.status,'save_queued');
 });
+
+// Live regression: the cached editor retained its disabled button after the worker finished.
+test('reopening the cached proof enables regeneration after background saving completes',async()=>{
+  let creating=true;const preview={pages:[]};
+  const context={busy:false,designId:'saved-proof',design:{status:'saving'},artworks:[{}],currentPreview:preview,showProofEditor(){},showDesign(){},setCreating(value){creating=value;}};
+  createContext(context);
+  const open=source.slice(source.indexOf('  async function openHistoryProof(job)'),source.indexOf('  async function loadPlacementPreview('));
+  vm.runInContext(open+'\nthis.open=openHistoryProof;',context);
+  const job={id:'saved-proof',status:'saved',revision:1};await context.open(job);
+  assert.equal(context.design,job);assert.equal(creating,false);assert.equal(context.currentPreview,preview);
+});
