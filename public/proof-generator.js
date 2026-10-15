@@ -5,7 +5,7 @@
   const localPreview = document.body.classList.contains('proof-preview');
   if (!localPreview) {
     const user = await window.ultimateHubUserPromise;
-    if (!user || user.access_scope === 'dtf_only' || String(user.email || '').trim().toLowerCase() !== 'production@ultimatepromotions.co.uk') return;
+    if (!user || user.access_scope === 'dtf_only' || !['production@ultimatepromotions.co.uk', 'charlie@ultimatepromotions.co.uk'].includes(String(user.email || '').trim().toLowerCase())) return;
   }
 
   // Retry only reads: a failed response must never replay generation or a save.

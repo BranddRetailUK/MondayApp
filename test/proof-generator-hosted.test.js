@@ -22,7 +22,7 @@ const production = { 'x-test-email': 'production@ultimatepromotions.co.uk' };
 test('hosted access denies every endpoint to anonymous, ordinary and DTF-only accounts', async () => {
   let calls = 0;
   await serve(createRouter({ parse: async () => { calls++; }, status: async () => { calls++; } }), async url => {
-    for (const [headers, expected] of [[{}, 401], [{ 'x-test-email': 'office@ultimatepromotions.co.uk' }, 403], [{ ...production, 'x-test-scope': 'dtf_only' }, 403], [{ 'x-test-email': 'production@ultimatepromotions.co.uk.attacker.test' }, 403]]) {
+    for (const [headers, expected] of [[{}, 401], [{ 'x-test-email': 'office@ultimatepromotions.co.uk' }, 403], [{ 'x-test-email': 'charlie@ultimatepromotions.co.uk', 'x-test-scope': 'dtf_only' }, 403], [{ 'x-test-email': 'charlie@ultimatepromotions.co.uk.attacker.test' }, 403], [{ ...production, 'x-test-scope': 'dtf_only' }, 403], [{ 'x-test-email': 'production@ultimatepromotions.co.uk.attacker.test' }, 403]]) {
       for (const endpoint of ['link-jobs', 'link-jobs/1', 'link-jobs/1/edit', 'link-jobs/1/unlink', 'designs/unknown/link', 'designs/unknown/sync', 'products?q=RX350', 'designs', 'designs/unknown', 'designs/unknown/retry', 'save', 'status', 'views/unknown', 'views', 'renderer/pdf.mjs', 'renderer/pdf.worker.mjs', 'parse', 'preflight', 'preview', 'create']) {
         const res = await fetch(`${url}/${endpoint}`, { method: ['link-jobs/1/edit','link-jobs/1/unlink','designs/unknown/link','designs/unknown/sync','parse', 'preflight', 'preview', 'create', 'views', 'designs', 'save','designs/unknown/retry'].includes(endpoint) ? 'POST' : 'GET', headers });
         assert.equal(res.status, expected, endpoint);
@@ -262,5 +262,15 @@ test('rendering a reviewed brief rechecks missing details before generating or s
   const form=new FormData();form.append('brief',JSON.stringify({preflightVersion:1,products:[{code:'JH001',colour:'Jet Black',decorations:[{position:'right sleeve',artworkId:'logo',method:'embroidery'}]}]}));
   form.append('artworkDetails',JSON.stringify([{id:'logo',originalName:'logo.png'}]));form.append('artworks',new Blob([image]),'logo.png');
   const res=await fetch(`${url}/preview`,{method:'POST',headers:production,body:form});assert.equal(res.status,422);assert.match((await res.json()).error,/width or height/);assert.equal(calls,0);
+ });
+});
+
+
+test('Charlie can read history, open the renderer and generate proofs',async()=>{
+ const headers={'x-test-email':'charlie@ultimatepromotions.co.uk'};
+ await serve(createRouter({status:async()=>({ready:true}),designs:{list:async()=>({designs:[],nextOffset:null})},enrich:async()=>{},build:async()=>({bytes:Buffer.from('%PDF-Charlie'),documents:[],pages:[],issues:[]})}),async url=>{
+   for(const endpoint of ['status','designs','renderer/pdf.mjs'])assert.equal((await fetch(`${url}/${endpoint}`,{headers})).status,200,endpoint);
+   const form=new FormData();form.append('brief',JSON.stringify({products:[{code:'ONE'}]}));form.append('artworkDetails','[]');
+   const response=await fetch(`${url}/create`,{method:'POST',headers,body:form});assert.equal(response.status,200);assert.equal(await response.text(),'%PDF-Charlie');
  });
 });

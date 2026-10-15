@@ -13,12 +13,7 @@ const {createService:designService,UUID}=require('../services/proofDesignJobs');
 
 const { prepareBrief, recoverProductCodes, repairRetainedDimensions } = require('../services/proofLayout');
 
-const PRODUCTION_EMAIL = 'production@ultimatepromotions.co.uk';
-
-function isProofGeneratorUser(user) {
-  return user?.access_scope !== 'dtf_only'
-    && String(user?.email || '').trim().toLowerCase() === PRODUCTION_EMAIL;
-}
+const { isProofGeneratorUser } = require('../services/proofAccess');
 
 function createRouter({ requireProduction = true, parse = parseProofBrief, enrich = enrichProofProducts, build = buildProof, status = proofRuntimeStatus, generateViews = ensureGeneratedViews, searchProducts = searchProofProducts, convertEps = require('../services/digitisingEps').rasterize, designs } = {}) {
   const router = express.Router();

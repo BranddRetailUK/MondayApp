@@ -5,7 +5,7 @@ const eligible = `j.is_complete IS NOT TRUE AND COALESCE(j.dashboard_status,'') 
   AND NOT EXISTS (SELECT 1 FROM test_dashboard_job_state s WHERE s.source_order_id=j.source_order_id AND s.archived)
   AND (j.order_type IN ('Printing','Embroidery','Print + Emb') OR j.order_type_abbr IN ('P','E','PE','EP'))`;
 const snapshotFields = ['source','source_artworks','garment_assets','customer','job_title'];
-const isProduction = user => user?.access_scope !== 'dtf_only' && String(user?.email || '').trim().toLowerCase() === 'production@ultimatepromotions.co.uk';
+const { isProofGeneratorUser: isProduction } = require('./proofAccess');
 function orderId(value) { const id=Number(value); if(!Number.isSafeInteger(id)||id<=0)throw new Error('Invalid job number.');return id; }
 function createService(pool, {upload = require('./cloudinaryDashboard').uploadBuffer} = {}) {
   async function transaction(fn) {

@@ -35,9 +35,14 @@
     document.querySelectorAll('.nav-tabs li[data-tab]').forEach((tab) => {
       tab.hidden = (dtfOnly && tab.dataset.tab !== 'dtf-uploader')
         || (tab.dataset.tab === 'digitising-studio' && (!isProductionProofUser(user) || tab.dataset.available !== 'true'))
-        || (tab.dataset.tab === 'proof-generator' && !isProductionProofUser(user))
+        || (tab.dataset.tab === 'proof-generator' && !isProofGeneratorUser(user))
         || (tab.dataset.tab === 'dtf-uploader' && String(user?.email || '').trim().toLowerCase() !== 'production@ultimatepromotions.co.uk');
     });
+  }
+
+  function isProofGeneratorUser(user) {
+    return user?.access_scope !== 'dtf_only'
+      && ['production@ultimatepromotions.co.uk', 'charlie@ultimatepromotions.co.uk'].includes(String(user?.email || '').trim().toLowerCase());
   }
 
   function isProductionProofUser(user) {
