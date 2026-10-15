@@ -930,3 +930,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Proof Generator history Grid view displays four columns above 1100 px, two columns at 651–1100 px and one column at 650 px or below. The list view, saved view preference, card previews and proof actions are unchanged.
 
 - Proof history Grid view shows only the London creation date (DD/MM/YYYY); List view retains the creation date and hours/minutes. Switching views updates the display immediately through the grid class, without changing timestamps or newest-first ordering.
+
+- Proof history metadata fields align their label/value rows to the top. Customer and Title text begin on the same baseline even when one value wraps to additional lines or card width changes.
