@@ -163,13 +163,14 @@ function prepareBrief(brief, input = {}) {
       applyChildBreastSize(d,product,input,(brief.sharedDecorations || []).includes(original));
       recoverDimensions(d, {...input,enforceSuppliedAxis:true}, product, brief.products);
       applyChildBreastSize(d,product,input,(brief.sharedDecorations || []).includes(original));
+      if(d.widthMm || d.heightMm)d.sizeTbc=false;
       require('./proofDstSize').applyNativeSize(d,artwork);
       return d;
     });
     if (product.decorations.length > 6) throw new Error(`${product.code || 'Product'} has more than six decorations.`);
   });
   brief.sharedDecorations = [];
-  brief.questions = brief.products.flatMap(product => product.decorations.filter(d => !d.widthMm && !d.heightMm).map(d => ({id:d.id,question:`What width or height should ${d.artwork || d.position} at ${d.position} on ${product.code || product.name} be?`})));
+  brief.questions = brief.products.flatMap(product => product.decorations.filter(d => !d.widthMm && !d.heightMm && d.sizeTbc!==true).map(d => ({id:d.id,question:`What width or height should ${d.artwork || d.position} at ${d.position} on ${product.code || product.name} be?`})));
   return brief;
 }
 

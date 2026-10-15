@@ -20,9 +20,9 @@ function assess(brief,artworks=[],request='') {
     (p.decorations||[]).forEach((d,di)=>{
       const path=`${base}.decorations.${di}`,name=`${label} · ${d.position||'decoration '+(di+1)}`;
       if(!POSITIONS.includes(positionName(d.position)))add(`${path}.position`,`${name}: select the position as worn.`,POSITIONS);
-      if(!d.method)add(`${path}.method`,`${name}: specify the decoration method.`,['embroidery','transfer print','screen print']);
+      if(!d.method)add(`${path}.method`,`${name}: specify the decoration method.`,['embroidery','transfer print']);
       const sizeValid=positive(d.widthMm)||positive(d.heightMm);
-      if(!sizeValid|| (d.widthMm&&!positive(d.widthMm)) || (d.heightMm&&!positive(d.heightMm)) || d.dimensionIssues?.length)add(`${path}.widthMm`,`${name}: confirm artwork width or height in mm; one axis is sufficient.`);
+      if((!sizeValid&&d.sizeTbc!==true)|| (d.widthMm&&!positive(d.widthMm)) || (d.heightMm&&!positive(d.heightMm)) || d.dimensionIssues?.length)add(`${path}.widthMm`,`${name}: confirm artwork width or height in mm; one axis is sufficient.`);
       const asset=artworks.find(a=>a.id===d.artworkId&&!/\.(ttf|otf)$/i.test(a.originalName));
       if(!asset&&!d.text)add(`${path}.artworkId`,`${name}: choose the supplied artwork.`,artworks.filter(a=>! /\.(ttf|otf)$/i.test(a.originalName)).map(a=>({value:a.id,label:a.originalName})));
       if(!asset&&d.text){

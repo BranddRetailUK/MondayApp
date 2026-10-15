@@ -109,15 +109,15 @@ function drawCallout(page, decoration, asset, regular, bold, index, total, garme
     drawAsset(page, asset, x, top + 21, imageWidth, imageHeight);
   }
   else drawText(page, 'No artwork', x, top + 27, 8, regular, GREY, imageWidth);
-  let widthLabel = 'Size to confirm';
+  let widthLabel = decoration.sizeTbc===true ? 'TBC' : 'Size to confirm';
   try {
     const size = asset && artworkSize(decoration, asset.width / asset.height);
     if (size?.confirmed) widthLabel = `${Number(size.width.toFixed(1))} x ${Number(size.height.toFixed(1))} mm`;
   } catch (_) { widthLabel = 'Dimensions need review'; }
-  drawText(page, printMethod(decoration.method), textX, top + 21, 8, regular, GREY, textWidth);
-  drawText(page, widthLabel, textX, top + 33, 8, regular, GREY, textWidth);
+  drawText(page, printMethod(decoration.method), textX, top + 21, 11, bold, rgb(0,0,0), textWidth);
+  drawText(page, widthLabel, textX, top + 36, 10, regular, rgb(0,0,0), textWidth);
   const colours = [...(decoration.printColours || []), ...(decoration.threadColours || [])];
-  if (colours.length) drawText(page, `Colours: ${colours.join(', ')}`, textX, top + 45, 7, regular, GREY, textWidth);
+  if (colours.length) drawText(page, `Colours: ${colours.join(', ')}`, textX, top + 50, 8, regular, rgb(0,0,0), textWidth);
 }
 
 
@@ -257,16 +257,16 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
       while(methodSize>8.5&&bold.widthOfTextAtSize(safeText(methodText),methodSize)>available)methodSize-=.25;
       for(const [index,method] of methods.entries()){
         if(index){drawText(page,' / ',methodX,128-methodSize,methodSize,bold,rgb(0,0,0));methodX+=bold.widthOfTextAtSize(' / ',methodSize);}
-        const colour=method.toLowerCase()==='transfer print'?rgb(0,.45,.18):method.toLowerCase()==='embroidery'?rgb(.8,.08,.08):rgb(0,0,0);
+        const colour=rgb(0,0,0);
         drawText(page,method,methodX,128-methodSize,methodSize,bold,colour,cellX+cellWidth-8-methodX);
         methodX+=bold.widthOfTextAtSize(safeText(method),methodSize);
       }
       const dimensionLabels=marks.map(d=>{
         const file=findArtwork(d,artworks),asset=assetFor(file,d);
-        try {const size=asset&&artworkSize(d,asset.width/asset.height);return (marks.length>1?`${positionName(d.position)}: `:'')+(size?.confirmed?`${Number(size.width.toFixed(1))} x ${Number(size.height.toFixed(1))} mm`:'To confirm');}
+        try {const size=asset&&artworkSize(d,asset.width/asset.height);return (marks.length>1?`${positionName(d.position)}: `:'')+(size?.confirmed?`${Number(size.width.toFixed(1))} x ${Number(size.height.toFixed(1))} mm`:d.sizeTbc===true?'TBC':'To confirm');}
         catch(_){return 'Needs review';}
       });
-      drawText(page,`Dimensions: ${dimensionLabels.join(' / ')}`,cellX+8,133,8,regular,GREY,cellWidth-16);
+      drawText(page,`Dimensions: ${dimensionLabels.join(' / ')}`,cellX+8,133,8,regular,rgb(0,0,0),cellWidth-16);
       if (!garment) drawText(page,'Matching view unavailable',cellX+8,245,10,bold,GREY,cellWidth-16);
       if (garment && !garment.confident) issue(productIndex,null,'Garment boundary is uncertain. Check printable regions and placement.');
       for (const d of marks) {
@@ -277,7 +277,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
         }
         for (const message of asset.warnings) issue(productIndex,d.id,message);
         for (const message of d.dimensionIssues || []) issue(productIndex,d.id,message,true);
-        if (!d.widthMm && !d.heightMm) issue(productIndex,d.id,`${d.position}: specify the artwork width or height before saving.`,true);
+        if (!d.widthMm && !d.heightMm && d.sizeTbc!==true) issue(productIndex,d.id,`${d.position}: specify the artwork width or height before saving.`,true);
         if (!garment) continue;
         try {
           let p = placementFor(d,asset,garment,calibration);

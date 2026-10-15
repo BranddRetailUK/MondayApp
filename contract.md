@@ -960,3 +960,8 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Production has one navigation toggle: Test proofs on production history, Production proofs on test history. Charlie has no production switch. Both list and grid show London creation dates without times; the reference label is Ref/Design No. and card values sit closer to their field labels.
 
 - Reopening the current cached proof refreshes its save status and editor controls, so Regenerate is enabled after the background worker finishes.
+
+### Proof size TBC and presentation (2026-10-15)
+- Create proof and Regenerate proof share the top-right editor action without an arrow. Missing-method choices are embroidery and transfer print; explicitly requested screen print remains supported.
+- Explicit artwork-size TBC/to be confirmed instructions set a per-decoration `sizeTbc` flag, scoped by the parser to the named artwork/product/position or globally. Supplied numeric dimensions take precedence. Unspecified sizes without this explicit instruction still require confirmation. TBC permits proof generation using the existing indicative preview geometry, while both PDF dimension labels show TBC instead of an estimated numeric size. Native DST sizing does not override explicit TBC; manually entered sizes remain numeric.
+- PDF method/dimensions labels are black; lower artwork callouts use larger black text with the method larger than the dimensions.

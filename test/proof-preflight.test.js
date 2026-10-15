@@ -46,3 +46,11 @@ test('quality acknowledgement and size can be answered together without a second
  const first=assess(b,a);b.preflightAcknowledgements=first.issues.filter(i=>i.ack).map(i=>i.ack);b.products[0].decorations[0].widthMm='90';
  assert.equal(assess(b,a).ready,true);
 });
+
+test('TBC exempts only absent sizes and missing-method options exclude screen print',()=>{
+ const b=brief(),d=b.products[0].decorations[0];d.widthMm='';d.sizeTbc=true;assert.equal(assess(b,assets).ready,true);
+ d.widthMm='bad';assert.ok(assess(b,assets).issues.some(i=>i.path.endsWith('widthMm')));
+ d.widthMm='';d.sizeTbc=false;assert.ok(assess(b,assets).issues.some(i=>i.path.endsWith('widthMm')));
+ d.method='';assert.deepEqual(assess(b,assets).issues.find(i=>i.path.endsWith('method')).options,['embroidery','transfer print']);
+ d.method='screen print';d.widthMm='90';assert.equal(assess(b,assets).ready,true);
+});

@@ -7,7 +7,7 @@ function nativeSize(artwork) {
   return {widthMm,heightMm};
 }
 function applyNativeSize(decoration,artwork) {
-  if(decoration.widthMm||decoration.heightMm||decoration.dimensionIssues?.length||decoration.dimensionSource==='user-confirmed')return;
+  if(decoration.sizeTbc===true||decoration.widthMm||decoration.heightMm||decoration.dimensionIssues?.length||decoration.dimensionSource==='user-confirmed')return;
   const size=nativeSize(artwork);if(!size)return;
   decoration.widthMm=String(size.widthMm);decoration.heightMm=String(size.heightMm);
   decoration.dimensionSource='dst-native';

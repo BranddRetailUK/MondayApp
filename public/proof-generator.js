@@ -89,7 +89,7 @@
             <button id="proof-dropzone" class="proof-dropzone" type="button"><span class="proof-upload-icon" aria-hidden="true">↥</span><strong>Choose artwork files</strong></button>
             <div id="proof-artworks" class="proof-artwork-list"></div>
           </section>
-          <div class="proof-form-actions"><button id="proof-review" class="proof-primary-button" type="button"><span class="proof-button-spinner" aria-hidden="true" hidden></span><span data-proof-button-label>Create proof</span><span data-proof-button-arrow aria-hidden="true">→</span></button><button id="proof-retry-save" class="proof-secondary-button" type="button" hidden>Retry folder/save</button><span id="proof-feedback" role="status" aria-live="polite"></span></div>
+          <div class="proof-form-actions"><button id="proof-review" class="proof-primary-button" type="button"><span class="proof-button-spinner" aria-hidden="true" hidden></span><span data-proof-button-label>Create proof</span></button><button id="proof-retry-save" class="proof-secondary-button" type="button" hidden>Retry folder/save</button><span id="proof-feedback" role="status" aria-live="polite"></span></div>
         </div>
         <aside class="proof-review-column">
             <section id="proof-job-picker" class="proof-card">
@@ -404,8 +404,7 @@
   customer.addEventListener('input',metadataChanged);jobTitle.addEventListener('input',metadataChanged);
   function showDesign(){
     showJobSelection();
-    if(designId)editorToolbar.append(reviewButton);else formActions.prepend(reviewButton);
-    reviewButton.querySelector('[data-proof-button-arrow]').hidden=busy||Boolean(designId);
+    editorToolbar.append(reviewButton);
     retrySave.hidden=localPreview||!designId||design?.status!=='error';
     designStatus.textContent=sandbox?'':design?.designNumber?`Design ${design.designNumber} · ${design.folderName||'Preparing folder'}${design.status==='saved'?' · Saved':design.status==='error'?' · Save needs attention':''}`:designId?'Waiting for ARTWORK-PC to allocate the design folder.':'';
     if(!busy)reviewButton.querySelector('[data-proof-button-label]').textContent=designId?'Regenerate proof':'Create proof';
@@ -665,7 +664,6 @@
     reviewButton.disabled = creating || (!localPreview&&['save_queued','saving'].includes(design?.status));
     reviewButton.setAttribute('aria-busy', String(creating));
     reviewButton.querySelector('.proof-button-spinner').hidden = !creating;
-    reviewButton.querySelector('[data-proof-button-arrow]').hidden = creating || Boolean(designId);
     reviewButton.querySelector('[data-proof-button-label]').textContent = creating ? (designId?'Regenerating proof…':'Creating proof…') : designId?'Regenerate proof':'Create proof';
     retrySave.disabled=creating;createNew.disabled=creating;
     editorScreen.querySelectorAll('input,textarea,select,#proof-dropzone,.proof-remove').forEach(control=>{control.disabled=creating;});

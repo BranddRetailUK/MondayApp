@@ -709,3 +709,19 @@ test('Oxford short-sleeve correction is scoped and preserves measured and manual
  }
  for(const code of ['KK351','KK361','GD001','UNKNOWN'])assert.deepEqual(layout.placementFor(mark(),asset,g(code)),old);
 });
+
+test('explicit TBC generates a strict proof with indicative geometry and no numeric size claim',async()=>{
+ const b=brief([mark({widthMm:'',sizeTbc:true,method:'transfer print'})]);
+ const out=await buildProof(b,[await artFile()],{fetchImpl:await fixtureFetch(),strict:true});
+ assert.equal(out.pages[0].placements[0].size.confirmed,false);
+ const pdfjs=await import('pdfjs-dist/legacy/build/pdf.mjs');
+ const doc=await pdfjs.getDocument({data:new Uint8Array(out.bytes),isEvalSupported:false}).promise;
+ try{const items=(await (await doc.getPage(1)).getTextContent()).items;assert.ok(items.some(i=>i.str==='Dimensions: TBC'));assert.ok(items.some(i=>i.str==='TBC'));assert.ok(!items.some(i=>/80.*mm/.test(i.str)));}finally{await doc.destroy();}
+});
+test('TBC shared sizing preserves explicit product overrides and does not spread scoped TBC',()=>{
+ const input={requestText:'Artwork size TBC. GD001 front 120mm wide',artworks:[{id:'art',fileName:'logo.png'}]};
+ const b={sharedDecorations:[mark({position:'front',widthMm:'',sizeTbc:true})],products:[{code:'GD001',decorations:[]},{code:'JH001',decorations:[]}]};
+ layout.prepareBrief(b,input);assert.equal(b.products[0].decorations[0].widthMm,'120');assert.equal(b.products[0].decorations[0].sizeTbc,false);assert.equal(b.products[1].decorations[0].sizeTbc,true);assert.equal(b.questions.length,0);
+ const scoped=brief([mark({widthMm:'',sizeTbc:true}),mark({id:'back',position:'back',widthMm:'',sizeTbc:false})]);
+ layout.prepareBrief(scoped,{requestText:'Left breast size TBC; back logo',artworks:input.artworks});assert.equal(scoped.questions.length,1);assert.equal(scoped.questions[0].id,'back');
+});
