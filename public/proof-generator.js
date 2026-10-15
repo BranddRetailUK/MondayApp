@@ -46,7 +46,7 @@
             <button type="button" data-proof-view="list" aria-label="List view" title="List view" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h1M3 12h1M3 18h1"/></svg></button>
             <button type="button" data-proof-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
           </div>
-          ${!standalonePreview?`<a class="proof-primary-button proof-mode-button" href="?test=1#proof-generator" aria-current="${sandbox?'page':'false'}">Test proofs</a>${!charlie&&sandbox?'<a class="proof-primary-button proof-mode-button" href="?#proof-generator">Production proofs</a>':''}`:''}
+          ${!standalonePreview&&!charlie?`<a class="proof-primary-button proof-mode-button" href="${sandbox?'?#proof-generator':'?test=1#proof-generator'}">${sandbox?'Production proofs':'Test proofs'}</a>`:''}
           <button id="proof-create-new" class="proof-primary-button" type="button">Create proof</button>
         </div>
       </header>
@@ -214,7 +214,8 @@
   }
   function historyState(job){
     if(job.id===designId&&busy)return ['Pending',progressMessage];
-    if(job.status==='error')return ['Needs attention',job.message];
+    if(job.hasPdf&&['save_queued','saving'].includes(job.status))return ['Proof ready','Saving to design folder…'];
+    if(job.status==='error')return [job.hasPdf?'Save needs attention':'Needs attention',job.message];
     if(job.generationStatus==='error')return ['Failed',job.generationMessage];
     if(job.generationStatus==='review')return ['Needs review',job.generationMessage];
     if(job.generationStatus==='interrupted')return ['Interrupted','Generation stopped before saving. Reopen the proof to continue.'];
@@ -243,18 +244,14 @@
       }else if(localPreview&&job.id===designId&&currentPreview?.pdf){renderDocument(currentPreview.pdf,thumb,[],{onlyPage:1,clickable:false});}
       else{thumb.textContent=job.status==='saved'?'Preview unavailable':'Preview pending';}
       const info=document.createElement('div');info.className='proof-history-info';
-      for(const [label,value] of [['Customer',job.customer],['Title',job.jobTitle],['Ref',job.designNumber||job.reference],['Date created',job.createdAt?new Date(job.createdAt).toLocaleDateString('en-GB',{timeZone:'Europe/London',day:'2-digit',month:'2-digit',year:'numeric'}):'—']]){
+      for(const [label,value] of [['Customer',job.customer],['Title',job.jobTitle],['Ref/Design No.',job.designNumber||job.reference],['Date created',job.createdAt?new Date(job.createdAt).toLocaleDateString('en-GB',{timeZone:'Europe/London',day:'2-digit',month:'2-digit',year:'numeric'}):'—']]){
         const field=document.createElement('div'),name=document.createElement('span'),valueNode=document.createElement('strong');name.textContent=label;valueNode.textContent=value||'—';
-        if(label==='Date created'&&job.createdAt){
-          const time=document.createElement('span');time.className='proof-history-created-time';
-          time.textContent=', '+new Date(job.createdAt).toLocaleTimeString('en-GB',{timeZone:'Europe/London',hour:'2-digit',minute:'2-digit'});valueNode.append(time);
-        }
-        if(label==='Ref'&&/^[1-9]\d{0,9}$/.test(String(value||''))){
+        if(label==='Ref/Design No.'&&/^[1-9]\d{0,9}$/.test(String(value||''))){
           const link=document.createElement('button');link.type='button';link.className='design-folder-link';link.textContent=value;
           link.title=`Open design folder ${value} on the Windows design computer`;link.addEventListener('click',event=>window.openDesignFolder(value,event));valueNode.replaceChildren(link);
         }
         field.append(name,valueNode);
-        if(label==='Ref'){
+        if(label==='Ref/Design No.'){
           const references=document.createElement('div');references.className='proof-history-references';references.append(field);
           for(const linkedOrder of job.linkedOrders||[]){
             const jobField=document.createElement('div'),jobLabel=document.createElement('span'),jobValue=document.createElement('strong');
@@ -273,11 +270,15 @@
       if(message){const detail=document.createElement('p');detail.textContent=reviewMessage(message);state.append(detail);}
 
       const actions=document.createElement('div');actions.className='proof-history-actions';
+      if(!localPreview&&job.status==='error'&&job.hasPdf){
+        const retry=document.createElement('button');retry.type='button';retry.className='proof-secondary-button';retry.textContent='Retry folder save';
+        retry.onclick=async()=>{retry.disabled=true;try{await designRequest(`/${job.id}/retry`,{});await refreshHistory();}catch(error){historyStatus.textContent=error.message;}finally{retry.disabled=false;}};actions.append(retry);
+      }
       if(job.linkPending){const sync=document.createElement('button');sync.type='button';sync.className='proof-secondary-button';sync.textContent='Retry proof sync';sync.onclick=async()=>{sync.disabled=true;try{await window.ProofLinks.api(`/designs/${job.id}/sync`,{});await refreshHistory();window.ProofLinks.refresh();}catch(error){historyStatus.textContent=error.message;}finally{sync.disabled=false;}};actions.append(sync);}
       if(standalonePreview&&job.id===designId&&currentPreview?.pdf){const download=action('Download PDF',()=>downloadPdf());download.disabled=busy||dirty||currentPreview.issues.some(i=>i.blocking);actions.append(download);}
       else if(job.hasPdf){const download=document.createElement('a');download.className='proof-secondary-button';download.textContent='Download';download.href=`/api/proof-generator/${historyEndpoint}/${encodeURIComponent(job.id)}/pdf?download=1`;actions.append(download);}
       else{const download=document.createElement('button');download.type='button';download.className='proof-secondary-button';download.textContent='Download';download.disabled=true;download.title='Available after a proof PDF has been generated and retained.';actions.append(download);}
-      const regenerate=document.createElement('button');regenerate.type='button';regenerate.className='proof-secondary-button';regenerate.textContent='Regenerate proof';regenerate.disabled=busy;
+      const regenerate=document.createElement('button');regenerate.type='button';regenerate.className='proof-secondary-button';regenerate.textContent='Regenerate proof';regenerate.disabled=busy||['save_queued','saving'].includes(job.status);
       regenerate.addEventListener('click',async()=>{try{if(job.sourceOrderId)await window.ProofLinks.edit(job.sourceOrderId);else await openHistoryProof(job);}catch(error){historyStatus.textContent=error.message;}});actions.append(regenerate);if(!localPreview)actions.append(linkButton);state.append(actions);
       item.append(thumb,info,state);
       const generating=label==='Pending'||label==='Saving';
@@ -405,7 +406,7 @@
     showJobSelection();
     if(designId)editorToolbar.append(reviewButton);else formActions.prepend(reviewButton);
     reviewButton.querySelector('[data-proof-button-arrow]').hidden=busy||Boolean(designId);
-    retrySave.hidden=localPreview||!designId||['saved','folder_ready'].includes(design?.status);
+    retrySave.hidden=localPreview||!designId||design?.status!=='error';
     designStatus.textContent=sandbox?'':design?.designNumber?`Design ${design.designNumber} · ${design.folderName||'Preparing folder'}${design.status==='saved'?' · Saved':design.status==='error'?' · Save needs attention':''}`:designId?'Waiting for ARTWORK-PC to allocate the design folder.':'';
     if(!busy)reviewButton.querySelector('[data-proof-button-label]').textContent=designId?'Regenerate proof':'Create proof';
   }
@@ -445,7 +446,7 @@
   }
   retrySave.addEventListener('click',async()=>{
     if(busy||!designId)return;busy=true;retrySave.disabled=true;
-    try{design=await designRequest(`/${designId}/retry`,{});await awaitDesign(['save_queued','saving'].includes(design.status));showDesign();setFeedback(design.status==='saved'?'Proof saved in DESIGN FILES.':'Design folder ready. Regenerate the proof to continue.');}
+    try{design=await designRequest(`/${designId}/retry`,{});if(!['save_queued','saving'].includes(design.status))await awaitDesign();showDesign();setFeedback(design.status==='saved'?'Proof saved in DESIGN FILES.':'Design folder ready. Regenerate the proof to continue.');}
     catch(error){setFeedback(error.message,true);}finally{busy=false;retrySave.disabled=false;showDesign();}
   });
   if(designId&&!localPreview){const restoringId=designId;designRequest(`/${restoringId}`).then(value=>{if(designId!==restoringId)return;design=value;showDesign();}).catch(()=>{showDesign();});}
@@ -661,7 +662,7 @@
   }
 
   function setCreating(creating) {
-    reviewButton.disabled = creating;
+    reviewButton.disabled = creating || (!localPreview&&['save_queued','saving'].includes(design?.status));
     reviewButton.setAttribute('aria-busy', String(creating));
     reviewButton.querySelector('.proof-button-spinner').hidden = !creating;
     reviewButton.querySelector('[data-proof-button-arrow]').hidden = creating || Boolean(designId);
@@ -726,9 +727,10 @@
     results.scrollIntoView({block:'nearest',behavior:'smooth'});
   }
 
-  let savedThisRun = false;
+  let readyThisRun = false;
   async function reviewBrief() {
     if (busy) return;
+    if(!localPreview&&['save_queued','saving'].includes(design?.status)){setFeedback('This proof is still saving to its design folder. You can view or download it now.',true);return;}
     if(selectedLinkJob?.designRefs?.length&&!existingReference.value&&!designId){setFeedback('Select the design reference for this job.',true);existingReference.focus();return;}
     if (!request.value.trim()) { request.focus(); setFeedback('Enter the proof request first.', true); return; }
     if (!artworks.length) { setFeedback('Attach artwork first so each decoration can be assigned to a file.', true); return; }
@@ -739,7 +741,7 @@
       catch(error){setFeedback(error.message,true);return;}
       finally{busy=false;setCreating(false);}
     }
-    busy = true; generatingProof = true; savedThisRun = false; setCreating(true);
+    busy = true; generatingProof = true; readyThisRun = false; setCreating(true);
     if(!designId){designId=crypto.randomUUID();try{if(!localPreview)sessionStorage.setItem('proof-design-id',designId);}catch(_){} }
     design={...design,id:designId,customer:customer.value,jobTitle:jobTitle.value,createdAt:design?.createdAt||new Date().toISOString(),generationStatus:'generating'};
     showProofList();
@@ -753,14 +755,18 @@
       setFeedback('Preparing artwork…');
       await Promise.all(artworks.map(item=>prepareArtworkFile(item.file)));
       await saveProofSource();
-      await reserveDesign(currentBrief);
-      await updatePreview();
-      await recordProgress(currentPreview?.issues.some(issue=>issue.blocking)?'review':'complete');
+      // Allocation only changes this copy; view preparation may replace currentBrief.
+      const numberedBrief={...currentBrief};
+      const preparation=await Promise.allSettled([reserveDesign(numberedBrief),prepareMissingViews()]);
+      const failed=preparation.find(result=>result.status==='rejected');if(failed)throw failed.reason;
+      if(!localPreview)for(const key of ['proofSourceOrderId','proofDesignId','reference','proofRevision'])currentBrief[key]=numberedBrief[key];
+      await updatePreview(true,true,true);
+      if(!readyThisRun)await recordProgress(currentPreview?.issues.some(issue=>issue.blocking)?'review':'complete');
       if(localPreview){design.status='saved';if(sandbox){design.hasPdf=!currentPreview?.issues.some(issue=>issue.blocking);design.hasPreview=true;design.reference='SANDBOX';setFeedback('Proof saved.');}}
     } catch(error) {
-      if(savedThisRun){
+      if(readyThisRun){
         design={...design,generationStatus:'complete',generationMessage:''};
-        setFeedback(`Proof saved under design ${design.designNumber}. History confirmation was interrupted; refresh to check its status.`);
+        setFeedback(`Proof ${design.designNumber} is ready. Folder saving continues in the background; refresh history for its status.`);
         return;
       }
       if(design)design={...design,generationStatus:'error',generationMessage:error.message};
@@ -781,21 +787,27 @@
     return form;
   }
 
-  async function updatePreview(loadSaved = true,save = true) {
+  async function updatePreview(loadSaved = true,save = true,viewsPrepared = false) {
     if (!currentBrief) return;
     if(sandbox&&save&&designId&&!generatingProof)await saveProofSource();
-    if(loadSaved)await prepareMissingViews();
+    if(loadSaved&&!viewsPrepared)await prepareMissingViews();
     if (!currentBrief) return;
+    const productionSave=save&&!localPreview&&!!designId;
+    // Legacy local calibration templates need a measuring preview before committing.
+    let checkCalibration=false;
+    if(loadSaved)try{checkCalibration=Object.keys(localStorage).some(key=>currentBrief.products.some(p=>key.startsWith(`proof-calibration-v1:${p.code}:${p.colour}:`)));}catch(_){}
+    const commit=productionSave&&!checkCalibration;
+    if(commit){currentBrief.proofSourceOrderId=selectedLinkJob?.source_order_id||null;currentBrief.proofSaveKey=crypto.randomUUID();currentBrief.proofRevision=design.revision;}
     const snapshot = JSON.stringify(currentBrief);
     const targetBrief = currentBrief;
     const requestFiles = artworks.map(a=>a.id).join(',');
     setFeedback('Measuring visible artwork and preparing garment views…');
-    const response = await proofFetch('/api/proof-generator/preview', {method:'POST',body:await uploadForm(targetBrief)});
+    const response = await proofFetch(`/api/proof-generator/${commit?'generate':'preview'}`, {method:'POST',body:await uploadForm(targetBrief,commit)});
     const payload = await proofJson(response);
     if (!response.ok) throw new Error(payload.error || 'Could not prepare the preview.');
     if (targetBrief !== currentBrief || snapshot !== JSON.stringify(currentBrief) || requestFiles !== artworks.map(a=>a.id).join(',')) return;
     currentBrief = payload.brief; currentPreview = payload;
-    if(loadSaved){
+    if(checkCalibration){
       let loaded=false;
       for(const page of payload.pages){
         const product=currentBrief.products[page.productIndex];
@@ -805,21 +817,19 @@
           if(saved){product.calibrations||={};product.calibrations[page.view]=JSON.parse(saved);loaded=true;}
         }catch(_) { /* A corrupt or unavailable local template must not block automatic proofs. */ }
       }
-      if(loaded)return updatePreview(false,save);
+      if(loaded||productionSave)return updatePreview(false,save,true);
+    }
+    if(commit){
+      design=payload.design;readyThisRun=true;generatingProof=false;
+      currentBrief.proofRevision=design.revision;showDesign();
+      setFeedback(`Proof ${design.designNumber} is ready. Saving to design folder in the background…`);
     }
     dirty = false;
     renderEditor();
     const hasGarment = payload.pages.some(page => page.image);
     const blockers=payload.issues.filter(issue=>issue.blocking);
     setFeedback(blockers.length?blockers.map(issue=>[currentBrief.products[issue.productIndex]?.code,issue.message].filter(Boolean).join(': ')).filter((text,index,all)=>all.indexOf(text)===index).join(' '):!hasGarment?'No garment preview is available.':'Preview ready.');
-    if(save&&!localPreview&&designId&&!payload.issues.some(i=>i.blocking)){
-      const saveTarget=currentBrief;saveTarget.proofSourceOrderId=selectedLinkJob?.source_order_id||null;saveTarget.proofSaveKey=crypto.randomUUID();saveTarget.proofRevision=design.revision;
-      setFeedback('Saving the proof to its design folder…');
-      const saved=await proofFetch('/api/proof-generator/save',{method:'POST',body:await uploadForm(saveTarget,true)});const savedData=await proofJson(saved);
-      if(!saved.ok)throw new Error(savedData.error||'Could not save proof.');
-      design=savedData.design;showDesign();await awaitDesign(true);savedThisRun=true;
-      if(currentBrief===saveTarget){currentBrief.proofRevision=design.revision;setFeedback(`Proof saved under design ${design.designNumber}.`);}
-    }
+
   }
 
   async function prepareMissingViews() {

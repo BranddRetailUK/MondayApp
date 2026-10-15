@@ -64,7 +64,7 @@ function createService(pool){
     if(!deferAllocation)await query("UPDATE proof_design_jobs SET status='awaiting_folder',customer=$2,job_title=$3 WHERE id=$1 AND status='preparing'",[id,String(customer).trim().slice(0,200),String(jobTitle).trim().slice(0,200)]);
     return get(id);
   }
-  async function queueSave(id,key,expectedRevision,bytes,brief,artworks=[]){
+  async function queueSave(id,key,expectedRevision,bytes,brief,artworks=[],previewPng=null){
     if(!UUID.test(key||'')||!Number.isInteger(expectedRevision)||expectedRevision<0)throw new Error('Invalid proof revision.');
     const target=(await query('SELECT active_source_order_id FROM proof_design_jobs WHERE id=$1',[id])).rows[0]?.active_source_order_id;
     if(String(target||'')!==String(brief.proofSourceOrderId||''))throw new Error('The linked job changed. Reopen this proof from the job before saving.');
@@ -74,10 +74,10 @@ function createService(pool){
     const originals=artworks.map(file=>({name:originalArtworkName(file.originalname),hash:createHash('sha256').update(file.buffer).digest('hex'),data:file.buffer.toString('base64')}));
     const hash=createHash('sha256').update(bytes).digest('hex');
     const r=await query(`UPDATE proof_design_jobs SET pdf=$4,pdf_hash=$5,save_key=$2,revision=revision+1,status='save_queued',
-      customer=$6,job_title=$7,artworks=$8::jsonb,publish_source_order_id=$10,proof_pdf=$4,proof_ready=true,source=CASE WHEN source IS NULL THEN NULL ELSE jsonb_set(source,'{brief}',$9::jsonb) END,claim_token=NULL,lease_until=NULL,message='Waiting for ARTWORK-PC to save the proof',updated_at=NOW()
+      customer=$6,job_title=$7,artworks=$8::jsonb,publish_source_order_id=$10,proof_pdf=$4,proof_ready=true,preview_png=COALESCE($11,preview_png),generation_status='complete',generation_message='',generation_updated_at=NOW(),source=CASE WHEN source IS NULL THEN NULL ELSE jsonb_set(source,'{brief}',$9::jsonb) END,claim_token=NULL,lease_until=NULL,message='Waiting for ARTWORK-PC to save the proof',updated_at=NOW()
       WHERE id=$1 AND design_number IS NOT NULL AND folder_name IS NOT NULL AND revision=$3 AND status IN ('folder_ready','saved','error')
-      AND active_source_order_id IS NOT DISTINCT FROM $10::integer AND (save_key IS NULL OR save_key<>$2) RETURNING *`,[id,key,expectedRevision,bytes,hash,String(brief.customer||'').slice(0,200),String(brief.jobTitle||'').slice(0,200),JSON.stringify(originals),JSON.stringify(brief),target||null]);
-    if(r.rows[0])return publicJob(r.rows[0]);
+      AND active_source_order_id IS NOT DISTINCT FROM $10::integer AND (save_key IS NULL OR save_key<>$2) RETURNING *`,[id,key,expectedRevision,bytes,hash,String(brief.customer||'').slice(0,200),String(brief.jobTitle||'').slice(0,200),JSON.stringify(originals),JSON.stringify(brief),target||null,previewPng]);
+    if(r.rows[0])return get(id);
     const current=await query(`SELECT ${columns} FROM proof_design_jobs WHERE id=$1`,[id]);
     if(current.rows[0]?.save_key===key)return publicJob(current.rows[0]);
     throw new Error('The proof has changed or is still being saved. Wait for the current save, then regenerate.');

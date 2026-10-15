@@ -23,13 +23,14 @@ function harness({ fail=false }={}) {
     preflightBrief:async()=>true,jobReservation(){return {};},
     async designRequest(){calls.push('reserve-request');await gate;if(fail)throw Error('Service unavailable');return {id:'existing-design',revision:4,status:'saved'};},
     async recordProgress(state){calls.push(state);},async prepareArtworkFile(){},async saveProofSource(){calls.push('source');},
+    async prepareMissingViews(){calls.push('views');},
     async reserveDesign(brief){calls.push('identity');brief.proofDesignId=context.designId;brief.proofRevision=4;},
     async updatePreview(){calls.push('save');context.savedBrief=structuredClone(context.currentBrief);context.currentPreview={issues:[]};},
   };
   createContext(context);vm.runInContext(review+history+'\nthis.run=reviewBrief;this.rowState=historyState;',context);
   return {context,calls,release};
 }
-test('regeneration returns to list before networking and keeps row busy until saving completes',async()=>{
+test('regeneration returns to list before networking and keeps row busy until the numbered proof is queued',async()=>{
   const {context,calls,release}=harness();const pending=context.run();await new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(calls,['list','reserve-request']);assert.equal(context.busy,true);
   assert.equal(context.rowState({id:'existing-design',status:'saved'})[0],'Pending');
@@ -162,11 +163,11 @@ test('valid application errors are preserved and do not retry',async()=>{
   createContext(context);vm.runInContext(http,context);
   assert.equal((await context.proofJson(await context.proofFetch('/proof'))).error,'Artwork needs attention');assert.equal(count,1);
 });
-test('failed completion notification cannot mark an acknowledged save as failed',async()=>{
-  const h=harness();h.context.updatePreview=async()=>{h.context.savedThisRun=true;h.context.design={...h.context.design,designNumber:'29144',status:'saved'};h.context.currentPreview={issues:[]};};
+test('queued proof needs no further completion request before becoming available',async()=>{
+  const h=harness();h.context.updatePreview=async()=>{h.context.readyThisRun=true;h.context.design={...h.context.design,designNumber:'29144',status:'save_queued',generationStatus:'complete',hasPdf:true};h.context.currentPreview={issues:[]};};
   h.context.recordProgress=async state=>{h.calls.push(state);if(state==='complete')throw Error('upstream error');};
   const pending=h.context.run();h.release();await pending;
-  assert.equal(h.context.design.generationStatus,'complete');assert.ok(!h.calls.includes('error'));assert.match(h.context.progressMessage,/Proof saved under design 29144/);
+  assert.equal(h.context.design.generationStatus,'complete');assert.ok(!h.calls.includes('error'));assert.ok(!h.calls.includes('complete'));assert.equal(h.context.busy,false);assert.equal(h.context.rowState(h.context.design)[0],'Proof ready');
 });
 test('cancelled requests are not retried',async()=>{
   let count=0;const error=new Error('Cancelled');error.name='AbortError';
@@ -200,4 +201,27 @@ for(const sandbox of [false,true])test(`restores editable placement data in ${sa
  const fn=source.slice(source.indexOf('  async function loadPlacementPreview()'),source.indexOf('  async function recordProgress('));
  vm.runInContext(fn+'\nthis.load=loadPlacementPreview;',context);await context.load();
  assert.equal(context.currentPreview,payload);assert.equal(rendered,true);
+});
+
+test('folder allocation overlaps view preparation and both finish before numbered rendering',async()=>{
+ const h=harness();let releaseFolder,releaseViews;
+ const folder=new Promise(resolve=>releaseFolder=resolve),views=new Promise(resolve=>releaseViews=resolve);
+ h.context.reserveDesign=async brief=>{h.calls.push('folder-start');await folder;brief.proofDesignId='existing-design';brief.proofRevision=4;brief.reference='30001';h.calls.push('folder-end');};
+ h.context.prepareMissingViews=async()=>{h.calls.push('views-start');await views;h.context.currentBrief=structuredClone(h.context.currentBrief);h.calls.push('views-end');};
+ const pending=h.context.run();h.release();await new Promise(resolve=>setImmediate(resolve));
+ assert.ok(h.calls.includes('folder-start'));assert.ok(h.calls.includes('views-start'));assert.ok(!h.calls.includes('save'));
+ releaseFolder();await new Promise(resolve=>setImmediate(resolve));assert.ok(!h.calls.includes('save'));
+ releaseViews();await pending;assert.equal(h.context.savedBrief.reference,'30001');assert.equal(h.context.savedBrief.proofRevision,4);
+});
+test('ready proofs remain accessible while saving and after background save failure',()=>{
+ const h=harness();h.context.busy=false;
+ for(const status of ['save_queued','saving'])assert.equal(h.context.rowState({id:'other',hasPdf:true,status,generationStatus:'generating'})[0],'Proof ready');
+ assert.equal(h.context.rowState({id:'other',hasPdf:true,status:'error',message:'Worker offline'})[0],'Save needs attention');
+});
+test('the production render queues the proof once and never waits for the worker',async()=>{
+ const calls=[];const brief={products:[]};
+ const context={currentBrief:brief,designId:'id',design:{revision:2},localPreview:false,sandbox:false,generatingProof:true,selectedLinkJob:null,artworks:[],localStorage:{},crypto:{randomUUID:()=> 'save-key'},setFeedback(){},showDesign(){},renderEditor(){},uploadForm:async(b,originals)=>{assert.equal(originals,true);assert.equal(b.proofSaveKey,'save-key');return b;},proofFetch:async(url)=>{calls.push(url);return {ok:true};},proofJson:async()=>({brief,pages:[],issues:[],design:{id:'id',revision:3,designNumber:'30001',hasPdf:true,status:'save_queued'}}),awaitDesign(){throw Error('Do not wait for the worker');}};
+ createContext(context);const fn=source.slice(source.indexOf('  async function updatePreview('),source.indexOf('  async function prepareMissingViews('));
+ vm.runInContext(fn+'\nthis.run=()=>updatePreview(true,true,true);',context);await context.run();
+ assert.deepEqual(calls,['/api/proof-generator/generate']);assert.equal(context.readyThisRun,true);assert.equal(context.generatingProof,false);assert.equal(context.design.status,'save_queued');
 });

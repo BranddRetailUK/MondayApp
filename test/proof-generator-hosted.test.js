@@ -23,8 +23,8 @@ test('hosted access denies every endpoint to anonymous, ordinary and DTF-only ac
   let calls = 0;
   await serve(createRouter({ parse: async () => { calls++; }, status: async () => { calls++; } }), async url => {
     for (const [headers, expected] of [[{}, 401], [{ 'x-test-email': 'office@ultimatepromotions.co.uk' }, 403], [{ 'x-test-email': 'charlie@ultimatepromotions.co.uk', 'x-test-scope': 'dtf_only' }, 403], [{ 'x-test-email': 'charlie@ultimatepromotions.co.uk.attacker.test' }, 403], [{ ...production, 'x-test-scope': 'dtf_only' }, 403], [{ 'x-test-email': 'production@ultimatepromotions.co.uk.attacker.test' }, 403]]) {
-      for (const endpoint of ['link-jobs', 'link-jobs/1', 'link-jobs/1/edit', 'link-jobs/1/unlink', 'designs/unknown/link', 'designs/unknown/sync', 'products?q=RX350', 'designs', 'designs/unknown', 'designs/unknown/retry', 'save', 'status', 'views/unknown', 'views', 'renderer/pdf.mjs', 'renderer/pdf.worker.mjs', 'parse', 'preflight', 'preview', 'placement-preview', 'create']) {
-        const res = await fetch(`${url}/${endpoint}`, { method: ['link-jobs/1/edit','link-jobs/1/unlink','designs/unknown/link','designs/unknown/sync','parse', 'preflight', 'preview', 'placement-preview', 'create', 'views', 'designs', 'save','designs/unknown/retry'].includes(endpoint) ? 'POST' : 'GET', headers });
+      for (const endpoint of ['link-jobs', 'link-jobs/1', 'link-jobs/1/edit', 'link-jobs/1/unlink', 'designs/unknown/link', 'designs/unknown/sync', 'products?q=RX350', 'designs', 'designs/unknown', 'designs/unknown/retry', 'save', 'status', 'views/unknown', 'views', 'renderer/pdf.mjs', 'renderer/pdf.worker.mjs', 'parse', 'preflight', 'preview', 'placement-preview', 'generate', 'create']) {
+        const res = await fetch(`${url}/${endpoint}`, { method: ['link-jobs/1/edit','link-jobs/1/unlink','designs/unknown/link','designs/unknown/sync','parse', 'preflight', 'preview', 'placement-preview', 'generate', 'create', 'views', 'designs', 'save','designs/unknown/retry'].includes(endpoint) ? 'POST' : 'GET', headers });
         assert.equal(res.status, expected, endpoint);
       }
     }
@@ -280,7 +280,7 @@ test('sandbox cannot reserve, save, read or change production designs and job li
  const headers={'x-test-email':'charlie@ultimatepromotions.co.uk'};
  let writes=0;const designs=new Proxy({}, {get:()=>async()=>{writes++;throw Error('Production store accessed');}});
  await serve(createRouter({designs,enrich:async()=>{},generateViews:async()=>{},build:async brief=>{assert.equal(brief.reference,'SANDBOX');return {bytes:Buffer.from('%PDF-test'),pages:[],issues:[]};}}),async url=>{
-  for(const path of ['designs','designs/id','designs/id/source','designs/id/preview','designs/id/pdf','designs/id/progress','designs/id/retry','designs/id/link','designs/id/sync','link-jobs','link-jobs/1','link-jobs/1/edit','link-jobs/1/unlink','save']){
+  for(const path of ['designs','designs/id','designs/id/source','designs/id/preview','designs/id/pdf','designs/id/progress','designs/id/retry','designs/id/link','designs/id/sync','generate','link-jobs','link-jobs/1','link-jobs/1/edit','link-jobs/1/unlink','save']){
    for(const method of ['GET','POST'])assert.equal((await fetch(`${url}/${path}`,{method,headers})).status,403,`${method} ${path}`);
   }
   for(const endpoint of ['preview','create'])for(const key of ['proofDesignId','proofSourceOrderId']){
@@ -344,4 +344,17 @@ for(const sandbox of [false,true])test(`placement preview restores ${sandbox?'te
   const response=await fetch(url+'/placement-preview'+(sandbox?'?test=1':''),{method:'POST',headers:sandbox?{'x-test-email':'charlie@ultimatepromotions.co.uk'}:production,body:form});
   assert.equal(response.status,200,await response.clone().text());assert.equal((await response.json()).pages[0].placements[0].x,.4);
  });
+});
+
+test('production generate renders once, forces the reserved number and atomically queues identical preview/PDF/originals',async()=>{
+ const {PDFDocument}=require('pdf-lib');const pdf=await PDFDocument.create();pdf.addPage().drawText('30001 QA');const bytes=Buffer.from(await pdf.save());
+ let builds=0,queued=0;
+ await serve(createRouter({
+  designs:{get:async()=>({id:'saved',designNumber:'30001',folderName:'30001 QA'}),source:async()=>null,queueSave:async(id,key,revision,output,brief,originals,png)=>{
+   queued++;assert.equal(id,'saved');assert.equal(key,'key');assert.equal(revision,2);assert.deepEqual(output,bytes);assert.equal(brief.reference,'30001');assert.equal(originals[0].originalname,'original.svg');assert.equal(originals[0].buffer.toString(),'<svg/>');assert.ok(png.length>0);return {id,status:'save_queued',hasPdf:true,hasPreview:true,revision:3,designNumber:'30001'};
+  }},enrich:async()=>{},generateViews:async()=>{},build:async(brief,_art,options)=>{builds++;assert.equal(options.strict,true);assert.equal(brief.reference,'30001');return {bytes,pages:[],issues:[]};}
+ }),async url=>{
+  const form=new FormData();form.append('brief',JSON.stringify({proofDesignId:'saved',reference:'WRONG',proofSaveKey:'key',proofRevision:2,products:[{code:'TEST'}]}));form.append('artworkDetails',JSON.stringify([{id:'art',originalName:'original.svg'}]));form.append('artworks',new Blob(['png']),'prepared.png');form.append('originalArtworks',new Blob(['<svg/>']),'original.svg');
+  const response=await fetch(url+'/generate',{method:'POST',headers:production,body:form});assert.equal(response.status,200,await response.clone().text());const data=await response.json();assert.equal(data.design.status,'save_queued');assert.equal(data.design.hasPdf,true);assert.deepEqual(Buffer.from(data.pdf,'base64'),bytes);
+ });assert.equal(builds,1);assert.equal(queued,1);
 });

@@ -275,8 +275,8 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       return res.status(502).json({ error: err.message || 'Could not review the proof brief.' });
     }
   }));
-  router.post(['/create', '/preview', '/placement-preview', '/save'], exclusive(async (req, res) => {
-    await new Promise((resolve, reject) => upload.fields([{name:'artworks',maxCount:20},...(req.path==='/save'?[{name:'originalArtworks',maxCount:20}]:[])])(req, res, error => error ? reject(error) : resolve()));
+  router.post(['/create', '/preview', '/placement-preview', '/save', '/generate'], exclusive(async (req, res) => {
+    await new Promise((resolve, reject) => upload.fields([{name:'artworks',maxCount:20},...(['/save','/generate'].includes(req.path)?[{name:'originalArtworks',maxCount:20}]:[])])(req, res, error => error ? reject(error) : resolve()));
     const originals=req.files?.originalArtworks;
     req.files=req.files?.artworks||[];
     try {
@@ -289,7 +289,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       let design;
       if(brief.testProofId)await testJobs().get(brief.testProofId);
       if(brief.proofDesignId){design=await designJobs().get(brief.proofDesignId);if(String(design.sourceOrderId||'')!==String(brief.proofSourceOrderId||''))throw new Error('The linked job changed. Reopen this proof from the job.');if(!design.designNumber||!design.folderName)throw new Error('The design folder is still being prepared.');brief.reference=design.designNumber;}
-      if(req.path==='/save'&&!design)throw new Error('Reserve a design folder before saving.');
+      if(['/save','/generate'].includes(req.path)&&!design)throw new Error('Reserve a design folder before saving.');
       if (!Array.isArray(details) || details.length !== (req.files || []).length) {
         return res.status(400).json({ error: 'Artwork details do not match uploaded files.' });
       }
@@ -328,6 +328,12 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       const productIndex=req.query.productIndex;
       if(productIndex!==undefined && (typeof productIndex!=='string'||!/^\d+$/.test(productIndex)||Number(productIndex)>=brief.products.length))return res.status(400).json({error:'Choose a valid product PDF.'});
       const { bytes, documents = [], pages, issues } = await build(brief, artworks, { strict: !['/preview','/placement-preview'].includes(req.path), ...(design&&designJobs().garmentLoader?{garmentLoader:await designJobs().garmentLoader(design.id)}:{}) });
+      if(req.path==='/generate'){
+        if(issues.some(issue=>issue.blocking))return res.status(422).json({error:'Resolve the proof issues before saving.',issues});
+        const png=await require('../services/proofThumbnail').proofThumbnail(bytes);
+        const queued=await designJobs().queueSave(design.id,brief.proofSaveKey,brief.proofRevision,bytes,brief,originals||req.files,png);
+        return res.json({pdf:bytes.toString('base64'),fileName:proofFileName(brief),documents:documents.map(({bytes,...metadata})=>metadata),pages,issues,brief,design:queued});
+      }
       if(req.path==='/save')return res.json({design:await designJobs().queueSave(design.id,brief.proofSaveKey,brief.proofRevision,bytes,brief,originals||req.files)});
       if(brief.testProofId&&req.path==='/preview')await testJobs().setPreview(brief.testProofId,bytes,brief,!issues.some(issue=>issue.blocking));
       if(design&&req.path==='/preview')await designJobs().setPreview(design.id,bytes,brief,!issues.some(issue=>issue.blocking));

@@ -334,3 +334,17 @@ test('test proofs survive reopening and regeneration without entering the worker
   assert.equal(await worker.claim('ARTWORK-PC'),null);
  }finally{await db.close();}
 });
+
+test('queued proof is ready and durable before worker saving, including failure and retry',async()=>{
+ const db=new PGlite(),pool={query:(...args)=>db.query(...args),connect:async()=>({query:(...args)=>db.query(...args),release(){}})};
+ try{
+  await ensureProofGeneratorTables(db);const service=createService(pool),id=randomUUID();await service.reserve(id,'Background QA');
+  const allocation=await service.claim('pc');await service.report(id,allocation.claimToken,{status:'reserve',proposedNumber:'30001'});await service.report(id,allocation.claimToken,{status:'allocated',designNumber:'30001',folderName:'30001 Background QA'});
+  const bytes=await pdfBytes('30001 background'),png=Buffer.from('thumbnail');const queued=await service.queueSave(id,randomUUID(),0,bytes,{customer:'Background QA'},[{originalname:'qa.svg',buffer:Buffer.from('<svg/>')}],png);
+  assert.equal(queued.status,'save_queued');assert.equal(queued.hasPdf,true);assert.equal(queued.hasPreview,true);assert.equal(queued.generationStatus,'complete');
+  const restarted=createService(pool);assert.deepEqual(Buffer.from(await restarted.document(id)),bytes);assert.deepEqual(Buffer.from(await restarted.preview(id)),png);
+  const save=await restarted.claim('pc');await restarted.report(id,save.claimToken,{status:'error',message:'Temporary disk failure'});assert.equal((await restarted.get(id)).hasPdf,true);assert.deepEqual(Buffer.from(await restarted.document(id)),bytes);
+  await restarted.retry(id);const retry=await restarted.claim('pc');assert.equal(retry.pdf,save.pdf);assert.deepEqual(retry.artworks,save.artworks);
+  await restarted.report(id,retry.claimToken,{status:'saved',hash:retry.hash,revision:retry.revision});assert.equal((await restarted.get(id)).status,'saved');assert.deepEqual(Buffer.from(await restarted.document(id)),bytes);
+ }finally{await db.close();}
+});
