@@ -89,12 +89,7 @@
             <button id="proof-dropzone" class="proof-dropzone" type="button"><span class="proof-upload-icon" aria-hidden="true">↥</span><strong>Choose artwork files</strong></button>
             <div id="proof-artworks" class="proof-artwork-list"></div>
           </section>
-          <section class="proof-card">
-            <div class="proof-review-title proof-section-title"><h2>Special instructions</h2></div>
-            <label class="proof-label" for="proof-instructions">Instructions</label>
-            <textarea id="proof-instructions" class="proof-textarea" maxlength="5000"></textarea>
-          </section>
-          <div class="proof-form-actions"><button id="proof-review" class="proof-primary-button" type="button"><span class="proof-button-spinner" aria-hidden="true" hidden></span><span data-proof-button-label>Create proof</span><span data-proof-button-arrow aria-hidden="true">→</span></button><button id="proof-new" class="proof-secondary-button" type="button" hidden>New proof</button><button id="proof-retry-save" class="proof-secondary-button" type="button" hidden>Retry folder/save</button><span id="proof-feedback" role="status" aria-live="polite"></span></div>
+          <div class="proof-form-actions"><button id="proof-review" class="proof-primary-button" type="button"><span class="proof-button-spinner" aria-hidden="true" hidden></span><span data-proof-button-label>Create proof</span><span data-proof-button-arrow aria-hidden="true">→</span></button><button id="proof-retry-save" class="proof-secondary-button" type="button" hidden>Retry folder/save</button><span id="proof-feedback" role="status" aria-live="polite"></span></div>
         </div>
         <aside class="proof-review-column">
             <section id="proof-job-picker" class="proof-card">
@@ -115,10 +110,9 @@
 
   const request = root.querySelector('#proof-request');
   const customer=root.querySelector('#proof-customer'),jobTitle=root.querySelector('#proof-job-title');
-  const designStatus=root.querySelector('#proof-design-status'),newProof=root.querySelector('#proof-new'),retrySave=root.querySelector('#proof-retry-save');
+  const designStatus=root.querySelector('#proof-design-status'),retrySave=root.querySelector('#proof-retry-save');
   let design=null,designId=null;
   try{if(!localPreview)designId=sessionStorage.getItem('proof-design-id');}catch(_){}
-  const instructions = root.querySelector('#proof-instructions');
   const input = root.querySelector('#proof-file-input');
   const dropzone = root.querySelector('#proof-dropzone');
   const artworksNode = root.querySelector('#proof-artworks');
@@ -314,7 +308,7 @@
   }
   async function saveProofSource(){
     if(standalonePreview)return;
-    const form=new FormData();form.append('brief',JSON.stringify({proofSourceOrderId:selectedLinkJob?.source_order_id||null,request:request.value,instructions:instructions.value,customer:customer.value,jobTitle:jobTitle.value,brief:currentBrief}));
+    const form=new FormData();form.append('brief',JSON.stringify({proofSourceOrderId:selectedLinkJob?.source_order_id||null,request:request.value,customer:customer.value,jobTitle:jobTitle.value,brief:currentBrief}));
     form.append('artworkDetails',JSON.stringify(artworks.map(item=>({id:item.id,originalName:item.file.name,backgroundMode:item.backgroundMode,threadColours:item.threadColours,assignment:item.assignment,notes:item.notes}))));
     for(const item of artworks)form.append('artworks',item.file,item.file.name);
     const response=await proofFetch(`/api/proof-generator/${historyEndpoint}/${designId}/source`,{method:'POST',body:form});
@@ -323,13 +317,13 @@
   }
   async function openHistoryProof(job){
     if(busy)return;
-    if(job.id===designId&&artworks.length){showProofEditor();return;}
+    if(job.id===designId&&artworks.length&&currentPreview){showProofEditor();return;}
     startNewProof();selectedLinkJob=job.sourceOrderId?{source_order_id:job.sourceOrderId,order_no:job.linkedOrders?.find(order=>order.sourceOrderId===job.sourceOrderId)?.orderNo}:null;designId=job.id;design=job;try{if(!localPreview)sessionStorage.setItem('proof-design-id',designId);}catch(_){}
     customer.value=job.customer||'';jobTitle.value=job.jobTitle||'';showProofEditor();showDesign();busy=true;setCreating(true);reviewButton.querySelector('[data-proof-button-label]').textContent='Loading proof…';
     try{
       const response=await proofFetch(`/api/proof-generator/${historyEndpoint}/${encodeURIComponent(job.id)}/source`,{cache:'no-store'});const data=await proofJson(response);
       if(!response.ok)throw new Error(data.error||'Proof source is unavailable.');
-      request.value=data.source.request||'';instructions.value=data.source.instructions||'';customer.value=data.source.customer||job.customer||'';jobTitle.value=data.source.jobTitle||job.jobTitle||'';
+      request.value=[data.source.request,data.source.instructions].filter(Boolean).join('\n\n');customer.value=data.source.customer||job.customer||'';jobTitle.value=data.source.jobTitle||job.jobTitle||'';
       for(const saved of data.artworks){
         const file=new File([Uint8Array.from(atob(saved.data),c=>c.charCodeAt(0))],saved.name,{type:saved.type||''});
         const item={id:saved.id,file,assignment:saved.assignment||'',notes:saved.notes||'',backgroundMode:saved.backgroundMode||'auto',threadColours:saved.threadColours||[],url:file.type.startsWith('image/')?URL.createObjectURL(file):''};artworks.push(item);renderArtwork(item);
@@ -341,9 +335,19 @@
           results.append(savedPreview);
         }
       }
-      setFeedback('Ready to regenerate. Make your changes, then click Regenerate proof.');
+      if(currentBrief)await loadPlacementPreview();
+      setFeedback('');
     }catch(error){setFeedback(error.message,true);}
     finally{busy=false;setCreating(false);renderHistory();}
+  }
+  async function loadPlacementPreview() {
+    const target=currentBrief;
+    const response=await proofFetch('/api/proof-generator/placement-preview',{method:'POST',body:await uploadForm(target)});
+    const payload=await proofJson(response);
+    if(!response.ok)throw new Error(payload.error||'Could not load artwork adjustment.');
+    if(currentBrief!==target)return;
+    currentBrief=payload.brief;currentPreview=payload;
+    renderEditor();
   }
   async function recordProgress(state,message=progressMessage,metadata={}){
     const id=designId;if(!id)return;
@@ -360,7 +364,6 @@
     setFeedback(`Request changed. ${designId?'Regenerate':'Create'} the proof to apply it.`);
   }
   request.addEventListener('input', sourceChanged);
-  instructions.addEventListener('input', sourceChanged);
   function metadataChanged(){
     if(currentBrief){currentBrief.customer=customer.value;currentBrief.jobTitle=jobTitle.value;markDirty(false);setFeedback('Details changed. Regenerate proof to save the updated names.');}
     else sourceChanged();
@@ -374,7 +377,7 @@
   }
   customer.addEventListener('input',()=>{
     clearCustomerSearch();const query=customer.value.trim(),version=customerSearchVersion;
-    if(!query||localPreview)return;
+    if(!query||standalonePreview)return;
     customerStatus.textContent='Searching customers…';
     customerSearchTimer=setTimeout(async()=>{
       const controller=new AbortController();customerSearchController=controller;
@@ -402,7 +405,7 @@
     showJobSelection();
     if(designId)editorToolbar.append(reviewButton);else formActions.prepend(reviewButton);
     reviewButton.querySelector('[data-proof-button-arrow]').hidden=busy||Boolean(designId);
-    newProof.hidden=!designId;retrySave.hidden=localPreview||!designId||['saved','folder_ready'].includes(design?.status);
+    retrySave.hidden=localPreview||!designId||['saved','folder_ready'].includes(design?.status);
     designStatus.textContent=sandbox?'':design?.designNumber?`Design ${design.designNumber} · ${design.folderName||'Preparing folder'}${design.status==='saved'?' · Saved':design.status==='error'?' · Save needs attention':''}`:designId?'Waiting for ARTWORK-PC to allocate the design folder.':'';
     if(!busy)reviewButton.querySelector('[data-proof-button-label]').textContent=designId?'Regenerate proof':'Create proof';
   }
@@ -435,12 +438,11 @@
   function startNewProof(){
     if(busy)return;selectedLinkJob=null;design=null;designId=null;try{if(!localPreview)sessionStorage.removeItem('proof-design-id');}catch(_){}
     ++officeRequest;officeSearch.value='';officeStatus.textContent='';existingReference.replaceChildren();showJobSelection();
-    request.value='';customer.value='';clearCustomerSearch();jobTitle.value='';instructions.value='';
+    request.value='';customer.value='';clearCustomerSearch();jobTitle.value='';
     for(const art of artworks)if(art.url)URL.revokeObjectURL(art.url);artworks.length=0;artworksNode.replaceChildren();
     resetProductPicker();productQuery.value='';productResults.replaceChildren();productStatus.textContent='';
     sourceChanged();results.replaceChildren();showDesign();setFeedback('Enter a new proof request.');request.focus();
   }
-  newProof.addEventListener('click',startNewProof);
   retrySave.addEventListener('click',async()=>{
     if(busy||!designId)return;busy=true;retrySave.disabled=true;
     try{design=await designRequest(`/${designId}/retry`,{});await awaitDesign(['save_queued','saving'].includes(design.status));showDesign();setFeedback(design.status==='saved'?'Proof saved in DESIGN FILES.':'Design folder ready. Regenerate the proof to continue.');}
@@ -653,6 +655,7 @@
 
   function setFeedback(message, error = false) {
     feedback.textContent = message;
+    feedback.hidden=Boolean(designId)&&!error;
     feedback.classList.toggle('error', error);
     progressMessage=message;progressError=error;if(!historyScreen.hidden)renderHistory();
   }
@@ -663,7 +666,7 @@
     reviewButton.querySelector('.proof-button-spinner').hidden = !creating;
     reviewButton.querySelector('[data-proof-button-arrow]').hidden = creating || Boolean(designId);
     reviewButton.querySelector('[data-proof-button-label]').textContent = creating ? (designId?'Regenerating proof…':'Creating proof…') : designId?'Regenerate proof':'Create proof';
-    newProof.disabled=creating;retrySave.disabled=creating;createNew.disabled=creating;
+    retrySave.disabled=creating;createNew.disabled=creating;
     editorScreen.querySelectorAll('input,textarea,select,#proof-dropzone,.proof-remove').forEach(control=>{control.disabled=creating;});
     productColour.disabled=creating||!selectedProduct||productColour.options.length<2;
     showJobSelection();
@@ -673,21 +676,21 @@
   async function preflightBrief() {
     busy=true;setCreating(true);
     try{
-      const submittedSource=JSON.stringify([request.value,instructions.value,customer.value,jobTitle.value,artworks.map(a=>[a.id,a.file.name,a.assignment,a.notes])]);
-      const unchanged=()=>submittedSource===JSON.stringify([request.value,instructions.value,customer.value,jobTitle.value,artworks.map(a=>[a.id,a.file.name,a.assignment,a.notes])]);
+      const submittedSource=JSON.stringify([request.value,customer.value,jobTitle.value,artworks.map(a=>[a.id,a.file.name,a.assignment,a.notes])]);
+      const unchanged=()=>submittedSource===JSON.stringify([request.value,customer.value,jobTitle.value,artworks.map(a=>[a.id,a.file.name,a.assignment,a.notes])]);
       setFeedback('Checking all proof details before generation…');
       const prepared=await Promise.allSettled(artworks.map(a=>prepareArtworkFile(a.file,true)));
       const failures=prepared.flatMap((r,i)=>r.status==='rejected'?[`${artworks[i].file.name}: ${r.reason.message}`]:[]);
       if(failures.length){setFeedback(failures.join(' '),true);return false;}
       if(!currentBrief){
-        const parseForm=await uploadForm({preflight:true,customer:customer.value,jobTitle:jobTitle.value,requestText:request.value,specialInstructions:instructions.value,
+        const parseForm=await uploadForm({preflight:true,customer:customer.value,jobTitle:jobTitle.value,requestText:request.value,
           artworks:artworks.map(({id,file,assignment,notes,dstSize})=>({id,fileName:file.name,assignment,notes,dstSize})),answers:[]},false,true);
         const response=await proofFetch('/api/proof-generator/parse',{method:'POST',body:parseForm}),payload=await proofJson(response);
         if(!response.ok)throw Error(payload.error||'Could not read the brief.');
         if(!unchanged())throw Error('The request changed during review. Check the details again.');
         currentBrief=payload.brief;currentPreview=null;dirty=true;
       }
-      currentBrief.preflightRequest=[request.value,instructions.value].filter(Boolean).join('\n');
+      currentBrief.preflightRequest=request.value;
       const response=await proofFetch('/api/proof-generator/preflight',{method:'POST',body:await uploadForm(currentBrief,false,true)}),payload=await proofJson(response);
       if(!response.ok)throw Error(payload.error||'Could not check the brief.');
       if(!unchanged())throw Error('The request changed during review. Check the details again.');
@@ -699,11 +702,10 @@
   }
 
   function renderPreflight(issues){
-    results.replaceChildren();
+    results.className='proof-results proof-editor';results.replaceChildren();
     const title=document.createElement('h3');title.textContent='Confirm proof details';results.append(title);
-    const summary=document.createElement('p');summary.textContent=currentBrief.products.map(p=>`${p.code} · ${p.colour||'colour needed'}: ${(p.decorations||[]).map(d=>`${d.position} / ${d.method||'method needed'} / ${artworks.find(a=>a.id===d.artworkId)?.file.name||d.text||'artwork needed'} / ${d.widthMm?d.widthMm+' mm wide':d.heightMm?d.heightMm+' mm high':'size needed'}`).join('; ')}`).join(' — ');results.append(summary);
     for(const issue of issues){
-      const label=document.createElement('label');label.className='proof-control';label.textContent=issue.message;
+      const label=document.createElement('label');label.className='proof-control proof-missing-detail';label.textContent=issue.message.replace('confirm artwork width or height in mm; one axis is sufficient.','Artwork size needed (mm).').replace('specify the decoration method.','Print or embroidery type needed.');
       if(issue.ack){
         const input=document.createElement('input');input.type='checkbox';input.addEventListener('change',()=>{currentBrief.preflightAcknowledgements=(currentBrief.preflightAcknowledgements||[]).filter(k=>k!==issue.ack);if(input.checked)currentBrief.preflightAcknowledgements.push(issue.ack);});label.append(input);
       }else if(/^products\.\d+\.(code|colour|decorations\.\d+\.(position|method|widthMm|artworkId|fontArtworkId|textColour))$/.test(issue.path)){
@@ -721,7 +723,6 @@
       }
       results.append(label);
     }
-    const note=document.createElement('p');note.textContent='Replace artwork or choose DST threads in the artwork cards. Correct the request for missing garments or decorations. Width is the visible artwork width; PXF thumbnail pixels never establish sewn size.';results.append(note);
     results.scrollIntoView({block:'nearest',behavior:'smooth'});
   }
 
@@ -892,11 +893,9 @@
   function renderEditor() {
     if(!currentBrief)return;
     results.className='proof-results proof-editor';results.replaceChildren();
-    const summary=document.createElement('p');summary.textContent=[currentBrief.customer,currentBrief.reference,currentBrief.jobTitle].filter(Boolean).join(' · ');results.append(summary);
-    const actions=document.createElement('div');actions.className='proof-question-actions';
-
-    const download=action(currentBrief.products.length>1?'Download all as multipage PDF':'Download PDF',()=>downloadPdf());
-    download.dataset.download='true';download.disabled=dirty || !currentPreview || currentPreview.issues.some(i=>i.blocking);actions.append(download);results.append(actions);
+    if(!designId&&currentBrief.products.length===1){
+      const download=action('Download PDF',()=>downloadPdf());download.dataset.download='true';download.disabled=dirty||!currentPreview||currentPreview.issues.some(i=>i.blocking);results.append(download);
+    }
     const blockers=(currentPreview?.issues || []).filter(issue=>issue.blocking);
     if(blockers.length){
       const list=document.createElement('ul');list.className='proof-issues';
@@ -920,20 +919,14 @@
       }
     }
     if(count)results.append(names);
-    const wasFallbackOpen=results.dataset.fallbackOpen==='true';
-    const fallback=document.createElement('details');fallback.open=wasFallbackOpen;fallback.addEventListener('toggle',()=>{results.dataset.fallbackOpen=String(fallback.open);});fallback.className='proof-fallback';
-    const fallbackTitle=document.createElement('summary');fallbackTitle.textContent='Adjust placement (fallback)';fallback.append(fallbackTitle);
+    const fallback=document.createElement('section');fallback.className='proof-fallback';
+    const fallbackTitle=document.createElement('h3');fallbackTitle.textContent='Adjust artwork position';fallback.append(fallbackTitle);
 
     const views=document.createElement('div');views.className='proof-placement-views';
     for(const page of currentPreview?.pages || []){
       const product=currentBrief.products[page.productIndex];
       if(!product)continue;
       const section=document.createElement('section');section.className='proof-product-editor';
-      const heading=document.createElement('h3');heading.textContent=[product.code,product.name,colourName(product.colour)].filter(Boolean).join(' · ');section.append(heading);
-      if(page.view==='front' || !currentPreview.pages.some(other=>other.productIndex===page.productIndex && other.view==='front')){
-        section.append(inputField('Flat chest width (mm, optional)',product.measurements?.flatChestWidthMm,value=>{product.measurements||={};product.measurements.flatChestWidthMm=value;},{min:150,max:1500}));
-        const basis=document.createElement('p');basis.textContent=page.calibration?.referenceMm ? 'Scale uses the saved measured image calibration.' : page.scaleSource==='flat-chest-measurement' ? 'Scale uses the supplied flat chest measurement.' : 'Estimated scale. Use the flat chest width of the size shown for greater accuracy.';section.append(basis);
-      }
       section.append(viewEditor(product,page));
       views.append(section);
     }
@@ -943,7 +936,8 @@
       const container=document.createElement('div');container.className='proof-pdf-pages proof-auto-preview';results.append(container);
       renderDocument(currentPreview.pdf,container,currentPreview.documents || []);
     }
-    if(hasGarment)results.append(fallback);
+    results.append(fallback);
+    if(!hasGarment){const status=document.createElement('p');status.textContent='Artwork adjustment preview unavailable. Check the request and artwork, then regenerate.';fallback.append(status);}
   }
 
   function openProofPreview(encoded,pageNumber){
@@ -966,13 +960,6 @@
       try{for(let i=1;i<=doc.numPages;i++){
         if(onlyPage&&i!==onlyPage)continue;
         if(!container.isConnected)break;
-        const documentInfo=documents[i-1];
-        if(documentInfo){
-          const heading=document.createElement('div');heading.className='proof-product-download';
-          const title=document.createElement('strong');title.textContent=[documentInfo.code,colourName(documentInfo.colour)].filter(Boolean).join(' · ');heading.append(title);
-          if(doc.numPages>1){const button=action('Download product PDF',()=>downloadPdf(documentInfo.productIndex));button.dataset.download='true';button.disabled=dirty||currentPreview.issues.some(issue=>issue.blocking);heading.append(button);}
-          container.append(heading);
-        }
         const page=await doc.getPage(i);const base=page.getViewport({scale:1});const viewport=page.getViewport({scale:Math.max(.75,(container.clientWidth||600)/base.width)});
         const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);canvas.setAttribute('aria-label',`Proof page ${i} of ${doc.numPages}`);container.append(canvas);
         if(clickable){canvas.tabIndex=0;canvas.setAttribute('role','button');canvas.setAttribute('aria-label',`Open proof sheet ${i} full screen`);canvas.title='Click to view full screen';canvas.classList.add('proof-clickable-preview');canvas.addEventListener('click',()=>openProofPreview(encoded,i));canvas.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openProofPreview(encoded,i);}});}
@@ -983,7 +970,6 @@
 
   function viewEditor(product,page) {
     const wrap=document.createElement('div');wrap.className='proof-view-editor';
-    const heading=document.createElement('h4');heading.textContent=`${page.view.toUpperCase()} view`;wrap.append(heading);
     if(!page.image){const text=document.createElement('p');text.textContent='No verified image for this view. Select an available matching view above.';wrap.append(text);return wrap;}
     product.calibrations ||= {};
     let selected=page.placements[0]?.id || product.decorations.find(d=>(d.view||'auto')===page.view)?.id || product.decorations[0]?.id;

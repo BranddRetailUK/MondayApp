@@ -23,8 +23,8 @@ test('hosted access denies every endpoint to anonymous, ordinary and DTF-only ac
   let calls = 0;
   await serve(createRouter({ parse: async () => { calls++; }, status: async () => { calls++; } }), async url => {
     for (const [headers, expected] of [[{}, 401], [{ 'x-test-email': 'office@ultimatepromotions.co.uk' }, 403], [{ 'x-test-email': 'charlie@ultimatepromotions.co.uk', 'x-test-scope': 'dtf_only' }, 403], [{ 'x-test-email': 'charlie@ultimatepromotions.co.uk.attacker.test' }, 403], [{ ...production, 'x-test-scope': 'dtf_only' }, 403], [{ 'x-test-email': 'production@ultimatepromotions.co.uk.attacker.test' }, 403]]) {
-      for (const endpoint of ['link-jobs', 'link-jobs/1', 'link-jobs/1/edit', 'link-jobs/1/unlink', 'designs/unknown/link', 'designs/unknown/sync', 'products?q=RX350', 'designs', 'designs/unknown', 'designs/unknown/retry', 'save', 'status', 'views/unknown', 'views', 'renderer/pdf.mjs', 'renderer/pdf.worker.mjs', 'parse', 'preflight', 'preview', 'create']) {
-        const res = await fetch(`${url}/${endpoint}`, { method: ['link-jobs/1/edit','link-jobs/1/unlink','designs/unknown/link','designs/unknown/sync','parse', 'preflight', 'preview', 'create', 'views', 'designs', 'save','designs/unknown/retry'].includes(endpoint) ? 'POST' : 'GET', headers });
+      for (const endpoint of ['link-jobs', 'link-jobs/1', 'link-jobs/1/edit', 'link-jobs/1/unlink', 'designs/unknown/link', 'designs/unknown/sync', 'products?q=RX350', 'designs', 'designs/unknown', 'designs/unknown/retry', 'save', 'status', 'views/unknown', 'views', 'renderer/pdf.mjs', 'renderer/pdf.worker.mjs', 'parse', 'preflight', 'preview', 'placement-preview', 'create']) {
+        const res = await fetch(`${url}/${endpoint}`, { method: ['link-jobs/1/edit','link-jobs/1/unlink','designs/unknown/link','designs/unknown/sync','parse', 'preflight', 'preview', 'placement-preview', 'create', 'views', 'designs', 'save','designs/unknown/retry'].includes(endpoint) ? 'POST' : 'GET', headers });
         assert.equal(res.status, expected, endpoint);
       }
     }
@@ -329,5 +329,19 @@ test('test history retains sources and regeneration renders only into the test s
   }
   assert.equal((await fetch(`${url}/designs?test=1`,{headers:production})).status,403);
   assert.equal(productionCalls,0);
+ });
+});
+
+for(const sandbox of [false,true])test(`placement preview restores ${sandbox?'test':'production'} geometry without writes or generated views`,async()=>{
+ const products=[{code:'RX350',colour:'Black',decorations:[{id:'mark',placement:{x:.4,y:.2}}]}];
+ const noWrite=async()=>{throw Error('Opening a proof must not save');};
+ const store={get:async()=>({id:'saved',designNumber:'123',folderName:'123 Test'}),source:async()=>({source:{brief:{products}}}),setPreview:noWrite,queueSave:noWrite};
+ await serve(createRouter({designs:store,tests:store,enrich:async()=>{},generateViews:async(_brief,options)=>{assert.equal(options.allowGenerate,false);},build:async(brief,_art,options)=>{
+  assert.equal(options.strict,false);assert.deepEqual(brief.products[0].decorations[0].placement,{x:.4,y:.2});
+  return {bytes:Buffer.from('pdf'),pages:[{image:'garment',placements:[{id:'mark',x:.4,y:.2}]}],issues:[]};
+ }}),async url=>{
+  const form=new FormData();form.append('brief',JSON.stringify({[sandbox?'testProofId':'proofDesignId']:'saved',products}));form.append('artworkDetails','[]');
+  const response=await fetch(url+'/placement-preview'+(sandbox?'?test=1':''),{method:'POST',headers:sandbox?{'x-test-email':'charlie@ultimatepromotions.co.uk'}:production,body:form});
+  assert.equal(response.status,200,await response.clone().text());assert.equal((await response.json()).pages[0].placements[0].x,.4);
  });
 });

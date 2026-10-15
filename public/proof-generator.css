@@ -255,3 +255,6 @@ body.proof-preview .proof-preview-badge{display:block}
 
 .proof-history-info .proof-history-created-time{color:inherit;font:inherit}
 .proof-history-list.is-grid .proof-history-created-time{display:none}
+
+.proof-missing-detail{color:#fff;font-size:12px;margin-bottom:12px}
+.proof-placement-views .proof-view-editor{border:0;margin:0;padding:0}

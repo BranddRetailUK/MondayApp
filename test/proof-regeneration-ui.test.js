@@ -51,7 +51,7 @@ function element(tag) {
 }
 test('placement tiles share one grid across products without per-decoration dropdowns',()=>{
   const results=element('div');
-  const context={results,currentBrief:{products:[{code:'GD010',colour:'Grey',decorations:[]},{code:'GD001',colour:'Orange',decorations:[]}]},currentPreview:{issues:[],pages:[{productIndex:0,image:'front'},{productIndex:1,image:'front'}]},dirty:false,
+  const context={designId:'saved',results,currentBrief:{products:[{code:'GD010',colour:'Grey',decorations:[]},{code:'GD001',colour:'Orange',decorations:[]}]},currentPreview:{issues:[],pages:[{productIndex:0,image:'front'},{productIndex:1,image:'front'}]},dirty:false,
     document:{createElement:element},colourName:x=>x,action:()=>element('button'),inputField:()=>element('label'),viewEditor:()=>element('canvas')};
   createContext(context);
   const render=source.slice(source.indexOf('  function renderEditor()'),source.indexOf('  function openProofPreview('));
@@ -59,9 +59,8 @@ test('placement tiles share one grid across products without per-decoration drop
   const fallback=results.children.find(node=>node.className==='proof-fallback');
   const grid=fallback.children.find(node=>node.className==='proof-placement-views');
   assert.equal(grid.children.length,2);
-  assert.equal(grid.children[0].children[0].textContent,'GD010 · Grey');
-  assert.equal(grid.children[1].children[0].textContent,'GD001 · Orange');
-  assert.ok(grid.children.every(tile=>tile.children.length===4 && tile.children[1].tag==='label' && tile.children[3].tag==='canvas'));
+  assert.equal(fallback.children[0].textContent,'Adjust artwork position');
+  assert.ok(grid.children.every(tile=>tile.children.length===1 && tile.children[0].tag==='canvas'));
 });
 test('canvas movement and corner scaling still update placement without numeric controls',()=>{
   const canvas=element('canvas');let dirtyCount=0;
@@ -95,14 +94,15 @@ for(const sandbox of [false,true])test(`opening a saved ${sandbox?'test':'produc
   const calls=[];
   const context={sandbox,localPreview:sandbox,historyEndpoint:sandbox?'tests':'designs',busy:false,designId:null,artworks:[],customer:{},jobTitle:{},request:{},instructions:{},reviewButton:{querySelector:()=>({})},results:element('div'),document:{createElement:element},sessionStorage:{setItem(){}},
     startNewProof(){},showProofEditor(){calls.push('editor');},showDesign(){},setCreating(){},renderHistory(){},renderEditor(){calls.push('restore');},setFeedback(){},
-    async fetch(url,options){calls.push([url,options]);return {ok:true,json:async()=>({source:{request:'Saved request',brief:{products:[]}},artworks:[]})};},
-    updatePreview(){throw Error('Opening must not generate a preview');}
+    async fetch(url,options){calls.push([url,options]);return {ok:true,json:async()=>({source:{request:'Saved request',instructions:'Legacy instruction',brief:{products:[]}},artworks:[]})};},
+    loadPlacementPreview:async()=>{calls.push('placement');},
+    updatePreview(){throw Error('Opening must not save or generate garment views');}
   };
   createContext(context);
-  const open=source.slice(source.indexOf('  async function openHistoryProof(job)'),source.indexOf('  async function recordProgress('));
+  const open=source.slice(source.indexOf('  async function openHistoryProof(job)'),source.indexOf('  async function loadPlacementPreview('));
   vm.runInContext(http+open+'\nthis.open=openHistoryProof;',context);
   await context.open({id:'saved-proof',revision:6,hasPreview:true});
-  assert.equal(context.request.value,'Saved request');assert.equal(context.currentBrief.proofRevision,sandbox?undefined:6);assert.equal(context.currentBrief.proofDesignId,sandbox?undefined:'saved-proof');if(sandbox)assert.equal(context.currentBrief.testProofId,'saved-proof');
+  assert.equal(context.request.value,'Saved request\n\nLegacy instruction');assert.ok(calls.includes('placement'));assert.equal(context.currentBrief.proofRevision,sandbox?undefined:6);assert.equal(context.currentBrief.proofDesignId,sandbox?undefined:'saved-proof');if(sandbox)assert.equal(context.currentBrief.testProofId,'saved-proof');
   assert.equal(context.busy,false);assert.ok(calls.includes('restore'));
   const requests=calls.filter(Array.isArray);assert.equal(requests.length,1);
   assert.equal(requests[0][0],`/api/proof-generator/${sandbox?'tests':'designs'}/saved-proof/source${sandbox?'?test=1':''}`);assert.equal(requests[0][1].method,undefined);
@@ -189,4 +189,15 @@ test('real preflight collects review issues before allocation and retains manual
   proofFetch:async(url,options)=>{calls.push(url);return {ok:true,json:async()=>({brief:options.body,ready:false,issues:[{path:'products.0.colour',message:'Choose exact black'}]})};},proofJson:r=>r.json(),renderPreflight:issues=>calls.push(issues[0].message)};
  createContext(context);const fn=source.slice(source.indexOf('  async function preflightBrief()'),source.indexOf('  function renderPreflight('));vm.runInContext(fn+'\nthis.check=preflightBrief;',context);
  assert.equal(await context.check(),false);assert.deepEqual(calls,['/api/proof-generator/preflight','Choose exact black']);assert.equal(context.busy,false);assert.deepEqual(brief.products[0].decorations[0].placement,{x:.4,y:.3});assert.equal(brief.products[0].decorations[0].widthMm,'90');
+});
+
+for(const sandbox of [false,true])test(`restores editable placement data in ${sandbox?'sandbox':'production'} without saving`,async()=>{
+ const brief={products:[{decorations:[{id:'mark',placement:{x:.4,y:.2}}]}]};
+ const payload={brief,pages:[{image:'garment',placements:[{id:'mark'}]}],issues:[]};
+ let rendered=false;
+ const context={sandbox,currentBrief:brief,uploadForm:async b=>b,proofFetch:async(url,options)=>{assert.equal(url,'/api/proof-generator/placement-preview');assert.equal(options.body,brief);return {ok:true};},proofJson:async()=>payload,renderEditor(){rendered=true;}};
+ createContext(context);
+ const fn=source.slice(source.indexOf('  async function loadPlacementPreview()'),source.indexOf('  async function recordProgress('));
+ vm.runInContext(fn+'\nthis.load=loadPlacementPreview;',context);await context.load();
+ assert.equal(context.currentPreview,payload);assert.equal(rendered,true);
 });

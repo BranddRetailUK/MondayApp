@@ -38,7 +38,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
   router.use((req,res,next)=>{
     if(!sandboxFor(req))return next();
     if(/^\/tests(?:\/|$)/.test(req.path))return next();
-    const permitted=req.method==='GET'?/^\/(?:status|products|renderer\/(?:pdf\.mjs|pdf\.worker\.mjs)|views\/[^/]+)$/.test(req.path):req.method==='POST'&&['/parse','/preflight','/views','/preview','/create','/artwork/eps-preview'].includes(req.path);
+    const permitted=req.method==='GET'?/^\/(?:status|products|renderer\/(?:pdf\.mjs|pdf\.worker\.mjs)|views\/[^/]+)$/.test(req.path):req.method==='POST'&&['/parse','/preflight','/views','/preview','/placement-preview','/create','/artwork/eps-preview'].includes(req.path);
     if(!permitted)return res.status(403).set('Cache-Control','no-store').json({error:'Sandbox mode does not access production history, design folders or job links.'});
     next();
   });
@@ -275,7 +275,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       return res.status(502).json({ error: err.message || 'Could not review the proof brief.' });
     }
   }));
-  router.post(['/create', '/preview', '/save'], exclusive(async (req, res) => {
+  router.post(['/create', '/preview', '/placement-preview', '/save'], exclusive(async (req, res) => {
     await new Promise((resolve, reject) => upload.fields([{name:'artworks',maxCount:20},...(req.path==='/save'?[{name:'originalArtworks',maxCount:20}]:[])])(req, res, error => error ? reject(error) : resolve()));
     const originals=req.files?.originalArtworks;
     req.files=req.files?.artworks||[];
@@ -318,7 +318,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
         const saved=savedProducts.find(item=>item.code===product.code&&item.colour===product.colour&&item.supplier===product.supplier&&(product.instanceId?item.instanceId===product.instanceId:item.name===product.name));
         if(saved?.visual?.matched)product.visual=saved.visual;
       }
-      if(brief.preflightVersion===1){
+      if(brief.preflightVersion===1&&req.path!=='/placement-preview'){
         const {assess,inspect}=require('../services/proofPreflight');
         const assets=await Promise.all(req.files.map((file,i)=>inspect(file,details[i]).catch(error=>({...details[i],error:error.message}))));
         const check=assess(brief,assets,brief.preflightRequest);
@@ -327,11 +327,11 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       await generateViews(brief, { allowGenerate: false });
       const productIndex=req.query.productIndex;
       if(productIndex!==undefined && (typeof productIndex!=='string'||!/^\d+$/.test(productIndex)||Number(productIndex)>=brief.products.length))return res.status(400).json({error:'Choose a valid product PDF.'});
-      const { bytes, documents = [], pages, issues } = await build(brief, artworks, { strict: req.path !== '/preview', ...(design&&designJobs().garmentLoader?{garmentLoader:await designJobs().garmentLoader(design.id)}:{}) });
+      const { bytes, documents = [], pages, issues } = await build(brief, artworks, { strict: !['/preview','/placement-preview'].includes(req.path), ...(design&&designJobs().garmentLoader?{garmentLoader:await designJobs().garmentLoader(design.id)}:{}) });
       if(req.path==='/save')return res.json({design:await designJobs().queueSave(design.id,brief.proofSaveKey,brief.proofRevision,bytes,brief,originals||req.files)});
       if(brief.testProofId&&req.path==='/preview')await testJobs().setPreview(brief.testProofId,bytes,brief,!issues.some(issue=>issue.blocking));
       if(design&&req.path==='/preview')await designJobs().setPreview(design.id,bytes,brief,!issues.some(issue=>issue.blocking));
-      if (req.path === '/preview') return res.json({ pdf: bytes.toString('base64'), fileName:proofFileName(brief), documents:documents.map(({bytes,...metadata})=>metadata), pages, issues, brief });
+      if (['/preview','/placement-preview'].includes(req.path)) return res.json({ pdf: bytes.toString('base64'), fileName:proofFileName(brief), documents:documents.map(({bytes,...metadata})=>metadata), pages, issues, brief });
       const selected=productIndex===undefined?null:documents.find(document=>document.productIndex===Number(productIndex));
       if(productIndex!==undefined&&!selected)return res.status(422).json({error:'The product PDF is unavailable. Create the proof again.'});
       res.set('Content-Type', 'application/pdf');
