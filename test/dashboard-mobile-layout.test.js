@@ -69,8 +69,8 @@ test('dashboard grid starts with compact unlabelled job number and mobile retain
     })()
   `, sandbox);
 
-  assert.equal(result.desktopTemplate, '64px 560px 168px 88px 100px');
-  assert.equal(result.mobileTemplate, '72px 240px 168px 100px');
+  assert.equal(result.desktopTemplate, '64px 560px 168px 88px 120px');
+  assert.equal(result.mobileTemplate, '72px 240px 168px 120px');
   assert.deepEqual(Array.from(result.mobileTitles), ['', 'JOB TITLE', 'STATUS', 'VISUAL']);
   assert.equal(result.firstColumnKind, 'jobNumber');
   assert.equal(result.hasActionColumn, false);
@@ -86,15 +86,16 @@ test('mobile dashboard shows every group and keeps file-strip scrolling in place
 
   assert.doesNotMatch(script, /MOBILE_HIDDEN_DASHBOARD_GROUP_TITLES|mobile-hidden-dashboard-group/);
   assert.doesNotMatch(styles, /\.mobile-hidden-dashboard-group\s*\{/);
-  assert.match(styles, /\.dashboard-file-cell\s*\{[^}]*justify-content:flex-start/s);
-  assert.match(styles, /\.dashboard-file-cell\s*\{[^}]*overflow-x:auto/s);
-  assert.match(styles, /\.dashboard-file-cell\s*\{[^}]*overscroll-behavior-x:contain/s);
-  assert.match(styles, /\.dashboard-file-cell\s*\{[^}]*scroll-snap-type:none/s);
-  assert.match(styles, /\.dashboard-file-cell\s*\{[^}]*touch-action:pan-x pan-y/s);
-  assert.match(styles, /\.dashboard-file-cell\s*\{[^}]*-webkit-overflow-scrolling:touch/s);
+  assert.match(styles, /\.dashboard-file-cell\s*\{[^}]*overflow:hidden/s);
+  assert.match(styles, /\.dashboard-file-cell > \.test-file-upload-add-button\s*\{[^}]*flex:0 0 23px;[^}]*margin-left:auto/s);
+  assert.match(styles, /\.dashboard-file-strip\.is-overflowing\s*\{[^}]*overflow-x:auto/s);
+  assert.match(styles, /\.dashboard-file-strip\s*\{[^}]*overscroll-behavior-x:contain/s);
+  assert.match(styles, /\.dashboard-file-strip\s*\{[^}]*scroll-snap-type:none/s);
+  assert.match(styles, /\.dashboard-file-strip\s*\{[^}]*touch-action:pan-x pan-y/s);
+  assert.match(styles, /\.dashboard-file-strip\s*\{[^}]*-webkit-overflow-scrolling:touch/s);
   assert.match(script, /const __testFileCellScrollPositions = new Map\(\);/);
   assert.match(script, /preserveTestFileCellScrollPosition\(cell, uploadKey\);/);
-  assert.match(script, /cell\.scrollLeft = Math\.min\(savedScrollLeft, maxScrollLeft\);/);
+  assert.match(script, /strip\.scrollLeft = Math\.min\(savedScrollLeft, maxScrollLeft\);/);
 });
 
 test('dashboard file-strip offset survives a board rerender', () => {
@@ -107,25 +108,26 @@ test('dashboard file-strip offset survives a board rerender', () => {
         return 1;
       };
       let scrollHandler = null;
-      const originalCell = {
+      const originalStrip = {
         scrollLeft: 46,
         addEventListener(type, handler) {
           if (type === 'scroll') scrollHandler = handler;
         }
       };
-      preserveTestFileCellScrollPosition(originalCell, 'job:proof');
+      preserveTestFileCellScrollPosition({ querySelector: () => originalStrip }, 'job:proof');
       scrollHandler();
 
-      const replacementCell = {
+      const replacementStrip = {
         scrollLeft: 0,
         scrollWidth: 180,
         clientWidth: 100,
         isConnected: true,
         addEventListener() {}
       };
+      const replacementCell = { isConnected: true, querySelector: () => replacementStrip };
       preserveTestFileCellScrollPosition(replacementCell, 'job:proof');
       restoreFrame();
-      return replacementCell.scrollLeft;
+      return replacementStrip.scrollLeft;
     })()
   `, sandbox);
 
@@ -489,4 +491,67 @@ test('row menu exposes the destructive REMOVE VISUAL action', () => {
     source,
     /class="test-row-action-button danger"[^>]*data-test-row-remove-proof="true">REMOVE VISUAL<\/button>/
   );
+});
+
+test('production account opens only Pre-production and Print on initial load', () => {
+  const ui = loadDashboardFrontend();
+  const groups = ['HOLD', 'OFFICE', 'PRE-PRODUCTION', 'PRINT', 'EMBROIDERY', 'COMPLETED'];
+  for (const mobile of [true, false]) {
+    ui.window.matchMedia = () => ({ matches: mobile });
+    for (const user of [null, { email: 'someone@example.test' },
+      { email: 'production@ultimatepromotions.co.uk', access_scope: 'dtf_only' },
+      { email: ' Production@UltimatePromotions.co.uk ' }]) {
+      ui.window.ultimateHubUser = user;
+      const production = user?.email.startsWith(' Production');
+      for (const group of groups) {
+        assert.equal(ui.isDefaultCollapsedGroup(group),
+          !(production && ['PRE-PRODUCTION', 'PRINT'].includes(group)),
+          `${user?.email} / ${mobile} / ${group}`);
+      }
+    }
+  }
+});
+
+test('file-strip restoration clamps shortened lists and ignores removed cells or empty strips', () => {
+  const ui = loadDashboardFrontend();
+  let frame;
+  ui.window.requestAnimationFrame = callback => { frame = callback; };
+  let onScroll;
+  const original = { scrollLeft: 75, addEventListener: (type, callback) => { onScroll = callback; } };
+  ui.preserveTestFileCellScrollPosition({ querySelector: () => original }, 'files');
+  onScroll();
+  const strip = { scrollLeft: 0, scrollWidth: 120, clientWidth: 100, addEventListener() {} };
+  const cell = { isConnected: true, querySelector: () => strip };
+  ui.preserveTestFileCellScrollPosition(cell, 'files');
+  frame();
+  assert.equal(strip.scrollLeft, 20);
+  strip.scrollLeft = 0;
+  cell.isConnected = false;
+  ui.preserveTestFileCellScrollPosition(cell, 'files');
+  frame();
+  assert.equal(strip.scrollLeft, 0);
+  assert.doesNotThrow(() => ui.preserveTestFileCellScrollPosition({ querySelector: () => null }, 'empty'));
+});
+
+test('two-line notes retain existing text and do not save on render, unchanged blur or Escape', async () => {
+  const ui = loadDashboardFrontend();
+  const handlers = {};
+  let input;
+  ui.document.createElement = tag => (input = {
+    tagName: tag, dataset: {}, setAttribute() {},
+    classList: { add() {}, remove() {} },
+    addEventListener(event, handler) { handlers[event] = handler; },
+    blur() { handlers.blur(); }
+  });
+  const cell = { classList: { add() {} }, appendChild() {} };
+  const note = 'Existing Office note with a longer description and delivery instructions';
+  ui.renderTestTextInputValue(cell, note, { id: '123' }, { id: 'text9', title: 'NOTES', type: 'text' });
+  assert.equal(input.tagName, 'textarea');
+  assert.equal(input.value, note);
+  handlers.focus();
+  await ui.saveTestTextInput(input, { id: '123' }, { id: 'text9', title: 'NOTES' });
+  input.value = 'Temporary edit';
+  handlers.keydown({ key: 'Escape', preventDefault() {} });
+  assert.equal(input.value, note);
+  // The sandbox fetch throws if rendering or cancelling accidentally writes data.
 });

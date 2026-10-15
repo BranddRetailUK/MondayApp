@@ -637,9 +637,11 @@ function collectBoardUiState(boardDiv) {
 }
 
 function isDefaultCollapsedGroup(groupName, context = BOARD_CONTEXT_TEST) {
-  if (context === BOARD_CONTEXT_TEST) return true;
-  if (isMobileNavLayout()) return true;
   const normalized = String(groupName || '').trim().toUpperCase();
+  if (context === BOARD_CONTEXT_TEST) {
+    return !(isProductionArtworkUser() && (normalized === 'PRE-PRODUCTION' || normalized === 'PRINT'));
+  }
+  if (isMobileNavLayout()) return true;
   return normalized === 'HOLD' ||
     normalized === 'COMPLETED' ||
     normalized === 'TO SAMPLE' ||

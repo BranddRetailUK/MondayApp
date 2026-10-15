@@ -84,7 +84,9 @@ test('shared VISUAL upload routes accept and store files for a Business Gifts da
     height: 842,
   };
   const calls = [];
+  let released = false;
   const { router, restore } = loadTestDashboardRouter({
+    async connect() { return { query: this.query.bind(this), release() { released = true; } }; },
     async query(sql, values = []) {
       calls.push({ sql, values });
       if (sql.includes('FROM database_jobs') && sql.includes('WHERE source_order_id = $1 OR order_no = $1')) {
@@ -155,6 +157,9 @@ test('shared VISUAL upload routes accept and store files for a Business Gifts da
     }, saveResponse);
 
     assert.equal(saveResponse.statusCode, 201);
+    assert.ok(calls.some(({ sql }) => sql === 'BEGIN'));
+    assert.ok(calls.some(({ sql }) => sql === 'COMMIT'));
+    assert.equal(released, true);
     assert.equal(saveResponse.body.file.source_order_id, giftJob.source_order_id);
     assert.equal(saveResponse.body.file.original_filename, 'gift-visual.pdf');
     const insert = calls.find(({ sql }) => sql.includes('INSERT INTO test_dashboard_files'));
