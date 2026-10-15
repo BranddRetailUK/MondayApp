@@ -922,3 +922,7 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 ### Proof Generator Charlie access (2026-10-15)
 
 - Proof Generator access now includes the exact normalized full-access accounts `production@ultimatepromotions.co.uk` and `charlie@ultimatepromotions.co.uk`, superseding the production-only restriction above. Both can open the sidebar/editor, view saved proof history, generate/save proofs and use the existing proof/job linking and order-creation workflow. Server routes and job-link authorization share `proofAccess.js`; browser navigation, editor initialization and proof actions use the same two-account allowlist. Anonymous, other and DTF-only users remain excluded. Digitising Studio, DTF navigation and print-export controls retain their existing production-only access. No account credentials or other user permissions change.
+
+### Proof history four-column grid (2026-10-15)
+
+- Proof Generator history Grid view displays four columns above 1100 px, two columns at 651–1100 px and one column at 650 px or below. The list view, saved view preference, card previews and proof actions are unchanged.

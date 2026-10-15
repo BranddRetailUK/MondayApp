@@ -227,7 +227,7 @@ body.proof-preview .proof-preview-badge{display:block}
 .proof-view-toggle button[aria-pressed="true"]{color:#17212b}
 .proof-view-toggle button:focus-visible{outline:2px solid #fff;outline-offset:2px}
 .proof-view-toggle svg{width:20px;height:20px}
-.proof-history-list.is-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+.proof-history-list.is-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:20px}
 @media(max-width:1100px){.proof-history-list.is-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:650px){.proof-history-list.is-grid{grid-template-columns:1fr}.proof-list-controls{gap:8px}}
 @media(prefers-reduced-motion:reduce){.proof-view-highlight,.proof-view-toggle button{transition:none}}
