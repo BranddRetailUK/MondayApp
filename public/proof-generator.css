@@ -2,6 +2,8 @@
 .proof-page{max-width:1560px;margin:0 auto;padding:18px 8px 48px;color:var(--text)}
 .proof-page-header{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin:4px 0 25px}
 .proof-page-header h1{font-size:32px;line-height:1.15;margin:5px 0 8px;letter-spacing:-.035em;color:#fff}
+.proof-page-title{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.proof-sandbox-pill{display:inline-flex;align-items:center;flex-shrink:0;padding:6px 11px;border-radius:999px;background:#94cafa;color:#102337;font-size:11px;font-weight:800;line-height:1;letter-spacing:.08em;white-space:nowrap}
 .proof-page-header p{margin:0;color:#acb3be;font-size:14px}
 .proof-eyebrow{font-size:11px;letter-spacing:.15em;font-weight:800;color:#73baf5}
 .proof-preview-badge{display:block;color:#9fb2c4;border:1px solid #3d4c58;background:#1b242b;border-radius:999px;padding:7px 11px;font-weight:800;font-size:10px;letter-spacing:.08em;white-space:nowrap}

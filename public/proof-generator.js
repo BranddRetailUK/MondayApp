@@ -37,7 +37,7 @@
       <header class="proof-page-header">
         <div>
           <div class="proof-eyebrow">${sandbox&&!charlie?'TEST PROOFS':'PRODUCTION'}</div>
-          <h1>Proof Generator${sandbox&&!charlie?' — Sandbox':''}</h1>
+          <h1 class="proof-page-title">Proof Generator${sandbox&&!charlie?' — Sandbox':''}${charlie?'<span class="proof-sandbox-pill">SANDBOX</span>':''}</h1>
 
         </div>
         <div id="proof-list-controls" class="proof-list-controls">

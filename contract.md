@@ -943,3 +943,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Test proofs and Production proofs navigation buttons share Create proof’s sizing, typography, padding and rounded styling, with dark grey backgrounds, light text and no text underline.
 
 - Charlie’s generator uses the normal PRODUCTION eyebrow and Proof Generator heading, without a sandbox explanation banner or folder/numbering explanation. Saved status and completion text use the normal proof wording. Sandbox routing, separate test history, SANDBOX PDF references and production isolation remain enforced; Production’s explicit Test proofs view retains its distinguishing heading.
+
+- Charlie’s Proof Generator title includes a compact SANDBOX pill with a rounded light-blue background and dark text. This account-only indicator replaces no controls and does not reintroduce the explanatory banner.
