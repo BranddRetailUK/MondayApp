@@ -641,3 +641,71 @@ test('back and right-sleeve callouts follow their garment columns despite sleeve
   assert.ok(back.transform[4]<sleeve.transform[4]);
  }finally{await doc.destroy();}
 });
+
+test('proof details show quantity and sizes without inventing personalisation',async()=>{
+ const b=brief();Object.assign(b.products[0],{quantity:'27',size:'Sizes: 13.5 x2, 14 x1, 15.5 x2, 16 x3, 16.5 x3, 17 x9, 17.5 x1, 18 x5, 18.5 x1',personalisation:''});
+ const out=await buildProof(b,[await artFile()],{fetchImpl:await fixtureFetch(),strict:true});
+ const pdfjs=await import('pdfjs-dist/legacy/build/pdf.mjs');
+ for(const bytes of [out.bytes,out.documents[0].bytes]){
+  const doc=await pdfjs.getDocument({data:new Uint8Array(bytes),isEvalSupported:false}).promise;
+  try{const text=(await (await doc.getPage(1)).getTextContent()).items.map(i=>i.str).join(' ');
+   assert.ok(text.includes('Qty 27'));assert.ok(text.includes('18.5 x1'));
+   for(const stale of ['00/00/25','GD01','TBC','240mm','Date Approved:'])assert.ok(!text.includes(stale),stale);
+  }finally{await doc.destroy();}
+ }
+ assert.equal(out.pages[0].placements.length,1);assert.equal(b.products[0].personalisation,'');
+});
+
+test('long canonical garment names fit without losing gender, sleeve length or fit',async()=>{
+ const b=brief();Object.assign(b.products[0],{code:'KK360',name:"Women's workplace Oxford blouse short-sleeved (tailored fit)",quantity:'15',size:'UK 6 x1, UK 8 x2',personalisation:'Team A'});
+ const out=await buildProof(b,[await artFile()],{fetchImpl:await fixtureFetch(),strict:true});
+ const pdfjs=await import('pdfjs-dist/legacy/build/pdf.mjs');const doc=await pdfjs.getDocument({data:new Uint8Array(out.bytes),isEvalSupported:false}).promise;
+ try{const items=(await (await doc.getPage(1)).getTextContent()).items;
+  const text=items.map(i=>i.str).join(' ');
+  for(const part of ['KK360',"Women's",'short-sleeved','(tailored fit)','Qty 15','UK 8 x2','Team A'])assert.ok(text.includes(part),part);
+  const garment=items.filter(i=>i.transform?.[4]>=694 && i.transform?.[5]>545);
+  assert.ok(garment.length>=2);assert.ok(garment.every(i=>i.transform[4]+i.width<=822),JSON.stringify(garment));
+ }finally{await doc.destroy();}
+});
+
+test('cropped legacy PDF excludes hidden job text while retaining visible artwork and original bytes',async()=>{
+ const src=await PDFDocument.create(),page=src.addPage([400,400]);
+ page.drawText('OLD ORDER 28778',{x:20,y:370,size:12});
+ page.drawRectangle({x:100,y:200,width:200,height:50,color:rgb(1,0,0)});
+ page.setCropBox(100,200,200,50);
+ const buffer=Buffer.from(await src.save()),copy=Buffer.from(buffer);
+ const a=await artwork.prepareArtwork(await PDFDocument.create(),{file:{buffer}});
+ assert.equal(a.kind,'image');assert.equal(a.width/a.height,4);assert.equal(a.width,1600);assert.ok(a.warnings.some(w=>w.includes('hidden source text')));
+ assert.deepEqual(buffer,copy);
+ const pixels=await sharp(Buffer.from(a.preview.split(',')[1],'base64')).ensureAlpha().raw().toBuffer();
+ assert.deepEqual([...pixels.subarray(0,4)],[255,0,0,255]);
+ const out=await buildProof(brief(),[{id:'art',file:{originalname:'cropped.pdf',buffer}}],{fetchImpl:await fixtureFetch(),strict:true});
+ const pdfjs=await import('pdfjs-dist/legacy/build/pdf.mjs');const doc=await pdfjs.getDocument({data:new Uint8Array(out.bytes),isEvalSupported:false}).promise;
+ try{const text=(await (await doc.getPage(1)).getTextContent()).items.map(i=>i.str).join(' ');assert.ok(!text.includes('28778'));assert.ok(text.includes('100 x 25 mm'));}finally{await doc.destroy();}
+});
+
+test('ordinary PDF lettering retains vectors and searchable artwork text',async()=>{
+ const src=await PDFDocument.create();src.addPage([200,100]).drawText('BRAND',{x:20,y:40,size:20});
+ const asset=await artwork.prepareArtwork(await PDFDocument.create(),{file:{buffer:Buffer.from(await src.save())}});
+ assert.equal(asset.kind,'page');assert.deepEqual(asset.warnings,[]);
+});
+
+test('Oxford short-sleeve correction is scoped and preserves measured and manual geometry',async()=>{
+ const base=await artwork.analyseGarment(await garmentBytes());const asset={width:200,height:100};
+ const g=code=>({...base,sourceHash:'same',view:'front',...artwork.automaticGarmentProfile({code},base,'front')});
+ const generic=g('GD001'),old=layout.placementFor(mark(),asset,generic);
+ for(const code of ['KK350','KK360','K350','K360']){
+  const shirt=g(code),placed=layout.placementFor(mark(),asset,shirt);
+  assert.ok(placed.x>old.x+.05);assert.equal(placed.width,old.width);assert.equal(placed.size.width,100);assert.ok(layout.fitsRegion(placed));
+  const right=layout.placementFor(mark({position:'right breast'}),asset,shirt);assert.ok(Math.abs(placed.x+right.x-1)<.005);
+  for(const manual of [mark({placement:{x:.67,y:.2},scaleVersion:2}),mark({placement:{x:.68,y:.21},manualScale:{widthPerMm:.00134,sourceHash:'same',view:'front'}}),mark({offsetXmm:'5'})]){
+   assert.deepEqual(layout.placementFor(manual,asset,shirt),layout.placementFor(manual,asset,generic));
+  }
+  const calibration={referenceMm:550,start:{x:0,y:.5},end:{x:1,y:.5},neckRight:{x:.68}};
+  assert.deepEqual(layout.placementFor(mark(),asset,shirt,calibration),layout.placementFor(mark(),asset,generic,calibration));
+  const measured={...base,view:'front',...artwork.automaticGarmentProfile({code,measurements:{flatChestWidthMm:500}},base,'front')};
+  const genericMeasured={...base,view:'front',...artwork.automaticGarmentProfile({code:'GD001',measurements:{flatChestWidthMm:500}},base,'front')};
+  assert.deepEqual(layout.placementFor(mark(),asset,measured),layout.placementFor(mark(),asset,genericMeasured));
+ }
+ for(const code of ['KK351','KK361','GD001','UNKNOWN'])assert.deepEqual(layout.placementFor(mark(),asset,g(code)),old);
+});

@@ -52,18 +52,28 @@ async function rasterPdf(bytes) {
   if (!pdfRenderer) pdfRenderer = import('pdfjs-dist/legacy/build/pdf.mjs');
   const pdfjs = await pdfRenderer;
   const { createCanvas } = require('@napi-rs/canvas');
-  const task = pdfjs.getDocument({data:new Uint8Array(bytes),isEvalSupported:false,useSystemFonts:true});
+  const standardFontDataUrl=require('path').join(require('path').dirname(require.resolve('pdfjs-dist/package.json')),'standard_fonts/');
+  const task = pdfjs.getDocument({data:new Uint8Array(bytes),isEvalSupported:false,useSystemFonts:false,standardFontDataUrl});
   const doc = await task.promise;
   try {
     if(doc.numPages!==1) throw new Error('Upload one artwork per PDF page. Multi-page artwork must be split before upload.');
     const page=await doc.getPage(1);
     // Render upright unrotated page coordinates so pdf-lib can embed the original vectors.
     const base=page.getViewport({scale:1,rotation:0});
-    const viewport=page.getViewport({scale:Math.min(3,1600/Math.max(base.width,base.height)),rotation:0});
+    const source=await PDFDocument.load(bytes);
+    const media=source.getPage(0).getMediaBox();
+    const [left,bottom,right,top]=page.view;
+    const cropped=left!==0 || bottom!==0 || left!==media.x || bottom!==media.y
+      || right!==media.x+media.width || top!==media.y+media.height;
+    // PDF text extraction ignores clipping inconsistently between readers.
+    // Render cropped pages so old off-artboard labels cannot
+    // leak into a repeat proof. Ordinary PDF artwork still retains vectors.
+    const viewport=page.getViewport({scale:cropped ? 1600/Math.max(base.width,base.height) : Math.min(3,1600/Math.max(base.width,base.height)),rotation:0});
     const canvas=createCanvas(Math.ceil(viewport.width),Math.ceil(viewport.height));
     const ctx=canvas.getContext('2d');
     await page.render({canvasContext:ctx,viewport,background:'rgba(0,0,0,0)'}).promise;
-    return {data:Buffer.from(ctx.getImageData(0,0,canvas.width,canvas.height).data),width:canvas.width,height:canvas.height,view:page.view,rotation:page.rotate};
+    const data=Buffer.from(ctx.getImageData(0,0,canvas.width,canvas.height).data);
+    return {data,width:canvas.width,height:canvas.height,view:page.view,rotation:page.rotate,clippedPage:cropped};
   } finally { await doc.destroy(); }
 }
 
@@ -88,7 +98,7 @@ async function prepareArtwork(pdf, artwork, {embroideryFinish=false} = {}) {
   const warnings=[];
   if(bounds.removedWhite) warnings.push('White edge background removed. Select Keep background if this is intentional artwork.');
   let asset;
-  if(isPdf && !bounds.removedWhite && !rendered.rotation) {
+  if(isPdf && !bounds.removedWhite && !rendered.rotation && !rendered.clippedPage) {
     const source=await PDFDocument.load(bytes);
     const [x0,y0,x1,y1]=rendered.view;
     const sx=(x1-x0)/rendered.width, sy=(y1-y0)/rendered.height;
@@ -103,6 +113,7 @@ async function prepareArtwork(pdf, artwork, {embroideryFinish=false} = {}) {
     const image=await pdf.embedPng(png);
     asset={kind:'image',image,width:image.width,height:image.height};
     if(isPdf) warnings.push('PDF proof preview is rasterised; retain the uploaded PDF for production.');
+    if(rendered.clippedPage) warnings.push('Cropped PDF artwork uses a rendered preview to exclude hidden source text; the original artwork is unchanged.');
   }
   const previewBytes=isPdf && rendered.rotation ? await sharp(preview).rotate(rendered.rotation).png().toBuffer() : preview;
   return {...asset,needsContrast,preview:`data:image/png;base64,${previewBytes.toString('base64')}`,warnings,bounds};
@@ -199,7 +210,8 @@ function automaticGarmentProfile(product, garment, view, referenceGarment) {
   } : undefined;
   // A compact silhouette exposes the chest panel edges without projecting sleeves.
   const exposedPanels=torsoPx/garment.width>.85;
-  const breastFraction=exposedPanels ? .25 : .15;
+  const breastFraction=!measured && view==='front' && profile.breastPanelFraction != null
+    ? profile.breastPanelFraction : exposedPanels ? .25 : .15;
   const chestPanels=exposedPanels && garment.confident && view==='front' ? {
     'left breast':{left:(torsoCentre+torsoPx*.02)/garment.width,width:torsoPx*.46/garment.width},
     'right breast':{left:(torsoCentre-torsoPx*.48)/garment.width,width:torsoPx*.46/garment.width}

@@ -41,15 +41,31 @@ function line(page, x1, top1, x2, top2, colour = LIGHT, thickness = 1) {
   page.drawLine({ start: { x: x1, y: PAGE_H - top1 }, end: { x: x2, y: PAGE_H - top2 }, color: colour, thickness });
 }
 
+function fittedLines(value, font, width, initialSize, maxLines = 2) {
+  const words = safeText(value).split(' ');
+  let lines, size = initialSize;
+  for (; size >= 6; size -= .25) {
+    // Standard-font metrics can include kerning that drawText does not apply.
+    const measure = text => Math.max(font.widthOfTextAtSize(text,size),
+      [...text].reduce((total,char)=>total+font.widthOfTextAtSize(char,size),0));
+    lines = [''];
+    for (const word of words) {
+      const last = lines.length - 1, candidate = [lines[last], word].filter(Boolean).join(' ');
+      if (lines[last] && measure(candidate) > width) lines.push(word);
+      else lines[last] = candidate;
+    }
+    if (lines.length <= maxLines && lines.every(text => measure(text) <= width)) return {lines, size};
+  }
+  // Keep an explicit ellipsis for exceptional input that cannot fit at 6 pt.
+  return {lines: [...lines.slice(0, maxLines - 1), lines.slice(maxLines - 1).join(' ')], size: 6};
+}
+
 function drawField(page, x, top, width, label, value, regular, bold, split = false) {
   rect(page, x, top, width, 25, rgb(1, 1, 1), rgb(0.65, 0.69, 0.73));
   drawText(page, label, x + 12, top + 6, 10, bold, rgb(0.15, 0.15, 0.15), 80);
   if(label==='Garment:'){
-    const words=safeText(value || 'To confirm').split(' '), lines=[''];
-    for(const word of words){const i=lines.length-1,candidate=[lines[i],word].filter(Boolean).join(' ');
-      if(bold.widthOfTextAtSize(candidate,8.5)>width-75 && lines[i] && lines.length<2)lines.push(word);else lines[i]=candidate;
-    }
-    lines.forEach((text,i)=>drawText(page,text,x+67,top+(lines.length===1?7:2)+i*10,8.5,bold,rgb(.15,.15,.15),width-75));return;
+    const {lines,size}=fittedLines(value || 'To confirm',bold,width-75,8.5);
+    lines.forEach((text,i)=>drawText(page,text,x+67,top+(lines.length===1?7:2)+i*10,size,bold,rgb(.15,.15,.15),width-75));return;
   }
   drawText(page, value || 'To confirm', x + (split ? 77 : 91), top + 5.5, 10.5, bold, rgb(0.15, 0.15, 0.15), width - (split ? 86 : 103));
 }
@@ -298,7 +314,11 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
     // Match the garment view order, not the order positions appeared in the request.
     orderedGroups.flatMap(([,marks])=>marks).forEach((d,index)=>{const artwork=findArtwork(d,artworks);drawCallout(page,d,assetFor(artwork,d),regular,bold,index,decorations.length,garmentColour);});
     page.pushOperators(popGraphicsState());
-    if(product.personalisation)drawText(page,[product.personalisation,product.size,product.quantity?'Qty '+product.quantity:''].filter(Boolean).join(' | '),34,98,8,bold);
+    const details=[product.quantity ? 'Qty '+product.quantity : '',product.size,product.personalisation].filter(Boolean).join(' | ');
+    if(details){
+      const {lines,size}=fittedLines(details,bold,774,8);
+      lines.forEach((text,i)=>drawText(page,text,34,98+i*9,size,bold,NAVY,774));
+    }
     if(brief.productionNotes)drawText(page,brief.productionNotes,34,574,7,regular,GREY,774);
     if(product.referenceOnly)drawText(page,'Garment image is a placement reference; exact style not confirmed. Scale and position are indicative.',34,584,7,regular,GREY,774);
 

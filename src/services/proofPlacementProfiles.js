@@ -43,7 +43,10 @@ function placementProfile(product = {}) {
     breast.breastCentre=(breast.breastCentre ?? PROFILES.hoodie.breastCentre)+0.02;
   }
   if (/bodywarmer|gilet/.test(name)) breast.neckRight=0.70;
-  return { family, ...PROFILES[family], ...breast };
+  // Approved Oxford short-sleeve references expose a wider chest panel than
+  // tees. Keep this correction style-scoped; do not move generic tee anchors.
+  const oxford = /^(?:KK|K)0?3(?:50|60)$/.test(code) ? {breastPanelFraction: .28} : {};
+  return { family, ...PROFILES[family], ...breast, ...oxford };
 }
 
 
