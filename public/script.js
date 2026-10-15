@@ -5660,8 +5660,9 @@ function activateDashboardTab(target) {
   if (!window.ultimateHubUser) return;
   const dtfOnly = window.ultimateHubUser?.access_scope === 'dtf_only';
   const fallbackTab = dtfOnly ? 'dtf-uploader' : 'test-dashboard';
-  const proofAllowed = isProductionArtworkUser(window.ultimateHubUser);
-  const allowedTarget = !['proof-generator','digitising-studio'].includes(target) || proofAllowed;
+  const productionArtwork = isProductionArtworkUser(window.ultimateHubUser);
+  const proofAllowed = !dtfOnly && (productionArtwork || String(window.ultimateHubUser?.email || '').trim().toLowerCase() === 'charlie@ultimatepromotions.co.uk');
+  const allowedTarget = target === 'proof-generator' ? proofAllowed : target !== 'digitising-studio' || productionArtwork;
   const requestedTab = !dtfOnly && allowedTarget && isValidDashboardTab(target)
     ? target
     : (target === 'dtf-uploader' ? target : fallbackTab);

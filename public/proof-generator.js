@@ -2,14 +2,19 @@
   const {colourName,reviewMessage}=window.ProofDisplay;
   const root = document.getElementById('proof-generator-root');
   if (!root) return;
-  const localPreview = document.body.classList.contains('proof-preview');
-  if (!localPreview) {
-    const user = await window.ultimateHubUserPromise;
+  const standalonePreview = document.body.classList.contains('proof-preview');
+  const user = standalonePreview ? null : await window.ultimateHubUserPromise;
+  const charlie = String(user?.email || '').trim().toLowerCase() === 'charlie@ultimatepromotions.co.uk';
+  const sandbox = !standalonePreview && (charlie || new URLSearchParams(location.search).get('test') === '1');
+  const historyEndpoint = sandbox ? 'tests' : 'designs';
+  const localPreview = standalonePreview || sandbox;
+  if (!standalonePreview) {
     if (!user || user.access_scope === 'dtf_only' || !['production@ultimatepromotions.co.uk', 'charlie@ultimatepromotions.co.uk'].includes(String(user.email || '').trim().toLowerCase())) return;
   }
 
   // Retry only reads: a failed response must never replay generation or a save.
   async function proofFetch(url, options={}) {
+    if(sandbox)url+=(url.includes('?')?'&':'?')+'test=1';
     const attempts=(!options.method || options.method==='GET')?3:1;
     for(let attempt=0;attempt<attempts;attempt++){
       try{
@@ -31,8 +36,8 @@
     <div class="proof-page">
       <header class="proof-page-header">
         <div>
-          <div class="proof-eyebrow">PRODUCTION</div>
-          <h1>Proof Generator</h1>
+          <div class="proof-eyebrow">${sandbox?'TEST PROOFS':'PRODUCTION'}</div>
+          <h1>Proof Generator${sandbox?' — Sandbox':''}</h1>
 
         </div>
         <div id="proof-list-controls" class="proof-list-controls">
@@ -41,9 +46,11 @@
             <button type="button" data-proof-view="list" aria-label="List view" title="List view" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h1M3 12h1M3 18h1"/></svg></button>
             <button type="button" data-proof-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
           </div>
+          ${!standalonePreview?`<a class="proof-secondary-button" href="?test=1#proof-generator" aria-current="${sandbox?'page':'false'}">Test proofs</a>${!charlie&&sandbox?'<a class="proof-secondary-button" href="?#proof-generator">Production proofs</a>':''}`:''}
           <button id="proof-create-new" class="proof-primary-button" type="button">Create proof</button>
         </div>
       </header>
+      ${sandbox?'<p class="proof-sandbox-notice" role="note">Sandbox: no design numbers, folders or job changes. Test proofs are saved separately and can be reopened and regenerated from Test proofs. AI generation still uses the live service.</p>':''}
       <section id="proof-history">
         <div id="proof-history-status" role="status"></div>
         <div id="proof-history-list" class="proof-history-list"></div>
@@ -111,7 +118,7 @@
   const customer=root.querySelector('#proof-customer'),jobTitle=root.querySelector('#proof-job-title');
   const designStatus=root.querySelector('#proof-design-status'),newProof=root.querySelector('#proof-new'),retrySave=root.querySelector('#proof-retry-save');
   let design=null,designId=null;
-  try{designId=sessionStorage.getItem('proof-design-id');}catch(_){}
+  try{if(!localPreview)designId=sessionStorage.getItem('proof-design-id');}catch(_){}
   const instructions = root.querySelector('#proof-instructions');
   const input = root.querySelector('#proof-file-input');
   const dropzone = root.querySelector('#proof-dropzone');
@@ -198,13 +205,13 @@
     loadMore.hidden=waiting||nextOffset===null;
   }
   async function refreshHistory(foreground=false){
-    if(localPreview||historyLoading)return;
+    if(standalonePreview||historyLoading)return;
     historyLoading=true;
     if(foreground||!historyLoaded)showHistoryLoading(true);
     try{
       let offset=0,rows=[],more=null;
       do{
-        const response=await proofFetch(`/api/proof-generator/designs?offset=${offset}`,{cache:'no-store'});
+        const response=await proofFetch(`/api/proof-generator/${historyEndpoint}?offset=${offset}`,{cache:'no-store'});
         const data=await proofJson(response);if(!response.ok)throw new Error(data.error||'Could not load proof history.');
         rows.push(...data.designs);more=data.nextOffset;offset=more;
       }while(more!==null&&rows.length<historyLimit);
@@ -220,7 +227,7 @@
     if(job.generationStatus==='interrupted')return ['Interrupted','Generation stopped before saving. Reopen the proof to continue.'];
     if(job.generationStatus==='generating')return ['Pending',job.generationMessage];
     if(job.status==='saved'&&job.linkPending)return ['Sync pending','The saved proof still needs to be added to Dashboard.'];
-    if(job.status==='saved')return ['Saved',''];
+    if(job.status==='saved')return [sandbox?'Test ready':'Saved',''];
     if(job.status==='save_queued'||job.status==='saving')return ['Saving',job.message];
     return ['Pending',job.message];
   }
@@ -236,8 +243,8 @@
       const job=row.id===designId&&design?{...row,...design}:row;
       const item=document.createElement('article');item.className='proof-history-row';
       const thumb=document.createElement('div');thumb.className='proof-history-thumb';
-      if(job.hasPreview&&!localPreview){
-        const img=document.createElement('img');img.loading='lazy';img.alt=`Proof preview for ${job.customer||job.designNumber||'pending design'}`;img.src=`/api/proof-generator/designs/${encodeURIComponent(job.id)}/preview?v=${encodeURIComponent(job.updatedAt||job.revision)}`;
+      if(job.hasPreview&&!standalonePreview){
+        const img=document.createElement('img');img.loading='lazy';img.alt=`Proof preview for ${job.customer||job.designNumber||'pending design'}`;img.src=`/api/proof-generator/${historyEndpoint}/${encodeURIComponent(job.id)}/preview?v=${encodeURIComponent(job.updatedAt||job.revision)}`;
         const button=document.createElement('button');button.type='button';button.className='proof-history-image';button.setAttribute('aria-label',`Open proof preview ${job.designNumber||''}`);button.append(img);
         button.addEventListener('click',()=>openSavedProof(job));thumb.append(button);
       }else if(localPreview&&job.id===designId&&currentPreview?.pdf){renderDocument(currentPreview.pdf,thumb,[],{onlyPage:1,clickable:false});}
@@ -274,10 +281,11 @@
 
       const actions=document.createElement('div');actions.className='proof-history-actions';
       if(job.linkPending){const sync=document.createElement('button');sync.type='button';sync.className='proof-secondary-button';sync.textContent='Retry proof sync';sync.onclick=async()=>{sync.disabled=true;try{await window.ProofLinks.api(`/designs/${job.id}/sync`,{});await refreshHistory();window.ProofLinks.refresh();}catch(error){historyStatus.textContent=error.message;}finally{sync.disabled=false;}};actions.append(sync);}
-      if(job.hasPdf){const download=document.createElement('a');download.className='proof-secondary-button';download.textContent='Download';download.href=`/api/proof-generator/designs/${encodeURIComponent(job.id)}/pdf?download=1`;actions.append(download);}
+      if(standalonePreview&&job.id===designId&&currentPreview?.pdf){const download=action('Download PDF',()=>downloadPdf());download.disabled=busy||dirty||currentPreview.issues.some(i=>i.blocking);actions.append(download);}
+      else if(job.hasPdf){const download=document.createElement('a');download.className='proof-secondary-button';download.textContent='Download';download.href=`/api/proof-generator/${historyEndpoint}/${encodeURIComponent(job.id)}/pdf?download=1`;actions.append(download);}
       else{const download=document.createElement('button');download.type='button';download.className='proof-secondary-button';download.textContent='Download';download.disabled=true;download.title='Available after a proof PDF has been generated and retained.';actions.append(download);}
       const regenerate=document.createElement('button');regenerate.type='button';regenerate.className='proof-secondary-button';regenerate.textContent='Regenerate proof';regenerate.disabled=busy;
-      regenerate.addEventListener('click',async()=>{try{if(job.sourceOrderId)await window.ProofLinks.edit(job.sourceOrderId);else await openHistoryProof(job);}catch(error){historyStatus.textContent=error.message;}});actions.append(regenerate,linkButton);state.append(actions);
+      regenerate.addEventListener('click',async()=>{try{if(job.sourceOrderId)await window.ProofLinks.edit(job.sourceOrderId);else await openHistoryProof(job);}catch(error){historyStatus.textContent=error.message;}});actions.append(regenerate);if(!localPreview)actions.append(linkButton);state.append(actions);
       item.append(thumb,info,state);
       const generating=label==='Pending'||label==='Saving';
       item.classList.toggle('proof-history-generating',generating);
@@ -293,33 +301,34 @@
     const previousFocus=document.activeElement,dialog=document.createElement('dialog');dialog.className='proof-fullscreen';dialog.setAttribute('aria-label','Proof preview');
     const bar=document.createElement('div');bar.className='proof-fullscreen-bar';
     const title=document.createElement('strong');title.textContent=[job.designNumber,job.customer,job.jobTitle].filter(Boolean).join(' · ');bar.append(title);
-    if(job.hasPdf){const download=document.createElement('a');download.className='proof-secondary-button';download.textContent='Download PDF';download.href=`/api/proof-generator/designs/${encodeURIComponent(job.id)}/pdf?download=1`;bar.append(download);}
+    if(job.hasPdf){const download=document.createElement('a');download.className='proof-secondary-button';download.textContent='Download PDF';download.href=`/api/proof-generator/${historyEndpoint}/${encodeURIComponent(job.id)}/pdf?download=1`;bar.append(download);}
     const close=document.createElement('button');close.type='button';close.className='proof-secondary-button';close.textContent='Close preview';close.addEventListener('click',()=>dialog.close());bar.append(close);
     const viewer=document.createElement('div');viewer.className='proof-fullscreen-pages';viewer.innerHTML='<div class="workspace-loading" role="status" aria-label="Loading proof"><span class="board-loading-spinner" aria-hidden="true"></span></div>';dialog.append(bar,viewer);document.body.append(dialog);
     dialog.addEventListener('close',()=>{dialog.remove();previousFocus?.focus();});dialog.showModal();close.focus();
     try{
-      if(!job.hasPdf){const img=document.createElement('img');img.className='proof-history-large';img.src=`/api/proof-generator/designs/${encodeURIComponent(job.id)}/preview`;img.alt='Draft proof preview';viewer.replaceChildren(img);return;}
-      const response=await proofFetch(`/api/proof-generator/designs/${encodeURIComponent(job.id)}/pdf`,{cache:'no-store'});
+      if(!job.hasPdf){const img=document.createElement('img');img.className='proof-history-large';img.src=`/api/proof-generator/${historyEndpoint}/${encodeURIComponent(job.id)}/preview`;img.alt='Draft proof preview';viewer.replaceChildren(img);return;}
+      const response=await proofFetch(`/api/proof-generator/${historyEndpoint}/${encodeURIComponent(job.id)}/pdf`,{cache:'no-store'});
       if(!response.ok)throw new Error('Proof PDF is unavailable.');
       const encoded=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=reject;response.blob().then(blob=>reader.readAsDataURL(blob),reject);});
       if(!dialog.isConnected)return;viewer.replaceChildren();await renderDocument(encoded,viewer,[],{clickable:false});
     }catch(error){viewer.textContent=error.message;}
   }
   async function saveProofSource(){
-    if(localPreview)return;
+    if(standalonePreview)return;
     const form=new FormData();form.append('brief',JSON.stringify({proofSourceOrderId:selectedLinkJob?.source_order_id||null,request:request.value,instructions:instructions.value,customer:customer.value,jobTitle:jobTitle.value,brief:currentBrief}));
     form.append('artworkDetails',JSON.stringify(artworks.map(item=>({id:item.id,originalName:item.file.name,backgroundMode:item.backgroundMode,threadColours:item.threadColours,assignment:item.assignment,notes:item.notes}))));
     for(const item of artworks)form.append('artworks',item.file,item.file.name);
-    const response=await proofFetch(`/api/proof-generator/designs/${designId}/source`,{method:'POST',body:form});
+    const response=await proofFetch(`/api/proof-generator/${historyEndpoint}/${designId}/source`,{method:'POST',body:form});
     if(!response.ok){const data=await proofJson(response);throw new Error(data.error||'Could not retain proof source.');}
+    if(sandbox){design=(await proofJson(response)).design;currentBrief.testProofId=designId;currentBrief.reference='SANDBOX';}
   }
   async function openHistoryProof(job){
     if(busy)return;
     if(job.id===designId&&artworks.length){showProofEditor();return;}
-    startNewProof();selectedLinkJob=job.sourceOrderId?{source_order_id:job.sourceOrderId,order_no:job.linkedOrders?.find(order=>order.sourceOrderId===job.sourceOrderId)?.orderNo}:null;designId=job.id;design=job;try{sessionStorage.setItem('proof-design-id',designId);}catch(_){}
+    startNewProof();selectedLinkJob=job.sourceOrderId?{source_order_id:job.sourceOrderId,order_no:job.linkedOrders?.find(order=>order.sourceOrderId===job.sourceOrderId)?.orderNo}:null;designId=job.id;design=job;try{if(!localPreview)sessionStorage.setItem('proof-design-id',designId);}catch(_){}
     customer.value=job.customer||'';jobTitle.value=job.jobTitle||'';showProofEditor();showDesign();busy=true;setCreating(true);reviewButton.querySelector('[data-proof-button-label]').textContent='Loading proof…';
     try{
-      const response=await proofFetch(`/api/proof-generator/designs/${encodeURIComponent(job.id)}/source`,{cache:'no-store'});const data=await proofJson(response);
+      const response=await proofFetch(`/api/proof-generator/${historyEndpoint}/${encodeURIComponent(job.id)}/source`,{cache:'no-store'});const data=await proofJson(response);
       if(!response.ok)throw new Error(data.error||'Proof source is unavailable.');
       request.value=data.source.request||'';instructions.value=data.source.instructions||'';customer.value=data.source.customer||job.customer||'';jobTitle.value=data.source.jobTitle||job.jobTitle||'';
       for(const saved of data.artworks){
@@ -327,9 +336,9 @@
         const item={id:saved.id,file,assignment:saved.assignment||'',notes:saved.notes||'',backgroundMode:saved.backgroundMode||'auto',threadColours:saved.threadColours||[],url:file.type.startsWith('image/')?URL.createObjectURL(file):''};artworks.push(item);renderArtwork(item);
       }
       currentBrief=data.source.brief;currentPreview=null;dirty=true;
-      if(currentBrief){currentBrief.proofSourceOrderId=job.sourceOrderId||null;currentBrief.proofRevision=job.revision;currentBrief.proofDesignId=job.id;renderEditor();
+      if(currentBrief){if(sandbox){delete currentBrief.proofDesignId;delete currentBrief.proofSourceOrderId;delete currentBrief.proofRevision;currentBrief.testProofId=job.id;}else{currentBrief.proofSourceOrderId=job.sourceOrderId||null;currentBrief.proofRevision=job.revision;currentBrief.proofDesignId=job.id;}renderEditor();
         if(job.hasPreview){
-          const savedPreview=document.createElement('img');savedPreview.className='proof-history-large';savedPreview.alt='Previously saved proof';savedPreview.src=`/api/proof-generator/designs/${encodeURIComponent(job.id)}/preview?v=${encodeURIComponent(job.updatedAt||job.revision)}`;
+          const savedPreview=document.createElement('img');savedPreview.className='proof-history-large';savedPreview.alt='Previously saved proof';savedPreview.src=`/api/proof-generator/${historyEndpoint}/${encodeURIComponent(job.id)}/preview?v=${encodeURIComponent(job.updatedAt||job.revision)}`;
           results.append(savedPreview);
         }
       }
@@ -394,8 +403,8 @@
     showJobSelection();
     if(designId)editorToolbar.append(reviewButton);else formActions.prepend(reviewButton);
     reviewButton.querySelector('[data-proof-button-arrow]').hidden=busy||Boolean(designId);
-    newProof.hidden=!designId;retrySave.hidden=!designId||['saved','folder_ready'].includes(design?.status);
-    designStatus.textContent=design?.designNumber?`Design ${design.designNumber} · ${design.folderName||'Preparing folder'}${design.status==='saved'?' · Saved':design.status==='error'?' · Save needs attention':''}`:designId?'Waiting for ARTWORK-PC to allocate the design folder.':'';
+    newProof.hidden=!designId;retrySave.hidden=localPreview||!designId||['saved','folder_ready'].includes(design?.status);
+    designStatus.textContent=sandbox?'Sandbox preview — no design number or folder will be created.':design?.designNumber?`Design ${design.designNumber} · ${design.folderName||'Preparing folder'}${design.status==='saved'?' · Saved':design.status==='error'?' · Save needs attention':''}`:designId?'Waiting for ARTWORK-PC to allocate the design folder.':'';
     if(!busy)reviewButton.querySelector('[data-proof-button-label]').textContent=designId?'Regenerate proof':'Create proof';
   }
   async function designRequest(path,body){
@@ -417,7 +426,7 @@
   }
   async function reserveDesign(brief){
     if(localPreview)return;
-    if(!designId){designId=crypto.randomUUID();try{sessionStorage.setItem('proof-design-id',designId);}catch(_){}showDesign();}
+    if(!designId){designId=crypto.randomUUID();try{if(!localPreview)sessionStorage.setItem('proof-design-id',designId);}catch(_){}showDesign();}
     design=await designRequest('',{id:designId,customer:brief.customer,jobTitle:brief.jobTitle,...jobReservation()});
     if(design.status==='error')design=await designRequest(`/${designId}/retry`,{});
     await awaitDesign();
@@ -425,7 +434,7 @@
     brief.proofSourceOrderId=selectedLinkJob?.source_order_id||null;brief.proofDesignId=design.id;brief.reference=design.designNumber;brief.proofRevision=design.revision;
   }
   function startNewProof(){
-    if(busy)return;selectedLinkJob=null;design=null;designId=null;try{sessionStorage.removeItem('proof-design-id');}catch(_){}
+    if(busy)return;selectedLinkJob=null;design=null;designId=null;try{if(!localPreview)sessionStorage.removeItem('proof-design-id');}catch(_){}
     ++officeRequest;officeSearch.value='';officeStatus.textContent='';existingReference.replaceChildren();showJobSelection();
     request.value='';customer.value='';clearCustomerSearch();jobTitle.value='';instructions.value='';
     for(const art of artworks)if(art.url)URL.revokeObjectURL(art.url);artworks.length=0;artworksNode.replaceChildren();
@@ -731,7 +740,7 @@
       finally{busy=false;setCreating(false);}
     }
     busy = true; generatingProof = true; savedThisRun = false; setCreating(true);
-    if(!designId){designId=crypto.randomUUID();try{sessionStorage.setItem('proof-design-id',designId);}catch(_){} }
+    if(!designId){designId=crypto.randomUUID();try{if(!localPreview)sessionStorage.setItem('proof-design-id',designId);}catch(_){} }
     design={...design,id:designId,customer:customer.value,jobTitle:jobTitle.value,createdAt:design?.createdAt||new Date().toISOString(),generationStatus:'generating'};
     showProofList();
     setFeedback('Preparing the confirmed proof…');
@@ -747,7 +756,7 @@
       await reserveDesign(currentBrief);
       await updatePreview();
       await recordProgress(currentPreview?.issues.some(issue=>issue.blocking)?'review':'complete');
-      if(localPreview)design.status='saved';
+      if(localPreview){design.status='saved';if(sandbox){design.hasPdf=!currentPreview?.issues.some(issue=>issue.blocking);design.hasPreview=true;design.reference='SANDBOX';setFeedback('Test proof saved. Reopen it from Test proofs to regenerate.');}}
     } catch(error) {
       if(savedThisRun){
         design={...design,generationStatus:'complete',generationMessage:''};
@@ -774,6 +783,7 @@
 
   async function updatePreview(loadSaved = true,save = true) {
     if (!currentBrief) return;
+    if(sandbox&&save&&designId&&!generatingProof)await saveProofSource();
     if(loadSaved)await prepareMissingViews();
     if (!currentBrief) return;
     const snapshot = JSON.stringify(currentBrief);

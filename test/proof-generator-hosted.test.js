@@ -266,11 +266,68 @@ test('rendering a reviewed brief rechecks missing details before generating or s
 });
 
 
-test('Charlie can read history, open the renderer and generate proofs',async()=>{
+test('Charlie can open the sandbox renderer and generate test proofs',async()=>{
  const headers={'x-test-email':'charlie@ultimatepromotions.co.uk'};
  await serve(createRouter({status:async()=>({ready:true}),designs:{list:async()=>({designs:[],nextOffset:null})},enrich:async()=>{},build:async()=>({bytes:Buffer.from('%PDF-Charlie'),documents:[],pages:[],issues:[]})}),async url=>{
-   for(const endpoint of ['status','designs','renderer/pdf.mjs'])assert.equal((await fetch(`${url}/${endpoint}`,{headers})).status,200,endpoint);
+   for(const endpoint of ['status','renderer/pdf.mjs'])assert.equal((await fetch(`${url}/${endpoint}`,{headers})).status,200,endpoint);
    const form=new FormData();form.append('brief',JSON.stringify({products:[{code:'ONE'}]}));form.append('artworkDetails','[]');
    const response=await fetch(`${url}/create`,{method:'POST',headers,body:form});assert.equal(response.status,200);assert.equal(await response.text(),'%PDF-Charlie');
+ });
+});
+
+
+test('sandbox cannot reserve, save, read or change production designs and job links',async()=>{
+ const headers={'x-test-email':'charlie@ultimatepromotions.co.uk'};
+ let writes=0;const designs=new Proxy({}, {get:()=>async()=>{writes++;throw Error('Production store accessed');}});
+ await serve(createRouter({designs,enrich:async()=>{},generateViews:async()=>{},build:async brief=>{assert.equal(brief.reference,'SANDBOX');return {bytes:Buffer.from('%PDF-test'),pages:[],issues:[]};}}),async url=>{
+  for(const path of ['designs','designs/id','designs/id/source','designs/id/preview','designs/id/pdf','designs/id/progress','designs/id/retry','designs/id/link','designs/id/sync','link-jobs','link-jobs/1','link-jobs/1/edit','link-jobs/1/unlink','save']){
+   for(const method of ['GET','POST'])assert.equal((await fetch(`${url}/${path}`,{method,headers})).status,403,`${method} ${path}`);
+  }
+  for(const endpoint of ['preview','create'])for(const key of ['proofDesignId','proofSourceOrderId']){
+   const form=new FormData();form.append('brief',JSON.stringify({products:[{code:'ONE'}],[key]:'production-id'}));form.append('artworkDetails','[]');
+   assert.equal((await fetch(`${url}/${endpoint}`,{method:'POST',headers,body:form})).status,422);
+  }
+  const form=new FormData();form.append('brief',JSON.stringify({products:[{code:'ONE'}],reference:'29149'}));form.append('artworkDetails','[]');
+  const result=await fetch(`${url}/preview`,{method:'POST',headers,body:form});assert.equal(result.status,200);assert.equal((await result.json()).brief.reference,'SANDBOX');assert.equal(writes,0);
+ });
+});
+
+test('sandbox view tasks are private and do not take the production generation slot',async()=>{
+ let finish;const pending=new Promise(resolve=>finish=resolve);
+ const charlie={'x-test-email':'charlie@ultimatepromotions.co.uk','Content-Type':'application/json'};
+ await serve(createRouter({enrich:async()=>{},generateViews:async()=>pending,parse:async()=>({products:[{code:'ONE'}]})}),async url=>{
+  try{
+   const response=await fetch(`${url}/views`,{method:'POST',headers:charlie,body:JSON.stringify({brief:{products:[{code:'ONE'}]}})});assert.equal(response.status,202);const {jobId}=await response.json();
+   assert.equal((await fetch(`${url}/views/${jobId}`,{headers:production})).status,404);
+   assert.equal((await fetch(`${url}/views/${jobId}`,{headers:charlie})).status,200);
+   assert.equal((await fetch(`${url}/parse`,{method:'POST',headers:{...production,'Content-Type':'application/json'},body:JSON.stringify({request:'ONE navy shirt'})})).status,200);
+   assert.equal((await fetch(`${url}/views`,{method:'POST',headers:charlie,body:JSON.stringify({brief:{products:[{code:'ONE'}]}})})).status,429);
+  }finally{finish();}
+ });
+});
+
+test('test history retains sources and regeneration renders only into the test store',async()=>{
+ const id='12345678-1234-4234-8234-123456789abc';let retained,rendered,productionCalls=0;
+ const tests={list:async()=>({designs:[{id,testProof:true}],nextOffset:null}),get:async()=>({id}),source:async()=>retained,
+ saveSource:async(_id,owner,source,files,details)=>{retained={source,artworks:files,owner};return {id};},
+ setPreview:async(_id,bytes,brief,ready)=>{rendered={id:_id,brief,ready};},asset:async()=>Buffer.from('test-pdf')};
+ const designs=new Proxy({},{get(){return ()=>{productionCalls++;throw Error('Production store called');};}});
+ await serve(createRouter({tests,designs,enrich:async()=>{},generateViews:async()=>{},build:async()=>({bytes:Buffer.from('pdf'),pages:[],issues:[]})}),async url=>{
+  const charlie={'x-test-email':'charlie@ultimatepromotions.co.uk'};
+  for(const headers of [charlie,production]){
+   assert.equal((await fetch(`${url}/tests`,{headers})).status,200);
+  }
+  for(const headers of [{},{'x-test-email':'office@ultimatepromotions.co.uk'},{...charlie,'x-test-scope':'dtf_only'}])assert.ok([401,403].includes((await fetch(`${url}/tests`,{headers})).status));
+  const source=new FormData();source.append('brief',JSON.stringify({request:'Test shirt',brief:{products:[{code:'RX350'}]}}));source.append('artworkDetails','[]');
+  assert.equal((await fetch(`${url}/tests/${id}/source`,{method:'POST',headers:charlie,body:source})).status,200);
+  assert.equal(retained.source.brief.reference,'SANDBOX');assert.equal(retained.source.brief.testProofId,id);
+  assert.equal((await fetch(`${url}/tests/${id}/source`,{headers:production})).status,200);
+  for(const [headers,query] of [[charlie,''],[production,'?test=1']]){
+   const form=new FormData();form.append('brief',JSON.stringify(retained.source.brief));form.append('artworkDetails','[]');
+   assert.equal((await fetch(`${url}/preview${query}`,{headers,method:'POST',body:form})).status,200);
+   assert.equal(rendered.brief.reference,'SANDBOX');assert.equal(rendered.id,id);
+  }
+  assert.equal((await fetch(`${url}/designs?test=1`,{headers:production})).status,403);
+  assert.equal(productionCalls,0);
  });
 });

@@ -20,7 +20,8 @@ for (const [email, scope, allowed] of [
   test(`proof access agrees across server and browser for ${email || 'anonymous'} / ${scope}`, async () => {
     const user = email ? { email, access_scope: scope } : null;
     assert.equal(isProofGeneratorUser(user), allowed);
-    assert.equal(isProduction(user), allowed);
+    const productionAllowed=allowed && email.trim().toLowerCase()==='production@ultimatepromotions.co.uk';
+    assert.equal(isProduction(user), productionAllowed);
     const tabs = ['proof-generator', 'digitising-studio', 'dtf-uploader'].map(tab => ({dataset:{tab,available:'true'}}));
     const context = {
       window:{location:{assign(){}}},
@@ -36,11 +37,20 @@ for (const [email, scope, allowed] of [
       assert.equal(tabs[2].hidden, !production);
     }
     vm.runInNewContext(read('proof-links.js'), context);
-    assert.equal(context.window.ProofLinks.allowed(), allowed);
+    assert.equal(context.window.ProofLinks.allowed(), productionAllowed);
     // Exercise the real editor initialization gate, stopping before its UI setup.
     const editor = read('proof-generator.js').split('  // Retry only reads:')[0] + '\nwindow.started = true;})();';
-    const editorContext = {window:{ProofDisplay:{},ultimateHubUserPromise:Promise.resolve(user)},document:{getElementById:()=>({}),body:{classList:{contains:()=>false}}}};
+    const editorContext = {URLSearchParams,location:{search:''},window:{ProofDisplay:{},ultimateHubUserPromise:Promise.resolve(user)},document:{getElementById:()=>({}),body:{classList:{contains:()=>false}}}};
     await vm.runInNewContext(editor, editorContext);
     assert.equal(!!editorContext.window.started, allowed);
   });
 }
+
+for(const email of ['production@ultimatepromotions.co.uk','charlie@ultimatepromotions.co.uk','office@ultimatepromotions.co.uk'])test(`dashboard tab activation enforces separate proof and digitising access for ${email}`,()=>{
+  const script=read('script.js'),activation=script.slice(script.indexOf('function activateDashboardTab(target)'),script.indexOf('window.activateDashboardTab = activateDashboardTab;'));
+  let selected;
+  const context={window:{ultimateHubUser:{email,access_scope:'full'}},document:{getElementById:()=>({}),querySelectorAll:()=>[]},isProductionArtworkUser:u=>u.email==='production@ultimatepromotions.co.uk',isValidDashboardTab:()=>true,setStoredDashboardTab:value=>selected=value,loadTestBoard(){},closeTestDashboardMobileJobOverview(){},closeMobileNav(){}};
+  vm.createContext(context);vm.runInContext(activation,context);
+  context.activateDashboardTab('proof-generator');assert.equal(selected,email.startsWith('office@')?'test-dashboard':'proof-generator');
+  context.activateDashboardTab('digitising-studio');assert.equal(selected,email.startsWith('production@')?'digitising-studio':'test-dashboard');
+});

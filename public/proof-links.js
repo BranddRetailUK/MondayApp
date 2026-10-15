@@ -1,6 +1,6 @@
 /* Shared authorised proof/job actions. Ordinary visual viewing stays unchanged. */
 (() => {
-  const allowed=()=>window.ultimateHubUser?.access_scope!=='dtf_only' && ['production@ultimatepromotions.co.uk','charlie@ultimatepromotions.co.uk'].includes(String(window.ultimateHubUser?.email||'').trim().toLowerCase());
+  const allowed=()=>window.ultimateHubUser?.access_scope!=='dtf_only' && String(window.ultimateHubUser?.email||'').trim().toLowerCase()==='production@ultimatepromotions.co.uk';
   async function api(path,body){
     const response=await fetch('/api/proof-generator'+path,{cache:'no-store',...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})});
     const data=await response.json();if(!response.ok)throw new Error(data.error||'Proof action failed.');return data;

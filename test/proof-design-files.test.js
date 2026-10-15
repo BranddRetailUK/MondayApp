@@ -309,3 +309,28 @@ test('embroidery originals and thread palette survive proof source reopening',as
   await assert.rejects(()=>service.saveSource(id,source,files,[{...details[0],threadColours:['red']}]),/thread colours/);
  }finally{await db.close();}
 });
+
+test('test proofs survive reopening and regeneration without entering the worker queue or allocating numbers',async()=>{
+ const db=new PGlite();
+ try{
+  await ensureProofGeneratorTables(db);
+  const factory=require('../src/services/proofTestJobs').createService;
+  const tests=factory(db),id=randomUUID();
+  const source={request:'Supplied shirt with logo',instructions:'',customer:'Charlie test',jobTitle:'Sandbox shirt',brief:{reference:'SANDBOX',testProofId:id,products:[{decorations:[{placement:{x:.4,y:.3},widthMm:280}]}]}};
+  const files=[{originalname:'logo.png',mimetype:'image/png',buffer:Buffer.from('original')}],details=[{id:'logo',backgroundMode:'keep',threadColours:['#ffffff']}];
+  await tests.saveSource(id,'charlie@ultimatepromotions.co.uk',source,files,details);
+  const reopened=factory(db),saved=await reopened.source(id);
+  assert.deepEqual(saved.source,source);assert.equal(saved.artworks[0].data,Buffer.from('original').toString('base64'));
+  const pdf=await pdfBytes('SANDBOX');await reopened.setPreview(id,pdf,source.brief,true);
+  assert.equal((await reopened.get(id)).hasPdf,true);assert.deepEqual(Buffer.from(await reopened.asset(id,'pdf')),pdf);
+  source.brief.products[0].decorations[0].widthMm=200;
+  await reopened.saveSource(id,'production@ultimatepromotions.co.uk',source,files,details);
+  await reopened.setPreview(id,pdf,source.brief,true);
+  const history=await reopened.list();assert.equal(history.designs.length,1);assert.equal(history.designs[0].revision,2);
+  assert.equal(history.designs[0].createdBy,'charlie@ultimatepromotions.co.uk');assert.equal(history.designs[0].reference,'SANDBOX');assert.equal(history.designs[0].designNumber,undefined);
+  assert.equal((await reopened.source(id)).source.brief.products[0].decorations[0].widthMm,200);
+  assert.equal((await db.query('SELECT COUNT(*) AS count FROM proof_design_jobs')).rows[0].count,0);
+  const worker=createService({query:db.query.bind(db),connect:async()=>({query:db.query.bind(db),release(){}})});
+  assert.equal(await worker.claim('ARTWORK-PC'),null);
+ }finally{await db.close();}
+});

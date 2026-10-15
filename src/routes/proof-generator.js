@@ -13,15 +13,19 @@ const {createService:designService,UUID}=require('../services/proofDesignJobs');
 
 const { prepareBrief, recoverProductCodes, repairRetainedDimensions } = require('../services/proofLayout');
 
-const { isProofGeneratorUser } = require('../services/proofAccess');
+const { isProofGeneratorUser, isProofSandboxUser, prepareSandboxBrief } = require('../services/proofAccess');
 
-function createRouter({ requireProduction = true, parse = parseProofBrief, enrich = enrichProofProducts, build = buildProof, status = proofRuntimeStatus, generateViews = ensureGeneratedViews, searchProducts = searchProofProducts, convertEps = require('../services/digitisingEps').rasterize, designs } = {}) {
+function createRouter({ requireProduction = true, parse = parseProofBrief, enrich = enrichProofProducts, build = buildProof, status = proofRuntimeStatus, generateViews = ensureGeneratedViews, searchProducts = searchProofProducts, convertEps = require('../services/digitisingEps').rasterize, designs, tests } = {}) {
   const router = express.Router();
   const designJobs=()=>designs || (designs=designService(require('../db/pool')));
+  const testJobs=()=>tests || (tests=require('../services/proofTestJobs').createService(require('../db/pool')));
+  const sandboxFor=req=>isProofSandboxUser(req.hubUser)||req.query.test==='1';
+  const sandboxBrief=(req,brief)=>prepareSandboxBrief(sandboxFor(req)?{email:'charlie@ultimatepromotions.co.uk'}:req.hubUser,brief);
   const links=()=>require('../services/proofJobLinks').createService(require('../db/pool'));
   const upload = multer({ storage: multer.memoryStorage(), limits: { files: 40, fields: 2, parts: 42, fileSize: 10 * 1024 * 1024, fieldSize: 100 * 1024 } });
-  let active = false;
-  const uploadLanes={source:false,eps:false};
+  const lanes={production:{active:false,source:false,eps:false},sandbox:{active:false,source:false,eps:false}};
+  const laneFor=req=>lanes[sandboxFor(req)?'sandbox':'production'];
+  const ownerFor=req=>String(req.hubUser?.email||'local-preview').trim().toLowerCase();
   const viewJobs = new Map();
   const allowed = (req, res) => {
     if (requireProduction && !isProofGeneratorUser(req.hubUser)) {
@@ -30,6 +34,14 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
     }
     return true;
   };
+  // Enforce sandbox isolation before uploads, service calls or worker writes.
+  router.use((req,res,next)=>{
+    if(!sandboxFor(req))return next();
+    if(/^\/tests(?:\/|$)/.test(req.path))return next();
+    const permitted=req.method==='GET'?/^\/(?:status|products|renderer\/(?:pdf\.mjs|pdf\.worker\.mjs)|views\/[^/]+)$/.test(req.path):req.method==='POST'&&['/parse','/preflight','/views','/preview','/create','/artwork/eps-preview'].includes(req.path);
+    if(!permitted)return res.status(403).set('Cache-Control','no-store').json({error:'Sandbox mode does not access production history, design folders or job links.'});
+    next();
+  });
   router.get('/link-jobs',async(req,res)=>{
     if(!allowed(req,res))return;res.set('Cache-Control','no-store');
     try{res.json({jobs:await (req.query.office==='1'?links().officeJobs(req.query.q):links().jobs(req.query.q))});}catch(error){res.status(400).json({error:error.message});}
@@ -107,12 +119,39 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
   const exclusive = (handler,lane='proof') => async (req, res, next) => {
     if (!allowed(req, res)) return;
     res.set('Cache-Control', 'no-store');
-    if (lane==='proof'?active:uploadLanes[lane]) return res.set('Retry-After', '5').status(429).json({ error: 'Another proof is being prepared. Please try again shortly.' });
-    if(lane==='proof')active=true;else uploadLanes[lane]=true;
+    const state=laneFor(req);
+    if (lane==='proof'?state.active:state[lane]) return res.set('Retry-After', '5').status(429).json({ error: 'Another proof is being prepared. Please try again shortly.' });
+    if(lane==='proof')state.active=true;else state[lane]=true;
     try { await handler(req, res); }
     catch (error) { next(error); }
-    finally { if(lane==='proof')active=false;else uploadLanes[lane]=false; }
+    finally { if(lane==='proof')state.active=false;else state[lane]=false; }
   };
+  router.get('/tests',async(req,res)=>{
+    if(!allowed(req,res))return;res.set('Cache-Control','no-store');
+    if(!/^\d{1,7}$/.test(String(req.query.offset||'0')))return res.status(400).json({error:'Invalid history page.'});
+    try{res.json(await testJobs().list(Number(req.query.offset||0)));}catch(error){res.status(503).json({error:'Could not load test proofs.'});}
+  });
+  router.get('/tests/:id/:asset',async(req,res)=>{
+    if(!allowed(req,res))return;res.set('Cache-Control','no-store');
+    try{
+      const {id,asset}=req.params;
+      if(asset==='source')return res.json(await testJobs().source(id));
+      if(!['pdf','preview'].includes(asset))return res.sendStatus(404);
+      const bytes=await testJobs().asset(id,asset);if(!bytes)return res.sendStatus(404);
+      if(asset==='pdf')res.set('Content-Disposition',require('content-disposition')('SANDBOX - Test proof.pdf',{type:req.query.download==='1'?'attachment':'inline'}));
+      return res.type(asset==='pdf'?'pdf':'png').send(bytes);
+    }catch(error){res.status(404).json({error:'Test proof unavailable.'});}
+  });
+  router.post('/tests/:id/source',exclusive(async(req,res)=>{
+    await new Promise((resolve,reject)=>upload.array('artworks',20)(req,res,error=>error?reject(error):resolve()));
+    try{
+      const source=JSON.parse(req.body.brief||'{}');
+      if(source.proofSourceOrderId)throw new Error('Test proofs cannot link to jobs.');
+      source.brief=prepareSandboxBrief({email:'charlie@ultimatepromotions.co.uk'},source.brief||{});
+      source.brief.testProofId=req.params.id;
+      res.json({design:await testJobs().saveSource(req.params.id,ownerFor(req),source,req.files||[],JSON.parse(req.body.artworkDetails||'[]'))});
+    }catch(error){res.status(400).json({error:error.message});}
+  },'source'));
   router.post('/designs/:id/source',exclusive(async(req,res)=>{
     await new Promise((resolve,reject)=>upload.array('artworks',20)(req,res,error=>error?reject(error):resolve()));
     try{await designJobs().saveSource(req.params.id,JSON.parse(req.body.brief||'{}'),req.files||[],JSON.parse(req.body.artworkDetails||'[]'));return res.json({ok:true});}
@@ -155,13 +194,15 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
   router.post('/views', (req, res) => {
     if (!allowed(req, res)) return;
     res.set('Cache-Control', 'no-store');
-    if (active) return res.set('Retry-After','5').status(429).json({error:'Another proof is being prepared. Please try again shortly.'});
+    const state=laneFor(req);
+    if (state.active) return res.set('Retry-After','5').status(429).json({error:'Another proof is being prepared. Please try again shortly.'});
     const brief = req.body?.brief;
     if (!Array.isArray(brief?.products) || !brief.products.length || brief.products.length > 20) return res.status(400).json({error:'A proof needs 1-20 products.'});
+    try{sandboxBrief(req,brief);}catch(error){return res.status(403).json({error:error.message});}
     for(const [id,job] of viewJobs)if(Date.now()-job.createdAt>30*60*1000)viewJobs.delete(id);
     if(viewJobs.size>=100)return res.status(429).json({error:'Please try again later.'});
-    const jobId=randomUUID();const job={state:'running',message:'Loading garment references…',completed:0,total:0,createdAt:Date.now()};
-    viewJobs.set(jobId,job);active=true;
+    const jobId=randomUUID();const job={owner:ownerFor(req),state:'running',message:'Loading garment references…',completed:0,total:0,createdAt:Date.now()};
+    viewJobs.set(jobId,job);state.active=true;
     res.status(202).json({jobId});
     Promise.resolve().then(async()=>{
       await enrich(brief);
@@ -169,19 +210,19 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       await generateViews(brief,{allowGenerate:true,onProgress:progress=>Object.assign(job,progress)});
       job.brief=brief;job.state='complete';
     }).catch(error=>{job.state='failed';job.error=error.message;console.error('Proof garment views failed:',error.message);})
-      .finally(()=>{active=false;});
+      .finally(()=>{state.active=false;});
   });
   router.get('/views/:jobId', (req,res)=>{
     if(!allowed(req,res))return;
     res.set('Cache-Control','no-store');
     const job=viewJobs.get(req.params.jobId);
-    if(!job)return res.status(404).json({error:'The garment-view task is no longer available. Create the proof again.'});
+    if(!job||job.owner!==ownerFor(req))return res.status(404).json({error:'The garment-view task is no longer available. Create the proof again.'});
     return res.json(job);
   });
   router.post('/preflight', exclusive(async(req,res)=>{
     try{
       await new Promise((resolve,reject)=>upload.array('artworks',20)(req,res,error=>error?reject(error):resolve()));
-      const brief=JSON.parse(req.body.brief||'{}'),details=JSON.parse(req.body.artworkDetails||'[]');
+      const brief=sandboxBrief(req,JSON.parse(req.body.brief||'{}')),details=JSON.parse(req.body.artworkDetails||'[]');
       if(!Array.isArray(brief.products)||!brief.products.length||brief.products.length>20)throw Error('A proof needs 1-20 products.');
       if(!Array.isArray(details)||details.length!==req.files.length)throw Error('Artwork details do not match uploaded files.');
       if(req.files.reduce((n,f)=>n+f.size,0)>50*1024*1024)throw Error('Artwork uploads exceed 50 MB.');
@@ -220,7 +261,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
           }
         }
       }
-      const brief = await parse(req.body, {artworkImages});
+      const brief = sandboxBrief(req,await parse(req.body, {artworkImages}));
       if(String(req.body.customer||'').trim())brief.customer=String(req.body.customer).trim().slice(0,200);
       if(String(req.body.jobTitle||'').trim())brief.jobTitle=String(req.body.jobTitle).trim().slice(0,200);
       recoverProductCodes(brief, req.body);
@@ -239,12 +280,14 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
     const originals=req.files?.originalArtworks;
     req.files=req.files?.artworks||[];
     try {
-      const brief = JSON.parse(req.body.brief || '{}');
+      const brief = sandboxBrief(req,JSON.parse(req.body.brief || '{}'));
+      if(brief.testProofId&&!sandboxFor(req))throw new Error('Open Test proofs to regenerate this proof.');
       const details = JSON.parse(req.body.artworkDetails || '[]');
       if (!Array.isArray(brief?.products) || !brief.products.length || brief.products.length > 20) {
         return res.status(400).json({ error: 'A proof needs 1-20 products.' });
       }
       let design;
+      if(brief.testProofId)await testJobs().get(brief.testProofId);
       if(brief.proofDesignId){design=await designJobs().get(brief.proofDesignId);if(String(design.sourceOrderId||'')!==String(brief.proofSourceOrderId||''))throw new Error('The linked job changed. Reopen this proof from the job.');if(!design.designNumber||!design.folderName)throw new Error('The design folder is still being prepared.');brief.reference=design.designNumber;}
       if(req.path==='/save'&&!design)throw new Error('Reserve a design folder before saving.');
       if (!Array.isArray(details) || details.length !== (req.files || []).length) {
@@ -286,6 +329,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       if(productIndex!==undefined && (typeof productIndex!=='string'||!/^\d+$/.test(productIndex)||Number(productIndex)>=brief.products.length))return res.status(400).json({error:'Choose a valid product PDF.'});
       const { bytes, documents = [], pages, issues } = await build(brief, artworks, { strict: req.path !== '/preview', ...(design&&designJobs().garmentLoader?{garmentLoader:await designJobs().garmentLoader(design.id)}:{}) });
       if(req.path==='/save')return res.json({design:await designJobs().queueSave(design.id,brief.proofSaveKey,brief.proofRevision,bytes,brief,originals||req.files)});
+      if(brief.testProofId&&req.path==='/preview')await testJobs().setPreview(brief.testProofId,bytes,brief,!issues.some(issue=>issue.blocking));
       if(design&&req.path==='/preview')await designJobs().setPreview(design.id,bytes,brief,!issues.some(issue=>issue.blocking));
       if (req.path === '/preview') return res.json({ pdf: bytes.toString('base64'), fileName:proofFileName(brief), documents:documents.map(({bytes,...metadata})=>metadata), pages, issues, brief });
       const selected=productIndex===undefined?null:documents.find(document=>document.productIndex===Number(productIndex));

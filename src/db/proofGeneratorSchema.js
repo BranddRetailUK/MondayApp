@@ -43,5 +43,14 @@ async function ensureProofGeneratorTables(pool) {
   await pool.query('ALTER TABLE proof_job_links ADD COLUMN IF NOT EXISTS created_position_id INTEGER, ADD COLUMN IF NOT EXISTS order_no INTEGER');
   await pool.query('CREATE INDEX IF NOT EXISTS proof_job_links_proof_idx ON proof_job_links(proof_id)');
   await pool.query('CREATE INDEX IF NOT EXISTS proof_design_jobs_history_idx ON proof_design_jobs(created_at DESC,id DESC)');
+  // Deliberately separate from the workstation queue and numeric design sequence.
+  await pool.query(`CREATE TABLE IF NOT EXISTS proof_test_jobs (
+    id UUID PRIMARY KEY, created_by TEXT NOT NULL, source JSONB NOT NULL,
+    source_artworks JSONB NOT NULL DEFAULT '[]'::jsonb,
+    proof_pdf BYTEA, preview_png BYTEA, ready BOOLEAN NOT NULL DEFAULT false,
+    revision INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+  await pool.query('CREATE INDEX IF NOT EXISTS proof_test_jobs_history_idx ON proof_test_jobs(created_at DESC,id DESC)');
 }
 module.exports = { ensureProofGeneratorTables };
