@@ -36,8 +36,8 @@
     <div class="proof-page">
       <header class="proof-page-header">
         <div>
-          <div class="proof-eyebrow">${sandbox?'TEST PROOFS':'PRODUCTION'}</div>
-          <h1>Proof Generator${sandbox?' — Sandbox':''}</h1>
+          <div class="proof-eyebrow">${sandbox&&!charlie?'TEST PROOFS':'PRODUCTION'}</div>
+          <h1>Proof Generator${sandbox&&!charlie?' — Sandbox':''}</h1>
 
         </div>
         <div id="proof-list-controls" class="proof-list-controls">
@@ -50,7 +50,6 @@
           <button id="proof-create-new" class="proof-primary-button" type="button">Create proof</button>
         </div>
       </header>
-      ${sandbox?'<p class="proof-sandbox-notice" role="note">Sandbox: no design numbers, folders or job changes. Test proofs are saved separately and can be reopened and regenerated from Test proofs. AI generation still uses the live service.</p>':''}
       <section id="proof-history">
         <div id="proof-history-status" role="status"></div>
         <div id="proof-history-list" class="proof-history-list"></div>
@@ -227,7 +226,7 @@
     if(job.generationStatus==='interrupted')return ['Interrupted','Generation stopped before saving. Reopen the proof to continue.'];
     if(job.generationStatus==='generating')return ['Pending',job.generationMessage];
     if(job.status==='saved'&&job.linkPending)return ['Sync pending','The saved proof still needs to be added to Dashboard.'];
-    if(job.status==='saved')return [sandbox?'Test ready':'Saved',''];
+    if(job.status==='saved')return ['Saved',''];
     if(job.status==='save_queued'||job.status==='saving')return ['Saving',job.message];
     return ['Pending',job.message];
   }
@@ -404,7 +403,7 @@
     if(designId)editorToolbar.append(reviewButton);else formActions.prepend(reviewButton);
     reviewButton.querySelector('[data-proof-button-arrow]').hidden=busy||Boolean(designId);
     newProof.hidden=!designId;retrySave.hidden=localPreview||!designId||['saved','folder_ready'].includes(design?.status);
-    designStatus.textContent=sandbox?'Sandbox preview — no design number or folder will be created.':design?.designNumber?`Design ${design.designNumber} · ${design.folderName||'Preparing folder'}${design.status==='saved'?' · Saved':design.status==='error'?' · Save needs attention':''}`:designId?'Waiting for ARTWORK-PC to allocate the design folder.':'';
+    designStatus.textContent=sandbox?'':design?.designNumber?`Design ${design.designNumber} · ${design.folderName||'Preparing folder'}${design.status==='saved'?' · Saved':design.status==='error'?' · Save needs attention':''}`:designId?'Waiting for ARTWORK-PC to allocate the design folder.':'';
     if(!busy)reviewButton.querySelector('[data-proof-button-label]').textContent=designId?'Regenerate proof':'Create proof';
   }
   async function designRequest(path,body){
@@ -756,7 +755,7 @@
       await reserveDesign(currentBrief);
       await updatePreview();
       await recordProgress(currentPreview?.issues.some(issue=>issue.blocking)?'review':'complete');
-      if(localPreview){design.status='saved';if(sandbox){design.hasPdf=!currentPreview?.issues.some(issue=>issue.blocking);design.hasPreview=true;design.reference='SANDBOX';setFeedback('Test proof saved. Reopen it from Test proofs to regenerate.');}}
+      if(localPreview){design.status='saved';if(sandbox){design.hasPdf=!currentPreview?.issues.some(issue=>issue.blocking);design.hasPreview=true;design.reference='SANDBOX';setFeedback('Proof saved.');}}
     } catch(error) {
       if(savedThisRun){
         design={...design,generationStatus:'complete',generationMessage:''};

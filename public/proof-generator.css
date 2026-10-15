@@ -253,5 +253,3 @@ body.proof-preview .proof-preview-badge{display:block}
 
 .proof-history-info .proof-history-created-time{color:inherit;font:inherit}
 .proof-history-list.is-grid .proof-history-created-time{display:none}
-
-.proof-sandbox-notice{padding:12px 16px;border:1px solid #94cafa;border-radius:8px;color:#cbe6ff;background:#172837;line-height:1.5}
