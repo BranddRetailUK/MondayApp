@@ -243,8 +243,12 @@
       }else if(localPreview&&job.id===designId&&currentPreview?.pdf){renderDocument(currentPreview.pdf,thumb,[],{onlyPage:1,clickable:false});}
       else{thumb.textContent=job.status==='saved'?'Preview unavailable':'Preview pending';}
       const info=document.createElement('div');info.className='proof-history-info';
-      for(const [label,value] of [['Customer',job.customer],['Title',job.jobTitle],['Ref',job.designNumber||job.reference],['Date created',job.createdAt?new Date(job.createdAt).toLocaleString('en-GB',{timeZone:'Europe/London',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—']]){
+      for(const [label,value] of [['Customer',job.customer],['Title',job.jobTitle],['Ref',job.designNumber||job.reference],['Date created',job.createdAt?new Date(job.createdAt).toLocaleDateString('en-GB',{timeZone:'Europe/London',day:'2-digit',month:'2-digit',year:'numeric'}):'—']]){
         const field=document.createElement('div'),name=document.createElement('span'),valueNode=document.createElement('strong');name.textContent=label;valueNode.textContent=value||'—';
+        if(label==='Date created'&&job.createdAt){
+          const time=document.createElement('span');time.className='proof-history-created-time';
+          time.textContent=', '+new Date(job.createdAt).toLocaleTimeString('en-GB',{timeZone:'Europe/London',hour:'2-digit',minute:'2-digit'});valueNode.append(time);
+        }
         if(label==='Ref'&&/^[1-9]\d{0,9}$/.test(String(value||''))){
           const link=document.createElement('button');link.type='button';link.className='design-folder-link';link.textContent=value;
           link.title=`Open design folder ${value} on the Windows design computer`;link.addEventListener('click',event=>window.openDesignFolder(value,event));valueNode.replaceChildren(link);
