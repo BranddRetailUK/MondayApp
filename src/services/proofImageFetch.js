@@ -2,6 +2,11 @@ const {isPencarrieCatalogueImage}=require('./proofPencarrieCatalogue');
 const { isRalawiseImageUrl } = require('./proofRalawiseVisuals');
 
 async function fetchGarment(url, source, fetchImpl = fetch) {
+  if (String(url).startsWith('proof-headwear:')) {
+    const template=await require('./proofHeadwearViews').readTemplate(url);
+    if(!template)throw new Error('The headwear template is unavailable. Prepare the garment view again.');
+    return template.bytes;
+  }
   if (/^proof-generated:[a-f0-9]{64}$/.test(url)) {
     const cached = await require('./proofGeneratedViews').readCachedView(url.slice(16));
     if (!cached) throw new Error('The generated garment view has expired. Create the proof again.');

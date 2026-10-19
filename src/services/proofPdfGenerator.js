@@ -225,6 +225,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
       if (source) {
         try {
           garment = {...await loadGarment(source, product.visual?.source), view};
+          garment.headwearTemplate=await require('./proofHeadwearViews').templateGeometry(product,source,garment.sourceHash);
           let referenceGarment;
           const frontSource=views.find(v=>v.view==='front'&&!v.generated);
           if(['left','right'].includes(view)&&frontSource){
@@ -233,7 +234,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
           }
           garmentColour ||= garment.colour;
           Object.assign(garment, automaticGarmentProfile(product, garment, view, referenceGarment));
-        } catch(error) { issue(productIndex,null,error.message,true); }
+        } catch(error) { garment=null;issue(productIndex,null,error.message,true); }
       } else if (!supplierUnavailable && !missingCode && !catalogueIssue) issue(productIndex,null,`No verified ${view} view for ${product.code || product.name}. The supplier catalogue needs a matching garment view before this position can be shown.`,true);
       if (!product.visual?.matched && !supplierUnavailable && !missingCode && !catalogueIssue) issue(productIndex,null,'The requested garment colour has not been verified.',true);
       let calibration = product.calibrations?.[view] || {};
@@ -242,7 +243,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
         calibration = {};
       }
       const pageData = {productIndex,pdfPageIndex:productIndex,view,sourceHash:garment?.sourceHash || '',width:garment?.width || 400,height:garment?.height || 500,
-        image:garment ? `data:image/png;base64,${garment.bytes.toString('base64')}` : '',generatedView:Boolean(source?.generated),calibration,scaleSource:garment?.scaleSource,flatChestWidthMm:garment?.estimatedTorsoMm,landmarks:garment?.landmarks,placements:[]};
+        image:garment ? `data:image/png;base64,${garment.bytes.toString('base64')}` : '',generatedView:Boolean(source?.generated),calibration,scaleSource:garment?.scaleSource,flatChestWidthMm:garment?.estimatedTorsoMm,flatHeadwearWidthMm:garment?.estimatedFlatWidthMm,landmarks:garment?.landmarks,placements:[]};
       const cellWidth=774/groups.size, cellX=34+viewIndex*cellWidth;
       const garmentBox = garment ? drawAsset(page,garment,cellX+8,148,cellWidth-16,decorations.length>3?288:300) : null;
       drawText(page,`${view.toUpperCase()} VIEW`,cellX+8,104,10,bold,NAVY,cellWidth-16);
@@ -285,7 +286,8 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
           // Both region-anchored and explicit placements keep exactly the same size.
           if (!fitsRegion(p)) issue(productIndex,d.id,`${d.position}: artwork exceeds the printable region. Adjust its placement, region or calibration; its size has been preserved.`,true);
           if (garment.confident && coverage(garment,p) < .96) issue(productIndex,d.id,`${d.position}: artwork crosses the detected garment edge.`,true);
-          if (!p.calibrated && garment.scaleSource !== 'flat-chest-measurement') issue(productIndex,d.id,'Estimated garment scale. Supply a flat chest measurement or measured image calibration for a physical reference.');
+          if (!p.calibrated && garment.headwear) issue(productIndex,d.id,garment.headwearTemplate?.builtin?'Artwork scale uses the accepted B45 proof reference.':'Headwear scale uses an indicative 200 mm flat width; no supplier measurement is available.');
+          if (!p.calibrated && !garment.headwear && garment.scaleSource !== 'flat-chest-measurement') issue(productIndex,d.id,'Estimated garment scale. Supply a flat chest measurement or measured image calibration for a physical reference.');
           if (!p.size.confirmed) issue(productIndex,d.id,'Size to confirm: an 80 mm estimated width is used only for the preview.');
           const retained=product.decorations?.find(item=>item.id===d.id);
           if(retained){
@@ -319,6 +321,8 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
       const {lines,size}=fittedLines(details,bold,774,8);
       lines.forEach((text,i)=>drawText(page,text,34,98+i*9,size,bold,NAVY,774));
     }
+    const headwearPages=pages.filter(p=>p.productIndex===productIndex && p.flatHeadwearWidthMm);
+    if(headwearPages.length && !product.referenceOnly)drawText(page,headwearPages.every(p=>p.placements.every(mark=>mark.calibrated))?'Headwear artwork scale uses the supplied image calibration.':headwearPages.every(p=>p.scaleSource==='accepted-headwear-reference')?'Artwork scale follows the accepted B45 proof reference. Thread shades are indicative.':'Headwear mockup assumes a 200 mm flat width. Garment scale and thread shades are indicative.',34,584,7,regular,GREY,774);
     if(brief.productionNotes)drawText(page,brief.productionNotes,34,574,7,regular,GREY,774);
     if(product.referenceOnly)drawText(page,'Garment image is a placement reference; exact style not confirmed. Scale and position are indicative.',34,584,7,regular,GREY,774);
 

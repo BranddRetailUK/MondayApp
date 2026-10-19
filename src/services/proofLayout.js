@@ -2,7 +2,7 @@
 // visible garment bounds, not the supplier photograph's surrounding canvas.
 const { automaticTop, garmentSizeProfile } = require('./proofPlacementProfiles');
 const POSITIONS = ['left breast', 'right breast', 'front', 'back', 'upper back', 'nape', 'left sleeve', 'right sleeve', 'left hem', 'right hem'];
-const ALIASES = { lb: 'left breast', rb: 'right breast', ls: 'left sleeve', rs: 'right sleeve', 'left chest': 'left breast', 'right chest': 'right breast', chest: 'front', 'centre chest': 'front', 'center chest': 'front', 'full chest': 'front', 'front chest': 'front', 'centre front': 'front', 'center front': 'front', 'full front': 'front', 'centre back': 'back', 'center back': 'back', 'full back': 'back', rear: 'back', 'back neck': 'nape' };
+const ALIASES = { 'front cuff':'front', 'front turn-up':'front', 'front turn up':'front', 'cuff':'front', 'turn up':'front', 'turn-up':'front', lb: 'left breast', rb: 'right breast', ls: 'left sleeve', rs: 'right sleeve', 'left chest': 'left breast', 'right chest': 'right breast', chest: 'front', 'centre chest': 'front', 'center chest': 'front', 'full chest': 'front', 'front chest': 'front', 'centre front': 'front', 'center front': 'front', 'full front': 'front', 'centre back': 'back', 'center back': 'back', 'full back': 'back', rear: 'back', 'back neck': 'nape' };
 function normalise(value) { return String(value || '').toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim(); }
 function positionName(value) { const text = normalise(value); return ALIASES[text] || text; }
 function dimension(value, { signed = false } = {}) {
@@ -225,7 +225,9 @@ function artworkSize(d, aspect) {
 function placementFor(d, asset, garment, calibration = {}) {
   const position = positionName(d.position);
   const custom = calibration.regions?.[position];
-  let region = custom || regionFor(position, garment.view);
+  if(garment.headwear && !garment.headwearRegion && !(custom && calibration.referenceMm))throw new Error('Headwear requires a reviewed front template or a measured custom decoration region. Regenerate to prepare the garment view.');
+  if(garment.headwearRegion && (position!=='front' || garment.view!=='front'))throw new Error('This headwear template supports front decoration only.');
+  let region = custom || garment.headwearRegion || regionFor(position, garment.view);
   // Automatic body prints use the detected torso's safe width, not a box
   // proportional to the sleeve-inclusive photograph. Never change custom/manual regions.
   if(garment.torsoRegion && !custom && !d.placement && !calibration.referenceMm && (!d.anchor || d.anchor==='region') && !Number(d.offsetXmm) && !Number(d.offsetYmm) && ['front','back','upper back'].includes(position))region={...region,...garment.torsoRegion};
@@ -262,7 +264,7 @@ function placementFor(d, asset, garment, calibration = {}) {
   let x = explicit ? d.placement.x : region.x;
   let y = explicit ? d.placement.y : region.y;
   if (!explicit && !custom && (!d.anchor || d.anchor === 'region')) {
-    y = automaticTop(position, garment.view, height, garment.placementProfile) ?? y;
+    y = garment.headwearRegion ? region.y-height/2 : automaticTop(position, garment.view, height, garment.placementProfile) ?? y;
     if(/breast/.test(position)){
       const edge=calibration.neckRight || garment.landmarks?.neckRight;
       const right=edge?.x ?? garment.placementProfile?.neckRight;

@@ -205,7 +205,9 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
     viewJobs.set(jobId,job);state.active=true;
     res.status(202).json({jobId});
     Promise.resolve().then(async()=>{
+      const preparedHeadwear=structuredClone(brief.products);
       await enrich(brief);
+      await require('../services/proofHeadwearViews').restorePreparedHeadwearViews(brief,preparedHeadwear);
       if(brief.preflightVersion===1){const check=require('../services/proofPreflight').assess(brief,brief.preflightAssets||[],brief.preflightRequest);if(!check.ready)throw Error(check.issues.map(i=>i.message).join(' '));}
       await generateViews(brief,{allowGenerate:true,onProgress:progress=>Object.assign(job,progress)});
       job.brief=brief;job.state='complete';
@@ -313,11 +315,13 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       const retained=design&&designJobs().source?await designJobs().source(design.id):null;
       const savedProducts=retained?.source?.brief?.products||[];
       repairRetainedDimensions(brief,retained?.source);
+      const preparedHeadwear=structuredClone(brief.products);
       await enrich(brief);
       for(const product of brief.products){
         const saved=savedProducts.find(item=>item.code===product.code&&item.colour===product.colour&&item.supplier===product.supplier&&(product.instanceId?item.instanceId===product.instanceId:item.name===product.name));
         if(saved?.visual?.matched)product.visual=saved.visual;
       }
+      await require('../services/proofHeadwearViews').restorePreparedHeadwearViews(brief,preparedHeadwear);
       if(brief.preflightVersion===1&&req.path!=='/placement-preview'){
         const {assess,inspect}=require('../services/proofPreflight');
         const assets=await Promise.all(req.files.map((file,i)=>inspect(file,details[i]).catch(error=>({...details[i],error:error.message}))));

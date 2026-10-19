@@ -9,6 +9,7 @@ async function ensureProofGeneratorTables(pool) {
     image_png BYTEA NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`);
+  await pool.query('ALTER TABLE proof_generated_garment_views ADD COLUMN IF NOT EXISTS headwear_geometry JSONB');
   await pool.query(`CREATE TABLE IF NOT EXISTS proof_design_jobs (
     id UUID PRIMARY KEY, customer TEXT NOT NULL DEFAULT '', job_title TEXT NOT NULL DEFAULT '',
     design_number BIGINT UNIQUE, folder_name TEXT, status TEXT NOT NULL DEFAULT 'awaiting_folder',

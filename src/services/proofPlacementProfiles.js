@@ -27,6 +27,8 @@ function garmentSizeProfile(product = {}) {
 }
 
 function placementProfile(product = {}) {
+  const headwear = require('./proofHeadwear').headwearKind(product);
+  if(headwear)return {family:'headwear',kind:headwear};
   const code = String(product.code || '').trim().toUpperCase();
   const name = `${product.name || ''} ${product.requestedName || ''} ${product.visual?.name || ''}`.toLowerCase();
   const outer = /jacket|coat|padded|softshell|parka|bodywarmer|gilet/.test(name);

@@ -178,6 +178,11 @@ function fitSleeve(garment,p) {
 
 function automaticGarmentProfile(product, garment, view, referenceGarment) {
   const profile=placementProfile(product);
+  if(profile.family==='headwear'){
+    const template=garment.headwearTemplate;
+    const pxPerMm=garment.width/(template?.flatWidthMm || 200);
+    return {placementProfile:profile,headwear:true,headwearRegion:template?.region,estimatedPxPerMm:pxPerMm,unrefinedPxPerMm:pxPerMm,referencePxPerMm:pxPerMm,legacyPxPerMm:pxPerMm,scaleSource:template?.builtin?'accepted-headwear-reference':'estimated-headwear-width',estimatedFlatWidthMm:template?.flatWidthMm || 200,landmarks:{}};
+  }
   const hood=['hoodie','hoodedOuterwear'].includes(profile.family), outer=['outerwear','hoodedOuterwear'].includes(profile.family);
   const sizing=garmentSizeProfile(product);
   // Representative flat body widths, not supplier-confirmed measurements.
