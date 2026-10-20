@@ -18,7 +18,6 @@ const ENDPOINTS = {
   testFiles: (itemId) => `/api/test-dashboard/items/${encodeURIComponent(itemId)}/files`
 };
 const DASHBOARD_TAB_STORAGE_KEY = 'ultimateHub.activeDashboardTab';
-const SIDEBAR_COLLAPSED_STORAGE_KEY = 'ultimateHub.sidebarCollapsed';
 const MOBILE_NAV_MEDIA = '(max-width: 720px), (max-width: 960px) and (max-height: 520px)';
 const PROOF_PDF_ZOOM_MIN = 0.5;
 const PROOF_PDF_ZOOM_MAX = 3;
@@ -143,7 +142,7 @@ let __proofModalState = {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-  ensureSidebarToggle();
+  ensureSidebarNavigation();
   initDashboardPinchZoom();
   Promise.resolve(window.ultimateHubUserPromise).then((user) => {
     refreshPackingControlVisibility();
@@ -155,39 +154,24 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 window.loadTestBoard = loadTestBoard;
 
-function ensureSidebarToggle() {
+function ensureSidebarNavigation() {
   const app = document.querySelector('.app-container');
-  const button = document.getElementById('sidebarToggle');
   const mobileButton = document.getElementById('mobileNavToggle');
   const backdrop = document.getElementById('mobileNavBackdrop');
-  if (!app || !button) return;
+  if (!app) return;
 
   const mobileQuery = window.matchMedia(MOBILE_NAV_MEDIA);
   const syncViewportMode = () => {
     setMobileNavOpen(false);
     if (mobileQuery.matches) {
-      app.classList.remove('sidebar-collapsed');
-      button.textContent = '×';
-      button.setAttribute('aria-expanded', 'false');
-      button.setAttribute('aria-label', 'Close navigation');
       return;
     }
 
     closeTestDashboardMobileJobOverview();
-    const collapsed = localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === '1';
     applyDashboardZoom(1);
-    setSidebarCollapsed(collapsed, { persist: false });
   };
 
   syncViewportMode();
-  button.addEventListener('click', () => {
-    if (isMobileNavLayout()) {
-      setMobileNavOpen(false);
-      return;
-    }
-    setSidebarCollapsed(!app.classList.contains('sidebar-collapsed'));
-  });
-
   mobileButton?.addEventListener('click', () => {
     setMobileNavOpen(!app.classList.contains('mobile-nav-open'));
   });
@@ -207,23 +191,9 @@ function ensureSidebarToggle() {
   }
 }
 
-function setSidebarCollapsed(collapsed, { persist = true } = {}) {
-  const app = document.querySelector('.app-container');
-  const button = document.getElementById('sidebarToggle');
-  if (!app || !button) return;
-  app.classList.toggle('sidebar-collapsed', collapsed);
-  button.textContent = collapsed ? '›' : '‹';
-  button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-  button.setAttribute('aria-label', collapsed ? 'Show navigation' : 'Hide navigation');
-  if (persist) {
-    localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, collapsed ? '1' : '0');
-  }
-}
-
 function setMobileNavOpen(open) {
   const app = document.querySelector('.app-container');
   const mobileButton = document.getElementById('mobileNavToggle');
-  const sidebarButton = document.getElementById('sidebarToggle');
   const sidebar = document.getElementById('appSidebar');
   const backdrop = document.getElementById('mobileNavBackdrop');
   if (!app) return;
@@ -235,11 +205,6 @@ function setMobileNavOpen(open) {
   if (mobileButton) {
     mobileButton.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
     mobileButton.setAttribute('aria-label', shouldOpen ? 'Close navigation' : 'Open navigation');
-  }
-  if (sidebarButton && mobileLayout) {
-    sidebarButton.textContent = '×';
-    sidebarButton.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
-    sidebarButton.setAttribute('aria-label', 'Close navigation');
   }
   if (sidebar) {
     if (mobileLayout) {
