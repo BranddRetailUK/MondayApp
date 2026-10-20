@@ -696,6 +696,9 @@
     document.addEventListener('keydown', handleOrderAckKeydown);
     window.addEventListener('scroll', handleDatabasePageScroll, { passive: true });
     window.addEventListener('resize', handleDatabaseViewportResize);
+    if (typeof ResizeObserver !== 'undefined' && els.databaseTab) {
+      new ResizeObserver(fitDatabaseShellToViewport).observe(els.databaseTab);
+    }
     window.addEventListener('pagehide', () => flushOrderAutosaves({ keepalive: true }));
     window.addEventListener('beforeunload', () => flushOrderAutosaves({ keepalive: true }));
     document.querySelectorAll('.nav-tabs li').forEach((tab) => {
