@@ -9838,3 +9838,13 @@ input.db-custom-line-input{
   #db-order-proof-panel > .db-order-proof-grid-shell,
   #db-order-files-panel > .db-order-proof-grid-shell{flex:1 1 auto;height:auto;min-height:0;overflow:auto;}
 }
+
+/* One desktop DATABASE shell; long pages scroll without moving navigation. */
+@media (min-width:961px), (min-width:721px) and (min-height:521px){
+  #tab-database.db-legacy-tab,
+  #tab-database.db-legacy-tab.db-tall-view-active{padding-top:0;align-items:center;}
+  #db-legacy-app.db-legacy-app{height:840px;min-height:840px;}
+  #db-legacy-app .db-legacy-stage{height:660px;}
+  #db-legacy-app .db-view{max-height:658px;}
+  #db-legacy-app .db-view.active{overflow-y:auto;}
+}

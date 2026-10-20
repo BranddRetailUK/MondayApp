@@ -1039,3 +1039,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Desktop order Visuals is bounded to the same 524px panel height as the other order tabs. Its toolbar retains its size and extra attachments scroll inside the remaining grid area, replacing the former 620px-plus grid that overflowed the order container. Mobile layout remains responsive.
 
 - Desktop order Files now shares the bounded 524px Visuals panel, retaining toolbar sizing and scrolling extra attachments internally. Desktop left navigation is permanently expanded: its collapse arrow, collapse styles and stored-state handling are removed. The separate mobile navigation drawer retains its menu button, backdrop and keyboard dismissal.
+
+- All desktop DATABASE pages now share the order/customer outer shell dimensions (840px app, 660px stage) and the same vertical alignment, including Home, lists, create forms, Styles, Users, DTF administration, Reports and the Visuals gallery. Active views are bounded to the stage interior and scroll when their existing content exceeds it. Internal control, table, chart and card layouts are retained; responsive mobile rules remain unchanged.
