@@ -9842,9 +9842,18 @@ input.db-custom-line-input{
 /* One desktop DATABASE shell; long pages scroll without moving navigation. */
 @media (min-width:961px), (min-width:721px) and (min-height:521px){
   #tab-database.db-legacy-tab,
-  #tab-database.db-legacy-tab.db-tall-view-active{padding-top:0;align-items:center;}
+  #tab-database.db-legacy-tab.db-tall-view-active{padding-top:0;align-items:safe center;}
   #db-legacy-app.db-legacy-app{height:840px;min-height:840px;}
   #db-legacy-app .db-legacy-stage{height:660px;}
-  #db-legacy-app .db-view{max-height:658px;}
-  #db-legacy-app .db-view.active{overflow-y:auto;}
+  #tab-database.db-legacy-tab{margin:-16px -22px;}
+  #db-outstanding-view.active{display:flex;flex-direction:column;height:658px;min-height:0;}
+  #db-outstanding-view .db-outstanding-table-frame{flex:1 1 auto;height:auto;min-height:0;}
+  #db-outstanding-view .db-outstanding-controls{flex:0 0 58px;}
+  #db-visuals-view{display:none;height:658px;}
+  #db-visuals-view.active{display:flex;flex-direction:column;}
+  #db-visuals-view .db-visuals-scroll{flex:1 1 auto;height:auto;min-height:0;}
+
 }
+
+/* Prevent browser scroll anchoring from moving the tab strip on content swaps. */
+#tab-database{overflow-anchor:none;}

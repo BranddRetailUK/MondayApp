@@ -366,3 +366,20 @@ test('empty Files routes fall back to visible Visuals and populated Files routes
   assert.equal(state.activeOrderTab, 'files');
   assert.equal(tabs[4].hidden, false);
 });
+
+
+test('desktop database fits available width and clears scaling for mobile layouts', () => {
+  const style = { removeProperty(key) { delete this[key]; } };
+  let mobile = false;
+  const els = { root: { style }, databaseTab: { clientWidth: 784 } };
+  const context = vm.createContext({ els, isDatabaseTopLevelActive: () => true, isDatabaseMobileLayout: () => mobile });
+  vm.runInContext(section('  function fitDatabaseShellToViewport()', '  function handleDatabaseViewportResize()'), context);
+  context.fitDatabaseShellToViewport();
+  assert.equal(Number(style.zoom), 760 / 1203);
+  els.databaseTab.clientWidth = 1600;
+  context.fitDatabaseShellToViewport();
+  assert.equal(style.zoom, '1');
+  mobile = true;
+  context.fitDatabaseShellToViewport();
+  assert.equal(style.zoom, undefined);
+});

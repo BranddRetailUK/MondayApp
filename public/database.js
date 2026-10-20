@@ -797,7 +797,18 @@
     if (state.activeView === 'visuals') handleDatabaseVisualsScroll();
   }
 
+  function fitDatabaseShellToViewport() {
+    if (!els.root || !els.databaseTab || !isDatabaseTopLevelActive()) return;
+    if (isDatabaseMobileLayout()) {
+      els.root.style.removeProperty('zoom');
+      return;
+    }
+    const available = Math.max(1, els.databaseTab.clientWidth - 24);
+    els.root.style.zoom = String(Math.min(1, available / 1203));
+  }
+
   function handleDatabaseViewportResize() {
+    fitDatabaseShellToViewport();
     fitDatabaseDocumentPreviewToViewport();
     if (databaseProofResizeFrame) window.cancelAnimationFrame(databaseProofResizeFrame);
     databaseProofResizeFrame = window.requestAnimationFrame(() => {
@@ -13650,6 +13661,7 @@
       tab.classList.toggle('active', active);
     });
     syncOrderItemsExpansion();
+    fitDatabaseShellToViewport();
     if (name === 'reports' && previousView !== name && els.databaseTab) {
       els.databaseTab.scrollTop = 0;
     }

@@ -1041,3 +1041,10 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Desktop order Files now shares the bounded 524px Visuals panel, retaining toolbar sizing and scrolling extra attachments internally. Desktop left navigation is permanently expanded: its collapse arrow, collapse styles and stored-state handling are removed. The separate mobile navigation drawer retains its menu button, backdrop and keyboard dismissal.
 
 - All desktop DATABASE pages now share the order/customer outer shell dimensions (840px app, 660px stage) and the same vertical alignment, including Home, lists, create forms, Styles, Users, DTF administration, Reports and the Visuals gallery. Active views are bounded to the stage interior and scroll when their existing content exceeds it. Internal control, table, chart and card layouts are retained; responsive mobile rules remain unchanged.
+
+
+### DATABASE smaller screens and scroll ownership (2026-10-20)
+
+- Desktop/tablet DATABASE scales its unchanged 1203px shell down to the available section width, never above its original size; viewport changes and page navigation recalculate the fit. Phone/short-landscape layouts clear scaling and retain their existing responsive cards/forms. Desktop section margins now match the actual main-content padding, avoiding page-level horizontal overflow, and safe centering avoids clipping the top on short screens.
+- The blanket active-view scroll container introduced above is removed: customer tabs and other pages keep their existing scroll areas without an additional enclosing scrollbar. The Visuals gallery uses its existing grid scroller within the shared stage height. Open/All Orders use the full stage height, with the existing list scroller expanding down to the fixed footer controls.
+- DATABASE disables browser scroll anchoring so changing panel content does not shift the tab strip. No additional page scroll areas are introduced.
