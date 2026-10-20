@@ -350,3 +350,19 @@ test('order loading uses the shared circle in every tab and errors replace every
     assert.doesNotMatch(els[name].innerHTML, /board-loading-spinner/);
   }
 });
+
+
+test('empty Files routes fall back to visible Visuals and populated Files routes remain available', () => {
+  const tabs = ['details', 'items', 'design', 'proof', 'files'].map(key => ({ dataset: { dbOrderTab: key }, hidden: false, classList: { toggle() {} } }));
+  const state = { selectedJob: { source_order_id: 51356 }, selectedFiles: [] };
+  const context = vm.createContext({ state, els: { orderTabs: tabs }, normalizeDatabaseOrderTab: tab => tab, syncOrderItemsExpansion() {}, persistDatabaseRoute() {} });
+  vm.runInContext(section('  function showOrderTab(', '  function renderDetailsPanel('), context);
+  context.showOrderTab('files');
+  assert.equal(state.activeOrderTab, 'proof');
+  assert.equal(tabs[4].hidden, true);
+  assert.equal(tabs[3].hidden, false);
+  state.selectedFiles = [{ id: 1 }];
+  context.showOrderTab('files');
+  assert.equal(state.activeOrderTab, 'files');
+  assert.equal(tabs[4].hidden, false);
+});

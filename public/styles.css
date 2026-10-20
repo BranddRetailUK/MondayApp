@@ -9879,7 +9879,12 @@ input.db-custom-line-input{
 .db-upload-progress{display:grid;gap:3px;min-width:170px;order:-1;font:12px Arial,Helvetica,sans-serif;color:#263746;}
 .db-upload-progress:empty{display:none;}
 .db-upload-progress progress{width:100%;height:8px;accent-color:#1671a3;}
-.db-section-loading{display:grid;place-items:center;width:100%;min-height:220px;}
+.db-section-loading,.app-section-loading{display:grid;place-items:center;width:100%;min-height:220px;}
 .db-order-panel > .db-section-loading{min-height:clamp(360px,calc(100dvh - 350px),760px);}
-.db-section-loading.is-compact{min-height:40px;}
-.db-section-loading.is-compact .board-loading-spinner{width:22px;height:22px;border-width:3px;}
+.db-section-loading.is-compact,.app-section-loading.is-compact{min-height:40px;}
+.db-section-loading.is-compact .board-loading-spinner,.app-section-loading.is-compact .board-loading-spinner{width:22px;height:22px;border-width:3px;}
+
+/* Keep the available order tabs evenly spaced with subtle blue separators. */
+@media(min-width:761px){.db-order-tabs:has([data-db-order-tab="files"][hidden]){grid-template-columns:repeat(4,minmax(0,1fr));}}
+.db-order-tab[hidden]{display:none;}
+.db-order-tab + .db-order-tab{border-left:2px solid #9ccce5;}

@@ -1019,3 +1019,11 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Uploads warn when filenames match attachments already loaded in either tab or repeat within the selected batch (case-insensitive, trimmed Unicode-normalized names). Confirm uploads all selected files; Cancel skips matching names and uploads only new names. This is a filename warning, not content deduplication.
 - Both attachment tabs show actual transfer progress per file followed by a Saving phase while metadata is registered. Progress and completion stay scoped to the starting order and attachment tab across navigation; failed transfers show an error. No attachment-count badges are added.
 - DATABASE order details, list tables, customer sections, reports, catalogue previews and attachment viewers use the existing Dashboard loading circle centred in the loading section instead of visible loading text. Smaller incremental loads use a compact circle; errors remain readable and clear the loading state in every order tab.
+
+
+### Shared application loading circles (2026-10-20)
+
+- Remaining visible loading messages in Holiday Board, Digitising Studio file history, DTF administration, proof/job selection, Proof Generator and the standalone database job page now use the Dashboard circle centred within their loading area. Initial DATABASE HTML placeholders also use circles, preventing a text flash before JavaScript initializes. Compact picker indicators retain accessible loading labels; success, empty and error states replace the spinner normally.
+- Loading changes are presentation-only. Upload/generation progress details and errors remain readable; digitising algorithms and accepted stitch baselines are unchanged.
+
+- Order-info hides the Files tab when the loaded order has no FILES attachments, including after deleting its last file. Visuals always remains available; restoring a Files-tab route for an empty order falls back to Visuals. The remaining tabs share the row equally and have light blue separators. First attachments can still be added through Dashboard FILES.

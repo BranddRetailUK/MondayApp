@@ -161,7 +161,7 @@
   }
   async function loadOfficeJobs(){
     if(localPreview||designId)return;
-    const token=++officeRequest;officeStatus.textContent='Loading OFFICE jobs…';
+    const token=++officeRequest;officeStatus.innerHTML='<span class="app-section-loading is-compact" role="status" aria-label="Loading OFFICE jobs"><span class="board-loading-spinner" aria-hidden="true"></span></span>';
     try{
       const data=await window.ProofLinks.api(`/link-jobs?office=1&q=${encodeURIComponent(officeSearch.value)}`);
       if(token!==officeRequest||designId)return;
@@ -320,7 +320,7 @@
     if(busy)return;
     if(job.id===designId&&artworks.length&&currentPreview){design=job;showProofEditor();showDesign();setCreating(false);return;}
     startNewProof();selectedLinkJob=job.sourceOrderId?{source_order_id:job.sourceOrderId,order_no:job.linkedOrders?.find(order=>order.sourceOrderId===job.sourceOrderId)?.orderNo}:null;designId=job.id;design=job;try{if(!localPreview)sessionStorage.setItem('proof-design-id',designId);}catch(_){}
-    customer.value=job.customer||'';jobTitle.value=job.jobTitle||'';showProofEditor();showDesign();busy=true;setCreating(true);reviewButton.querySelector('[data-proof-button-label]').textContent='Loading proof…';
+    customer.value=job.customer||'';jobTitle.value=job.jobTitle||'';showProofEditor();showDesign();busy=true;setCreating(true);reviewButton.querySelector('[data-proof-button-label]').textContent='';setFeedback('Loading proof…');
     try{
       const response=await proofFetch(`/api/proof-generator/${historyEndpoint}/${encodeURIComponent(job.id)}/source`,{cache:'no-store'});const data=await proofJson(response);
       if(!response.ok)throw new Error(data.error||'Proof source is unavailable.');
@@ -654,8 +654,10 @@
   }
 
   function setFeedback(message, error = false) {
-    feedback.textContent = message;
-    feedback.hidden=Boolean(designId)&&!error;
+    const loading = !error && /^Loading\b/.test(message);
+    if (loading) feedback.innerHTML = '<span class="app-section-loading" role="status" aria-label="Loading proof"><span class="board-loading-spinner" aria-hidden="true"></span></span>';
+    else feedback.textContent = message;
+    feedback.hidden=Boolean(designId)&&!error&&!loading;
     feedback.classList.toggle('error', error);
     progressMessage=message;progressError=error;if(!historyScreen.hidden)renderHistory();
   }

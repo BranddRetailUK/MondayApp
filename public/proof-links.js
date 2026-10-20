@@ -19,7 +19,7 @@
       const more=button('Load more',()=>load(true));more.hidden=true;dialog.insertBefore(more,close);
       dialog.addEventListener('close',()=>{clearTimeout(timer);request++;dialog.remove();resolve(chosen);});
       async function load(append=false){
-        const token=++request;if(!append){offset=0;list.replaceChildren();}status.textContent='Loading…';more.hidden=true;
+        const token=++request;if(!append){offset=0;list.replaceChildren();}status.innerHTML='<span class="app-section-loading" role="status" aria-label="Loading choices"><span class="board-loading-spinner" aria-hidden="true"></span></span>';more.hidden=true;
         try{
           const data=await api(kind==='jobs'?`/link-jobs?q=${encodeURIComponent(search.value)}`:`/designs?q=${encodeURIComponent(search.value)}&offset=${offset}`);
           if(token!==request)return;const rows=kind==='jobs'?data.jobs:data.designs.filter(row=>row.status==='saved'&&row.hasPdf);

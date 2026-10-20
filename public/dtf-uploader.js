@@ -933,7 +933,7 @@
     if (reset) {
       adminState.offset = 0;
       adminState.jobs = [];
-      els.adminBody.innerHTML = '<tr><td colspan="10" class="db-empty-cell">Loading DTF jobs</td></tr>';
+      els.adminBody.innerHTML = '<tr><td colspan="10" class="db-empty-cell"><span class="app-section-loading" role="status" aria-label="Loading DTF jobs"><span class="board-loading-spinner" aria-hidden="true"></span></span></td></tr>';
     }
     try {
       const query = new URLSearchParams({ limit: '50', offset: String(adminState.offset) });

@@ -21,7 +21,7 @@
   async function loadHistory(reset=false){
     if(historyLoading)return;historyLoading=true;$('more').disabled=true;$('retry').hidden=true;
     if(reset){historyOffset=0;$('grid').replaceChildren();}
-    $('history-status').textContent='Loading previous files…';
+    $('history-status').innerHTML='<span class="app-section-loading" role="status" aria-label="Loading previous files"><span class="board-loading-spinner" aria-hidden="true"></span></span>';
     try{
       const response=await fetch('/api/digitising-studio/jobs?offset='+historyOffset);
       const data=await response.json();if(!response.ok)throw Error(data.error||'Unable to load previous files.');

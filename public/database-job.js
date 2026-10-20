@@ -116,7 +116,8 @@
   }
 
   function setStatus(els, message) {
-    els.status.textContent = message || '';
+    if (/^Loading\b/.test(message)) els.status.innerHTML = '<span class="app-section-loading" role="status" aria-label="Loading job"><span class="board-loading-spinner" aria-hidden="true"></span></span>';
+    else els.status.textContent = message || '';
   }
 
   function showError(els, message) {

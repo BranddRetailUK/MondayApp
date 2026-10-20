@@ -2252,10 +2252,12 @@
     if (!els.visualModalJob) return;
     const visual = state.activeVisual;
     if (options.loading || state.visualOpenJobsLoading) {
-      els.visualModalJob.innerHTML = '<option value="">Loading open jobs…</option>';
+      els.visualModalJob.innerHTML = '<option value=""></option>';
+      if (els.visualModalFeedback) els.visualModalFeedback.innerHTML = renderDatabaseLoading('Loading open jobs', true);
       els.visualModalJob.disabled = true;
       return;
     }
+    if (els.visualModalFeedback?.querySelector('.db-section-loading')) els.visualModalFeedback.textContent = '';
     if (options.error) {
       els.visualModalJob.innerHTML = '<option value="">Open jobs unavailable</option>';
       els.visualModalJob.disabled = true;
@@ -7648,7 +7650,9 @@
 
   function showOrderTab(tab, options = {}) {
     state.activeOrderTab = normalizeDatabaseOrderTab(tab);
+    if (state.selectedJob && state.activeOrderTab === 'files' && !state.selectedFiles?.length) state.activeOrderTab = 'proof';
     els.orderTabs.forEach((button) => {
+      button.hidden = button.dataset.dbOrderTab === 'files' && !state.selectedFiles?.length;
       button.classList.toggle('active', button.dataset.dbOrderTab === state.activeOrderTab);
     });
     [
@@ -8125,6 +8129,10 @@
   function renderFilesPanel() {
     if (!els.filesPanel) return;
     const files = state.selectedFiles || [];
+    for (const button of els.orderTabs || []) {
+      button.hidden = button.dataset.dbOrderTab === 'files' && !files.length;
+    }
+    if (!files.length && state.activeOrderTab === 'files') showOrderTab('proof');
     const upload = databaseProofUploadForJob(`files:${state.selectedJob?.source_order_id}`);
     els.filesPanel.innerHTML = `
       <div class="db-proof-upload-row">

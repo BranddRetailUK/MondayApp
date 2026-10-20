@@ -20,7 +20,7 @@
   async function load() {
     if (loading) return;
     loading = true;
-    if (!root.innerHTML) root.innerHTML = '<p role="status">Loading Holiday Board…</p>';
+    if (!root.innerHTML) root.innerHTML = '<span class="app-section-loading" role="status" aria-label="Loading Holiday Board"><span class="board-loading-spinner" aria-hidden="true"></span></span>';
     try { data = await api(`?year=${year}`); render(); }
     catch (e) { root.innerHTML = `<p role="alert">${esc(e.message)}</p><button id="hb-retry">Try again</button>`; root.querySelector('button').onclick = load; }
     finally { loading = false; }
