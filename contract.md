@@ -1035,3 +1035,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - All order-info tabs retain the existing Order Items outer shell height (840px app / 660px stage on desktop), preventing vertical recentering when switching tabs. Other tab contents retain their existing layout and control sizes; responsive shell overrides remain in effect.
 
 - Customer-detail pages now retain the same expanded desktop shell as order-info pages, with a consistent 524px customer panel across Orders, Contacts, Addresses, Quotations and Design Numbers. Existing inner layouts and responsive overrides remain intact. DATABASE reserves symmetrical scrollbar gutters so tall Visuals content cannot shift the centred shell horizontally when a scrollbar appears.
+
+- Desktop order Visuals is bounded to the same 524px panel height as the other order tabs. Its toolbar retains its size and extra attachments scroll inside the remaining grid area, replacing the former 620px-plus grid that overflowed the order container. Mobile layout remains responsive.

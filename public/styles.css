@@ -9896,3 +9896,10 @@ input.db-custom-line-input{
 .db-main-tab.active,
 .db-customer-tab.active,
 .db-order-tab.active{background:#c7e7f7;border-bottom-color:#c7e7f7;}
+
+/* Fit order visuals inside the same desktop panel as the other order tabs. */
+@media (min-width:961px), (min-width:721px) and (min-height:521px){
+  #db-order-proof-panel.active{display:flex;flex-direction:column;height:524px;min-height:524px;}
+  #db-order-proof-panel > .db-proof-upload-row{flex:0 0 auto;}
+  #db-order-proof-panel > .db-order-proof-grid-shell{flex:1 1 auto;height:auto;min-height:0;overflow:auto;}
+}
