@@ -9887,4 +9887,6 @@ input.db-custom-line-input{
 /* Keep the available order tabs evenly spaced with subtle blue separators. */
 @media(min-width:761px){.db-order-tabs:has([data-db-order-tab="files"][hidden]){grid-template-columns:repeat(4,minmax(0,1fr));}}
 .db-order-tab[hidden]{display:none;}
-.db-order-tab + .db-order-tab{border-left:2px solid #9ccce5;}
+.db-order-tab + .db-order-tab,
+.db-main-tab + .db-main-tab,
+.db-customer-tab + .db-customer-tab{border-left:2px solid #9ccce5;}
