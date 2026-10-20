@@ -15,7 +15,7 @@ const { prepareBrief, recoverProductCodes, repairRetainedDimensions } = require(
 
 const { isProofGeneratorUser, isProofSandboxUser, prepareSandboxBrief } = require('../services/proofAccess');
 
-function createRouter({ requireProduction = true, parse = parseProofBrief, enrich = enrichProofProducts, build = buildProof, status = proofRuntimeStatus, generateViews = ensureGeneratedViews, searchProducts = searchProofProducts, convertEps = require('../services/digitisingEps').rasterize, designs, tests } = {}) {
+function createRouter({ requireProduction = true, parse = parseProofBrief, enrich = enrichProofProducts, build = buildProof, status = proofRuntimeStatus, generateViews = ensureGeneratedViews, searchProducts = searchProofProducts, convertEps = require('../services/digitisingEps').rasterize, designs, tests, promotions } = {}) {
   const router = express.Router();
   const designJobs=()=>designs || (designs=designService(require('../db/pool')));
   const testJobs=()=>tests || (tests=require('../services/proofTestJobs').createService(require('../db/pool')));
@@ -24,7 +24,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
   const links=()=>require('../services/proofJobLinks').createService(require('../db/pool'));
   const upload = multer({ storage: multer.memoryStorage(), limits: { files: 40, fields: 2, parts: 42, fileSize: 10 * 1024 * 1024, fieldSize: 100 * 1024 } });
   const lanes={production:{active:false,source:false,eps:false},sandbox:{active:false,source:false,eps:false}};
-  const laneFor=req=>lanes[sandboxFor(req)?'sandbox':'production'];
+  const laneFor=req=>lanes[/^\/tests\/[^/]+\/promote$/.test(req.path)?'production':sandboxFor(req)?'sandbox':'production'];
   const ownerFor=req=>String(req.hubUser?.email||'local-preview').trim().toLowerCase();
   const viewJobs = new Map();
   const allowed = (req, res) => {
@@ -108,7 +108,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
   });
   router.post('/designs/:id/sync',async(req,res)=>{
     if(!allowed(req,res))return;
-    try{await links().sync(req.params.id);res.json({design:await designJobs().get(req.params.id)});}catch(error){res.status(409).json({error:error.message});}
+    try{await links().sync(req.params.id);await require('../services/proofPromotion').complete(require('../db/pool'),req.params.id);res.json({design:await designJobs().get(req.params.id)});}catch(error){res.status(409).json({error:error.message});}
   });
   router.post('/designs/:id/retry',async(req,res)=>{
     if(!allowed(req,res))return;res.set('Cache-Control','no-store');
@@ -126,6 +126,15 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
     catch (error) { next(error); }
     finally { if(lane==='proof')state.active=false;else state[lane]=false; }
   };
+  // The only explicit sandbox-to-live write: uses server-retained source and a durable mapping.
+  router.post('/tests/:id/promote',exclusive(async(req,res)=>{
+    try{
+      if(req.is('multipart/form-data'))await new Promise((resolve,reject)=>upload.array('artworks',20)(req,res,error=>error?reject(error):resolve()));
+      const service=promotions || require('../services/proofPromotion').createService(require('../db/pool'),{enrich,build,generateViews});
+      const result=await service.promote(req.params.id,req.files||[],req.body?.updatedAt);
+      return res.status(result.complete?200:202).json(result);
+    }catch(error){return res.status(422).json({error:error.message||'Could not add this proof to live.'});}
+  }));
   router.get('/tests',async(req,res)=>{
     if(!allowed(req,res))return;res.set('Cache-Control','no-store');
     if(!/^\d{1,7}$/.test(String(req.query.offset||'0')))return res.status(400).json({error:'Invalid history page.'});

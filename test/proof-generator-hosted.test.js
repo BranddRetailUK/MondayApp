@@ -391,3 +391,18 @@ test('supported proof layout and separate personalisation retain their parsed de
   });
   assert.deepEqual(result, brief);
 });
+
+test('ADD TO LIVE is an explicit scoped action for proof users while other sandbox live access stays denied',async()=>{
+ let calls=0;const id='12345678-1234-4234-8234-123456789abc';
+ await serve(createRouter({promotions:{promote:async(testId,files,updated)=>{calls++;assert.equal(testId,id);return {design:{id:'live',status:'awaiting_folder'},complete:false};}}}),async url=>{
+  for(const headers of [{},{'x-test-email':'office@example.com'},{...production,'x-test-scope':'dtf_only'}]){
+   const res=await fetch(`${url}/tests/${id}/promote?test=1`,{method:'POST',headers});assert.ok([401,403].includes(res.status));
+  }
+  assert.equal(calls,0);
+  for(const headers of [production,{'x-test-email':'charlie@ultimatepromotions.co.uk'}]){
+   const res=await fetch(`${url}/tests/${id}/promote?test=1`,{method:'POST',headers});assert.equal(res.status,202);
+   assert.equal((await fetch(`${url}/designs?test=1`,{headers})).status,403);
+  }
+  assert.equal(calls,2);
+ });
+});

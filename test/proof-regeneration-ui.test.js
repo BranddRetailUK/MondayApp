@@ -236,3 +236,14 @@ test('reopening the cached proof enables regeneration after background saving co
   const job={id:'saved-proof',status:'saved',revision:1};await context.open(job);
   assert.equal(context.design,job);assert.equal(creating,false);assert.equal(context.currentPreview,preview);
 });
+
+test('ADD TO LIVE cancellation never reads source or writes live state; confirmation resumes the same mapped proof',async()=>{
+ const fn=source.slice(source.indexOf('  async function addTestToLive(job)'),source.indexOf('  async function saveProofSource()'));
+ const requests=[];let confirm=false;
+ const context={busy:false,confirmAddToLive:async()=>confirm,renderHistory(){},refreshHistory:async()=>{},historyStatus:{},window:{ProofLinks:{refresh(){}}},proofFetch:async(url,options)=>{requests.push({url,options});return {ok:true};},proofJson:async()=>({complete:true,design:{designNumber:'31001'}})};
+ createContext(context);vm.runInContext(fn+'\nthis.promote=addTestToLive;',context);
+ await context.promote({id:'test',liveDesignId:'live'});assert.equal(requests.length,0);assert.equal(context.busy,false);
+ confirm=true;await context.promote({id:'test',liveDesignId:'live'});assert.equal(requests.length,1);assert.equal(requests[0].url,'/api/proof-generator/tests/test/promote');assert.equal(requests[0].options.body,'{}');assert.match(context.historyStatus.textContent,/31001 added to live/);assert.equal(context.busy,false);
+ assert.ok(source.indexOf("promote.textContent='ADD TO LIVE'")<source.indexOf("else if(job.hasPdf){const download="));
+ assert.match(source,/promote.className='proof-primary-button'/);
+});

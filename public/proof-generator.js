@@ -214,6 +214,7 @@
   }
   function historyState(job){
     if(job.id===designId&&busy)return ['Pending',progressMessage];
+    if(job.liveDesignId)return ['Live migration pending','Use ADD TO LIVE to resume the same live design.'];
     if(job.hasPdf&&['save_queued','saving'].includes(job.status))return ['Proof ready','Saving to design folder…'];
     if(job.status==='error')return [job.hasPdf?'Save needs attention':'Needs attention',job.message];
     if(job.generationStatus==='error')return ['Failed',job.generationMessage];
@@ -275,10 +276,16 @@
         retry.onclick=async()=>{retry.disabled=true;try{await designRequest(`/${job.id}/retry`,{});await refreshHistory();}catch(error){historyStatus.textContent=error.message;}finally{retry.disabled=false;}};actions.append(retry);
       }
       if(job.linkPending){const sync=document.createElement('button');sync.type='button';sync.className='proof-secondary-button';sync.textContent='Retry proof sync';sync.onclick=async()=>{sync.disabled=true;try{await window.ProofLinks.api(`/designs/${job.id}/sync`,{});await refreshHistory();window.ProofLinks.refresh();}catch(error){historyStatus.textContent=error.message;}finally{sync.disabled=false;}};actions.append(sync);}
+      if(sandbox){
+        const promote=document.createElement('button');promote.type='button';promote.className='proof-primary-button';promote.textContent='ADD TO LIVE';
+        promote.disabled=busy||(!job.hasPdf&&!job.liveDesignId);
+        promote.addEventListener('click',()=>addTestToLive(job));actions.append(promote);
+      }
       if(standalonePreview&&job.id===designId&&currentPreview?.pdf){const download=action('Download PDF',()=>downloadPdf());download.disabled=busy||dirty||currentPreview.issues.some(i=>i.blocking);actions.append(download);}
       else if(job.hasPdf){const download=document.createElement('a');download.className='proof-secondary-button';download.textContent='Download';download.href=`/api/proof-generator/${historyEndpoint}/${encodeURIComponent(job.id)}/pdf?download=1`;actions.append(download);}
       else{const download=document.createElement('button');download.type='button';download.className='proof-secondary-button';download.textContent='Download';download.disabled=true;download.title='Available after a proof PDF has been generated and retained.';actions.append(download);}
-      const regenerate=document.createElement('button');regenerate.type='button';regenerate.className='proof-secondary-button';regenerate.textContent='Regenerate proof';regenerate.disabled=busy||['save_queued','saving'].includes(job.status);
+      const regenerate=document.createElement('button');regenerate.type='button';regenerate.className='proof-secondary-button';regenerate.textContent='Regenerate proof';regenerate.disabled=busy||!!job.liveDesignId||['save_queued','saving'].includes(job.status);
+      if(job.liveDesignId)regenerate.title='This proof is moving to live. Use ADD TO LIVE to resume.';
       regenerate.addEventListener('click',async()=>{try{if(job.sourceOrderId)await window.ProofLinks.edit(job.sourceOrderId);else await openHistoryProof(job);}catch(error){historyStatus.textContent=error.message;}});actions.append(regenerate);if(!localPreview)actions.append(linkButton);state.append(actions);
       item.append(thumb,info,state);
       const generating=label==='Pending'||label==='Saving';
@@ -306,6 +313,48 @@
       const encoded=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=reject;response.blob().then(blob=>reader.readAsDataURL(blob),reject);});
       if(!dialog.isConnected)return;viewer.replaceChildren();await renderDocument(encoded,viewer,[],{clickable:false});
     }catch(error){viewer.textContent=error.message;}
+  }
+  function confirmAddToLive() {
+    return new Promise(resolve=>{
+      const previous=document.activeElement,modal=document.createElement('div');
+      modal.className='test-dashboard-complete-confirm-modal';
+      modal.innerHTML=`<div class="test-dashboard-complete-confirm-shell" role="dialog" aria-modal="true" aria-labelledby="proof-live-confirm-title"><div class="test-dashboard-complete-confirm-title" id="proof-live-confirm-title">Are you sure?</div><div class="test-dashboard-complete-confirm-message">Add this proof to live? A live design number and folder will be created, and the proof will be matched to an eligible OFFICE job. The sandbox row will be removed after a successful save.</div><div class="test-dashboard-complete-confirm-actions"><button class="test-dashboard-complete-confirm-button confirm" type="button">Confirm</button><button class="test-dashboard-complete-confirm-button cancel" type="button">No</button></div></div>`;
+      const yes=modal.querySelector('.confirm'),no=modal.querySelector('.cancel');
+      const close=value=>{document.removeEventListener('keydown',keys);modal.remove();previous?.focus();resolve(value);};
+      const keys=event=>{if(event.key==='Escape'){event.preventDefault();close(false);}if(event.key==='Tab'){event.preventDefault();(document.activeElement===no?yes:no).focus();}};
+      yes.onclick=()=>close(true);no.onclick=()=>close(false);modal.onclick=event=>{if(event.target===modal)close(false);};
+      document.addEventListener('keydown',keys);document.body.append(modal);no.focus();
+    });
+  }
+  async function addTestToLive(job) {
+    if(busy)return;
+    busy=true;
+    if(!await confirmAddToLive()){busy=false;renderHistory();return;}
+    let finalMessage='';renderHistory();historyStatus.textContent='Preparing live proof…';
+    try{
+      let form;
+      if(!job.liveDesignId){
+        const response=await proofFetch(`/api/proof-generator/tests/${job.id}/source`),data=await proofJson(response);
+        if(!response.ok)throw Error(data.error||'Test proof source is unavailable.');
+        form=new FormData();form.append('updatedAt',job.updatedAt);
+        for(const saved of data.artworks){
+          const file=new File([Uint8Array.from(atob(saved.data),c=>c.charCodeAt(0))],saved.name,{type:saved.type||''});
+          const prepared=await prepareArtworkFile(file,false,{threadColours:saved.threadColours||[]});
+          form.append('artworks',prepared,prepared.name);
+        }
+      }
+      const started=Date.now();
+      while(Date.now()-started<90000){
+        const response=await proofFetch(`/api/proof-generator/tests/${job.id}/promote`,{method:'POST',...(form?{body:form}:{headers:{'Content-Type':'application/json'},body:'{}'})});
+        const result=await proofJson(response);if(!response.ok)throw Error(result.error||'Could not add this proof to live.');
+        form=null;
+        historyStatus.textContent=result.design.designNumber?`Design ${result.design.designNumber}: saving and matching the live proof…`:'Waiting for ARTWORK-PC to allocate the live design number…';
+        if(result.complete){finalMessage=`Design ${result.design.designNumber} added to live.`;window.ProofLinks?.refresh();return;}
+        await new Promise(resolve=>setTimeout(resolve,2000));
+      }
+      finalMessage='Live migration is still pending. Keep ARTWORK-PC running, then click ADD TO LIVE to resume the same design.';
+    }catch(error){finalMessage=error.message;}
+    finally{busy=false;await refreshHistory();renderHistory();historyStatus.textContent=finalMessage;}
   }
   async function saveProofSource(){
     if(standalonePreview)return;
@@ -1048,9 +1097,9 @@
 
   const epsPreviews=new WeakMap();
   let epsQueue=Promise.resolve();
-  async function prepareArtworkFile(file,preflight=false) {
+  async function prepareArtworkFile(file,preflight=false,providedItem) {
     if(/\.(pxf|dst)$/i.test(file.name)){
-      const item=artworks.find(a=>a.file===file);
+      const item=providedItem||artworks.find(a=>a.file===file);
       const module=await import('/proof-embroidery.mjs');
       let colours=item?.threadColours||[];
       if(/\.dst$/i.test(file.name)){
