@@ -1050,3 +1050,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - DATABASE disables browser scroll anchoring so changing panel content does not shift the tab strip. No additional page scroll areas are introduced.
 
 - Shell fitting also observes the DATABASE section size directly, so sidebar breakpoint changes and orientation changes cannot leave a stale tablet scale.
+
+- DATABASE main navigation no longer shows the Back button beside Home. Home and Open Orders occupy the full navigation row on desktop and mobile.

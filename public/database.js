@@ -417,7 +417,6 @@
       databaseTab: document.getElementById('tab-database'),
       stage: document.querySelector('#db-legacy-app .db-legacy-stage'),
       sideTab: document.querySelector('.nav-tabs li[data-tab="database"]'),
-      homeButton: document.getElementById('db-home-button'),
       mainTabs: Array.from(document.querySelectorAll('.db-main-tab')),
       views: Array.from(document.querySelectorAll('#db-legacy-app .db-view')),
       homeCountPrinting: document.getElementById('db-count-printing'),
@@ -993,12 +992,6 @@
         cancelCustomLineDraft();
         return;
       }
-    }
-
-    if (button.id === 'db-home-button') {
-      await flushOrderAutosaves();
-      goBackDatabaseView();
-      return;
     }
 
     if (button.dataset.dbProofUpload !== undefined) {
