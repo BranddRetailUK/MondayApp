@@ -13696,7 +13696,8 @@
   }
 
   function syncOrderItemsExpansion() {
-    const expanded = state.activeView === 'order' && state.activeOrderTab === 'items';
+    // Keep the Order Items shell height across every order tab to prevent recentering.
+    const expanded = state.activeView === 'order';
     els.stage?.classList.toggle('db-order-items-active', expanded);
     els.root?.classList.toggle('db-order-items-expanded', expanded);
   }

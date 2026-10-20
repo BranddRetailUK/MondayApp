@@ -1031,3 +1031,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - The same 2px light blue tab separators also apply to DATABASE main navigation (Home/Open Orders) and all customer-detail tabs, matching the order-info tabs.
 
 - Selected DATABASE main, customer and order tabs use a consistent light blue (`#c7e7f7`) background to distinguish the active page from the neutral inactive tabs.
+
+- All order-info tabs retain the existing Order Items outer shell height (840px app / 660px stage on desktop), preventing vertical recentering when switching tabs. Other tab contents retain their existing layout and control sizes; responsive shell overrides remain in effect.
