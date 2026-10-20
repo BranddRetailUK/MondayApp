@@ -1029,3 +1029,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Order-info hides the Files tab when the loaded order has no FILES attachments, including after deleting its last file. Visuals always remains available; restoring a Files-tab route for an empty order falls back to Visuals. The remaining tabs share the row equally and have light blue separators. First attachments can still be added through Dashboard FILES.
 
 - The same 2px light blue tab separators also apply to DATABASE main navigation (Home/Open Orders) and all customer-detail tabs, matching the order-info tabs.
+
+- Selected DATABASE main, customer and order tabs use a consistent light blue (`#c7e7f7`) background to distinguish the active page from the neutral inactive tabs.

@@ -9890,3 +9890,8 @@ input.db-custom-line-input{
 .db-order-tab + .db-order-tab,
 .db-main-tab + .db-main-tab,
 .db-customer-tab + .db-customer-tab{border-left:2px solid #9ccce5;}
+
+/* Consistent selected-tab highlight throughout DATABASE. */
+.db-main-tab.active,
+.db-customer-tab.active,
+.db-order-tab.active{background:#c7e7f7;border-bottom-color:#c7e7f7;}
