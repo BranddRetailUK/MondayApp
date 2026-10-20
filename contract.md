@@ -1054,3 +1054,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - DATABASE main navigation no longer shows the Back button beside Home. Home and Open Orders occupy the full navigation row on desktop and mobile.
 
 - The order-info Customer overview drawer starts expanded, with matching initial HTML and accessible toggle state. Users can still collapse or reopen it during the session.
+
+- The outer DATABASE workspace background is dark grey `#242628`, slightly lighter than the sidebar `#111213`. The inner page panels and shared light blue accent colours retain their existing colours.

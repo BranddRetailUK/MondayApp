@@ -2646,7 +2646,7 @@ body.modal-open{overflow:hidden}
   padding:0;
   min-height:100vh;
   overflow:auto;
-  background:var(--database-bg);
+  background:#242628;
   color:#000;
   justify-content:center;
   align-items:center;
