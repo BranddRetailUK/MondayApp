@@ -266,7 +266,7 @@
     viewHistory: [],
     activeOrderTab: 'details',
     activeCustomerTab: 'orders',
-    orderStatsCollapsed: true,
+    orderStatsCollapsed: false,
     newOrderSubmitting: false,
     newCustomerSubmitting: false,
     newContactSubmitting: false,
