@@ -358,3 +358,36 @@ test('production generate renders once, forces the reserved number and atomicall
   const response=await fetch(url+'/generate',{method:'POST',headers:production,body:form});assert.equal(response.status,200,await response.clone().text());const data=await response.json();assert.equal(data.design.status,'save_queued');assert.equal(data.design.hasPdf,true);assert.deepEqual(Buffer.from(data.pdf,'base64'),bytes);
  });assert.equal(builds,1);assert.equal(queued,1);
 });
+
+test('artwork edits return the production referral before catalogue or name-colour review', async () => {
+  let enriched = false;
+  const parse = body => parseProofBrief(body, {
+    apiKey: 'test-only-key',
+    fetchImpl: async (_url, options) => {
+      const request = JSON.parse(options.body);
+      assert.ok(request.text.format.schema.required.includes('artworkEditRequested'));
+      assert.match(request.instructions, /Never reinterpret these as typed-name personalisation/);
+      // Even an inconsistent model result must not expose its hex question.
+      const brief = { artworkEditRequested: true, products: [{ personalisation: 'CREW' }], questions: [{ id: 'ink', question: 'What hex colour?' }] };
+      return { ok: true, json: async () => ({ output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(brief) }] }] }) };
+    },
+  });
+  await serve(createRouter({ parse, enrich: async () => { enriched = true; } }), async url => {
+    const res = await fetch(`${url}/parse`, {
+      method: 'POST', headers: { ...production, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requestText: 'Change STAFF to CREW in the uploaded artwork' }),
+    });
+    assert.equal(res.status, 422);
+    assert.deepEqual(await res.json(), { error: 'For any artwork edits, please contact production.' });
+    assert.equal(enriched, false);
+  });
+});
+
+test('supported proof layout and separate personalisation retain their parsed details', async () => {
+  const brief = { artworkEditRequested: false, products: [{ code: 'RX350', colour: 'Navy', personalisation: 'Charlie', decorations: [{ text: 'Charlie', fontArtworkId: 'font1', textColour: '#ffffff' }] }], questions: [] };
+  const result = await parseProofBrief({ requestText: 'RX350 Navy with separate name Charlie in uploaded font, white #ffffff, 100mm wide' }, {
+    apiKey: 'test-only-key',
+    fetchImpl: async () => ({ ok: true, json: async () => ({ output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(brief) }] }] }) }),
+  });
+  assert.deepEqual(result, brief);
+});

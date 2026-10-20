@@ -270,6 +270,9 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       await enrich(brief);
       return res.json({ brief: prepareBrief(brief, req.body) });
     } catch (err) {
+      if (err.code === 'PROOF_ARTWORK_EDIT_UNSUPPORTED') {
+        return res.status(422).json({ error: err.message });
+      }
       if (/^Enter a request|^Special instructions|^Add no more|^Answer no more/.test(err.message)) {
         return res.status(400).json({ error: err.message });
       }
