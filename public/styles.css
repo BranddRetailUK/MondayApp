@@ -6335,7 +6335,7 @@ body.modal-open{overflow:hidden}
 }
 .db-order-tabs{
   display:grid;
-  grid-template-columns:repeat(4, 1fr);
+  grid-template-columns:repeat(5, minmax(0, 1fr));
   height:28px;
   margin-top:8px;
 }

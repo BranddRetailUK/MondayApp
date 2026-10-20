@@ -999,3 +999,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Visuals uploads retain PDF/JPEG/PNG validation and target PROOF. Files uploads accept the same general attachments as Dashboard FILES and target `files_1`. Both tabs support multiple uploads, drag/drop, file previews/downloads and confirmed individual deletion. Each upload retains its starting order and destination even when the user switches tabs or orders. Non-image/PDF files expose a download link instead of an embedded preview.
 - Download all is scoped per tab: `/api/database/jobs/:id/visuals/download` includes PROOF only; `/api/database/jobs/:id/files/download` includes FILES only. Both use the existing bounded ZIP download service and authenticated order access.
 - Dashboard FILES remains immediately to the right of VISUAL via defaults and the transactional startup migration `dashboard-files-after-visual-v1`.
+
+- Desktop order tabs use five equal-width columns in one row at the original 28px height; the Files tab fits beside Visual without wrapping. Existing mobile tab layouts remain responsive.
