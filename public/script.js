@@ -2814,14 +2814,9 @@ function renderTestVisualRemovalModal() {
 }
 
 function buildTestVisualRemovalThumbnailUrl(file) {
-  const source = buildAssetSrc(file);
-  if (!source || !isCloudinaryDeliveryUrl(source)) return source;
-  const marker = '/upload/';
-  if (!source.includes(marker)) return source;
-  return source.replace(
-    marker,
-    `${marker}f_jpg,q_auto:eco,c_limit,w_360,h_250,pg_1/`
-  );
+  return buildCloudinaryPreviewUrl(buildAssetSrc(file), {
+    profile: 'removal', pdf: isPdfFile(file?.name, file?.mime)
+  });
 }
 
 function handleTestVisualRemovalModalClick(event) {
@@ -3898,16 +3893,26 @@ function clearDashboardFileHoverSource() {
   __dashboardFileHoverUrl = null;
 }
 
-async function loadDashboardPdfHover(file, frame, token) {
+async function loadDashboardFileHover(file, frame, token) {
   try {
-    // Match the clicked preview's no-store fetch instead of the native PDF
-    // viewer's persistent URL cache. Each hover owns its temporary blob URL.
-    const blob = await fetchProofDownloadBlob(buildAssetSrc(file));
+    const source = buildAssetSrc(file);
+    const pdf = isPdfFile(file.name, file.mime);
+    const thumbnail = buildCloudinaryPreviewUrl(source, { profile: 'hover', pdf });
+    // Unsupported/mutable URLs retain the fresh authenticated original path.
+    // A failed derivative never falls back to downloading the original.
+    const blob = await fetchProofDownloadBlob(thumbnail || source);
     if (token !== __dashboardFileHoverToken) return;
     __dashboardFileHoverUrl = URL.createObjectURL(blob);
-    const viewer = document.createElement('iframe');
-    viewer.src = `${__dashboardFileHoverUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`;
-    viewer.title = file.name || 'PDF preview';
+    const viewer = document.createElement(thumbnail || !pdf ? 'img' : 'iframe');
+    viewer.src = thumbnail || !pdf ? __dashboardFileHoverUrl
+      : `${__dashboardFileHoverUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`;
+    viewer.alt = viewer.title = file.name || 'File preview';
+    viewer.onerror = () => {
+      if (token === __dashboardFileHoverToken) {
+        clearDashboardFileHoverSource();
+        frame.textContent = 'Preview unavailable — click to open';
+      }
+    };
     frame.replaceChildren(viewer);
   } catch (_) {
     if (token === __dashboardFileHoverToken) frame.textContent = 'Preview unavailable — click to open';
@@ -3921,14 +3926,9 @@ function showDashboardFileHoverPreview(file, x, y) {
   const frame = document.createElement('div');
   frame.className = 'dashboard-file-hover-frame';
   const src = buildAssetSrc(file, { stripPdfUi: true });
-  if (src && isPdfFile(file.name, file.mime)) {
+  if (src && (isPdfFile(file.name, file.mime) || isImageFile(file))) {
     frame.innerHTML = '<span class="board-loading-spinner" role="status" aria-label="Loading preview"></span>';
-    loadDashboardPdfHover(file, frame, __dashboardFileHoverToken);
-  } else if (src && isImageFile(file)) {
-    const image = document.createElement('img');
-    image.src = src;
-    image.alt = file.name || 'File preview';
-    frame.appendChild(image);
+    loadDashboardFileHover(file, frame, __dashboardFileHoverToken);
   } else {
     const fallback = document.createElement('div');
     fallback.className = 'dashboard-file-hover-fallback';
@@ -4558,7 +4558,7 @@ async function fetchProofDownloadBlob(src) {
 
   const response = await fetch(src, {
     credentials,
-    cache: 'no-store'
+    cache: parsePublicVersionedCloudinaryUrl(src) ? 'default' : 'no-store'
   });
   if (!response.ok) throw new Error(`File download failed (${response.status})`);
   return response.blob();
@@ -5729,6 +5729,41 @@ function isPdfFile(name, mime) {
 
 function isCloudinaryDeliveryUrl(url) {
   return /^https?:\/\/res\.cloudinary\.com\//i.test(String(url || ''));
+}
+
+// Only these display profiles may be replaced; preserve unknown transformation semantics.
+const CLOUDINARY_PREVIEW_PROFILES = Object.freeze({
+  hover: 'q_auto:good,c_limit,w_840,h_600',
+  visual: 'q_auto:eco,c_limit,w_420,h_420',
+  removal: 'q_auto:eco,c_limit,w_360,h_250'
+});
+
+function parsePublicVersionedCloudinaryUrl(source) {
+  try {
+    const url = new URL(source);
+    if (url.protocol !== 'https:' || url.hostname !== 'res.cloudinary.com'
+      || url.port || url.username || url.password || url.search) return null;
+    const match = url.pathname.match(/^\/([^/]+)\/image\/upload\/(.*)$/);
+    if (!match) return null;
+    let path = match[2];
+    const profiles = Object.values(CLOUDINARY_PREVIEW_PROFILES);
+    const transform = path.split('/')[0];
+    if (profiles.some(profile => transform === `f_auto,${profile}` || transform === `f_jpg,${profile},pg_1`)) {
+      path = path.slice(transform.length + 1);
+    }
+    // Signed, authenticated, unversioned and unknown transformed URLs are excluded.
+    if (!/^v[1-9]\d*\/.+/.test(path)) return null;
+    return { base: `${url.origin}/${match[1]}/image/upload/`, path };
+  } catch { return null; }
+}
+
+function buildCloudinaryPreviewUrl(source, { profile = 'visual', pdf = false } = {}) {
+  const asset = parsePublicVersionedCloudinaryUrl(source);
+  const sizing = CLOUDINARY_PREVIEW_PROFILES[profile];
+  if (!asset || !sizing) return '';
+  const transform = pdf ? `f_jpg,${sizing},pg_1` : `f_auto,${sizing}`;
+  const path = pdf ? asset.path.replace(/\.[^/.]+$/, '.jpg') : asset.path;
+  return `${asset.base}${transform}/${path}`;
 }
 
 function buildCloudinaryPdfDeliveryUrl(url) {

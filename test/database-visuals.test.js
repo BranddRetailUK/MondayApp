@@ -235,7 +235,15 @@ test('DATABASE Visuals UI uses active navigation, five/two-column grids, lazy pr
   assert.match(script, /const DATABASE_VISUAL_PAGE_LIMIT = 30/);
   assert.match(script, /loading="lazy"/);
   assert.match(script, /new window\.IntersectionObserver/);
-  assert.match(script, /f_jpg,q_auto:eco,c_limit,w_420,h_420,pg_1/);
+  const shared = fs.readFileSync(path.join(__dirname, '..', 'public', 'script.js'), 'utf8');
+  const context = require('node:vm').createContext({ URL, window: {},
+    buildDatabaseAssetSrc: file => file.url, isDatabasePdfFile: () => true });
+  require('node:vm').runInContext(
+    shared.slice(shared.indexOf('const CLOUDINARY_PREVIEW_PROFILES'), shared.indexOf('function buildCloudinaryPdfDeliveryUrl('))
+    + '\nwindow.buildCloudinaryPreviewUrl = buildCloudinaryPreviewUrl;\n'
+    + script.slice(script.indexOf('  function databaseVisualThumbnailUrl('), script.indexOf('  function handleDatabaseVisualThumbnailError(')), context);
+  assert.equal(context.databaseVisualThumbnailUrl({url: 'https://res.cloudinary.com/example/image/upload/v123/proof.pdf'}),
+    'https://res.cloudinary.com/example/image/upload/f_jpg,q_auto:eco,c_limit,w_420,h_420,pg_1/v123/proof.jpg');
   assert.match(script, /databaseVisualGroupTint/);
   assert.match(script, /<optgroup/);
   assert.match(

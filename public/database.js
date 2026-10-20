@@ -2022,20 +2022,9 @@
   }
 
   function databaseVisualThumbnailUrl(visual) {
-    const original = buildDatabaseAssetSrc(visual);
-    if (!original) return '';
-    const marker = '/image/upload/';
-    const markerIndex = original.indexOf(marker);
-    if (markerIndex < 0) return isDatabasePdfFile(visual) ? '' : original;
-
-    const transform = isDatabasePdfFile(visual)
-      ? 'f_jpg,q_auto:eco,c_limit,w_420,h_420,pg_1'
-      : 'f_auto,q_auto:eco,c_limit,w_420,h_420';
-    let transformed = `${original.slice(0, markerIndex)}${marker}${transform}/${original.slice(markerIndex + marker.length)}`;
-    if (isDatabasePdfFile(visual)) {
-      transformed = transformed.replace(/\.pdf(?=([?#]|$))/i, '.jpg');
-    }
-    return transformed;
+    return window.buildCloudinaryPreviewUrl?.(buildDatabaseAssetSrc(visual), {
+      profile: 'visual', pdf: isDatabasePdfFile(visual)
+    }) || '';
   }
 
   function handleDatabaseVisualThumbnailError(event) {
@@ -8465,9 +8454,8 @@
     try {
       const pdfjs = await ensureDatabasePdfJs();
       const src = buildDatabaseAssetSrc(file);
-      const resp = await fetch(src, { credentials: 'include', cache: 'no-store' });
-      if (!resp.ok) throw new Error(`PDF fetch failed (${resp.status})`);
-      const buffer = await resp.arrayBuffer();
+      const blob = await window.fetchProofDownloadBlob(src);
+      const buffer = await blob.arrayBuffer();
       if (token !== state.proofViewer.renderToken) return;
 
       const loadingTask = pdfjs.getDocument({
