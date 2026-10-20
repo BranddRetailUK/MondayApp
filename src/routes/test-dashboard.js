@@ -1533,6 +1533,22 @@ async function initializeDashboardData() {
       await ensureTestDashboardDefaults(client);
       await client.query("INSERT INTO hub_data_migrations(version) VALUES ('dashboard-defaults-v1')");
     }
+    const filesPositionApplied = await client.query("SELECT version FROM hub_data_migrations WHERE version = 'dashboard-files-after-visual-v1'");
+    if (!filesPositionApplied.rowCount) {
+      await client.query(`WITH ordered AS (
+        SELECT id, ROW_NUMBER() OVER (ORDER BY
+          CASE WHEN id = $1 THEN
+            (SELECT position FROM test_dashboard_columns WHERE id = $2 AND is_subitem = FALSE) + 0.5
+          ELSE position END, id) AS new_position
+        FROM test_dashboard_columns
+        WHERE is_subitem = FALSE
+      )
+      UPDATE test_dashboard_columns c
+      SET position = ordered.new_position, updated_at = NOW()
+      FROM ordered WHERE c.id = ordered.id AND c.is_subitem = FALSE`,
+      [TEST_DASHBOARD_COLUMN_IDS.FILES, TEST_DASHBOARD_COLUMN_IDS.PROOF]);
+      await client.query("INSERT INTO hub_data_migrations(version) VALUES ('dashboard-files-after-visual-v1')");
+    }
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');

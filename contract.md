@@ -992,3 +992,8 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Ordinary existing public JS/CSS/image/font files are served before session attachment. Protected HTML, vendor PDF-lib, renderer and API routes retain their authorization; missing static files fall through normally. No credentials, API responses or private file bytes become public.
 - Verification covers read-only board SQL, versioned initialization, account-isolated ETags/304s, in-flight read sharing/retry, static/auth boundaries, server-side category/approval sorting, paging/search cancellation and full-report loading. No artwork/digitising algorithm, production originals, approval rules or supplier ordering behaviour changes.
 - Dashboard conditional GETs accept weak and comma-separated validators, including the `W/` prefix added by the production compression proxy; unchanged responses remain body-free even when the browser sends `Cache-Control: no-cache`.
+
+### Dashboard files in order visuals (2026-10-20)
+
+- DATABASE order-info Visuals includes attachments from both Dashboard VISUAL/PROOF and FILES, including Download all. Attachments retain their original column metadata; this is a read-only combined view, so FILES attachments do not populate Dashboard VISUAL or satisfy proof-presence checks. Uploading through DATABASE Visuals continues to target PROOF.
+- Dashboard FILES sits immediately to the right of VISUAL. New defaults and the transactional startup migration `dashboard-files-after-visual-v1` apply the order to new and existing installations without changing file records.

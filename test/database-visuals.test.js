@@ -385,7 +385,7 @@ function createResponse() {
   };
 }
 
-test('order ZIP download resolves the order and includes only its visual column files', async () => {
+test('order ZIP download includes visual and Files column attachments', async () => {
   const originalFetch = global.fetch;
   global.fetch = async () => new Response('original-pdf-bytes');
   const { router, calls, restore } = loadDatabaseRouter({
@@ -404,6 +404,31 @@ test('order ZIP download resolves the order and includes only its visual column 
     assert.equal(res.filename, 'order-51346-visuals.zip');
     assert.equal(res.body.readUInt32LE(), 0x04034b50);
     assert.equal(calls[1].values[0], 50593);
-    assert.match(calls[1].text, /column_id=\$2 OR UPPER\(TRIM\(column_title\)\)='PROOF'/);
+    assert.deepEqual(calls[1].values, [50593, 'file_mky43tg9', 'files_1']);
+    assert.match(calls[1].text, /column_id IN \(\$2, \$3\)/);
   } finally { global.fetch = originalFetch; restore(); }
+});
+
+
+test('order detail combines Visual and Files attachments without changing their columns', async () => {
+  const attachments = [visualRow(1), { ...visualRow(2), column_id: 'files_1', column_title: 'FILES', original_filename: 'artwork.dst' }];
+  const { router, calls, restore } = loadDatabaseRouter({
+    async query(sql) {
+      if (sql.includes('SELECT *') && sql.includes('FROM database_jobs')) return { rowCount: 1, rows: [{ source_order_id: 50593, order_no: 51346 }] };
+      if (sql.includes('FROM test_dashboard_files')) return { rowCount: 2, rows: attachments };
+      return { rowCount: 0, rows: [] };
+    },
+  });
+  try {
+    const response = createResponse();
+    await findRoute(router, '/api/database/jobs/:id', 'get').route.stack[0].handle({ params: { id: '51346' } }, response);
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.proofFiles.length, 2);
+    assert.equal(response.body.proofFiles[1].column_id, 'files_1');
+    assert.equal(response.body.proofFiles[1].name, 'artwork.dst');
+    const query = calls.find(call => call.text.includes('FROM test_dashboard_files'));
+    assert.deepEqual(query.values, [50593, 'file_mky43tg9', 'files_1']);
+    assert.match(query.text, /column_id IN \(\$2, \$3\)/);
+    assert.ok(calls.every(call => !/INSERT|UPDATE|DELETE/.test(call.text)));
+  } finally { restore(); }
 });

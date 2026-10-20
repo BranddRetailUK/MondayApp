@@ -5851,8 +5851,8 @@ router.get('/api/database/jobs/:id/visuals/download', async (req, res) => {
     if (!job.rows.length) return res.status(404).json({ error: 'Database job not found' });
     const selected = job.rows[0];
     const files = await pool.query(`SELECT * FROM test_dashboard_files
-      WHERE source_order_id=$1 AND (column_id=$2 OR UPPER(TRIM(column_title))='PROOF')
-      ORDER BY created_at, id`, [selected.source_order_id, TEST_DASHBOARD_COLUMN_IDS.PROOF]);
+      WHERE source_order_id=$1 AND (column_id IN ($2, $3) OR UPPER(TRIM(column_title)) IN ('PROOF', 'FILES'))
+      ORDER BY created_at, id`, [selected.source_order_id, TEST_DASHBOARD_COLUMN_IDS.PROOF, TEST_DASHBOARD_COLUMN_IDS.FILES]);
     const archive = await require('../services/databaseVisualDownload').buildVisualArchive(files.rows);
     res.set('Cache-Control', 'no-store');
     res.attachment(`order-${selected.order_no || selected.source_order_id}-visuals.zip`);
@@ -5903,9 +5903,9 @@ router.get('/api/database/jobs/:id', async (req, res) => {
         `SELECT *
          FROM test_dashboard_files
          WHERE source_order_id = $1
-           AND (column_id = $2 OR UPPER(TRIM(column_title)) = 'PROOF')
+           AND (column_id IN ($2, $3) OR UPPER(TRIM(column_title)) IN ('PROOF', 'FILES'))
          ORDER BY created_at, id`,
-        [sourceOrderId, TEST_DASHBOARD_COLUMN_IDS.PROOF]
+        [sourceOrderId, TEST_DASHBOARD_COLUMN_IDS.PROOF, TEST_DASHBOARD_COLUMN_IDS.FILES]
       ),
       fetchCustomerOverview(pool, selectedJob),
     ]);
