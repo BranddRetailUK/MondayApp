@@ -1005,3 +1005,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Visual and Files attachment toolbars use matching compact 30px upload/download buttons at the top right, with consistent sentence-case labels and spacing. File-type and drag/drop instruction text is omitted; drag/drop and upload validation remain active. Empty tabs keep the same toolbar placement.
 
 - Sidebar navigation synchronizes recognized `?tab=`/hash links with the active page for every user. Reload restores that page instead of a stale explicit link (such as Proof Generator). Initial deep links, unrelated URL parameters/anchors and existing DATABASE order/tab restoration remain supported; uploader-only and restricted-page access rules still apply. URL updates continue even when local storage is unavailable.
+
+- The order Files tab shows compact file-type document icons with extension badges for attachments without image/PDF previews (including green spreadsheet icons for Excel/CSV). Images and PDFs keep their thumbnail previews; generic attachments no longer show a large Preview unavailable box. Existing file open/download/delete actions are unchanged.

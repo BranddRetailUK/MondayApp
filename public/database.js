@@ -2006,8 +2006,11 @@
   }
 
   function renderDatabaseVisualCard(visual, options = {}) {
-    const thumbnailUrl = databaseVisualThumbnailUrl(visual);
     const isPdf = isDatabasePdfFile(visual);
+    const fileTypeIcon = options.fileTypeIcons && !isPdf && !isDatabaseImageFile(visual)
+      ? renderDatabaseFileTypeIcon(visual)
+      : '';
+    const thumbnailUrl = fileTypeIcon ? '' : databaseVisualThumbnailUrl(visual);
     const orderNumber = visual.order_no || visual.source_order_id || '';
     const customer = visual.customer_name || 'Customer not recorded';
     const design = visual.design_numbers || 'No design number';
@@ -2024,7 +2027,7 @@
         ${openAttribute}="${escapeAttr(openValue)}"
         aria-label="${escapeAttr(aria)}"
       >
-        <span class="db-visual-card-preview${thumbnailUrl ? '' : ' is-unavailable'}">
+        ${fileTypeIcon || `<span class="db-visual-card-preview${thumbnailUrl ? '' : ' is-unavailable'}">
           ${thumbnailUrl ? `
             <img
               src="${escapeAttr(thumbnailUrl)}"
@@ -2037,13 +2040,40 @@
           ` : ''}
           <span class="db-visual-card-fallback">${isPdf ? 'PDF' : 'Preview unavailable'}</span>
           ${isPdf ? '<span class="db-visual-card-type">PDF</span>' : ''}
-        </span>
+        </span>`}
         <span class="db-visual-card-name" title="${escapeAttr(name)}">${escapeHtml(name)}</span>
         <span class="db-visual-card-job">Job ${escapeHtml(orderNumber)}</span>
         <span class="db-visual-card-customer" title="${escapeAttr(customer)}">${escapeHtml(customer)}</span>
         <span class="db-visual-card-design" title="${escapeAttr(design)}">${escapeHtml(design)}</span>
       </button>
     `;
+  }
+
+  function renderDatabaseFileTypeIcon(file) {
+    const extension = String(file.name || '').match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase()
+      || String(file.format || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    let type = 'document', label = 'File';
+    if (['xls', 'xlsx', 'xlsm', 'xlsb', 'csv', 'ods'].includes(extension)) {
+      type = 'spreadsheet'; label = ['xls', 'xlsx', 'xlsm', 'xlsb'].includes(extension) ? 'Excel spreadsheet' : 'Spreadsheet';
+    } else if (['doc', 'docx', 'odt', 'rtf'].includes(extension)) {
+      type = 'word'; label = 'Text document';
+    } else if (['ppt', 'pptx', 'odp'].includes(extension)) {
+      type = 'presentation'; label = 'Presentation';
+    } else if (['zip', 'rar', '7z', 'gz'].includes(extension)) {
+      type = 'archive'; label = 'Archive';
+    } else if (['dst', 'emb', 'pes', 'jef', 'exp'].includes(extension)) {
+      type = 'embroidery'; label = 'Embroidery file';
+    }
+    return `<span class="db-file-type-icon db-file-type-icon--${type}" role="img" aria-label="${label}">
+      <svg viewBox="0 0 64 72" aria-hidden="true" focusable="false">
+        <path d="M13 3h27l15 15v49H13z" fill="#fff" stroke="currentColor" stroke-width="2"/>
+        <path d="M40 3v15h15" fill="none" stroke="currentColor" stroke-width="2"/>
+        ${type === 'spreadsheet'
+          ? '<path d="M22 25h24v18H22z M22 31h24 M22 37h24 M30 25v18 M38 25v18" fill="none" stroke="currentColor" stroke-width="1.5"/>'
+          : '<path d="M22 28h22 M22 35h22 M22 42h15" fill="none" stroke="currentColor" stroke-width="2"/>'}
+      </svg>
+      <span class="db-file-type-extension" aria-hidden="true">${escapeHtml((extension || 'FILE').toUpperCase().slice(0, 6))}</span>
+    </span>`;
   }
 
   function databaseVisualThumbnailUrl(visual) {
@@ -8092,7 +8122,7 @@
         <span data-db-proof-download-status role="status" aria-live="polite"></span>
       </div>
       <div class="db-order-proof-grid-shell"><div class="db-visuals-grid db-order-proof-grid" role="list">
-        ${files.map((file, index) => renderDatabaseVisualCard(orderVisualFromFile(file), { openAttribute: 'data-db-order-file-open', openValue: index })).join('')}
+        ${files.map((file, index) => renderDatabaseVisualCard(orderVisualFromFile(file), { openAttribute: 'data-db-order-file-open', openValue: index, fileTypeIcons: true })).join('')}
       </div></div>`;
   }
 

@@ -3073,6 +3073,33 @@ body.modal-open{overflow:hidden}
   outline:3px solid #0471f7;
   outline-offset:2px;
 }
+.db-file-type-icon{
+  position:relative;
+  display:block;
+  width:64px;
+  height:76px;
+  margin:8px auto 12px;
+  --file-type-color:#637282;
+  color:var(--file-type-color);
+}
+.db-file-type-icon svg{display:block;width:64px;height:72px;}
+.db-file-type-icon--spreadsheet{--file-type-color:#217346;}
+.db-file-type-icon--word{--file-type-color:#2459a6;}
+.db-file-type-icon--presentation{--file-type-color:#b94c2e;}
+.db-file-type-icon--archive{--file-type-color:#976518;}
+.db-file-type-icon--embroidery{--file-type-color:#79519a;}
+.db-file-type-extension{
+  position:absolute;
+  bottom:5px;
+  left:2px;
+  min-width:52px;
+  padding:4px 5px;
+  border-radius:3px;
+  background:var(--file-type-color);
+  text-align:center;
+  font:700 10px/1 Arial, Helvetica, sans-serif;
+  color:#fff;
+}
 .db-visual-card-preview{
   position:relative;
   display:flex;
