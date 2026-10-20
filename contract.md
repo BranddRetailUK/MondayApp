@@ -1094,3 +1094,9 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Live proof history disables and greys the Link to job button whenever the record has an active job, linked job IDs or linked order metadata. Unlinked proofs retain the existing action and busy/save guards. The tooltip explains that the proof is already linked; API linking semantics are unchanged. JavaScript syntax validation and the existing 25 proof UI regressions passed.
 
 - The ADD TO LIVE confirmation popup contains only “Add this proof to live?” and the existing Confirm/No buttons. Its centred layout, accessible dialog label and cancellation behaviour are retained.
+
+### Proof presentation refinements (2026-10-20)
+
+- The ADD TO LIVE popup centres both its question and Confirm/No buttons using popup-scoped styles; other Dashboard confirmation layouts are unchanged.
+- Newly generated/regenerated PDFs colour Transfer print method values green and Embroidery values red, both beside Print method and in bottom artwork callouts. Other methods, labels and dimensions remain black. Colour and Version header values share the Garment value's left alignment. Bottom artwork callouts omit the optional Colours line; supplied print/thread colours remain stored and used by rendering. Existing saved PDFs are unchanged until regenerated.
+- Validation: all 231 proof regressions passed; a rendered two-method proof confirmed colours and bottom callout layout, and PDF text positions confirmed all three header values at the same x coordinate with no Colours line.

@@ -260,3 +260,6 @@ body.proof-preview .proof-preview-badge{display:block}
 .proof-placement-views .proof-view-editor{border:0;margin:0;padding:0}
 
 .proof-history-actions .proof-history-link-button.is-linked:disabled{background:#64676b;border-color:#777a7e;color:#d5d7da;opacity:.65;cursor:not-allowed;box-shadow:none}
+
+.proof-live-confirm-modal .test-dashboard-complete-confirm-message{text-align:center}
+.proof-live-confirm-modal .test-dashboard-complete-confirm-actions{justify-content:center}

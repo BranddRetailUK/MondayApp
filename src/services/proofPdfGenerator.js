@@ -60,6 +60,11 @@ function fittedLines(value, font, width, initialSize, maxLines = 2) {
   return {lines: [...lines.slice(0, maxLines - 1), lines.slice(maxLines - 1).join(' ')], size: 6};
 }
 
+function methodColour(value) {
+  const method=printMethod(value);
+  return method==='Transfer print' ? rgb(0.08,0.5,0.22) : method==='Embroidery' ? rgb(0.8,0.12,0.12) : rgb(0,0,0);
+}
+
 function drawField(page, x, top, width, label, value, regular, bold, split = false) {
   rect(page, x, top, width, 25, rgb(1, 1, 1), rgb(0.65, 0.69, 0.73));
   drawText(page, label, x + 12, top + 6, 10, bold, rgb(0.15, 0.15, 0.15), 80);
@@ -67,7 +72,8 @@ function drawField(page, x, top, width, label, value, regular, bold, split = fal
     const {lines,size}=fittedLines(value || 'To confirm',bold,width-75,8.5);
     lines.forEach((text,i)=>drawText(page,text,x+67,top+(lines.length===1?7:2)+i*10,size,bold,rgb(.15,.15,.15),width-75));return;
   }
-  drawText(page, value || 'To confirm', x + (split ? 77 : 91), top + 5.5, 10.5, bold, rgb(0.15, 0.15, 0.15), width - (split ? 86 : 103));
+  const valueOffset=['Colour:','Version:'].includes(label) ? 67 : split ? 77 : 91;
+  drawText(page, value || 'To confirm', x + valueOffset, top + 5.5, 10.5, bold, rgb(0.15, 0.15, 0.15), width - valueOffset - 12);
 }
 
 function drawHeader(page, brief, product, regular, bold, date) {
@@ -114,10 +120,8 @@ function drawCallout(page, decoration, asset, regular, bold, index, total, garme
     const size = asset && artworkSize(decoration, asset.width / asset.height);
     if (size?.confirmed) widthLabel = `${Number(size.width.toFixed(1))} x ${Number(size.height.toFixed(1))} mm`;
   } catch (_) { widthLabel = 'Dimensions need review'; }
-  drawText(page, printMethod(decoration.method), textX, top + 21, 11, bold, rgb(0,0,0), textWidth);
+  drawText(page, printMethod(decoration.method), textX, top + 21, 11, bold, methodColour(decoration.method), textWidth);
   drawText(page, widthLabel, textX, top + 36, 10, regular, rgb(0,0,0), textWidth);
-  const colours = [...(decoration.printColours || []), ...(decoration.threadColours || [])];
-  if (colours.length) drawText(page, `Colours: ${colours.join(', ')}`, textX, top + 50, 8, regular, rgb(0,0,0), textWidth);
 }
 
 
@@ -258,7 +262,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
       while(methodSize>8.5&&bold.widthOfTextAtSize(safeText(methodText),methodSize)>available)methodSize-=.25;
       for(const [index,method] of methods.entries()){
         if(index){drawText(page,' / ',methodX,128-methodSize,methodSize,bold,rgb(0,0,0));methodX+=bold.widthOfTextAtSize(' / ',methodSize);}
-        const colour=rgb(0,0,0);
+        const colour=methodColour(method);
         drawText(page,method,methodX,128-methodSize,methodSize,bold,colour,cellX+cellWidth-8-methodX);
         methodX+=bold.widthOfTextAtSize(safeText(method),methodSize);
       }

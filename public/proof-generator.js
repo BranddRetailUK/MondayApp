@@ -320,7 +320,7 @@
   function confirmAddToLive() {
     return new Promise(resolve=>{
       const previous=document.activeElement,modal=document.createElement('div');
-      modal.className='test-dashboard-complete-confirm-modal';
+      modal.className='test-dashboard-complete-confirm-modal proof-live-confirm-modal';
       modal.innerHTML=`<div class="test-dashboard-complete-confirm-shell" role="dialog" aria-modal="true" aria-labelledby="proof-live-confirm-title"><div class="test-dashboard-complete-confirm-message" id="proof-live-confirm-title">Add this proof to live?</div><div class="test-dashboard-complete-confirm-actions"><button class="test-dashboard-complete-confirm-button confirm" type="button">Confirm</button><button class="test-dashboard-complete-confirm-button cancel" type="button">No</button></div></div>`;
       const yes=modal.querySelector('.confirm'),no=modal.querySelector('.cancel');
       const close=value=>{document.removeEventListener('keydown',keys);modal.remove();previous?.focus();resolve(value);};
