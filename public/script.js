@@ -5720,6 +5720,16 @@ function setStoredDashboardTab(tabName) {
   try {
     window.localStorage.setItem(DASHBOARD_TAB_STORAGE_KEY, tabName);
   } catch {}
+  // Keep explicit deep links aligned with navigation so reload cannot reopen a stale tab.
+  try {
+    const url = new URL(window.location.href);
+    const hashTab = url.hash.replace(/^#/, '');
+    if (url.searchParams.has('tab') || (hashTab && !isValidDashboardTab(hashTab))) {
+      url.searchParams.set('tab', tabName);
+    }
+    if (!hashTab || isValidDashboardTab(hashTab)) url.hash = tabName;
+    if (url.href !== window.location.href) window.history.replaceState(window.history.state, '', url.href);
+  } catch {}
 }
 
 function isValidDashboardTab(tabName) {
