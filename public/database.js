@@ -2015,7 +2015,7 @@
     const customer = visual.customer_name || 'Customer not recorded';
     const design = visual.design_numbers || 'No design number';
     const name = visual.name || 'Visual';
-    const aria = `Open ${name} from job ${orderNumber}`;
+    const aria = options.showOrderMetadata === false ? `Open ${name}` : `Open ${name} from job ${orderNumber}`;
     const openAttribute = options.openAttribute || 'data-db-visual-open';
     const openValue = options.openValue ?? visual.id;
 
@@ -2042,9 +2042,9 @@
           ${isPdf ? '<span class="db-visual-card-type">PDF</span>' : ''}
         </span>`}
         <span class="db-visual-card-name" title="${escapeAttr(name)}">${escapeHtml(name)}</span>
-        <span class="db-visual-card-job">Job ${escapeHtml(orderNumber)}</span>
+        ${options.showOrderMetadata === false ? '' : `<span class="db-visual-card-job">Job ${escapeHtml(orderNumber)}</span>
         <span class="db-visual-card-customer" title="${escapeAttr(customer)}">${escapeHtml(customer)}</span>
-        <span class="db-visual-card-design" title="${escapeAttr(design)}">${escapeHtml(design)}</span>
+        <span class="db-visual-card-design" title="${escapeAttr(design)}">${escapeHtml(design)}</span>`}
       </button>
     `;
   }
@@ -8122,7 +8122,7 @@
         <span data-db-proof-download-status role="status" aria-live="polite"></span>
       </div>
       <div class="db-order-proof-grid-shell"><div class="db-visuals-grid db-order-proof-grid" role="list">
-        ${files.map((file, index) => renderDatabaseVisualCard(orderVisualFromFile(file), { openAttribute: 'data-db-order-file-open', openValue: index, fileTypeIcons: true })).join('')}
+        ${files.map((file, index) => renderDatabaseVisualCard(orderVisualFromFile(file), { openAttribute: 'data-db-order-file-open', openValue: index, fileTypeIcons: true, showOrderMetadata: false })).join('')}
       </div></div>`;
   }
 
