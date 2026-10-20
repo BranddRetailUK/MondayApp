@@ -148,7 +148,6 @@ function createService(pool, {upload = require('./cloudinaryDashboard').uploadBu
     if(!targetBeforeUpload)throw new Error('The linked job no longer exists.');
     const filesBeforeUpload=(await pool.query(`SELECT public_id FROM test_dashboard_files WHERE source_order_id=$1 AND ${VISUAL}`,[saved.publication_target])).rows;
     if(targetBeforeUpload.proof_approved && (saved.linked_saved_revision>0||saved.file_public_id||filesBeforeUpload.length))throw new Error('Approved proofs cannot be regenerated or replaced.');
-    if(filesBeforeUpload.some(file=>file.public_id!==saved.file_public_id))throw new Error('The job visual has changed. Remove the unrelated visual before retrying.');
     if(!saved.saved_proof_pdf)throw new Error('The saved PDF is unavailable.');
     const filename=proofFileName({designNumber:String(saved.design_number),customer:saved.saved_snapshot?.customer||saved.customer,jobTitle:saved.saved_snapshot?.job_title||saved.job_title});
     // Upload without database locks: Cloudinary processing must not block order creation.
@@ -164,10 +163,9 @@ function createService(pool, {upload = require('./cloudinaryDashboard').uploadBu
       if(!target)throw new Error('The linked job no longer exists.');
       const files=(await db.query(`SELECT * FROM test_dashboard_files WHERE source_order_id=$1 AND ${VISUAL} FOR UPDATE`,[link.source_order_id])).rows;
       if(target.proof_approved && (link.saved_revision>0||link.file_public_id||files.length))throw new Error('Approved proofs cannot be regenerated or replaced.');
-      if(files.some(file=>file.public_id!==link.file_public_id))throw new Error('The job visual has changed. Remove the unrelated visual before retrying.');
       if(!proof.saved_proof_pdf)throw new Error('The saved PDF is unavailable.');
       // Revision-specific assets preserve previous/repeat order visuals.
-      await db.query(`DELETE FROM test_dashboard_files WHERE source_order_id=$1 AND ${VISUAL}`,[link.source_order_id]);
+      await db.query(`DELETE FROM test_dashboard_files WHERE source_order_id=$1 AND ${VISUAL} AND public_id=$2`,[link.source_order_id,link.file_public_id]);
       await db.query(`INSERT INTO test_dashboard_files(source_order_id,column_id,column_title,public_id,secure_url,resource_type,format,original_filename,bytes,metadata)
         VALUES($1,$2,'PROOF',$3,$4,$5,'pdf',$6,$7,$8)`,[link.source_order_id,COL.PROOF,asset.public_id,asset.secure_url,asset.resource_type||'image',filename,asset.bytes||proof.saved_proof_pdf.length,JSON.stringify({proofId,revision:proof.saved_revision})]);
       const insertedPosition=await db.query(`INSERT INTO database_job_positions(source_order_position_id,source_order_id,position_sort_order,design_ref,created_at_source,updated_at_source)

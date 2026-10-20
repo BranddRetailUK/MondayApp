@@ -98,6 +98,7 @@ test('shared VISUAL upload routes accept and store files for a Business Gifts da
       ) {
         return { rowCount: 1, rows: [proofColumn] };
       }
+      if (sql.includes('FROM proof_job_links')) return { rowCount: 1, rows: [{ proof_id: 'existing-generated-proof' }] };
       if (sql.includes('INSERT INTO test_dashboard_files')) {
         return { rowCount: 1, rows: [insertedFile] };
       }

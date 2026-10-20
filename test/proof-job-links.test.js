@@ -79,7 +79,7 @@ test('repeat snapshot keeps old visual; editing repeat retains design number and
 
   }finally{await f.db.close();}
 });
-test('approval, conflicting visuals and failed publication preserve job data and support retry',async()=>{
+test('approval, additional manual visuals and failed publication preserve job data and support retry',async()=>{
   const f=await fixture();try{
     f.fail(true);await assert.rejects(()=>f.links.link(f.id,1),/unavailable/);
     assert.equal((await f.links.job(1)).proof_id,f.id);
@@ -91,13 +91,15 @@ test('approval, conflicting visuals and failed publication preserve job data and
     await assert.rejects(()=>f.links.publish(f.id),/Approved proofs/);
     await f.db.query('UPDATE database_jobs SET proof_approved=false WHERE source_order_id=1');
     await f.db.query(`INSERT INTO test_dashboard_files(source_order_id,column_id,column_title,public_id) VALUES(1,$1,'PROOF','unrelated')`,[COL.PROOF]);
-    await assert.rejects(()=>f.links.publish(f.id),/visual has changed/);
-    await f.db.query("DELETE FROM test_dashboard_files WHERE public_id='unrelated'");
+    const manualBefore=(await f.db.query("SELECT * FROM test_dashboard_files WHERE public_id='unrelated'")).rows;
     await f.links.publish(f.id);assert.equal(f.uploads.length,2);
+    assert.deepEqual((await f.db.query("SELECT * FROM test_dashboard_files WHERE public_id='unrelated'")).rows,manualBefore);
+    assert.equal((await f.db.query("SELECT * FROM test_dashboard_files WHERE source_order_id=1")).rows.length,2);
     await f.links.unlink(1);
     assert.equal((await f.links.job(1)).proof_id,null);
     assert.equal((await f.db.query('SELECT * FROM database_job_positions WHERE source_order_id=1')).rows.length,0);
     assert.equal((await f.designs.get(f.id)).designNumber,'30001');
+    assert.deepEqual((await f.db.query("SELECT * FROM test_dashboard_files WHERE source_order_id=1")).rows,manualBefore);
   }finally{await f.db.close();}
 });
 test('worker acknowledgement snapshots confirmed revision and job context is fenced',async()=>{

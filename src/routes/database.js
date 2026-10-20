@@ -1309,10 +1309,6 @@ router.post('/api/database/visuals/:fileId/attach', async (req, res) => {
     }
 
     const targetJob = targetResult.rows[0];
-    if((await client.query('SELECT 1 FROM proof_job_links WHERE source_order_id=$1',[targetSourceOrderId])).rows.length){
-      await client.query('ROLLBACK');
-      return res.status(409).json({error:'This job has a generated proof. Edit or unlink that proof before attaching another visual.'});
-    }
 
     if (!isOpenDatabaseVisualJob(targetJob)) {
       await client.query('ROLLBACK');

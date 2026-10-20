@@ -906,10 +906,7 @@ protectedRouter.post('/api/test-dashboard/items/:jobId/files', async (req, res) 
     fileClient = await pool.connect();
     await fileClient.query('BEGIN');
     await fileClient.query('SELECT source_order_id FROM database_jobs WHERE source_order_id=$1 FOR UPDATE',[sourceOrderId]);
-    if(isVisualProofColumn(column) && (await fileClient.query('SELECT 1 FROM proof_job_links WHERE source_order_id=$1',[sourceOrderId])).rows.length){
-      await fileClient.query('ROLLBACK');
-      return res.status(409).json({error:'This job has a generated proof. Edit or unlink that proof before uploading another visual.'});
-    }
+
     const inserted = await fileClient.query(
       `INSERT INTO test_dashboard_files (
          source_order_id,

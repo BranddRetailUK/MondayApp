@@ -70,6 +70,7 @@ test('attaching a gallery visual reuses its Cloudinary metadata on an eligible o
       if (sql.includes('FROM database_jobs') && sql.includes('FOR UPDATE')) {
         return { rowCount: 1, rows: [target] };
       }
+      if (sql.includes('FROM proof_job_links')) return { rowCount: 1, rows: [{ proof_id: 'existing-generated-proof' }] };
       if (sql.includes('INSERT INTO test_dashboard_files')) {
         return { rowCount: 1, rows: [inserted] };
       }
