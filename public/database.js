@@ -3385,17 +3385,6 @@
 
   function resetNewOrderForm() {
     els.newOrderForm.reset();
-    delete els.newOrderForm.dataset.proofDesignId;
-    let proofPicker=els.newOrderForm.querySelector('[data-new-order-proof]');
-    if(!proofPicker){proofPicker=document.createElement('div');proofPicker.dataset.newOrderProof='';proofPicker.className='db-new-order-row';document.getElementById('db-new-job-title').closest('.db-new-order-row').after(proofPicker);}
-    proofPicker.replaceChildren();proofPicker.hidden=!window.ProofLinks?.allowed();
-    if(!proofPicker.hidden){
-      const label=document.createElement('label');label.textContent='Existing proof:';
-      const choose=document.createElement('button');choose.type='button';choose.textContent='Choose proof';
-      const clear=document.createElement('button');clear.type='button';clear.textContent='Clear';clear.hidden=true;
-      choose.onclick=async()=>{const proof=await window.ProofLinks.picker('proofs',{customer:document.getElementById('db-new-customer').value});if(proof){els.newOrderForm.dataset.proofDesignId=proof.id;choose.textContent=`${proof.designNumber} · ${proof.customer} · ${proof.jobTitle}`;clear.hidden=false;}};
-      clear.onclick=()=>{delete els.newOrderForm.dataset.proofDesignId;choose.textContent='Choose proof';clear.hidden=true;};proofPicker.append(label,choose,clear);
-    }
     clearTimeout(customerSearchTimer);
     customerSearchRequest += 1;
     state.selectedCustomer = null;
@@ -3941,7 +3930,6 @@
 
     try {
       const payload = collectNewOrderPayload();
-      if(window.ProofLinks?.allowed()&&els.newOrderForm.dataset.proofDesignId)payload.proof_design_id=els.newOrderForm.dataset.proofDesignId;
       const response = await fetch('/api/database/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3961,8 +3949,7 @@
       state.loadedOrderMode = '';
       els.newOrderStatus.textContent = `Created order ${data.job?.order_no || ''}`;
       els.newOrderStatus.dataset.tone = 'success';
-      await openOrder(data.job.source_order_id, payload.proof_design_id?'proof':'details');
-      if(payload.proof_design_id){try{await window.ProofLinks.api(`/designs/${payload.proof_design_id}/link`,{sourceOrderId:data.job.source_order_id});await openOrder(data.job.source_order_id,'proof');}catch(error){window.alert('Order created. Proof sync needs attention: '+error.message);}}
+      await openOrder(data.job.source_order_id, 'details');
 
       loadHomeMetrics();
     } catch (err) {

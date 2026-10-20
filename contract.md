@@ -1056,3 +1056,10 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - The order-info Customer overview drawer starts expanded, with matching initial HTML and accessible toggle state. Users can still collapse or reopen it during the session.
 
 - The outer DATABASE workspace background is dark grey `#242628`, slightly lighter than the sidebar `#111213`. The inner page panels and shared light blue accent colours retain their existing colours.
+
+
+### DATABASE Home and New Order presentation (2026-10-20)
+
+- The outer workspace returns to light blue with a subtle diagonal gradient (`#c1e3f3`, `#8ec7e3`, `#a9d6ec`). Desktop Home menu groups, counts and status updates are centred together within the shared container; mobile stacking is retained.
+- New Order uses a wider 500px desktop form, larger fields, and a centred bold uppercase title. The form is vertically centred; status messages and Cancel/Accept buttons are in normal flow below Customer Ref rather than overlapping fields. Mobile remains full-width within its existing responsive form layout.
+- The New Order Existing proof picker and its automatic post-creation proof-link action are removed. New orders open on Order Details; existing order/proof linking elsewhere remains available.
