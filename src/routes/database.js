@@ -5841,6 +5841,31 @@ router.delete('/api/database/jobs/:id/line-items/:lineItemId', async (req, res) 
   }
 });
 
+router.get('/api/database/jobs/:id/files/:fileId/download', async (req, res) => {
+  const id = Number(req.params.id), fileId = Number(req.params.fileId);
+  if (!Number.isSafeInteger(id) || !Number.isSafeInteger(fileId) || fileId <= 0) {
+    return res.status(400).json({ error: 'Invalid order or file id' });
+  }
+  try {
+    const job = await pool.query(`SELECT source_order_id FROM database_jobs
+      WHERE source_order_id=$1 OR order_no=$1
+      ORDER BY CASE WHEN source_order_id=$1 THEN 0 ELSE 1 END LIMIT 1`, [id]);
+    if (!job.rows.length) return res.status(404).json({ error: 'Database job not found' });
+    const result = await pool.query(`SELECT * FROM test_dashboard_files
+      WHERE source_order_id=$1 AND id=$2
+        AND (column_id IN ($3, $4) OR UPPER(TRIM(column_title)) IN ('PROOF', 'FILES'))`,
+    [job.rows[0].source_order_id, fileId, TEST_DASHBOARD_COLUMN_IDS.PROOF, TEST_DASHBOARD_COLUMN_IDS.FILES]);
+    if (!result.rows.length) return res.status(404).json({ error: 'File not found for this order' });
+    const { name, data } = await require('../services/databaseVisualDownload').readVisualFile(result.rows[0]);
+    res.set('Cache-Control', 'no-store');
+    res.attachment(name);
+    res.send(data);
+  } catch (error) {
+    console.error('GET order file download', error.message);
+    res.status(error.status || 502).json({ error: error.status ? error.message : 'Could not download this file. Please try again.' });
+  }
+});
+
 router.get('/api/database/jobs/:id/visuals/download', (req, res) => downloadOrderAttachments(req, res));
 router.get('/api/database/jobs/:id/files/download', (req, res) => downloadOrderAttachments(req, res, true));
 

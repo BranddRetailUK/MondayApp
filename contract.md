@@ -1011,3 +1011,11 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Files-tab cards display only the file-type icon (or existing image/PDF preview) and filename; job number, customer and design metadata are omitted from those cards. Visuals cards retain their existing metadata.
 
 - Order Visuals-tab cards also omit job, customer and design metadata, displaying only the preview and filename. The separate cross-order Visuals gallery keeps those details to identify the source order.
+
+
+### Order attachment actions and DATABASE loading states (2026-10-20)
+
+- Order Visuals and Files cards each offer an individual Download action alongside their existing preview/open action. Authenticated `GET /api/database/jobs/:id/files/:fileId/download` verifies that the attachment belongs to the resolved order and a PROOF/FILES column, then returns the original with a sanitized filename. The shared download reader only accepts HTTPS Cloudinary asset URLs, refuses redirects and limits downloads to 100 MB with a 30-second fetch timeout; ZIP downloads retain their cumulative limit.
+- Uploads warn when filenames match attachments already loaded in either tab or repeat within the selected batch (case-insensitive, trimmed Unicode-normalized names). Confirm uploads all selected files; Cancel skips matching names and uploads only new names. This is a filename warning, not content deduplication.
+- Both attachment tabs show actual transfer progress per file followed by a Saving phase while metadata is registered. Progress and completion stay scoped to the starting order and attachment tab across navigation; failed transfers show an error. No attachment-count badges are added.
+- DATABASE order details, list tables, customer sections, reports, catalogue previews and attachment viewers use the existing Dashboard loading circle centred in the loading section instead of visible loading text. Smaller incremental loads use a compact circle; errors remain readable and clear the loading state in every order tab.

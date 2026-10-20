@@ -9868,3 +9868,18 @@ input.db-custom-line-input{
 #test-board > .workspace-loading{min-height:calc(100dvh - 70px)}
 #proof-history-list[hidden]{display:none}
 @media(prefers-reduced-motion:reduce){.board-loading-spinner{animation-duration:2s}}
+
+/* Order attachments: keep preview/open and download as separate controls. */
+.db-order-attachment-card{min-width:0;display:flex;flex-direction:column;border:2px outset #fff;background:#f5f3e9;}
+.db-order-attachment-card > .db-visual-card{width:100%;flex:1;border:0;background:transparent;}
+.db-attachment-card-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;padding:4px 6px 6px;}
+.db-attachment-download{padding:4px 9px;border:1px solid #b8bec3;border-radius:3px;background:#fff;color:#164c80;font:12px Arial,Helvetica,sans-serif;cursor:pointer;}
+.db-attachment-download:disabled{color:#667;cursor:wait;}
+[data-db-file-download-status]{color:#9d1010;font:11px Arial,Helvetica,sans-serif;overflow-wrap:anywhere;}
+.db-upload-progress{display:grid;gap:3px;min-width:170px;order:-1;font:12px Arial,Helvetica,sans-serif;color:#263746;}
+.db-upload-progress:empty{display:none;}
+.db-upload-progress progress{width:100%;height:8px;accent-color:#1671a3;}
+.db-section-loading{display:grid;place-items:center;width:100%;min-height:220px;}
+.db-order-panel > .db-section-loading{min-height:clamp(360px,calc(100dvh - 350px),760px);}
+.db-section-loading.is-compact{min-height:40px;}
+.db-section-loading.is-compact .board-loading-spinner{width:22px;height:22px;border-width:3px;}

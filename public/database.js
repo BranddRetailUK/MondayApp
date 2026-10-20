@@ -894,6 +894,10 @@
       await downloadAllDatabaseVisuals(button, 'files');
       return;
     }
+    if (button.dataset.dbAttachmentDownload !== undefined) {
+      await downloadDatabaseAttachment(button);
+      return;
+    }
     if (button.dataset.dbOrderFileOpen !== undefined) {
       const file = state.selectedFiles[Number(button.dataset.dbOrderFileOpen)];
       if (file) openDatabaseVisualPreviewModal(orderVisualFromFile(file), button, { allowAttach: false });
@@ -1977,7 +1981,7 @@
       els.visualsStatus.textContent = state.visualsError;
     } else if (state.visualsLoading && !visuals.length) {
       els.visualsStatus.hidden = false;
-      els.visualsStatus.textContent = 'Loading visual previews…';
+      els.visualsStatus.innerHTML = renderDatabaseLoading('Loading visual previews');
     } else if (!visuals.length) {
       els.visualsStatus.hidden = false;
       els.visualsStatus.textContent = state.visualsLoadedQuery
@@ -1985,7 +1989,7 @@
         : 'No job visuals have been attached yet';
     } else if (state.visualsLoading) {
       els.visualsStatus.hidden = false;
-      els.visualsStatus.textContent = 'Loading more visuals…';
+      els.visualsStatus.innerHTML = renderDatabaseLoading('Loading more visuals', true);
     } else {
       els.visualsStatus.hidden = true;
       els.visualsStatus.textContent = '';
@@ -2019,11 +2023,11 @@
     const openAttribute = options.openAttribute || 'data-db-visual-open';
     const openValue = options.openValue ?? visual.id;
 
-    return `
+    const card = `
       <button
         class="db-visual-card"
         type="button"
-        role="listitem"
+        ${options.downloadKind ? '' : 'role="listitem"'}
         ${openAttribute}="${escapeAttr(openValue)}"
         aria-label="${escapeAttr(aria)}"
       >
@@ -2047,6 +2051,16 @@
         <span class="db-visual-card-design" title="${escapeAttr(design)}">${escapeHtml(design)}</span>`}
       </button>
     `;
+    if (!options.downloadKind) return card;
+    return `<div class="db-order-attachment-card" role="listitem">
+      ${card}
+      <div class="db-attachment-card-actions">
+        <span data-db-file-download-status role="status" aria-live="polite"></span>
+        <button class="db-attachment-download" type="button"
+          data-db-attachment-download="${escapeAttr(openValue)}" data-db-attachment-kind="${escapeAttr(options.downloadKind)}"
+          aria-label="Download ${escapeAttr(name)}">Download</button>
+      </div>
+    </div>`;
   }
 
   function renderDatabaseFileTypeIcon(file) {
@@ -2877,22 +2891,22 @@
 
   function renderDatabaseReportsLoading() {
     window.DatabaseReports?.clear();
-    if (els.reportsStatus) els.reportsStatus.textContent = 'Loading financial report…';
+    if (els.reportsStatus) els.reportsStatus.textContent = '';
     if (els.reportsChart) els.reportsChart.replaceChildren();
     if (els.reportsChartLegend) els.reportsChartLegend.hidden = true;
     syncDatabaseReportChartHeading({});
     if (els.reportsChartState) {
       els.reportsChartState.hidden = false;
-      els.reportsChartState.textContent = 'Loading financial report';
+      els.reportsChartState.innerHTML = renderDatabaseLoading('Loading financial report');
     }
     if (els.reportsKpis) {
       els.reportsKpis.innerHTML = Array.from({ length: 6 }, () => `
         <div class="db-report-kpi db-report-loading-block"><span>&nbsp;</span><strong>&nbsp;</strong></div>
       `).join('');
     }
-    if (els.reportsTopCustomer) els.reportsTopCustomer.innerHTML = '<div class="db-report-card-title">Highest grossing customer</div><div class="db-report-card-empty">Loading…</div>';
-    if (els.reportsCustomersBody) els.reportsCustomersBody.innerHTML = '<tr><td colspan="3">Loading…</td></tr>';
-    if (els.reportsTypesBody) els.reportsTypesBody.innerHTML = '<tr><td colspan="3">Loading…</td></tr>';
+    if (els.reportsTopCustomer) els.reportsTopCustomer.innerHTML = '<div class="db-report-card-title">Highest grossing customer</div>' + renderDatabaseLoading('Loading customers', true);
+    if (els.reportsCustomersBody) els.reportsCustomersBody.innerHTML = renderStatusRow('Loading report', 3);
+    if (els.reportsTypesBody) els.reportsTypesBody.innerHTML = renderStatusRow('Loading report', 3);
   }
 
   function renderDatabaseReportsError(err) {
@@ -4729,13 +4743,13 @@
       els.customerOrdersSearch.value = '';
       els.customerOrdersSearch.disabled = true;
     }
-    els.customerName.value = 'Loading...';
+    els.customerName.value = '';
     els.customerCode.value = '';
     setCustomerAccountManagerOptions(null, true);
     renderCustomerHeaderStats();
     els.customerOrdersBody.innerHTML = renderStatusRow('Loading customer orders', 11);
-    els.customerContactsBody.innerHTML = '<div class="db-panel-message">Loading contacts</div>';
-    els.customerAddressesBody.innerHTML = '<div class="db-panel-message">Loading addresses</div>';
+    els.customerContactsBody.innerHTML = renderDatabaseLoading('Loading contacts');
+    els.customerAddressesBody.innerHTML = renderDatabaseLoading('Loading addresses');
     if (els.customerDesignNumbersBody) els.customerDesignNumbersBody.innerHTML = renderStatusRow('Loading design numbers', 6);
   }
 
@@ -6652,7 +6666,7 @@
     window.clearTimeout(productStyleSearchTimer);
     productStylesRequest += 1;
     state.productStylesLoading = false;
-    if (els.stylesSummary) els.stylesSummary.textContent = 'Searching styles...';
+    if (els.stylesSummary) els.stylesSummary.textContent = '';
     productStyleSearchTimer = window.setTimeout(() => {
       loadProductStyles({ force: true });
     }, STYLE_SEARCH_DELAY);
@@ -6706,13 +6720,13 @@
     ) return;
     if (!style) {
       els.stylesDetailPanel?.classList.remove('db-styles-many-colours');
-      els.stylesSelectedTitle.textContent = message || 'Select a parent product';
+      els.stylesSelectedTitle.textContent = /^(Loading|Searching)\b/.test(message) ? '' : (message || 'Select a parent product');
       els.stylesSelectedMeta.textContent = '';
       els.stylesSelectedCost.textContent = '';
       if (els.stylesColourLabel) els.stylesColourLabel.textContent = '';
       if (els.stylesSizeLabel) els.stylesSizeLabel.textContent = '';
-      els.stylesSizes.innerHTML = `<div class="db-panel-message">${escapeHtml(message || 'No size options')}</div>`;
-      els.stylesColours.innerHTML = `<div class="db-panel-message">${escapeHtml(message || 'No colours')}</div>`;
+      els.stylesSizes.innerHTML = /^(Loading|Searching)\b/.test(message) ? '' : `<div class="db-panel-message">${escapeHtml(message || 'No size options')}</div>`;
+      els.stylesColours.innerHTML = /^(Loading|Searching)\b/.test(message) ? '' : `<div class="db-panel-message">${escapeHtml(message || 'No colours')}</div>`;
       setProductStylePreview('', '', message || 'Select a parent product');
       return;
     }
@@ -6861,7 +6875,8 @@
     els.stylesPreviewImage.classList.add('is-loading');
     setProductStylePreviewInteractive(false);
     els.stylesPreviewPlaceholder.hidden = false;
-    els.stylesPreviewPlaceholder.textContent = imageUrl ? 'Loading image...' : (emptyLabel || 'No image available');
+    if (imageUrl || /^(Loading|Searching)\b/.test(emptyLabel || '')) els.stylesPreviewPlaceholder.innerHTML = renderDatabaseLoading('Loading image');
+    else els.stylesPreviewPlaceholder.textContent = emptyLabel || 'No image available';
     if (!imageUrl) {
       delete els.stylesPreviewImage.dataset.imageUrl;
       els.stylesPreviewImage.removeAttribute('src');
@@ -6970,12 +6985,12 @@
     if (!els.stylesSummary) return;
     const query = String(state.productStyleQuery || '').trim();
     if (state.productStylesLoading && !state.productStylesLoaded) {
-      els.stylesSummary.textContent = query ? 'Searching styles...' : 'Loading styles...';
+      els.stylesSummary.textContent = '';
       return;
     }
     const total = Number.isFinite(Number(totalCount)) ? Number(totalCount) : loadedCount;
     if (loadedCount < total) {
-      els.stylesSummary.textContent = `Showing ${formatNumber(loadedCount)} of ${formatNumber(total)}${query ? ' matches' : ' styles'}${state.productStylesLoading ? ' · loading more' : ''}`;
+      els.stylesSummary.textContent = `Showing ${formatNumber(loadedCount)} of ${formatNumber(total)}${query ? ' matches' : ' styles'}`;
       return;
     }
     els.stylesSummary.textContent = `${formatNumber(total)}${query ? ' matches' : ' styles'}`;
@@ -7239,7 +7254,7 @@
 
     const scrollTop = options.preserveScroll ? els.outstandingFrame?.scrollTop : null;
     els.outstandingBody.innerHTML = jobs.map(renderOutstandingRow).join('')
-      + (!state.orderLoadComplete ? `<tr><td colspan="${outstandingTableColumnCount()}"><button type="button" data-db-action="load-more-orders" ${state.loadingOrders ? 'disabled' : ''}>${escapeHtml(state.orderLoadError || (state.loadingOrders ? 'Loading more…' : 'Load more orders'))}</button></td></tr>` : '');
+      + (!state.orderLoadComplete ? `<tr><td colspan="${outstandingTableColumnCount()}"><button type="button" data-db-action="load-more-orders" ${state.loadingOrders ? 'disabled' : ''}>${state.loadingOrders ? renderDatabaseLoading('Loading more orders', true) : escapeHtml(state.orderLoadError || 'Load more orders')}</button></td></tr>` : '');
     scheduleOutstandingTableLayout(jobs);
     if (scrollTop !== null && els.outstandingFrame) els.outstandingFrame.scrollTop = scrollTop;
     if (hydrateSelectors) hydrateOrderSelectors();
@@ -7553,14 +7568,13 @@
     state.orderCustomerDetail = null;
     state.selectedCustomerOverview = null;
     syncOrderDocumentButtons(null);
-    els.orderTitle.value = 'Loading...';
+    els.orderTitle.value = '';
     els.orderNumber.value = '';
     renderOrderHeaderStats();
-    els.detailsPanel.innerHTML = '<div class="db-panel-message">Loading order details</div>';
-    els.itemsPanel.innerHTML = '';
-    els.designPanel.innerHTML = '';
-    if (els.proofPanel) els.proofPanel.innerHTML = '';
-    if (els.filesPanel) els.filesPanel.innerHTML = '';
+    for (const panel of [els.detailsPanel, els.itemsPanel, els.designPanel, els.proofPanel, els.filesPanel]) {
+      if (panel) panel.innerHTML = renderDatabaseLoading('Loading order');
+    }
+
   }
 
   function renderOrderError(message) {
@@ -7570,11 +7584,9 @@
     syncOrderDocumentButtons(null);
     els.orderTitle.value = 'Order unavailable';
     els.orderNumber.value = '';
-    els.detailsPanel.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
-    els.itemsPanel.innerHTML = '';
-    els.designPanel.innerHTML = '';
-    if (els.proofPanel) els.proofPanel.innerHTML = '';
-    if (els.filesPanel) els.filesPanel.innerHTML = '';
+    for (const panel of [els.detailsPanel, els.itemsPanel, els.designPanel, els.proofPanel, els.filesPanel]) {
+      if (panel) panel.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
+    }
   }
 
   function renderOrder() {
@@ -8122,8 +8134,44 @@
         <span data-db-proof-download-status role="status" aria-live="polite"></span>
       </div>
       <div class="db-order-proof-grid-shell"><div class="db-visuals-grid db-order-proof-grid" role="list">
-        ${files.map((file, index) => renderDatabaseVisualCard(orderVisualFromFile(file), { openAttribute: 'data-db-order-file-open', openValue: index, fileTypeIcons: true, showOrderMetadata: false })).join('')}
+        ${files.map((file, index) => renderDatabaseVisualCard(orderVisualFromFile(file), { openAttribute: 'data-db-order-file-open', openValue: index, fileTypeIcons: true, showOrderMetadata: false, downloadKind: 'files' })).join('')}
       </div></div>`;
+  }
+
+  function filterDatabaseDuplicateUploads(files) {
+    const key = file => String(file.name || file.original_filename || '').normalize('NFC').trim().toLowerCase();
+    const names = new Set([...(state.selectedProofFiles || []), ...(state.selectedFiles || [])].map(key).filter(Boolean));
+    const uniqueFiles = [], duplicates = [];
+    for (const file of files) {
+      const name = key(file);
+      if (name && names.has(name)) duplicates.push(file.name);
+      else uniqueFiles.push(file);
+      if (name) names.add(name);
+    }
+    if (!duplicates.length) return files;
+    const list = [...new Set(duplicates)].slice(0, 5).join('\n');
+    const more = duplicates.length > 5 ? `\n…and ${duplicates.length - 5} more` : '';
+    return window.confirm(`Files with these names are already attached to this order or repeated in your selection:\n\n${list}${more}\n\nUpload them anyway? Cancel skips the matching files and uploads only new names.`)
+      ? files : uniqueFiles;
+  }
+
+  function renderDatabaseUploadProgress(upload) {
+    if (!upload?.inFlight) return '';
+    const percent = Number.isFinite(upload.percent) ? Math.max(0, Math.min(100, Math.round(upload.percent))) : null;
+    const phase = upload.phase || 'Preparing';
+    const label = `${phase} ${upload.current || 1} of ${upload.total || 1}${phase === 'Uploading' && percent !== null ? ` · ${percent}%` : ''}`;
+    return `<span class="db-upload-progress-label">${escapeHtml(label)}</span>
+      <progress max="100" ${percent === null ? '' : `value="${percent}"`} aria-label="${escapeAttr(label)}"></progress>`;
+  }
+
+  function updateDatabaseAttachmentProgress(sourceOrderId, kind, progress) {
+    const upload = databaseProofUploadForJob(kind === 'files' ? `files:${sourceOrderId}` : sourceOrderId);
+    if (!upload?.inFlight) return;
+    Object.assign(upload, progress);
+    if (Number(state.selectedJob?.source_order_id) !== Number(sourceOrderId)) return;
+    const panel = kind === 'files' ? els.filesPanel : els.proofPanel;
+    const holder = panel?.querySelector('[data-db-upload-progress]');
+    if (holder) holder.innerHTML = renderDatabaseUploadProgress(upload);
   }
 
   async function uploadDatabaseOrderFiles(files) {
@@ -8131,13 +8179,18 @@
     if (!sourceOrderId || !files.length) return;
     const upload = databaseProofUploadForJob(`files:${sourceOrderId}`, { create: true });
     if (upload.inFlight) return;
-    Object.assign(upload, { inFlight: true, message: '', error: '' });
+    files = filterDatabaseDuplicateUploads(files);
+    if (!files.length) return;
+    Object.assign(upload, { inFlight: true, current: 0, total: files.length, percent: null, phase: 'Preparing', message: '', error: '' });
     renderFilesPanel();
     const saved = [], failures = [];
     for (const file of files) {
+      upload.current += 1;
+      updateDatabaseAttachmentProgress(sourceOrderId, 'files', { percent: null, phase: 'Preparing' });
       try {
         const result = await uploadDatabaseAttachmentFile(sourceOrderId, file, {
           columnId: 'files_1', columnTitle: 'FILES', upload_source: 'database_order_files_tab',
+          onProgress: progress => updateDatabaseAttachmentProgress(sourceOrderId, 'files', progress),
         });
         if (result) saved.push(result);
       } catch (error) { failures.push(`${file.name}: ${error.message || 'Upload failed'}`); }
@@ -8172,12 +8225,48 @@
               openAttribute: 'data-db-order-visual-open',
               openValue: index,
               showOrderMetadata: false,
+              downloadKind: 'proof',
             }
           )).join('')}
         </div>
       </div>
     `;
     window.ProofLinks?.controls(els.proofPanel.querySelector('[data-proof-job-controls]'),state.selectedJob?.source_order_id,{showLinkedActions:false});
+  }
+
+  async function downloadDatabaseAttachment(button) {
+    if (button.disabled) return;
+    const files = button.dataset.dbAttachmentKind === 'files' ? state.selectedFiles : state.selectedProofFiles;
+    const file = files?.[Number(button.dataset.dbAttachmentDownload)];
+    const fileId = databaseVisualFileId(file);
+    const orderId = file?.source_order_id || state.selectedJob?.source_order_id;
+    if (!fileId || !orderId) return;
+    const status = button.closest('.db-order-attachment-card')?.querySelector('[data-db-file-download-status]');
+    button.disabled = true;
+    button.textContent = 'Downloading…';
+    if (status) status.textContent = '';
+    try {
+      const response = await fetch(`/api/database/jobs/${encodeURIComponent(orderId)}/files/${fileId}/download`, {
+        credentials: 'include', cache: 'no-store',
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || 'Could not download this file.');
+      }
+      if (!response.headers.get('content-disposition')?.includes('attachment')) throw new Error('Please sign in again to download this file.');
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = file.name || file.original_filename || 'file';
+      document.body.appendChild(link);
+      link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (error) {
+      if (status) status.textContent = error.message || 'Download failed';
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Download';
+    }
   }
 
   async function downloadAllDatabaseVisuals(button, kind = 'visuals') {
@@ -8250,13 +8339,13 @@
 
   function renderDatabaseProofUploadMessage(upload) {
     const message = upload?.error || upload?.message || '';
-    if (!message) return '<span class="db-proof-upload-message" role="status" aria-live="polite"></span>';
     return `
       <span
         class="db-proof-upload-message${upload?.error ? ' is-error' : ' is-success'}"
         role="status"
         aria-live="polite"
       >${escapeHtml(message)}</span>
+      <span class="db-upload-progress" data-db-upload-progress>${renderDatabaseUploadProgress(upload)}</span>
     `;
   }
 
@@ -8330,6 +8419,10 @@
       return;
     }
 
+    files = filterDatabaseDuplicateUploads(files);
+    if (!files.length) return;
+    upload.percent = null;
+    upload.phase = 'Preparing';
     upload.inFlight = true;
     upload.current = 1;
     upload.total = files.length;
@@ -8341,6 +8434,8 @@
     const failures = [];
     for (let index = 0; index < files.length; index += 1) {
       upload.current = index + 1;
+      upload.percent = null;
+      upload.phase = 'Preparing';
       syncDatabaseProofUploadUi(sourceOrderId);
       try {
         const saved = await uploadDatabaseProofFile(sourceOrderId, files[index]);
@@ -8392,6 +8487,7 @@
     return uploadDatabaseAttachmentFile(sourceOrderId, file, {
       columnId: DATABASE_VISUAL_PROOF_COLUMN_ID,
       columnTitle: 'PROOF', upload_source: 'database_order_visual_tab',
+      onProgress: progress => updateDatabaseAttachmentProgress(sourceOrderId, 'proof', progress),
     });
   }
 
@@ -8418,14 +8514,8 @@
     form.append('public_id', signature.publicId);
     if (signature.format) form.append('format', signature.format);
 
-    const uploadResponse = await fetch(signature.uploadUrl, {
-      method: 'POST',
-      body: form,
-    });
-    const uploadJson = await uploadResponse.json().catch(() => ({}));
-    if (!uploadResponse.ok) {
-      throw new Error(databaseCloudinaryUploadError(uploadJson?.error?.message, uploadResponse.status));
-    }
+    const uploadJson = await uploadDatabaseCloudinaryFile(signature.uploadUrl, form, destination.onProgress);
+    destination.onProgress?.({ percent: 100, phase: 'Saving' });
 
     const originalFilename = file.name || uploadJson.original_filename || uploadJson.public_id || 'file';
     const uploadedFile = normalizeDatabaseProofFiles([{
@@ -8461,6 +8551,33 @@
     return normalizeDatabaseProofFiles([saved.file])[0] || null;
   }
 
+  function uploadDatabaseCloudinaryFile(url, form, onProgress) {
+    return new Promise((resolve, reject) => {
+      const request = new XMLHttpRequest();
+      request.open('POST', url);
+      request.timeout = 15 * 60 * 1000;
+      request.upload.onprogress = event => onProgress?.({
+        percent: event.lengthComputable && event.total > 0 ? event.loaded / event.total * 100 : null,
+        phase: 'Uploading',
+      });
+      request.onload = () => {
+        let data;
+        try { data = JSON.parse(request.responseText); }
+        catch { reject(new Error('Upload returned an invalid response. Please try again.')); return; }
+        if (request.status < 200 || request.status >= 300) {
+          reject(new Error(databaseCloudinaryUploadError(data?.error?.message, request.status)));
+        } else if (!data?.secure_url || !data?.public_id) {
+          reject(new Error('Upload response was incomplete. Please try again.'));
+        } else resolve(data);
+      };
+      request.onerror = () => reject(new Error('Upload failed. Check your connection and try again.'));
+      request.ontimeout = () => reject(new Error('Upload timed out. Please try again.'));
+      request.onabort = () => reject(new Error('Upload cancelled.'));
+      onProgress?.({ percent: 0, phase: 'Uploading' });
+      request.send(form);
+    });
+  }
+
   function databaseCloudinaryUploadError(message, status) {
     const clean = String(message || '').trim();
     if (/invalid cloud_name|cloud_name mismatch/i.test(clean)) {
@@ -8487,6 +8604,8 @@
     message.classList.toggle('is-error', Boolean(upload?.error));
     message.classList.toggle('is-success', !upload?.error && Boolean(upload?.message));
     message.textContent = upload?.error || upload?.message || '';
+    const progress = els.proofPanel?.querySelector('[data-db-upload-progress]');
+    if (progress) progress.innerHTML = renderDatabaseUploadProgress(upload);
   }
 
   function normalizeDatabaseProofFiles(files) {
@@ -8666,7 +8785,7 @@
   function setDatabaseProofViewerMessage(message) {
     const body = els.proofPanel?.querySelector('[data-db-proof-viewer]');
     if (!body) return;
-    body.innerHTML = `<div class="db-panel-message">${escapeHtml(message)}</div>`;
+    body.innerHTML = /^Loading\b/.test(message) ? renderDatabaseLoading(message) : `<div class="db-panel-message">${escapeHtml(message)}</div>`;
   }
 
   function changeDatabaseProofFile(delta) {
@@ -11721,7 +11840,7 @@
         <td><input class="db-line-input db-line-vat" data-line-input="vatPercent" inputmode="decimal" value="${escapeAttr(draft.vatPercent)}"></td>
         <td><input class="db-line-input db-line-ref" data-line-input="itemReference" value="${escapeAttr(draft.itemReference)}"></td>
       </tr>
-      ${status ? `<tr class="db-add-line-status-row"><td colspan="11">${escapeHtml(status)}</td></tr>` : ''}
+      ${status ? `<tr class="db-add-line-status-row"><td colspan="11">${draft.loadingVariants && !draft.error ? renderDatabaseLoading('Loading variants', true) : escapeHtml(status)}</td></tr>` : ''}
     `;
   }
 
@@ -13748,8 +13867,15 @@
     select.innerHTML = `<option>${escapeHtml(value || '')}</option>`;
   }
 
+  function renderDatabaseLoading(label = 'Loading', compact = false) {
+    return `<span class="db-section-loading${compact ? ' is-compact' : ''}" role="status" aria-label="${escapeAttr(label)}">
+      <span class="board-loading-spinner" aria-hidden="true"></span>
+    </span>`;
+  }
+
   function renderStatusRow(message, colspan = OUTSTANDING_TABLE_COLUMN_COUNT) {
-    return `<tr><td colspan="${colspan}" class="db-empty-cell">${escapeHtml(message)}</td></tr>`;
+    const loading = /^(Loading|Searching)\b/.test(message);
+    return `<tr><td colspan="${colspan}" class="db-empty-cell">${loading ? renderDatabaseLoading(message) : escapeHtml(message)}</td></tr>`;
   }
 
   function renderItemEmptyRow(colspan) {

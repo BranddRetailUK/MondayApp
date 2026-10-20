@@ -436,3 +436,28 @@ test('order detail separates Visual and Files attachments without changing their
     assert.ok(calls.every(call => !/INSERT|UPDATE|DELETE/.test(call.text)));
   } finally { restore(); }
 });
+
+test('individual download resolves its order and file, preserves bytes and rejects unrelated file IDs', async () => {
+  const originalFetch = global.fetch;
+  let requested = 0, missing = false;
+  global.fetch = async () => { requested++; return new Response('original spreadsheet bytes'); };
+  const { router, calls, restore } = loadDatabaseRouter({ async query(sql) {
+    if (sql.includes('FROM database_jobs')) return { rows: [{ source_order_id: 50603 }] };
+    return { rows: missing ? [] : [{ ...visualRow(44), column_id: 'files_1', original_filename: 'kit.xlsx' }] };
+  } });
+  try {
+    const response = createResponse(); response.set = () => response; response.attachment = name => { response.filename = name; return response; }; response.send = body => { response.body = body; return response; };
+    const handler = findRoute(router, '/api/database/jobs/:id/files/:fileId/download', 'get').route.stack[0].handle;
+    await handler({ params: { id: '51356', fileId: '44' } }, response);
+    assert.equal(response.filename, 'kit.xlsx'); assert.equal(response.body.toString(), 'original spreadsheet bytes');
+    assert.deepEqual(calls[1].values, [50603, 44, 'file_mky43tg9', 'files_1']);
+    assert.match(calls[1].text, /source_order_id=\$1 AND id=\$2/);
+    missing = true;
+    const absent = createResponse();
+    await handler({ params: { id: '51356', fileId: '45' } }, absent);
+    assert.equal(absent.statusCode, 404); assert.equal(requested, 1);
+    const invalid = createResponse();
+    await handler({ params: { id: '51356', fileId: 'not-an-id' } }, invalid);
+    assert.equal(invalid.statusCode, 400);
+  } finally { global.fetch = originalFetch; restore(); }
+});

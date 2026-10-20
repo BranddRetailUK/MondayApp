@@ -13,21 +13,8 @@ async function buildVisualArchive(files, { fetchImpl = fetch, maxBytes = MAX_BYT
   const names = new Set();
   let total = 0;
   for (const file of files) {
-    let url;
-    try { url = new URL(file.secure_url); } catch { /* handled below */ }
-    if (!url || url.protocol !== 'https:' || url.hostname !== 'res.cloudinary.com' || url.username || url.password || url.port) {
-      throw downloadError('A visual has an unsupported download URL.');
-    }
-    const response = await fetchImpl(url.href, { redirect: 'error', signal: AbortSignal.timeout(30000) });
-    if (!response.ok || !response.body) throw downloadError('A visual could not be downloaded. Please try again.');
-    const chunks = [];
-    for await (const chunk of response.body) {
-      total += chunk.length;
-      if (total > maxBytes) throw downloadError('The visuals exceed the 100 MB download limit.', 413);
-      chunks.push(Buffer.from(chunk));
-    }
-    const base = String(file.original_filename || `visual-${file.id}.${file.format || 'bin'}`)
-      .replace(/[\\/\x00-\x1f\x7f:]/g, '_').replace(/^\.+/, '_').slice(0, 180) || 'visual';
+    const { name: base, data } = await readVisualFile(file, { fetchImpl, maxBytes: maxBytes - total });
+    total += data.length;
     let name = base;
     let suffix = 2;
     while (names.has(name.toLowerCase())) {
@@ -35,7 +22,7 @@ async function buildVisualArchive(files, { fetchImpl = fetch, maxBytes = MAX_BYT
       name = dot > 0 ? `${base.slice(0, dot)} (${suffix++})${base.slice(dot)}` : `${base} (${suffix++})`;
     }
     names.add(name.toLowerCase());
-    entries.push({ name, data: Buffer.concat(chunks) });
+    entries.push({ name, data });
   }
   const zip = new ZipFile();
   const result = new Promise((resolve, reject) => {
@@ -50,4 +37,24 @@ async function buildVisualArchive(files, { fetchImpl = fetch, maxBytes = MAX_BYT
   return result;
 }
 
-module.exports = { buildVisualArchive };
+async function readVisualFile(file, { fetchImpl = fetch, maxBytes = MAX_BYTES } = {}) {
+  let url;
+  try { url = new URL(file.secure_url); } catch { /* validated below */ }
+  if (!url || url.protocol !== 'https:' || url.hostname !== 'res.cloudinary.com' || url.username || url.password || url.port) {
+    throw downloadError('This file has an unsupported download URL.');
+  }
+  const response = await fetchImpl(url.href, { redirect: 'error', signal: AbortSignal.timeout(30000) });
+  if (!response.ok || !response.body) throw downloadError('This file could not be downloaded. Please try again.');
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of response.body) {
+    total += chunk.length;
+    if (total > maxBytes) throw downloadError('The files exceed the 100 MB download limit.', 413);
+    chunks.push(Buffer.from(chunk));
+  }
+  const name = String(file.original_filename || `file-${file.id}.${file.format || 'bin'}`)
+    .replace(/[\\/\x00-\x1f\x7f:]/g, '_').replace(/^\.+/, '_').slice(0, 180) || 'file';
+  return { name, data: Buffer.concat(chunks) };
+}
+
+module.exports = { buildVisualArchive, readVisualFile };

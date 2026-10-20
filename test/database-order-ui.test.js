@@ -88,7 +88,7 @@ function uploadUi(uploadFile) {
   const highlights = new Set();
   const state = { selectedJob: { source_order_id: 8001 }, selectedProofFiles: [], proofUploads: new Map(), proofViewer: { renderToken: 0 } };
   const context = vm.createContext({
-    state,
+    state, window: { confirm: () => true },
     els: { proofPanel: {
       classList: { remove: name => highlights.delete(name), toggle: (name, enabled) => enabled ? highlights.add(name) : highlights.delete(name) },
       contains: target => target === 'child',
@@ -102,6 +102,7 @@ function uploadUi(uploadFile) {
     },
   });
   vm.runInContext([
+    section('function filterDatabaseDuplicateUploads', 'async function uploadDatabaseOrderFiles'),
     section('function currentDatabaseProofUpload', 'function openDatabaseProofUploadPicker'),
     section('async function handleDatabaseProofUploadSelection', 'async function uploadDatabaseProofFile(sourceOrderId, file)'),
   ].join('\n'), context);
@@ -188,11 +189,12 @@ test('Download all saves one ZIP, prevents duplicate clicks and restores the but
 function filesUi(uploadFile) {
   const destinations = [];
   const state = { selectedJob: { source_order_id: 51356 }, selectedFiles: [], selectedProofFiles: [{ name: 'proof.pdf' }], proofUploads: new Map() };
-  const context = vm.createContext({ state, renderFilesPanel() {}, async uploadDatabaseAttachmentFile(jobId, file, destination) {
+  const context = vm.createContext({ state, els: {}, window: { confirm: () => true }, renderFilesPanel() {}, async uploadDatabaseAttachmentFile(jobId, file, destination) {
     destinations.push({ jobId, file, destination });
     return uploadFile ? uploadFile(jobId, file) : file;
   }});
   vm.runInContext([
+    section('function filterDatabaseDuplicateUploads', 'async function uploadDatabaseOrderFiles'),
     section('function databaseProofUploadForJob', 'function openDatabaseProofUploadPicker'),
     section('async function uploadDatabaseOrderFiles', 'function renderProofPanel'),
   ].join('\n'), context);
@@ -231,6 +233,12 @@ test('shared uploader signs and saves to its explicit tab column, preserving gen
   const context = vm.createContext({
     DATABASE_VISUAL_PROOF_COLUMN_ID: 'file_mky43tg9',
     FormData: class { append() {} },
+    updateDatabaseAttachmentProgress() {},
+    XMLHttpRequest: class {
+      upload = {}; status = 200;
+      responseText = JSON.stringify({ public_id: 'asset', secure_url: 'https://res.cloudinary.com/test/raw/upload/v1/asset.xlsx', resource_type: 'raw', format: 'xlsx' });
+      open() {} send() { this.onload(); }
+    },
     normalizeDatabaseProofFiles: files => files,
     isDatabasePdfFile: () => false,
     fetch: async () => ({ ok: true, json: async () => ({ public_id: 'asset', secure_url: 'https://res.cloudinary.com/test/raw/upload/v1/asset.xlsx', resource_type: 'raw', format: 'xlsx' }) }),
@@ -249,4 +257,96 @@ test('shared uploader signs and saves to its explicit tab column, preserving gen
   assert.equal(calls[2].payload.columnId, 'file_mky43tg9');
   assert.equal(calls[3].payload.columnId, 'file_mky43tg9');
   assert.equal(calls[3].payload.metadata.column_title, 'PROOF');
+});
+
+test('duplicate warning checks both tabs and the batch; cancel keeps only new names', () => {
+  let prompt, accepted = false;
+  const context = vm.createContext({
+    state: { selectedProofFiles: [{ name: 'Proof.PDF' }], selectedFiles: [{ name: 'kit.xlsx' }] },
+    window: { confirm(message) { prompt = message; return accepted; } },
+  });
+  vm.runInContext(section('function filterDatabaseDuplicateUploads', 'function renderDatabaseUploadProgress'), context);
+  const files = [{ name: 'proof.pdf' }, { name: ' KIT.xlsx ' }, { name: 'new.png' }, { name: 'NEW.png' }];
+  assert.deepEqual(Array.from(context.filterDatabaseDuplicateUploads(files), file => file.name), ['new.png']);
+  assert.match(prompt, /already attached/);
+  accepted = true;
+  assert.equal(context.filterDatabaseDuplicateUploads(files), files);
+});
+
+test('upload progress reports transferred bytes and handles failed, malformed and timed-out uploads', async () => {
+  let request;
+  const events = [];
+  const context = vm.createContext({ XMLHttpRequest: class {
+    upload = {}; open(method, url) { this.method = method; this.url = url; } send() { request = this; }
+  } });
+  vm.runInContext(section('function uploadDatabaseCloudinaryFile', 'function syncDatabaseProofUploadUi'), context);
+  const pending = context.uploadDatabaseCloudinaryFile('https://api.cloudinary.com/upload', {}, progress => events.push(progress));
+  request.upload.onprogress({ lengthComputable: true, loaded: 25, total: 100 });
+  assert.equal(events.at(-1).percent, 25);
+  request.upload.onprogress({ lengthComputable: false });
+  assert.equal(events.at(-1).percent, null);
+  request.status = 200;
+  request.responseText = JSON.stringify({ public_id: 'asset', secure_url: 'https://res.cloudinary.com/test/raw/upload/asset' });
+  request.onload(); await pending;
+  for (const scenario of ['network', 'timeout', 'invalid', 'rejected']) {
+    const failure = context.uploadDatabaseCloudinaryFile('https://api.cloudinary.com/upload', {});
+    if (scenario === 'network') request.onerror();
+    if (scenario === 'timeout') request.ontimeout();
+    if (scenario === 'invalid') { request.responseText = 'not json'; request.onload(); }
+    if (scenario === 'rejected') { request.status = 400; request.responseText = '{"error":{"message":"Too large"}}'; request.onload(); }
+    await assert.rejects(failure, /Upload|Too large/);
+  }
+});
+
+test('late progress updates remain scoped to the starting order and tab', () => {
+  const progress = { innerHTML: '' }, state = { selectedJob: { source_order_id: 1 }, proofUploads: new Map() };
+  state.proofUploads.set('files:1', { inFlight: true, current: 1, total: 2 });
+  const context = vm.createContext({ state, els: { filesPanel: { querySelector: () => progress } },
+    escapeHtml: text => text, escapeAttr: text => text });
+  vm.runInContext(section('function renderDatabaseUploadProgress', 'async function uploadDatabaseOrderFiles')
+    + section('function databaseProofUploadForJob', 'function openDatabaseProofUploadPicker'), context);
+  context.updateDatabaseAttachmentProgress(1, 'files', { percent: 42, phase: 'Uploading' });
+  assert.match(progress.innerHTML, /value="42"/);
+  assert.match(progress.innerHTML, /1 of 2/);
+  state.selectedJob.source_order_id = 2;
+  context.updateDatabaseAttachmentProgress(1, 'files', { percent: 75, phase: 'Uploading' });
+  assert.match(progress.innerHTML, /value="42"/);
+  assert.equal(state.proofUploads.get('files:1').percent, 75);
+});
+
+test('single attachment downloads capture the file identity and filename before navigation', async () => {
+  let resolveFetch, downloads = 0, requested;
+  const status = { textContent: '' }, button = { disabled: false, dataset: { dbAttachmentDownload: '0', dbAttachmentKind: 'files' }, closest: () => ({ querySelector: () => status }) };
+  const link = { click() { downloads++; }, remove() {} };
+  const state = { selectedJob: { source_order_id: 1 }, selectedFiles: [{ id: 44, name: 'kit.xlsx', source_order_id: 1 }] };
+  const context = vm.createContext({ state, databaseVisualFileId: file => file.id,
+    fetch: async url => { requested = url; return new Promise(resolve => { resolveFetch = resolve; }); },
+    URL: { createObjectURL: () => 'blob:file', revokeObjectURL() {} },
+    document: { createElement: () => link, body: { appendChild() {} } }, setTimeout() {},
+  });
+  vm.runInContext(section('async function downloadDatabaseAttachment', 'async function downloadAllDatabaseVisuals'), context);
+  const pending = context.downloadDatabaseAttachment(button);
+  await context.downloadDatabaseAttachment(button);
+  state.selectedJob = { source_order_id: 2 }; state.selectedFiles = [];
+  resolveFetch({ ok: true, headers: { get: () => 'attachment; filename="kit.xlsx"' }, blob: async () => ({}) });
+  await pending;
+  assert.equal(requested, '/api/database/jobs/1/files/44/download');
+  assert.equal(downloads, 1); assert.equal(link.download, 'kit.xlsx'); assert.equal(button.disabled, false);
+});
+
+test('order loading uses the shared circle in every tab and errors replace every spinner', () => {
+  const panel = () => ({ innerHTML: '' });
+  const els = { detailsPanel: panel(), itemsPanel: panel(), designPanel: panel(), proofPanel: panel(), filesPanel: panel(), orderTitle: {}, orderNumber: {} };
+  const context = vm.createContext({ els, state: {}, escapeAttr: text => text, escapeHtml: text => text,
+    resetDesignAutosaveState() {}, resetJobAutosaveState() {}, syncOrderDocumentButtons() {}, renderOrderHeaderStats() {} });
+  vm.runInContext(section('function renderDatabaseLoading', 'function renderStatusRow')
+    + section('function setOrderLoading', 'function renderOrder()'), context);
+  context.setOrderLoading();
+  for (const name of ['detailsPanel', 'itemsPanel', 'designPanel', 'proofPanel', 'filesPanel']) assert.match(els[name].innerHTML, /board-loading-spinner/);
+  assert.equal(els.orderTitle.value, '');
+  context.renderOrderError('Request failed');
+  for (const name of ['detailsPanel', 'itemsPanel', 'designPanel', 'proofPanel', 'filesPanel']) {
+    assert.match(els[name].innerHTML, /Request failed/);
+    assert.doesNotMatch(els[name].innerHTML, /board-loading-spinner/);
+  }
 });
