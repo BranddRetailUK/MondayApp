@@ -5841,7 +5841,10 @@ router.delete('/api/database/jobs/:id/line-items/:lineItemId', async (req, res) 
   }
 });
 
-router.get('/api/database/jobs/:id/visuals/download', async (req, res) => {
+router.get('/api/database/jobs/:id/visuals/download', (req, res) => downloadOrderAttachments(req, res));
+router.get('/api/database/jobs/:id/files/download', (req, res) => downloadOrderAttachments(req, res, true));
+
+async function downloadOrderAttachments(req, res, filesOnly = false) {
   const id = Number(req.params.id);
   if (!Number.isSafeInteger(id)) return res.status(400).json({ error: 'Invalid job id' });
   try {
@@ -5851,17 +5854,17 @@ router.get('/api/database/jobs/:id/visuals/download', async (req, res) => {
     if (!job.rows.length) return res.status(404).json({ error: 'Database job not found' });
     const selected = job.rows[0];
     const files = await pool.query(`SELECT * FROM test_dashboard_files
-      WHERE source_order_id=$1 AND (column_id IN ($2, $3) OR UPPER(TRIM(column_title)) IN ('PROOF', 'FILES'))
-      ORDER BY created_at, id`, [selected.source_order_id, TEST_DASHBOARD_COLUMN_IDS.PROOF, TEST_DASHBOARD_COLUMN_IDS.FILES]);
+      WHERE source_order_id=$1 AND (column_id=$2 OR UPPER(TRIM(column_title))=$3)
+      ORDER BY created_at, id`, [selected.source_order_id, filesOnly ? TEST_DASHBOARD_COLUMN_IDS.FILES : TEST_DASHBOARD_COLUMN_IDS.PROOF, filesOnly ? 'FILES' : 'PROOF']);
     const archive = await require('../services/databaseVisualDownload').buildVisualArchive(files.rows);
     res.set('Cache-Control', 'no-store');
-    res.attachment(`order-${selected.order_no || selected.source_order_id}-visuals.zip`);
+    res.attachment(`order-${selected.order_no || selected.source_order_id}-${filesOnly ? 'files' : 'visuals'}.zip`);
     res.send(archive);
   } catch (err) {
     console.error('GET /api/database/jobs/:id/visuals/download', err.message);
     res.status(err.status || 502).json({ error: err.status ? err.message : 'Could not download all visuals. Please try again.' });
   }
-});
+}
 
 router.get('/api/database/jobs/:id', async (req, res) => {
   const id = Number.parseInt(req.params.id, 10);
@@ -5918,7 +5921,8 @@ router.get('/api/database/jobs/:id', async (req, res) => {
       job: resolvedJob,
       lineItems,
       positions: positions.rows,
-      proofFiles: proofFiles.rows.map(databaseProofFileToApi),
+      proofFiles: proofFiles.rows.filter(file => file.column_id !== TEST_DASHBOARD_COLUMN_IDS.FILES && String(file.column_title || '').trim().toUpperCase() !== 'FILES').map(databaseProofFileToApi),
+      files: proofFiles.rows.filter(file => file.column_id === TEST_DASHBOARD_COLUMN_IDS.FILES || String(file.column_title || '').trim().toUpperCase() === 'FILES').map(databaseProofFileToApi),
       customerOverview,
     });
   } catch (err) {

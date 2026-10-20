@@ -385,7 +385,7 @@ function createResponse() {
   };
 }
 
-test('order ZIP download includes visual and Files column attachments', async () => {
+test('order ZIP downloads keep Visual and Files attachments separate', async () => {
   const originalFetch = global.fetch;
   global.fetch = async () => new Response('original-pdf-bytes');
   const { router, calls, restore } = loadDatabaseRouter({
@@ -404,13 +404,16 @@ test('order ZIP download includes visual and Files column attachments', async ()
     assert.equal(res.filename, 'order-51346-visuals.zip');
     assert.equal(res.body.readUInt32LE(), 0x04034b50);
     assert.equal(calls[1].values[0], 50593);
-    assert.deepEqual(calls[1].values, [50593, 'file_mky43tg9', 'files_1']);
-    assert.match(calls[1].text, /column_id IN \(\$2, \$3\)/);
+    assert.deepEqual(calls[1].values, [50593, 'file_mky43tg9', 'PROOF']);
+    assert.match(calls[1].text, /column_id=\$2 OR UPPER\(TRIM\(column_title\)\)=\$3/);
+    await findRoute(router, '/api/database/jobs/:id/files/download', 'get').route.stack[0].handle({ params: { id: '51346' } }, res);
+    assert.equal(res.filename, 'order-51346-files.zip');
+    assert.deepEqual(calls[3].values, [50593, 'files_1', 'FILES']);
   } finally { global.fetch = originalFetch; restore(); }
 });
 
 
-test('order detail combines Visual and Files attachments without changing their columns', async () => {
+test('order detail separates Visual and Files attachments without changing their columns', async () => {
   const attachments = [visualRow(1), { ...visualRow(2), column_id: 'files_1', column_title: 'FILES', original_filename: 'artwork.dst' }];
   const { router, calls, restore } = loadDatabaseRouter({
     async query(sql) {
@@ -423,9 +426,10 @@ test('order detail combines Visual and Files attachments without changing their 
     const response = createResponse();
     await findRoute(router, '/api/database/jobs/:id', 'get').route.stack[0].handle({ params: { id: '51346' } }, response);
     assert.equal(response.statusCode, 200);
-    assert.equal(response.body.proofFiles.length, 2);
-    assert.equal(response.body.proofFiles[1].column_id, 'files_1');
-    assert.equal(response.body.proofFiles[1].name, 'artwork.dst');
+    assert.equal(response.body.proofFiles.length, 1);
+    assert.equal(response.body.files.length, 1);
+    assert.equal(response.body.files[0].column_id, 'files_1');
+    assert.equal(response.body.files[0].name, 'artwork.dst');
     const query = calls.find(call => call.text.includes('FROM test_dashboard_files'));
     assert.deepEqual(query.values, [50593, 'file_mky43tg9', 'files_1']);
     assert.match(query.text, /column_id IN \(\$2, \$3\)/);

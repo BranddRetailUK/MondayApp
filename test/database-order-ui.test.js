@@ -184,3 +184,69 @@ test('Download all saves one ZIP, prevents duplicate clicks and restores the but
   assert.equal(message.textContent, 'File unavailable');
   assert.equal(button.textContent, 'Download all');
 });
+
+function filesUi(uploadFile) {
+  const destinations = [];
+  const state = { selectedJob: { source_order_id: 51356 }, selectedFiles: [], selectedProofFiles: [{ name: 'proof.pdf' }], proofUploads: new Map() };
+  const context = vm.createContext({ state, renderFilesPanel() {}, async uploadDatabaseAttachmentFile(jobId, file, destination) {
+    destinations.push({ jobId, file, destination });
+    return uploadFile ? uploadFile(jobId, file) : file;
+  }});
+  vm.runInContext([
+    section('function databaseProofUploadForJob', 'function openDatabaseProofUploadPicker'),
+    section('async function uploadDatabaseOrderFiles', 'function renderProofPanel'),
+  ].join('\n'), context);
+  return { context, state, destinations };
+}
+
+test('Files uploads accept spreadsheets and retain their destination while switching tabs', async () => {
+  let finish;
+  const ui = filesUi((_job, file) => new Promise(resolve => { finish = () => resolve(file); }));
+  const pending = ui.context.uploadDatabaseOrderFiles([{ name: 'Hawks Netball - 2026.xlsx' }]);
+  ui.state.activeOrderTab = 'proof';
+  await ui.context.uploadDatabaseOrderFiles([{ name: 'duplicate.xlsx' }]);
+  finish(); await pending;
+  assert.equal(ui.destinations.length, 1);
+  assert.equal(ui.destinations[0].destination.columnId, 'files_1');
+  assert.equal(ui.destinations[0].jobId, 51356);
+  assert.equal(ui.state.selectedFiles[0].name, 'Hawks Netball - 2026.xlsx');
+  assert.equal(ui.state.selectedProofFiles[0].name, 'proof.pdf');
+});
+
+test('Files uploads cannot populate a different order after navigation and report partial failures', async () => {
+  let finish;
+  const ui = filesUi((_job, file) => new Promise(resolve => { finish = () => resolve(file); }));
+  const pending = ui.context.uploadDatabaseOrderFiles([{ name: 'original.xlsx' }]);
+  ui.state.selectedJob = { source_order_id: 51357 };
+  finish(); await pending;
+  assert.equal(ui.state.selectedFiles.length, 0);
+  const partial = filesUi(async (_job, file) => { if (file.name === 'bad.xlsx') throw Error('Rejected'); return file; });
+  await partial.context.uploadDatabaseOrderFiles([{ name: 'good.xlsx' }, { name: 'bad.xlsx' }]);
+  assert.equal(partial.state.selectedFiles.length, 1);
+  assert.match(partial.state.proofUploads.get('files:51356').error, /bad.xlsx: Rejected/);
+});
+
+test('shared uploader signs and saves to its explicit tab column, preserving general files', async () => {
+  const calls = [];
+  const context = vm.createContext({
+    DATABASE_VISUAL_PROOF_COLUMN_ID: 'file_mky43tg9',
+    FormData: class { append() {} },
+    normalizeDatabaseProofFiles: files => files,
+    isDatabasePdfFile: () => false,
+    fetch: async () => ({ ok: true, json: async () => ({ public_id: 'asset', secure_url: 'https://res.cloudinary.com/test/raw/upload/v1/asset.xlsx', resource_type: 'raw', format: 'xlsx' }) }),
+    async fetchJson(url, options) {
+      const payload = JSON.parse(options.body); calls.push({ url, payload });
+      return url.endsWith('/signature') ? { uploadUrl: 'https://api.cloudinary.com/upload', signature: 'test', apiKey: 'test' } : { file: payload };
+    },
+  });
+  vm.runInContext(section('async function uploadDatabaseProofFile(sourceOrderId, file)', 'function databaseCloudinaryUploadError'), context);
+  await context.uploadDatabaseAttachmentFile(51356, { name: 'Hawks Netball - 2026.xlsx' }, { columnId: 'files_1', columnTitle: 'FILES', upload_source: 'database_order_files_tab' });
+  assert.equal(calls[0].payload.columnId, 'files_1');
+  assert.equal(calls[1].payload.columnId, 'files_1');
+  assert.equal(calls[1].payload.metadata.column_title, 'FILES');
+  assert.equal(calls[1].payload.resourceType, 'raw');
+  await context.uploadDatabaseProofFile(51356, { name: 'proof.png' });
+  assert.equal(calls[2].payload.columnId, 'file_mky43tg9');
+  assert.equal(calls[3].payload.columnId, 'file_mky43tg9');
+  assert.equal(calls[3].payload.metadata.column_title, 'PROOF');
+});

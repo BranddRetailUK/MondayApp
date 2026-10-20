@@ -52,7 +52,7 @@
     'new-order',
     'new-customer',
   ]);
-  const DATABASE_ORDER_TABS = new Set(['details', 'items', 'design', 'proof']);
+  const DATABASE_ORDER_TABS = new Set(['details', 'items', 'design', 'proof', 'files']);
   const DATABASE_CUSTOMER_TABS = new Set(['orders', 'contacts', 'addresses', 'quotations', 'design-numbers']);
   const OUTSTANDING_TABLE_COLUMN_COUNT = 9;
   const OUTSTANDING_ALL_TABLE_COLUMN_COUNT = 9;
@@ -297,6 +297,7 @@
     selectedLineItems: [],
     selectedPositions: [],
     selectedProofFiles: [],
+    selectedFiles: [],
     proofUploads: new Map(),
     proofViewer: {
       fileIndex: 0,
@@ -534,6 +535,8 @@
       detailsPanel: document.getElementById('db-order-details-panel'),
       itemsPanel: document.getElementById('db-order-items-panel'),
       designPanel: document.getElementById('db-order-design-panel'),
+      filesPanel: document.getElementById('db-order-files-panel'),
+      filesUploadInput: document.getElementById('db-order-files-upload-input'),
       proofPanel: document.getElementById('db-order-proof-panel'),
       proofUploadInput: document.getElementById('db-order-proof-upload-input'),
       newOrderForm: document.getElementById('db-new-order-form'),
@@ -673,6 +676,19 @@
     els.proofPanel?.addEventListener('dragover', handleDatabaseProofDragOver);
     els.proofPanel?.addEventListener('dragleave', handleDatabaseProofDragLeave);
     els.proofPanel?.addEventListener('drop', handleDatabaseProofDrop);
+    els.filesPanel?.addEventListener('error', handleDatabaseVisualThumbnailError, true);
+    els.filesPanel?.addEventListener('dragover', event => {
+      if (Array.from(event.dataTransfer?.types || []).includes('Files')) event.preventDefault();
+    });
+    els.filesPanel?.addEventListener('drop', event => {
+      event.preventDefault();
+      uploadDatabaseOrderFiles(Array.from(event.dataTransfer?.files || []));
+    });
+    els.filesUploadInput?.addEventListener('change', event => {
+      const files = Array.from(event.target.files || []);
+      event.target.value = '';
+      uploadDatabaseOrderFiles(files);
+    });
     els.proofUploadInput?.addEventListener('change', handleDatabaseProofUploadSelection);
     document.addEventListener('pointermove', handleLineDragPointerMove);
     document.addEventListener('pointerup', handleLineDragPointerUp);
@@ -869,6 +885,20 @@
       return;
     }
 
+    if (button.dataset.dbFilesUpload !== undefined) {
+      els.filesUploadInput.value = '';
+      els.filesUploadInput.click();
+      return;
+    }
+    if (button.dataset.dbFilesDownloadAll !== undefined) {
+      await downloadAllDatabaseVisuals(button, 'files');
+      return;
+    }
+    if (button.dataset.dbOrderFileOpen !== undefined) {
+      const file = state.selectedFiles[Number(button.dataset.dbOrderFileOpen)];
+      if (file) openDatabaseVisualPreviewModal(orderVisualFromFile(file), button, { allowAttach: false });
+      return;
+    }
     const orderVisualIndex = button.dataset.dbOrderVisualOpen;
     if (orderVisualIndex !== undefined) {
       openOrderVisualModal(orderVisualIndex, button);
@@ -2118,12 +2148,19 @@
       image.src = src;
       image.alt = visual.name || 'Visual';
       els.visualModalViewer.appendChild(image);
-    } else {
+    } else if (isDatabasePdfFile(visual)) {
       const frame = document.createElement('iframe');
       frame.src = src;
       frame.title = visual.name || 'Visual PDF';
       frame.allow = 'fullscreen';
       els.visualModalViewer.appendChild(frame);
+    } else {
+      const link = document.createElement('a');
+      link.href = src;
+      link.textContent = `Download ${visual.name || 'file'}`;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      els.visualModalViewer.appendChild(link);
     }
 
     els.visualModal.hidden = false;
@@ -2382,6 +2419,7 @@
         state.selectedProofFiles = (state.selectedProofFiles || []).filter((file) => (
           databaseVisualFileId(file) !== target.fileId
         ));
+        state.selectedFiles = (state.selectedFiles || []).filter(file => databaseVisualFileId(file) !== target.fileId);
         resetDatabaseProofViewerState();
       }
       state.visuals = (state.visuals || []).filter((visual) => (
@@ -2393,9 +2431,11 @@
       closeDatabaseVisualDeleteConfirmation({ restoreFocus: false });
       closeDatabaseVisualModal({ restoreFocus: false });
       if (selectedOrderIsTarget) {
+        renderFilesPanel();
         renderProofPanel();
         window.requestAnimationFrame(() => {
-          els.proofPanel?.querySelector('[data-db-order-visual-open], [data-db-proof-upload]')
+          const panel = state.activeOrderTab === 'files' ? els.filesPanel : els.proofPanel;
+          panel?.querySelector('[data-db-order-visual-open], [data-db-proof-upload], [data-db-order-file-open], [data-db-files-upload]')
             ?.focus({ preventScroll: true });
         });
       }
@@ -4489,6 +4529,7 @@
     state.selectedLineItems = [];
     state.selectedPositions = [];
     state.selectedProofFiles = [];
+    state.selectedFiles = [];
     state.selectedCustomerOverview = null;
     state.orderCustomerDetail = null;
     resetDatabaseProofViewerState();
@@ -7437,6 +7478,7 @@
       state.selectedLineItems = data.lineItems || [];
       state.selectedPositions = data.positions || [];
       state.selectedProofFiles = normalizeDatabaseProofFiles(data.proofFiles || []);
+      state.selectedFiles = normalizeDatabaseProofFiles(data.files || []);
       state.selectedCustomerOverview = data.customerOverview || null;
       state.orderCustomerDetail = await loadOrderCustomerDetail(state.selectedJob);
       resetDatabaseProofViewerState();
@@ -7460,6 +7502,7 @@
     state.selectedLineItems = data.lineItems || [];
     state.selectedPositions = data.positions || [];
     state.selectedProofFiles = normalizeDatabaseProofFiles(data.proofFiles || []);
+    state.selectedFiles = normalizeDatabaseProofFiles(data.files || []);
     state.selectedCustomerOverview = data.customerOverview || null;
     state.orderCustomerDetail = await loadOrderCustomerDetail(state.selectedJob);
     resetDatabaseProofViewerState();
@@ -7487,6 +7530,7 @@
     els.itemsPanel.innerHTML = '';
     els.designPanel.innerHTML = '';
     if (els.proofPanel) els.proofPanel.innerHTML = '';
+    if (els.filesPanel) els.filesPanel.innerHTML = '';
   }
 
   function renderOrderError(message) {
@@ -7500,6 +7544,7 @@
     els.itemsPanel.innerHTML = '';
     els.designPanel.innerHTML = '';
     if (els.proofPanel) els.proofPanel.innerHTML = '';
+    if (els.filesPanel) els.filesPanel.innerHTML = '';
   }
 
   function renderOrder() {
@@ -7513,6 +7558,7 @@
     renderItemsPanel();
     renderDesignPanel();
     renderProofPanel();
+    renderFilesPanel();
     syncOrderDocumentButtons(job);
   }
 
@@ -7568,6 +7614,7 @@
       ['items', els.itemsPanel],
       ['design', els.designPanel],
       ['proof', els.proofPanel],
+      ['files', els.filesPanel],
     ].forEach(([key, panel]) => {
       panel?.classList.toggle('active', key === state.activeOrderTab);
     });
@@ -8033,6 +8080,46 @@
 
   window.addEventListener('proof-job-linked',()=>{if(state.selectedJob?.source_order_id&&els.proofPanel?.classList.contains('active'))openOrder(state.selectedJob.source_order_id,'proof');});
 
+  function renderFilesPanel() {
+    if (!els.filesPanel) return;
+    const files = state.selectedFiles || [];
+    const upload = databaseProofUploadForJob(`files:${state.selectedJob?.source_order_id}`);
+    els.filesPanel.innerHTML = `
+      <div class="db-proof-upload-row">
+        <span class="db-proof-drop-hint">Drag and drop files here</span>
+        ${renderDatabaseProofUploadMessage(upload)}
+        <button class="db-toolbar-button db-blue-link" type="button" data-db-files-upload ${upload?.inFlight ? 'disabled' : ''}>${upload?.inFlight ? 'Uploading…' : 'Upload Files'}</button>
+        ${files.length ? '<button class="db-toolbar-button db-blue-link" type="button" data-db-files-download-all>Download all</button>' : ''}
+        <span data-db-proof-download-status role="status" aria-live="polite"></span>
+      </div>
+      <div class="db-order-proof-grid-shell"><div class="db-visuals-grid db-order-proof-grid" role="list">
+        ${files.map((file, index) => renderDatabaseVisualCard(orderVisualFromFile(file), { openAttribute: 'data-db-order-file-open', openValue: index })).join('')}
+      </div></div>`;
+  }
+
+  async function uploadDatabaseOrderFiles(files) {
+    const sourceOrderId = Number(state.selectedJob?.source_order_id);
+    if (!sourceOrderId || !files.length) return;
+    const upload = databaseProofUploadForJob(`files:${sourceOrderId}`, { create: true });
+    if (upload.inFlight) return;
+    Object.assign(upload, { inFlight: true, message: '', error: '' });
+    renderFilesPanel();
+    const saved = [], failures = [];
+    for (const file of files) {
+      try {
+        const result = await uploadDatabaseAttachmentFile(sourceOrderId, file, {
+          columnId: 'files_1', columnTitle: 'FILES', upload_source: 'database_order_files_tab',
+        });
+        if (result) saved.push(result);
+      } catch (error) { failures.push(`${file.name}: ${error.message || 'Upload failed'}`); }
+    }
+    Object.assign(upload, { inFlight: false, message: saved.length ? `${saved.length} files uploaded` : '', error: failures.join(' · ') });
+    if (Number(state.selectedJob?.source_order_id) === sourceOrderId) {
+      state.selectedFiles = [...state.selectedFiles, ...saved];
+      renderFilesPanel();
+    }
+  }
+
   function renderProofPanel() {
     if (!els.proofPanel) return;
     els.proofPanel.classList.remove('is-file-dragover');
@@ -8078,35 +8165,36 @@
     window.ProofLinks?.controls(els.proofPanel.querySelector('[data-proof-job-controls]'),state.selectedJob?.source_order_id,{showLinkedActions:false});
   }
 
-  async function downloadAllDatabaseVisuals(button) {
+  async function downloadAllDatabaseVisuals(button, kind = 'visuals') {
     if (button.disabled || !state.selectedJob?.source_order_id) return;
     const job = state.selectedJob;
-    const message = els.proofPanel?.querySelector('[data-db-proof-download-status]');
+    const panel = kind === 'files' ? els.filesPanel : els.proofPanel;
+    const message = panel?.querySelector('[data-db-proof-download-status]');
     button.disabled = true;
     button.textContent = 'Preparing download…';
     if (message) message.textContent = '';
     try {
-      const response = await fetch(`/api/database/jobs/${encodeURIComponent(job.source_order_id)}/visuals/download`, {
+      const response = await fetch(`/api/database/jobs/${encodeURIComponent(job.source_order_id)}/${kind}/download`, {
         credentials: 'include', cache: 'no-store',
       });
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || 'Could not download all visuals. Please try again.');
+        throw new Error(error.error || `Could not download all ${kind}. Please try again.`);
       }
       if (!response.headers.get('content-type')?.includes('application/zip')) {
-        throw new Error('Please sign in again to download the visuals.');
+        throw new Error(`Please sign in again to download the ${kind}.`);
       }
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement('a');
       link.href = url;
-      link.download = `order-${job.order_no || job.source_order_id}-visuals.zip`;
+      link.download = `order-${job.order_no || job.source_order_id}-${kind}.zip`;
       document.body.appendChild(link);
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60000);
       if (message) message.textContent = 'Download ready.';
     } catch (err) {
-      if (message) message.textContent = err.message || 'Could not download all visuals.';
+      if (message) message.textContent = err.message || `Could not download all ${kind}.`;
     } finally {
       button.disabled = false;
       button.textContent = 'Download all';
@@ -8286,12 +8374,19 @@
   }
 
   async function uploadDatabaseProofFile(sourceOrderId, file) {
+    return uploadDatabaseAttachmentFile(sourceOrderId, file, {
+      columnId: DATABASE_VISUAL_PROOF_COLUMN_ID,
+      columnTitle: 'PROOF', upload_source: 'database_order_visual_tab',
+    });
+  }
+
+  async function uploadDatabaseAttachmentFile(sourceOrderId, file, destination) {
     const signature = await fetchJson('/api/test-dashboard/uploads/signature', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         jobId: sourceOrderId,
-        columnId: DATABASE_VISUAL_PROOF_COLUMN_ID,
+        columnId: destination.columnId,
         filename: file.name || 'file',
       }),
     });
@@ -8333,7 +8428,7 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        columnId: DATABASE_VISUAL_PROOF_COLUMN_ID,
+        columnId: destination.columnId,
         publicId: uploadJson.public_id,
         secureUrl,
         resourceType: uploadJson.resource_type,
@@ -8343,8 +8438,8 @@
         width: uploadJson.width || null,
         height: uploadJson.height || null,
         metadata: {
-          upload_source: 'database_order_visual_tab',
-          column_title: 'PROOF',
+          upload_source: destination.upload_source,
+          column_title: destination.columnTitle,
         },
       }),
     });

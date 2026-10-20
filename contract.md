@@ -993,7 +993,9 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Verification covers read-only board SQL, versioned initialization, account-isolated ETags/304s, in-flight read sharing/retry, static/auth boundaries, server-side category/approval sorting, paging/search cancellation and full-report loading. No artwork/digitising algorithm, production originals, approval rules or supplier ordering behaviour changes.
 - Dashboard conditional GETs accept weak and comma-separated validators, including the `W/` prefix added by the production compression proxy; unchanged responses remain body-free even when the browser sends `Cache-Control: no-cache`.
 
-### Dashboard files in order visuals (2026-10-20)
+### Separate order Visuals and Files tabs (2026-10-20)
 
-- DATABASE order-info Visuals includes attachments from both Dashboard VISUAL/PROOF and FILES, including Download all. Attachments retain their original column metadata; this is a read-only combined view, so FILES attachments do not populate Dashboard VISUAL or satisfy proof-presence checks. Uploading through DATABASE Visuals continues to target PROOF.
-- Dashboard FILES sits immediately to the right of VISUAL. New defaults and the transactional startup migration `dashboard-files-after-visual-v1` apply the order to new and existing installations without changing file records.
+- DATABASE order-info Visuals contains only Dashboard VISUAL/PROOF attachments; its new Files tab contains only Dashboard FILES attachments. `GET /api/database/jobs/:id` returns these as separate `proofFiles` and `files` arrays. Existing files stay in their original column without copying or migration.
+- Visuals uploads retain PDF/JPEG/PNG validation and target PROOF. Files uploads accept the same general attachments as Dashboard FILES and target `files_1`. Both tabs support multiple uploads, drag/drop, file previews/downloads and confirmed individual deletion. Each upload retains its starting order and destination even when the user switches tabs or orders. Non-image/PDF files expose a download link instead of an embedded preview.
+- Download all is scoped per tab: `/api/database/jobs/:id/visuals/download` includes PROOF only; `/api/database/jobs/:id/files/download` includes FILES only. Both use the existing bounded ZIP download service and authenticated order access.
+- Dashboard FILES remains immediately to the right of VISUAL via defaults and the transactional startup migration `dashboard-files-after-visual-v1`.
