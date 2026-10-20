@@ -1092,3 +1092,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 ### Linked proof action (2026-10-20)
 
 - Live proof history disables and greys the Link to job button whenever the record has an active job, linked job IDs or linked order metadata. Unlinked proofs retain the existing action and busy/save guards. The tooltip explains that the proof is already linked; API linking semantics are unchanged. JavaScript syntax validation and the existing 25 proof UI regressions passed.
+
+- The ADD TO LIVE confirmation popup contains only “Add this proof to live?” and the existing Confirm/No buttons. Its centred layout, accessible dialog label and cancellation behaviour are retained.
