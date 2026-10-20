@@ -6393,26 +6393,33 @@ body.modal-open{overflow:hidden}
   background:#92cdea;
 }
 .db-proof-upload-row{
-  min-height:47px;
+  min-height:46px;
   display:flex;
   align-items:center;
   justify-content:flex-end;
-  gap:10px;
-  padding:10px 16px 0;
+  flex-wrap:wrap;
+  gap:8px;
+  padding:8px 16px;
   background:#92cdea;
 }
-.db-proof-upload-button{
+.db-proof-upload-row .db-toolbar-button{
   flex:0 0 auto;
-  min-width:112px;
-  height:31px;
-  font-weight:700;
+  min-width:108px;
+  height:30px;
+  min-height:30px;
+  padding:0 12px;
+  font:12px Arial, Helvetica, sans-serif;
+  white-space:nowrap;
 }
-.db-proof-drop-hint{
-  color:#263746;
-  font:11px Arial, Helvetica, sans-serif;
+.db-proof-upload-row .db-proof-upload-message,
+.db-proof-upload-row [data-db-proof-download-status]{
+  order:-1;
+  font:12px Arial, Helvetica, sans-serif;
 }
-.db-proof-upload-row .db-proof-drop-hint{
-  margin-right:auto;
+.db-proof-upload-row .db-proof-upload-message:empty,
+.db-proof-upload-row [data-db-proof-download-status]:empty,
+.db-proof-upload-row [data-proof-job-controls]:empty{
+  display:none;
 }
 #db-order-proof-panel.is-file-dragover{
   outline:3px dashed #1671a3;

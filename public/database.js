@@ -8086,9 +8086,8 @@
     const upload = databaseProofUploadForJob(`files:${state.selectedJob?.source_order_id}`);
     els.filesPanel.innerHTML = `
       <div class="db-proof-upload-row">
-        <span class="db-proof-drop-hint">Drag and drop files here</span>
         ${renderDatabaseProofUploadMessage(upload)}
-        <button class="db-toolbar-button db-blue-link" type="button" data-db-files-upload ${upload?.inFlight ? 'disabled' : ''}>${upload?.inFlight ? 'Uploading…' : 'Upload Files'}</button>
+        <button class="db-toolbar-button db-blue-link" type="button" data-db-files-upload ${upload?.inFlight ? 'disabled' : ''}>${upload?.inFlight ? 'Uploading…' : 'Upload files'}</button>
         ${files.length ? '<button class="db-toolbar-button db-blue-link" type="button" data-db-files-download-all>Download all</button>' : ''}
         <span data-db-proof-download-status role="status" aria-live="polite"></span>
       </div>
@@ -8128,26 +8127,11 @@
     const uploadButton = renderDatabaseProofUploadButton(upload)+'<span data-proof-job-controls></span>';
     const uploadMessage = renderDatabaseProofUploadMessage(upload);
 
-    if (!files.length) {
-      els.proofPanel.innerHTML = `
-        <div class="db-proof-empty">
-          <div class="db-proof-empty-actions">
-            ${uploadButton}
-            <span class="db-proof-drop-hint">or drag and drop PDF, JPEG or PNG files here</span>
-            ${uploadMessage}
-          </div>
-        </div>
-      `;
-      window.ProofLinks?.controls(els.proofPanel.querySelector('[data-proof-job-controls]'),state.selectedJob?.source_order_id,{showLinkedActions:false});
-      return;
-    }
-
     els.proofPanel.innerHTML = `
       <div class="db-proof-upload-row">
-        <span class="db-proof-drop-hint">Drag and drop PDF, JPEG or PNG files here</span>
         ${uploadMessage}
         ${uploadButton}
-        <button class="db-toolbar-button db-blue-link" type="button" data-db-proof-download-all>Download all</button>
+        ${files.length ? '<button class="db-toolbar-button db-blue-link" type="button" data-db-proof-download-all>Download all</button>' : ''}
         <span data-db-proof-download-status role="status" aria-live="polite"></span>
       </div>
       <div class="db-order-proof-grid-shell">
@@ -8222,7 +8206,7 @@
     const inFlight = upload?.inFlight === true;
     const label = inFlight
       ? `Uploading ${Math.max(1, upload.current || 1)} of ${Math.max(1, upload.total || 1)}…`
-      : 'Upload Files';
+      : 'Upload files';
     return `
       <button
         class="db-toolbar-button db-blue-link db-proof-upload-button"
@@ -8468,7 +8452,7 @@
     button.disabled = inFlight;
     button.textContent = inFlight
       ? `Uploading ${Math.max(1, upload.current || 1)} of ${Math.max(1, upload.total || 1)}…`
-      : 'Upload Files';
+      : 'Upload files';
     message.classList.toggle('is-error', Boolean(upload?.error));
     message.classList.toggle('is-success', !upload?.error && Boolean(upload?.message));
     message.textContent = upload?.error || upload?.message || '';

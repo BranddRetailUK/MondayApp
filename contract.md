@@ -1001,3 +1001,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Dashboard FILES remains immediately to the right of VISUAL via defaults and the transactional startup migration `dashboard-files-after-visual-v1`.
 
 - Desktop order tabs use five equal-width columns in one row at the original 28px height; the Files tab fits beside Visual without wrapping. Existing mobile tab layouts remain responsive.
+
+- Visual and Files attachment toolbars use matching compact 30px upload/download buttons at the top right, with consistent sentence-case labels and spacing. File-type and drag/drop instruction text is omitted; drag/drop and upload validation remain active. Empty tabs keep the same toolbar placement.
