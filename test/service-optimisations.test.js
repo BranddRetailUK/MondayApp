@@ -42,6 +42,8 @@ test('board GET is read-only; unchanged responses are 304 and validators isolate
     const ordinary = await first.json();
     const same = await fetch(url, {headers:{'If-None-Match':tag}});
     assert.equal(same.status, 304); assert.equal(await same.text(), '');
+    const compressed = await fetch(url, {headers:{'If-None-Match':`"older", W/${tag}`,'Cache-Control':'no-cache'}});
+    assert.equal(compressed.status, 304); assert.equal(await compressed.text(), '');
     const privileged = await fetch(url,{headers:{'If-None-Match':tag,'X-Test-Production':'1'}});
     assert.equal(privileged.status,200);
     assert.notEqual(privileged.headers.get('etag'),tag);

@@ -110,7 +110,9 @@ protectedRouter.get('/api/test-dashboard/board', async (req, res) => {
     res.set('Cache-Control', 'private, no-cache');
     res.set('Vary', 'Cookie');
     res.set('ETag', etag);
-    if (req.get('If-None-Match') === etag) return res.status(304).end();
+    // GET validators use weak comparison: the compression proxy can add W/.
+    const validators = (req.get('If-None-Match') || '').split(',').map(value => value.trim().replace(/^W\//, ''));
+    if (validators.includes(etag) || validators.includes('*')) return res.status(304).end();
     res.type('json').send(body);
   } catch (err) {
     console.error('GET /api/test-dashboard/board', err);
