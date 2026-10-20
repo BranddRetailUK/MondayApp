@@ -99,12 +99,19 @@ const STITCH_REFERENCE_PATTERN = new RegExp(
   'gi'
 );
 
+const readDashboardBoard = require('../services/dashboardReads').coalesceReads(buildTestDashboardBoardPayload);
+
 protectedRouter.get('/api/test-dashboard/board', async (req, res) => {
   try {
-    await ensureTestDashboardDefaults(pool);
-    const payload = await buildTestDashboardBoardPayload();
+    const payload = structuredClone(await readDashboardBoard(req.query?.fresh === '1'));
     await require('../services/artworkExportStatus').decorateArtworkStatus(pool,payload,req.hubUser);
-    res.json(payload);
+    const body = JSON.stringify(payload);
+    const etag = `"${crypto.createHash('sha256').update(body).digest('hex')}"`;
+    res.set('Cache-Control', 'private, no-cache');
+    res.set('Vary', 'Cookie');
+    res.set('ETag', etag);
+    if (req.get('If-None-Match') === etag) return res.status(304).end();
+    res.type('json').send(body);
   } catch (err) {
     console.error('GET /api/test-dashboard/board', err);
     res.status(500).json({ error: 'Failed to fetch Tuesday Dashboard board' });
@@ -113,7 +120,6 @@ protectedRouter.get('/api/test-dashboard/board', async (req, res) => {
 
 protectedRouter.post('/api/test-dashboard/private-jobs', async (req, res) => {
   try {
-    await ensureTestDashboardDefaults(pool);
     const columns = await fetchDashboardColumns(false);
     const job = await createPrivateDashboardJob({
       groupId: normalizeMoveTargetGroupId(req.body?.groupId) || TEST_DASHBOARD_GROUP_IDS.OFFICE,
@@ -133,7 +139,6 @@ protectedRouter.delete('/api/test-dashboard/private-jobs/:jobId', async (req, re
   if (!isPrivateDashboardJobId(jobId)) return res.status(400).json({ error: 'Invalid private dashboard job id' });
 
   try {
-    await ensureTestDashboardDefaults(pool);
     const job = await fetchPrivateDashboardJob(jobId);
     if (!job) return res.status(404).json({ error: 'Private dashboard job not found' });
 
@@ -165,7 +170,6 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/name', async (req, res) =>
   const title = clean(req.body?.name || req.body?.title).slice(0, 300);
 
   try {
-    await ensureTestDashboardDefaults(pool);
     const job = await fetchPrivateDashboardJob(jobId);
     if (!job) return res.status(404).json({ error: 'Private dashboard job not found' });
     const saved = await updatePrivateDashboardJob(job.id, {
@@ -191,7 +195,6 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/group', async (req, res) =
   if (!groupId) return res.status(400).json({ error: 'Unsupported Tuesday Dashboard group' });
 
   try {
-    await ensureTestDashboardDefaults(pool);
     const [job, columns] = await Promise.all([
       privateJob ? fetchPrivateDashboardJob(jobId) : fetchDashboardJob(sourceOrderId),
       fetchDashboardColumns(false),
@@ -264,7 +267,6 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/date-column', async (req, 
   if (rawDate && !parsedDate) return res.status(400).json({ error: 'Invalid date' });
 
   try {
-    await ensureTestDashboardDefaults(pool);
     const [job, columns] = await Promise.all([
       privateJob ? fetchPrivateDashboardJob(jobId) : fetchDashboardJob(sourceOrderId),
       fetchDashboardColumns(false),
@@ -331,7 +333,6 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
   if (!columnId) return res.status(400).json({ error: 'columnId is required' });
 
   try {
-    await ensureTestDashboardDefaults(pool);
     const [job, columns] = await Promise.all([
       privateJob ? fetchPrivateDashboardJob(jobId) : fetchDashboardJob(sourceOrderId),
       fetchDashboardColumns(false),
@@ -520,7 +521,6 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/checkbox-column', async (r
   const checked = req.body?.checked === true || req.body?.checked === 'true' || req.body?.checked === 1 || req.body?.checked === '1';
 
   try {
-    await ensureTestDashboardDefaults(pool);
     const [job, columns] = await Promise.all([
       privateJob ? fetchPrivateDashboardJob(jobId) : fetchDashboardJob(sourceOrderId),
       fetchDashboardColumns(false),
@@ -643,7 +643,6 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/text-column', async (req, 
   if (!hasValue) return res.status(400).json({ error: 'Text value is required' });
 
   try {
-    await ensureTestDashboardDefaults(pool);
     const [job, columns] = await Promise.all([
       privateJob ? fetchPrivateDashboardJob(jobId) : fetchDashboardJob(sourceOrderId),
       fetchDashboardColumns(false),
@@ -702,7 +701,6 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/design-column', async (req
   if (!hasValue) return res.status(400).json({ error: 'Design / PSG value is required' });
 
   try {
-    await ensureTestDashboardDefaults(pool);
     if (privateJob) {
       const [job, column] = await Promise.all([
         fetchPrivateDashboardJob(jobId),
@@ -768,7 +766,6 @@ protectedRouter.post('/api/test-dashboard/items/:jobId/label-printed', async (re
   if (!privateJob && !Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
 
   try {
-    await ensureTestDashboardDefaults(pool);
     const [job, columns] = await Promise.all([
       privateJob ? fetchPrivateDashboardJob(jobId) : fetchDashboardJob(sourceOrderId),
       fetchDashboardColumns(false),
@@ -837,7 +834,6 @@ protectedRouter.post('/api/test-dashboard/uploads/signature', async (req, res) =
 
   try {
     requireCloudinaryConfig();
-    await ensureTestDashboardDefaults(pool);
     const [job, column] = await Promise.all([
       privateJob ? fetchPrivateDashboardJob(jobId) : fetchDashboardJob(sourceOrderId),
       fetchDashboardColumn(columnId),
@@ -872,7 +868,6 @@ protectedRouter.post('/api/test-dashboard/items/:jobId/files', async (req, res) 
 
   let fileClient;
   try {
-    await ensureTestDashboardDefaults(pool);
     const [job, column] = await Promise.all([
       privateJob ? fetchPrivateDashboardJob(jobId) : fetchDashboardJob(sourceOrderId),
       fetchDashboardColumn(columnId),
@@ -978,7 +973,6 @@ protectedRouter.delete('/api/test-dashboard/items/:jobId/proof-files', async (re
   if (!privateJob && !Number.isFinite(sourceOrderId)) return res.status(400).json({ error: 'Invalid job id' });
 
   try {
-    await ensureTestDashboardDefaults(pool);
 
     if (privateJob) {
       const job = await fetchPrivateDashboardJob(jobId);
@@ -1100,10 +1094,7 @@ async function buildTestDashboardBoardPayload() {
     fetchFileMap(sourceOrderIds),
     fetchDashboardSamplingHistory(pool, sourceOrderIds),
   ]);
-  let positions = initialPositions;
-  if (await backfillDashboardDesignPositions(candidateJobs, states, positions)) {
-    positions = await fetchPositionMap(sourceOrderIds);
-  }
+  const positions = initialPositions;
 
   const linksById = new Map(productionLinks.map(link => [link.dashboard_job_id, link]));
   const productionParentIds = new Set(productionLinks.map(link => link.source_order_id));
@@ -1524,6 +1515,32 @@ async function hasProofFile(sourceOrderId) {
     [sourceOrderId, TEST_DASHBOARD_COLUMN_IDS.PROOF]
   );
   return result.rowCount > 0;
+}
+
+// Runs before listen(), never from a board read or mutation request.
+async function initializeDashboardData() {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(71060218)');
+    await client.query(`CREATE TABLE IF NOT EXISTS hub_data_migrations (
+      version TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+    const applied = await client.query("SELECT version FROM hub_data_migrations WHERE version = 'dashboard-defaults-v1'");
+    if (!applied.rowCount) {
+      await ensureTestDashboardDefaults(client);
+      await client.query("INSERT INTO hub_data_migrations(version) VALUES ('dashboard-defaults-v1')");
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally { client.release(); }
+  // Legacy/imported design state can arrive between deployments; repair at startup.
+  const jobs = await fetchOpenDashboardJobs();
+  const ids = jobs.map(job => job.source_order_id);
+  const [states, positions] = await Promise.all([fetchStateMap(ids), fetchPositionMap(ids)]);
+  await backfillDashboardDesignPositions(jobs, states, positions, { strict: true });
 }
 
 async function ensureTestDashboardDefaults(db) {
@@ -2109,7 +2126,7 @@ function designDisplayTextFromRawValue(value) {
   return designTextFromPositions([{ design_ref: rawValue }], {});
 }
 
-async function backfillDashboardDesignPositions(jobs, states, positionMap) {
+async function backfillDashboardDesignPositions(jobs, states, positionMap, { strict = false } = {}) {
   const candidates = [];
   const stateOnlyCleanupIds = [];
   for (const job of jobs || []) {
@@ -2145,6 +2162,7 @@ async function backfillDashboardDesignPositions(jobs, states, positionMap) {
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     console.error('[test-dashboard] DES/PSG backfill failed:', err);
+    if (strict) throw err;
     return false;
   } finally {
     client.release();
@@ -2903,6 +2921,7 @@ function clean(value) {
 
 module.exports = {
   protectedRouter,
+  initializeDashboardData,
   ensureTestDashboardDefaults,
   buildTestDashboardBoardPayload,
   buildDashboardSplitBoardItem,

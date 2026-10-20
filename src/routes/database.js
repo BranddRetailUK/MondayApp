@@ -857,6 +857,20 @@ router.get('/api/database/reports', async (req, res) => {
   }
 });
 
+// Lightweight selector metadata is independent of the paged/filtered table.
+router.get('/api/database/job-options', async (req, res) => {
+  const all = req.query.status === 'all';
+  const { whereSql, params, orderSql } = buildJobFilters(all ? {} : { status: 'open' });
+  try {
+    const result = await pool.query(`SELECT j.source_order_id, j.order_no, j.job_title, j.customer_name
+      FROM database_jobs j ${whereSql} ${orderSql} ${all ? 'LIMIT 500' : ''}`, params);
+    res.json({ jobs: result.rows });
+  } catch (error) {
+    console.error('GET /api/database/job-options', error);
+    res.status(500).json({ error: 'Failed to fetch order options' });
+  }
+});
+
 router.get('/api/database/jobs', async (req, res) => {
   const limit = clampInt(req.query.limit, 100, 1, 100);
   const offset = clampInt(req.query.offset, 0, 0, 100000);

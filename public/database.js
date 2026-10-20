@@ -1,7 +1,5 @@
 (function () {
   const PAGE_LIMIT = 100;
-  const ALL_ORDERS_VISIBLE_BATCH_SIZE = PAGE_LIMIT;
-  const BACKGROUND_LOAD_DELAY_MS = 50;
   const ORDER_SELECTOR_LIMIT = 500;
   const CUSTOMER_SEARCH_DELAY = 180;
   const PRODUCT_SEARCH_DELAY = 180;
@@ -248,6 +246,11 @@
     visualDeleteSaving: false,
     orderLoadToken: 0,
     orderLoadComplete: false,
+    orderNextOffset: 0,
+    loadedOrderKey: '',
+    orderLoadError: '',
+    orderSelectorKey: '',
+    orderSelectorJobs: [],
     orderSearchQuery: '',
     visibleOrderLimit: PAGE_LIMIT,
     loadingCustomers: false,
@@ -386,6 +389,7 @@
   let contactAutosaveTimer = 0;
   let customerAddressAutosaveTimer = 0;
   let lineOrderAutosaveTimer = 0;
+  let orderLoadController = null;
   let orderSearchTimer = 0;
   let outstandingScrollFrame = 0;
   let productStylesScrollFrame = 0;
@@ -689,7 +693,7 @@
       input.addEventListener('change', () => {
         state.activeSort = input.value;
         resetVisibleOrderLimit();
-        renderOutstandingOrders();
+        loadOutstandingOrders({ force: true });
       });
     });
 
@@ -1120,6 +1124,8 @@
       return;
     }
 
+    if (action === 'load-more-orders') { loadNextOrdersPage(); return; }
+
     const group = button.dataset.dbGroup;
     if (group) {
       state.activeGroup = group;
@@ -1133,7 +1139,7 @@
         loadOutstandingOrders({ force: false });
         return;
       }
-      renderOutstandingOrders();
+      loadOutstandingOrders({ force: true });
       persistDatabaseRoute();
       return;
     }
@@ -1206,23 +1212,12 @@
   }
 
   function maybeExtendVisibleOrders() {
-    if (state.orderMode !== 'all' || !els.outstandingFrame) return;
-
+    if (!els.outstandingFrame || state.activeView !== 'outstanding' || !isDatabaseTopLevelActive()) return;
     const distanceFromBottom = isDatabaseMobileLayout()
       ? els.outstandingFrame.getBoundingClientRect().bottom - window.innerHeight
-      : els.outstandingFrame.scrollHeight
-        - els.outstandingFrame.scrollTop
-        - els.outstandingFrame.clientHeight;
-    if (distanceFromBottom > 140) return;
-
-    const nextLimit = Math.min(
-      state.visibleOrderLimit + ALL_ORDERS_VISIBLE_BATCH_SIZE,
-      state.outstandingJobs.length
-    );
-    if (nextLimit <= state.visibleOrderLimit) return;
-
-    state.visibleOrderLimit = nextLimit;
-    renderOutstandingOrders({ hydrateSelectors: false, preserveScroll: true });
+      : els.outstandingFrame.scrollHeight - els.outstandingFrame.scrollTop - els.outstandingFrame.clientHeight;
+    // Start early enough to have the next page ready before it is visible.
+    if (distanceFromBottom <= 1000) loadNextOrdersPage();
   }
 
   function resetVisibleOrderLimit() {
@@ -5965,6 +5960,9 @@
     if (state.orderMode !== 'all') return;
     persistDatabaseRoute();
 
+    orderLoadController?.abort();
+    state.orderLoadToken++;
+    state.loadingOrders = false;
     clearTimeout(orderSearchTimer);
     orderSearchTimer = window.setTimeout(() => {
       if (state.orderMode !== 'all') return;
@@ -7042,88 +7040,82 @@
     }
   }
 
+  function currentOrderQueryKey() {
+    return JSON.stringify([state.orderMode, state.orderMode === 'all' ? state.orderSearchQuery : '', state.activeGroup, state.activeSort]);
+  }
+
   async function loadOutstandingOrders(options = {}) {
     const mode = state.orderMode;
-    if (state.loadingOrders && state.loadedOrderMode === mode && !options.force) {
+    const key = currentOrderQueryKey();
+    if (state.loadedOrderKey === key && !options.force && (state.loadingOrders || state.outstandingJobs.length)) {
       renderOutstandingOrders();
       return;
     }
-    if (state.outstandingJobs.length && state.loadedOrderMode === mode && !options.force) {
-      if (!state.loadedCustomerUsers) {
-        await ensureCustomerUsers();
-      }
-      renderOutstandingOrders();
-      return;
-    }
-
-    const token = state.orderLoadToken + 1;
-    state.orderLoadToken = token;
+    orderLoadController?.abort();
+    orderLoadController = new AbortController();
+    const signal = orderLoadController.signal;
+    const token = ++state.orderLoadToken;
+    state.loadedOrderKey = key;
+    state.orderSelectorKey = '';
     state.loadingOrders = true;
     state.orderLoadComplete = false;
+    state.orderLoadError = '';
     state.loadedOrderMode = mode;
     state.outstandingJobs = [];
     state.outstandingTotal = 0;
+    state.orderNextOffset = 0;
     state.visibleOrderLimit = PAGE_LIMIT;
     syncOutstandingTableMode();
     els.outstandingBody.innerHTML = renderStatusRow(mode === 'all' ? 'Loading all orders' : 'Loading outstanding orders', outstandingTableColumnCount());
     scheduleOutstandingTableLayout([]);
-
     try {
-      const [result] = await Promise.all([
-        fetchJobsPage(mode, 0, { includeTotal: true }),
-        ensureCustomerUsers(),
-      ]);
+      // User-selector enrichment must not delay displaying the first page.
+      void ensureCustomerUsers().catch(error => console.warn('Order users unavailable', error));
+      const result = await fetchJobsPage(mode, 0, { includeTotal: false, signal });
       if (!isCurrentOrderLoad(token, mode)) return;
-
       state.outstandingJobs = result.jobs;
       state.outstandingTotal = result.total;
-      renderOutstandingOrders();
-      hydrateOrderSelectors();
-      if (result.hasMore) {
-        loadRemainingJobs(mode, result.nextOffset, token, result.hasMore);
-      } else {
-        state.loadingOrders = false;
-        state.orderLoadComplete = true;
-      }
-    } catch (err) {
-      if (!isCurrentOrderLoad(token, mode)) return;
+      state.orderNextOffset = result.nextOffset;
+      state.orderLoadComplete = !result.hasMore;
       state.loadingOrders = false;
-      state.orderLoadComplete = true;
-      state.loadedOrderMode = '';
+      renderOutstandingOrders();
+      window.requestAnimationFrame(maybeExtendVisibleOrders);
+    } catch (err) {
+      if (!isCurrentOrderLoad(token, mode) || err.name === 'AbortError') return;
+      state.loadingOrders = false;
+      state.loadedOrderKey = '';
       els.outstandingBody.innerHTML = renderStatusRow(err.message, outstandingTableColumnCount());
       scheduleOutstandingTableLayout([]);
     }
   }
 
-  async function loadRemainingJobs(mode, offset, token, hasMore) {
-    let nextOffset = offset;
-    let hasMorePages = hasMore;
-
+  async function loadNextOrdersPage() {
+    if (state.loadingOrders || state.orderLoadComplete || state.loadedOrderKey !== currentOrderQueryKey()) return;
+    const mode = state.orderMode, token = state.orderLoadToken;
+    state.loadingOrders = true;
+    state.orderLoadError = '';
     try {
-      while (isCurrentOrderLoad(token, mode) && hasMorePages) {
-        const result = await fetchJobsPage(mode, nextOffset, { includeTotal: false });
-        if (!isCurrentOrderLoad(token, mode)) return;
-        if (!result.jobs.length) break;
-
-        state.outstandingJobs.push(...result.jobs);
-        state.outstandingTotal = Math.max(state.outstandingTotal, result.total);
-        nextOffset = result.nextOffset;
-        hasMorePages = result.hasMore;
-        await yieldOrderLoad(BACKGROUND_LOAD_DELAY_MS);
-      }
-    } catch (err) {
-      if (isCurrentOrderLoad(token, mode)) {
-        console.error('Background order load failed', err);
-      }
-    } finally {
+      const result = await fetchJobsPage(mode, state.orderNextOffset, { includeTotal: false, signal: orderLoadController?.signal });
       if (!isCurrentOrderLoad(token, mode)) return;
-      state.outstandingTotal = state.outstandingJobs.length;
-      state.loadingOrders = false;
-      state.orderLoadComplete = true;
+      const known = new Set(state.outstandingJobs.map(job => job.source_order_id));
+      state.outstandingJobs.push(...result.jobs.filter(job => !known.has(job.source_order_id)));
+      state.outstandingTotal = result.total;
+      state.orderNextOffset = result.nextOffset;
+      state.orderLoadComplete = !result.hasMore;
+    } catch (error) {
+      if (!isCurrentOrderLoad(token, mode) || error.name === 'AbortError') return;
+      state.orderLoadError = 'Retry loading orders';
+      console.warn('Order page load failed', error);
+    } finally {
+      if (isCurrentOrderLoad(token, mode)) {
+        state.loadingOrders = false;
+        renderOutstandingOrders({ hydrateSelectors: false, preserveScroll: true });
+      }
     }
   }
 
   async function fetchJobsPage(mode, offset, options = {}) {
+    if (offset > 100000) throw new Error('This result is too large. Narrow the search before continuing.');
     const includeTotal = options.includeTotal !== false;
     const hasActiveSearch = mode === 'all' && Boolean(state.orderSearchQuery);
     const params = new URLSearchParams({
@@ -7133,8 +7125,10 @@
     if (!includeTotal || hasActiveSearch) params.set('includeTotal', 'false');
     if (mode !== 'all') params.set('status', 'open');
     if (hasActiveSearch) params.set('q', state.orderSearchQuery);
+    params.set('group', state.activeGroup);
+    params.set('sort', state.activeSort);
 
-    const data = await fetchJson(`/api/database/jobs?${params.toString()}`);
+    const data = await fetchJson(`/api/database/jobs?${params.toString()}`, { signal: options.signal });
     storeDashboardStatusColors(data.dashboardStatusColors);
     const jobs = data.jobs || [];
     const limit = data.limit || PAGE_LIMIT;
@@ -7142,7 +7136,7 @@
     const hasMore = typeof data.hasMore === 'boolean'
       ? data.hasMore
       : jobs.length > 0 && nextOffset < Number(data.total || 0);
-    const total = Number.isFinite(Number(data.total))
+    const total = data.total != null && Number.isFinite(Number(data.total))
       ? Number(data.total)
       : Math.max(state.outstandingTotal || 0, offset + jobs.length + (hasMore ? 1 : 0));
     return {
@@ -7156,11 +7150,8 @@
   function isCurrentOrderLoad(token, mode) {
     return state.orderLoadToken === token
       && state.loadedOrderMode === mode
-      && state.orderMode === mode;
-  }
-
-  function yieldOrderLoad(delayMs = 0) {
-    return new Promise((resolve) => window.setTimeout(resolve, delayMs));
+      && state.orderMode === mode
+      && state.loadedOrderKey === currentOrderQueryKey();
   }
 
   function renderOutstandingOrders(options = {}) {
@@ -7176,7 +7167,8 @@
     }
 
     const scrollTop = options.preserveScroll ? els.outstandingFrame?.scrollTop : null;
-    els.outstandingBody.innerHTML = jobs.map(renderOutstandingRow).join('');
+    els.outstandingBody.innerHTML = jobs.map(renderOutstandingRow).join('')
+      + (!state.orderLoadComplete ? `<tr><td colspan="${outstandingTableColumnCount()}"><button type="button" data-db-action="load-more-orders" ${state.loadingOrders ? 'disabled' : ''}>${escapeHtml(state.orderLoadError || (state.loadingOrders ? 'Loading more…' : 'Load more orders'))}</button></td></tr>` : '');
     scheduleOutstandingTableLayout(jobs);
     if (scrollTop !== null && els.outstandingFrame) els.outstandingFrame.scrollTop = scrollTop;
     if (hydrateSelectors) hydrateOrderSelectors();
@@ -7281,8 +7273,7 @@
   }
 
   function ordersForCurrentRender() {
-    if (state.orderMode !== 'all') return state.outstandingJobs;
-    return state.outstandingJobs.slice(0, state.visibleOrderLimit);
+    return state.outstandingJobs;
   }
 
   function groupedOutstandingRows(sourceJobs = state.outstandingJobs) {
@@ -7525,7 +7516,24 @@
     syncOrderDocumentButtons(job);
   }
 
+  let orderSelectorRequest = null;
+  async function ensureOrderSelectorOptions() {
+    const mode = state.orderMode;
+    if (state.orderSelectorKey === mode || orderSelectorRequest?.mode === mode) return;
+    const request = { mode };
+    orderSelectorRequest = request;
+    try {
+      const data = await fetchJson(`/api/database/job-options?status=${mode === 'all' ? 'all' : 'open'}`);
+      if (orderSelectorRequest !== request || state.orderMode !== mode) return;
+      state.orderSelectorJobs = data.jobs || [];
+      state.orderSelectorKey = mode;
+      hydrateOrderSelectors();
+    } catch (error) { console.warn('Order options unavailable', error); }
+    finally { if (orderSelectorRequest === request) orderSelectorRequest = null; }
+  }
+
   function hydrateOrderSelectors() {
+    void ensureOrderSelectorOptions();
     const selectedId = state.selectedJob?.source_order_id ? String(state.selectedJob.source_order_id) : '';
     const jobs = selectorJobs();
     const placeholder = '<option value="">Select order</option>';
@@ -7542,9 +7550,8 @@
   }
 
   function selectorJobs() {
-    const jobs = state.orderMode === 'all'
-      ? state.outstandingJobs.slice(0, ORDER_SELECTOR_LIMIT)
-      : [...state.outstandingJobs];
+    const source = state.orderSelectorKey === state.orderMode ? state.orderSelectorJobs : state.outstandingJobs;
+    const jobs = state.orderMode === 'all' ? source.slice(0, ORDER_SELECTOR_LIMIT) : [...source];
     if (state.selectedJob?.source_order_id && !jobs.some((job) => Number(job.source_order_id) === Number(state.selectedJob.source_order_id))) {
       jobs.unshift(state.selectedJob);
     }
@@ -8827,8 +8834,25 @@
     });
   }
 
-  function openOutstandingReportDocument() {
-    const snapshot = buildOutstandingReportSnapshot();
+  async function openOutstandingReportDocument() {
+    const key = currentOrderQueryKey();
+    try {
+      // Printing explicitly requests the complete matching set, independently
+      // of how far the user scrolled. Never turn background browsing into an export.
+      const jobs = [];
+      let offset = 0, more = true;
+      while (more) {
+        const page = await fetchJobsPage(state.orderMode, offset, { includeTotal: false });
+        if (key !== currentOrderQueryKey()) return;
+        jobs.push(...page.jobs);
+        more = page.hasMore;
+        offset = page.nextOffset;
+      }
+      return showOutstandingReportDocument(buildOutstandingReportSnapshot(jobs));
+    } catch (error) { alert(error.message || 'Unable to load orders for printing'); }
+  }
+
+  function showOutstandingReportDocument(snapshot) {
     if (!snapshot.jobs.length) {
       alert('No orders to print');
       return;
@@ -8936,8 +8960,8 @@
     });
   }
 
-  function buildOutstandingReportSnapshot() {
-    const groups = groupedOutstandingRows(ordersForCurrentRender()).map((group) => ({
+  function buildOutstandingReportSnapshot(sourceJobs = ordersForCurrentRender()) {
+    const groups = groupedOutstandingRows(sourceJobs).map((group) => ({
       key: group.key,
       label: outstandingReportGroupLabel(group.key, group.label),
       jobs: [...group.jobs],
@@ -13353,6 +13377,11 @@
 
   function showView(name, options = {}) {
     const previousView = state.activeView;
+    if (previousView === 'outstanding' && name !== 'outstanding') {
+      orderLoadController?.abort();
+      state.orderLoadToken++;
+      state.loadingOrders = false;
+    }
     if (!options.skipHistory && state.activeView && state.activeView !== name) {
       state.viewHistory.push(state.activeView);
       if (state.viewHistory.length > 20) state.viewHistory.shift();

@@ -193,6 +193,29 @@ function buildJobFilters(query = {}) {
                          j.order_no DESC`;
   }
 
+  // Match the existing browser category precedence before paginating.
+  const typeText = "LOWER(COALESCE(j.order_type, '') || ' ' || COALESCE(j.order_type_abbr, ''))";
+  const abbr = "LOWER(BTRIM(COALESCE(j.order_type_abbr, '')))";
+  const print = `(${typeText} LIKE '%print%' OR ${abbr} IN ('p','pe','ep'))`;
+  const embroidery = `(${typeText} LIKE '%embro%' OR ${typeText} ~ '\\memb\\M' OR ${abbr} IN ('e','pe','ep'))`;
+  const category = `CASE WHEN ${typeText} LIKE '%gift%' OR ${abbr}='g' THEN 'gifts'
+    WHEN ${print} AND ${embroidery} THEN 'print_embroidery'
+    WHEN ${embroidery} THEN 'embroidery' WHEN ${print} THEN 'print' ELSE 'other' END`;
+  const group = cleanQuery(query.group);
+  if (['print','print_embroidery','embroidery','gifts','other'].includes(group)) {
+    params.push(group);
+    where.push(`(${category}) = $${params.length}`);
+  } else if (group === 'ready' || group === 'not-ready') {
+    where.push("COALESCE(UPPER(TRIM(j.dashboard_status)), '') NOT IN ('COMPLETED','INVOICED')");
+    where.push(group === 'ready' ? 'j.proof_approved IS TRUE' : 'j.proof_approved IS NOT TRUE');
+  }
+  if (query.sort === 'order' || query.sort === 'delivery') {
+    const rank = `CASE (${category}) WHEN 'print' THEN 0 WHEN 'print_embroidery' THEN 1
+      WHEN 'embroidery' THEN 2 WHEN 'gifts' THEN 3 ELSE 4 END`;
+    orderSql = `ORDER BY ${rank}, ${query.sort === 'delivery' ? 'j.delivery_date ASC NULLS LAST,' : ''}
+      j.order_no DESC NULLS LAST, j.source_order_id DESC`;
+  }
+
   return {
     whereSql: where.length ? `WHERE ${where.join(' AND ')}` : '',
     params,

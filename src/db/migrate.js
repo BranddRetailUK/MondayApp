@@ -95,6 +95,7 @@ async function initDb() {
   await require('./digitisingHistorySchema').ensureDigitisingHistoryTables(pool);
   await require('./proofPencarrieSchema').ensureProofPencarrieTables(pool);
   await require('../services/designFolders').ensureTables(pool);
+  await require('../routes/test-dashboard').initializeDashboardData();
 }
 
 module.exports = { initDb };

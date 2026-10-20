@@ -337,6 +337,8 @@ function clampDashboardZoom(zoom) {
   return Math.min(DASHBOARD_ZOOM_MAX, Math.max(DASHBOARD_ZOOM_MIN, numericZoom));
 }
 
+let __testBoardEtag = '';
+
 async function loadTestBoard(options = {}) {
   if (__testBoardLoading) return;
   const boardDiv = document.getElementById('test-board');
@@ -351,8 +353,10 @@ async function loadTestBoard(options = {}) {
     const response = await fetch(boardUrl, {
       cache: 'no-store',
       credentials: 'include',
-      headers: forceRefresh ? { 'Cache-Control': 'no-cache' } : {}
+      headers: !forceRefresh && __testBoardEtag && boardDiv.querySelector('.group')
+        ? { 'If-None-Match': __testBoardEtag } : {}
     });
+    if (response.status === 304) return;
     if (!response.ok) {
       const error = await readApiError(response);
       console.warn('Tuesday Dashboard load failed', error);
@@ -364,6 +368,7 @@ async function loadTestBoard(options = {}) {
     pruneSyncedTestCheckboxOptimisticValues(payload);
     if (__dashboardFileHoverTarget?.isConnected || (!allowDuringDesignEdit && isTestDashboardTextEditActive())) return;
     renderBoard(payload, { context: BOARD_CONTEXT_TEST, boardDiv });
+    __testBoardEtag = response.headers.get('ETag') || '';
   } catch (err) {
     console.warn('Tuesday Dashboard load failed', err);
     renderBoardLoadingState(boardDiv);
@@ -387,7 +392,7 @@ function startTestBoardAutoRefresh() {
     const dashboard = document.getElementById('tab-test-dashboard');
     if (dashboard && !dashboard.classList.contains('active')) return;
     if (isStatusDropdownOpen() || isTestRowMenuOpen() || isTestVisualRemovalModalOpen() || isTestDatePopoverOpen() || isTestDashboardMobileJobOverviewOpen() || __statusUpdateInFlight > 0 || __testFileUploadsInFlight > 0 || isTestDashboardTextEditActive() || __dashboardFileHoverTarget?.isConnected) return;
-    loadTestBoard({ forceRefresh: true });
+    loadTestBoard();
   }, BOARD_AUTO_REFRESH_MS);
 }
 

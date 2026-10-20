@@ -45,7 +45,7 @@ function invoiceUi() {
   });
   for (const name of ['updateOutstandingJob', 'renderOrderHeaderStats', 'renderOutstandingOrders', 'renderToInvoiceJobs', 'hydrateOrderSelectors', 'syncOrderDocumentButtons', 'loadHomeMetrics']) context[name] = () => {};
   vm.runInContext([
-    section('async function openDatabaseDocument', 'function openOutstandingReportDocument'),
+    section('async function openDatabaseDocument', 'async function openOutstandingReportDocument'),
     section('function applyGeneratedDocumentDateToOrderUi', 'function shouldRemoveFromOpenOrders'),
     section('function selectedManualInvoiceDate', 'function isJobInvoiceStatusEligible'),
     section('function legacyInputDateToIso', 'function addDays'),

@@ -251,8 +251,8 @@ async function withFixture(options, run) {
     const { protectedRouter } = require('../src/routes/test-dashboard');
     async function request(endpoint, body, method = 'put') {
       const route = protectedRouter.stack.find(layer => layer.route?.path === endpoint && layer.route.methods[method]);
-      const response = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(data) { this.body = data; return this; } };
-      await route.route.stack[0].handle({ params: { jobId: options.databaseJob ? '50503' : privateId }, body }, response);
+      const response = { set() { return this; }, type() { return this; }, send(data) { this.body = JSON.parse(data); return this; }, statusCode: 200, status(code) { this.statusCode = code; return this; }, json(data) { this.body = data; return this; } };
+      await route.route.stack[0].handle({ query: {}, get: () => undefined, params: { jobId: options.databaseJob ? '50503' : privateId }, body }, response);
       return response;
     }
     await run({

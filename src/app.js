@@ -16,6 +16,16 @@ const dtfRoutes = require('./routes/dtf');
 
 app.set('trust proxy', 1);
 
+// Ordinary public assets do not need a session lookup. HTML and protected
+// renderer/vendor routes still pass through their existing authorization.
+const servePublicAsset = express.static(publicDir, { index: false });
+app.use((req, res, next) => {
+  if (/\.(?:js|css|png|jpe?g|gif|svg|webp|ico|woff2?|ttf)$/i.test(req.path)) {
+    return servePublicAsset(req, res, next);
+  }
+  next();
+});
+
 // ---- parse JSON BEFORE routes
 app.use(express.json());
 app.use(attachHubUser);
