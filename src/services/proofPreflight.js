@@ -1,5 +1,5 @@
 const {createHash}=require('crypto');
-const {POSITIONS,positionName,dimension,textClauses}=require('./proofLayout');
+const {positionOptions,positionName,dimension,textClauses}=require('./proofLayout');
 const refs=text=>[...String(text||'').matchAll(/\bPSG\s*[-_]?\s*(\d+)(?!\d)/gi)].map(m=>`PSG${m[1]}`);
 const positive=value=>{try{return dimension(value)>0;}catch{return false;}};
 
@@ -19,7 +19,9 @@ function assess(brief,artworks=[],request='') {
     if(!p.decorations?.length)add(base,`${label}: add decoration details to the request.`);
     (p.decorations||[]).forEach((d,di)=>{
       const path=`${base}.decorations.${di}`,name=`${label} · ${d.position||'decoration '+(di+1)}`;
-      if(!POSITIONS.includes(positionName(d.position)))add(`${path}.position`,`${name}: select the position as worn.`,POSITIONS);
+      const options=positionOptions(p), allowed=options.map(option=>typeof option==='string'?option:option.value);
+      const legacyShortsHem=typeof options[0]==='object' && ['left hem','right hem'].includes(positionName(d.position));
+      if(!allowed.includes(positionName(d.position))&&!legacyShortsHem)add(`${path}.position`,`${name}: select the position as worn.`,options);
       if(!d.method)add(`${path}.method`,`${name}: specify the decoration method.`,['embroidery','transfer print']);
       const sizeValid=positive(d.widthMm)||positive(d.heightMm);
       if((!sizeValid&&d.sizeTbc!==true)|| (d.widthMm&&!positive(d.widthMm)) || (d.heightMm&&!positive(d.heightMm)) || d.dimensionIssues?.length)add(`${path}.widthMm`,`${name}: confirm artwork width or height in mm; one axis is sufficient.`);

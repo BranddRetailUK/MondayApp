@@ -1,8 +1,11 @@
 // Deterministic brief resolution and geometry. All coordinates refer to the
 // visible garment bounds, not the supplier photograph's surrounding canvas.
-const { automaticTop, garmentSizeProfile } = require('./proofPlacementProfiles');
-const POSITIONS = ['left breast', 'right breast', 'front', 'back', 'upper back', 'nape', 'left sleeve', 'right sleeve', 'left hem', 'right hem'];
-const ALIASES = { 'front cuff':'front', 'front turn-up':'front', 'front turn up':'front', 'cuff':'front', 'turn up':'front', 'turn-up':'front', lb: 'left breast', rb: 'right breast', ls: 'left sleeve', rs: 'right sleeve', 'left chest': 'left breast', 'right chest': 'right breast', chest: 'front', 'centre chest': 'front', 'center chest': 'front', 'full chest': 'front', 'front chest': 'front', 'centre front': 'front', 'center front': 'front', 'full front': 'front', 'centre back': 'back', 'center back': 'back', 'full back': 'back', rear: 'back', 'back neck': 'nape' };
+const { automaticTop, garmentSizeProfile, placementProfile } = require('./proofPlacementProfiles');
+const SHORTS_POSITIONS = ['left leg', 'right leg', 'bottom left leg', 'bottom right leg'];
+const SHORTS_OPTIONS = SHORTS_POSITIONS.map((value,i)=>({value,label:['Left','Right','Bottom left','Bottom right'][i]}));
+function positionOptions(product) { return placementProfile(product).family === 'shorts' ? SHORTS_OPTIONS : POSITIONS.filter(p=>!SHORTS_POSITIONS.includes(p)); }
+const POSITIONS = ['left breast', 'right breast', 'front', 'back', 'upper back', 'nape', 'left sleeve', 'right sleeve', 'left hem', 'right hem', ...SHORTS_POSITIONS];
+const ALIASES = { 'left':'left leg', 'right':'right leg', 'bottom left':'bottom left leg', 'bottom right':'bottom right leg', 'left pocket':'left leg', 'right pocket':'right leg', 'bottom of left leg':'bottom left leg', 'bottom of right leg':'bottom right leg', 'front cuff':'front', 'front turn-up':'front', 'front turn up':'front', 'cuff':'front', 'turn up':'front', 'turn-up':'front', lb: 'left breast', rb: 'right breast', ls: 'left sleeve', rs: 'right sleeve', 'left chest': 'left breast', 'right chest': 'right breast', chest: 'front', 'centre chest': 'front', 'center chest': 'front', 'full chest': 'front', 'front chest': 'front', 'centre front': 'front', 'center front': 'front', 'full front': 'front', 'centre back': 'back', 'center back': 'back', 'full back': 'back', rear: 'back', 'back neck': 'nape' };
 function normalise(value) { return String(value || '').toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim(); }
 function positionName(value) { const text = normalise(value); return ALIASES[text] || text; }
 function dimension(value, { signed = false } = {}) {
@@ -196,8 +199,14 @@ function preferredView(d, views) {
 
 // Estimated regions for an upright top. A saved template/calibration supersedes these.
 // x/y = artwork centre horizontally and top edge vertically; regions are safe boxes.
-function regionFor(position, view) {
+function regionFor(position, view, profile) {
   const p = positionName(position);
+  if (profile?.family==='shorts') {
+    const leg = {'left hem':'bottom left leg','right hem':'bottom right leg'}[p] || p;
+    if (!SHORTS_POSITIONS.includes(leg)) return null;
+    const imageRight = leg.includes('left') !== (view==='back');
+    return {x:imageRight ? .75 : .25,y:.25,left:imageRight ? .52 : .02,top:.12,width:.46,height:.85};
+  }
   if (/sleeve/.test(p) && ['left','right'].includes(view)) return { x:.5,y:.30, left:.22,top:.16,width:.56,height:.43 };
   const presets = {
     'left breast': [.62,.25,.46,.12,.38,.40], 'right breast': [.38,.25,.16,.12,.38,.40],
@@ -227,7 +236,7 @@ function placementFor(d, asset, garment, calibration = {}) {
   const custom = calibration.regions?.[position];
   if(garment.headwear && !garment.headwearRegion && !(custom && calibration.referenceMm))throw new Error('Headwear requires a reviewed front template or a measured custom decoration region. Regenerate to prepare the garment view.');
   if(garment.headwearRegion && (position!=='front' || garment.view!=='front'))throw new Error('This headwear template supports front decoration only.');
-  let region = custom || garment.headwearRegion || regionFor(position, garment.view);
+  let region = custom || garment.headwearRegion || regionFor(position, garment.view, garment.placementProfile);
   // Automatic body prints use the detected torso's safe width, not a box
   // proportional to the sleeve-inclusive photograph. Never change custom/manual regions.
   if(garment.torsoRegion && !custom && !d.placement && !calibration.referenceMm && (!d.anchor || d.anchor==='region') && !Number(d.offsetXmm) && !Number(d.offsetYmm) && ['front','back','upper back'].includes(position))region={...region,...garment.torsoRegion};
@@ -265,6 +274,12 @@ function placementFor(d, asset, garment, calibration = {}) {
   let y = explicit ? d.placement.y : region.y;
   if (!explicit && !custom && (!d.anchor || d.anchor === 'region')) {
     y = garment.headwearRegion ? region.y-height/2 : automaticTop(position, garment.view, height, garment.placementProfile) ?? y;
+    if(garment.placementProfile?.family==='shorts'){
+      const bottom=/bottom|hem/.test(position);
+      const imageRight=position.includes('left') !== (garment.view==='back');
+      x=bottom ? (imageRight ? .95-width/2 : .05+width/2) : (imageRight ? .75 : .25);
+      y=bottom ? .92-height : .25-height/2;
+    }
     if(/breast/.test(position)){
       const edge=calibration.neckRight || garment.landmarks?.neckRight;
       const right=edge?.x ?? garment.placementProfile?.neckRight;
@@ -298,4 +313,4 @@ function placementFor(d, asset, garment, calibration = {}) {
 function fitsRegion(p) {
   return p.x-p.width/2 >= p.region.left-.001 && p.x+p.width/2 <= p.region.left+p.region.width+.001 && p.y >= p.region.top-.001 && p.y+p.height <= p.region.top+p.region.height+.001;
 }
-module.exports = {POSITIONS,positionName,dimension,dimensionsInText,textClauses,recoverDimensions,resolveDecorations,findArtwork,recoverProductCodes,prepareBrief,repairRetainedDimensions,preferredView,regionFor,artworkSize,placementFor,fitsRegion};
+module.exports = {POSITIONS,SHORTS_POSITIONS,positionOptions,positionName,dimension,dimensionsInText,textClauses,recoverDimensions,resolveDecorations,findArtwork,recoverProductCodes,prepareBrief,repairRetainedDimensions,preferredView,regionFor,artworkSize,placementFor,fitsRegion};

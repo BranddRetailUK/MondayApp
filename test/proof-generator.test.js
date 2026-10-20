@@ -725,3 +725,27 @@ test('TBC shared sizing preserves explicit product overrides and does not spread
  const scoped=brief([mark({widthMm:'',sizeTbc:true}),mark({id:'back',position:'back',widthMm:'',sizeTbc:false})]);
  layout.prepareBrief(scoped,{requestText:'Left breast size TBC; back logo',artworks:input.artworks});assert.equal(scoped.questions.length,1);assert.equal(scoped.questions[0].id,'back');
 });
+
+test('shorts anchors use pocket areas and outer hem edges, mirrored as worn',()=>{
+ const profile=require('../src/services/proofPlacementProfiles').placementProfile({name:'Kids cycling shorts'});
+ assert.equal(profile.family,'shorts');
+ const g={width:700,height:850,view:'front',estimatedPxPerMm:1,placementProfile:profile},asset={width:200,height:100};
+ const placements=Object.fromEntries(layout.SHORTS_POSITIONS.map(position=>[position,layout.placementFor(mark({position}),asset,g)]));
+ assert.equal(placements['left leg'].x,.75);assert.equal(placements['right leg'].x,.25);
+ assert.equal(placements['left leg'].y+placements['left leg'].height/2,.25);
+ assert.equal(placements['bottom left leg'].x+placements['bottom left leg'].width/2,.95);
+ assert.equal(placements['bottom right leg'].x-placements['bottom right leg'].width/2,.05);
+ for(const p of Object.values(placements))assert.ok(layout.fitsRegion(p));
+ for(const position of layout.SHORTS_POSITIONS){const back=layout.placementFor(mark({position}),asset,{...g,view:'back'});assert.ok(Math.abs(back.x-(1-placements[position].x))<1e-10);}
+ assert.equal(layout.placementFor(mark({position:'left hem'}),asset,g).x,placements['bottom left leg'].x);
+});
+
+test('manual placements override automatic region, silhouette and overlap blocks without moving or resizing',async()=>{
+ const files=[await artFile()],fetchImpl=await fixtureFetch();
+ const b=brief([mark({placement:{x:.95,y:.8},scaleVersion:4}),mark({id:'second',placement:{x:.95,y:.8},scaleVersion:4})]);
+ const result=await buildProof(b,files,{fetchImpl,strict:true});
+ assert.equal(result.issues.some(i=>i.blocking),false);
+ for(const p of result.pages[0].placements){assert.equal(p.x,.95);assert.equal(p.y,.8);assert.equal(p.size.width,100);assert.equal(p.explicit,true);}
+ const invalid=brief([mark({placement:{x:NaN,y:.8}})]);
+ await assert.rejects(()=>buildProof(invalid,files,{fetchImpl,strict:true}),/coordinates/);
+});

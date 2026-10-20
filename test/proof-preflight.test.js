@@ -54,3 +54,12 @@ test('TBC exempts only absent sizes and missing-method options exclude screen pr
  d.method='';assert.deepEqual(assess(b,assets).issues.find(i=>i.path.endsWith('method')).options,['embroidery','transfer print']);
  d.method='screen print';d.widthMm='90';assert.equal(assess(b,assets).ready,true);
 });
+
+test('shorts position review offers pocket and outer-hem choices instead of top positions',()=>{
+ const b=brief(),p=b.products[0];p.name='Kids fashion cycling shorts';p.code='SM427';p.decorations=[{...p.decorations[0],position:''}];
+ const issue=assess(b,assets).issues.find(i=>i.path.endsWith('.position'));
+ assert.deepEqual(issue.options,[{value:'left leg',label:'Left'},{value:'right leg',label:'Right'},{value:'bottom left leg',label:'Bottom left'},{value:'bottom right leg',label:'Bottom right'}]);
+ for(const {value} of issue.options){p.decorations[0].position=value;assert.equal(assess(b,assets).ready,true);}
+ p.decorations[0].position='left hem';assert.equal(assess(b,assets).ready,true,'legacy proofs remain editable');
+ p.name='T-shirt';p.decorations[0].position='';assert.ok(assess(b,assets).issues.find(i=>i.path.endsWith('.position')).options.includes('left breast'));
+});

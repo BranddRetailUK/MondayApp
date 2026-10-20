@@ -31,6 +31,7 @@ function placementProfile(product = {}) {
   if(headwear)return {family:'headwear',kind:headwear};
   const code = String(product.code || '').trim().toUpperCase();
   const name = `${product.name || ''} ${product.requestedName || ''} ${product.visual?.name || ''}`.toLowerCase();
+  if (/\bshorts\b/.test(name)) return {family:'shorts'};
   const outer = /jacket|coat|padded|softshell|parka|bodywarmer|gilet/.test(name);
   const hood = /hood/.test(name);
   const family = STYLE_PROFILES[code] || (hood && outer ? 'hoodedOuterwear'

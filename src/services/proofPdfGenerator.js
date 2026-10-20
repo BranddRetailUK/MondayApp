@@ -283,9 +283,10 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
         try {
           let p = placementFor(d,asset,garment,calibration);
           if (/sleeve/.test(positionName(d.position)) && (!d.anchor || d.anchor === 'region') && !Number(d.offsetXmm) && !Number(d.offsetYmm)) p = fitSleeve(garment,p);
-          // Both region-anchored and explicit placements keep exactly the same size.
-          if (!fitsRegion(p)) issue(productIndex,d.id,`${d.position}: artwork exceeds the printable region. Adjust its placement, region or calibration; its size has been preserved.`,true);
-          if (garment.confident && coverage(garment,p) < .96) issue(productIndex,d.id,`${d.position}: artwork crosses the detected garment edge.`,true);
+          // Manual placement is the user’s override of automatic region/edge rules.
+          // Both automatic and manual placements preserve the requested size.
+          if (!p.explicit && !fitsRegion(p)) issue(productIndex,d.id,`${d.position}: artwork exceeds the printable region. Adjust its placement, region or calibration; its size has been preserved.`,true);
+          if (!p.explicit && garment.confident && coverage(garment,p) < .96) issue(productIndex,d.id,`${d.position}: artwork crosses the detected garment edge.`,true);
           if (!p.calibrated && garment.headwear) issue(productIndex,d.id,garment.headwearTemplate?.builtin?'Artwork scale uses the accepted B45 proof reference.':'Headwear scale uses an indicative 200 mm flat width; no supplier measurement is available.');
           if (!p.calibrated && !garment.headwear && garment.scaleSource !== 'flat-chest-measurement') issue(productIndex,d.id,'Estimated garment scale. Supply a flat chest measurement or measured image calibration for a physical reference.');
           if (!p.size.confirmed) issue(productIndex,d.id,'Size to confirm: an 80 mm estimated width is used only for the preview.');
@@ -297,9 +298,9 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
             retained.scaleVersion=4;
           }
           pageData.placements.push({...p,id:d.id,artworkId:artwork.id,preview:asset.preview});
-          // Avoid drawing an invalid oversized overlay through the callouts/header.
-          // It stays visible in the interactive editor, with a blocking warning.
-          if (p.x-p.width/2>=0 && p.x+p.width/2<=1 && p.y>=0 && p.y+p.height<=1) {
+          // Automatic oversized overlays stay in the editor for correction.
+          // User-positioned artwork must remain visible in the exported proof.
+          if (p.explicit || (p.x-p.width/2>=0 && p.x+p.width/2<=1 && p.y>=0 && p.y+p.height<=1)) {
             drawAsset(page,asset,garmentBox.x+(p.x-p.width/2)*garmentBox.width,
               PAGE_H-garmentBox.y-garmentBox.height+p.y*garmentBox.height,p.width*garmentBox.width,p.height*garmentBox.height);
           }
@@ -307,7 +308,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
       }
       for (let i=0;i<pageData.placements.length;i++) for (let j=i+1;j<pageData.placements.length;j++) {
         const a=pageData.placements[i], b=pageData.placements[j];
-        if (Math.abs(a.x-b.x)<(a.width+b.width)/2 && a.y<b.y+b.height && b.y<a.y+a.height) {
+        if (!a.explicit && !b.explicit && Math.abs(a.x-b.x)<(a.width+b.width)/2 && a.y<b.y+b.height && b.y<a.y+a.height) {
           issue(productIndex,a.id,'Two artworks overlap in this view. Adjust their positions.',true);
         }
       }
