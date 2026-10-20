@@ -2689,6 +2689,7 @@ body.modal-open{overflow:hidden}
 
 /* Legacy database hub */
 #tab-database.db-legacy-tab{
+  scrollbar-gutter:stable both-edges;
   margin:-28px -32px;
   padding:0;
   min-height:100vh;
@@ -6682,7 +6683,7 @@ body.modal-open{overflow:hidden}
 }
 .db-customer-panel{
   display:none;
-  height:372px;
+  height:524px;
   border:1px solid #fff;
   border-top:none;
   background:#92cdea;
