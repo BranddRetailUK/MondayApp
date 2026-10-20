@@ -8171,6 +8171,7 @@
             {
               openAttribute: 'data-db-order-visual-open',
               openValue: index,
+              showOrderMetadata: false,
             }
           )).join('')}
         </div>

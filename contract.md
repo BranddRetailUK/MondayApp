@@ -1009,3 +1009,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - The order Files tab shows compact file-type document icons with extension badges for attachments without image/PDF previews (including green spreadsheet icons for Excel/CSV). Images and PDFs keep their thumbnail previews; generic attachments no longer show a large Preview unavailable box. Existing file open/download/delete actions are unchanged.
 
 - Files-tab cards display only the file-type icon (or existing image/PDF preview) and filename; job number, customer and design metadata are omitted from those cards. Visuals cards retain their existing metadata.
+
+- Order Visuals-tab cards also omit job, customer and design metadata, displaying only the preview and filename. The separate cross-order Visuals gallery keeps those details to identify the source order.
