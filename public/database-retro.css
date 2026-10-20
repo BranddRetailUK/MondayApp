@@ -1,0 +1,559 @@
+/*
+ * DATABASE / modern workstation theme.
+ * Presentation only: retain every legacy dimension, position and breakpoint.
+ * Borders keep their original widths; shadows provide the new bevels.
+ */
+#tab-database {
+  --db-ink: #243c49;
+  --db-muted: #526b76;
+  --db-blue: #245f7a;
+  --db-edge: #8faab5;
+  --db-paper: #fcfcf7;
+  --db-surface: #dce7e8;
+  --db-raised: linear-gradient(180deg, #fcfcf8, #e5eae7);
+  --db-bevel: inset 1px 1px 0 #ffffffd9, inset -1px -1px 0 #637f8a40;
+}
+#tab-database.db-legacy-tab {
+  background: radial-gradient(ellipse at 50% 20%, #d2e4e7, #adc7d0);
+  color: var(--db-ink);
+}
+#tab-database .db-legacy-app {
+  background: transparent;
+  color: var(--db-ink);
+}
+#tab-database .db-legacy-stage {
+  border-color: #78939f;
+  background: #cfdee2;
+  background-image: linear-gradient(135deg, #ffffff24, transparent 60%);
+  box-shadow: var(--db-bevel), 0 12px 32px #28465324;
+  border-radius: 0 0 5px 5px;
+}
+#tab-database .db-view {
+  color: var(--db-ink);
+}
+#tab-database :is(.db-visuals-view, .db-logs-view, .db-reports-view,
+  .db-order-panel, .db-customer-panel, .db-proof-layout,
+  .db-proof-upload-row) {
+  background: #cfdee2;
+  border-color: var(--db-edge);
+}
+#tab-database :is(.db-menu-column, .db-outstanding-actions) {
+  background: linear-gradient(160deg, #617b85, #435e69);
+  border-color: #b6cbd1 #39545f #39545f #b6cbd1;
+  border-style: solid;
+  border-radius: 5px;
+  box-shadow: var(--db-bevel), 0 3px 8px #263f4b1a;
+}
+#tab-database :is(.db-raised-button, .db-toolbar-button, .db-small-button,
+  .db-doc-button, .db-icon-button, .db-home-logs-toggle, .db-edit-button) {
+  background: var(--db-raised);
+  border-color: #f9fcfa #9aadb1 #8c9fa5 #f9fcfa;
+  border-style: solid;
+  border-radius: 3px;
+  color: var(--db-ink);
+  box-shadow: inset 0 0 0 1px #ffffff80, 0 1px 2px #1d38431c;
+  text-shadow: 0 1px 0 #ffffffa6;
+}
+#tab-database .db-raised-button {
+  font-weight: 600;
+}
+#tab-database .db-blue-link {
+  color: #235d78;
+}
+#tab-database [data-db-action="new-order"] {
+  background: linear-gradient(#377792, #255b74);
+  border-color: #8cb5c3 #1f4f64 #1f4f64 #8cb5c3;
+  color: #fff;
+  text-shadow: 0 1px 0 #163d54;
+}
+#tab-database :is(.db-raised-button, .db-toolbar-button, .db-small-button,
+  .db-doc-button, .db-icon-button, .db-home-logs-toggle, .db-edit-button):hover:not(:disabled) {
+  background: linear-gradient(#f7fcfd, #d6e8ed);
+  color: #163f56;
+  border-color: #effaff #658b9b #658b9b #effaff;
+}
+#tab-database :is(.db-raised-button, .db-toolbar-button, .db-small-button,
+  .db-doc-button, .db-icon-button, .db-home-logs-toggle, .db-edit-button):active:not(:disabled) {
+  background: #c9dce2;
+  box-shadow: inset 1px 2px 3px #26465330;
+  border-color: #65818e #e9f2f4 #e9f2f4 #65818e;
+}
+#tab-database :is(button, input, select, textarea, a):focus-visible {
+  outline: 2px solid #276c8c;
+  outline-offset: 2px;
+}
+#tab-database button:disabled {
+  color: #78878c;
+  text-shadow: none;
+  box-shadow: none;
+}
+#tab-database :is(.db-main-tab, .db-order-tab, .db-customer-tab) {
+  background: linear-gradient(#f1f4f1, #dde5e4);
+  color: #536a74;
+  border-color: #b4c8ce;
+  box-shadow: inset 0 1px 0 #ffffffc9;
+}
+#tab-database :is(.db-main-tab, .db-order-tab, .db-customer-tab):hover {
+  background: #e6f1f3;
+  color: #234f65;
+}
+#tab-database :is(.db-main-tab, .db-order-tab, .db-customer-tab).active {
+  background: linear-gradient(#d5eaf1, #bddbe7);
+  color: #18465c;
+  box-shadow: inset 0 3px 0 #32718c, inset 0 -1px 0 #a1c3d0;
+  font-weight: 700;
+}
+#tab-database .db-action-count {
+  background: #eff7f5;
+  color: #254b5c;
+  border-color: #314d5b #94afb8 #94afb8 #314d5b;
+  box-shadow: inset 0 1px 3px #223c4a2b;
+  border-radius: 2px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+#tab-database :is(.db-panel-title, .db-action-title) {
+  color: #f7fbfa;
+  text-shadow: 0 1px 0 #263e4b60;
+}
+#tab-database :is(.db-status-updates, .db-table-frame, .db-customer-table-frame,
+  .db-visuals-scroll) {
+  border-color: #90a7b1;
+  border-style: solid;
+  border-radius: 3px;
+  box-shadow: inset 0 1px 3px #26465315;
+  background: var(--db-paper);
+}
+#tab-database .db-status-updates-list {
+  background: var(--db-paper);
+}
+#tab-database .db-status-update {
+  border-bottom-color: #dbe4e4;
+}
+#tab-database .db-status-update.is-light { background: #fcfcf8; }
+#tab-database .db-status-update.is-dark { background: #edf2ef; }
+#tab-database .db-status-update-job-number { color: #245f7a; }
+#tab-database :is(.db-status-update-job-title, .db-status-update-connector) { color: var(--db-ink); }
+#tab-database :is(.db-legacy-table, #db-logs-table) {
+  background: var(--db-paper);
+  color: var(--db-ink);
+  font-variant-numeric: tabular-nums;
+}
+#tab-database .db-legacy-table :is(th, td) { border-color: #b9c9cd; }
+/* Fill the list frame; give spare space to the job title column. */
+#tab-database #db-outstanding-table:not(.db-all-orders-mode) {
+  width: max(100%, var(--db-outstanding-table-width, 100%));
+}
+#tab-database #db-outstanding-table:not(.db-all-orders-mode) th:nth-child(6) {
+  width: auto;
+}
+#tab-database .db-legacy-table th {
+  background: linear-gradient(#eaf0ef, #d3dfe1);
+  color: #294d60;
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 #ffffffb0;
+}
+#tab-database .db-legacy-table tbody tr:nth-child(even) td:not([style*="background"]) {
+  background-color: #eef3f1;
+}
+#tab-database .db-legacy-table tbody tr:hover td:not([style*="background"]) {
+  background-color: #dcecf1;
+}
+#tab-database .db-legacy-table tbody tr.selected td:not(.db-dashboard-status-cell) {
+  background-color: #c8e3ed;
+  color: #183f53;
+}
+#tab-database :is(.db-order-link, .db-customer-link, .db-customer-latest-order-button) {
+  color: #225f7d;
+}
+#tab-database :is(input:not([type="checkbox"]):not([type="radio"]),
+  select, textarea) {
+  border-color: #93aab4;
+  border-style: solid;
+  border-radius: 2px;
+  color: #243f4e;
+  box-shadow: inset 0 1px 2px #243f4e14;
+  accent-color: #2b708c;
+}
+#tab-database :is(input[type="checkbox"], input[type="radio"]) {
+  accent-color: #2b708c;
+}
+#tab-database :is(input, textarea)::placeholder { color: #71838b; }
+#tab-database :is(.db-order-label-large, .db-customer-manager-label) { color: #28566b; }
+#tab-database :is(.db-title-input, .db-order-number-input) { color: #234e65; }
+#tab-database .db-new-order-title { color: #244b5e; }
+#tab-database .db-new-order-row > label:first-child { color: #934b3a; }
+#tab-database .db-order-number-input {
+  background: #f7f5e9;
+  font-variant-numeric: tabular-nums;
+}
+#tab-database :is(.db-detail-box, .db-new-order-box, .db-new-customer-box,
+  .db-add-contact-box, .db-report-panel, .db-report-table-card,
+  .db-customer-address-card) {
+  background: #e3eceb;
+  border-color: #a6bcc3;
+  border-radius: 3px;
+  box-shadow: var(--db-bevel);
+}
+#tab-database :is(.db-report-panel-heading, .db-report-compare-toolbar,
+  .db-styles-detail-panel) {
+  background: #4d6875;
+  border-color: #8ea6b0;
+}
+#tab-database :is(.db-visual-card, .db-customer-overview-card) {
+  background: var(--db-paper);
+  border-color: #b0c3c9;
+  border-radius: 3px;
+  box-shadow: 0 2px 4px #26465312;
+  color: var(--db-ink);
+}
+#tab-database .db-customer-overview-card span {
+  background: #dce9eb;
+  color: #3e5d6b;
+  border-color: #b2c8cf;
+}
+#tab-database .db-customer-overview-card strong { color: #244b5e; }
+#tab-database .db-visual-card-preview { border-color: #c2ced0; }
+#tab-database :is(.db-filter-buttons, .db-sort-panel) {
+  background: #dce7e8;
+  border-color: #a4bbc3;
+  border-radius: 3px;
+  box-shadow: var(--db-bevel);
+}
+#tab-database .db-toolbar-button.active {
+  box-shadow: inset 0 -3px 0 #32718c, inset 0 1px 3px #304d6020;
+}
+#tab-database :is(.db-new-action-button, .db-order-stats-toggle) {
+  background: var(--db-raised);
+  color: var(--db-blue);
+  border-color: #f9fcfa #9aadb1 #8c9fa5 #f9fcfa;
+  border-style: solid;
+  border-radius: 3px;
+}
+#tab-database .db-type-print { background: #f4e6b0 !important; }
+#tab-database .db-type-embroidery { background: #eecba4 !important; }
+#tab-database .db-type-print_embroidery { background: #dfcce8 !important; }
+#tab-database .db-type-gifts { background: #cce3c3 !important; }
+#tab-database :is(.db-items-stock-frame, .db-small-item-box, .db-nonstock-box,
+  .db-custom-table-scroll, .db-design-table-frame, .db-customer-gray-fill,
+  .db-proof-frame, .db-proof-viewer) {
+  background: #b8c8ce;
+  border-color: #8fa7b2;
+}
+#tab-database :is(.db-gray-fill, .db-add-line-button-row) td {
+  background: #b8c8ce !important;
+  border-color: #b8c8ce !important;
+}
+#tab-database :is(.db-add-line-button, .db-customer-open-button) {
+  background: var(--db-raised);
+  border-color: #a1b6be;
+  border-style: solid;
+  border-radius: 2px;
+  color: #245f7a;
+  box-shadow: var(--db-bevel);
+}
+#tab-database .db-order-delete-button {
+  background: linear-gradient(#964f47, #793c36);
+  border-color: #b67972 #69332d #69332d #b67972;
+  border-style: solid;
+  border-radius: 3px;
+}
+#tab-database .db-edit-spine {
+  visibility: hidden;
+}
+#tab-database * {
+  scrollbar-color: #96afb9 #e2ebeb;
+}
+@media print {
+  #tab-database .db-legacy-stage { box-shadow: none; }
+}
+
+/* DATABASE dialogs are mounted on body, outside the main workspace. */
+:is(.db-order-ack-modal, .db-visual-modal, .db-styles-image-modal,
+  .db-visual-delete-confirm-modal, .db-repeat-order-modal,
+  .db-no-invoice-close-modal, .db-invoice-completion-modal,
+  .db-add-address-modal, .db-line-delete-modal) {
+  background: rgb(26 47 59 / 48%);
+  color: #243c49;
+  scrollbar-color: #96afb9 #e2ebeb;
+}
+:is(.db-order-ack-shell, .db-visual-modal-shell, .db-visual-delete-confirm-shell,
+  .db-repeat-order-shell, .db-no-invoice-close-shell, .db-invoice-completion-shell,
+  .db-add-address-shell, .db-line-delete-shell) {
+  background: #e3eceb;
+  color: #243c49;
+  border-color: #b6cbd1 #78939f #78939f #b6cbd1;
+  border-style: solid;
+  border-radius: 4px;
+  box-shadow: inset 1px 1px 0 #ffffffd9, 0 16px 48px #203d4b45;
+}
+:is(.db-order-ack-toolbar, .db-visual-modal-toolbar,
+  .db-visual-delete-confirm-title, .db-repeat-order-title,
+  .db-no-invoice-close-title, .db-invoice-completion-title,
+  .db-add-address-title, .db-line-delete-title),
+#tab-database .db-users-section-title {
+  background: linear-gradient(160deg, #617b85, #435e69);
+  color: #f7fbfa;
+  border-color: #8faab5;
+  box-shadow: inset 0 1px 0 #ffffff40;
+  text-shadow: 0 1px 0 #263e4b60;
+}
+.db-visual-modal-title-wrap strong { color: #f7fbfa; }
+.db-visual-modal-title-wrap span { color: #e0eaee; }
+:is(.db-order-ack-scroll, .db-visual-modal-viewer) {
+  background: #b8c8ce;
+  scrollbar-color: #78939f #dce7e8;
+}
+.db-visual-modal-feedback {
+  background: #e3eceb;
+  color: #243c49;
+  border-color: #a6bcc3;
+}
+:is(.db-order-ack-action, .db-order-ack-close, .db-visual-modal-close,
+  .db-styles-image-modal-close, .db-visual-delete-confirm-button,
+  .db-visual-delete-cancel-button, .db-repeat-order-choice,
+  .db-no-invoice-close-choice, .db-invoice-completion-okay,
+  .db-line-delete-confirm, .db-line-delete-cancel, .db-visual-modal-delete),
+.db-add-address-actions button,
+#tab-database .db-user-remove-button {
+  background: linear-gradient(180deg, #fcfcf8, #e5eae7);
+  color: #243c49;
+  border-color: #f9fcfa #9aadb1 #8c9fa5 #f9fcfa;
+  border-style: solid;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px #ffffff80, 0 1px 2px #1d38431c;
+  text-shadow: 0 1px 0 #ffffffa6;
+}
+:is(.db-visual-delete-confirm-button, .db-visual-modal-delete,
+  .db-line-delete-confirm.db-order-delete-confirm) {
+  background: linear-gradient(#964f47, #793c36);
+  border-color: #b67972 #69332d #69332d #b67972;
+  color: #fff;
+  text-shadow: none;
+}
+:is(.db-order-ack-modal, .db-visual-modal, .db-styles-image-modal,
+  .db-visual-delete-confirm-modal, .db-repeat-order-modal,
+  .db-no-invoice-close-modal, .db-invoice-completion-modal,
+  .db-add-address-modal, .db-line-delete-modal) button:hover:not(:disabled) {
+  filter: brightness(1.06);
+  outline: 1px solid #8baebd;
+  outline-offset: 1px;
+}
+:is(.db-order-ack-modal, .db-visual-modal, .db-styles-image-modal,
+  .db-visual-delete-confirm-modal, .db-repeat-order-modal,
+  .db-no-invoice-close-modal, .db-invoice-completion-modal,
+  .db-add-address-modal, .db-line-delete-modal) button:active:not(:disabled) {
+  box-shadow: inset 1px 2px 3px #26465340;
+}
+:is(.db-order-ack-modal, .db-visual-modal, .db-styles-image-modal,
+  .db-visual-delete-confirm-modal, .db-repeat-order-modal,
+  .db-no-invoice-close-modal, .db-invoice-completion-modal,
+  .db-add-address-modal, .db-line-delete-modal) :is(button, input, select, textarea):focus-visible {
+  outline: 2px solid #276c8c;
+  outline-offset: 2px;
+}
+:is(.db-order-ack-modal, .db-visual-modal, .db-styles-image-modal,
+  .db-visual-delete-confirm-modal, .db-repeat-order-modal,
+  .db-no-invoice-close-modal, .db-invoice-completion-modal,
+  .db-add-address-modal, .db-line-delete-modal) button:disabled {
+  opacity: .55;
+  box-shadow: none;
+  text-shadow: none;
+}
+.db-add-address-shell :is(input:not([type="radio"]), select, textarea),
+.db-visual-modal-job-control select {
+  background: #fcfcf7;
+  color: #243f4e;
+  border-color: #93aab4;
+  border-style: solid;
+  border-radius: 2px;
+  box-shadow: inset 0 1px 2px #243f4e14;
+}
+.db-add-address-shell input[type="radio"] { accent-color: #2b708c; }
+
+.db-visual-modal-close:hover,
+.db-visual-modal-close:focus-visible,
+.db-styles-image-modal-close:hover,
+.db-styles-image-modal-close:focus-visible {
+  background: #d6e8ed;
+  color: #163f56;
+  border-color: #658b9b;
+}
+.db-visual-modal-delete:hover,
+.db-visual-modal-delete:focus-visible {
+  background: #964f47;
+  color: #fff;
+}
+
+#db-home-view > .db-home-logo {
+  position: absolute;
+  left: 50%;
+  top: 60px;
+  width: 330px;
+  height: auto;
+  transform: translateX(-50%);
+  object-fit: contain;
+}
+@media (max-width:720px), (max-width:960px) and (max-height:520px) {
+  #db-home-view > .db-home-logo,
+  #db-home-view > .db-home-logs-toggle,
+  #db-home-view > #db-status-updates-panel {
+    display: none;
+  }
+}
+
+/* Complete the secondary DATABASE surfaces without changing their geometry. */
+#tab-database :is(.db-styles-toolbar, .db-styles-panel,
+  .db-report-range-buttons, .db-report-year-control, .db-report-card-title),
+#tab-database .db-report-health h3 {
+  background: linear-gradient(160deg, #617b85, #435e69);
+  border-color: #8faab5;
+  color: #f7fbfa;
+  box-shadow: inset 0 1px 0 #ffffff40;
+}
+#tab-database :is(.db-contact-card, .db-contact-cards-scroll,
+  .db-report-kpi, .db-report-error, .db-report-order-panel, .db-dtf-detail),
+#tab-database .db-report-health > section {
+  background: #e3eceb;
+  border-color: #a6bcc3;
+  border-radius: 3px;
+  color: #243c49;
+  box-shadow: var(--db-bevel);
+}
+#tab-database :is(.db-styles-detail-head, .db-styles-chip-list,
+  .db-styles-selected-cost, .db-styles-preview, .db-report-chart-wrap,
+  .db-report-table-scroll, .db-report-mini-table, .db-report-order-scroll,
+  .db-report-hover, .db-report-chart-state, .db-customer-results, .db-product-results,
+  .db-supplier-row, .db-visual-card-fallback) {
+  background: var(--db-paper);
+  color: var(--db-ink);
+  border-color: var(--db-edge);
+  border-radius: 2px;
+}
+#tab-database .db-report-hover {
+  box-shadow: var(--db-bevel), 0 4px 12px #26465326;
+}
+#tab-database :is(.db-report-hover h4, .db-report-coverage-number,
+  .db-report-highlight-name, .db-style-sku-cell, .db-invoice-number-button,
+  .db-report-range-buttons .db-toolbar-button.active,
+  .db-report-compare-toolbar .db-toolbar-button.active) { color: var(--db-blue); }
+#tab-database .db-control-link { color: #245f7a !important; }
+#tab-database .db-meta-grid a {
+  color: var(--db-blue);
+  border-color: var(--db-edge);
+  background: transparent;
+}
+#tab-database :is(.db-styles-chip, .db-stock-ralawise-button,
+  .db-signup-review-button, .db-repeat-order-button, .db-line-save-button,
+  .db-proof-zoom-button, .db-proof-fit-button, .db-proof-file-arrow) {
+  background: var(--db-raised);
+  color: var(--db-ink);
+  border-color: #f9fcfa #9aadb1 #8c9fa5 #f9fcfa;
+  border-radius: 3px;
+  box-shadow: var(--db-bevel);
+}
+#tab-database :is(.db-styles-chip, .db-stock-ralawise-button,
+  .db-signup-review-button, .db-repeat-order-button, .db-line-save-button,
+  .db-proof-zoom-button, .db-proof-fit-button, .db-proof-file-arrow):hover:not(:disabled) {
+  background: #d6e8ed;
+  color: #163f56;
+}
+#tab-database :is(.db-styles-colour-chip.selected, .db-report-kpi.is-primary,
+  .db-customer-result:hover, .db-customer-result.active,
+  .db-product-result:hover, .db-product-result.active) {
+  background: #326a82;
+  color: #fff;
+  border-color: #82a7b6;
+}
+#tab-database .db-report-kpi.is-primary small { color: #e3eff2; }
+#tab-database .db-report-kpi.is-negative strong { color: #9a3027; }
+#tab-database .db-report-kpi.is-primary.is-negative strong { color: #ffd9d3; }
+#tab-database .db-report-mini-table :is(th, td) { border-color: #b9c9cd; }
+#tab-database .db-report-mini-table th {
+  background: linear-gradient(#eaf0ef, #d3dfe1);
+  color: #294d60;
+}
+#tab-database :is(.db-report-health-row, .db-report-detail-row) { border-color: #b9c9cd; }
+#tab-database .db-report-chart-line:not(.is-secondary),
+#tab-database .db-report-chart-point:not(.is-secondary) { stroke: #32718c; }
+#tab-database .db-report-chart-area { fill: #b9d8e1; }
+#tab-database .db-report-chart-legend i:not(.is-secondary) { background: #32718c; }
+#tab-database :is(.db-report-chart-x-label, .db-report-chart-y-label) { fill: #3e5d6b; }
+#tab-database .db-report-chart-grid { stroke: #d3dfe1; }
+#tab-database .db-proof-empty { background: #cfdee2; color: var(--db-muted); }
+#tab-database .db-order-proof-grid-shell { background: #c2d3d9; border-color: var(--db-edge); }
+#tab-database :is(.db-customer-address-card-header, .db-contact-card-row label,
+  .db-dtf-title) { color: var(--db-ink); }
+#tab-database :is(.db-contact-delete-button, .db-customer-address-delete-button) {
+  background: #89483f;
+  color: #fff;
+  border-color: #713a33;
+  border-radius: 2px;
+}
+#tab-database :is(.db-add-line-edit-row, .db-custom-line-edit-row, .db-add-line-status-row) td {
+  background: #fcfcf7;
+  border-color: #b9c9cd;
+}
+#tab-database :is(.db-dtf-subtitle, .db-dtf-detail-head span) { color: var(--db-muted); }
+#tab-database .db-dtf-file-actions a { color: var(--db-blue); }
+#tab-database .db-dtf-jobs-row.active td { background: #c8e3ed; }
+@media (max-width:720px), (max-width:960px) and (max-height:520px) {
+  #tab-database .db-stage-nav { background: #cfdee2; }
+  #tab-database .db-mobile-card-table > tbody > tr {
+    border-color: #a6bcc3;
+    background: #fcfcf7;
+    box-shadow: 0 2px 4px #26465312;
+  }
+  #tab-database .db-mobile-card-table > tbody > tr > td { background: #fcfcf7; }
+}
+#tab-database .db-signup-accept-button { background: #d4e7d8; color: #28573a; }
+#tab-database .db-signup-reject-button { background: #edd6d1; color: #793c36; }
+#tab-database .db-stock-ralawise-button.is-basketed {
+  background: #d4e7d8;
+  color: #28573a;
+  border-color: #9cbca7;
+}
+#tab-database :is(.db-stock-ralawise-button, .db-signup-review-button,
+  .db-repeat-order-button, .db-line-save-button, .db-proof-zoom-button,
+  .db-proof-fit-button, .db-proof-file-arrow):disabled {
+  opacity: .55;
+  box-shadow: none;
+}
+.db-add-address-shell input[type="checkbox"] { accent-color: #2b708c; }
+
+/* Shared proof dialogs adopt this theme only when opened from DATABASE. */
+body:has(#tab-database.active) :is(.proof-link-dialog, .proof-regeneration-warning) {
+  background: #e3eceb;
+  color: #243c49;
+  border-color: #8faab5;
+  border-radius: 4px;
+  box-shadow: inset 1px 1px 0 #ffffffd9, 0 16px 48px #203d4b45;
+}
+body:has(#tab-database.active) :is(.proof-link-dialog, .proof-regeneration-warning)::backdrop {
+  background: rgb(26 47 59 / 48%);
+}
+body:has(#tab-database.active) :is(.proof-link-dialog, .proof-regeneration-warning) h2 { color: #28566b; }
+body:has(#tab-database.active) :is(.proof-link-dialog, .proof-regeneration-warning) button {
+  background: linear-gradient(#fcfcf8, #e5eae7);
+  border-color: #9aadb1;
+  color: #243c49;
+  border-radius: 3px;
+  box-shadow: inset 1px 1px 0 #ffffffd9;
+}
+body:has(#tab-database.active) .proof-regeneration-warning .proof-regeneration-confirm {
+  background: #eedbb5;
+  color: #684c21;
+  border-color: #c6ad7d;
+}
+body:has(#tab-database.active) .proof-link-dialog input {
+  background: #fcfcf7;
+  color: #243c49;
+  border-color: #93aab4;
+  border-radius: 2px;
+}
+body:has(#tab-database.active) .proof-link-dialog a { color: #245f7a; }
+body:has(#tab-database.active) :is(.proof-link-dialog, .proof-regeneration-warning) :is(button,input,a):focus-visible {
+  outline: 2px solid #276c8c;
+  outline-offset: 2px;
+}
