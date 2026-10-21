@@ -7,7 +7,18 @@ function positionOptions(product) { return placementProfile(product).family === 
 const POSITIONS = ['left breast', 'right breast', 'front', 'back', 'upper back', 'nape', 'left sleeve', 'right sleeve', 'left hem', 'right hem', ...SHORTS_POSITIONS];
 const ALIASES = { 'left':'left leg', 'right':'right leg', 'bottom left':'bottom left leg', 'bottom right':'bottom right leg', 'left pocket':'left leg', 'right pocket':'right leg', 'bottom of left leg':'bottom left leg', 'bottom of right leg':'bottom right leg', 'front cuff':'front', 'front turn-up':'front', 'front turn up':'front', 'cuff':'front', 'turn up':'front', 'turn-up':'front', lb: 'left breast', rb: 'right breast', ls: 'left sleeve', rs: 'right sleeve', 'left chest': 'left breast', 'right chest': 'right breast', chest: 'front', 'centre chest': 'front', 'center chest': 'front', 'full chest': 'front', 'front chest': 'front', 'centre front': 'front', 'center front': 'front', 'full front': 'front', 'centre back': 'back', 'center back': 'back', 'full back': 'back', rear: 'back', 'back neck': 'nape' };
 function normalise(value) { return String(value || '').toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim(); }
-function positionName(value) { const text = normalise(value); return ALIASES[text] || text; }
+function positionName(value, product) {
+  const text = normalise(value);
+  if (/^(?:left|right) pocket$/.test(text)) {
+    const family = placementProfile(product).family;
+    if (family === 'shorts') return text.replace('pocket', 'leg');
+    const name = `${product?.name || ''} ${product?.requestedName || ''} ${product?.visual?.name || ''}`;
+    if (/\b(?:waistcoat|vest|jacket|coat|shirt|polo|hoodie|sweatshirt|fleece|bodywarmer|gilet)\b/i.test(name)) return text.replace('pocket', 'breast');
+    return text; // Unknown garment: retain the request for position review.
+  }
+  if (/^(?:left|right|bottom left|bottom right)$/.test(text) && placementProfile(product).family !== 'shorts') return text;
+  return ALIASES[text] || text;
+}
 function dimension(value, { signed = false } = {}) {
   if (value === '' || value == null) return null;
   const match = String(value).trim().match(/^(-?\d+(?:\.\d+)?)\s*(mm|cm|inches|inch|in|")?$/i);
@@ -44,17 +55,17 @@ function textClauses(text) {
   });
 }
 
-function mentionsPosition(text, position) {
+function mentionsPosition(text, position, product) {
   const names = [...POSITIONS, ...Object.keys(ALIASES)].sort((a,b) => b.length-a.length).join('|');
-  return [...String(text || '').matchAll(new RegExp('\\b(?:' + names + ')\\b', 'gi'))].some(match => positionName(match[0]) === position);
+  return [...String(text || '').matchAll(new RegExp('\\b(?:' + names + ')\\b', 'gi'))].some(match => positionName(match[0], product) === position);
 }
 
 function recoverDimensions(decoration, input = {}, product = {}, products = []) {
   if(decoration.dimensionSource==='user-confirmed')return;
   const assigned = (input.artworks || []).find(a => a.id && a.id === decoration.artworkId);
-  const position = positionName(decoration.position);
+  const position = positionName(decoration.position, product);
   let scoped = textClauses([input.requestText,input.specialInstructions].filter(Boolean).join('\n')).filter(clause => {
-    if (!mentionsPosition(clause, position)) return false;
+    if (!mentionsPosition(clause, position, product)) return false;
     // Never recover another product's numbers into this product's decoration.
     const canonical=code=>String(code||'').toUpperCase().replace(/^([A-Z]+)0+(?=\d)/,'$1');
     const tokens=[...clause.matchAll(/\b[A-Z]*\d[A-Z0-9-]*\b/gi)].map(m=>canonical(m[0]));
@@ -68,7 +79,7 @@ function recoverDimensions(decoration, input = {}, product = {}, products = []) 
   const specific=scoped.filter(c=>thisProduct(c) || childClause(c));
   if(specific.some(c=>{const d=dimensionsInText(c);return d.width.length || d.height.length;})) scoped=specific;
   const assignedClauses=textClauses(assigned?.notes);
-  const scopedNotes=assignedClauses.filter(clause=>mentionsPosition(clause, position));
+  const scopedNotes=assignedClauses.filter(clause=>mentionsPosition(clause, position, product));
   const notesHavePositions=assignedClauses.some(clause=>[...POSITIONS,...Object.keys(ALIASES)].some(p=>new RegExp('\\b'+p+'\\b','i').test(clause)));
   const sourceTexts = [...(notesHavePositions?scopedNotes:[assigned?.notes]), ...scoped];
   // The model may estimate the other axis from a thumbnail. Only user text can
@@ -102,8 +113,8 @@ function recoverDimensions(decoration, input = {}, product = {}, products = []) 
 
 function resolveDecorations(brief, product) {
   const exceptions = product.decorations || [];
-  const overridden = new Set(exceptions.map(d => positionName(d.position)));
-  return [...(brief.sharedDecorations || []).filter(d => !overridden.has(positionName(d.position))), ...exceptions].filter(d => !d.omit);
+  const overridden = new Set(exceptions.map(d => positionName(d.position, product)));
+  return [...(brief.sharedDecorations || []).filter(d => !overridden.has(positionName(d.position, product))), ...exceptions].filter(d => !d.omit);
 }
 
 function findArtwork(decoration, artworks) {
@@ -136,7 +147,7 @@ function applyChildBreastSize(d, product, input = {}, inherited = false) {
   const assigned=(input.artworks || []).find(a=>a.id===d.artworkId);
   const noteDimensions=dimensionsInText(assigned?.notes);
   if(noteDimensions.width.length || noteDimensions.height.length)return;
-  const clauses=textClauses([input.requestText,input.specialInstructions].filter(Boolean).join('\n')).filter(c=>mentionsPosition(c,positionName(d.position)));
+  const clauses=textClauses([input.requestText,input.specialInstructions].filter(Boolean).join('\n')).filter(c=>mentionsPosition(c,positionName(d.position, product),product));
   const canonical=value=>String(value||'').toUpperCase().replace(/^([A-Z]+)0+(?=\d)/,'$1');
   const explicit=clauses.filter(c=>/\b(kids?|children|child|youth|junior)\b/i.test(c) || [...c.matchAll(/\b[A-Z]+\d[A-Z0-9]*\b/gi)].some(m=>canonical(m[0])===canonical(product.code)));
   if(explicit.some(c=>{const dims=dimensionsInText(c);return dims.width.length || dims.height.length;}))return;
@@ -155,7 +166,7 @@ function prepareBrief(brief, input = {}) {
       const savedManual=d.placement || d.manualScale || (d.anchor && d.anchor!=='region') || Number(d.offsetXmm) || Number(d.offsetYmm) || Object.values(product.calibrations || {}).some(c=>c.regions?.[positionName(d.position)]);
       if(!savedManual)d.scaleVersion=4;
       d.id = d.id || `product-${pi}-decoration-${di}`;
-      d.position = positionName(d.position);
+      d.position = positionName(d.position, product);
       d.method = d.method || product.method || brief.method || '';
       const artwork = findArtwork(d, input.artworks || []);
       if (artwork) {
@@ -201,6 +212,7 @@ function preferredView(d, views) {
 // x/y = artwork centre horizontally and top edge vertically; regions are safe boxes.
 function regionFor(position, view, profile) {
   const p = positionName(position);
+  if (profile?.printableRegions?.[p]) return {...profile.printableRegions[p]};
   if (profile?.family==='shorts') {
     const leg = {'left hem':'bottom left leg','right hem':'bottom right leg'}[p] || p;
     if (!SHORTS_POSITIONS.includes(leg)) return null;
@@ -239,8 +251,8 @@ function placementFor(d, asset, garment, calibration = {}) {
   let region = custom || garment.headwearRegion || regionFor(position, garment.view, garment.placementProfile);
   // Automatic body prints use the detected torso's safe width, not a box
   // proportional to the sleeve-inclusive photograph. Never change custom/manual regions.
-  if(garment.torsoRegion && !custom && !d.placement && !calibration.referenceMm && (!d.anchor || d.anchor==='region') && !Number(d.offsetXmm) && !Number(d.offsetYmm) && ['front','back','upper back'].includes(position))region={...region,...garment.torsoRegion};
-  if(garment.chestPanels?.[position] && !custom && !d.placement && !calibration.referenceMm && (!d.anchor || d.anchor==='region') && !Number(d.offsetXmm) && !Number(d.offsetYmm))region={...region,...garment.chestPanels[position]};
+  if(!garment.placementProfile?.printableRegions?.[position] && garment.torsoRegion && !custom && !d.placement && !calibration.referenceMm && (!d.anchor || d.anchor==='region') && !Number(d.offsetXmm) && !Number(d.offsetYmm) && ['front','back','upper back'].includes(position))region={...region,...garment.torsoRegion};
+  if(!garment.placementProfile?.printableRegions?.[position] && garment.chestPanels?.[position] && !custom && !d.placement && !calibration.referenceMm && (!d.anchor || d.anchor==='region') && !Number(d.offsetXmm) && !Number(d.offsetYmm))region={...region,...garment.chestPanels[position]};
   if (!region) throw new Error(`Unsupported position "${d.position}". Choose a supported position or define its printable region.`);
   for (const key of ['x','y','left','top','width','height']) if (!Number.isFinite(region[key]) || region[key] < 0 || region[key] > 1) throw new Error('Printable region coordinates must be between 0 and 1.');
   if (region.width <= 0 || region.height <= 0 || region.left+region.width>1.001 || region.top+region.height>1.001) throw new Error('Printable region must fit inside the garment.');

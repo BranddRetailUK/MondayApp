@@ -749,3 +749,22 @@ test('manual placements override automatic region, silhouette and overlap blocks
  const invalid=brief([mark({placement:{x:NaN,y:.8}})]);
  await assert.rejects(()=>buildProof(invalid,files,{fetchImpl,strict:true}),/coordinates/);
 });
+
+test('RX700 automatic artwork stays in panels above the reflective bands',()=>{
+ const {placementProfile}=require('../src/services/proofPlacementProfiles');
+ const profile=placementProfile({code:'RX700',name:'Waistcoat'});
+ const g={width:1000,height:1450,view:'front',estimatedPxPerMm:1.8,placementProfile:profile,
+  torsoRegion:{left:.05,width:.9},chestPanels:{'right breast':{left:.05,width:.43}},
+  landmarks:{rightBreast:{x:.34},leftBreast:{x:.66}}};
+ const right=layout.placementFor(mark({position:'right breast',widthMm:'90'}),{width:1930,height:815},g);
+ const left=layout.placementFor(mark({position:'left breast',widthMm:'70'}),{width:1400,height:1130},g);
+ for(const p of [right,left]){assert.ok(layout.fitsRegion(p));assert.ok(p.y+p.height<.46);assert.ok(Math.abs(p.y+p.height/2-.40)<1e-9);}
+ assert.equal(right.region.left,.20,'torso silhouette must not replace the panel boundary');
+ const back=layout.placementFor(mark({position:'back',widthMm:'220'}),{width:2712,height:2941},{...g,view:'back'});
+ assert.equal(back.y,.11);assert.ok(layout.fitsRegion(back));assert.ok(back.y+back.height<.45);
+ const large=layout.placementFor(mark({position:'back',widthMm:'400'}),{width:2712,height:2941},{...g,view:'back'});
+ assert.equal(layout.fitsRegion(large),false,'oversize artwork must not silently cross the tape or shrink');
+ const manual=layout.placementFor(mark({position:'back',widthMm:'220',placement:{x:.5,y:.6}}),{width:2712,height:2941},{...g,view:'back'});
+ assert.equal(manual.y,.6);assert.equal(manual.explicit,true,'renderer retains its existing explicit-placement override');
+ assert.equal(placementProfile({code:'OTHER',name:'Waistcoat'}).printableRegions,undefined,'unverified styles must not inherit RX700 tape geometry');
+});

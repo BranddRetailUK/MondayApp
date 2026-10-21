@@ -46,10 +46,19 @@ function placementProfile(product = {}) {
     breast.breastCentre=(breast.breastCentre ?? PROFILES.hoodie.breastCentre)+0.02;
   }
   if (/bodywarmer|gilet/.test(name)) breast.neckRight=0.70;
-  // Approved Oxford short-sleeve references expose a wider chest panel than
-  // tees. Keep this correction style-scoped; do not move generic tee anchors.
+  // RX700 reference: keep front marks below the V opening and all marks above
+  // the first reflective band. These are indicative, style-specific guides.
+  const hiVis = code === 'RX700' ? {
+    breastCentre: .40, breastPanelFraction: .18, backTop: .11,
+    printableRegions: {
+      'right breast': {x:.34,y:.40,left:.20,top:.32,width:.26,height:.14},
+      'left breast': {x:.66,y:.40,left:.54,top:.32,width:.26,height:.14},
+      back: {x:.5,y:.11,left:.21,top:.08,width:.58,height:.37},
+    },
+  } : {};
+  // Approved Oxford references expose wider chest panels than tees.
   const oxford = /^(?:KK|K)0?3(?:50|60)$/.test(code) ? {breastPanelFraction: .28} : {};
-  return { family, ...PROFILES[family], ...breast, ...oxford };
+  return { family, ...PROFILES[family], ...breast, ...oxford, ...hiVis };
 }
 
 
@@ -61,6 +70,7 @@ function automaticTop(position, view, height, profile = PROFILES.tee) {
   }
   if (position === 'front') return 0.20 + profile.hoodClearance;
   if (position === 'back') {
+    if (profile.backTop != null) return profile.backTop;
     // Large/tall back compositions start nearer the neckline; a small back
     // wordmark sits lower. Preserve artwork size and keep a usable hem margin.
     const top = Math.max(0.10, 0.20 - Math.max(0, height - 0.30) * 0.20);

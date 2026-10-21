@@ -63,3 +63,31 @@ test('shorts position review offers pocket and outer-hem choices instead of top 
  p.decorations[0].position='left hem';assert.equal(assess(b,assets).ready,true,'legacy proofs remain editable');
  p.name='T-shirt';p.decorations[0].position='';assert.ok(assess(b,assets).issues.find(i=>i.path.endsWith('.position')).options.includes('left breast'));
 });
+
+test('RX700 pocket brief resolves breast positions and keeps all supplied widths',()=>{
+ const {prepareBrief}=require('../src/services/proofLayout');
+ const b={products:[{code:'RX700',name:'Waistcoat',colour:'HV Yellow',decorations:[
+  {position:'right pocket',artworkId:'mwa'}, {position:'left pocket',artworkId:'360'}, {position:'back',artworkId:'combined',method:'transfer print'}
+ ]}]};
+ const a=[{id:'mwa',originalName:'MWA Logo Redraw.png'},{id:'360',originalName:'360.png'},{id:'combined',originalName:'MWA 360 BACK.png'}];
+ prepareBrief(b,{requestText:'RX700 - Waistcoat (Ralawise), HV Yellow\nmwa logo to right pocket 90mm wide\n360 logo to left pocket 70mm wide\nmwa 360 back artwork to back 220mm wide',artworks:a});
+ assert.deepEqual(b.products[0].decorations.map(d=>[d.position,d.widthMm]),[['right breast','90'],['left breast','70'],['back','220']]);
+ const issues=assess(b,a).issues;
+ assert.deepEqual(issues.map(i=>i.path),['products.0.decorations.0.method','products.0.decorations.1.method']);
+ b.products[0].decorations.slice(0,2).forEach(d=>d.method='embroidery');
+ assert.equal(assess(b,a).ready,true);
+});
+
+test('shared pockets resolve per garment and canonical product overrides win',()=>{
+ const {prepareBrief,positionName}=require('../src/services/proofLayout');
+ const b={method:'transfer print',sharedDecorations:[{position:'left pocket',artworkId:'shared',widthMm:'70'}],products:[
+  {name:'Hi vis jacket',decorations:[{position:'left breast',artworkId:'override',widthMm:'90'}]},
+  {name:'Cycling shorts',decorations:[]}, {name:'Unknown item',decorations:[]}
+ ]};
+ prepareBrief(b);
+ assert.deepEqual(b.products.map(p=>p.decorations.map(d=>[d.position,d.artworkId])),[[['left breast','override']],[['left leg','shared']],[['left pocket','shared']]]);
+ assert.equal(positionName('right pocket'),'right pocket');
+ assert.equal(positionName('right',{name:'Jacket'}),'right');
+ assert.equal(positionName('right',{name:'Shorts'}),'right leg');
+ assert.equal(positionName('right leg',{name:'Jacket'}),'right leg','explicit incompatible positions still require review');
+});
