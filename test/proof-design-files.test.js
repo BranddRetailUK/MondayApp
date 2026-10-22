@@ -123,6 +123,22 @@ test('pre-print preserves exact Unicode filenames and bytes and refuses changed 
  }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
 
+test('pre-print writes a 260mm PNG with its exact pixels and physical resolution metadata',async()=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'proof-png-original-')),root=path.join(dir,'designs'),state=path.join(dir,'state');
+ try{
+  await fs.mkdir(path.join(root,'29100-29199','29198 Previous'),{recursive:true});
+  const id=randomUUID(),destination=await allocateDesign(root,state,{id,customer:'Test'});
+  const sharp=require('sharp'),original=await sharp({create:{width:3071,height:20,channels:4,background:{r:255,g:180,b:0,alpha:0.4}}}).withMetadata({density:300}).png().toBuffer();
+  const bytes=await pdfBytes('Proof'),hash=buffer=>createHash('sha256').update(buffer).digest('hex');
+  const task={id,...destination,customer:'Test',revision:1,pdf:bytes.toString('base64'),hash:hash(bytes),artworks:[{name:'print.png',data:original.toString('base64'),hash:hash(original)}]};
+  const file=await saveDesignProof(root,state,task);
+  const saved=await fs.readFile(path.join(path.dirname(file),'pre-print','print.png'));
+  assert.deepEqual(saved,original);
+  const metadata=await sharp(saved).metadata();assert.equal(metadata.density,300);assert.equal(metadata.hasAlpha,true);
+  assert.ok(Math.abs(metadata.width/metadata.density*25.4-260)<0.1);
+ }finally{await fs.rm(dir,{recursive:true,force:true});}
+});
+
 test('new proofs use the next database or filesystem number even after deletion and with the same customer',async()=>{
  const db=new PGlite(),pool={query:(...args)=>db.query(...args),connect:async()=>({query:(...args)=>db.query(...args),release(){}})};
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'proof-numbering-')),root=path.join(dir,'designs'),state=path.join(dir,'state');

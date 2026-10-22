@@ -141,6 +141,40 @@ test('save passes exact JSON Unicode filenames and original bytes through multip
  });
 });
 
+test('production saves reject prepared-only artwork before rendering or queueing',async()=>{
+ const unexpected=async()=>{assert.fail('Prepared artwork must not reach rendering or saving');};
+ await serve(createRouter({enrich:unexpected,build:unexpected,designs:{
+  get:async()=>({id:'design',designNumber:'29200',folderName:'29200 Test'}),queueSave:unexpected
+ }}),async url=>{
+  for(const endpoint of ['save','generate']){
+   const form=new FormData();form.append('brief',JSON.stringify({proofDesignId:'design',products:[{code:'TEST'}]}));
+   form.append('artworkDetails',JSON.stringify([{id:'art',originalName:'print.png'}]));
+   form.append('artworks',new Blob(['converted preview']),'print.png');
+   const response=await fetch(`${url}/${endpoint}`,{method:'POST',headers:production,body:form});
+   assert.equal(response.status,422);assert.match((await response.json()).error,/Original artwork files are required for pre-print/);
+  }
+ });
+});
+
+test('PNG upload retains resolution and transparency bytes independently of proof rendering',async()=>{
+ const sharp=require('sharp');
+ const original=await sharp({create:{width:3071,height:20,channels:4,background:{r:255,g:180,b:0,alpha:0.4}}}).withMetadata({density:300}).png().toBuffer();
+ let saved;
+ await serve(createRouter({enrich:async()=>{},generateViews:async()=>{},build:async(_brief,assets)=>{
+  const {PDFDocument}=require('pdf-lib');
+  await require('../src/services/proofArtwork').prepareArtwork(await PDFDocument.create(),assets[0]);
+  return {bytes:Buffer.from('pdf')};
+ },designs:{get:async()=>({id:'design',designNumber:'29200',folderName:'29200 Test'}),queueSave:async(...args)=>{saved=args[5];return {status:'save_queued'};}}}),async url=>{
+  const form=new FormData();form.append('brief',JSON.stringify({proofDesignId:'design',products:[{code:'TEST'}]}));
+  form.append('artworkDetails',JSON.stringify([{id:'art',originalName:'print.png',backgroundMode:'white'}]));
+  form.append('artworks',new Blob([original]),'print.png');form.append('originalArtworks',new Blob([original]),'print.png');
+  const response=await fetch(`${url}/save`,{method:'POST',headers:production,body:form});
+  assert.equal(response.status,200,await response.text());assert.deepEqual(saved[0].buffer,original);
+  const metadata=await sharp(saved[0].buffer).metadata();assert.equal(metadata.density,300);assert.equal(metadata.hasAlpha,true);
+  assert.ok(Math.abs(metadata.width/metadata.density*25.4-260)<0.1);
+ });
+});
+
 test('EPS previews validate uploads, preserve bytes and require production access before conversion',async()=>{
  let calls=0;
  const converted=await require('sharp')({create:{width:40,height:20,channels:4,background:'#e42313'}}).png().toBuffer();

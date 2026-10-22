@@ -307,6 +307,10 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       if (!Array.isArray(details) || details.length !== (req.files || []).length) {
         return res.status(400).json({ error: 'Artwork details do not match uploaded files.' });
       }
+      // Render assets may be converted previews. Never archive them as production originals.
+      if(['/save','/generate'].includes(req.path)&&details.length&&!originals){
+        throw new Error('Original artwork files are required for pre-print. Reopen the proof and upload the original files before saving.');
+      }
       if(originals){
         if(originals.length!==details.length)throw new Error('Original artwork files do not match uploaded details.');
         originals.forEach((file,index)=>{
@@ -347,10 +351,10 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       if(req.path==='/generate'){
         if(issues.some(issue=>issue.blocking))return res.status(422).json({error:'Resolve the proof issues before saving.',issues});
         const png=await require('../services/proofThumbnail').proofThumbnail(bytes);
-        const queued=await designJobs().queueSave(design.id,brief.proofSaveKey,brief.proofRevision,bytes,brief,originals||req.files,png);
+        const queued=await designJobs().queueSave(design.id,brief.proofSaveKey,brief.proofRevision,bytes,brief,originals||[],png);
         return res.json({pdf:bytes.toString('base64'),fileName:proofFileName(brief),documents:documents.map(({bytes,...metadata})=>metadata),pages,issues,brief,design:queued});
       }
-      if(req.path==='/save')return res.json({design:await designJobs().queueSave(design.id,brief.proofSaveKey,brief.proofRevision,bytes,brief,originals||req.files)});
+      if(req.path==='/save')return res.json({design:await designJobs().queueSave(design.id,brief.proofSaveKey,brief.proofRevision,bytes,brief,originals||[])});
       if(brief.testProofId&&req.path==='/preview')await testJobs().setPreview(brief.testProofId,bytes,brief,!issues.some(issue=>issue.blocking));
       if(design&&req.path==='/preview')await designJobs().setPreview(design.id,bytes,brief,!issues.some(issue=>issue.blocking));
       if (['/preview','/placement-preview'].includes(req.path)) return res.json({ pdf: bytes.toString('base64'), fileName:proofFileName(brief), documents:documents.map(({bytes,...metadata})=>metadata), pages, issues, brief });
