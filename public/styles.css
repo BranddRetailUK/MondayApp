@@ -9877,3 +9877,11 @@ input.db-custom-line-input{
   #db-new-order-form .db-new-order-row > input,
   #db-new-order-form .db-new-order-row > select{grid-column:2;width:100%;height:26px;font-size:13px;}
 }
+
+/* Navigation sits beneath the shared DATABASE page container. */
+#db-legacy-app { margin-bottom:60px; }
+.db-history-nav { position:absolute; left:0; top:100%; display:flex; gap:8px; padding-top:10px; }
+.db-history-nav button { width:44px; height:40px; border:1px solid #617682; border-radius:5px; background:#edf2f4; color:#263e4b; font:26px/1 Arial,sans-serif; cursor:pointer; }
+.db-history-nav button:hover:not(:disabled) { background:#fff; }
+.db-history-nav button:focus-visible { outline:3px solid #246c9b; outline-offset:2px; }
+.db-history-nav button:disabled { opacity:.4; cursor:default; }

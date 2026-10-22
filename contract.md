@@ -1125,3 +1125,9 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 
 - Production proof save/generate requests with artwork must include the separate original uploads. Missing originals stop before rendering/saving; prepared proof previews can no longer be substituted into the pre-print archive. Artwork-free proofs remain supported. Preview background removal, cropping, physical placement and embroidery effects apply only to proof rendering.
 - Original files pass through multipart upload, the save queue and the workstation archive byte-for-byte, preserving PNG transparency, resolution metadata and colour profiles. Proof dimensions do not rewrite the original file's physical size metadata. Existing saved files are not modified. Regression coverage checks rejection of missing originals and exact preservation of a transparent 260mm PNG through rendering/upload and workstation saving.
+
+
+### DATABASE navigation history (2026-10-22)
+
+- Back and Forward arrows sit at the bottom left beneath the main DATABASE page container. Session-local history retains up to 100 previous pages, including specific customer/order identities, selected detail tabs and existing route filters. Tabs/filter edits update the current entry; opening a different record or page creates an entry. Back/Forward reload the selected record through the existing route loaders and flush pending autosaves first. Unavailable directions are disabled; a new navigation after Back clears Forward. Reload restores the last page but starts a fresh history.
+- Verified the customer → order → Back → Forward flow and branching in the fictional-data localhost preview. Twenty focused navigation/customer/order/layout checks passed.

@@ -264,6 +264,9 @@
     activeSort: 'order',
     activeView: 'home',
     viewHistory: [],
+    viewForwardHistory: [],
+    currentRoute: { view: 'home' },
+    navigatingHistory: false,
     activeOrderTab: 'details',
     activeCustomerTab: 'orders',
     orderStatsCollapsed: false,
@@ -706,6 +709,8 @@
       }, { capture: true });
     });
     document.addEventListener('click', handleDocumentClick);
+    document.getElementById('db-history-back')?.addEventListener('click', () => navigateDatabaseHistory(-1));
+    document.getElementById('db-history-forward')?.addEventListener('click', () => navigateDatabaseHistory(1));
 
     document.querySelectorAll('input[name="db-sort"]').forEach((input) => {
       input.addEventListener('change', () => {
@@ -1295,14 +1300,12 @@
       console.warn('Failed to restore DATABASE route', err);
       showHome({ skipHistory: true, skipPersistence: true });
     } finally {
-      restoringDatabaseRoute = false;
       persistDatabaseRoute({ force: true });
+      restoringDatabaseRoute = false;
     }
   }
 
   async function applyStoredDatabaseRoute(route) {
-    state.viewHistory = [];
-
     if (route.view === 'order') {
       if (!route.orderId) {
         showHome({ skipHistory: true, skipPersistence: true });
@@ -1312,12 +1315,13 @@
       return;
     }
 
-    if (route.view === 'customer') {
+    if (route.view === 'customer' || route.view === 'new-contact') {
       if (!route.customerKey) {
         showCustomers({ skipHistory: true, skipPersistence: true });
         return;
       }
       await openCustomer(route.customerKey, normalizeDatabaseCustomerTab(route.customerTab), { skipHistory: true, throwOnError: true });
+      if (route.view === 'new-contact') showNewContact();
       return;
     }
 
@@ -1416,6 +1420,7 @@
     if (restoringDatabaseRoute && !options.force) return;
     const route = buildDatabaseRouteSnapshot();
     if (!route) return;
+    rememberDatabaseRoute(route);
     try {
       window.localStorage.setItem(DATABASE_ROUTE_STORAGE_KEY, JSON.stringify(route));
     } catch {}
@@ -1433,7 +1438,7 @@
   }
 
   function buildDatabaseRouteSnapshot() {
-    const view = DATABASE_RESTORABLE_VIEWS.has(state.activeView) ? state.activeView : 'home';
+    const view = state.activeView === 'new-contact' || DATABASE_RESTORABLE_VIEWS.has(state.activeView) ? state.activeView : 'home';
     const route = { view, savedAt: Date.now() };
 
     if (view === 'order') {
@@ -1444,7 +1449,7 @@
       return route;
     }
 
-    if (view === 'customer') {
+    if (view === 'customer' || view === 'new-contact') {
       const customerKey = state.selectedCustomerDetail?.customer_key;
       if (!customerKey) return null;
       route.customerKey = customerKey;
@@ -3359,7 +3364,9 @@
     });
     if (!restricted) return;
 
-    state.viewHistory = state.viewHistory.filter((view) => !DATABASE_RESTRICTED_HOME_VIEWS.has(view));
+    state.viewHistory = state.viewHistory.filter((route) => !DATABASE_RESTRICTED_HOME_VIEWS.has(route.view));
+    state.viewForwardHistory = state.viewForwardHistory.filter((route) => !DATABASE_RESTRICTED_HOME_VIEWS.has(route.view));
+    syncDatabaseHistoryButtons();
     if (DATABASE_RESTRICTED_HOME_VIEWS.has(state.activeView)) {
       if (state.activeView === 'reports') {
         state.reportsRequest += 1;
@@ -13613,10 +13620,6 @@
       state.orderLoadToken++;
       state.loadingOrders = false;
     }
-    if (!options.skipHistory && state.activeView && state.activeView !== name) {
-      state.viewHistory.push(state.activeView);
-      if (state.viewHistory.length > 20) state.viewHistory.shift();
-    }
     state.activeView = name;
 
     els.views.forEach((view) => {
@@ -13651,20 +13654,51 @@
     if (!options.skipPersistence) persistDatabaseRoute();
   }
 
-  function goBackDatabaseView() {
-    const previous = state.viewHistory.pop();
-    if (!previous || previous === state.activeView) {
-      showHome({ skipHistory: true });
-      return;
-    }
+  function databaseRouteIdentity(route) {
+    return JSON.stringify([route?.view, route?.orderId, route?.customerKey, route?.orderMode]);
+  }
 
-    if (previous === 'home') {
-      showHome({ skipHistory: true });
-      return;
+  function rememberDatabaseRoute(route) {
+    if (!state.navigatingHistory && !restoringDatabaseRoute &&
+        databaseRouteIdentity(route) !== databaseRouteIdentity(state.currentRoute)) {
+      if (state.currentRoute) state.viewHistory.push(state.currentRoute);
+      if (state.viewHistory.length > 100) state.viewHistory.shift();
+      state.viewForwardHistory = [];
     }
+    state.currentRoute = route;
+    syncDatabaseHistoryButtons();
+  }
 
-    showView(previous, { skipHistory: true });
-    setFooterTitle(titleForView(previous));
+  function syncDatabaseHistoryButtons() {
+    const back = document.getElementById('db-history-back');
+    const forward = document.getElementById('db-history-forward');
+    if (back) back.disabled = state.navigatingHistory || !state.viewHistory.length;
+    if (forward) forward.disabled = state.navigatingHistory || !state.viewForwardHistory.length;
+  }
+
+  async function navigateDatabaseHistory(direction) {
+    const source = direction < 0 ? state.viewHistory : state.viewForwardHistory;
+    const destination = direction < 0 ? state.viewForwardHistory : state.viewHistory;
+    if (state.navigatingHistory || !source.length) return;
+    const previous = state.currentRoute;
+    const target = source[source.length - 1];
+    state.navigatingHistory = true;
+    syncDatabaseHistoryButtons();
+    try {
+      await flushOrderAutosaves();
+      await applyStoredDatabaseRoute(target);
+      source.pop();
+      destination.push(previous);
+      persistDatabaseRoute();
+    } catch (err) {
+      console.warn('Failed to navigate DATABASE history', err);
+      // Keep the failed destination available for retry, and restore the current page.
+      try { await applyStoredDatabaseRoute(previous); } catch {}
+      state.currentRoute = previous;
+    } finally {
+      state.navigatingHistory = false;
+      syncDatabaseHistoryButtons();
+    }
   }
 
   function titleForView(name) {
