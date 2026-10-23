@@ -184,8 +184,8 @@
     else{customer.value=job.customer_name||'';jobTitle.value=job.job_title||'';showProofEditor();}
     selectedLinkJob=job;showJobSelection();
   };
-  function showProofList(){
-    editorScreen.hidden=true;historyScreen.hidden=false;listControls.hidden=false;renderHistory();refreshHistory(true);
+  function showProofList(foreground=true){
+    editorScreen.hidden=true;historyScreen.hidden=false;listControls.hidden=false;renderHistory();refreshHistory(foreground);
   }
   function showProofEditor(){historyScreen.hidden=true;editorScreen.hidden=false;listControls.hidden=true;showJobSelection();loadOfficeJobs();}
   root.querySelector('#proof-back-list').addEventListener('click',showProofList);
@@ -853,17 +853,22 @@
     if(selectedLinkJob?.designRefs?.length&&!existingReference.value&&!designId){setFeedback('Select the design reference for this job.',true);existingReference.focus();return;}
     if (!request.value.trim()) { request.focus(); setFeedback('Enter the proof request first.', true); return; }
     if (!artworks.length) { setFeedback('Attach artwork first so each decoration can be assigned to a file.', true); return; }
-    if(!await preflightBrief())return;
+    const returningToList=Boolean(designId);
+    if(returningToList){busy=true;setCreating(true);showProofList(false);}
+    if(!await preflightBrief()){
+      if(returningToList){busy=false;setCreating(false);showProofEditor();renderHistory();}
+      return;
+    }
     if(!localPreview&&design?.sourceOrderId){
       busy=true;setCreating(true);
-      try{if(!await window.ProofLinks.beginRegeneration(design.sourceOrderId,designId))return;}
-      catch(error){setFeedback(error.message,true);return;}
+      try{if(!await window.ProofLinks.beginRegeneration(design.sourceOrderId,designId)){if(returningToList)showProofEditor();return;}}
+      catch(error){if(returningToList)showProofEditor();setFeedback(error.message,true);return;}
       finally{busy=false;setCreating(false);}
     }
     busy = true; generatingProof = true; readyThisRun = false; setCreating(true);
     if(!designId){designId=crypto.randomUUID();try{if(!localPreview)sessionStorage.setItem('proof-design-id',designId);}catch(_){} }
     design={...design,id:designId,customer:customer.value,jobTitle:jobTitle.value,createdAt:design?.createdAt||new Date().toISOString(),generationStatus:'generating'};
-    showProofList();
+    if(!returningToList)showProofList();
     setFeedback('Preparing the confirmed proof…');
     try {
       design=localPreview?{id:designId,customer:customer.value,jobTitle:jobTitle.value,status:'folder_ready',createdAt:new Date().toISOString()}:await designRequest('',{id:designId,customer:customer.value,jobTitle:jobTitle.value,deferAllocation:true,...jobReservation()});

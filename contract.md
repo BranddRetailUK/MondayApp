@@ -1206,3 +1206,8 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Proof history removes visible status headings/messages above row actions. Busy rows use a blue/lilac gradient sweep across the complete card instead of a centered spinner; controls remain inert while generating. Reduced-motion users receive a static highlight. Existing retry actions and message tooltips remain available.
 - Melvyn is no longer blocked from setting dashboard jobs to COMPLETED in either the browser or server. Normal completion confirmation and status automation still apply.
 - `node scripts/preview-proof-loading.js` serves an isolated visual approval fixture at `http://127.0.0.1:3119` with fictional rows and a delayed placement response. It uses the actual proof UI, cannot access production, and denies other API actions.
+
+
+### Immediate regeneration navigation (2026-10-23)
+- Clicking Regenerate on an existing proof returns synchronously to its history list before asynchronous artwork/preflight checks or linked-job confirmation. The existing row displays the busy sweep immediately; the history refresh runs in the background instead of hiding rows behind a page loader.
+- Unresolved preflight or cancelled/failed linked-job confirmation returns to the editor for correction without allocating or saving. Basic missing-request/artwork validation remains immediate, and creating a new proof retains its existing review flow.

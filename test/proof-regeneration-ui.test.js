@@ -19,7 +19,7 @@ function harness({ fail=false }={}) {
     artworks:[{id:'art-1',file:{name:'art.png'},assignment:'front',notes:'Keep colour'}],
     currentBrief:{products:[{decorations:[{id:'mark',artworkId:'art-1',placement:{x:.37,y:.22},widthMm:125}]}]},currentPreview:null,
     progressMessage:'',setCreating(){},setFeedback(message){context.progressMessage=message;},
-    showProofList(){calls.push('list');},renderHistory(){},refreshHistory(){},
+    showProofList(){calls.push('list');},showProofEditor(){calls.push('editor');},renderHistory(){},refreshHistory(){},
     preflightBrief:async()=>true,jobReservation(){return {};},
     async designRequest(){calls.push('reserve-request');await gate;if(fail)throw Error('Service unavailable');return {id:'existing-design',revision:4,status:'saved'};},
     async recordProgress(state){calls.push(state);},async prepareArtworkFile(){},async saveProofSource(){calls.push('source');},
@@ -128,15 +128,15 @@ test('approved linked proofs reach the approval gate only when submitting regene
     assert.equal(id,50587);assert.equal(proofId,'existing-design');h.calls.push('approval');
     return new Promise(resolve=>{resolveApproval=resolve;});
   }}};
-  const pending=h.context.run();await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(h.calls,['approval']);assert.equal(h.context.busy,true);
-  await h.context.run();assert.deepEqual(h.calls,['approval']); // Repeated clicks cannot start a second action.
+  const pending=h.context.run();await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(h.calls,['list','approval']);assert.equal(h.context.busy,true);
+  await h.context.run();assert.deepEqual(h.calls,['list','approval']); // Repeated clicks cannot start a second action.
   resolveApproval(true);h.release();await pending;
-  assert.equal(h.calls[0],'approval');assert.ok(h.calls.includes('save'));assert.equal(h.context.busy,false);
+  assert.equal(h.calls[1],'approval');assert.ok(h.calls.includes('save'));assert.equal(h.context.busy,false);
 });
 for(const failed of [false,true])test(`regeneration ${failed?'approval-save failure':'cancel'} leaves the editor and saved proof alone`,async()=>{
   const h=harness();h.context.design.sourceOrderId=50587;
   h.context.window={ProofLinks:{beginRegeneration:async()=>{if(failed)throw Error('Approval save failed');return false;}}};
-  await h.context.run();assert.deepEqual(h.calls,[]);assert.equal(h.context.busy,false);
+  await h.context.run();assert.deepEqual(h.calls,['list','editor']);assert.equal(h.context.busy,false);
   assert.equal(h.context.design.status,'saved');assert.equal(h.context.design.generationStatus,undefined);
   assert.equal(h.context.savedBrief,undefined);
   if(failed)assert.equal(h.context.progressMessage,'Approval save failed');
@@ -182,7 +182,7 @@ test('cancelled requests are not retried',async()=>{
   const h=harness();h.context.preflightBrief=async()=>false;
   h.context.design.sourceOrderId=50587;
   h.context.window={ProofLinks:{beginRegeneration(){throw Error('Preflight must happen first');}}};
-  await h.context.run();assert.deepEqual(h.calls,[]);assert.equal(h.context.design.status,'saved');
+  await h.context.run();assert.deepEqual(h.calls,['list','editor']);assert.equal(h.context.busy,false);assert.equal(h.context.design.status,'saved');
  });
 
 test('real preflight collects review issues before allocation and retains manual edits',async()=>{
@@ -284,4 +284,18 @@ test('placement loading waits for rendered image readiness',async()=>{
  const context={currentBrief:brief,uploadForm:async()=>({}),proofFetch:async()=>({ok:true}),proofJson:async()=>({brief,pages:[]}),renderEditor:()=>ready};
  vm.runInNewContext(source.slice(source.indexOf('  async function loadPlacementPreview()'),source.indexOf('  async function recordProgress('))+';this.load=loadPlacementPreview;',context);
  let done=false;const pending=context.load().then(()=>done=true);await new Promise(resolve=>setImmediate(resolve));assert.equal(done,false);release();await pending;assert.equal(done,true);
+});
+
+test('regenerate returns to the list synchronously before delayed preflight, with the existing row busy',async()=>{
+ const h=harness();let releaseCheck;const check=new Promise(resolve=>releaseCheck=resolve);
+ h.context.preflightBrief=()=>check;
+ h.context.showProofList=foreground=>{assert.equal(foreground,false);h.calls.push('list');};
+ const pending=h.context.run();
+ assert.deepEqual(h.calls,['list']);assert.equal(h.context.busy,true);assert.equal(h.context.rowState(h.context.design)[0],'Pending');
+ releaseCheck(true);h.release();await pending;assert.equal(h.calls.filter(x=>x==='list').length,1);
+});
+test('linked regeneration cancellation returns to the editor without reservation or writes',async()=>{
+ const h=harness();h.context.design.sourceOrderId=123;
+ h.context.window={ProofLinks:{beginRegeneration:async()=>false}};
+ await h.context.run();assert.deepEqual(h.calls,['list','editor']);assert.equal(h.context.busy,false);
 });
