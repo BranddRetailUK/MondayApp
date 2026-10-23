@@ -209,6 +209,8 @@ body.proof-preview .proof-preview-badge{display:block}
 
 .proof-history-actions .proof-history-link-button{background:#94cafa;border-color:#94cafa;color:#17212b}
 .proof-history-actions .proof-history-link-button:hover{background:#b4dcff;border-color:#b4dcff}
+.proof-history-list:not(.is-grid) .proof-history-state.has-linked-proof{justify-items:stretch}
+.proof-history-list:not(.is-grid) .has-linked-proof .proof-history-actions{justify-content:flex-end}
 /* Reserve the same action column whether or not Link to job is present. */
 @media(min-width:1101px){.proof-history-row{grid-template-columns:130px minmax(0,1fr) 340px}}
 
