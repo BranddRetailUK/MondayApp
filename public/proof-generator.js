@@ -36,8 +36,7 @@
     <div class="proof-page">
       <header class="proof-page-header">
         <div>
-          <div class="proof-eyebrow">${sandbox&&!melvyn?'TEST PROOFS':'PRODUCTION'}</div>
-          <h1 class="proof-page-title">Proof Generator${sandbox&&!melvyn?' — Sandbox':''}${melvyn?'<span class="proof-sandbox-pill">SANDBOX</span>':''}</h1>
+          <h1 class="proof-page-title">${sandbox?"Melvyn's Proofs":"Proof Generator"}</h1>
 
         </div>
         <div id="proof-list-controls" class="proof-list-controls">
@@ -46,7 +45,7 @@
             <button type="button" data-proof-view="list" aria-label="List view" title="List view" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h1M3 12h1M3 18h1"/></svg></button>
             <button type="button" data-proof-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
           </div>
-          ${!standalonePreview&&!melvyn?`<a class="proof-primary-button proof-mode-button" href="${sandbox?'?#proof-generator':'?test=1#proof-generator'}">${sandbox?'Production proofs':'Test proofs'}</a>`:''}
+          ${!standalonePreview&&!melvyn?`<a class="proof-primary-button proof-mode-button" href="${sandbox?'?#proof-generator':'?test=1#proof-generator'}">${sandbox?"Live proofs":"Melvyn's proofs"}</a>`:''}
           <button id="proof-create-new" class="proof-primary-button" type="button">Create proof</button>
         </div>
       </header>
@@ -284,12 +283,20 @@
         promote.disabled=busy||(!job.hasPdf&&!job.liveDesignId);
         promote.addEventListener('click',()=>addTestToLive(job));actions.append(promote);
       }
+      if(!sandbox){
       if(standalonePreview&&job.id===designId&&currentPreview?.pdf){const download=action('Download PDF',()=>downloadPdf());download.disabled=busy||dirty||currentPreview.issues.some(i=>i.blocking);actions.append(download);}
       else if(job.hasPdf){const download=document.createElement('a');download.className='proof-secondary-button';download.textContent='Download';download.href=`/api/proof-generator/${historyEndpoint}/${encodeURIComponent(job.id)}/pdf?download=1`;actions.append(download);}
       else{const download=document.createElement('button');download.type='button';download.className='proof-secondary-button';download.textContent='Download';download.disabled=true;download.title='Available after a proof PDF has been generated and retained.';actions.append(download);}
+      }
       const regenerate=document.createElement('button');regenerate.type='button';regenerate.className='proof-secondary-button';regenerate.textContent='Regenerate proof';regenerate.disabled=busy||!!job.liveDesignId||['save_queued','saving'].includes(job.status);
       if(job.liveDesignId)regenerate.title='This proof is moving to live. Use ADD TO LIVE to resume.';
-      regenerate.addEventListener('click',async()=>{try{if(job.sourceOrderId)await window.ProofLinks.edit(job.sourceOrderId);else await openHistoryProof(job);}catch(error){historyStatus.textContent=error.message;}});actions.append(regenerate);if(!localPreview)actions.append(linkButton);state.append(actions);
+      regenerate.addEventListener('click',async()=>{try{if(job.sourceOrderId)await window.ProofLinks.edit(job.sourceOrderId);else await openHistoryProof(job);}catch(error){historyStatus.textContent=error.message;}});actions.append(regenerate);
+      if(sandbox){
+        const remove=document.createElement('button');remove.type='button';remove.className='proof-secondary-button proof-delete-button';remove.textContent='Delete';remove.disabled=busy||!!job.liveDesignId;
+        if(job.liveDesignId)remove.title='Finish adding this proof to live before it leaves this list.';
+        remove.addEventListener('click',()=>deleteTestProof(job));actions.append(remove);
+      }
+      if(!localPreview)actions.append(linkButton);state.append(actions);
       item.append(thumb,info,state);
       const generating=label==='Pending'||label==='Saving';
       item.classList.toggle('proof-history-generating',generating);
@@ -305,7 +312,7 @@
     const previousFocus=document.activeElement,dialog=document.createElement('dialog');dialog.className='proof-fullscreen';dialog.setAttribute('aria-label','Proof preview');
     const bar=document.createElement('div');bar.className='proof-fullscreen-bar';
     const title=document.createElement('strong');title.textContent=[job.designNumber,job.customer,job.jobTitle].filter(Boolean).join(' · ');bar.append(title);
-    if(job.hasPdf){const download=document.createElement('a');download.className='proof-secondary-button';download.textContent='Download PDF';download.href=`/api/proof-generator/${historyEndpoint}/${encodeURIComponent(job.id)}/pdf?download=1`;bar.append(download);}
+    if(job.hasPdf&&!sandbox){const download=document.createElement('a');download.className='proof-secondary-button';download.textContent='Download PDF';download.href=`/api/proof-generator/${historyEndpoint}/${encodeURIComponent(job.id)}/pdf?download=1`;bar.append(download);}
     const close=document.createElement('button');close.type='button';close.className='proof-secondary-button';close.textContent='Close preview';close.addEventListener('click',()=>dialog.close());bar.append(close);
     const viewer=document.createElement('div');viewer.className='proof-fullscreen-pages';viewer.innerHTML='<div class="workspace-loading" role="status" aria-label="Loading proof"><span class="board-loading-spinner" aria-hidden="true"></span></div>';dialog.append(bar,viewer);document.body.append(dialog);
     dialog.addEventListener('close',()=>{dialog.remove();previousFocus?.focus();});dialog.showModal();close.focus();
@@ -317,17 +324,31 @@
       if(!dialog.isConnected)return;viewer.replaceChildren();await renderDocument(encoded,viewer,[],{clickable:false});
     }catch(error){viewer.textContent=error.message;}
   }
-  function confirmAddToLive() {
+  function confirmAddToLive(deleting=false) {
     return new Promise(resolve=>{
       const previous=document.activeElement,modal=document.createElement('div');
       modal.className='test-dashboard-complete-confirm-modal proof-live-confirm-modal';
-      modal.innerHTML=`<div class="test-dashboard-complete-confirm-shell" role="dialog" aria-modal="true" aria-labelledby="proof-live-confirm-title"><div class="test-dashboard-complete-confirm-message" id="proof-live-confirm-title">Add this proof to live?</div><div class="test-dashboard-complete-confirm-actions"><button class="test-dashboard-complete-confirm-button confirm" type="button">Confirm</button><button class="test-dashboard-complete-confirm-button cancel" type="button">No</button></div></div>`;
+      modal.innerHTML=`<div class="test-dashboard-complete-confirm-shell" role="dialog" aria-modal="true" aria-labelledby="proof-live-confirm-title"><div class="test-dashboard-complete-confirm-message" id="proof-live-confirm-title">${deleting?'Delete this proof, are you sure?':'Add this proof to live?'}</div><div class="test-dashboard-complete-confirm-actions"><button class="test-dashboard-complete-confirm-button confirm" type="button">Confirm</button><button class="test-dashboard-complete-confirm-button cancel" type="button">No</button></div></div>`;
       const yes=modal.querySelector('.confirm'),no=modal.querySelector('.cancel');
       const close=value=>{document.removeEventListener('keydown',keys);modal.remove();previous?.focus();resolve(value);};
       const keys=event=>{if(event.key==='Escape'){event.preventDefault();close(false);}if(event.key==='Tab'){event.preventDefault();(document.activeElement===no?yes:no).focus();}};
       yes.onclick=()=>close(true);no.onclick=()=>close(false);modal.onclick=event=>{if(event.target===modal)close(false);};
       document.addEventListener('keydown',keys);document.body.append(modal);no.focus();
     });
+  }
+  async function deleteTestProof(job) {
+    if(busy)return;
+    busy=true;
+    if(!await confirmAddToLive(true)){busy=false;renderHistory();return;}
+    renderHistory();let message='';
+    try{
+      const response=await proofFetch(`/api/proof-generator/tests/${encodeURIComponent(job.id)}`,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({updatedAt:job.updatedAt})});
+      if(!response.ok)throw Error((await proofJson(response)).error||'Could not delete this proof.');
+      busy=false;
+      if(designId===job.id)startNewProof();
+      showProofList();message='Proof deleted.';
+    }catch(error){message=error.message;}
+    finally{busy=false;await refreshHistory();renderHistory();historyStatus.textContent=message;}
   }
   async function addTestToLive(job) {
     if(busy)return;

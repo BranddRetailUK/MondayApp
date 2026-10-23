@@ -249,3 +249,14 @@ test('ADD TO LIVE cancellation never reads source or writes live state; confirma
  assert.ok(source.indexOf("promote.textContent='ADD TO LIVE'")<source.indexOf("else if(job.hasPdf){const download="));
  assert.match(source,/promote.className='proof-primary-button'/);
 });
+
+test('deletion cancellation makes no request; confirmation deletes and clears the active proof',async()=>{
+ let confirm=false,cleared=0,refreshes=0;const requests=[];
+ const context={busy:false,designId:'test',confirmAddToLive:async deleting=>{assert.equal(deleting,true);return confirm;},renderHistory(){},historyStatus:{},startNewProof(){cleared++;},showProofList(){},refreshHistory:async()=>{refreshes++;},proofFetch:async(url,options)=>{requests.push({url,options});return {ok:true};},proofJson:async()=>({})};
+ createContext(context);
+ const fn=source.slice(source.indexOf('  async function deleteTestProof('),source.indexOf('  async function addTestToLive('));
+ vm.runInContext(fn+'\nthis.remove=deleteTestProof;',context);
+ await context.remove({id:'test',updatedAt:'stamp'});assert.equal(requests.length,0);assert.equal(context.busy,false);
+ confirm=true;await context.remove({id:'test',updatedAt:'stamp'});
+ assert.equal(requests[0].url,'/api/proof-generator/tests/test');assert.equal(requests[0].options.method,'DELETE');assert.equal(JSON.parse(requests[0].options.body).updatedAt,'stamp');assert.equal(cleared,1);assert.equal(refreshes,1);assert.equal(context.historyStatus.textContent,'Proof deleted.');assert.equal(context.busy,false);
+});

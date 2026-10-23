@@ -75,3 +75,21 @@ test('failed publication keeps the sandbox row; retry publishes once and then re
   assert.equal((await f.tests.list()).designs.length,0);
  }finally{await f.db.close();}
 });
+
+test('deleting a test proof removes its retained row, rejects stale edits and preserves live promotion mappings',async()=>{
+ const f=await fixture();try{
+  await assert.rejects(()=>f.tests.remove(f.id,'2000-01-01'),/changed/);
+  assert.equal((await f.tests.list()).designs.length,1);
+  await f.tests.remove(f.id,f.updatedAt);
+  assert.equal((await f.tests.list()).designs.length,0);
+  await assert.rejects(()=>f.tests.source(f.id),/not found/);
+  await f.tests.remove(f.id,f.updatedAt); // Safe retry after an uncertain response.
+  assert.equal((await f.db.query('SELECT * FROM proof_design_jobs')).rows.length,0);
+ }finally{await f.db.close();}
+ const promoted=await fixture();try{
+  const live=await promoted.service.promote(promoted.id,[promoted.file],promoted.updatedAt);
+  await assert.rejects(()=>promoted.tests.remove(promoted.id,promoted.updatedAt),/being added to live/);
+  assert.equal((await promoted.tests.get(promoted.id)).liveDesignId,live.design.id);
+  assert.equal((await promoted.designs.get(live.design.id)).id,live.design.id);
+ }finally{await promoted.db.close();}
+});

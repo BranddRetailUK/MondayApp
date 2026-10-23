@@ -447,3 +447,14 @@ test('Charlie can use production history while Melvyn remains sandbox-only',asyn
   assert.equal((await fetch(url+'/designs',{headers:{'x-test-email':'melvyn@ultimatepromotions.co.uk'}})).status,403);
  });
 });
+
+test('test proof deletion is restricted to proof users and passes the version guard',async()=>{
+ const calls=[];
+ await serve(createRouter({tests:{remove:async(...args)=>calls.push(args)}}),async url=>{
+  for(const email of ['melvyn@ultimatepromotions.co.uk','charlie@ultimatepromotions.co.uk','production@ultimatepromotions.co.uk']){
+   const response=await fetch(url+'/tests/test-id',{method:'DELETE',headers:{'x-test-email':email,'Content-Type':'application/json'},body:JSON.stringify({updatedAt:'2026-10-23T12:00:00Z'})});assert.equal(response.status,200);
+  }
+  for(const headers of [{},{'x-test-email':'office@ultimatepromotions.co.uk'},{'x-test-email':'melvyn@ultimatepromotions.co.uk','x-test-scope':'dtf_only'}])assert.ok([401,403].includes((await fetch(url+'/tests/test-id',{method:'DELETE',headers})).status));
+  assert.equal(calls.length,3);assert.deepEqual(calls[0],['test-id','2026-10-23T12:00:00Z']);
+ });
+});

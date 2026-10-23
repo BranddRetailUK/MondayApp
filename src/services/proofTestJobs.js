@@ -23,6 +23,18 @@ function createService(pool){
     if(!saved.rows.length)throw Error('This test proof is being added to live. Resume ADD TO LIVE from the test proofs list.');
     return get(id);
   }
+  async function remove(id,expectedUpdatedAt){
+    valid(id);
+    const date=new Date(expectedUpdatedAt);
+    if(!Number.isFinite(date.getTime()))throw Error('Refresh the proof list before deleting.');
+    const result=await pool.query(`DELETE FROM proof_test_jobs WHERE id=$1 AND live_design_id IS NULL
+      AND date_trunc('milliseconds',updated_at)=date_trunc('milliseconds',$2::timestamptz) RETURNING id`,[id,date.toISOString()]);
+    if(!result.rows.length){
+      const existing=await pool.query('SELECT live_design_id FROM proof_test_jobs WHERE id=$1',[id]);
+      if(existing.rows[0]?.live_design_id)throw Error('This proof is being added to live and cannot be deleted here.');
+      if(existing.rows.length)throw Error('This proof changed. Refresh the list before deleting.');
+    }
+  }
   async function source(id){await get(id);const {rows}=await pool.query('SELECT source,source_artworks FROM proof_test_jobs WHERE id=$1',[id]);return {source:rows[0].source,artworks:rows[0].source_artworks};}
   async function setPreview(id,bytes,brief,ready){
     const current=await get(id);if(current.liveDesignId)throw Error('This test proof is being added to live. Resume ADD TO LIVE from the test proofs list.');if(bytes.length>50*1024*1024)throw Error('Test proof PDF must be smaller than 50 MB.');
@@ -31,6 +43,6 @@ function createService(pool){
       source=jsonb_set(source,'{brief}',$5::jsonb),revision=revision+1,updated_at=NOW() WHERE id=$1 AND live_design_id IS NULL`,[id,bytes,png,ready,JSON.stringify(brief)]);
   }
   async function asset(id,kind){await get(id);const column=kind==='pdf'?'proof_pdf':'preview_png';const {rows}=await pool.query(`SELECT ${column} AS bytes FROM proof_test_jobs WHERE id=$1${kind==='pdf'?' AND ready':''}`,[id]);return rows[0]?.bytes;}
-  return {get,list,saveSource,source,setPreview,asset};
+  return {get,list,saveSource,source,setPreview,asset,remove};
 }
 module.exports={createService};

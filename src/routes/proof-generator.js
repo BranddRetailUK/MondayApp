@@ -140,6 +140,11 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
     if(!/^\d{1,7}$/.test(String(req.query.offset||'0')))return res.status(400).json({error:'Invalid history page.'});
     try{res.json(await testJobs().list(Number(req.query.offset||0)));}catch(error){res.status(503).json({error:'Could not load test proofs.'});}
   });
+  router.delete('/tests/:id',async(req,res)=>{
+    if(!allowed(req,res))return;res.set('Cache-Control','no-store');
+    try{await testJobs().remove(req.params.id,req.body?.updatedAt);res.json({ok:true});}
+    catch(error){res.status(409).json({error:error.message});}
+  });
   router.get('/tests/:id/:asset',async(req,res)=>{
     if(!allowed(req,res))return;res.set('Cache-Control','no-store');
     try{

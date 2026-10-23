@@ -279,3 +279,6 @@ body.proof-preview .proof-preview-badge{display:block}
 .proof-placement-header h3{margin:0}
 .proof-dimension-lock{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #536473;border-radius:8px;background:#242c32;color:#c1ddf5;font-size:12px;cursor:pointer}
 .proof-dimension-lock input[type="checkbox"]{appearance:auto;width:16px;height:16px;margin:0;accent-color:#168ed0;cursor:pointer}
+
+.proof-secondary-button.proof-delete-button{background:#4b2228;border-color:#bc505d;color:#ffb9c0}
+.proof-secondary-button.proof-delete-button:hover:not(:disabled){background:#682d36;border-color:#ed7280;color:#fff}
