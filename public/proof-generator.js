@@ -273,7 +273,7 @@
       const alreadyLinked=Boolean(job.sourceOrderId||job.linkedJobs?.length||job.linkedOrders?.length);
       const linkButton=document.createElement('button');linkButton.type='button';linkButton.className='proof-secondary-button proof-history-link-button';linkButton.textContent='Link to job';linkButton.disabled=busy||['save_queued','saving','allocating'].includes(job.status);
       linkButton.addEventListener('click',async()=>{try{const target=await window.ProofLinks.picker('jobs',{customer:job.customer});if(!target)return;if(!await window.ProofLinks.link(job.id,target.source_order_id))return;if(designId===job.id){design=null;designId=null;}await refreshHistory();window.ProofLinks.refresh();}catch(error){historyStatus.textContent=error.message;}});
-      const state=document.createElement('div');state.className='proof-history-state'+(!localPreview&&alreadyLinked?' has-linked-proof':'');const [label,message]=historyState(job);
+      const state=document.createElement('div');state.className='proof-history-state';const [label,message]=historyState(job);
       if(message)state.title=reviewMessage(message);
 
       const actions=document.createElement('div');actions.className='proof-history-actions';

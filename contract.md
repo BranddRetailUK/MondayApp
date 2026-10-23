@@ -1223,3 +1223,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Proof history alignment (2026-10-23): desktop list rows reserve a consistent 340px action column, keeping Title and Date created aligned regardless of Link to job visibility. Tablet/mobile stacking and grid cards retain their existing responsive layout.
 
 - Linked-proof button alignment (2026-10-23): in list view, rows with an existing job link right-align their remaining actions within the reserved action column. Text columns remain fixed; unlinked rows and grid cards retain their existing button alignment.
+
+- Shared proof-action right edge (2026-10-23): all list-view action groups fill their reserved column and align right. Regenerate proof on linked rows therefore ends at the same right edge as Link to job on unlinked rows, without moving Title or Date created. Grid-card alignment is unchanged.
