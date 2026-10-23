@@ -1189,3 +1189,7 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 ### Report notice and proof-list cleanup (2026-10-23)
 - Removed the missing-invoice-date notice from the Reports overview. Invoice date filtering and API diagnostics remain unchanged; no guessed dates or values are added.
 - At the user's request, archived the six unlinked saved proof entries 29143 (Masons Party), 29144 (Penn Petals), 29149 (Focus football shirts), 29150 (Background QA), 29151 (TBC QA) and 29156 (Madhatter). Their design numbers, source and files are retained; archiving removes them from live history and worker eligibility.
+
+
+### Report KPI card copy (2026-10-23)
+- Removed the explanatory date-basis footer lines from the three overview cards. Card headings, values and order counts remain; the graph legend and order-table basis selector still identify the reporting dates.
