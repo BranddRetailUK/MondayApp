@@ -165,6 +165,9 @@ function prepareBrief(brief, input = {}) {
       const d = JSON.parse(JSON.stringify(original));
       const savedManual=d.placement || d.manualScale || (d.anchor && d.anchor!=='region') || Number(d.offsetXmm) || Number(d.offsetYmm) || Object.values(product.calibrations || {}).some(c=>c.regions?.[positionName(d.position)]);
       if(!savedManual)d.scaleVersion=4;
+      // New requests opt into body-panel placement. Retained proofs must keep
+      // their accepted automatic geometry when reopened or regenerated.
+      if(!savedManual && d.placementVersion == null && !brief.proofDesignId && !brief.testProofId)d.placementVersion=2;
       d.id = d.id || `product-${pi}-decoration-${di}`;
       d.position = positionName(d.position, product);
       d.method = d.method || product.method || brief.method || '';
@@ -299,12 +302,20 @@ function placementFor(d, asset, garment, calibration = {}) {
       const edge=calibration.neckRight || garment.landmarks?.neckRight;
       const right=edge?.x ?? garment.placementProfile?.neckRight;
       if(Number.isFinite(right))x=position==='left breast'?right:1-right;
-      const bodyAnchor=garment.landmarks?.[position==='left breast'?'leftBreast':'rightBreast'];
+      const breastGeometry=d.placementVersion===2 ? garment.breastGeometry : null;
+      const bodyAnchor=(breastGeometry || garment.landmarks)?.[position==='left breast'?'leftBreast':'rightBreast'];
       if(!calibrated && !manual && Number.isFinite(bodyAnchor?.x)){
         x=bodyAnchor.x;
+        const centre=breastGeometry?.breastCentre;
+        const established=garment.placementProfile?.breastCentre;
+        // Small differences are photographic noise. Bound larger corrections
+        // to the accepted family guide; unknown/ambiguous shoulders fall back.
+        // Collared/placket garments retain their established chest height:
+        // their silhouette cannot identify the bottom of the placket.
+        if(['tee','hoodie'].includes(garment.placementProfile?.family) && Number.isFinite(centre) && Number.isFinite(established) && Math.abs(centre-established)>.025 && Math.abs(centre-established)<=.10)y=centre-height/2;
         // Keep enlarged breast artwork on its own half of the torso, with a
         // small shared centre-line clearance (also protects zipped garments).
-        const body=garment.torsoRegion;
+        const body=breastGeometry?.body || garment.torsoRegion;
         if(body){const centre=body.left+body.width/2,clearance=body.width*.02;
           x=position==='left breast'?Math.max(x,centre+clearance+width/2):Math.min(x,centre-clearance-width/2);
         }

@@ -255,6 +255,9 @@ function automaticGarmentProfile(product, garment, view, referenceGarment) {
       if(garment.mask[y*garment.width+Math.floor(garment.width*.5)]){collarY=y/garment.height;break;}
     }
   }
-  return {torsoRegion,chestPanels,referencePxPerMm,estimatedPxPerMm,unrefinedPxPerMm,legacyPxPerMm,scaleSource,estimatedTorsoMm:torsoMm,...sizing,placementProfile:profile,landmarks:{...breastAnchors,neckRight:{x:profile.neckRight,y:collarY},collar:{x:.5,y:collarY},hem:{x:.5,y:.97}}};
+  const breastGeometry = !measured && profile.breastPanelFraction == null && !profile.printableRegions &&
+    ['tee','polo','sweatshirt','hoodie','fleece','outerwear','hoodedOuterwear'].includes(profile.family)
+    ? require('./proofChestGeometry').chestGeometry(garment,view) : null;
+  return {breastGeometry,torsoRegion,chestPanels,referencePxPerMm,estimatedPxPerMm,unrefinedPxPerMm,legacyPxPerMm,scaleSource,estimatedTorsoMm:torsoMm,...sizing,placementProfile:profile,landmarks:{...breastAnchors,neckRight:{x:profile.neckRight,y:collarY},collar:{x:.5,y:collarY},hem:{x:.5,y:.97}}};
 }
 module.exports={visibleBounds,rasterPdf,prepareArtwork,analyseGarment,coverage,fitSleeve,automaticGarmentProfile};
