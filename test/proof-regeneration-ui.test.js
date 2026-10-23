@@ -70,7 +70,7 @@ for(const keepPrintDimensions of [false,true])test(`canvas movement and scaling 
   Object.assign(canvas,{getContext:()=>({fillRect(){},drawImage(){},strokeRect(){}}),getBoundingClientRect:()=>({left:0,top:0,width:600,height:600}),setPointerCapture(){},hasPointerCapture:()=>false,focus(){}});
   const product={code:'GD001',decorations:[{id:'mark',widthMm:100}]};
   const page={view:'front',image:'garment',width:600,height:600,placements:[{id:'mark',x:.5,y:.3,width:.2,height:.1,size:{width:100,height:50},preview:'art'}]};
-  const context={document:{createElement:tag=>tag==='canvas'?canvas:element(tag)},Image:class{},currentBrief:{keepPrintDimensions},busy:false,markDirty(){dirtyCount++;},product,page};
+  const context={document:{createElement:tag=>tag==='canvas'?canvas:element(tag)},Image:class{complete=true;},currentBrief:{keepPrintDimensions},busy:false,markDirty(){dirtyCount++;},product,page};
   createContext(context);
   const view=source.slice(source.indexOf('  function viewEditor('),source.indexOf('  const epsPreviews='));
   vm.runInContext(view+'\nviewEditor(product,page);',context);
@@ -270,3 +270,18 @@ for (const [hasEmbroidery,psgNumbers,visible] of [[true,['PSG123'],true],[true,[
   if(visible){assert.equal(references.children[0].children[0].textContent,'PSG No');assert.equal(references.children[0].children[1].textContent,'PSG123');}
  });
 }
+
+test('placement loading indicator is separate from button feedback and clears on completion or error',()=>{
+ const feedback={classList:{toggle(){}}},placementLoading={},historyScreen={hidden:true};
+ const context={feedback,placementLoading,historyScreen,designId:'saved'};
+ vm.runInNewContext(source.slice(source.indexOf('  function setFeedback('),source.indexOf('  function setCreating('))+';this.set=setFeedback;',context);
+ context.set('Loading proof…');assert.equal(placementLoading.hidden,false);assert.equal(feedback.hidden,true);assert.equal(feedback.textContent,'');
+ context.set('');assert.equal(placementLoading.hidden,true);
+ context.set('Loading proof…');context.set('Preview unavailable',true);assert.equal(placementLoading.hidden,true);assert.equal(feedback.hidden,false);
+});
+test('placement loading waits for rendered image readiness',async()=>{
+ let release;const ready=new Promise(resolve=>release=resolve),brief={products:[]};
+ const context={currentBrief:brief,uploadForm:async()=>({}),proofFetch:async()=>({ok:true}),proofJson:async()=>({brief,pages:[]}),renderEditor:()=>ready};
+ vm.runInNewContext(source.slice(source.indexOf('  async function loadPlacementPreview()'),source.indexOf('  async function recordProgress('))+';this.load=loadPlacementPreview;',context);
+ let done=false;const pending=context.load().then(()=>done=true);await new Promise(resolve=>setImmediate(resolve));assert.equal(done,false);release();await pending;assert.equal(done,true);
+});

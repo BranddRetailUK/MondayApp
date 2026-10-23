@@ -9,14 +9,14 @@ const {
   isDashboardCompletionBlocked,
 } = require('../src/services/dashboardCompletionGuard');
 
-test('only Melvyn is blocked from dashboard COMPLETED', () => {
-  assert.equal(DASHBOARD_COMPLETION_BLOCK_EMAILS.has('melvyn@ultimatepromotions.co.uk'), true);
+test('Melvyn can set dashboard jobs to COMPLETED', () => {
+  assert.equal(DASHBOARD_COMPLETION_BLOCK_EMAILS.has('melvyn@ultimatepromotions.co.uk'), false);
   assert.equal(DASHBOARD_COMPLETION_BLOCK_MESSAGE, 'LEAVE IT ALONE MELVYN');
   assert.equal(isDashboardCompletionBlocked({
     user: { email: ' Melvyn@UltimatePromotions.co.uk ' },
     columnTitle: 'Status',
     label: 'Completed',
-  }), true);
+  }), false);
   assert.equal(isDashboardCompletionBlocked({
     user: { full_name: ' Ultimate   Production ' },
     columnTitle: 'Status',
@@ -39,11 +39,12 @@ test('only Melvyn is blocked from dashboard COMPLETED', () => {
   }), false);
 });
 
-test('dashboard UI blocks before confirmation and shows a dismissible Okay popup', () => {
+test('dashboard retains shared confirmation handling without an account block', () => {
   const script = fs.readFileSync(path.join(__dirname, '..', 'public', 'script.js'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
   const route = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'test-dashboard.js'), 'utf8');
 
+  assert.match(script, /const DASHBOARD_COMPLETION_BLOCK_EMAILS = new Set\(\)/);
   assert.match(script, /if \(shouldBlockDashboardCompletion\(state, option\)\)[\s\S]+DASHBOARD_COMPLETION_BLOCK_MESSAGE[\s\S]+return;/);
   assert.match(script, /data-test-dashboard-approval-ok="true">Okay<\/button>/);
   assert.doesNotMatch(script, /DASHBOARD_COMPLETION_BLOCK_NAMES/);

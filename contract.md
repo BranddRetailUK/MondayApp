@@ -1199,3 +1199,10 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Supersedes the Melvyn sandbox restriction: `melvyn@ultimatepromotions.co.uk` now has the same full live Proof Generator, history and job-link permissions as Charlie and Production, and opens live mode by default. DTF-only accounts remain excluded.
 - Removed the **Melvyn's proofs** navigation button for all users. Existing test proofs remain accessible by explicit `?test=1` URLs, with sandbox isolation and a Live proofs return link; no saved proofs are deleted. Sandbox selection is explicit rather than tied to an account email.
 - Verified that the complete PSG No field is absent from history rows without a PSG number or without embroidery; qualifying embroidery rows retain the number.
+
+
+### Proof loading presentation and completion access (2026-10-23)
+- Proof regeneration displays its loading indicator beneath the proof preview card with 64px top padding. The indicator clears after the placement canvases' garment/artwork images settle, or on failure; loading no longer inserts a wheel in the bottom feedback area. The regeneration button remains disabled during restoration.
+- Proof history removes visible status headings/messages above row actions. Busy rows use a blue/lilac gradient sweep across the complete card instead of a centered spinner; controls remain inert while generating. Reduced-motion users receive a static highlight. Existing retry actions and message tooltips remain available.
+- Melvyn is no longer blocked from setting dashboard jobs to COMPLETED in either the browser or server. Normal completion confirmation and status automation still apply.
+- `node scripts/preview-proof-loading.js` serves an isolated visual approval fixture at `http://127.0.0.1:3119` with fictional rows and a delayed placement response. It uses the actual proof UI, cannot access production, and denies other API actions.

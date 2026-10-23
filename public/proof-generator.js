@@ -101,6 +101,7 @@
             <div class="proof-review-title proof-section-title"><h2>Clothing proof</h2></div>
             <div id="proof-results" class="proof-results-empty"><div class="proof-empty-mark" aria-hidden="true">✦</div><strong>Ready when you are</strong></div>
           </section>
+          <div id="proof-placement-loading" class="proof-placement-loading" role="status" aria-label="Loading artwork position previews" hidden><span class="board-loading-spinner" aria-hidden="true"></span></div>
         </aside>
       </div>
       </div>
@@ -119,6 +120,7 @@
   const formActions = root.querySelector('.proof-form-actions');
   const editorToolbar = root.querySelector('.proof-editor-toolbar');
   const feedback = root.querySelector('#proof-feedback');
+  const placementLoading = root.querySelector('#proof-placement-loading');
   const artworks = [];
   let currentBrief = null;
   let currentPreview = null;
@@ -274,8 +276,7 @@
       if(alreadyLinked)linkButton.title='This proof is already linked to a job.';
       linkButton.addEventListener('click',async()=>{try{const target=await window.ProofLinks.picker('jobs',{customer:job.customer});if(!target)return;if(!await window.ProofLinks.link(job.id,target.source_order_id))return;if(designId===job.id){design=null;designId=null;}await refreshHistory();window.ProofLinks.refresh();}catch(error){historyStatus.textContent=error.message;}});
       const state=document.createElement('div');state.className='proof-history-state';const [label,message]=historyState(job);
-      if(label!=='Saved'){const status=document.createElement('strong');status.textContent=label;state.append(status);}
-      if(message){const detail=document.createElement('p');detail.textContent=reviewMessage(message);state.append(detail);}
+      if(message)state.title=reviewMessage(message);
 
       const actions=document.createElement('div');actions.className='proof-history-actions';
       if(!localPreview&&job.status==='error'&&job.hasPdf){
@@ -308,7 +309,7 @@
       item.setAttribute('aria-busy',String(generating));
       if(generating){
         for(const content of [thumb,info,state])content.inert=true;
-        const spinner=document.createElement('span');spinner.className='proof-history-spinner';spinner.setAttribute('role','status');spinner.setAttribute('aria-label','Generating proof');item.append(spinner);
+        const spinner=document.createElement('span');spinner.className='proof-history-sweep';spinner.setAttribute('role','status');spinner.setAttribute('aria-label','Generating proof');item.append(spinner);
       }
       historyList.append(item);
     }
@@ -398,7 +399,7 @@
     if(busy)return;
     if(job.id===designId&&artworks.length&&currentPreview){design=job;showProofEditor();showDesign();setCreating(false);return;}
     startNewProof();selectedLinkJob=job.sourceOrderId?{source_order_id:job.sourceOrderId,order_no:job.linkedOrders?.find(order=>order.sourceOrderId===job.sourceOrderId)?.orderNo}:null;designId=job.id;design=job;try{if(!localPreview)sessionStorage.setItem('proof-design-id',designId);}catch(_){}
-    customer.value=job.customer||'';jobTitle.value=job.jobTitle||'';showProofEditor();showDesign();busy=true;setCreating(true);reviewButton.querySelector('[data-proof-button-label]').textContent='';setFeedback('Loading proof…');
+    customer.value=job.customer||'';jobTitle.value=job.jobTitle||'';showProofEditor();showDesign();busy=true;setCreating(true);reviewButton.querySelector('[data-proof-button-label]').textContent='Loading previews…';reviewButton.querySelector('.proof-button-spinner').hidden=true;setFeedback('Loading proof…');
     try{
       const response=await proofFetch(`/api/proof-generator/${historyEndpoint}/${encodeURIComponent(job.id)}/source`,{cache:'no-store'});const data=await proofJson(response);
       if(!response.ok)throw new Error(data.error||'Proof source is unavailable.');
@@ -426,7 +427,7 @@
     if(!response.ok)throw new Error(payload.error||'Could not load artwork adjustment.');
     if(currentBrief!==target)return;
     currentBrief=payload.brief;currentPreview=payload;
-    renderEditor();
+    await renderEditor();
   }
   async function recordProgress(state,message=progressMessage,metadata={}){
     const id=designId;if(!id)return;
@@ -773,9 +774,9 @@
 
   function setFeedback(message, error = false) {
     const loading = !error && /^Loading\b/.test(message);
-    if (loading) feedback.innerHTML = '<span class="app-section-loading" role="status" aria-label="Loading proof"><span class="board-loading-spinner" aria-hidden="true"></span></span>';
-    else feedback.textContent = message;
-    feedback.hidden=Boolean(designId)&&!error&&!loading;
+    placementLoading.hidden = !loading;
+    feedback.textContent = loading ? '' : message;
+    feedback.hidden=loading || (Boolean(designId)&&!error);
     feedback.classList.toggle('error', error);
     progressMessage=message;progressError=error;if(!historyScreen.hidden)renderHistory();
   }
@@ -1056,11 +1057,13 @@
     fallbackHeader.append(fallbackTitle,lockLabel);fallback.append(fallbackHeader);
 
     const views=document.createElement('div');views.className='proof-placement-views';
+    const previewReady=[];
     for(const page of currentPreview?.pages || []){
       const product=currentBrief.products[page.productIndex];
       if(!product)continue;
       const section=document.createElement('section');section.className='proof-product-editor';
-      section.append(viewEditor(product,page));
+      const editor=viewEditor(product,page);section.append(editor);
+      if(editor.previewReady)previewReady.push(editor.previewReady);
       views.append(section);
     }
     fallback.append(views);
@@ -1069,8 +1072,9 @@
       const container=document.createElement('div');container.className='proof-pdf-pages proof-auto-preview';results.append(container);
       renderDocument(currentPreview.pdf,container,currentPreview.documents || []);
     }
-    results.append(fallback);
-    if(!hasGarment){const status=document.createElement('p');status.textContent='Artwork adjustment preview unavailable. Check the request and artwork, then regenerate.';fallback.append(status);}
+    if(currentPreview)results.append(fallback);
+    if(currentPreview&&!hasGarment){const status=document.createElement('p');status.textContent='Artwork adjustment preview unavailable. Check the request and artwork, then regenerate.';fallback.append(status);}
+    return Promise.all(previewReady);
   }
 
   function openProofPreview(encoded,pageNumber){
@@ -1129,6 +1133,8 @@
       }
 
     }
+    const waitForImage=image=>image.complete?Promise.resolve():new Promise(resolve=>{image.addEventListener('load',resolve,{once:true});image.addEventListener('error',resolve,{once:true});});
+    wrap.previewReady=Promise.all([base,...images.values()].map(waitForImage)).then(paint);
     base.onload=paint;
     const point=event=>{const box=canvas.getBoundingClientRect();return{x:Math.max(0,Math.min(1,(event.clientX-box.left)/box.width)),y:Math.max(0,Math.min(1,(event.clientY-box.top)/box.height))};};
     canvas.addEventListener('pointerdown',event=>{

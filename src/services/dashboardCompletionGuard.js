@@ -1,6 +1,4 @@
-const DASHBOARD_COMPLETION_BLOCK_EMAILS = new Set([
-  'melvyn@ultimatepromotions.co.uk',
-]);
+const DASHBOARD_COMPLETION_BLOCK_EMAILS = new Set();
 const DASHBOARD_COMPLETION_BLOCK_MESSAGE = 'LEAVE IT ALONE MELVYN';
 
 function isDashboardCompletionBlocked({
