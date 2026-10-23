@@ -3762,7 +3762,6 @@ router.post('/api/database/jobs', async (req, res) => {
       ]
     );
 
-    await require('../services/madebluntPipeline').enroll(client,job,payload.proof_design_id||null);
     if(payload.proof_design_id){
       if(!require('../services/proofJobLinks').isProduction(req.hubUser))throw new Error('Proof Generator access required.');
       await require('../services/proofJobLinks').createService(pool).linkWithClient(client,payload.proof_design_id,job.source_order_id);
@@ -4248,7 +4247,6 @@ router.post('/api/database/jobs/:id/repeat', async (req, res) => {
       ]
     );
 
-    await require('../services/madebluntPipeline').enroll(client,job);
     await client.query('COMMIT');
     res.status(201).json({
       job,

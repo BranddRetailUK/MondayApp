@@ -13,6 +13,7 @@ const pipeline=require('../src/services/madebluntPipeline');
   if(job.length!==1||Number(job[0].customer_id)!==pipeline.CUSTOMER_ID)throw new Error('Expected exactly one Madeblunt job');
   const before={sourceOrderId:job[0].source_order_id,orderNo:order,customer:job[0].customer_name,status:job[0].dashboard_status};
   if(process.argv.includes('--apply')){
+   if(String(job[0].dashboard_status||'').trim().toUpperCase()!=='TO SAMPLE')throw new Error('Only TO SAMPLE jobs can enter the Madeblunt pipeline');
    const linked=(await db.query('SELECT proof_id FROM proof_job_links WHERE source_order_id=$1',[before.sourceOrderId])).rows[0];
    const refs=(await db.query("SELECT design_ref FROM database_job_positions WHERE source_order_id=$1 AND NULLIF(BTRIM(design_ref),'') IS NOT NULL",[before.sourceOrderId])).rows;
    if(refs.length&&!linked)throw new Error('This job already has design references. Review before allocating another folder.');

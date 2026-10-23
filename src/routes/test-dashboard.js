@@ -232,16 +232,19 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/group', async (req, res) =
       column_values: columnValues,
       archived: false,
     };
-    const saved = privateJob
-      ? await updatePrivateDashboardJob(job.id, nextState)
-      : await upsertJobState(job.source_order_id, nextState);
-
-    if (!privateJob) {
-      const labels = {
-        status: statusLabel,
-      };
-      if (groupId === TEST_DASHBOARD_GROUP_IDS.OFFICE) labels.priority = '';
-      await updateDatabaseJobDashboardFields(pool, job.source_order_id, labels);
+    const labels = { status: statusLabel };
+    if (groupId === TEST_DASHBOARD_GROUP_IDS.OFFICE) labels.priority = '';
+    const sampling = !privateJob && Number(job.customer_id) === 3446 && normalizeColumnTitle(statusLabel) === 'TO SAMPLE';
+    let saved;
+    if (sampling) {
+      saved = await require('../services/madebluntPipeline').activateForSampling(pool,job.source_order_id,async client=>{
+        const result=await upsertJobState(job.source_order_id,nextState,client);
+        await updateDatabaseJobDashboardFields(client,job.source_order_id,labels);
+        return result;
+      });
+    } else {
+      saved = privateJob ? await updatePrivateDashboardJob(job.id,nextState) : await upsertJobState(job.source_order_id,nextState);
+      if (!privateJob) await updateDatabaseJobDashboardFields(pool,job.source_order_id,labels);
     }
 
     res.json({
@@ -485,16 +488,19 @@ protectedRouter.put('/api/test-dashboard/items/:jobId/status-column', async (req
       }
     }
 
-    const saved = privateJob
-      ? await updatePrivateDashboardJob(job.id, nextState)
-      : await upsertJobState(job.source_order_id, nextState);
     const effectiveLabel = getColumnText(nextState.column_values[columnId]);
-    if (!privateJob) {
-      await updateDatabaseJobDashboardFields(
-        pool,
-        job.source_order_id,
-        dashboardLabelsForChangedColumn(column, effectiveLabel)
-      );
+    const labels = dashboardLabelsForChangedColumn(column,effectiveLabel);
+    const sampling = !privateJob && Number(job.customer_id) === 3446 && normalizeColumnTitle(labels.status) === 'TO SAMPLE';
+    let saved;
+    if (sampling) {
+      saved = await require('../services/madebluntPipeline').activateForSampling(pool,job.source_order_id,async client=>{
+        const result=await upsertJobState(job.source_order_id,nextState,client);
+        await updateDatabaseJobDashboardFields(client,job.source_order_id,labels);
+        return result;
+      });
+    } else {
+      saved = privateJob ? await updatePrivateDashboardJob(job.id,nextState) : await upsertJobState(job.source_order_id,nextState);
+      if (!privateJob) await updateDatabaseJobDashboardFields(pool,job.source_order_id,labels);
     }
     res.json({
       ok: true,

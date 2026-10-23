@@ -15,12 +15,14 @@ async function ensureTables(db) {
     )`);
   await db.query('ALTER TABLE madeblunt_visual_files ADD COLUMN IF NOT EXISTS legacy_filename TEXT');
 }
-// Called inside the order transaction. Customer identity is authoritative, not a name substring.
+// Called inside the TO SAMPLE status transaction. Customer identity is authoritative, not a name substring.
 async function enroll(db, job, existingProofId=null) {
-  if (Number(job.customer_id) !== CUSTOMER_ID) return null;
+  if (Number(job.customer_id) !== CUSTOMER_ID || String(job.dashboard_status||'').trim().toUpperCase()!=='TO SAMPLE') return null;
   await db.query('SELECT pg_advisory_xact_lock(731094,$1)',[job.source_order_id]);
   const existing = (await db.query('SELECT proof_id FROM madeblunt_design_jobs WHERE source_order_id=$1', [job.source_order_id])).rows[0];
   if (existing) return existing.proof_id;
+  const linked=(await db.query('SELECT proof_id FROM proof_job_links WHERE source_order_id=$1',[job.source_order_id])).rows[0];
+  existingProofId=existingProofId||linked?.proof_id||null;
   const id = existingProofId || randomUUID();
   if(!existingProofId) await db.query(`INSERT INTO proof_design_jobs(id,customer,job_title,pipeline)
     VALUES($1,$2,$3,'madeblunt')`, [id, job.customer_name || '', job.job_title || '']);
@@ -31,6 +33,15 @@ async function transaction(pool, fn) {
   const db = await pool.connect();
   try { await db.query('BEGIN'); const result=await fn(db); await db.query('COMMIT'); return result; }
   catch(error) { await db.query('ROLLBACK'); throw error; } finally { db.release(); }
+}
+async function activateForSampling(pool,sourceOrderId,saveStatus) {
+  return transaction(pool,async db=>{
+    await db.query('SELECT source_order_id FROM database_jobs WHERE source_order_id=$1 FOR UPDATE',[sourceOrderId]);
+    const result=await saveStatus(db);
+    const job=(await db.query('SELECT * FROM database_jobs WHERE source_order_id=$1',[sourceOrderId])).rows[0];
+    if(job)await enroll(db,job);
+    return result;
+  });
 }
 async function reconcile(pool) {
   return transaction(pool, async db => {
@@ -94,4 +105,4 @@ async function status(pool,sourceOrderId) {
   if(!folder)return null;
   return {...folder,visuals:(await pool.query('SELECT id,filename,status,message FROM madeblunt_visual_files WHERE source_order_id=$1 ORDER BY updated_at',[sourceOrderId])).rows};
 }
-module.exports={CUSTOMER_ID,ensureTables,enroll,reconcile,claim,report,status};
+module.exports={CUSTOMER_ID,ensureTables,enroll,activateForSampling,reconcile,claim,report,status};

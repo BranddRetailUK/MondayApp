@@ -14,9 +14,24 @@ test('Madeblunt folder allocation, visual discovery, leases and retries preserve
  CREATE TABLE database_job_positions(source_order_position_id INTEGER PRIMARY KEY,source_order_id INTEGER,position_sort_order INTEGER,design_ref TEXT,created_at_source TIMESTAMPTZ,updated_at_source TIMESTAMPTZ);
  CREATE TABLE test_dashboard_files(id INTEGER PRIMARY KEY,source_order_id INTEGER,column_id TEXT,column_title TEXT,public_id TEXT,secure_url TEXT,original_filename TEXT,format TEXT);
  INSERT INTO database_jobs VALUES(50622,3446,'TO SAMPLE'),(50623,9,'AWAITING APPROVAL');`);
- const job={source_order_id:50622,customer_id:3446,customer_name:'Madeblunt ( UK ) Ltd',job_title:'Umbrellas'};
+ const job={source_order_id:50622,customer_id:3446,customer_name:'Madeblunt ( UK ) Ltd',job_title:'Umbrellas',dashboard_status:'TO SAMPLE'};
  assert.equal(await pipeline.enroll(pool,{...job,source_order_id:50623,customer_id:9}),null);
- const id=await pipeline.enroll(pool,job);assert.equal(await pipeline.enroll(pool,job),id);
+ assert.equal(await pipeline.enroll(pool,{...job,dashboard_status:'AWAITING APPROVAL'}),null);
+ assert.equal(await pipeline.enroll(pool,{...job,dashboard_status:'SAMPLED'}),null);
+ assert.equal((await pg.query('SELECT * FROM madeblunt_design_jobs')).rows.length,0);
+ await pg.exec("UPDATE database_jobs SET dashboard_status='AWAITING APPROVAL' WHERE source_order_id=50622");
+ await assert.rejects(()=>pipeline.activateForSampling(pool,50622,async client=>{
+   await client.query("UPDATE database_jobs SET dashboard_status='TO SAMPLE' WHERE source_order_id=50622");
+   throw new Error('Status save failed');
+ }),/Status save failed/);
+ assert.equal((await pg.query('SELECT * FROM madeblunt_design_jobs')).rows.length,0);
+ assert.equal((await pg.query('SELECT dashboard_status FROM database_jobs WHERE source_order_id=50622')).rows[0].dashboard_status,'AWAITING APPROVAL');
+ await pipeline.activateForSampling(pool,50622,async client=>{
+   await client.query("UPDATE database_jobs SET dashboard_status='TO SAMPLE' WHERE source_order_id=50622");
+ });
+ const id=(await pipeline.status(pool,50622)).id;assert.equal(await pipeline.enroll(pool,job),id);
+ await pipeline.activateForSampling(pool,50622,async()=>{});
+ assert.equal((await pg.query('SELECT * FROM madeblunt_design_jobs')).rows.length,1);
  const service=proofs.createService(pool);assert.equal((await service.list()).designs.length,0);
  let task=await service.claim('test',5);assert.equal(task.operation,'allocate');
  const reserved=await service.report(id,task.claimToken,{status:'reserve',proposedNumber:'29200'});
