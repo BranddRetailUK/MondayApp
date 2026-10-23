@@ -1219,3 +1219,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Clean images improve placement geometry only: physical garment scale remains estimated unless supplied measurements/calibration establish it. Print sizes are not changed. Tests cover YK102 100 × 24 mm placement, oversize rejection, tape exclusion, distorted/unclear image rejection, both suppliers, cache reuse, failed replacements and manual/calibrated image preservation.
 
 - Linked-proof action visibility (2026-10-23): proof history omits the Link to job button entirely when a source order, linked job or linked order exists. Unlinked proofs retain the action and its existing busy/save restrictions.
+
+- Proof history alignment (2026-10-23): desktop list rows reserve a consistent 340px action column, keeping Title and Date created aligned regardless of Link to job visibility. Tablet/mobile stacking and grid cards retain their existing responsive layout.
