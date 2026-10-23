@@ -250,7 +250,15 @@ body.proof-preview .proof-preview-badge{display:block}
 .proof-regeneration-warning .proof-regeneration-confirm { background: #f5cc79; border-color: #f5cc79; color: #172129; }
 .proof-regeneration-warning button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 
-.proof-runout-upload{border:1px dashed #8bc5ff;border-radius:8px;padding:14px;margin:12px 0;background:rgba(139,197,255,.06)}.proof-runout-upload p{font-size:12px;line-height:1.5;margin:8px 0 0}.proof-runout-upload input{max-width:100%}
+.proof-dst-artwork{display:block}
+.proof-dst-media{display:grid;grid-template-columns:repeat(2,minmax(0,160px));gap:14px;align-items:start}
+.proof-dst-media .proof-artwork-thumb{width:100%;height:auto;aspect-ratio:1;position:relative}
+.proof-dst-media .proof-artwork-thumb img{position:absolute;inset:0;width:100%;height:100%}
+.proof-runout-upload{min-width:0;aspect-ratio:1}
+.proof-runout-dropzone{width:100%;height:100%;min-height:0;aspect-ratio:1;padding:12px;text-align:center;box-sizing:border-box}
+.proof-runout-dropzone:focus-visible{outline:2px solid #70b8f8;outline-offset:3px}
+.proof-runout-status{font-size:12px;line-height:1.5;margin:0;overflow-wrap:anywhere}
+.proof-runout-status:empty{display:none}
 .proof-thread-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-top:14px}.proof-thread-cell{min-width:0;display:flex;flex-direction:column;gap:6px;text-align:center}.proof-thread-cell input[type=color]{display:block;width:100%;height:auto;min-height:0;aspect-ratio:1;box-sizing:border-box;padding:3px;cursor:pointer;border-radius:6px}.proof-thread-cell input[type=color]::-webkit-color-swatch-wrapper{padding:0}.proof-thread-cell input[type=color]::-webkit-color-swatch{border:0;border-radius:3px}.proof-thread-cell input[type=color]::-moz-color-swatch{border:0;border-radius:3px}.proof-thread-cell label{font-size:12px;font-weight:700;color:#a1d5ff}.proof-thread-cell small{font-size:11px;line-height:1.4;overflow-wrap:anywhere}.proof-thread-cell .proof-secondary-button{font-size:11px;min-height:30px;padding:5px 3px;margin-top:auto}@media(max-width:600px){.proof-thread-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 
 .proof-history-info .proof-history-created-time{color:inherit;font:inherit}

@@ -317,10 +317,11 @@ test('embroidery originals and thread palette survive proof source reopening',as
   await service.reserve(id,'Embroidery','Sleeve');
   const source={request:'Right sleeve embroidery',instructions:''};
   const files=[{originalname:'logo.dst',mimetype:'application/octet-stream',buffer:Buffer.from('original DST')}];
-  const details=[{id:'emb',originalName:'logo.dst',threadColours:['#ffffff','#c02030']}];
+  const details=[{id:'emb',originalName:'logo.dst',threadColours:['#ffffff','#c02030'],threadCodes:['1001','1147']}];
   await service.saveSource(id,source,files,details);
   const saved=await service.source(id);
   assert.deepEqual(saved.artworks[0].threadColours,details[0].threadColours);
+  assert.deepEqual(saved.artworks[0].threadCodes,details[0].threadCodes);
   assert.equal(Buffer.from(saved.artworks[0].data,'base64').toString(),'original DST');
   await assert.rejects(()=>service.saveSource(id,source,files,[{...details[0],threadColours:['red']}]),/thread colours/);
  }finally{await db.close();}
