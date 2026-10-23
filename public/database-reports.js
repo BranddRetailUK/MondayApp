@@ -132,7 +132,7 @@
     if (!canGroup) weekly = false;
     $('db-report-group').value = weekly ? 'week' : 'default';
     $('db-report-order-panel').hidden = false;
-    $('db-report-overview').innerHTML=[['Orders booked',report.summary,'By order date'],['Invoiced sales',report.invoiced?.summary,'By invoice date'],['Uninvoiced orders',report.uninvoiced?.summary,'Booked in this period; not yet invoiced']].map(([title,s,note])=>`<section><span>${title}</span><strong>${money(s?.netSales)}</strong><p>${numeric(s?.orderCount)} orders · Ex VAT</p><small>${note}</small></section>`).join('')+(report.missingInvoiceDates?`<p class="db-report-warning">${numeric(report.missingInvoiceDates)} invoices have no invoice date and are excluded from the invoice line.</p>`:'');
+    $('db-report-overview').innerHTML=[['Orders booked',report.summary,'By order date'],['Invoiced sales',report.invoiced?.summary,'By invoice date'],['Uninvoiced orders',report.uninvoiced?.summary,'Booked in this period; not yet invoiced']].map(([title,s,note])=>`<section><span>${title}</span><strong>${money(s?.netSales)}</strong><p>${numeric(s?.orderCount)} orders · Ex VAT</p><small>${note}</small></section>`).join('');
     renderHealth(); renderContributions(); renderGraph(); renderOrders();
   }
   const detail = (label, value) => `<div class="db-report-health-row"><span>${label}</span><strong>${value}</strong></div>`;
