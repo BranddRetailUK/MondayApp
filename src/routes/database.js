@@ -608,7 +608,11 @@ router.get('/api/database/reports', async (req, res) => {
   const rangeKey = period.range;
 
   try {
-    const report = await pool.query(
+    const reportFor = (basis) => {
+      const salesDate = basis === 'invoiced' ? 'j.invoice_date' : 'COALESCE(j.order_date, j.created_at_source)';
+      const statusFilter = basis === 'invoiced' ? 'AND j.invoice_no IS NOT NULL'
+        : basis === 'uninvoiced' ? 'AND j.invoice_no IS NULL AND j.closed_without_invoice IS NOT TRUE' : '';
+      return pool.query(
       `WITH bounds AS (
          SELECT (${period.startSql})::timestamp AS start_at,
                 (${period.endSql})::timestamp AS end_at
@@ -620,11 +624,12 @@ router.get('/api/database/reports', async (req, res) => {
                 j.job_title,
                 j.order_type,
                 j.order_type_abbr,
-                COALESCE(j.order_date, j.created_at_source) AS sales_at
+                ${salesDate} AS sales_at
          FROM database_jobs j
          CROSS JOIN bounds b
-         WHERE COALESCE(j.order_date, j.created_at_source) >= b.start_at
-           AND COALESCE(j.order_date, j.created_at_source) < b.end_at
+         WHERE ${salesDate} >= b.start_at
+           AND ${salesDate} < b.end_at
+           ${statusFilter}
        ),
        line_values AS (
          SELECT pj.source_order_id,
@@ -754,6 +759,7 @@ router.get('/api/database/reports', async (req, res) => {
          SELECT DISTINCT EXTRACT(YEAR FROM COALESCE(order_date, created_at_source))::int AS report_year
          FROM database_jobs
          WHERE COALESCE(order_date, created_at_source) IS NOT NULL
+         UNION SELECT DISTINCT EXTRACT(YEAR FROM invoice_date)::int FROM database_jobs WHERE invoice_no IS NOT NULL AND invoice_date IS NOT NULL
        )
        SELECT JSON_BUILD_OBJECT(
                 'orderCount', sr.order_count,
@@ -833,7 +839,14 @@ router.get('/api/database/reports', async (req, res) => {
       []
     );
 
+    };
+    const [report, invoicedReport, uninvoicedReport, missingDates] = await Promise.all([
+      reportFor('orders'), reportFor('invoiced'), reportFor('uninvoiced'),
+      pool.query('SELECT COUNT(*)::int AS count FROM database_jobs WHERE invoice_no IS NOT NULL AND invoice_date IS NULL')
+    ]);
     const row = report.rows[0] || {};
+    const invoiced = invoicedReport.rows[0] || {};
+    const uninvoiced = uninvoicedReport.rows[0] || {};
     res.json({
       range: rangeKey,
       period: period.periodValue || null,
@@ -842,6 +855,9 @@ router.get('/api/database/reports', async (req, res) => {
       grain: period.grain,
       periodStart: row.period_start || null,
       periodEnd: row.period_end || null,
+      invoiced: {summary: invoiced.summary || emptyDatabaseReportSummary(), series: invoiced.series || [], orders: invoiced.orders || [], basis: 'Invoice date; numbered invoices only; proformas excluded'},
+      uninvoiced: {summary: uninvoiced.summary || emptyDatabaseReportSummary(), series: uninvoiced.series || [], orders: uninvoiced.orders || [], basis: 'Orders booked in this period that currently have no invoice; closed-without-invoice jobs excluded'},
+      missingInvoiceDates: missingDates.rows[0]?.count || 0,
       summary: row.summary || emptyDatabaseReportSummary(),
       series: row.series || [],
       topCustomers: row.top_customers || [],

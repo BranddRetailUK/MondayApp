@@ -45,7 +45,7 @@ test('reports endpoint keeps the financial basis and returns order drilldown fie
   const poolPath=require.resolve('../src/db/pool'),routePath=require.resolve('../src/routes/database');
   const oldPool=require.cache[poolPath],oldRoute=require.cache[routePath];
   let query;
-  require.cache[poolPath]={id:poolPath,filename:poolPath,loaded:true,exports:{query:async sql=>{query=sql;return {rows:[{orders:[order()],summary:{orderCount:1},series:[],period_start:'2026-09-01',period_end:'2026-09-30'}]};}}};
+  require.cache[poolPath]={id:poolPath,filename:poolPath,loaded:true,exports:{query:async sql=>{if(sql.includes('WITH bounds'))query=sql;return {rows:[{orders:[order()],summary:{orderCount:1},series:[],period_start:'2026-09-01',period_end:'2026-09-30'}]};}}};
   delete require.cache[routePath];
   try {
     const router=require('../src/routes/database');
@@ -62,4 +62,24 @@ test('reports endpoint keeps the financial basis and returns order drilldown fie
     if(oldPool)require.cache[poolPath]=oldPool;else delete require.cache[poolPath];
     if(oldRoute)require.cache[routePath]=oldRoute;else delete require.cache[routePath];
   }
+});
+
+test('invoice reporting uses invoice month, excludes proformas and separates uninvoiced orders',async()=>{
+ const {PGlite}=require('@electric-sql/pglite');const db=new PGlite();
+ const poolPath=require.resolve('../src/db/pool'),routePath=require.resolve('../src/routes/database');const oldPool=require.cache[poolPath],oldRoute=require.cache[routePath];
+ try{
+  await db.exec(`CREATE TABLE database_jobs(source_order_id int,order_no int,customer_name text,job_title text,order_type text,order_type_abbr text,order_date timestamp,created_at_source timestamp,invoice_date timestamp,invoice_no int,closed_without_invoice boolean);
+  CREATE TABLE database_job_line_items(source_order_id int,quantity numeric,unit_price numeric,unit_cost numeric,vat_rate numeric,size text,line_description text,style_name text,product_type text,style_code text,alt_style_code text,is_internal boolean);
+  INSERT INTO database_jobs VALUES
+  (1,1,'A','Earlier order','Printing','P','2026-08-15',NULL,'2026-09-10',101,false),
+  (2,2,'B','Later invoice','Printing','P','2026-09-15',NULL,'2026-10-10',102,false),
+  (3,3,'C','Uninvoiced','Printing','P','2026-09-16',NULL,NULL,NULL,false),
+  (4,4,'D','Missing invoice date','Printing','P','2026-08-16',NULL,NULL,103,false);
+  INSERT INTO database_job_line_items(source_order_id,quantity,unit_price,unit_cost,vat_rate,is_internal) VALUES(1,1,100,50,20,false),(2,1,200,100,20,false),(3,1,300,150,20,false),(4,1,400,200,20,false),(1,1,999,0,20,true);`);
+  require.cache[poolPath]={id:poolPath,filename:poolPath,loaded:true,exports:db};delete require.cache[routePath];
+  const router=require('../src/routes/database');const handler=router.stack.find(l=>l.route?.path==='/api/database/reports').route.stack[0].handle;
+  let body,status=200;await handler({query:{range:'custom-month',period:'2026-09'}},{status(n){status=n;return this;},json(value){body=value;}});
+  assert.equal(status,200);assert.equal(body.summary.netSales,500);assert.equal(body.invoiced.summary.netSales,100);assert.equal(body.invoiced.summary.vat,20);assert.equal(body.uninvoiced.summary.netSales,300);assert.equal(body.missingInvoiceDates,1);
+  assert.equal(body.invoiced.orders[0].sourceOrderId,1);assert.equal(body.invoiced.orders[0].salesAt,'2026-09-10T00:00:00');assert.equal(body.invoiced.series.reduce((n,p)=>n+p.netSales,0),100);
+ }finally{if(oldPool)require.cache[poolPath]=oldPool;else delete require.cache[poolPath];if(oldRoute)require.cache[routePath]=oldRoute;else delete require.cache[routePath];await db.close();}
 });

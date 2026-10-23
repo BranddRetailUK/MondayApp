@@ -73,18 +73,22 @@
     if (mounted) return;
     const chartPanel = document.querySelector('#db-reports-view .db-report-chart-panel');
     if (!chartPanel) return;
-    chartPanel.insertAdjacentHTML('beforebegin', `<div class="db-report-explore"><span>Hover or use arrow keys for details · Click a date to show its orders</span><label>Graph grouping <select id="db-report-group"><option value="default">By period</option><option value="week">Calendar week</option></select></label></div>`);
+    chartPanel.insertAdjacentHTML('beforebegin', '<div id="db-report-overview" class="db-report-overview"></div>');
+    chartPanel.insertAdjacentHTML('beforebegin', `<div class="db-report-explore"><span>Choose a date to explore orders</span><label>Graph grouping <select id="db-report-group"><option value="default">By period</option><option value="week">Calendar week</option></select></label></div>`);
     $('db-reports-chart-wrap').insertAdjacentHTML('beforeend', '<div id="db-report-hover" role="status" class="db-report-hover" hidden></div>');
-    $('db-reports-kpis').insertAdjacentHTML('afterend', `<div id="db-report-health" class="db-report-health"></div>`);
+    $('db-reports-kpis').insertAdjacentHTML('beforebegin','<h3 class="db-report-breakdown-title">Orders booked breakdown <span>Choose a chart metric</span></h3>');
+    $('db-reports-kpis').insertAdjacentHTML('afterend', `<details class="db-report-detail-toggle"><summary>Costs, margins and data quality</summary><div id="db-report-health" class="db-report-health"></div></details>`);
     document.querySelector('#db-reports-view .db-reports-actions').insertAdjacentHTML('beforebegin', `<section id="db-report-order-panel" class="db-report-panel db-report-order-panel">
       <div class="db-report-order-heading"><strong id="db-report-order-heading">All customer orders in selected period</strong><button id="db-report-clear-date" class="db-toolbar-button" type="button" hidden>Clear date selection</button></div>
       <p id="db-report-order-basis"></p>
-      <div class="db-report-order-filters"><label>Search <input id="db-report-order-search" type="search" placeholder="Customer, order or job"></label><label>Type <select id="db-report-order-type"><option value="">All types</option></select></label><label>Show <select id="db-report-order-filter"><option value="all">All orders</option><option value="low">Margin below 25%</option><option value="missing">Missing costs / prices</option></select></label><button id="db-report-csv" class="db-toolbar-button" type="button">Export CSV</button></div>
+      <div class="db-report-order-filters"><label>Basis <select id="db-report-basis"><option value="orders">Orders booked</option><option value="invoiced">Invoiced sales</option><option value="uninvoiced">Uninvoiced orders</option></select></label><label>Search <input id="db-report-order-search" type="search" placeholder="Customer, order or job"></label><label>Type <select id="db-report-order-type"><option value="">All types</option></select></label><label>Show <select id="db-report-order-filter"><option value="all">All orders</option><option value="low">Margin below 25%</option><option value="missing">Missing costs / prices</option></select></label><button id="db-report-csv" class="db-toolbar-button" type="button">Export CSV</button></div>
       <div class="db-report-order-scroll"><table class="db-report-mini-table"><thead><tr><th>Order / date</th><th>Customer / job</th><th>Gross sales</th><th>Net sales</th><th>Known cost</th><th>Gross profit</th><th>Margin</th></tr></thead><tbody id="db-report-orders"></tbody></table></div>
       <div id="db-report-order-totals" role="status"></div></section>`);
+    const insights=document.querySelector('#db-reports-view .db-report-insights');
+    if(insights){const details=document.createElement('details');details.className='db-report-detail-toggle';details.innerHTML='<summary>Customers and order types</summary>';insights.before(details);details.append(insights);}
     $('db-report-group').addEventListener('change', () => { weekly = $('db-report-group').value === 'week'; selected = null; renderGraph(); renderOrders(); });
     $('db-report-clear-date').addEventListener('click', () => { selected = null; renderOrders(); });
-    for (const id of ['db-report-order-type', 'db-report-order-filter']) $(id).addEventListener('change', renderOrders);
+    for (const id of ['db-report-order-type', 'db-report-order-filter', 'db-report-basis']) $(id).addEventListener('change', renderOrders);
     $('db-report-order-search').addEventListener('input', renderOrders);
     $('db-report-csv').addEventListener('click', () => {
       const url = URL.createObjectURL(new Blob([csv(visibleOrders())], { type: 'text/csv;charset=utf-8' }));
@@ -104,7 +108,7 @@
   function clear() {
     hideHover(); data = null; selected = null;
     if (!mounted) return;
-    $('db-report-health').replaceChildren();
+    $('db-report-health').replaceChildren();$('db-report-overview').replaceChildren();
     $('db-report-orders').replaceChildren();
     $('db-report-order-totals').textContent = '';
     $('db-report-order-panel').hidden = true;
@@ -119,7 +123,7 @@
     }
     lastSelection = selection;
     const priorType = $('db-report-order-type').value;
-    $('db-report-order-type').innerHTML = '<option value="">All types</option>' + [...new Set((data.orders || []).map(o => o.orderType || 'Other'))].sort().map(type => `<option>${escape(type)}</option>`).join('');
+    $('db-report-order-type').innerHTML = '<option value="">All types</option>' + [...new Set([...(data.orders || []),...(data.invoiced?.orders || [])].map(o => o.orderType || 'Other'))].sort().map(type => `<option>${escape(type)}</option>`).join('');
     $('db-report-order-type').value = priorType;
     if ($('db-report-order-type').selectedIndex < 0) $('db-report-order-type').value = '';
     const canGroup = data.grain === 'day' && !comparison;
@@ -128,6 +132,7 @@
     if (!canGroup) weekly = false;
     $('db-report-group').value = weekly ? 'week' : 'default';
     $('db-report-order-panel').hidden = false;
+    $('db-report-overview').innerHTML=[['Orders booked',report.summary,'By order date'],['Invoiced sales',report.invoiced?.summary,'By invoice date'],['Uninvoiced orders',report.uninvoiced?.summary,'Booked in this period; not yet invoiced']].map(([title,s,note])=>`<section><span>${title}</span><strong>${money(s?.netSales)}</strong><p>${numeric(s?.orderCount)} orders · Ex VAT</p><small>${note}</small></section>`).join('')+(report.missingInvoiceDates?`<p class="db-report-warning">${numeric(report.missingInvoiceDates)} invoices have no invoice date and are excluded from the invoice line.</p>`:'');
     renderHealth(); renderContributions(); renderGraph(); renderOrders();
   }
   const detail = (label, value) => `<div class="db-report-health-row"><span>${label}</span><strong>${value}</strong></div>`;
@@ -136,7 +141,7 @@
     const provisional = missing || unpriced;
     const low = filterOrders(data.orders || [], { mode: 'low' }).length;
     const p = comparison?.secondary?.summary;
-    $('db-report-health').innerHTML = `<section class="db-report-panel"><h3>Where your sales go</h3>${detail('Net sales',money(s.netSales))}${detail('− Recorded goods costs',money(s.costOfGoods))}${detail('= Gross profit'+(provisional?' *':''),money(s.grossProfit))}<p>Excludes VAT. Gross profit is before labour, rent and other overheads.${provisional?' * Provisional: costs or prices are missing.':''}</p></section>
+    $('db-report-health').innerHTML = `<section class="db-report-panel"><h3>Where your sales go</h3>${detail('Net sales',money(s.netSales))}${detail('− Recorded goods costs',money(s.costOfGoods))}${detail('= Gross profit'+(provisional?' *':''),money(s.grossProfit))}<p>Excludes VAT. Gross profit is before labour, rent and overheads. Invoice totals use current job lines, not frozen invoice snapshots. Proformas are excluded.${provisional?' * Provisional: costs or prices are missing.':''}</p></section>
       <section class="db-report-panel"><h3>Trading health</h3>${detail('Gross margin'+(provisional?' *':''),marginText(s))}${detail('Average order (net)',money(numeric(s.orderCount)?numeric(s.netSales)/numeric(s.orderCount):0))}${detail('Units sold',numeric(s.unitsSold).toLocaleString('en-GB'))}${detail('Orders below 25% margin',low)}<p>${p&&margin(s)!==null&&margin(p)!==null?`Margin change: ${(margin(s)-margin(p)).toFixed(1)} percentage points. `:''}Low-margin count excludes missing costs/prices.</p></section>
       <section class="db-report-panel"><h3>Cost coverage</h3><strong class="db-report-coverage-number">${lines?percent((lines-missing)/lines*100):'—'}</strong><p>invoiceable lines with recorded costs</p>${detail('Lines missing costs',missing)}${detail('Lines missing prices',unpriced)}<button id="db-report-review-costs" type="button" class="db-toolbar-button">Review missing costs / prices</button><p>${provisional?'Incomplete costs or prices can distort profit and margin.':'No missing cost or price values in this period.'}</p></section>`;
     $('db-report-review-costs').addEventListener('click', () => { selected=null; $('db-report-order-search').value=''; $('db-report-order-type').value=''; $('db-report-order-filter').value='missing'; renderOrders(); $('db-report-order-filter').focus(); });
@@ -165,7 +170,7 @@
   function renderGraph() {
     hideHover();
     series = weekly ? groupWeeks(data.series || []) : (data.series || []);
-    draw(series, weekly ? 'week' : data.grain);
+    draw(series, weekly ? 'week' : data.grain, weekly ? groupWeeks(data.invoiced?.series || []) : data.invoiced?.series || []);
     const svg = $('db-reports-chart'), other = comparison?.secondary?.series || [], count=Math.max(series.length,other.length);
     if (!count) return;
     if (weekly) {
@@ -194,11 +199,11 @@
     });
   }
   function showHover(index,x) {
-    const point=series[index], other=comparison?.secondary?.series?.[index];
+    const point=series[index], other=comparison?.secondary?.series?.[index] || (weekly?groupWeeks(data.invoiced?.series||[]):data.invoiced?.series||[])[index];
     const info = (p,title) => !p?`<h4>${escape(title)}</h4><p>No matching date</p>`:`<h4>${escape(title)} · ${escape(label(p))}</h4>${detail('Net sales',money(p.netSales))}${detail('VAT',money(p.vat))}${detail('Gross sales',money(p.grossSales))}${detail('Known goods costs',money(p.costOfGoods))}${detail('Gross profit',money(p.grossProfit))}${detail('Margin',marginText(p))}${detail('Orders / units',`${numeric(p.orderCount)} / ${numeric(p.unitsSold)}`)}${detail('Average order (net)',money(numeric(p.orderCount)?numeric(p.netSales)/numeric(p.orderCount):0))}${numeric(p.missingCostLines)||numeric(p.missingPriceLines)?'<p class="db-report-warning">Provisional: missing costs or prices.</p>':''}`;
     const tip=$('db-report-hover');
-    tip.innerHTML=`<div class="db-report-hover-columns"><section>${info(point,comparison?'Primary period':'Sales breakdown')}</section>${comparison?`<section>${info(other,'Compared period')}</section>`:''}</div><p>Click to show primary-period orders below.</p>`;
-    tip.classList.toggle('is-comparison',Boolean(comparison));tip.hidden=false;
+    tip.innerHTML=`<div class="db-report-hover-columns"><section>${info(point,comparison?'Primary period':'Orders booked')}</section>${other?`<section>${info(other,comparison?'Compared period':'Invoiced sales')}</section>`:''}</div><p>Click to show primary-period orders below.</p>`;
+    tip.classList.toggle('is-comparison',Boolean(other));tip.hidden=false;
     // Convert the SVG coordinate to the wrapper's unscaled CSS coordinate system.
     const svg=$('db-reports-chart'),wrap=$('db-reports-chart-wrap'),rect=wrap.getBoundingClientRect();
     const p=svg.createSVGPoint();p.x=x;p.y=14;const screen=p.matrixTransform(svg.getScreenCTM());
@@ -207,19 +212,20 @@
     tip.style.top='10px';
     $('db-report-crosshair').setAttribute('x1',x);$('db-report-crosshair').setAttribute('x2',x);$('db-report-crosshair').setAttribute('visibility','visible');
   }
-  function visibleOrders() { return filterOrders(data?.orders || [],{bucket:selected,grain:data?.grain,type:$('db-report-order-type').value,query:$('db-report-order-search').value,mode:$('db-report-order-filter').value}).sort((a,b)=>String(b.salesAt).localeCompare(String(a.salesAt))||numeric(b.orderNo)-numeric(a.orderNo)); }
+  function activeOrders(){return $('db-report-basis').value==='orders'?(data?.orders||[]):data?.[$('db-report-basis').value]?.orders||[];}
+  function visibleOrders() { return filterOrders(activeOrders(),{bucket:selected,grain:data?.grain,type:$('db-report-order-type').value,query:$('db-report-order-search').value,mode:$('db-report-order-filter').value}).sort((a,b)=>String(b.salesAt).localeCompare(String(a.salesAt))||numeric(b.orderNo)-numeric(a.orderNo)); }
   function renderOrders() {
     if (!data) return;
     const orders=visibleOrders(),s=totals(orders);
-    $('db-report-order-heading').textContent=selected?`Customer orders · ${label(selected)}`:'All customer orders in selected period';
-    $('db-report-order-basis').textContent=`${comparison?'Primary period: ':''}${data.rangeLabel || ''} · ${data.periodStart} – ${data.periodEnd} · Order date · Invoiceable lines · Internal lines excluded`;
+    $('db-report-order-heading').textContent=`${$('db-report-basis').selectedOptions[0].textContent}${selected?' · '+label(selected):' in selected period'}`;
+    $('db-report-order-basis').textContent=`${comparison?'Primary period: ':''}${data.rangeLabel || ''} · ${data.periodStart} – ${data.periodEnd} · ${$('db-report-basis').value==='invoiced'?'Invoice date':'Order date'} · Internal lines excluded`;
     $('db-report-clear-date').hidden=!selected;
     const cell=(name,value)=>`<td data-label="${name}">${value}</td>`;
     $('db-report-orders').innerHTML=orders.map(o=>{
       const incomplete=numeric(o.missingCostLines)||numeric(o.missingPriceLines);
       return '<tr>'+cell('Order / date',`<strong>#${escape(o.orderNo || o.sourceOrderId)}</strong><small>${escape(o.salesAt?.slice(0,10) || '—')}</small>`)+cell('Customer / job',`${escape(o.customerName)}<small>${escape(o.jobTitle)} · ${escape(o.orderType)}</small>`)+cell('Gross sales',money(o.grossSales))+cell('Net sales',money(o.netSales))+cell('Known cost',`${money(o.costOfGoods)}${numeric(o.missingCostLines)?'<small class="db-report-warning">Missing costs</small>':''}${numeric(o.missingPriceLines)?'<small class="db-report-warning">Missing prices</small>':''}`)+cell('Gross profit',`${money(o.grossProfit)}${incomplete?' *':''}`)+cell('Margin',incomplete?'Provisional':`<span class="${margin(o)!==null&&margin(o)<25?'db-report-warning':''}">${marginText(o)}</span>`)+'</tr>';
     }).join('')||'<tr><td colspan="7">No orders match these filters.</td></tr>';
-    $('db-report-order-totals').textContent=`${orders.length} of ${(data.orders||[]).length} period orders · Net sales ${money(s.netSales)} · Known costs ${money(s.costOfGoods)} · Gross profit ${money(s.grossProfit)}${s.missingCostLines||s.missingPriceLines?' · * Provisional: costs or prices are missing.':''}`;
+    $('db-report-order-totals').textContent=`${orders.length} of ${activeOrders().length} period orders · Net sales ${money(s.netSales)} · Known costs ${money(s.costOfGoods)} · Gross profit ${money(s.grossProfit)}${s.missingCostLines||s.missingPriceLines?' · * Provisional: costs or prices are missing.':''}`;
   }
   root.DatabaseReports = { render, clear };
 })(typeof window === 'undefined' ? globalThis : window);

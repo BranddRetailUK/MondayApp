@@ -64,3 +64,30 @@
 #db-reports-view .db-report-insights .db-report-mini-table th:nth-child(2){width:88px}
 #db-reports-view .db-report-insights .db-report-mini-table th:nth-child(3){width:54px}
 #db-reports-view .db-report-insights .db-report-mini-table td:first-child{white-space:normal;overflow-wrap:anywhere}
+
+/* Readable overview first; supporting accounting detail is expandable. */
+#db-reports-view .db-report-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:16px 0}
+#db-reports-view .db-report-overview section{padding:18px;background:#ffffef;border:1px solid #b7c6cc;border-radius:6px}
+#db-reports-view .db-report-overview span{display:block;font-size:15px;font-weight:bold}
+#db-reports-view .db-report-overview strong{display:block;font-size:28px;color:#383399;margin:10px 0}
+#db-reports-view .db-report-overview p{font-size:14px;margin:6px 0}
+#db-reports-view .db-report-overview small{font-size:13px;color:#505b60}
+#db-reports-view .db-report-detail-toggle{margin:18px 0;font-size:14px}
+#db-reports-view .db-report-detail-toggle summary{cursor:pointer;padding:12px;background:#e0e8eb;font-weight:bold;border-radius:4px}
+#db-reports-view .db-report-kpi small:not(.db-report-kpi-comparison){display:none}
+#db-reports-view .db-report-kpi span{font-size:13px}
+#db-reports-view .db-report-kpi strong{font-size:21px}
+#db-reports-view .db-report-explore,#db-reports-view .db-report-order-filters,#db-reports-view .db-report-health-row,#db-reports-view .db-report-health p,#db-report-order-basis,#db-report-order-totals{font-size:13px;line-height:1.5}
+#db-reports-view .db-report-order-filters{flex-wrap:wrap;gap:12px}
+#db-reports-view select,#db-reports-view input{font-size:13px;min-height:34px}
+#db-reports-view .db-report-order-scroll .db-report-mini-table td{font-size:13px;padding:10px}
+#db-reports-view .db-report-order-scroll small{font-size:12px}
+#db-reports-view .db-report-chart-line.is-invoiced{stroke:#c65e12;stroke-dasharray:7 4;fill:none}
+#db-reports-view .db-report-chart-legend i.is-invoiced{background:#c65e12}
+@media(max-width:720px){#db-reports-view .db-report-overview{grid-template-columns:1fr}}
+#db-reports-view .db-report-breakdown-title{font-size:15px;margin:18px 0 8px}
+#db-reports-view .db-report-breakdown-title span{font-size:13px;font-weight:normal;margin-left:12px;color:#53616b}
+#tab-database #db-reports-view .db-report-chart-line.is-invoiced{stroke:#c65e12}
+#tab-database #db-reports-view .db-report-chart-legend i.is-invoiced{background:#c65e12}
+#tab-database #db-reports-view .db-report-chart-legend{font-size:13px;gap:14px}
+#tab-database #db-reports-view #db-reports-chart-subtitle{font-size:12px}

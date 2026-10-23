@@ -51,7 +51,7 @@ test('pending allocation never consumes a second number after an uncertain folde
 test('durable proof jobs allocate once, fence leases, reject stale saves and reuse a number for regeneration',async()=>{
  const db=new PGlite(),pool={query:(...args)=>db.query(...args),connect:async()=>({query:(...args)=>db.query(...args),release(){}})};
  try{
-  await ensureProofGeneratorTables(db);await ensureProofGeneratorTables(db);const service=createService(pool),id=randomUUID();
+  await ensureProofGeneratorTables(db);await ensureProofGeneratorTables(db);await db.exec('CREATE TABLE IF NOT EXISTS database_jobs(source_order_id INTEGER PRIMARY KEY,is_complete BOOLEAN,dashboard_status TEXT)');const service=createService(pool),id=randomUUID();
   await service.reserve(id,'Customer','Title');await service.reserve(id,'Duplicate','Title');
   assert.equal((await db.query('SELECT COUNT(*)::int n FROM proof_design_jobs')).rows[0].n,1);
   const first=await service.claim('production-pc');assert.equal(first.operation,'allocate');assert.equal(await service.claim('other'),null);
@@ -193,7 +193,7 @@ test('original artwork names retain Unicode and reject Windows-invalid names rat
 test('proof history is newest-first, paginated, private of upload data and retains thumbnails after saving',async()=>{
  const db=new PGlite(),pool={query:(...args)=>db.query(...args),connect:async()=>({query:(...args)=>db.query(...args),release(){}})};
  try{
-  await ensureProofGeneratorTables(db);await ensureProofGeneratorTables(db);const service=createService(pool),id=randomUUID();
+  await ensureProofGeneratorTables(db);await ensureProofGeneratorTables(db);await db.exec('CREATE TABLE IF NOT EXISTS database_jobs(source_order_id INTEGER PRIMARY KEY,is_complete BOOLEAN,dashboard_status TEXT)');const service=createService(pool),id=randomUUID();
   await service.reserve(id,'Customer','Title',true);
   assert.equal(await service.claim('worker'),null,'Pending generation does not allocate an unnamed folder before parsing');
   await service.progress(id,{state:'generating',message:'Reading brief',reference:'CUSTOM-REF'});
@@ -239,7 +239,7 @@ test('retained garment images survive a new service instance without supplier ac
 test('archived test proofs are hidden and unclaimable while their design numbers stay reserved',async()=>{
  const db=new PGlite(),pool={query:(...a)=>db.query(...a),connect:async()=>({query:(...a)=>db.query(...a),release(){}})};
  try{
-  await ensureProofGeneratorTables(db);const service=createService(pool),id=randomUUID();await service.reserve(id,'Test');
+  await ensureProofGeneratorTables(db);await db.exec('CREATE TABLE database_jobs(source_order_id INTEGER PRIMARY KEY,is_complete BOOLEAN,dashboard_status TEXT)');const service=createService(pool),id=randomUUID();await service.reserve(id,'Test');
   await db.query("UPDATE proof_design_jobs SET status='archived',design_number=29132 WHERE id=$1",[id]);
   assert.deepEqual((await service.list()).designs,[]);await assert.rejects(()=>service.get(id),/not found/);
   await assert.rejects(()=>service.source(id),/not found/);assert.equal(await service.claim('worker'),null);
@@ -364,5 +364,20 @@ test('queued proof is ready and durable before worker saving, including failure 
   const save=await restarted.claim('pc');await restarted.report(id,save.claimToken,{status:'error',message:'Temporary disk failure'});assert.equal((await restarted.get(id)).hasPdf,true);assert.deepEqual(Buffer.from(await restarted.document(id)),bytes);
   await restarted.retry(id);const retry=await restarted.claim('pc');assert.equal(retry.pdf,save.pdf);assert.deepEqual(retry.artworks,save.artworks);
   await restarted.report(id,retry.claimToken,{status:'saved',hash:retry.hash,revision:retry.revision});assert.equal((await restarted.get(id)).status,'saved');assert.deepEqual(Buffer.from(await restarted.document(id)),bytes);
+ }finally{await db.close();}
+});
+
+test('completed linked jobs leave live history without deleting proofs; active repeat links remain visible',async()=>{
+ const db=new PGlite();try{
+  await ensureProofGeneratorTables(db);await db.exec('CREATE TABLE database_jobs(source_order_id INTEGER PRIMARY KEY,is_complete BOOLEAN,dashboard_status TEXT)');
+  const service=createService(db),id=randomUUID(),standalone=randomUUID();await service.reserve(id);await service.reserve(standalone);
+  await db.exec("INSERT INTO database_jobs VALUES(1,false,'OFFICE'),(2,false,'OFFICE')");
+  await db.query('INSERT INTO proof_job_links(source_order_id,proof_id) VALUES(1,$1)',[id]);
+  assert.equal((await service.list()).designs.length,2);
+  await db.exec("UPDATE database_jobs SET dashboard_status='COMPLETED' WHERE source_order_id=1");
+  assert.deepEqual((await service.list()).designs.map(d=>d.id),[standalone]);assert.equal((await service.get(id)).id,id);
+  await db.query('INSERT INTO proof_job_links(source_order_id,proof_id) VALUES(2,$1)',[id]);assert.equal((await service.list()).designs.length,2);
+  await db.exec('UPDATE database_jobs SET is_complete=true WHERE source_order_id=2');assert.equal((await service.list()).designs.length,1);
+  await db.exec("UPDATE database_jobs SET dashboard_status='OFFICE' WHERE source_order_id=1");assert.equal((await service.list()).designs.length,2);
  }finally{await db.close();}
 });

@@ -12,7 +12,12 @@ function createService(pool){
   const query=(text,values=[])=>pool.query(text,values);
   async function get(id){if(!UUID.test(id||''))throw new Error('Invalid proof ID.');const r=await query(`SELECT ${columns} FROM proof_design_jobs WHERE id=$1 AND status<>'archived' AND pipeline IS NULL`,[id]);if(!r.rows[0])throw new Error('Proof design not found.');return publicJob(r.rows[0]);}
   async function list(offset=0,unlinked=false,q=''){
-    const result=await query(`SELECT ${columns} FROM proof_design_jobs WHERE status<>'archived' AND pipeline IS NULL AND (NOT $2 OR NOT EXISTS(SELECT 1 FROM proof_job_links l WHERE l.proof_id=proof_design_jobs.id)) AND ($3='' OR concat_ws(' ',customer,job_title,design_number) ILIKE '%' || $3 || '%') ORDER BY created_at DESC,id DESC LIMIT 51 OFFSET $1`,[offset,unlinked,String(q).slice(0,200)]);
+    const result=await query(`SELECT ${columns} FROM proof_design_jobs WHERE status<>'archived' AND pipeline IS NULL
+      AND (NOT EXISTS(SELECT 1 FROM proof_job_links l WHERE l.proof_id=proof_design_jobs.id)
+        OR EXISTS(SELECT 1 FROM proof_job_links l LEFT JOIN database_jobs j ON j.source_order_id=l.source_order_id
+          WHERE l.proof_id=proof_design_jobs.id AND j.is_complete IS NOT TRUE
+          AND COALESCE(UPPER(BTRIM(j.dashboard_status)),'') NOT IN ('COMPLETED','INVOICED')))
+      AND (NOT $2 OR NOT EXISTS(SELECT 1 FROM proof_job_links l WHERE l.proof_id=proof_design_jobs.id)) AND ($3='' OR concat_ws(' ',customer,job_title,design_number) ILIKE '%' || $3 || '%') ORDER BY created_at DESC,id DESC LIMIT 51 OFFSET $1`,[offset,unlinked,String(q).slice(0,200)]);
     return {designs:result.rows.slice(0,50).map(publicJob),nextOffset:result.rows.length>50?offset+50:null};
   }
   async function progress(id,{state,message='',customer,jobTitle,reference}={}){

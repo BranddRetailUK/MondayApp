@@ -363,7 +363,7 @@
     financialReportSnapshot: null,
     dashboardStatusColors: {},
     reportsRange: 'ytd',
-    reportsMetric: 'grossSales',
+    reportsMetric: 'netSales',
     reportsYear: null,
     reportsMonth: '',
     reportsAvailableYears: [],
@@ -2990,8 +2990,8 @@
       formatNumber(type.orderCount || 0),
       formatCurrency(reportNumber(type.grossSales)),
     ]);
-    window.DatabaseReports?.render(data, comparison, (series, grain) => {
-      renderDatabaseReportsChart(series, grain, data.rangeLabel, state.reportsMetric);
+    window.DatabaseReports?.render(data, comparison, (series, grain, invoices) => {
+      renderDatabaseReportsChart(series, grain, data.rangeLabel, state.reportsMetric, invoices);
     });
   }
 
@@ -3025,7 +3025,7 @@
     if (els.reportsChartSubtitle) {
       els.reportsChartSubtitle.textContent = comparison
         ? `${comparison.primary.rangeLabel} against ${comparison.secondary.rangeLabel}`
-        : metric.subtitle;
+        : `${metric.subtitle} · Orders booked and invoiced sales`;
     }
     if (els.reportsChartTotal) {
       els.reportsChartTotal.classList.toggle('is-comparison', Boolean(comparison));
@@ -3035,8 +3035,8 @@
     }
     if (els.reportsChartLegend) {
       if (!comparison) {
-        els.reportsChartLegend.hidden = true;
-        els.reportsChartLegend.replaceChildren();
+        els.reportsChartLegend.hidden = false;
+        els.reportsChartLegend.innerHTML='<span><i class="is-primary"></i>Orders booked · order date</span><span><i class="is-invoiced"></i>Invoiced sales · invoice date</span>';
       } else {
         els.reportsChartLegend.innerHTML = `
           <span><i class="is-primary"></i>${escapeHtml(comparison.primary.rangeLabel)}</span>
@@ -3063,7 +3063,7 @@
     }).join('');
   }
 
-  function renderDatabaseReportsChart(series, grain, rangeLabel, metricKey) {
+  function renderDatabaseReportsChart(series, grain, rangeLabel, metricKey, invoiceSeries = state.reportsData?.invoiced?.series || []) {
     if (!els.reportsChart) return;
     if (state.reportsComparisonData) {
       renderDatabaseReportsComparisonChart(state.reportsComparisonData, metricKey);
@@ -3086,7 +3086,9 @@
     const normalizedMetricKey = normalizeDatabaseReportMetric(metricKey);
     const metric = DATABASE_REPORT_METRICS[normalizedMetricKey];
     const values = series.map((point) => reportNumber(point[normalizedMetricKey]));
-    const bounds = metric.currency ? reportAxisBounds(values, 4) : reportCountAxisBounds(values, 4);
+    const invoiceValues=invoiceSeries.map(point=>reportNumber(point[normalizedMetricKey]));
+    const allValues=[...values,...invoiceValues];
+    const bounds = metric.currency ? reportAxisBounds(allValues, 4) : reportCountAxisBounds(allValues, 4);
     const xFor = (index) => series.length === 1
       ? margin.left + (plotWidth / 2)
       : margin.left + (index / (series.length - 1)) * plotWidth;
@@ -3135,6 +3137,7 @@
       <path class="db-report-chart-area" d="${area}"></path>
       <path class="db-report-chart-line" d="${path}"></path>
       ${pointMarkup}
+      ${invoiceValues.length?`<path class="db-report-chart-line is-invoiced" d="${invoiceValues.map((value,index)=>`${index?'L':'M'} ${xFor(index).toFixed(2)} ${yFor(value).toFixed(2)}`).join(' ')}"></path>`:''}
       ${xMarkup}
     `;
     if (els.reportsChartState) els.reportsChartState.hidden = true;
@@ -9174,7 +9177,10 @@
       return;
     }
 
-    const snapshot = buildFinancialReportSnapshot(data);
+    const basis=document.getElementById('db-report-basis')?.value || 'orders';
+    const basisLabel={orders:'Orders booked · order date',invoiced:'Invoiced sales · invoice date',uninvoiced:'Uninvoiced orders · order date'}[basis];
+    const exportData=basis==='orders'?data:{...data,...data[basis]};
+    const snapshot = buildFinancialReportSnapshot({...exportData,rangeDescription:`${basisLabel} · ${data.rangeDescription||data.rangeLabel}`,rangeLabel:`${basisLabel} · ${data.rangeLabel}`});
     state.activeDocumentType = 'financial-report';
     state.documentGeneratedAt = snapshot.generatedAt;
     state.financialReportSnapshot = snapshot;
