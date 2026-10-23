@@ -228,3 +228,26 @@ test('opening and leaving an approved proof preserves the complete job, dashboar
     assert.deepEqual(await snapshot(),before);
   }finally{await f.db.close();}
 });
+
+test('used DST PSG numbers appear in history and publish as separate deduplicated design rows',async()=>{
+  const f=await fixture();try{
+    const source={brief:{products:[{decorations:[{artworkId:'dst'},{artworkId:'omitted',omit:true}]}]}};
+    const artworks=[{id:'dst',name:'psg6860.DST'},{id:'unused',name:'PSG9999.dst'},{id:'omitted',name:'PSG8888.dst'}];
+    await f.db.query('UPDATE proof_design_jobs SET source=$2,source_artworks=$3,saved_snapshot=$4 WHERE id=$1',[f.id,source,JSON.stringify(artworks),{source,source_artworks:artworks}]);
+    assert.deepEqual((await f.designs.list()).designs[0].psgNumbers,['PSG6860']);
+    await f.links.link(f.id,1);await f.links.publish(f.id);
+    assert.deepEqual((await f.db.query('SELECT design_ref FROM database_job_positions WHERE source_order_id=1 ORDER BY position_sort_order')).rows.map(r=>r.design_ref),['30001','PSG6860']);
+    // A newer draft must not leak its PSG into the confirmed published revision.
+    await f.db.query('UPDATE proof_design_jobs SET source_artworks=$2,saved_revision=2 WHERE id=$1',[f.id,JSON.stringify([{id:'dst',name:'PSG1234.dst'}])]);
+    await f.links.publish(f.id);
+    assert.deepEqual((await f.db.query('SELECT design_ref FROM database_job_positions WHERE source_order_id=1 ORDER BY position_sort_order')).rows.map(r=>r.design_ref),['30001','PSG6860']);
+  }finally{await f.db.close();}
+});
+test('PSG extraction requires a used DST filename and preserves multiple distinct numbers',()=>{
+  const {psgNumbers}=require('../src/services/proofPsgNumbers');
+  const names=['PSG 0012.dst','logo_PSG-456.DST','PSG0012.dst','logo.dst','PSG777.pdf','NOTPSG888.dst','PSG12abc.dst'];
+  const artworks=names.map((name,id)=>({id:String(id),name}));
+  const source={brief:{products:[{decorations:artworks.map(a=>({artworkId:a.id}))}]}};
+  assert.deepEqual(psgNumbers(source,artworks),['PSG0012','PSG456']);
+  assert.deepEqual(psgNumbers(null,artworks),[]);
+});

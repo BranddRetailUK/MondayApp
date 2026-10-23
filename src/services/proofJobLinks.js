@@ -1,3 +1,4 @@
+const {addPsgPositions}=require('./proofPsgNumbers');
 const { TEST_DASHBOARD_COLUMN_IDS: COL, TEST_DASHBOARD_GROUP_IDS: GROUP } = require('./testDashboardDefaults');
 const { proofFileName } = require('../../tools/print-worker/proof-filename');
 const VISUAL = `(column_id = '${COL.PROOF}' OR UPPER(BTRIM(column_title)) IN ('PROOF','VISUAL'))`;
@@ -173,6 +174,7 @@ function createService(pool, {upload = require('./cloudinaryDashboard').uploadBu
           (SELECT COALESCE(MAX(position_sort_order),0)+1 FROM database_job_positions WHERE source_order_id=$1),$2,NOW(),NOW()
         WHERE NOT EXISTS(SELECT 1 FROM database_job_positions WHERE source_order_id=$1 AND BTRIM(design_ref)=$2) RETURNING source_order_position_id`,[link.source_order_id,String(proof.design_number)]);
       const snapshot=proof.saved_snapshot||Object.fromEntries(snapshotFields.map(key=>[key,proof[key]]));
+      await addPsgPositions(db,link.source_order_id,snapshot.source,snapshot.source_artworks);
       await db.query('UPDATE proof_job_links SET saved_revision=$2,file_public_id=$3,snapshot=$4,created_position_id=COALESCE(created_position_id,$5) WHERE source_order_id=$1',[link.source_order_id,proof.saved_revision,asset.public_id,JSON.stringify(snapshot),insertedPosition.rows[0]?.source_order_position_id||null]);
     });
   }
