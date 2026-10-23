@@ -13,14 +13,14 @@ const {createService:designService,UUID}=require('../services/proofDesignJobs');
 
 const { prepareBrief, recoverProductCodes, repairRetainedDimensions } = require('../services/proofLayout');
 
-const { isProofGeneratorUser, isProofSandboxUser, prepareSandboxBrief } = require('../services/proofAccess');
+const { isProofGeneratorUser, prepareSandboxBrief } = require('../services/proofAccess');
 
 function createRouter({ requireProduction = true, parse = parseProofBrief, enrich = enrichProofProducts, build = buildProof, status = proofRuntimeStatus, generateViews = ensureGeneratedViews, searchProducts = searchProofProducts, convertEps = require('../services/digitisingEps').rasterize, designs, tests, promotions } = {}) {
   const router = express.Router();
   const designJobs=()=>designs || (designs=designService(require('../db/pool')));
   const testJobs=()=>tests || (tests=require('../services/proofTestJobs').createService(require('../db/pool')));
-  const sandboxFor=req=>isProofSandboxUser(req.hubUser)||req.query.test==='1';
-  const sandboxBrief=(req,brief)=>prepareSandboxBrief(sandboxFor(req)?{email:'melvyn@ultimatepromotions.co.uk'}:req.hubUser,brief);
+  const sandboxFor=req=>req.query.test==='1';
+  const sandboxBrief=(req,brief)=>sandboxFor(req)?prepareSandboxBrief(brief):brief;
   const links=()=>require('../services/proofJobLinks').createService(require('../db/pool'));
   const upload = multer({ storage: multer.memoryStorage(), limits: { files: 40, fields: 2, parts: 42, fileSize: 10 * 1024 * 1024, fieldSize: 100 * 1024 } });
   const lanes={production:{active:false,source:false,eps:false},sandbox:{active:false,source:false,eps:false}};
@@ -161,7 +161,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
     try{
       const source=JSON.parse(req.body.brief||'{}');
       if(source.proofSourceOrderId)throw new Error('Test proofs cannot link to jobs.');
-      source.brief=prepareSandboxBrief({email:'melvyn@ultimatepromotions.co.uk'},source.brief||{});
+      source.brief=prepareSandboxBrief(source.brief||{});
       source.brief.testProofId=req.params.id;
       res.json({design:await testJobs().saveSource(req.params.id,ownerFor(req),source,req.files||[],JSON.parse(req.body.artworkDetails||'[]'))});
     }catch(error){res.status(400).json({error:error.message});}

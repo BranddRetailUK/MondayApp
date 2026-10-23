@@ -303,9 +303,9 @@ test('rendering a reviewed brief rechecks missing details before generating or s
 test('Melvyn can open the sandbox renderer and generate test proofs',async()=>{
  const headers={'x-test-email':'melvyn@ultimatepromotions.co.uk'};
  await serve(createRouter({status:async()=>({ready:true}),designs:{list:async()=>({designs:[],nextOffset:null})},enrich:async()=>{},build:async()=>({bytes:Buffer.from('%PDF-Charlie'),documents:[],pages:[],issues:[]})}),async url=>{
-   for(const endpoint of ['status','renderer/pdf.mjs'])assert.equal((await fetch(`${url}/${endpoint}`,{headers})).status,200,endpoint);
+   for(const endpoint of ['status','renderer/pdf.mjs'])assert.equal((await fetch(`${url}/${endpoint}?test=1`,{headers})).status,200,endpoint);
    const form=new FormData();form.append('brief',JSON.stringify({products:[{code:'ONE'}]}));form.append('artworkDetails','[]');
-   const response=await fetch(`${url}/create`,{method:'POST',headers,body:form});assert.equal(response.status,200);assert.equal(await response.text(),'%PDF-Charlie');
+   const response=await fetch(`${url}/create?test=1`,{method:'POST',headers,body:form});assert.equal(response.status,200);assert.equal(await response.text(),'%PDF-Charlie');
  });
 });
 
@@ -315,14 +315,14 @@ test('sandbox cannot reserve, save, read or change production designs and job li
  let writes=0;const designs=new Proxy({}, {get:()=>async()=>{writes++;throw Error('Production store accessed');}});
  await serve(createRouter({designs,enrich:async()=>{},generateViews:async()=>{},build:async brief=>{assert.equal(brief.reference,'SANDBOX');return {bytes:Buffer.from('%PDF-test'),pages:[],issues:[]};}}),async url=>{
   for(const path of ['designs','designs/id','designs/id/source','designs/id/preview','designs/id/pdf','designs/id/progress','designs/id/retry','designs/id/link','designs/id/sync','generate','link-jobs','link-jobs/1','link-jobs/1/edit','link-jobs/1/unlink','save']){
-   for(const method of ['GET','POST'])assert.equal((await fetch(`${url}/${path}`,{method,headers})).status,403,`${method} ${path}`);
+   for(const method of ['GET','POST'])assert.equal((await fetch(`${url}/${path}?test=1`,{method,headers})).status,403,`${method} ${path}`);
   }
   for(const endpoint of ['preview','create'])for(const key of ['proofDesignId','proofSourceOrderId']){
    const form=new FormData();form.append('brief',JSON.stringify({products:[{code:'ONE'}],[key]:'production-id'}));form.append('artworkDetails','[]');
-   assert.equal((await fetch(`${url}/${endpoint}`,{method:'POST',headers,body:form})).status,422);
+   assert.equal((await fetch(`${url}/${endpoint}?test=1`,{method:'POST',headers,body:form})).status,422);
   }
   const form=new FormData();form.append('brief',JSON.stringify({products:[{code:'ONE'}],reference:'29149'}));form.append('artworkDetails','[]');
-  const result=await fetch(`${url}/preview`,{method:'POST',headers,body:form});assert.equal(result.status,200);assert.equal((await result.json()).brief.reference,'SANDBOX');assert.equal(writes,0);
+  const result=await fetch(`${url}/preview?test=1`,{method:'POST',headers,body:form});assert.equal(result.status,200);assert.equal((await result.json()).brief.reference,'SANDBOX');assert.equal(writes,0);
  });
 });
 
@@ -331,11 +331,11 @@ test('sandbox view tasks are private and do not take the production generation s
  const charlie={'x-test-email':'melvyn@ultimatepromotions.co.uk','Content-Type':'application/json'};
  await serve(createRouter({enrich:async()=>{},generateViews:async()=>pending,parse:async()=>({products:[{code:'ONE'}]})}),async url=>{
   try{
-   const response=await fetch(`${url}/views`,{method:'POST',headers:charlie,body:JSON.stringify({brief:{products:[{code:'ONE'}]}})});assert.equal(response.status,202);const {jobId}=await response.json();
-   assert.equal((await fetch(`${url}/views/${jobId}`,{headers:production})).status,404);
-   assert.equal((await fetch(`${url}/views/${jobId}`,{headers:charlie})).status,200);
+   const response=await fetch(`${url}/views?test=1`,{method:'POST',headers:charlie,body:JSON.stringify({brief:{products:[{code:'ONE'}]}})});assert.equal(response.status,202);const {jobId}=await response.json();
+   assert.equal((await fetch(`${url}/views/${jobId}?test=1`,{headers:production})).status,404);
+   assert.equal((await fetch(`${url}/views/${jobId}?test=1`,{headers:charlie})).status,200);
    assert.equal((await fetch(`${url}/parse`,{method:'POST',headers:{...production,'Content-Type':'application/json'},body:JSON.stringify({request:'ONE navy shirt'})})).status,200);
-   assert.equal((await fetch(`${url}/views`,{method:'POST',headers:charlie,body:JSON.stringify({brief:{products:[{code:'ONE'}]}})})).status,429);
+   assert.equal((await fetch(`${url}/views?test=1`,{method:'POST',headers:charlie,body:JSON.stringify({brief:{products:[{code:'ONE'}]}})})).status,429);
   }finally{finish();}
  });
 });
@@ -356,7 +356,7 @@ test('test history retains sources and regeneration renders only into the test s
   assert.equal((await fetch(`${url}/tests/${id}/source`,{method:'POST',headers:charlie,body:source})).status,200);
   assert.equal(retained.source.brief.reference,'SANDBOX');assert.equal(retained.source.brief.testProofId,id);
   assert.equal((await fetch(`${url}/tests/${id}/source`,{headers:production})).status,200);
-  for(const [headers,query] of [[charlie,''],[production,'?test=1']]){
+  for(const [headers,query] of [[charlie,'?test=1'],[production,'?test=1']]){
    const form=new FormData();form.append('brief',JSON.stringify(retained.source.brief));form.append('artworkDetails','[]');
    assert.equal((await fetch(`${url}/preview${query}`,{headers,method:'POST',body:form})).status,200);
    assert.equal(rendered.brief.reference,'SANDBOX');assert.equal(rendered.id,id);
@@ -441,10 +441,10 @@ test('ADD TO LIVE is an explicit scoped action for proof users while other sandb
  });
 });
 
-test('Charlie can use production history while Melvyn remains sandbox-only',async()=>{
+test('Charlie and Melvyn can use production history',async()=>{
  await serve(createRouter({designs:{list:async()=>({designs:[]})}}),async url=>{
   assert.equal((await fetch(url+'/designs',{headers:{'x-test-email':'charlie@ultimatepromotions.co.uk'}})).status,200);
-  assert.equal((await fetch(url+'/designs',{headers:{'x-test-email':'melvyn@ultimatepromotions.co.uk'}})).status,403);
+  assert.equal((await fetch(url+'/designs',{headers:{'x-test-email':'melvyn@ultimatepromotions.co.uk'}})).status,200);
  });
 });
 

@@ -260,3 +260,13 @@ test('deletion cancellation makes no request; confirmation deletes and clears th
  confirm=true;await context.remove({id:'test',updatedAt:'stamp'});
  assert.equal(requests[0].url,'/api/proof-generator/tests/test');assert.equal(requests[0].options.method,'DELETE');assert.equal(JSON.parse(requests[0].options.body).updatedAt,'stamp');assert.equal(cleared,1);assert.equal(refreshes,1);assert.equal(context.historyStatus.textContent,'Proof deleted.');assert.equal(context.busy,false);
 });
+
+for (const [hasEmbroidery,psgNumbers,visible] of [[true,['PSG123'],true],[true,[],false],[false,['PSG123'],false],[false,[],false],[true,undefined,false]]) {
+ test(`history PSG field visibility: embroidery=${hasEmbroidery}, numbers=${psgNumbers}`,()=>{
+  const block=source.slice(source.indexOf('          if(job.hasEmbroidery'),source.indexOf('          info.append(references);'));
+  const references=element('div');
+  vm.runInNewContext(block,{job:{hasEmbroidery,psgNumbers},references,document:{createElement:element}});
+  assert.equal(references.children.length,visible?1:0);
+  if(visible){assert.equal(references.children[0].children[0].textContent,'PSG No');assert.equal(references.children[0].children[1].textContent,'PSG123');}
+ });
+}

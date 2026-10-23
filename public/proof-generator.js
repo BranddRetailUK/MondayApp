@@ -4,8 +4,7 @@
   if (!root) return;
   const standalonePreview = document.body.classList.contains('proof-preview');
   const user = standalonePreview ? null : await window.ultimateHubUserPromise;
-  const melvyn = String(user?.email || '').trim().toLowerCase() === 'melvyn@ultimatepromotions.co.uk';
-  const sandbox = !standalonePreview && (melvyn || new URLSearchParams(location.search).get('test') === '1');
+  const sandbox = !standalonePreview && new URLSearchParams(location.search).get('test') === '1';
   const historyEndpoint = sandbox ? 'tests' : 'designs';
   const localPreview = standalonePreview || sandbox;
   if (!standalonePreview) {
@@ -45,7 +44,7 @@
             <button type="button" data-proof-view="list" aria-label="List view" title="List view" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h1M3 12h1M3 18h1"/></svg></button>
             <button type="button" data-proof-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
           </div>
-          ${!standalonePreview&&!melvyn?`<a class="proof-primary-button proof-mode-button" href="${sandbox?'?#proof-generator':'?test=1#proof-generator'}">${sandbox?"Live proofs":"Melvyn's proofs"}</a>`:''}
+          ${!standalonePreview&&sandbox?`<a class="proof-primary-button proof-mode-button" href="?#proof-generator">Live proofs</a>`:''}
           <button id="proof-create-new" class="proof-primary-button" type="button">Create proof</button>
         </div>
       </header>

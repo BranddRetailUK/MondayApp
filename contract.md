@@ -1193,3 +1193,9 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 
 ### Report KPI card copy (2026-10-23)
 - Removed the explanatory date-basis footer lines from the three overview cards. Card headings, values and order counts remain; the graph legend and order-table basis selector still identify the reporting dates.
+
+
+### Live proof access and navigation (2026-10-23)
+- Supersedes the Melvyn sandbox restriction: `melvyn@ultimatepromotions.co.uk` now has the same full live Proof Generator, history and job-link permissions as Charlie and Production, and opens live mode by default. DTF-only accounts remain excluded.
+- Removed the **Melvyn's proofs** navigation button for all users. Existing test proofs remain accessible by explicit `?test=1` URLs, with sandbox isolation and a Live proofs return link; no saved proofs are deleted. Sandbox selection is explicit rather than tied to an account email.
+- Verified that the complete PSG No field is absent from history rows without a PSG number or without embroidery; qualifying embroidery rows retain the number.
