@@ -1022,7 +1022,12 @@
     }
     if(count)results.append(names);
     const fallback=document.createElement('section');fallback.className='proof-fallback';
-    const fallbackTitle=document.createElement('h3');fallbackTitle.textContent='Adjust artwork position';fallback.append(fallbackTitle);
+    const fallbackTitle=document.createElement('h3');fallbackTitle.textContent='Adjust artwork position';const fallbackHeader=document.createElement('div');fallbackHeader.className='proof-placement-header';
+    const lockLabel=document.createElement('label');lockLabel.className='proof-dimension-lock';
+    const lock=document.createElement('input');lock.type='checkbox';lock.checked=currentBrief.keepPrintDimensions===true;
+    lock.addEventListener('change',()=>{currentBrief.keepPrintDimensions=lock.checked;markDirty(false);});
+    lockLabel.append(lock,document.createTextNode('Keep print dimensions when resizing'));
+    fallbackHeader.append(fallbackTitle,lockLabel);fallback.append(fallbackHeader);
 
     const views=document.createElement('div');views.className='proof-placement-views';
     for(const page of currentPreview?.pages || []){
@@ -1082,7 +1087,8 @@
     // Use one scale factor for both axes, based on the renderer's visible bounds.
     function bounds(p){
       const d=product.decorations.find(d=>d.id===p.id),pos=d.placement||p;
-      const scale=Number(d.widthMm)>0?Number(d.widthMm)/p.size.width:Number(d.heightMm)>0?Number(d.heightMm)/p.size.height:1;
+      const sizeScale=Number(d.widthMm)>0?Number(d.widthMm)/p.size.width:Number(d.heightMm)>0?Number(d.heightMm)/p.size.height:1;
+      const scale=sizeScale*(d.visualScale||1)/(p.visualScale||1);
       return {x:pos.x,y:pos.y,width:p.width*scale,height:p.height*scale};
     }
     function paint(){
@@ -1115,13 +1121,18 @@
     });
     canvas.addEventListener('pointermove',event=>{
       if(!drag)return;const q=point(event);
-      drag.d.manualScale={widthPerMm:drag.p.width/drag.p.size.width,sourceHash:page.sourceHash,view:page.view};
+      drag.d.manualScale={widthPerMm:drag.p.width/drag.p.size.width/(drag.p.visualScale||1),sourceHash:page.sourceHash,view:page.view};
       if(drag.mode==='scale'){
         const {p,left,top}=drag;
         // Project onto the artwork diagonal in pixel space to preserve its aspect ratio.
         const w=p.width*canvas.width,h=p.height*canvas.height;
         const scale=Math.max(.1/Math.min(p.size.width,p.size.height),Math.min(3000/Math.max(p.size.width,p.size.height),((q.x-left)*canvas.width*w+(q.y-top)*canvas.height*h)/(w*w+h*h)));
-        drag.d.widthMm=p.size.width*scale;drag.d.heightMm='';drag.d.dimensionIssues=[];
+        if(currentBrief.keepPrintDimensions===true){
+          const sizeScale=Number(drag.d.widthMm)>0?Number(drag.d.widthMm)/p.size.width:Number(drag.d.heightMm)>0?Number(drag.d.heightMm)/p.size.height:1;
+          drag.d.visualScale=(p.visualScale||1)*scale/sizeScale;
+        }else{
+          drag.d.widthMm=p.size.width*scale*(p.visualScale||1)/(drag.d.visualScale||1);drag.d.heightMm='';drag.d.dimensionIssues=[];
+        }
         drag.d.placement={x:left+p.width*scale/2,y:top};
       }else drag.d.placement={x:Math.max(0,Math.min(1,q.x-drag.dx)),y:Math.max(0,Math.min(1,q.y-drag.dy))};
       drag.d.offsetXmm='';drag.d.offsetYmm='';drag.d.anchor='region';markDirty(false);paint();

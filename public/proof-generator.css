@@ -274,3 +274,8 @@ body.proof-preview .proof-preview-badge{display:block}
 
 .proof-pdf-icon{display:grid;place-items:center;width:32px;height:40px;border:1px solid #84caff;border-radius:4px;background:#1d4160;color:#b5ddff;font-size:10px;font-weight:800}
 .proof-runout-dropzone strong{max-width:100%;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+
+.proof-placement-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.proof-placement-header h3{margin:0}
+.proof-dimension-lock{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #536473;border-radius:8px;background:#242c32;color:#c1ddf5;font-size:12px;cursor:pointer}
+.proof-dimension-lock input[type="checkbox"]{appearance:auto;width:16px;height:16px;margin:0;accent-color:#168ed0;cursor:pointer}

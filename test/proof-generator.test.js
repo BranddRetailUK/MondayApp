@@ -768,3 +768,22 @@ test('RX700 automatic artwork stays in panels above the reflective bands',()=>{
  assert.equal(manual.y,.6);assert.equal(manual.explicit,true,'renderer retains its existing explicit-placement override');
  assert.equal(placementProfile({code:'OTHER',name:'Waistcoat'}).printableRegions,undefined,'unverified styles must not inherit RX700 tape geometry');
 });
+
+
+test('visual resize retains print dimensions across regeneration and calibrated views',async()=>{
+ const d=mark({placement:{x:.5,y:.3},visualScale:1.5});
+ const b=brief([d]);b.keepPrintDimensions=true;
+ const out=await buildProof(b,[await artFile()],{fetchImpl:await fixtureFetch(),strict:true});
+ const saved=JSON.parse(JSON.stringify(b));
+ const again=await buildProof(saved,[await artFile()],{fetchImpl:await fixtureFetch(),strict:true});
+ assert.deepEqual(again.pages[0].placements,out.pages[0].placements);
+ assert.equal(saved.keepPrintDimensions,true);
+ assert.equal(Number(saved.products[0].decorations[0].widthMm),100);
+ const p=out.pages[0].placements[0];assert.equal(p.size.width,100);assert.equal(p.size.height,50);assert.equal(p.visualScale,1.5);
+ const garment={width:600,height:600,view:'front',sourceHash:'same'};
+ const calibration={referenceMm:600,start:{x:0,y:0},end:{x:1,y:0}};
+ const normal=layout.placementFor({...d,visualScale:1},{width:200,height:100},garment,calibration);
+ const enlarged=layout.placementFor(d,{width:200,height:100},garment,calibration);
+ assert.equal(enlarged.width,normal.width*1.5);assert.deepEqual(enlarged.size,normal.size);
+ assert.throws(()=>layout.placementFor({...d,visualScale:-1},{width:200,height:100},garment,calibration),/Invalid visual/);
+});

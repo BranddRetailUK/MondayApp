@@ -297,7 +297,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
           const retained=product.decorations?.find(item=>item.id===d.id);
           if(retained){
             if((d.placement || calibration.regions?.[positionName(d.position)] || (d.anchor && d.anchor!=='region') || Number(d.offsetXmm) || Number(d.offsetYmm)) && !d.manualScale){
-              retained.manualScale={widthPerMm:p.width/p.size.width,sourceHash:garment.sourceHash,view};
+              retained.manualScale={widthPerMm:p.width/p.size.width/(p.visualScale||1),sourceHash:garment.sourceHash,view};
             }
             retained.scaleVersion=4;
           }

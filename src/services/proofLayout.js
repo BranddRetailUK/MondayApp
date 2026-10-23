@@ -278,6 +278,9 @@ function placementFor(d, asset, garment, calibration = {}) {
     else if(d.scaleVersion===3) pxPerMm=garment.referencePxPerMm || pxPerMm;
     else if(d.scaleVersion!==4) pxPerMm=garment.legacyPxPerMm || pxPerMm;
   }
+  const visualScale = d.visualScale ?? 1;
+  if (!Number.isFinite(visualScale) || visualScale <= 0 || visualScale > 30000) throw new Error('Invalid visual artwork scale.');
+  pxPerMm *= visualScale;
   const width = size.width * pxPerMm / garment.width;
   const height = size.height * pxPerMm / garment.height;
   const explicit = d.placement != null;
@@ -319,7 +322,7 @@ function placementFor(d, asset, garment, calibration = {}) {
   // measured template makes these exact; the estimate never becomes calibration.
   x += offsetX * pxPerMm / garment.width;
   y += offsetY * pxPerMm / garment.height;
-  return {x,y,width,height,size,region,calibrated,explicit};
+  return {x,y,width,height,size,region,calibrated,explicit,visualScale};
 }
 
 function fitsRegion(p) {

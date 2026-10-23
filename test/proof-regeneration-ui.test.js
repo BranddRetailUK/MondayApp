@@ -53,22 +53,24 @@ function element(tag) {
 test('placement tiles share one grid across products without per-decoration dropdowns',()=>{
   const results=element('div');
   const context={designId:'saved',results,currentBrief:{products:[{code:'GD010',colour:'Grey',decorations:[]},{code:'GD001',colour:'Orange',decorations:[]}]},currentPreview:{issues:[],pages:[{productIndex:0,image:'front'},{productIndex:1,image:'front'}]},dirty:false,
-    document:{createElement:element},colourName:x=>x,action:()=>element('button'),inputField:()=>element('label'),viewEditor:()=>element('canvas')};
+    document:{createElement:element,createTextNode:text=>({textContent:text})},markDirty(){},colourName:x=>x,action:()=>element('button'),inputField:()=>element('label'),viewEditor:()=>element('canvas')};
   createContext(context);
   const render=source.slice(source.indexOf('  function renderEditor()'),source.indexOf('  function openProofPreview('));
   vm.runInContext(render+'\nrenderEditor();',context);
   const fallback=results.children.find(node=>node.className==='proof-fallback');
   const grid=fallback.children.find(node=>node.className==='proof-placement-views');
   assert.equal(grid.children.length,2);
-  assert.equal(fallback.children[0].textContent,'Adjust artwork position');
+  assert.equal(fallback.children[0].children[0].textContent,'Adjust artwork position');
+  const checkbox=fallback.children[0].children[1].children[0];
+  assert.equal(checkbox.checked,false);checkbox.checked=true;checkbox.listeners.change();assert.equal(context.currentBrief.keepPrintDimensions,true);
   assert.ok(grid.children.every(tile=>tile.children.length===1 && tile.children[0].tag==='canvas'));
 });
-test('canvas movement and corner scaling still update placement without numeric controls',()=>{
+for(const keepPrintDimensions of [false,true])test(`canvas movement and scaling with dimension override ${keepPrintDimensions}`,()=>{
   const canvas=element('canvas');let dirtyCount=0;
   Object.assign(canvas,{getContext:()=>({fillRect(){},drawImage(){},strokeRect(){}}),getBoundingClientRect:()=>({left:0,top:0,width:600,height:600}),setPointerCapture(){},hasPointerCapture:()=>false,focus(){}});
   const product={code:'GD001',decorations:[{id:'mark',widthMm:100}]};
   const page={view:'front',image:'garment',width:600,height:600,placements:[{id:'mark',x:.5,y:.3,width:.2,height:.1,size:{width:100,height:50},preview:'art'}]};
-  const context={document:{createElement:tag=>tag==='canvas'?canvas:element(tag)},Image:class{},busy:false,markDirty(){dirtyCount++;},product,page};
+  const context={document:{createElement:tag=>tag==='canvas'?canvas:element(tag)},Image:class{},currentBrief:{keepPrintDimensions},busy:false,markDirty(){dirtyCount++;},product,page};
   createContext(context);
   const view=source.slice(source.indexOf('  function viewEditor('),source.indexOf('  const epsPreviews='));
   vm.runInContext(view+'\nviewEditor(product,page);',context);
@@ -77,7 +79,7 @@ test('canvas movement and corner scaling still update placement without numeric 
   assert.ok(Math.abs(product.decorations[0].placement.x-.55)<.0001);
   assert.ok(Math.abs(product.decorations[0].placement.y-.35)<.0001);
   canvas.listeners.pointerdown(event(390,270));canvas.listeners.pointermove(event(450,300));canvas.listeners.pointerup(event(450,300));
-  assert.ok(product.decorations[0].widthMm>100);assert.equal(product.decorations[0].heightMm,'');assert.equal(dirtyCount,2);assert.equal(product.decorations[0].manualScale.widthPerMm,.002);assert.equal(product.decorations[0].manualScale.view,'front');
+  if(keepPrintDimensions){assert.equal(product.decorations[0].widthMm,100);assert.equal(product.decorations[0].heightMm,undefined);assert.ok(product.decorations[0].visualScale>1);}else{assert.ok(product.decorations[0].widthMm>100);assert.equal(product.decorations[0].heightMm,'');}assert.equal(dirtyCount,2);assert.equal(product.decorations[0].manualScale.widthPerMm,.002);assert.equal(product.decorations[0].manualScale.view,'front');
 });
 
 test('customer and title edits retain manual geometry while updating the saved brief names',()=>{
