@@ -1,9 +1,9 @@
-const {psgNumbers,psgColumns}=require('./proofPsgNumbers');
+const {psgNumbers,psgColumns,hasEmbroidery}=require('./proofPsgNumbers');
 const {UUID}=require('./proofDesignJobs');
 const {originalArtworkName}=require('../../tools/print-worker/proof-filename');
 const columns=psgColumns+","+`id,live_design_id,created_by,source,revision,created_at,updated_at,ready,
   (proof_pdf IS NOT NULL) AS has_pdf,(preview_png IS NOT NULL) AS has_preview`;
-const publicJob=row=>({id:row.id,psgNumbers:psgNumbers(row.psg_source,row.psg_artworks||[]),createdBy:row.created_by,testProof:true,liveDesignId:row.live_design_id||null,reference:'SANDBOX',
+const publicJob=row=>({id:row.id,psgNumbers:psgNumbers(row.psg_source,row.psg_artworks||[]),hasEmbroidery:hasEmbroidery(row.psg_source),createdBy:row.created_by,testProof:true,liveDesignId:row.live_design_id||null,reference:'SANDBOX',
   customer:row.source.customer||'',jobTitle:row.source.jobTitle||'',revision:row.revision,
   status:row.has_pdf?'saved':'preparing',generationStatus:row.has_pdf?(row.ready?'complete':'review'):'interrupted',
   generationMessage:row.has_pdf?'':'Reopen this test proof to continue.',

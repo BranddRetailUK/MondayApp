@@ -1,3 +1,9 @@
+const {resolveDecorations}=require('./proofLayout');
+function hasEmbroidery(source) {
+  const brief=source?.brief;
+  return (brief?.products||[]).some(product=>resolveDecorations(brief,product)
+    .some(decoration=>/embroidery/i.test(decoration.method||product.method||brief.method||'')));
+}
 // Only DST originals actually used by a non-omitted decoration identify a PSG.
 function psgNumbers(source, artworks = []) {
   const brief = source?.brief;
@@ -26,4 +32,4 @@ async function addPsgPositions(db, sourceOrderId, source, artworks) {
   }
   return numbers;
 }
-module.exports = {psgNumbers, psgColumns, addPsgPositions};
+module.exports = {hasEmbroidery, psgNumbers, psgColumns, addPsgPositions};

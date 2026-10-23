@@ -261,9 +261,11 @@
             jobValue.append(link);jobField.append(jobLabel,jobValue);references.append(jobField);
           }
           references.append(field);
-          const psgField=document.createElement('div'),psgLabel=document.createElement('span'),psgValue=document.createElement('strong');
-          psgLabel.textContent='PSG No';psgValue.textContent=(job.psgNumbers||[]).join(' / ');
-          psgField.append(psgLabel,psgValue);references.append(psgField);
+          if(job.hasEmbroidery&&job.psgNumbers?.length){
+            const psgField=document.createElement('div'),psgLabel=document.createElement('span'),psgValue=document.createElement('strong');
+            psgLabel.textContent='PSG No';psgValue.textContent=(job.psgNumbers||[]).join(' / ');
+            psgField.append(psgLabel,psgValue);references.append(psgField);
+          }
           info.append(references);
         }else info.append(field);
       }
