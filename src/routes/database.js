@@ -3762,6 +3762,7 @@ router.post('/api/database/jobs', async (req, res) => {
       ]
     );
 
+    await require('../services/madebluntPipeline').enroll(client,job,payload.proof_design_id||null);
     if(payload.proof_design_id){
       if(!require('../services/proofJobLinks').isProduction(req.hubUser))throw new Error('Proof Generator access required.');
       await require('../services/proofJobLinks').createService(pool).linkWithClient(client,payload.proof_design_id,job.source_order_id);
@@ -4247,6 +4248,7 @@ router.post('/api/database/jobs/:id/repeat', async (req, res) => {
       ]
     );
 
+    await require('../services/madebluntPipeline').enroll(client,job);
     await client.query('COMMIT');
     res.status(201).json({
       job,
@@ -5886,6 +5888,21 @@ async function downloadOrderAttachments(req, res, filesOnly = false) {
     res.status(err.status || 502).json({ error: err.status ? err.message : 'Could not download all visuals. Please try again.' });
   }
 }
+
+
+router.get('/api/database/jobs/:id/design-folder', async (req,res,next)=>{
+  if(!/^[1-9]\d*$/.test(req.params.id))return res.status(400).json({error:'Invalid job ID'});
+  try{res.json(await require('../services/madebluntPipeline').status(pool,Number(req.params.id)));}catch(error){next(error);}
+});
+router.post('/api/database/jobs/:id/design-folder/retry', async (req,res,next)=>{
+  if(!/^[1-9]\d*$/.test(req.params.id))return res.status(400).json({error:'Invalid job ID'});
+  const id=Number(req.params.id);
+  try{
+    await pool.query("UPDATE proof_design_jobs SET status=CASE WHEN folder_name IS NULL THEN 'awaiting_folder' ELSE 'folder_ready' END,claim_token=NULL,lease_until=NULL,message='' WHERE id IN (SELECT proof_id FROM madeblunt_design_jobs WHERE source_order_id=$1) AND pipeline='madeblunt' AND status='error'",[id]);
+    await pool.query("UPDATE madeblunt_visual_files SET status='queued',claim_token=NULL,lease_until=NULL,message='' WHERE source_order_id=$1 AND status='error'",[id]);
+    res.json(await require('../services/madebluntPipeline').status(pool,id));
+  }catch(error){next(error);}
+});
 
 router.get('/api/database/jobs/:id', async (req, res) => {
   const id = Number.parseInt(req.params.id, 10);

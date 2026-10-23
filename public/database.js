@@ -8241,6 +8241,37 @@
       </div>
     `;
     window.ProofLinks?.controls(els.proofPanel.querySelector('[data-proof-job-controls]'),state.selectedJob?.source_order_id,{showLinkedActions:false});
+    if(Number(state.selectedJob?.customer_id)===3446){
+      const box=document.createElement('div');
+      box.className='db-status';
+      els.proofPanel.prepend(box);
+      renderMadebluntFolderStatus(box,state.selectedJob.source_order_id);
+    }
+  }
+
+  async function renderMadebluntFolderStatus(box,id) {
+    if(!box.isConnected)return;
+    clearTimeout(box.madebluntTimer);
+    try {
+      const response=await fetch(`/api/database/jobs/${id}/design-folder`,{credentials:'include',cache:'no-store'});
+      if(!response.ok)throw new Error('Could not check design folder');
+      const data=await response.json();
+      if(!box.isConnected)return;
+      if(!data){box.remove();return;}
+      const errors=[data.status==='error'?data.message:'',...data.visuals.filter(v=>v.status==='error').map(v=>v.message)].filter(Boolean);
+      const saved=data.visuals.filter(v=>v.status==='saved').length;
+      box.textContent=data.folder_name ? `Design ${data.design_number}: ${saved}/${data.visuals.filter(v=>v.status!=='cancelled').length} visuals saved to folder.` : 'Design folder: waiting for ARTWORK-PC.';
+      if(data.folder_name&&data.visuals.some(v=>v.status==='queued'))box.append(' Visual copying requires worker 1.26.');
+      if(errors.length){
+        box.append(' '+errors.join(' '));
+        const retry=document.createElement('button');retry.type='button';retry.textContent='Retry folder / visuals';
+        retry.addEventListener('click',async()=>{
+          retry.disabled=true;
+          try{const result=await fetch(`/api/database/jobs/${id}/design-folder/retry`,{method:'POST',credentials:'include'});if(!result.ok)throw new Error('Retry failed');await renderMadebluntFolderStatus(box,id);}catch(error){box.append(' '+error.message);retry.disabled=false;}
+        });box.append(' ',retry);
+      }
+    }catch(error){if(box.isConnected)box.textContent=error.message;}
+    if(box.isConnected)box.madebluntTimer=setTimeout(()=>renderMadebluntFolderStatus(box,id),10000);
   }
 
   async function downloadDatabaseAttachment(button) {

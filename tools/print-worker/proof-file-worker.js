@@ -12,15 +12,16 @@ async function runProofFileWorker(config,stateDir,{signal}={}){
   };
   try{while(!signal?.aborted){
     try{
-      const {task}=await api('/api/proof-file-worker/claim',{workerId:config.workerId,proofFilesVersion:5});
+      const {task}=await api('/api/proof-file-worker/claim',{workerId:config.workerId,proofFilesVersion:6});
       if(task){
         let message='Preparing design files',heartbeatBusy=false,claimLost=false;
-        const report=result=>api(`/api/proof-file-worker/tasks/${task.id}`,{claimToken:task.claimToken,...result});
+        const report=result=>api(`/api/proof-file-worker/${task.operation==='visual'?'visuals':'tasks'}/${task.id}`,{claimToken:task.claimToken,...result});
         const assertClaim=async()=>{if(claimLost||!(await report({status:'heartbeat',message})).accepted)throw new Error('Proof file claim changed.');};
         const timer=setInterval(async()=>{if(heartbeatBusy)return;heartbeatBusy=true;try{await assertClaim();}catch(e){claimLost=true;}finally{heartbeatBusy=false;}},10000);
         try{
           let result;
-          if(task.operation==='allocate'){const folder=await allocateDesign(config.designRoot,stateDir,task,value=>{message=value;},async proposedNumber=>{const reservation=await report({status:'reserve',proposedNumber});if(!reservation.accepted)throw new Error('Proof allocation claim changed.');return reservation.designNumber;});result={status:'allocated',...folder};}
+          if(task.operation==='visual'){message='Saving job visual';result={status:'saved',hash:await require('./visual-files').saveVisual(config.designRoot,task,assertClaim)};}
+          else if(task.operation==='allocate'){const folder=await allocateDesign(config.designRoot,stateDir,task,value=>{message=value;},async proposedNumber=>{const reservation=await report({status:'reserve',proposedNumber});if(!reservation.accepted)throw new Error('Proof allocation claim changed.');return reservation.designNumber;});result={status:'allocated',...folder};}
           else if(task.operation==='adopt'){const folder=await adoptDesign(config.designRoot,stateDir,task,value=>{message=value;},assertClaim);result={status:'allocated',...folder};}
           else if(task.operation==='save'){message='Saving proof PDF';const savedFile=await saveDesignProof(config.designRoot,stateDir,task,assertClaim);result={status:'saved',hash:task.hash,revision:task.revision,folderName:require('node:path').basename(require('node:path').dirname(savedFile))};}
           else throw new Error('Unknown proof file operation.');
