@@ -1,4 +1,4 @@
-const EMAILS = new Set(['production@ultimatepromotions.co.uk', 'charlie@ultimatepromotions.co.uk']);
+const EMAILS = new Set(['production@ultimatepromotions.co.uk', 'charlie@ultimatepromotions.co.uk', 'melvyn@ultimatepromotions.co.uk']);
 
 function isProofGeneratorUser(user) {
   return user?.access_scope !== 'dtf_only'
@@ -6,7 +6,7 @@ function isProofGeneratorUser(user) {
 }
 
 function isProofSandboxUser(user) {
-  return isProofGeneratorUser(user) && String(user.email).trim().toLowerCase() === 'charlie@ultimatepromotions.co.uk';
+  return isProofGeneratorUser(user) && String(user.email).trim().toLowerCase() === 'melvyn@ultimatepromotions.co.uk';
 }
 
 function isProductionProofUser(user) {

@@ -22,7 +22,7 @@ const production = { 'x-test-email': 'production@ultimatepromotions.co.uk' };
 test('hosted access denies every endpoint to anonymous, ordinary and DTF-only accounts', async () => {
   let calls = 0;
   await serve(createRouter({ parse: async () => { calls++; }, status: async () => { calls++; } }), async url => {
-    for (const [headers, expected] of [[{}, 401], [{ 'x-test-email': 'office@ultimatepromotions.co.uk' }, 403], [{ 'x-test-email': 'charlie@ultimatepromotions.co.uk', 'x-test-scope': 'dtf_only' }, 403], [{ 'x-test-email': 'charlie@ultimatepromotions.co.uk.attacker.test' }, 403], [{ ...production, 'x-test-scope': 'dtf_only' }, 403], [{ 'x-test-email': 'production@ultimatepromotions.co.uk.attacker.test' }, 403]]) {
+    for (const [headers, expected] of [[{}, 401], [{ 'x-test-email': 'office@ultimatepromotions.co.uk' }, 403], [{ 'x-test-email': 'melvyn@ultimatepromotions.co.uk', 'x-test-scope': 'dtf_only' }, 403], [{ 'x-test-email': 'melvyn@ultimatepromotions.co.uk.attacker.test' }, 403], [{ ...production, 'x-test-scope': 'dtf_only' }, 403], [{ 'x-test-email': 'production@ultimatepromotions.co.uk.attacker.test' }, 403]]) {
       for (const endpoint of ['link-jobs', 'link-jobs/1', 'link-jobs/1/edit', 'link-jobs/1/unlink', 'designs/unknown/link', 'designs/unknown/sync', 'products?q=RX350', 'designs', 'designs/unknown', 'designs/unknown/retry', 'save', 'status', 'views/unknown', 'views', 'renderer/pdf.mjs', 'renderer/pdf.worker.mjs', 'parse', 'preflight', 'preview', 'placement-preview', 'generate', 'create']) {
         const res = await fetch(`${url}/${endpoint}`, { method: ['link-jobs/1/edit','link-jobs/1/unlink','designs/unknown/link','designs/unknown/sync','parse', 'preflight', 'preview', 'placement-preview', 'generate', 'create', 'views', 'designs', 'save','designs/unknown/retry'].includes(endpoint) ? 'POST' : 'GET', headers });
         assert.equal(res.status, expected, endpoint);
@@ -300,8 +300,8 @@ test('rendering a reviewed brief rechecks missing details before generating or s
 });
 
 
-test('Charlie can open the sandbox renderer and generate test proofs',async()=>{
- const headers={'x-test-email':'charlie@ultimatepromotions.co.uk'};
+test('Melvyn can open the sandbox renderer and generate test proofs',async()=>{
+ const headers={'x-test-email':'melvyn@ultimatepromotions.co.uk'};
  await serve(createRouter({status:async()=>({ready:true}),designs:{list:async()=>({designs:[],nextOffset:null})},enrich:async()=>{},build:async()=>({bytes:Buffer.from('%PDF-Charlie'),documents:[],pages:[],issues:[]})}),async url=>{
    for(const endpoint of ['status','renderer/pdf.mjs'])assert.equal((await fetch(`${url}/${endpoint}`,{headers})).status,200,endpoint);
    const form=new FormData();form.append('brief',JSON.stringify({products:[{code:'ONE'}]}));form.append('artworkDetails','[]');
@@ -311,7 +311,7 @@ test('Charlie can open the sandbox renderer and generate test proofs',async()=>{
 
 
 test('sandbox cannot reserve, save, read or change production designs and job links',async()=>{
- const headers={'x-test-email':'charlie@ultimatepromotions.co.uk'};
+ const headers={'x-test-email':'melvyn@ultimatepromotions.co.uk'};
  let writes=0;const designs=new Proxy({}, {get:()=>async()=>{writes++;throw Error('Production store accessed');}});
  await serve(createRouter({designs,enrich:async()=>{},generateViews:async()=>{},build:async brief=>{assert.equal(brief.reference,'SANDBOX');return {bytes:Buffer.from('%PDF-test'),pages:[],issues:[]};}}),async url=>{
   for(const path of ['designs','designs/id','designs/id/source','designs/id/preview','designs/id/pdf','designs/id/progress','designs/id/retry','designs/id/link','designs/id/sync','generate','link-jobs','link-jobs/1','link-jobs/1/edit','link-jobs/1/unlink','save']){
@@ -328,7 +328,7 @@ test('sandbox cannot reserve, save, read or change production designs and job li
 
 test('sandbox view tasks are private and do not take the production generation slot',async()=>{
  let finish;const pending=new Promise(resolve=>finish=resolve);
- const charlie={'x-test-email':'charlie@ultimatepromotions.co.uk','Content-Type':'application/json'};
+ const charlie={'x-test-email':'melvyn@ultimatepromotions.co.uk','Content-Type':'application/json'};
  await serve(createRouter({enrich:async()=>{},generateViews:async()=>pending,parse:async()=>({products:[{code:'ONE'}]})}),async url=>{
   try{
    const response=await fetch(`${url}/views`,{method:'POST',headers:charlie,body:JSON.stringify({brief:{products:[{code:'ONE'}]}})});assert.equal(response.status,202);const {jobId}=await response.json();
@@ -347,7 +347,7 @@ test('test history retains sources and regeneration renders only into the test s
  setPreview:async(_id,bytes,brief,ready)=>{rendered={id:_id,brief,ready};},asset:async()=>Buffer.from('test-pdf')};
  const designs=new Proxy({},{get(){return ()=>{productionCalls++;throw Error('Production store called');};}});
  await serve(createRouter({tests,designs,enrich:async()=>{},generateViews:async()=>{},build:async()=>({bytes:Buffer.from('pdf'),pages:[],issues:[]})}),async url=>{
-  const charlie={'x-test-email':'charlie@ultimatepromotions.co.uk'};
+  const charlie={'x-test-email':'melvyn@ultimatepromotions.co.uk'};
   for(const headers of [charlie,production]){
    assert.equal((await fetch(`${url}/tests`,{headers})).status,200);
   }
@@ -375,7 +375,7 @@ for(const sandbox of [false,true])test(`placement preview restores ${sandbox?'te
   return {bytes:Buffer.from('pdf'),pages:[{image:'garment',placements:[{id:'mark',x:.4,y:.2}]}],issues:[]};
  }}),async url=>{
   const form=new FormData();form.append('brief',JSON.stringify({[sandbox?'testProofId':'proofDesignId']:'saved',products}));form.append('artworkDetails','[]');
-  const response=await fetch(url+'/placement-preview'+(sandbox?'?test=1':''),{method:'POST',headers:sandbox?{'x-test-email':'charlie@ultimatepromotions.co.uk'}:production,body:form});
+  const response=await fetch(url+'/placement-preview'+(sandbox?'?test=1':''),{method:'POST',headers:sandbox?{'x-test-email':'melvyn@ultimatepromotions.co.uk'}:production,body:form});
   assert.equal(response.status,200,await response.clone().text());assert.equal((await response.json()).pages[0].placements[0].x,.4);
  });
 });
@@ -433,10 +433,17 @@ test('ADD TO LIVE is an explicit scoped action for proof users while other sandb
    const res=await fetch(`${url}/tests/${id}/promote?test=1`,{method:'POST',headers});assert.ok([401,403].includes(res.status));
   }
   assert.equal(calls,0);
-  for(const headers of [production,{'x-test-email':'charlie@ultimatepromotions.co.uk'}]){
+  for(const headers of [production,{'x-test-email':'melvyn@ultimatepromotions.co.uk'}]){
    const res=await fetch(`${url}/tests/${id}/promote?test=1`,{method:'POST',headers});assert.equal(res.status,202);
    assert.equal((await fetch(`${url}/designs?test=1`,{headers})).status,403);
   }
   assert.equal(calls,2);
+ });
+});
+
+test('Charlie can use production history while Melvyn remains sandbox-only',async()=>{
+ await serve(createRouter({designs:{list:async()=>({designs:[]})}}),async url=>{
+  assert.equal((await fetch(url+'/designs',{headers:{'x-test-email':'charlie@ultimatepromotions.co.uk'}})).status,200);
+  assert.equal((await fetch(url+'/designs',{headers:{'x-test-email':'melvyn@ultimatepromotions.co.uk'}})).status,403);
  });
 });

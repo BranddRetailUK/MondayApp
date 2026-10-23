@@ -5635,7 +5635,7 @@ function activateDashboardTab(target) {
   const dtfOnly = window.ultimateHubUser?.access_scope === 'dtf_only';
   const fallbackTab = dtfOnly ? 'dtf-uploader' : 'test-dashboard';
   const productionArtwork = isProductionArtworkUser(window.ultimateHubUser);
-  const proofAllowed = !dtfOnly && (productionArtwork || String(window.ultimateHubUser?.email || '').trim().toLowerCase() === 'charlie@ultimatepromotions.co.uk');
+  const proofAllowed = !dtfOnly && (productionArtwork || ['charlie@ultimatepromotions.co.uk','melvyn@ultimatepromotions.co.uk'].includes(String(window.ultimateHubUser?.email || '').trim().toLowerCase()));
   const allowedTarget = target === 'proof-generator' ? proofAllowed : target !== 'digitising-studio' || productionArtwork;
   const requestedTab = !dtfOnly && allowedTarget && isValidDashboardTab(target)
     ? target

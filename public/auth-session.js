@@ -42,7 +42,7 @@
 
   function isProofGeneratorUser(user) {
     return user?.access_scope !== 'dtf_only'
-      && ['production@ultimatepromotions.co.uk', 'charlie@ultimatepromotions.co.uk'].includes(String(user?.email || '').trim().toLowerCase());
+      && ['production@ultimatepromotions.co.uk', 'charlie@ultimatepromotions.co.uk', 'melvyn@ultimatepromotions.co.uk'].includes(String(user?.email || '').trim().toLowerCase());
   }
 
   function isProductionProofUser(user) {

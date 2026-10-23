@@ -9,6 +9,8 @@ const read = name => fs.readFileSync(require.resolve('../public/' + name), 'utf8
 for (const [email, scope, allowed] of [
   ['production@ultimatepromotions.co.uk', 'full', true],
   ['charlie@ultimatepromotions.co.uk', 'full', true],
+  ['melvyn@ultimatepromotions.co.uk', 'full', true],
+  ['melvyn@ultimatepromotions.co.uk', 'dtf_only', false],
   [' CHARLIE@ULTIMATEPROMOTIONS.CO.UK ', 'full', true],
   ['charlie@ultimatepromotions.co.uk', 'dtf_only', false],
   ['production@ultimatepromotions.co.uk', 'dtf_only', false],
@@ -20,7 +22,7 @@ for (const [email, scope, allowed] of [
   test(`proof access agrees across server and browser for ${email || 'anonymous'} / ${scope}`, async () => {
     const user = email ? { email, access_scope: scope } : null;
     assert.equal(isProofGeneratorUser(user), allowed);
-    const productionAllowed=allowed && email.trim().toLowerCase()==='production@ultimatepromotions.co.uk';
+    const productionAllowed=allowed && ['production@ultimatepromotions.co.uk','charlie@ultimatepromotions.co.uk'].includes(email.trim().toLowerCase());
     assert.equal(isProduction(user), productionAllowed);
     const tabs = ['proof-generator', 'digitising-studio', 'dtf-uploader'].map(tab => ({dataset:{tab,available:'true'}}));
     const context = {
