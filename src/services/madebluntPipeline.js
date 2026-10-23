@@ -1,4 +1,4 @@
-const { randomUUID, createHash } = require('node:crypto');
+const { randomUUID } = require('node:crypto');
 const { TEST_DASHBOARD_COLUMN_IDS: COL } = require('./testDashboardDefaults');
 const CUSTOMER_ID = 3446;
 async function ensureTables(db) {
@@ -13,6 +13,7 @@ async function ensureTables(db) {
       claim_token UUID, lease_until TIMESTAMPTZ, message TEXT NOT NULL DEFAULT '', hash TEXT,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(source_order_id,file_id,secure_url)
     )`);
+  await db.query('ALTER TABLE madeblunt_visual_files ADD COLUMN IF NOT EXISTS legacy_filename TEXT');
 }
 // Called inside the order transaction. Customer identity is authoritative, not a name substring.
 async function enroll(db, job, existingProofId=null) {
@@ -48,22 +49,26 @@ async function reconcile(pool) {
     }
     await db.query(`UPDATE madeblunt_visual_files v SET status='cancelled',message='Visual removed from job' WHERE status IN ('queued','error')
       AND NOT EXISTS(SELECT 1 FROM test_dashboard_files f WHERE f.id=v.file_id AND f.source_order_id=v.source_order_id AND f.secure_url=v.secure_url)`);
+    // Requeue old prefixed copies once; the new worker verifies their bytes before removing the old name.
+    await db.query(`UPDATE madeblunt_visual_files v SET legacy_filename=v.filename,filename=f.original_filename,
+      status='queued',claim_token=NULL,lease_until=NULL,message='',updated_at=NOW()
+      FROM test_dashboard_files f WHERE f.id=v.file_id AND f.source_order_id=v.source_order_id AND f.secure_url=v.secure_url
+      AND v.legacy_filename IS NULL AND v.filename ~ '^Visual [0-9]+-[a-f0-9]{8} - '
+      AND v.filename IS DISTINCT FROM f.original_filename AND f.original_filename IS NOT NULL
+      AND v.status IN ('saved','queued','error')`);
     const files=(await db.query(`SELECT f.* FROM test_dashboard_files f JOIN madeblunt_design_jobs m USING(source_order_id)
       JOIN proof_design_jobs p ON p.id=m.proof_id WHERE p.folder_name IS NOT NULL
       AND (f.column_id=$1 OR UPPER(BTRIM(f.column_title)) IN ('PROOF','VISUAL'))
       AND NOT EXISTS(SELECT 1 FROM madeblunt_visual_files v WHERE v.source_order_id=f.source_order_id AND v.file_id=f.id AND v.secure_url=f.secure_url)`,[COL.PROOF])).rows;
     for(const file of files) {
-      // A stable file ID prevents two differently named uploads from overwriting each other.
-      const name=String(file.original_filename||'visual').replace(/[<>:"/\\|?*\x00-\x1f\x7f]/g,'_').replace(/[. ]+$/g,'').slice(0,150)||'visual';
-      const ext=String(file.format||'').replace(/[^a-z0-9]/gi,'').slice(0,10);
-      const version=createHash('sha256').update(file.secure_url).digest('hex').slice(0,8);
-      const filename=`Visual ${file.id}-${version} - ${name}${ext && !name.toLowerCase().endsWith('.'+ext.toLowerCase())?'.'+ext:''}`;
+      const filename=String(file.original_filename||'');
       await db.query(`INSERT INTO madeblunt_visual_files(id,source_order_id,file_id,public_id,secure_url,filename)
         VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,[randomUUID(),file.source_order_id,file.id,file.public_id,file.secure_url,filename]);
     }
   });
 }
-async function claim(pool) {
+async function claim(pool, version=7) {
+  if(version<7)return null;
   return transaction(pool,async db=>{
     const row=(await db.query(`SELECT v.*,p.design_number,p.folder_name FROM madeblunt_visual_files v
       JOIN madeblunt_design_jobs m USING(source_order_id) JOIN proof_design_jobs p ON p.id=m.proof_id
@@ -73,7 +78,7 @@ async function claim(pool) {
     if(!row)return null;
     const token=randomUUID();
     await db.query("UPDATE madeblunt_visual_files SET status='saving',claim_token=$2,lease_until=NOW()+INTERVAL '120 seconds',updated_at=NOW() WHERE id=$1",[row.id,token]);
-    return {id:row.id,claimToken:token,operation:'visual',designNumber:String(row.design_number),folderName:row.folder_name,url:row.secure_url,filename:row.filename};
+    return {id:row.id,claimToken:token,operation:'visual',designNumber:String(row.design_number),folderName:row.folder_name,url:row.secure_url,filename:row.filename,legacyFilename:row.legacy_filename};
   });
 }
 async function report(pool,id,token,result) {

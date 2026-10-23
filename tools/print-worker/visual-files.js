@@ -6,7 +6,10 @@ const {originalArtworkName}=require('./proof-filename');
 const MAX_BYTES=50*1024*1024;
 async function saveVisual(root,task,assertClaim=async()=>{},fetchImpl=fetch){
   originalArtworkName(task.filename);
-  if(!task.filename.startsWith('Visual '))throw new Error('Invalid visual filename');
+  if(task.legacyFilename){
+    originalArtworkName(task.legacyFilename);
+    if(!/^Visual [0-9]+-[a-f0-9]{8} - /.test(task.legacyFilename))throw new Error('Invalid legacy visual filename');
+  }
   const url=new URL(task.url);
   if(url.protocol!=='https:'||url.hostname!=='res.cloudinary.com'||url.username||url.password||url.port)throw new Error('Invalid visual source');
   const folder=await findDesignFolder(root,task.designNumber);
@@ -19,14 +22,28 @@ async function saveVisual(root,task,assertClaim=async()=>{},fetchImpl=fetch){
   if(!size)throw new Error('Visual is empty');
   const bytes=Buffer.concat(chunks),hash=crypto.createHash('sha256').update(bytes).digest('hex');
   const target=path.join(folder,task.filename);
-  const inspect=async()=>{
-    const stat=await fs.lstat(target).catch(e=>{if(e.code==='ENOENT')return null;throw e;});
+  const inspect=async(file=target)=>{
+    const stat=await fs.lstat(file).catch(e=>{if(e.code==='ENOENT')return null;throw e;});
     if(!stat)return null;
     if(!stat.isFile()||stat.isSymbolicLink())throw new Error('Unsafe visual destination');
-    return crypto.createHash('sha256').update(await fs.readFile(target)).digest('hex');
+    return crypto.createHash('sha256').update(await fs.readFile(file)).digest('hex');
+  };
+  const legacy=task.legacyFilename&&path.join(folder,task.legacyFilename);
+  if(legacy&&legacy!==target){
+    const previous=await inspect(legacy);
+    if(previous&&previous!==hash)throw new Error('The previously copied visual was changed; it has not been renamed or removed');
+  }
+  const finish=async()=>{
+    if(legacy&&legacy!==target){
+      await assertClaim();
+      const previous=await inspect(legacy);
+      if(previous&&previous!==hash)throw new Error('The previously copied visual was changed; it has not been removed');
+      if(previous)await fs.unlink(legacy);
+    }
+    return hash;
   };
   const current=await inspect();
-  if(current===hash)return hash;
+  if(current===hash)return finish();
   if(current)throw new Error('A different file already exists at the visual destination; it has not been overwritten');
   const temporary=path.join(folder,`.visual-${crypto.randomUUID()}.tmp`);
   await fs.writeFile(temporary,bytes,{flag:'wx'});
@@ -35,6 +52,6 @@ async function saveVisual(root,task,assertClaim=async()=>{},fetchImpl=fetch){
     // Hard-link publication is atomic and fails if another writer created the destination.
     try{await fs.link(temporary,target);}catch(error){if(error.code!=='EEXIST'||await inspect()!==hash)throw error;}
   }finally{await fs.unlink(temporary).catch(()=>{});}
-  return hash;
+  return finish();
 }
 module.exports={saveVisual};

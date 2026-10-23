@@ -12,7 +12,7 @@ async function runProofFileWorker(config,stateDir,{signal}={}){
   };
   try{while(!signal?.aborted){
     try{
-      const {task}=await api('/api/proof-file-worker/claim',{workerId:config.workerId,proofFilesVersion:6});
+      const {task}=await api('/api/proof-file-worker/claim',{workerId:config.workerId,proofFilesVersion:7});
       if(task){
         let message='Preparing design files',heartbeatBusy=false,claimLost=false;
         const report=result=>api(`/api/proof-file-worker/${task.operation==='visual'?'visuals':'tasks'}/${task.id}`,{claimToken:task.claimToken,...result});

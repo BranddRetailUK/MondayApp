@@ -8261,7 +8261,7 @@
       const errors=[data.status==='error'?data.message:'',...data.visuals.filter(v=>v.status==='error').map(v=>v.message)].filter(Boolean);
       const saved=data.visuals.filter(v=>v.status==='saved').length;
       box.textContent=data.folder_name ? `Design ${data.design_number}: ${saved}/${data.visuals.filter(v=>v.status!=='cancelled').length} visuals saved to folder.` : 'Design folder: waiting for ARTWORK-PC.';
-      if(data.folder_name&&data.visuals.some(v=>v.status==='queued'))box.append(' Visual copying requires worker 1.26.');
+      if(data.folder_name&&data.visuals.some(v=>v.status==='queued'))box.append(' Visual copying requires worker 1.27.');
       if(errors.length){
         box.append(' '+errors.join(' '));
         const retry=document.createElement('button');retry.type='button';retry.textContent='Retry folder / visuals';

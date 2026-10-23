@@ -7,11 +7,11 @@ function createRouter(pool){
   router.use(workerAuth);
   router.post('/claim',async(req,res,next)=>{
     if(!/^[A-Za-z0-9._-]{1,80}$/.test(req.body?.workerId||''))return res.status(400).json({error:'Invalid worker ID'});
-    if(![4,5,6].includes(req.body.proofFilesVersion))return res.json({task:null,message:'Update the print worker to 1.21 for proof file saving.'});
+    if(![4,5,6,7].includes(req.body.proofFilesVersion))return res.json({task:null,message:'Update the print worker to 1.21 for proof file saving.'});
     try{
       try{await madeblunt.reconcile(pool);}catch(error){console.error('Madeblunt reconciliation pending:',error.message);}
       const task=await service.claim(req.body.workerId,req.body.proofFilesVersion);
-      res.set('Cache-Control','no-store').json({task:task || (req.body.proofFilesVersion>=6 ? await madeblunt.claim(pool) : null)});
+      res.set('Cache-Control','no-store').json({task:task || (req.body.proofFilesVersion>=6 ? await madeblunt.claim(pool,req.body.proofFilesVersion) : null)});
     }catch(error){next(error);}
   });
   router.post('/visuals/:id',async(req,res,next)=>{

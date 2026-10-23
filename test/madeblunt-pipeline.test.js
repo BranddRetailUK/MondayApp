@@ -28,14 +28,20 @@ test('Madeblunt folder allocation, visual discovery, leases and retries preserve
  assert.equal((await pg.query('SELECT design_ref FROM database_job_positions')).rows[0].design_ref,'29200');
  assert.equal((await pg.query('SELECT * FROM database_job_positions')).rows.length,1);
  assert.equal((await pipeline.status(pool,50622)).visuals.length,1);
- task=await pipeline.claim(pool);assert.match(task.filename,/^Visual 1-[a-f0-9]{8} - Proof.pdf$/);
+ assert.equal(await pipeline.claim(pool,6),null);
+ task=await pipeline.claim(pool);assert.equal(task.filename,'Proof');
  assert.equal(await pipeline.claim(pool),null);
  assert.equal((await pipeline.report(pool,task.id,randomUUID(),{status:'saved',hash:'a'.repeat(64)})).accepted,false);
  await pipeline.report(pool,task.id,task.claimToken,{status:'saved',hash:'a'.repeat(64)});
  await pipeline.reconcile(pool);assert.equal(await pipeline.claim(pool),null);
+ await pg.exec("UPDATE madeblunt_visual_files SET filename='Visual 1-12345678 - Proof.pdf' WHERE file_id=1");
+ await pipeline.reconcile(pool);
+ const rename=await pipeline.claim(pool);assert.equal(rename.filename,'Proof');assert.equal(rename.legacyFilename,'Visual 1-12345678 - Proof.pdf');
+ await pipeline.report(pool,rename.id,rename.claimToken,{status:'saved',hash:'a'.repeat(64)});
+ await pipeline.reconcile(pool);assert.equal(await pipeline.claim(pool),null);
  assert.equal((await pg.query('SELECT dashboard_status FROM database_jobs WHERE source_order_id=50622')).rows[0].dashboard_status,'TO SAMPLE');
  await pg.exec(`INSERT INTO test_dashboard_files VALUES(3,50622,'proof','VISUAL','asset3','https://res.cloudinary.com/test/image/upload/c.png','Second.png','png');`);
- await pipeline.reconcile(pool);task=await pipeline.claim(pool);assert.match(task.filename,/^Visual 3-[a-f0-9]{8} - Second.png$/);
+ await pipeline.reconcile(pool);task=await pipeline.claim(pool);assert.equal(task.filename,'Second.png');
  await pg.exec("UPDATE madeblunt_visual_files SET lease_until=NOW()-INTERVAL '1 minute' WHERE status='saving'");
  const replay=await pipeline.claim(pool);assert.equal(replay.id,task.id);assert.notEqual(replay.claimToken,task.claimToken);
  }finally{await pg.close();}
@@ -44,9 +50,12 @@ test('visual file saving is byte-identical, idempotent and refuses unsafe source
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'madeblunt-'));const folder=path.join(dir,'29200 Madeblunt');
  try{
  await fs.mkdir(folder);const bytes=Buffer.from('original visual bytes');
- const task={designNumber:'29200',folderName:path.basename(folder),filename:'Visual 1 - Proof.pdf',url:'https://res.cloudinary.com/test/image/upload/a.pdf'};
+ const task={designNumber:'29200',folderName:path.basename(folder),filename:'BCG-SpencerStuart_Metro_V2.2[6].pdf',url:'https://res.cloudinary.com/test/image/upload/a.pdf'};
  const fetcher=async()=>new Response(bytes);
+ task.legacyFilename='Visual 419-79fb6a6c - '+task.filename;
+ await fs.writeFile(path.join(folder,task.legacyFilename),bytes);
  const hash=await saveVisual(dir,task,async()=>{},fetcher);
+ await assert.rejects(()=>fs.access(path.join(folder,task.legacyFilename)),/ENOENT/);
  assert.deepEqual(await fs.readFile(path.join(folder,task.filename)),bytes);
  assert.equal(await saveVisual(dir,task,async()=>{},fetcher),hash);
  await assert.rejects(()=>saveVisual(dir,{...task,url:'http://localhost/secret'},async()=>{},fetcher),/Invalid visual source/);
@@ -54,5 +63,10 @@ test('visual file saving is byte-identical, idempotent and refuses unsafe source
  await fs.writeFile(path.join(folder,task.filename),'manually changed');
  await assert.rejects(()=>saveVisual(dir,task,async()=>{},fetcher),/not been overwritten/);
  assert.equal(await fs.readFile(path.join(folder,task.filename),'utf8'),'manually changed');
+ const changed={...task,filename:'Épreuve (2)[1].pdf',legacyFilename:'Visual 420-12345678 - Épreuve (2)[1].pdf'};
+ await fs.writeFile(path.join(folder,changed.legacyFilename),'changed old copy');
+ await assert.rejects(()=>saveVisual(dir,changed,async()=>{},fetcher),/previously copied visual was changed/);
+ await assert.rejects(()=>fs.access(path.join(folder,changed.filename)),/ENOENT/);
+ assert.equal(await fs.readFile(path.join(folder,changed.legacyFilename),'utf8'),'changed old copy');
  }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
