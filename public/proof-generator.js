@@ -362,7 +362,7 @@
   async function saveProofSource(){
     if(standalonePreview)return;
     const form=new FormData();form.append('brief',JSON.stringify({proofSourceOrderId:selectedLinkJob?.source_order_id||null,request:request.value,customer:customer.value,jobTitle:jobTitle.value,brief:currentBrief}));
-    form.append('artworkDetails',JSON.stringify(artworks.map(item=>({id:item.id,originalName:item.file.name,backgroundMode:item.backgroundMode,threadColours:item.threadColours,threadCodes:item.threadCodes,assignment:item.assignment,notes:item.notes}))));
+    form.append('artworkDetails',JSON.stringify(artworks.map(item=>({id:item.id,originalName:item.file.name,backgroundMode:item.backgroundMode,threadColours:item.threadColours,threadCodes:item.threadCodes,runoutFilename:item.runoutFilename,assignment:item.assignment,notes:item.notes}))));
     for(const item of artworks)form.append('artworks',item.file,item.file.name);
     const response=await proofFetch(`/api/proof-generator/${historyEndpoint}/${designId}/source`,{method:'POST',body:form});
     if(!response.ok){const data=await proofJson(response);throw new Error(data.error||'Could not retain proof source.');}
@@ -379,7 +379,7 @@
       request.value=[data.source.request,data.source.instructions].filter(Boolean).join('\n\n');customer.value=data.source.customer||job.customer||'';jobTitle.value=data.source.jobTitle||job.jobTitle||'';
       for(const saved of data.artworks){
         const file=new File([Uint8Array.from(atob(saved.data),c=>c.charCodeAt(0))],saved.name,{type:saved.type||''});
-        const item={id:saved.id,file,assignment:saved.assignment||'',notes:saved.notes||'',backgroundMode:saved.backgroundMode||'auto',threadColours:saved.threadColours||[],threadCodes:saved.threadCodes||[],url:file.type.startsWith('image/')?URL.createObjectURL(file):''};artworks.push(item);renderArtwork(item);
+        const item={id:saved.id,file,assignment:saved.assignment||'',notes:saved.notes||'',backgroundMode:saved.backgroundMode||'auto',threadColours:saved.threadColours||[],threadCodes:saved.threadCodes||[],runoutFilename:saved.runoutFilename||'',url:file.type.startsWith('image/')?URL.createObjectURL(file):''};artworks.push(item);renderArtwork(item);
       }
       currentBrief=data.source.brief;currentPreview=null;dirty=true;
       if(currentBrief){if(sandbox){delete currentBrief.proofDesignId;delete currentBrief.proofSourceOrderId;delete currentBrief.proofRevision;currentBrief.testProofId=job.id;}else{currentBrief.proofSourceOrderId=job.sourceOrderId||null;currentBrief.proofRevision=job.revision;currentBrief.proofDesignId=job.id;}renderEditor();
@@ -567,11 +567,14 @@
   dropzone.addEventListener('drop', (event) => addFiles(event.dataTransfer.files));
   reviewButton.addEventListener('click', () => reviewBrief([]));
 
-  function addFiles(files) {
-    for (const file of Array.from(files || [])) {
+  async function addFiles(files) {
+    if(busy)return;
+    const {pairRunoutFiles}=await import('/proof-thread-swatches.mjs');
+    if(busy)return;
+    for (const {file,runout} of pairRunoutFiles(Array.from(files || []))) {
       if (artworks.length >= 20) { setFeedback('Add no more than 20 artwork files.', true); break; }
       if (!/\.(png|jpe?g|webp|svg|pdf|eps|ai|ttf|otf|pxf|dst)$/i.test(file.name)) { setFeedback(`Unsupported file: ${file.name}`, true); continue; }
-      const item = { id: crypto.randomUUID(), backgroundMode: 'auto', file, assignment: '', notes: '', url: file.type.startsWith('image/') ? URL.createObjectURL(file) : '' };
+      const item = { id: crypto.randomUUID(), backgroundMode: 'auto', file, pendingRunout:runout, assignment: '', notes: '', url: file.type.startsWith('image/') ? URL.createObjectURL(file) : '' };
       if (file.size > 10 * 1024 * 1024) { setFeedback('Each artwork must be no larger than 10 MB.', true); continue; }
       sourceChanged();
       artworks.push(item);
@@ -625,7 +628,8 @@
     const fileType = document.createElement('span');
     fileType.className = 'proof-artwork-type';
     fileType.textContent = item.file.name.split('.').pop().toUpperCase();
-    body.append(title, fileType);
+    body.append(title);
+    if(!/\.dst$/i.test(item.file.name))body.append(fileType);
     if (/\.(pxf|dst)$/i.test(item.file.name)) {
       const status=document.createElement('p');body.append(status);
       const refresh=async()=>{
@@ -644,7 +648,7 @@
       }else{
         import('/proof-embroidery.mjs').then(async module=>{
           const design=module.parseDst(await item.file.arrayBuffer());if(!card.isConnected)return;
-          status.textContent=`${design.widthMm.toFixed(1)} × ${design.heightMm.toFixed(1)} mm sewn size (used unless the request specifies a size). Upload a run off sheet or select each thread colour.`;
+          status.hidden=true;
           if(design.colourChanges>=100)throw Error('Proof embroidery supports up to 100 thread colour blocks.');
           const saved=item.threadColours||[];
           item.threadColours=Array.from({length:design.colourChanges+1},(_,i)=>saved[i]||'');
@@ -657,7 +661,6 @@
               const label=document.createElement('div');label.className='proof-thread-cell';
               const caption=document.createElement('label');caption.textContent=`Thread ${order+1}${group.codes.length?' · '+group.codes.join(' / '):''}`;
               const input=document.createElement('input');input.type='color';input.value=group.colour||'#ffffff';input.disabled=busy;input.id=`proof-thread-${item.id}-${order}`;caption.htmlFor=input.id;input.setAttribute('aria-label',caption.textContent+' colour');
-              const confirm=document.createElement('button');confirm.type='button';confirm.className='proof-secondary-button';confirm.textContent=group.colour?'Selected':'Use colour';confirm.disabled=busy;
               const change=()=>{
                 if(busy)return;
                 applyThreadSwatch(item.threadColours,group.indices,input.value);
@@ -666,18 +669,26 @@
                   group.indices.forEach(index=>{if(item.threadCodes)item.threadCodes[index]='';});
                   caption.textContent=`Thread ${order+1}`;
                 }
-                confirm.textContent='Selected';
                 if(currentBrief)markDirty(false);else sourceChanged();
                 if(item.threadColours.every(Boolean))refresh().catch(error=>setFeedback(error.message,true));
               };
-              input.addEventListener('input',change);input.addEventListener('change',renderThreads);
-              confirm.onclick=()=>{change();renderThreads();};label.append(input,caption,confirm);threadGrid.append(label);
+              input.addEventListener('input',change);input.addEventListener('change',()=>{change();renderThreads();});
+              label.append(caption,input);threadGrid.append(label);
             });
           };
           renderThreads();
           const runoutBox=document.createElement('div');runoutBox.className='proof-runout-upload';
           const runoutButton=document.createElement('button');runoutButton.type='button';runoutButton.className='proof-dropzone proof-runout-dropzone';runoutButton.disabled=busy;
           runoutButton.innerHTML='<span class="proof-upload-icon" aria-hidden="true">↥</span><strong>Upload run off sheet</strong><span>Choose or drop a PDF</span>';
+          const showRunoutFile=()=>{
+            if(!item.runoutFilename)return;
+            runoutButton.replaceChildren();
+            const icon=document.createElement('span');icon.className='proof-pdf-icon';icon.setAttribute('aria-hidden','true');icon.textContent='PDF';
+            const filename=document.createElement('strong');filename.textContent=item.runoutFilename;filename.title=item.runoutFilename;
+            const hint=document.createElement('span');hint.textContent='Choose or drop to replace';
+            runoutButton.append(icon,filename,hint);runoutButton.setAttribute('aria-label',`Run off sheet ${item.runoutFilename}. Choose or drop a PDF to replace.`);
+          };
+          showRunoutFile();
           const runoutInput=document.createElement('input');runoutInput.type='file';runoutInput.accept='.pdf,application/pdf';runoutInput.disabled=busy;runoutInput.hidden=true;
           const runoutStatus=document.createElement('p');runoutStatus.className='proof-runout-status';runoutStatus.setAttribute('role','status');
           let runoutVersion=0;
@@ -689,10 +700,10 @@
               const blocks=await readRunoutPdf(file,item.threadColours.length,item.file.name);
               if(!card.isConnected||token!==runoutVersion)return;
               if(busy||item.threadColours.some((c,i)=>c!==previous[i]))throw Error('Thread colours changed while reading. Upload the run off sheet again to apply it.');
-              item.threadColours=blocks.map(b=>b.colour);item.threadCodes=blocks.map(b=>b.code||'');
+              item.threadColours=blocks.map(b=>b.colour);item.threadCodes=blocks.map(b=>b.code||'');item.runoutFilename=file.name;showRunoutFile();
               renderThreads();
               if(currentBrief)markDirty(false);else sourceChanged();
-              runoutStatus.textContent=file.name;
+              runoutStatus.textContent='';
               await refresh();
             }catch(error){if(card.isConnected&&token===runoutVersion)runoutStatus.textContent=error.message;}
             finally{if(token===runoutVersion)runoutInput.value='';}
@@ -710,8 +721,9 @@
           runoutBox.append(runoutButton,runoutInput);
           const media=document.createElement('div');media.className='proof-dst-media';media.append(thumb,runoutBox);
           card.classList.add('proof-dst-artwork');body.insertBefore(media,status);body.insertBefore(runoutStatus,threadGrid);
-          if(item.threadColours.every(Boolean))await refresh();
-        }).catch(error=>{status.textContent=error.message;setFeedback(error.message,true);});
+          if(item.pendingRunout){const file=item.pendingRunout;delete item.pendingRunout;await readRunout(file);}
+          else if(item.threadColours.every(Boolean))await refresh();
+        }).catch(error=>{status.hidden=false;status.textContent=error.message;setFeedback(error.message,true);});
       }
     }
     card.append(thumb, body);
@@ -858,7 +870,7 @@
   async function uploadForm(brief,includeOriginals=false,preflight=false) {
     const form = new FormData();
     form.append('brief', JSON.stringify(brief));
-    form.append('artworkDetails', JSON.stringify(artworks.map(({id,file,assignment,notes,backgroundMode,threadColours,threadCodes})=>({id,originalName:file.name,assignment,notes,backgroundMode,threadColours,threadCodes}))));
+    form.append('artworkDetails', JSON.stringify(artworks.map(({id,file,assignment,notes,backgroundMode,threadColours,threadCodes,runoutFilename})=>({id,originalName:file.name,assignment,notes,backgroundMode,threadColours,threadCodes,runoutFilename}))));
     for (const item of artworks) {
       const file = await prepareArtworkFile(item.file,preflight);
       form.append('artworks', file, file.name);

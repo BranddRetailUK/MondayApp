@@ -271,3 +271,6 @@ body.proof-preview .proof-preview-badge{display:block}
 
 .proof-live-confirm-modal .test-dashboard-complete-confirm-message{text-align:center}
 .proof-live-confirm-modal .test-dashboard-complete-confirm-actions{justify-content:center}
+
+.proof-pdf-icon{display:grid;place-items:center;width:32px;height:40px;border:1px solid #84caff;border-radius:4px;background:#1d4160;color:#b5ddff;font-size:10px;font-weight:800}
+.proof-runout-dropzone strong{max-width:100%;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
