@@ -55,6 +55,11 @@ function placementProfile(product = {}) {
       'left breast': {x:.66,y:.40,left:.54,top:.32,width:.26,height:.14},
       back: {x:.5,y:.11,left:.21,top:.08,width:.58,height:.37},
     },
+  } : code === 'YK102' ? {
+    fixedBreastAnchors: true,
+    printableRegions: {
+      'left breast': {x:.635,y:.29,left:.52,top:.25,width:.23,height:.11},
+    },
   } : {};
   // Approved Oxford references expose wider chest panels than tees.
   const oxford = /^(?:KK|K)0?3(?:50|60)$/.test(code) ? {breastPanelFraction: .28} : {};
@@ -63,7 +68,7 @@ function placementProfile(product = {}) {
 
 
 function automaticTop(position, view, height, profile = PROFILES.tee) {
-  if (/breast/.test(position)) return profile.breastCentre - height / 2;
+  if (/breast/.test(position)) return (profile.fixedBreastAnchors && profile.printableRegions?.[position] ? profile.printableRegions[position].y : profile.breastCentre) - height / 2;
   if (/sleeve/.test(position)) {
     const centre = ['left', 'right'].includes(view) ? (profile.sideSleeveCentre ?? 0.335) : profile.sleeveCentre;
     return centre - height / 2;

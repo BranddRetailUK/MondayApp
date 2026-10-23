@@ -145,7 +145,7 @@ test('route authorisation protects parse, preview and create',async()=>{
 });
 test('preview route returns issues and PDF without production writes',async()=>{
  const app=express();app.use(express.json());const fetchImpl=await fixtureFetch();
- app.use('/api/proof-generator',createRouter({requireProduction:false,enrich:async b=>b,build:(b,a,o)=>buildProof(b,a,{...o,fetchImpl})}));
+ app.use('/api/proof-generator',createRouter({requireProduction:false,enrich:async b=>b,generateViews:(b,o)=>require('../src/services/proofGeneratedViews').ensureGeneratedViews(b,{...o,download:()=>garmentBytes()}),build:(b,a,o)=>buildProof(b,a,{...o,fetchImpl})}));
  const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
  try{
   const file=await artFile();const form=new FormData();form.append('brief',JSON.stringify(brief()));form.append('artworkDetails',JSON.stringify([{id:'art'}]));form.append('artworks',new Blob([file.file.buffer],{type:'image/png'}),'logo.png');
@@ -786,4 +786,20 @@ test('visual resize retains print dimensions across regeneration and calibrated 
  const enlarged=layout.placementFor(d,{width:200,height:100},garment,calibration);
  assert.equal(enlarged.width,normal.width*1.5);assert.deepEqual(enlarged.size,normal.size);
  assert.throws(()=>layout.placementFor({...d,visualScale:-1},{width:200,height:100},garment,calibration),/Invalid visual/);
+});
+
+test('YK102 breast anchors stay in yellow chest panels without changing print scale',()=>{
+ const {placementProfile}=require('../src/services/proofPlacementProfiles');
+ const g={width:1000,height:1450,view:'front',estimatedPxPerMm:1.88,
+  placementProfile:placementProfile({code:'YK102',name:'Waistcoat'}),
+  landmarks:{leftBreast:{x:.75},rightBreast:{x:.25}},chestPanels:{'left breast':{left:.5,width:.5}}};
+ const d=mark({position:'left breast',widthMm:100,heightMm:24});
+ const p=layout.placementFor(d,{width:100,height:24},g);
+ assert.equal(p.x,.635);assert.ok(layout.fitsRegion(p));
+ assert.deepEqual(p.size,{width:100,height:24,confirmed:true});
+ assert.equal(p.width,.188);assert.ok(p.x+p.width/2<.75);
+ const huge=layout.placementFor({...d,widthMm:200,heightMm:48},{width:100,height:24},g);
+ assert.equal(layout.fitsRegion(huge),false);assert.equal(huge.size.width,200);
+ const manual=layout.placementFor({...d,placement:{x:.8,y:.5}},{width:100,height:24},g);
+ assert.equal(manual.x,.8);assert.equal(manual.y,.5);
 });

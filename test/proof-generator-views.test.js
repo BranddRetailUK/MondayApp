@@ -35,7 +35,7 @@ test('hosted supplier enrichment uses the existing database without contacting P
 });
 test('missing back and sleeve views generate once and export reuses identical cached images',async()=>{
  const cache=new Map();let generated=0;const progress=[];
- const options={allowGenerate:true,download:async()=>Buffer.from('source-front'),read:async key=>cache.get(key),save:async(key,bytes)=>cache.set(key,bytes),generate:async(_bytes,_product,view)=>{generated++;return Buffer.from(view);},onProgress:p=>progress.push(p)};
+ const options={allowGenerate:true,assess:async()=>({suitable:true}),download:async()=>Buffer.from('source-front'),read:async key=>cache.get(key),save:async(key,bytes)=>cache.set(key,bytes),generate:async(_bytes,_product,view)=>{generated++;return Buffer.from(view);},onProgress:p=>progress.push(p)};
  const brief=makeBrief();assert.deepEqual(requiredViews(brief,brief.products[0]),['front','back','right']);
  await ensureGeneratedViews(brief,options);assert.equal(generated,2);assert.equal(cache.size,2);assert.equal(brief.products[0].visual.views.length,3);
  const exportBrief=makeBrief();await ensureGeneratedViews(exportBrief,{...options,allowGenerate:false});assert.equal(generated,2);
@@ -84,7 +84,7 @@ test('catalogue search uses bounded code prefixes and does not interpret wildcar
 
 test('export cannot silently replace a missing generated sleeve with a front view',async()=>{
  const brief=makeBrief();
- await assert.rejects(()=>ensureGeneratedViews(brief,{allowGenerate:false,download:async()=>Buffer.from('changed-source'),read:async()=>null}),/needs preparing/);
+ await assert.rejects(()=>ensureGeneratedViews(brief,{allowGenerate:false,assess:async()=>({suitable:true}),download:async()=>Buffer.from('changed-source'),read:async()=>null}),/needs preparing/);
 });
 test('separate verified colours expand into sheets without splitting real combined colourways',async()=>{
  const rows=['Black','White'].map((colour,i)=>({...row,colour_id:i+1,colour_code:colour,colour_name:colour}));
@@ -181,4 +181,53 @@ test('generic black cannot silently choose Black Smoke over Jet or Deep Black',(
  assert.equal(result.lookupIssue,'colour_ambiguous');
  assert.equal(result.availableColours.length,3);
  assert.equal(matchColour(colours,'Jet Black').name,'Jet Black*');
+});
+
+test('placement image checks accept an upright torso and reject unisolatable/skewed views',async()=>{
+ const {assessPlacementImage}=require('../src/services/proofPlacementQuality');
+ const good=await singleGarment();
+ assert.equal((await assessPlacementImage(good,{code:'RX350'},'front')).suitable,true);
+ const bad=await sharp(Buffer.from('<svg width="200" height="200"><rect width="200" height="200" fill="navy"/></svg>')).png().toBuffer();
+ assert.equal((await assessPlacementImage(bad,{code:'RX350'},'front')).suitable,false);
+ const skew=await sharp(Buffer.from('<svg width="200" height="200"><rect width="200" height="200" fill="white"/><path d="M20 10 L100 10 L170 190 L90 190 Z" fill="navy"/></svg>')).png().toBuffer();
+ assert.equal((await assessPlacementImage(skew,{code:'RX350'},'front')).suitable,false);
+ assert.equal((await assessPlacementImage(skew,{code:'RX350'},'left')).suitable,true);
+});
+
+test('unsuitable supplier fronts are replaced once, cached and retain print sizes for both suppliers',async()=>{
+ const clean=await singleGarment(),bad=Buffer.from('supplier photo');
+ for(const supplier of ['Ralawise catalog','PenCarrie']){
+  const make=()=>({products:[{code:'YK102',colour:'Yellow',decorations:[{position:'left breast',widthMm:100,heightMm:24}],visual:{matched:true,source:supplier,views:[{view:'front',url}]}}]});
+  const cache=new Map();let generated=0;
+  const opts={allowGenerate:true,download:async()=>bad,read:async k=>cache.get(k),save:async(k,v)=>cache.set(k,v),
+   assess:async bytes=>({suitable:bytes.equals(clean),reason:'skewed'}),generate:async()=>{generated++;return clean;}};
+  const b=make();await ensureGeneratedViews(b,opts);
+  assert.equal(generated,1);assert.equal(b.products[0].visual.views.length,1);
+  assert.equal(b.products[0].visual.views[0].placementFallback,true);
+  assert.deepEqual(b.products[0].decorations,make().products[0].decorations);
+  const next=make();await ensureGeneratedViews(next,{...opts,allowGenerate:false});
+  assert.equal(generated,1);assert.deepEqual(next,b);
+  const manual=make();manual.products[0].decorations[0].placement={x:.6,y:.3};
+  await ensureGeneratedViews(manual,{...opts,download:async()=>{throw Error('Manual image must be preserved');}});
+  assert.equal(manual.products[0].visual.views[0].url,url);
+  const calibrated=make();calibrated.products[0].calibrations={front:{referenceMm:550}};
+  await ensureGeneratedViews(calibrated,{...opts,download:async()=>{throw Error('Calibrated image must be preserved');}});
+  assert.equal(calibrated.products[0].visual.views[0].url,url);
+ }
+});
+
+test('failed clean replacements block without caching or substituting the supplier view',async()=>{
+ const b=makeBrief();b.products[0].decorations=[{position:'left breast'}];
+ let saved=0;const original=structuredClone(b);
+ await assert.rejects(()=>ensureGeneratedViews(b,{allowGenerate:true,download:singleGarment,read:async()=>null,
+  assess:async()=>({suitable:false,reason:'skewed'}),generate:singleGarment,save:async()=>saved++}),/still cannot support reliable placement/);
+ assert.equal(saved,0);assert.deepEqual(b,original);
+});
+
+test('YK102 yellow-panel check rejects tape inside the left breast guide',async()=>{
+ const {assessPlacementImage}=require('../src/services/proofPlacementQuality');
+ const vest=async(tapeX)=>sharp(Buffer.from(`<svg width="240" height="320"><rect width="240" height="320" fill="white"/><path d="M30 20 L90 10 L120 60 L150 10 L210 20 L220 300 L20 300 Z" fill="#dbea00"/><rect x="${tapeX}" y="20" width="18" height="280" fill="#888"/></svg>`)).png().toBuffer();
+ assert.equal((await assessPlacementImage(await vest(190),{code:'YK102',colour:'Yellow'},'front')).suitable,true);
+ const rejected=await assessPlacementImage(await vest(145),{code:'YK102',colour:'Yellow'},'front');
+ assert.equal(rejected.suitable,false);assert.match(rejected.reason,/reflective tape/);
 });

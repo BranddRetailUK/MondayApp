@@ -295,7 +295,7 @@ function placementFor(d, asset, garment, calibration = {}) {
       x=bottom ? (imageRight ? .95-width/2 : .05+width/2) : (imageRight ? .75 : .25);
       y=bottom ? .92-height : .25-height/2;
     }
-    if(/breast/.test(position)){
+    if(/breast/.test(position) && !(garment.placementProfile?.fixedBreastAnchors && garment.placementProfile.printableRegions?.[position])){
       const edge=calibration.neckRight || garment.landmarks?.neckRight;
       const right=edge?.x ?? garment.placementProfile?.neckRight;
       if(Number.isFinite(right))x=position==='left breast'?right:1-right;

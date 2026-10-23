@@ -349,10 +349,11 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
         const check=assess(brief,assets,brief.preflightRequest);
         if(!check.ready)return res.status(422).json({error:check.issues.map(i=>i.message).join(' '),issues:check.issues});
       }
-      await generateViews(brief, { allowGenerate: false });
+      const retainedGarmentLoader=design&&designJobs().garmentLoader?await designJobs().garmentLoader(design.id):null;
+      await generateViews(brief, { allowGenerate: false, ...(retainedGarmentLoader?{download:retainedGarmentLoader}:{}) });
       const productIndex=req.query.productIndex;
       if(productIndex!==undefined && (typeof productIndex!=='string'||!/^\d+$/.test(productIndex)||Number(productIndex)>=brief.products.length))return res.status(400).json({error:'Choose a valid product PDF.'});
-      const { bytes, documents = [], pages, issues } = await build(brief, artworks, { strict: !['/preview','/placement-preview'].includes(req.path), ...(design&&designJobs().garmentLoader?{garmentLoader:await designJobs().garmentLoader(design.id)}:{}) });
+      const { bytes, documents = [], pages, issues } = await build(brief, artworks, { strict: !['/preview','/placement-preview'].includes(req.path), ...(retainedGarmentLoader?{garmentLoader:retainedGarmentLoader}:{}) });
       if(req.path==='/generate'){
         if(issues.some(issue=>issue.blocking))return res.status(422).json({error:'Resolve the proof issues before saving.',issues});
         const png=await require('../services/proofThumbnail').proofThumbnail(bytes);
