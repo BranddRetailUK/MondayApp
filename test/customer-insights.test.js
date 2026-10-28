@@ -70,7 +70,7 @@ test('Insights order buttons invoke DATABASE Order Info in the current tab',asyn
  vm.runInNewContext(source,{document:{getElementById:()=>root},window:{async ultimateHubOpenDatabaseOrder(...args){calls.push(args)}},localStorage:{getItem:()=>null},Intl,Date,Number});
  await click({target:{closest:()=>button}});assert.deepEqual(calls,[[50604,'details']]);assert.equal(button.disabled,false);
  assert.doesNotMatch(source,/target="_blank"|database-job\.html|window\.open/);
- assert.match(source,/class="ins-open-order" data-ins-order=/);assert.match(source,/class="ins-history-order" data-ins-order=/);
+ assert.match(source,/class="ins-open-order" data-ins-order=/);assert.doesNotMatch(source,/ins-history-order|View order history and details|Add a note/);
 });
 test('calendar years are inclusive and gift filtering only sums matching orders; activity stays cross-type',()=>{
  const s=snap([job(1,'2022-12-31',999,{order_type:'Business gifts'}),job(2,'2023-01-01',2000,{order_type:'Business gifts'}),job(3,'2024-12-31',3000,{order_type:'Business Gifts'}),job(4,'2024-06-01',500,{order_type:'Printing'}),job(5,'2025-01-01',999,{order_type:'Business gifts'}),job(6,'2026-10-01',200,{order_type:'Embroidery'}),job(7,'2024-01-01',800,{customer_id:2,customer_name:'Print only',order_type:'Printing'})]);
@@ -102,4 +102,27 @@ test('notes endpoint rejects unauthorized or invalid writes before accessing the
 test('year ranges and job types reject malformed filters',async()=>{
  const route=createRouter({},async()=>{assert.fail('Unexpected snapshot read')}).stack.find(l=>l.route?.path==='/api/insights/customers').route.stack[1].handle;
  for(const query of [{fromYear:'2024'},{fromYear:'2024',toYear:'2023'},{fromYear:'1999',toYear:'2024'},{fromYear:'2023',toYear:'9999'},{jobType:'sql'},{fromYear:['2023'],toYear:'2024'}]){let code;await route({query},{status(n){code=n;return this},json(){}},e=>{throw e});assert.equal(code,400)}
+});
+test('single sales-note field preserves legacy text, saves edits, rejects stale versions and can clear',async()=>{
+ const {ensureCustomerInsightsTables}=require('../src/db/customerInsightsSchema');const {addNote,attachNotes,saveNoteDocument}=require('../src/services/customerInsightNotes');const db=new PGlite();
+ const client={query(sql,args){if(sql.includes('pg_advisory_xact_lock'))return Promise.resolve({rows:[]});return db.query(sql,args)},release(){}};const pool={connect:async()=>client};
+ try{
+ await db.exec("CREATE TABLE hub_users(id int PRIMARY KEY);INSERT INTO hub_users VALUES(1),(2);CREATE TABLE database_jobs(source_order_id int,customer_id int,customer_name text);INSERT INTO database_jobs VALUES(10,1,'Acme')");await ensureCustomerInsightsTables(db);
+ await addNote(db,{sourceOrderId:10,body:'Earlier contact record',requestId:'11111111-1111-4111-8111-111111111111',user:{id:1,first_name:'First'}});
+ const result=()=>selectCustomers(build(snap([job(10,'2025-01-01',6000)])),{preset:'all'});
+ assert.match((await attachNotes(db,result())).customers[0].salesNote.body,/Earlier contact record/);
+ const args={noteKeys:['id:1'],body:'Earlier contact record\nFollow-up booked',version:0,documentKey:null,user:{id:1,first_name:'First'}};
+ const saved=await saveNoteDocument(pool,args);assert.equal(saved.status,200);assert.equal(saved.salesNote.version,1);assert.equal((await saveNoteDocument(pool,args)).status,200);
+ assert.equal((await saveNoteDocument(pool,{...args,body:'Stale edit',user:{id:2,first_name:'Second'}})).status,409);
+ assert.equal((await attachNotes(db,result())).customers[0].salesNote.body,args.body);
+ const cleared=await saveNoteDocument(pool,{...args,body:'',version:1,documentKey:'id:1'});assert.equal(cleared.salesNote.version,2);assert.equal((await attachNotes(db,result())).customers[0].salesNote.body,'');
+ assert.equal((await db.query('SELECT COUNT(*)::int AS n FROM customer_insight_notes')).rows[0].n,1);
+ }finally{await db.close()}
+});
+test('single notes endpoint guards writes and rejects invalid versions before reading data',async()=>{
+ const router=createRouter({},async()=>assert.fail('Unexpected snapshot read'));
+ const route=router.stack.find(l=>l.route?.path==='/api/insights/notes'&&l.route.methods.put).route.stack;
+ const res=()=>({statusCode:200,status(n){this.statusCode=n;return this},json(v){this.body=v;return this}});
+ for(const [user,status]of[[null,401],[{access_scope:'dtf_only'},403]]){const response=res();route[0].handle({hubUser:user},response,()=>assert.fail('Access granted'));assert.equal(response.statusCode,status)}
+ for(const body of [{},{sourceOrderId:1,body:'text',version:-1},{sourceOrderId:1,body:'x'.repeat(20001),version:0},{sourceOrderId:1,body:'text',version:0,documentKey:{bad:true}}]){const response=res();await route[1].handle({body},response,e=>{throw e});assert.equal(response.statusCode,400)}
 });
