@@ -72,3 +72,34 @@ test('Insights order buttons invoke DATABASE Order Info in the current tab',asyn
  assert.doesNotMatch(source,/target="_blank"|database-job\.html|window\.open/);
  assert.match(source,/class="ins-open-order" data-ins-order=/);assert.match(source,/class="ins-history-order" data-ins-order=/);
 });
+test('calendar years are inclusive and gift filtering only sums matching orders; activity stays cross-type',()=>{
+ const s=snap([job(1,'2022-12-31',999,{order_type:'Business gifts'}),job(2,'2023-01-01',2000,{order_type:'Business gifts'}),job(3,'2024-12-31',3000,{order_type:'Business Gifts'}),job(4,'2024-06-01',500,{order_type:'Printing'}),job(5,'2025-01-01',999,{order_type:'Business gifts'}),job(6,'2026-10-01',200,{order_type:'Embroidery'}),job(7,'2024-01-01',800,{customer_id:2,customer_name:'Print only',order_type:'Printing'})]);
+ const r=buildCustomers(s,{fromYear:2023,toYear:2024,jobType:'gifts',today:'2026-10-28'});assert.equal(r.customers.length,1);const c=r.customers[0];assert.equal(c.periodValue,5000);assert.equal(c.periodOrders,2);assert.equal(c.lifetimeValue,7698);assert.equal(c.candidate,false);assert.equal(c.lastOrderDate,'2026-10-01');assert.deepEqual(c.annual.map(p=>p.value),[2000,3000]);assert.equal(r.end,'2024-12-31');
+});
+test('print, embroidery and combined orders remain distinct job-type filters',()=>{
+ const s=snap([job(1,'2024-01-01',10,{order_type:'Printing'}),job(2,'2024-01-02',20,{order_type:'Embroidery'}),job(3,'2024-01-03',30,{order_type:'Print + Emb'})]);
+ for(const [jobType,value]of[['print',10],['embroidery',20],['combined',30],['all',60]])assert.equal(buildCustomers(s,{jobType,today:'2026-10-28'}).customers[0].periodValue,value);
+ assert.equal(buildCustomers(s,{jobType:'gifts',today:'2026-10-28'}).customers.length,0);
+});
+test('sales notes persist, retain concurrent authors, retry idempotently and follow merged identities',async()=>{
+ const {ensureCustomerInsightsTables}=require('../src/db/customerInsightsSchema');const {addNote,attachNotes}=require('../src/services/customerInsightNotes');const db=new PGlite();
+ try{
+ await db.exec("CREATE TABLE hub_users(id int PRIMARY KEY); INSERT INTO hub_users VALUES(1),(2); CREATE TABLE database_jobs(source_order_id int,customer_id int,customer_name text); INSERT INTO database_jobs VALUES(10,1,'Acme'),(11,2,'Acme');");await ensureCustomerInsightsTables(db);await ensureCustomerInsightsTables(db);
+ const first={sourceOrderId:10,body:'Called 28 October. Follow up next week.',requestId:'11111111-1111-4111-8111-111111111111',user:{id:1,first_name:'Sales',last_name:'One'}};
+ assert.equal((await addNote(db,first)).status,201);assert.equal((await addNote(db,first)).status,200);
+ assert.equal((await addNote(db,{...first,body:'Changed payload'})).status,409);
+ assert.equal((await addNote(db,{sourceOrderId:11,body:'Customer replied.',requestId:'22222222-2222-4222-8222-222222222222',user:{id:2,first_name:'Sales',last_name:'Two'}})).status,201);
+ const r=await attachNotes(db,selectCustomers(build(snap([job(10,'2025-01-01',6000),job(11,'2025-02-01',100,{customer_id:2})])),{preset:'all'}));assert.equal(r.customers[0].salesNotes.length,2);assert.equal(r.customers[0].salesNotes[0].created_by_name,'Sales Two');assert.equal(r.customers[0].noteKeys,undefined);assert.equal((await db.query('SELECT COUNT(*)::int AS n FROM customer_insight_notes')).rows[0].n,2);
+ assert.equal((await addNote(db,{...first,sourceOrderId:999})).status,404);
+ }finally{await db.close()}
+});
+test('notes endpoint rejects unauthorized or invalid writes before accessing the database',async()=>{
+ const router=createRouter({query(){assert.fail('Unexpected database access')}},async()=>snap([]));const route=router.stack.find(l=>l.route?.path==='/api/insights/notes').route.stack;
+ const res=()=>({statusCode:200,status(n){this.statusCode=n;return this},json(v){this.body=v;return this}});
+ for(const [user,status]of[[null,401],[{access_scope:'dtf_only'},403]]){const response=res();route[0].handle({hubUser:user},response,()=>assert.fail('Access granted'));assert.equal(response.statusCode,status)}
+ for(const body of [{},{sourceOrderId:1,body:' '},{sourceOrderId:1,body:'x'.repeat(4001),requestId:'11111111-1111-4111-8111-111111111111'}]){const response=res();await route[1].handle({body},response,e=>{throw e});assert.equal(response.statusCode,400)}
+});
+test('year ranges and job types reject malformed filters',async()=>{
+ const route=createRouter({},async()=>{assert.fail('Unexpected snapshot read')}).stack.find(l=>l.route?.path==='/api/insights/customers').route.stack[1].handle;
+ for(const query of [{fromYear:'2024'},{fromYear:'2024',toYear:'2023'},{fromYear:'1999',toYear:'2024'},{fromYear:'2023',toYear:'9999'},{jobType:'sql'},{fromYear:['2023'],toYear:'2024'}]){let code;await route({query},{status(n){code=n;return this},json(){}},e=>{throw e});assert.equal(code,400)}
+});

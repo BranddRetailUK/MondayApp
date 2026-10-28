@@ -1,18 +1,26 @@
 const express = require('express');
 const { requireHubFullApiAccess } = require('../middleware/hubAuth');
-const { createSnapshotLoader, buildCustomers, selectCustomers } = require('../services/customerInsights');
+const { createSnapshotLoader, buildCustomers, selectCustomers, todayLondon } = require('../services/customerInsights');
+const { attachNotes, addNote } = require('../services/customerInsightNotes');
 function createRouter(pool = require('../db/pool'), load = createSnapshotLoader(pool)) {
   const router = express.Router();
   router.get('/api/insights/customers', requireHubFullApiAccess, async (req,res,next) => {
-    const { years='3', preset='contact', search='', page='1' } = req.query;
-    if (!['1','2','3','5'].includes(years) || !['contact','value','orders','lapsed','dormant','all'].includes(preset) || typeof search !== 'string' || search.length > 200 || typeof page !== 'string' || !/^\d{1,6}$/.test(page) || Number(page)<1) {
-      return res.status(400).json({error:'Choose a valid period, preset, search and page.'});
+    const { years='3', preset='contact', search='', page='1', fromYear, toYear, jobType='all' } = req.query;
+    const currentYear=Number(todayLondon().slice(0,4));
+    const validYear=y=>typeof y==='string'&&/^\d{4}$/.test(y)&&Number(y)>=2000&&Number(y)<=currentYear;
+    if (!['1','2','3','5'].includes(years) || !['contact','value','orders','lapsed','dormant','all'].includes(preset) || typeof search !== 'string' || search.length > 200 || typeof page !== 'string' || !/^\d{1,6}$/.test(page) || Number(page)<1 || !['all','print','embroidery','combined','gifts'].includes(jobType) || ((fromYear!==undefined||toYear!==undefined)&&(!validYear(fromYear)||!validYear(toYear)||Number(fromYear)>Number(toYear)))) {
+      return res.status(400).json({error:'Choose a valid year range, job type and preset.'});
     }
     try {
-      const result = buildCustomers(await load(), {years:Number(years)});
+      const result = buildCustomers(await load(), {years:Number(years),fromYear:fromYear?Number(fromYear):undefined,toYear:toYear?Number(toYear):undefined,jobType});
       res.set('Cache-Control','no-store');
-      res.json(selectCustomers(result,{preset,search,page:Number(page)}));
+      res.json(await attachNotes(pool,selectCustomers(result,{preset,search,page:Number(page)})));
     } catch(error) { next(error); }
+  });
+  router.post('/api/insights/notes', requireHubFullApiAccess, async(req,res,next)=>{
+    const {sourceOrderId,body,requestId}=req.body||{};
+    if (!Number.isSafeInteger(sourceOrderId)||sourceOrderId<1||typeof body!=='string'||!body.trim()||body.trim().length>4000||typeof requestId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId))return res.status(400).json({error:'Enter a note of 1–4,000 characters for a valid customer order.'});
+    try{const result=await addNote(pool,{sourceOrderId,body:body.trim(),requestId,user:req.hubUser});res.set('Cache-Control','no-store');res.status(result.status).json(result.error?{error:result.error}:{note:result.note});}catch(error){next(error);}
   });
   return router;
 }

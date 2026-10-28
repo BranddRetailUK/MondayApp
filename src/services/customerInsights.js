@@ -1,3 +1,4 @@
+const { createHash } = require('node:crypto');
 // Confirmed closed by the user. Insights-only exclusion; retain all DATABASE history.
 const CLOSED_CUSTOMER_IDS = new Set([469]); // Special Wear UK Ltd
 const DAY = 86400000;
@@ -47,8 +48,21 @@ function createSnapshotLoader(pool) {
     return pending;
   };
 }
-function buildCustomers(snapshot, { years = 3, today = todayLondon() } = {}) {
-  const start = monthsBefore(today, years * 12), sixMonths = monthsBefore(today, 6);
+function customerNoteKey(row) {
+  return row.customer_id != null ? `id:${row.customer_id}` : `name:${createHash('sha256').update(normalize(row.customer_name)).digest('hex')}`;
+}
+function jobCategory(value) {
+  const type = normalize(value).replace(/&/g, '+');
+  if (['print + emb','print+emb','print + embroidery','print and embroidery','printing + embroidery'].includes(type)) return 'combined';
+  if (['printing','print'].includes(type)) return 'print';
+  if (['embroidery','emb'].includes(type)) return 'embroidery';
+  if (['business gifts','business gift','gifts','gift'].includes(type)) return 'gifts';
+  return 'other';
+}
+function buildCustomers(snapshot, { years = 3, fromYear, toYear, jobType = 'all', today = todayLondon() } = {}) {
+  const start = fromYear ? `${fromYear}-01-01` : monthsBefore(today, years * 12);
+  const end = toYear ? [`${toYear}-12-31`,today].sort()[0] : today;
+  const sixMonths = monthsBefore(today, 6);
   const parents = new Map();
   function find(k) { if (!parents.has(k)) parents.set(k, k); if (parents.get(k) !== k) parents.set(k, find(parents.get(k))); return parents.get(k); }
   const keys = row => [row.customer_id != null ? `id:${row.customer_id}` : '', normalize(row.customer_name) ? `name:${normalize(row.customer_name)}` : ''].filter(Boolean);
@@ -75,7 +89,8 @@ function buildCustomers(snapshot, { years = 3, today = todayLondon() } = {}) {
   for (const [key, group] of groups) {
     if (group.jobs.some(j => CLOSED_CUSTOMER_IDS.has(Number(j.customer_id)))) continue;
     const jobs = group.jobs.sort((a, b) => b.order_date.localeCompare(a.order_date) || b.source_order_id - a.source_order_id);
-    const period = jobs.filter(j => j.order_date >= start);
+    const matchesType = j => jobType === 'all' || jobCategory(j.order_type) === jobType;
+    const period = jobs.filter(j => j.order_date >= start && j.order_date <= end && matchesType(j));
     if (!period.length) continue;
     const last = jobs[0], sources = [...group.profiles, ...jobs, ...group.contacts];
     const primary = sources.find(c => normalize(c.contact_email)) || sources.find(c => c.contact_phone || c.contact_mobile) || sources[0];
@@ -103,12 +118,16 @@ function buildCustomers(snapshot, { years = 3, today = todayLondon() } = {}) {
     const missing = jobs.reduce((s,j) => s + Number(j.missing || 0), 0);
     if (missing) notes.push(`${missing} historical lines lack a price or quantity; value may be understated.`);
     const candidate = qualified && lapsed && !sharedContact && !sharedDomain;
-    const annual = Array.from({length: years}, (_, i) => {
-      const from = monthsBefore(today, (years-i)*12), to = i === years-1 ? today : monthsBefore(today, (years-i-1)*12);
-      const orders = jobs.filter(j => j.order_date >= from && (i === years-1 ? j.order_date <= to : j.order_date < to));
-      return { from, to, endInclusive: i === years-1, value: money(orders.reduce((s,j) => s+Number(j.net),0)), orders: orders.length };
+    const annualCount = fromYear ? toYear-fromYear+1 : years;
+    const annual = Array.from({length: annualCount}, (_, i) => {
+      const from = fromYear ? `${fromYear+i}-01-01` : monthsBefore(today, (years-i)*12);
+      const to = fromYear ? [`${fromYear+i}-12-31`,end].sort()[0] : i === years-1 ? today : monthsBefore(today, (years-i-1)*12);
+      const endInclusive = Boolean(fromYear) || i === years-1;
+      const orders = period.filter(j => j.order_date >= from && (endInclusive ? j.order_date <= to : j.order_date < to));
+      return { from, to, endInclusive, value: money(orders.reduce((s,j) => s+Number(j.net),0)), orders: orders.length };
     });
-    customers.push({ key, name: last.customer_name || 'Unnamed customer', customerIds: [...new Set(jobs.map(j => j.customer_id).filter(id => id != null))],
+    const noteKeys = [...new Set(jobs.flatMap(j => [customerNoteKey(j), customerNoteKey({customer_name:j.customer_name})]))];
+    customers.push({ key, noteKeys, name: last.customer_name || 'Unnamed customer', customerIds: [...new Set(jobs.map(j => j.customer_id).filter(id => id != null))],
       periodValue, periodOrders: period.length, lifetimeValue, lifetimeOrders: jobs.length, averageOrder: money(periodValue / period.length),
       lastOrderDate: last.order_date, lastActivity, inactiveDays, cadence, candidate, qualified, sharedContact, sharedDomain, seasonal,
       contact: { name: primary?.contact_name || '', email: primary?.contact_email || '', phone: [primary?.contact_phone,primary?.contact_mobile].find(p => String(p || '').replace(/\D/g,'').length>=5) || '', source: group.profiles.includes(primary) ? 'Customer profile' : jobs.includes(primary) ? 'Order history' : 'Historical contact' },
@@ -122,7 +141,7 @@ function buildCustomers(snapshot, { years = 3, today = todayLondon() } = {}) {
     c.score = c.candidate ? Math.round(50*Math.log1p(Math.max(0,c.periodValue))/Math.log1p(maxValue) + 30*Math.log1p(c.periodOrders)/Math.log1p(maxOrders) + 20*Math.min(1,c.cadence ? c.inactiveDays/(2*c.cadence) : c.inactiveDays/365)) : 0;
     c.reason = c.sharedContact || c.sharedDomain ? 'Review account identity' : c.candidate ? `Valuable past customer · no orders for ${c.inactiveDays} days${c.cadence && c.inactiveDays > c.cadence*1.5 ? ` · beyond typical ${c.cadence}-day interval` : ''}` : !c.qualified ? 'Below the £5,000 / 10-order historical threshold' : 'Recently active';
   }
-  return { customers, start, today, years, invalidDates, fetchedAt:snapshot.fetchedAt, latestOrder:snapshot.jobs.map(j=>j.order_date).filter(d=>d<=today).sort().at(-1) || null };
+  return { customers, start, end, today, years, fromYear, toYear, jobType, invalidDates, fetchedAt:snapshot.fetchedAt, latestOrder:snapshot.jobs.map(j=>j.order_date).filter(d=>d<=today).sort().at(-1) || null };
 }
 function selectCustomers(result, { preset='contact', search='', page=1, pageSize=24 }={}) {
   let rows = result.customers.filter(c => normalize(`${c.name} ${c.contact.name} ${c.contact.email}`).includes(normalize(search)));
@@ -134,4 +153,4 @@ function selectCustomers(result, { preset='contact', search='', page=1, pageSize
   return { ...result, customers: rows.slice((page-1)*pageSize,page*pageSize), total, page, pages, pageSize,
     summary:{ value:money(rows.reduce((s,c)=>s+c.periodValue,0)),orders:rows.reduce((s,c)=>s+c.periodOrders,0),candidates:rows.filter(c=>c.candidate).length }, preset };
 }
-module.exports = { todayLondon, monthsBefore, JOBS_SQL, readSnapshot, createSnapshotLoader, buildCustomers, selectCustomers };
+module.exports = { customerNoteKey, jobCategory, todayLondon, monthsBefore, JOBS_SQL, readSnapshot, createSnapshotLoader, buildCustomers, selectCustomers };
