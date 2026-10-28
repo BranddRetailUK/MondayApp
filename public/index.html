@@ -18,6 +18,8 @@
   <script src="file-viewer.js" defer></script>
   <link rel="stylesheet" href="proof-generator.css">
   <script src="holiday-board.js" defer></script>
+  <link rel="stylesheet" href="insights.css">
+  <script src="insights.js" defer></script>
   <script src="auth-session.js" defer></script>
   <script src="digitising-studio.js" defer></script>
   <script src="label-layout.js" defer></script>
@@ -56,6 +58,7 @@
         <ul class="nav-tabs">
           <li data-tab="test-dashboard" class="active">DASHBOARD</li>
           <li data-tab="database">DATABASE</li>
+          <li data-tab="insights">INSIGHTS</li>
           <li data-tab="holiday-board">HOLIDAY BOARD</li>
           <li data-tab="dtf-uploader" hidden>DTF UPLOADER</li>
           <li data-tab="file-viewer">FILE VIEWER</li>
@@ -91,6 +94,8 @@
         <div id="print-export-controls"></div>
         <div id="test-board"><div class="board-loading workspace-loading" role="status" aria-label="Loading dashboard"><span class="board-loading-spinner" aria-hidden="true"></span></div></div>
       </section>
+
+      <section id="tab-insights" class="tab-content" aria-label="Customer Insights"><div id="insights-root"></div></section>
 
       <section id="tab-holiday-board" class="tab-content" aria-label="Holiday Board"><div id="holiday-board"></div></section>
 

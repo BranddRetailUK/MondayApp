@@ -64,6 +64,7 @@ app.use('/api/digitising-studio', require('./routes/digitising-studio').createRo
 app.use('/api/proof-generator', require('./routes/proof-generator').createRouter());
 
 // Routers
+app.use(require('./routes/insights').createRouter());
 app.use(requireHubApiAuth, dtfRoutes);
 app.use(requireHubFullApiAccess, require('./routes/database'));
 app.use(requireHubFullApiAccess, testDashboardRoutes.protectedRouter);

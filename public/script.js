@@ -22,7 +22,7 @@ const MOBILE_NAV_MEDIA = '(max-width: 720px), (max-width: 960px) and (max-height
 const PROOF_PDF_ZOOM_MIN = 0.5;
 const PROOF_PDF_ZOOM_MAX = 3;
 const PROOF_PDF_ZOOM_STEP = 0.25;
-const DASHBOARD_TAB_NAMES = ['database', 'test-dashboard', 'holiday-board', 'dtf-uploader', 'proof-generator', 'file-viewer', 'digitising-studio'];
+const DASHBOARD_TAB_NAMES = ['database', 'test-dashboard', 'insights', 'holiday-board', 'dtf-uploader', 'proof-generator', 'file-viewer', 'digitising-studio'];
 const BOARD_AUTO_REFRESH_MS = 3000;
 const BOARD_CONTEXT_TEST = 'test-dashboard';
 const PRIVATE_DASHBOARD_TOTAL_COLUMN = Object.freeze({ id: 'private_total', title: 'TOTAL', type: 'text' });
@@ -5651,6 +5651,7 @@ function activateDashboardTab(target) {
     content.classList.toggle("active", content.id === `tab-${activeTab}`);
   });
   setStoredDashboardTab(activeTab);
+  if (activeTab === 'insights') window.loadInsights?.();
   if (activeTab === 'holiday-board') window.loadHolidayBoard?.();
   if (activeTab === 'test-dashboard') {
     loadTestBoard({ forceRefresh: true });
