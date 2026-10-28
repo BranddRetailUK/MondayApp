@@ -35,12 +35,10 @@
 .ins-filters .ins-search { flex: 1; }
 .ins-filters select, .ins-filters input { width: 100%; background: var(--panel); color: var(--text); border: 1px solid #656971; border-radius: 6px; padding: 11px; min-height: 46px; color-scheme: dark; }
 .ins-filters input::placeholder { color: #a6a8ad; }
-.ins-explainer { color: var(--ins-muted); margin: 20px 0; }
-.ins-kpis { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 14px; }
+.ins-kpis { margin: 20px 0; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 14px; }
 .ins-kpis > div { background: var(--panel-soft); border: 1px solid var(--border); border-top: 3px solid #8ec7e3; border-radius: 7px; padding: 20px; }
 .ins-kpis span { color: var(--ins-muted); font-size: 14px; display: block; }
 .ins-kpis strong { display: block; font-size: 30px; color: var(--ins-blue); margin-top: 7px; font-variant-numeric: tabular-nums; }
-.ins-meta { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--ins-muted); margin: 20px 0; }
 .ins-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; align-items: stretch; }
 .ins-card { display: flex; flex-direction: column; background: var(--panel-soft); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 24px; min-width: 0; overflow-wrap: anywhere; }
 .ins-card-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--ins-muted); }
@@ -146,3 +144,18 @@
 .ins-notes { padding: 7px 10px 7px 26px; font-size: 13px; line-height: 1.35; }
 .ins-notes li + li { margin-top: 4px; }
 @media(max-width:480px) { .ins-card { padding: 14px; } .ins-contact-job { gap: 12px; } }
+
+/* Primary customer actions share the dashboard light-blue accent. */
+#insights-root .ins-open-order,
+#insights-root .ins-note-actions button {
+  background: var(--ins-blue);
+  border-color: var(--ins-blue);
+  color: #163b50;
+  font-weight: 600;
+}
+#insights-root .ins-open-order:hover:not(:disabled),
+#insights-root .ins-note-actions button:hover:not(:disabled) {
+  background: #a9d8f0;
+  border-color: #a9d8f0;
+  color: #163b50;
+}
