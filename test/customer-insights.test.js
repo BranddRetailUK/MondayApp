@@ -58,3 +58,17 @@ test('business-domain overlap flags related active accounts, while personal prov
  const s=snap([job(1,'2025-01-01',6000,{contact_email:`old@${domain}`}),job(2,'2026-10-01',100,{customer_id:2,customer_name:'Other',contact_email:`new@${domain}`})]);const c=build(s).customers.find(c=>c.name==='Acme');assert.equal(c.sharedDomain,expected);assert.equal(c.candidate,!expected);
  }
 });
+test('closed Special Wear identity is excluded from every preset and summary without affecting other customers',()=>{
+ const r=build(snap([job(1,'2025-01-01',6000,{customer_id:469,customer_name:'Special Wear UK Ltd'}),job(2,'2025-02-01',100,{customer_id:470,customer_name:'Special Wear UK Ltd'}),job(3,'2025-01-01',8000,{customer_id:999,customer_name:'Special Events Ltd'})]));
+ for(const preset of ['contact','value','orders','all','lapsed','dormant']){const result=selectCustomers(r,{preset});assert.equal(result.total,1);assert.equal(result.summary.value,8000);assert.equal(result.customers[0].name,'Special Events Ltd');}
+});
+test('Insights order buttons invoke DATABASE Order Info in the current tab',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm');let click;const feedback={textContent:''};
+ const root={addEventListener(type,handler){if(type==='click')click=handler},contains(){return true},querySelector(){return feedback}};
+ const calls=[],button={dataset:{insOrder:'50604'},disabled:false};
+ const source=fs.readFileSync(require.resolve('../public/insights.js'),'utf8');
+ vm.runInNewContext(source,{document:{getElementById:()=>root},window:{async ultimateHubOpenDatabaseOrder(...args){calls.push(args)}},localStorage:{getItem:()=>null},Intl,Date,Number});
+ await click({target:{closest:()=>button}});assert.deepEqual(calls,[[50604,'details']]);assert.equal(button.disabled,false);
+ assert.doesNotMatch(source,/target="_blank"|database-job\.html|window\.open/);
+ assert.match(source,/class="ins-open-order" data-ins-order=/);assert.match(source,/class="ins-history-order" data-ins-order=/);
+});

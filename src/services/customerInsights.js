@@ -1,3 +1,5 @@
+// Confirmed closed by the user. Insights-only exclusion; retain all DATABASE history.
+const CLOSED_CUSTOMER_IDS = new Set([469]); // Special Wear UK Ltd
 const DAY = 86400000;
 const normalize = value => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 const todayLondon = (date = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
@@ -71,6 +73,7 @@ function buildCustomers(snapshot, { years = 3, today = todayLondon() } = {}) {
   }
   const customers = [];
   for (const [key, group] of groups) {
+    if (group.jobs.some(j => CLOSED_CUSTOMER_IDS.has(Number(j.customer_id)))) continue;
     const jobs = group.jobs.sort((a, b) => b.order_date.localeCompare(a.order_date) || b.source_order_id - a.source_order_id);
     const period = jobs.filter(j => j.order_date >= start);
     if (!period.length) continue;

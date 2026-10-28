@@ -87,3 +87,7 @@
   .ins-card { padding: 18px; }
   .ins-card-top { align-items: flex-start; flex-direction: column; }
 }
+
+#insights-root .ins-history-order { background: none; border: 0; padding: 6px 0; color: var(--ins-blue); text-align: left; justify-content: flex-start; text-decoration: underline; }
+#ins-navigation-status { color: var(--danger); }
+#ins-navigation-status:empty { display: none; }
