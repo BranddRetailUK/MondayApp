@@ -30,7 +30,7 @@ Run with Railway-provided environment variables or a secure local environment. N
 
 Marketing content must contain `<%asm_group_unsubscribe_raw_url%>` in HTML and plain text. Dedicated unsubscribe group **Ultimate Promotions**, ID **43513**, is configured as `SENDGRID_UNSUBSCRIBE_GROUP_ID` in UltimateHub. It is not a default group for the shared account. Provider suppressions are never bypassed. Click/open tracking are explicitly disabled so the shared Goodgame default tracking domain is not used. There is no automatic retry on failure or timeout.
 
-The three finished campaigns are in `emails/christmas-2026/`, with subjects in `campaigns.json`, HTML and plain text bodies. They use hosted Cloudinary photography, collection and product links currently targeting the local development website, the Unicorn House postal address, and SendGrid unsubscribe/preference tokens. No prices are included. Website links currently use http://127.0.0.1:3119 and must be changed to the final public HTTPS address before sending again; the helper rejects localhost links. Review inbox tests and obtain an approved recipient list before customer sending; do not infer marketing permission from existing customer records.
+The three finished campaigns are in `emails/christmas-2026/`, with subjects in `campaigns.json`, HTML and plain text bodies. They use hosted Cloudinary photography, collection and product links targeting https://ultimatechristmas-production.up.railway.app/, the Unicorn House postal address, and SendGrid unsubscribe/preference tokens. No prices are included. Each email includes three rounded View hamper buttons and an Explore the full range homepage button, matching the site typography and colours. Review inbox tests and obtain an approved recipient list before customer sending; do not infer marketing permission from existing customer records.
 
 ## Verification, 29 October 2026
 
@@ -41,3 +41,5 @@ The three finished campaigns are in `emails/christmas-2026/`, with subjects in `
 - `SENDGRID_SENDING_ENABLED=false` remains set in Railway. The test process alone enabled sending temporarily; no customer emails were sent.
 
 The initial ultimatepromotions.co.uk authentication (33726409) remains pending and unused; no DNS changes were made for that domain.
+
+Updated live-site version: all three passed sandbox validation; one test of the first campaign was accepted for scott@brandd.co.uk at 13:16 UTC on 29 October 2026 (SendGrid message X8FnMj1OT8mgrBs5Sqoljg). No additional customer sends.
