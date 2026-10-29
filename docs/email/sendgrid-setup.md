@@ -2,21 +2,21 @@
 
 Railway: UltimateHub / production / UltimateHub. Uses the existing Good Game Apparel SendGrid account and API key, copied directly between Railway services without saving the secret in the repository.
 
-Sender and reply-to: sales@ultimatepromotions.co.uk. Sender name: Ultimate Promotions.
+Sender: sales@upcbranding.co.uk. Reply-to currently remains sales@ultimatepromotions.co.uk pending confirmation because UPC DNS has no MX records. Sender name: Ultimate Promotions.
 
 ## Domain authentication
 
-SendGrid authentication ID: 33726409. DNS provider: GoDaddy.
+SendGrid authentication ID: 33726462. DNS provider: GoDaddy.
 
-Add these CNAME records in the ultimatepromotions.co.uk zone:
+Add these CNAME records in the upcbranding.co.uk zone:
 
 | Host | Target |
 | --- | --- |
-| em9126 | u59884118.wl119.sendgrid.net |
+| em3606 | u59884118.wl119.sendgrid.net |
 | s1._domainkey | s1.domainkey.u59884118.wl119.sendgrid.net |
 | s2._domainkey | s2.domainkey.u59884118.wl119.sendgrid.net |
 
-The existing `_dmarc` TXT record is already `v=DMARC1; p=none;`; preserve it, do not create a duplicate. Check for existing DKIM records before adding these CNAMEs. Verify the domain in SendGrid after propagation. Domain authentication is pending until that succeeds.
+Add `_dmarc` TXT `v=DMARC1; p=none;` (no existing DMARC record in this zone). The four entries are prepared in GoDaddy pending final authorization to save. Check for existing DKIM records before adding these CNAMEs. Verify the domain in SendGrid after propagation. Domain authentication is pending until that succeeds.
 
 ## Server sending helper
 
@@ -37,3 +37,5 @@ The three hamper emails remain approval drafts: replace enquiry/footer placehold
 - Five unit tests pass (`node --test test/sendgrid.test.js`).
 - Live SendGrid sandbox validation succeeded using the copied UltimateHub configuration; no mail was delivered.
 - `SENDGRID_SENDING_ENABLED=false` until domain verification and campaign preparation are complete.
+
+The initial ultimatepromotions.co.uk authentication (33726409) remains pending and unused; no DNS changes were made for that domain.
