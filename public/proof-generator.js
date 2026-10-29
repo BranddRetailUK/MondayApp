@@ -145,18 +145,43 @@
   let selectedLinkJob=null;
   const officeSearch=root.querySelector('#proof-office-search'),officeSelect=root.querySelector('#proof-office-job'),existingReference=root.querySelector('#proof-existing-reference'),referenceControl=root.querySelector('#proof-reference-control'),officeStatus=root.querySelector('#proof-office-status');
   let officeRows=[],officeRequest=0,officeTimer;
+  const linkExistingProof=document.createElement('button');
+  linkExistingProof.type='button';linkExistingProof.className='proof-secondary-button';linkExistingProof.textContent='Link to job';
+  root.querySelector('#proof-job-picker').append(linkExistingProof);
+  linkExistingProof.addEventListener('click',linkExistingDesign);
+  async function linkExistingDesign(){
+    if(busy||!designId||design?.sourceOrderId||design?.linkedJobs?.length)return;
+    const id=designId;busy=true;showJobSelection();
+    try{
+      const target=await window.ProofLinks.picker('jobs',{customer:customer.value});
+      if(!target)return;
+      if(!await window.ProofLinks.link(id,target.source_order_id))return;
+      // Update the open editor's identity without discarding unsaved artwork/layout edits.
+      selectedLinkJob=target;
+      design={...design,sourceOrderId:target.source_order_id,linkedJobs:[target.source_order_id],linkedOrders:[{sourceOrderId:target.source_order_id,orderNo:target.order_no}]};
+      if(currentBrief)currentBrief.proofSourceOrderId=target.source_order_id;
+      officeStatus.textContent=`Linked to job ${target.order_no||target.source_order_id}.`;
+      window.ProofLinks.refresh();await refreshHistory();
+    }catch(error){officeStatus.textContent=error.message;}
+    finally{busy=false;showJobSelection();}
+  }
   function showJobSelection(){
     officeSelect.replaceChildren(new Option('No job selected — create a new design',''));
     const rows=selectedLinkJob?[selectedLinkJob,...officeRows.filter(row=>row.source_order_id!==selectedLinkJob.source_order_id)]:officeRows;
     for(const row of rows)officeSelect.add(new Option(`${row.order_no||row.source_order_id} · ${row.customer_name||''} · ${row.job_title||''}${row.designRefs?.length?' · '+row.designRefs.join(', '):''}`,String(row.source_order_id)));
     officeSelect.value=selectedLinkJob?String(selectedLinkJob.source_order_id):'';
-    referenceControl.hidden=!selectedLinkJob?.designRefs?.length;
+    referenceControl.hidden=!!designId||!selectedLinkJob?.designRefs?.length;
+    officeSearch.parentElement.hidden=!!designId;
+    officeSelect.parentElement.hidden=!!designId&&!selectedLinkJob;
     const previous=existingReference.value;existingReference.replaceChildren();
     const refs=selectedLinkJob?.designRefs||[];
     if(refs.length>1)existingReference.add(new Option('Select a design reference',''));
     for(const ref of refs)existingReference.add(new Option(ref,ref));
     if(refs.includes(previous))existingReference.value=previous;
     for(const control of [officeSearch,officeSelect,existingReference])control.disabled=busy||!!designId;
+    linkExistingProof.hidden=localPreview||!designId||!!design?.sourceOrderId||!!design?.linkedJobs?.length;
+    linkExistingProof.disabled=busy||['saving','save_queued','allocating'].includes(design?.status);
+    if(designId&&!design?.sourceOrderId&&!design?.linkedJobs?.length&&!officeStatus.textContent)officeStatus.textContent='Use Link to job to find a job added after this proof was created.';
     root.querySelector('#proof-job-picker').hidden=localPreview;
   }
   async function loadOfficeJobs(){

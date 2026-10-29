@@ -1267,3 +1267,8 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Verification covers legacy-note preservation, document edit/reload, clearing, retry and stale-version protection; visual preview uses the isolated local notes database.
 
 - Insights removes the grey period explainer above the KPI row and date/snapshot text below it. KPI labels and the expandable methodology remain. View latest order and Save notes use solid light-blue accent backgrounds with dark text, including an accent hover state.
+
+### Link an existing proof to a later job (2026-10-29)
+
+- The existing-proof editor offers **Link to job** for unlinked live proofs. It fetches the current open-job list through the same picker as proof history, including approved jobs without visuals; it is not limited to unapproved OFFICE jobs. The new-design OFFICE selector and design-reference allocation remain unchanged and are hidden for existing unlinked proofs.
+- Successful linking updates the editor's job identity and brief together, preserving unsaved artwork/layout edits and the existing design number. Cancelled or rejected linking leaves that identity unchanged. Busy saves and existing associations remain protected. Publication attaches the workstation-confirmed saved PDF; subsequent regeneration uses the normal linked-job approval confirmation.

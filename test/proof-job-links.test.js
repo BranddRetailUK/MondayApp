@@ -251,3 +251,16 @@ test('PSG extraction requires a used DST filename and preserves multiple distinc
   assert.deepEqual(psgNumbers(source,artworks),['PSG0012','PSG456']);
   assert.deepEqual(psgNumbers(null,artworks),[]);
 });
+
+test('saved standalone proof finds and links a job created later even after job approval',async()=>{
+  const f=await fixture();try{
+    assert.equal((await f.links.jobs('51384')).length,0);
+    await f.db.query("INSERT INTO database_jobs(source_order_id,order_no,customer_name,job_title,proof_approved,dashboard_status) VALUES(50631,51384,'Customer A','Later job',true,'STOCK ORDERED')");
+    assert.equal((await f.links.officeJobs('51384')).length,0);
+    assert.equal((await f.links.jobs('51384'))[0].source_order_id,50631);
+    await f.links.link(f.id,50631);
+    const job=await f.links.job(50631);
+    assert.equal(job.proof_id,f.id);assert.equal(job.saved_revision,1);assert.equal(job.proof_approved,true);assert.equal(job.has_visual,true);
+    assert.equal(f.uploads[0].bytes,'original PDF');
+  }finally{await f.db.close();}
+});

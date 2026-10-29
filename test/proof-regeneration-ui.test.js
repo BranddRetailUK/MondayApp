@@ -299,3 +299,23 @@ test('linked regeneration cancellation returns to the editor without reservation
  h.context.window={ProofLinks:{beginRegeneration:async()=>false}};
  await h.context.run();assert.deepEqual(h.calls,['list','editor']);assert.equal(h.context.busy,false);
 });
+
+for(const outcome of ['linked','cancel','failure'])test(`existing proof editor links to a later job: ${outcome}`,async()=>{
+  const calls=[];
+  const target={source_order_id:50631,order_no:51384};
+  const context={busy:false,designId:'existing-proof',design:{status:'saved',revision:5},customer:{value:'JIBWORX'},selectedLinkJob:null,
+    currentBrief:{products:[{decorations:[{widthMm:100,placement:{x:.4,y:.3}}]}]},officeStatus:{textContent:''},showJobSelection(){},
+    refreshHistory:async()=>calls.push('history'),window:{ProofLinks:{picker:async(kind,options)=>{calls.push([kind,options.customer]);return outcome==='cancel'?null:target;},link:async(id,job)=>{calls.push([id,job]);if(outcome==='failure')throw Error('Job already has a visual');return target;},refresh:()=>calls.push('refresh')}}};
+  const layout=JSON.stringify(context.currentBrief.products);
+  createContext(context);
+  const fn=source.slice(source.indexOf('  async function linkExistingDesign()'),source.indexOf('  function showJobSelection()'));
+  vm.runInContext(fn+'\nthis.run=linkExistingDesign;',context);await context.run();
+  assert.equal(context.busy,false);assert.equal(JSON.stringify(context.currentBrief.products),layout);
+  assert.deepEqual(calls[0],['jobs','JIBWORX']);
+  if(outcome==='linked'){
+    assert.equal(context.currentBrief.proofSourceOrderId,50631);assert.equal(context.design.sourceOrderId,50631);
+    assert.equal(context.design.revision,5);assert.equal(context.selectedLinkJob.order_no,51384);
+    await context.run();assert.equal(calls.filter(x=>Array.isArray(x)&&x[0]==='existing-proof').length,1);
+  }else{assert.equal(context.design.sourceOrderId,undefined);assert.equal(context.selectedLinkJob,null);}
+  if(outcome==='failure')assert.match(context.officeStatus.textContent,/already has a visual/);
+});
