@@ -28,14 +28,16 @@ Saved `_dmarc` TXT `v=DMARC1; p=none;`. All four records were added after explic
 
 Run with Railway-provided environment variables or a secure local environment. Never put an API key in message JSON. Message format: `{ "to": "recipient@example.com", "subject": "...", "html": "...", "text": "..." }`.
 
-Marketing content must contain `<%asm_group_unsubscribe_raw_url%>` in HTML and plain text. Select/create a dedicated Ultimate Promotions unsubscribe group in the shared SendGrid account and configure its ID before live sending. Provider suppressions are never bypassed. Click/open tracking are explicitly disabled so the shared Goodgame default tracking domain is not used. There is no automatic retry on failure or timeout.
+Marketing content must contain `<%asm_group_unsubscribe_raw_url%>` in HTML and plain text. Dedicated unsubscribe group **Ultimate Promotions**, ID **43513**, is configured as `SENDGRID_UNSUBSCRIBE_GROUP_ID` in UltimateHub. It is not a default group for the shared account. Provider suppressions are never bypassed. Click/open tracking are explicitly disabled so the shared Goodgame default tracking domain is not used. There is no automatic retry on failure or timeout.
 
-The three hamper emails remain approval drafts: replace enquiry/footer placeholders and local asset URLs before using them. Supply the business postal address and an approved recipient list before a campaign is sent. Do not infer marketing permission from existing customer records.
+The three finished campaigns are in `emails/christmas-2026/`, with subjects in `campaigns.json`, HTML and plain text bodies. They use hosted Cloudinary photography, mailto enquiries to sales@ultimatepromotions.co.uk, the Unicorn House postal address, and SendGrid unsubscribe/preference tokens. No prices are included. Review inbox tests and obtain an approved recipient list before customer sending; do not infer marketing permission from existing customer records.
 
 ## Verification, 29 October 2026
 
 - Five unit tests pass (`node --test test/sendgrid.test.js`).
 - Live SendGrid sandbox validation succeeded using the copied UltimateHub configuration; no mail was delivered.
-- `SENDGRID_SENDING_ENABLED=false` until campaign preparation is complete.
+- All three final payloads passed SendGrid sandbox validation. Three explicit tests to scott@brandd.co.uk were accepted (HTTP 202) at 12:48 UTC on 29 October 2026. Acceptance does not confirm inbox delivery.
+- Hosted images loaded in all three browser previews; mobile cells are centered. Real Outlook/inbox rendering remains for user review.
+- `SENDGRID_SENDING_ENABLED=false` remains set in Railway. The test process alone enabled sending temporarily; no customer emails were sent.
 
 The initial ultimatepromotions.co.uk authentication (33726409) remains pending and unused; no DNS changes were made for that domain.

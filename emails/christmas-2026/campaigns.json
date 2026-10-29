@@ -1,0 +1,20 @@
+[
+  {
+    "slug": "01-thoughtful-thank-yous",
+    "subject": "A little thank you for your team this Christmas",
+    "html": "01-thoughtful-thank-yous-email.html",
+    "text": "01-thoughtful-thank-yous.txt"
+  },
+  {
+    "slug": "02-generous-gifting",
+    "subject": "Something to enjoy over the Christmas break",
+    "html": "02-generous-gifting-email.html",
+    "text": "02-generous-gifting.txt"
+  },
+  {
+    "slug": "03-extraordinary-gifts",
+    "subject": "When you\u2019d like to send a bigger thank you",
+    "html": "03-extraordinary-gifts-email.html",
+    "text": "03-extraordinary-gifts.txt"
+  }
+]
