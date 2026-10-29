@@ -10,3 +10,6 @@ summary{list-style:none}summary::-webkit-details-marker{display:none}summary:aft
 .product{padding-top:24px}
 /* Consistent button alignment across the entire collection. */
 button,.button,.nav-contact,[role="button"]{text-align:center;justify-content:center;align-items:center}.button{gap:0}.button>span:empty{display:none}.nav-contact{display:inline-flex}
+header img{width:260px}footer img{width:230px}@media(max-width:750px){header img{width:220px}footer img{width:210px}}
+.hero-caption{align-items:center;gap:18px}.hero-caption .hero-product-action{display:flex;align-items:center;gap:15px}.hero-caption .hero-product-price{font-size:17px}.hero-caption .view-hamper-button{display:inline-flex;align-items:center;justify-content:center;text-align:center;border-radius:999px;background:var(--green);color:#fff;padding:12px 20px;min-height:44px;font-size:16px;white-space:nowrap}.hero-caption:hover .view-hamper-button{background:#3b594a}@media(max-width:750px){.hero-caption .hero-product-action{justify-content:center;margin-top:12px}.hero-caption .hero-product-action span{margin-top:0}.hero-image{padding-bottom:130px}}
+.card-image,.card:nth-child(3n+2) .card-image,.product-photo,.hero-image{border-radius:24px;overflow:hidden}
