@@ -2,13 +2,13 @@
 
 Railway: UltimateHub / production / UltimateHub. Uses the existing Good Game Apparel SendGrid account and API key, copied directly between Railway services without saving the secret in the repository.
 
-Sender: sales@upcbranding.co.uk. Reply-to currently remains sales@ultimatepromotions.co.uk pending confirmation because UPC DNS has no MX records. Sender name: Ultimate Promotions.
+Sender: sales@upcbranding.co.uk. Confirmed reply-to: sales@ultimatepromotions.co.uk; UPC DNS has no MX records. Sender name: Ultimate Promotions.
 
 ## Domain authentication
 
 SendGrid authentication ID: 33726462. DNS provider: GoDaddy.
 
-Add these CNAME records in the upcbranding.co.uk zone:
+Saved and verified CNAME records in the upcbranding.co.uk zone:
 
 | Host | Target |
 | --- | --- |
@@ -16,7 +16,7 @@ Add these CNAME records in the upcbranding.co.uk zone:
 | s1._domainkey | s1.domainkey.u59884118.wl119.sendgrid.net |
 | s2._domainkey | s2.domainkey.u59884118.wl119.sendgrid.net |
 
-Add `_dmarc` TXT `v=DMARC1; p=none;` (no existing DMARC record in this zone). The four entries are prepared in GoDaddy pending final authorization to save. Check for existing DKIM records before adding these CNAMEs. Verify the domain in SendGrid after propagation. Domain authentication is pending until that succeeds.
+Saved `_dmarc` TXT `v=DMARC1; p=none;`. All four records were added after explicit authorization. GoDaddy confirmed the save and SendGrid confirmed domain verification on 29 October 2026. Existing website and nameserver records were preserved.
 
 ## Server sending helper
 
@@ -36,6 +36,6 @@ The three hamper emails remain approval drafts: replace enquiry/footer placehold
 
 - Five unit tests pass (`node --test test/sendgrid.test.js`).
 - Live SendGrid sandbox validation succeeded using the copied UltimateHub configuration; no mail was delivered.
-- `SENDGRID_SENDING_ENABLED=false` until domain verification and campaign preparation are complete.
+- `SENDGRID_SENDING_ENABLED=false` until campaign preparation is complete.
 
 The initial ultimatepromotions.co.uk authentication (33726409) remains pending and unused; no DNS changes were made for that domain.
