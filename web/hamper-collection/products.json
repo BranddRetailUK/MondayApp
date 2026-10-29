@@ -1,0 +1,83 @@
+[
+  {
+    "page": 3,
+    "name": "Christmas Treats Basket",
+    "price": 24.95,
+    "sku": "H26002",
+    "group": 0,
+    "description": "A basket of Christmas treats for someone you\u2019d like to thank. A nice choice for colleagues and customers alike.",
+    "slug": "christmas-treats-basket"
+  },
+  {
+    "page": 2,
+    "name": "The Christmas Gift Box",
+    "price": 26.5,
+    "sku": "H26001",
+    "group": 0,
+    "description": "A festive gift box with a mix of sweet and savoury treats. A lovely surprise to take home at the end of the working day.",
+    "slug": "the-christmas-gift-box"
+  },
+  {
+    "page": 9,
+    "name": "The Sparkle Hamper",
+    "price": 39.95,
+    "sku": "H25011",
+    "group": 0,
+    "description": "With its gold details and a bottle of fizz, this one feels ready for a Christmas celebration.",
+    "slug": "the-sparkle-hamper"
+  },
+  {
+    "page": 21,
+    "name": "Classic Christmas Gift Box",
+    "price": 74.95,
+    "sku": "H26027",
+    "group": 1,
+    "description": "Red and white wine alongside a selection of sweet and savoury treats. Plenty to open and enjoy over the holidays.",
+    "slug": "classic-christmas-gift-box"
+  },
+  {
+    "page": 23,
+    "name": "A Cosy Christmas",
+    "price": 89.95,
+    "sku": "H26029",
+    "group": 1,
+    "description": "A wicker hamper with wine and snacks for a quiet night in. One to enjoy once the Christmas rush is over.",
+    "slug": "a-cosy-christmas"
+  },
+  {
+    "page": 25,
+    "name": "The Fireside Feast",
+    "price": 99.95,
+    "sku": "H25031",
+    "group": 1,
+    "description": "Wine, cheese and plenty to tuck into, all packed into a wicker hamper. Just the thing for an evening at home over Christmas.",
+    "slug": "the-fireside-feast"
+  },
+  {
+    "page": 32,
+    "name": "The Holly & The Ivy",
+    "price": 199.95,
+    "sku": "H26038",
+    "group": 2,
+    "description": "A full wicker hamper with wine and sweet and savoury treats. A generous gift for someone who\u2019s been a big part of your year.",
+    "slug": "the-holly-the-ivy"
+  },
+  {
+    "page": 34,
+    "name": "Yuletide Splendour",
+    "price": 399.95,
+    "sku": "H26040",
+    "group": 2,
+    "description": "A large Christmas selection with plenty to share with family and friends over the holidays.",
+    "slug": "yuletide-splendour"
+  },
+  {
+    "page": 45,
+    "name": "The Extravaganza",
+    "price": 499.95,
+    "sku": "H26069",
+    "group": 2,
+    "description": "A wide selection of food and drink and a traditional wicker hamper. There\u2019s plenty here for the Christmas table.",
+    "slug": "the-extravaganza"
+  }
+]

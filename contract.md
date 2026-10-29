@@ -1282,3 +1282,8 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Verification: five tests in `test/sendgrid.test.js` cover sandbox defaults, sender/payload construction, sending/unsubscribe gates, invalid preview input and failure redaction/no retry. A real SendGrid sandbox request succeeded using UltimateHub's configuration without delivering an email.
 
 - Christmas 2026 campaign HTML, plain text and subjects are saved in `emails/christmas-2026/`. They contain hosted Cloudinary assets, the confirmed Unicorn House address, mailto enquiries and SendGrid preference/unsubscribe tokens. Dedicated Ultimate Promotions unsubscribe group 43513 is configured in Railway. Three user-authorized tests to scott@brandd.co.uk were sandbox-validated and accepted by SendGrid on 29 October 2026; inbox delivery is not independently confirmed. Production sending remains disabled pending review and customer campaign authorization.
+
+### Christmas hamper development website (2026-10-29)
+
+- `web/hamper-collection/` contains a standalone static landing page and nine product pages for the email selection, using the original brochure VAT-inclusive RRPs (£24.95–£499.95). `products.json` records product SKUs, prices and source PDF pages. The collection has three category filters; product pages provide quantity controls, related gifts and mailto enquiries to sales@ultimatepromotions.co.uk.
+- Development preview runs independently on localhost:3119. No live application routes, checkout, customer data access or email-campaign changes are introduced. Delivery and availability are confirmed on enquiry.
