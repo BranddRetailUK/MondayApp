@@ -1,9 +1,4 @@
 'use strict';
-document.querySelectorAll('[data-filter]').forEach(button=>button.addEventListener('click',()=>{
- document.querySelectorAll('[data-filter]').forEach(b=>{b.classList.toggle('active',b===button);b.setAttribute('aria-pressed',String(b===button));});
- let count=0;document.querySelectorAll('.card').forEach(card=>{card.hidden=button.dataset.filter!=='all'&&card.dataset.group!==button.dataset.filter;if(!card.hidden)count++;});
- document.querySelector('#count').textContent=`${count} hampers`;
-}));
 const form=document.querySelector('#enquiry');
 if(form){const quantity=document.querySelector('#quantity');
  document.querySelector('#minus').addEventListener('click',()=>quantity.value=Math.max(1,(Number(quantity.value)||1)-1));

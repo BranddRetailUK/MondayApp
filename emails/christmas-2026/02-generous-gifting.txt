@@ -5,12 +5,15 @@ Something for the Christmas break.
 You know the people who’ve made your year easier — the colleague you can always count on, or the customer who keeps coming back. If you’d like to send them something a little more generous this Christmas, these are a good place to start.
 
 The Fireside Feast
+http://127.0.0.1:3119/the-fireside-feast.html
 Wine, cheese and plenty to tuck into, all packed into a wicker hamper. Just the thing for an evening at home over Christmas.
 
 Classic Christmas Gift Box
+http://127.0.0.1:3119/classic-christmas-gift-box.html
 Red and white wine alongside a selection of sweet and savoury treats. Plenty to open and enjoy over the holidays.
 
 A Cosy Christmas
+http://127.0.0.1:3119/a-cosy-christmas.html
 A wicker hamper with wine and snacks for a quiet night in. One to enjoy once the Christmas rush is over.
 
 We’re happy to help you choose.
@@ -19,7 +22,7 @@ Tell us who you’re buying for and the budget you have in mind. We can talk you
 Talk to us about hampers
 You can also reply to this email — we’re happy to help.
 
-Enquiries: mailto:sales@ultimatepromotions.co.uk?subject=Christmas%20hamper%20enquiry
+Explore the Christmas collection: http://127.0.0.1:3119/#collection
 
 Ultimate Promotions
 Unicorn House, Northbridge Road, Berkhamsted, HP4 1EH
