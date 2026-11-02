@@ -69,8 +69,8 @@ test('dashboard grid starts with compact unlabelled job number and mobile retain
     })()
   `, sandbox);
 
-  assert.equal(result.desktopTemplate, '64px 560px 168px 88px 120px');
-  assert.equal(result.mobileTemplate, '72px 240px 168px 120px');
+  assert.equal(result.desktopTemplate, '64px 560px 160px 88px 120px');
+  assert.equal(result.mobileTemplate, '72px 240px 160px 120px');
   assert.deepEqual(Array.from(result.mobileTitles), ['', 'JOB TITLE', 'STATUS', 'VISUAL']);
   assert.equal(result.firstColumnKind, 'jobNumber');
   assert.equal(result.hasActionColumn, false);
@@ -158,9 +158,9 @@ test('Ultimate Packing gets a leftmost desktop LABEL column while mobile starts 
 
   assert.deepEqual(Array.from(result.desktopKinds), ['print', 'jobNumber', 'name', 'column']);
   assert.deepEqual(Array.from(result.desktopTitles), ['LABEL', '', 'JOB TITLE', 'STATUS']);
-  assert.equal(result.desktopTemplate, '82px 64px 560px 168px');
+  assert.equal(result.desktopTemplate, '82px 64px 560px 160px');
   assert.deepEqual(Array.from(result.mobileKinds), ['jobNumber', 'name', 'column']);
-  assert.equal(result.mobileTemplate, '72px 240px 168px');
+  assert.equal(result.mobileTemplate, '72px 240px 160px');
 });
 
 test('dashboard subitems start with CODE, BRAND, and Subitem without duplicating CODE', () => {

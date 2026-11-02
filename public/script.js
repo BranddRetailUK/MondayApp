@@ -938,7 +938,7 @@ function getColumnWidth(column) {
   const title = String(column.title || '').toUpperCase();
   if (column.type === 'status') {
     if (title === 'TYPE') return 88;
-    if (title === 'STATUS') return 168;
+    if (title === 'STATUS') return 160;
     if (title === 'PRIORITY') return 108;
     return 112;
   }
@@ -2256,7 +2256,8 @@ function renderStatusValue(cell, value, column, text, { entity = null, subitem =
   const color = resolveStatusColor(column, value, text);
   badge.style.backgroundColor = color;
   badge.style.color = '#fff';
-  badge.textContent = text;
+  badge.textContent = normalizeColumnTitle(column.title) === 'STATUS' &&
+    normalizeStatusLabel(text) === 'awaiting approval' ? '' : text;
   cell.appendChild(badge);
 }
 
