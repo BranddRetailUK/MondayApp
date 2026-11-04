@@ -216,6 +216,23 @@ test('proof history is newest-first, paginated, private of upload data and retai
   assert.equal((await service.get(id)).hasPreview,true);assert.equal((await service.get(id)).generationStatus,'complete');
   assert.equal(Buffer.from(await service.preview(id)).subarray(1,4).toString(),'PNG');
   assert.equal((await db.query('SELECT pdf FROM proof_design_jobs WHERE id=$1',[id])).rows[0].pdf,null);
+  // A real failure on the next regeneration remains visible until a successful retry.
+  const failed = await service.progress(id,{expectedRevision:1,state:'error',message:'Headwear needs review'});
+  assert.equal(failed.generationMessage,'Headwear needs review');
+  const queued = await service.queueSave(id,randomUUID(),1,bytes,savedBrief);
+  assert.equal(queued.generationStatus,'complete');
+  assert.equal(queued.generationMessage,'');
+  await service.progress(id,{expectedRevision:1,state:'generating',message:'Late heartbeat'});
+  assert.equal((await service.get(id)).generationStatus,'complete');
+  const retry = await service.claim('worker');
+  await service.report(id,retry.claimToken,{status:'saved',hash:retry.hash,revision:retry.revision});
+  await service.progress(id,{expectedRevision:1,state:'error',message:'Late headwear error'});
+  await service.progress(id,{state:'error',message:'Late report from older client'});
+  const history = (await service.list()).designs[0];
+  assert.equal(history.savedRevision,2);
+  assert.equal(history.status,'saved');
+  assert.equal(history.generationStatus,'complete');
+  assert.equal(history.generationMessage,'');
   await db.query("UPDATE proof_design_jobs SET created_at='2020-01-01' WHERE id=$1",[id]);
   for(let i=0;i<51;i++)await service.reserve(randomUUID(),`Customer ${i}`,'Title',true);
   const first=await service.list();assert.equal(first.designs.length,50);assert.equal(first.nextOffset,50);

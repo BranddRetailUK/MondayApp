@@ -21,12 +21,14 @@ function createService(pool){
       AND (NOT $2 OR NOT EXISTS(SELECT 1 FROM proof_job_links l WHERE l.proof_id=proof_design_jobs.id)) AND ($3='' OR concat_ws(' ',customer,job_title,design_number) ILIKE '%' || $3 || '%') ORDER BY created_at DESC,id DESC LIMIT 51 OFFSET $1`,[offset,unlinked,String(q).slice(0,200)]);
     return {designs:result.rows.slice(0,50).map(publicJob),nextOffset:result.rows.length>50?offset+50:null};
   }
-  async function progress(id,{state,message='',customer,jobTitle,reference}={}){
+  async function progress(id,{state,message='',customer,jobTitle,reference,expectedRevision=0}={}){
     await get(id);
     if(!['generating','review','error','complete'].includes(state))throw new Error('Invalid proof progress.');
+    if(!Number.isSafeInteger(expectedRevision)||expectedRevision<0)throw new Error('Invalid proof revision.');
     await query(`UPDATE proof_design_jobs SET generation_status=$2,generation_message=$3,generation_updated_at=NOW(),
-      customer=COALESCE($4,customer),job_title=COALESCE($5,job_title),reference=COALESCE($6,reference) WHERE id=$1`,
-      [id,state,String(message).slice(0,1000),customer==null?null:String(customer).slice(0,200),jobTitle==null?null:String(jobTitle).slice(0,200),reference==null?null:String(reference).slice(0,200)]);
+      customer=COALESCE($4,customer),job_title=COALESCE($5,job_title),reference=COALESCE($6,reference)
+      WHERE id=$1 AND revision=$7 AND status NOT IN ('save_queued','saving','archived')`,
+      [id,state,String(message).slice(0,1000),customer==null?null:String(customer).slice(0,200),jobTitle==null?null:String(jobTitle).slice(0,200),reference==null?null:String(reference).slice(0,200),expectedRevision]);
     return get(id);
   }
   async function setPreview(id,bytes,brief,ready=false){

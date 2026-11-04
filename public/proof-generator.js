@@ -130,6 +130,7 @@
   const historyList=root.querySelector('#proof-history-list'),historyStatus=root.querySelector('#proof-history-status');
   const createNew=root.querySelector('#proof-create-new'),loadMore=root.querySelector('#proof-history-more');
   let progressChain=Promise.resolve();
+  let generationRevision = 0;
   let historyRows=[],nextOffset=null,historyLimit=50,historyLoading=false,historyWaiting=false,historyLoaded=false,lastHistory='',progressMessage='',progressError=false;
   const listControls=root.querySelector('#proof-list-controls');
   const viewButtons=[...root.querySelectorAll('[data-proof-view]')];
@@ -460,12 +461,13 @@
     currentBrief=payload.brief;currentPreview=payload;
     await renderEditor();
   }
-  async function recordProgress(state,message=progressMessage,metadata={}){
+  async function recordProgress(state,message=progressMessage){
     const id=designId;if(!id)return;
     if(localPreview){design={...design,generationStatus:state,generationMessage:message};renderHistory();return;}
+    const expectedRevision = generationRevision;
     const pending=progressChain.then(async()=>{
-      const updated=await designRequest(`/${id}/progress`,{state,message,...metadata});
-      if(designId===id){design=updated;renderHistory();}
+      const updated=await designRequest(`/${id}/progress`,{state,message,expectedRevision});
+      if(designId===id && updated.revision >= (design?.revision ?? 0)){design=updated;renderHistory();}
     });
     progressChain=pending.catch(()=>{});return pending;
   }
@@ -896,6 +898,7 @@
       catch(error){if(returningToList)showProofEditor();setFeedback(error.message,true);return;}
       finally{busy=false;setCreating(false);}
     }
+    generationRevision = design?.revision ?? 0;
     busy = true; generatingProof = true; readyThisRun = false; setCreating(true);
     if(!designId){designId=crypto.randomUUID();try{if(!localPreview)sessionStorage.setItem('proof-design-id',designId);}catch(_){} }
     design={...design,id:designId,customer:customer.value,jobTitle:jobTitle.value,createdAt:design?.createdAt||new Date().toISOString(),generationStatus:'generating'};
@@ -952,7 +955,7 @@
     let checkCalibration=false;
     if(loadSaved)try{checkCalibration=Object.keys(localStorage).some(key=>currentBrief.products.some(p=>key.startsWith(`proof-calibration-v1:${p.code}:${p.colour}:`)));}catch(_){}
     const commit=productionSave&&!checkCalibration;
-    if(commit){currentBrief.proofSourceOrderId=selectedLinkJob?.source_order_id||null;currentBrief.proofSaveKey=crypto.randomUUID();currentBrief.proofRevision=design.revision;}
+    if(commit){currentBrief.proofSourceOrderId=selectedLinkJob?.source_order_id||null;currentBrief.proofSaveKey=crypto.randomUUID();currentBrief.proofRevision=generationRevision;}
     const snapshot = JSON.stringify(currentBrief);
     const targetBrief = currentBrief;
     const requestFiles = artworks.map(a=>a.id).join(',');
