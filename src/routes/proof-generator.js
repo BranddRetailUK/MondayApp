@@ -242,7 +242,9 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       if(!Array.isArray(brief.products)||!brief.products.length||brief.products.length>20)throw Error('A proof needs 1-20 products.');
       if(!Array.isArray(details)||details.length!==req.files.length)throw Error('Artwork details do not match uploaded files.');
       if(req.files.reduce((n,f)=>n+f.size,0)>50*1024*1024)throw Error('Artwork uploads exceed 50 MB.');
+      const preparedHeadwear=structuredClone(brief.products);
       await enrich(brief);
+      await require('../services/proofHeadwearViews').restorePreparedHeadwearViews(brief,preparedHeadwear);
       const {assess,inspect}=require('../services/proofPreflight');
       const assets=await Promise.all(req.files.map((file,i)=>inspect(file,details[i]).catch(error=>({...details[i],error:error.message}))));
       for(const p of brief.products)for(const d of p.decorations||[]){

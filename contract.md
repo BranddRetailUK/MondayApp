@@ -1293,3 +1293,8 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 
 - Black R369X uses a hash-checked upright copy of the Ralawise front photo. The reviewed front embroidery region covers the folded cuff. Proofs use the indicative 200 mm headwear flat width. Other colours require their own front view assessment.
 - Proof history shows failure, interruption and review messages directly in the row, including when a previous preview exists. A failed generation without a thumbnail displays its failure state in the thumbnail space.
+
+### Proof Generator artwork versions and headwear preflight (2026-11-04)
+
+- Explicit alternative artwork versions are parsed as separate garment sheets. For a simple single-garment request such as “2 versions 1 for each artwork”, fresh brief preparation can split a merged same-position assignment when each supplied logo is identified exactly once. Preflight flags mismatched counts, omitted versions and repeated artwork in simple one-page-per-file requests.
+- Knitted, bobble and pom-pom hats can use the beanie front-surface assessment. The supplier image or generated blank must still pass the existing suitability checks. Automatic headwear review now reports unsupported styles, positions, views and missing supplier references during preflight, before the normal generation and allocation workflow. Existing manual geometry stays bound to its source image.

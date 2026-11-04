@@ -1,7 +1,23 @@
 const {createHash}=require('crypto');
-const {positionOptions,positionName,dimension,textClauses}=require('./proofLayout');
+const {positionOptions,positionName,dimension,textClauses,artworkPageRequest}=require('./proofLayout');
 const refs=text=>[...String(text||'').matchAll(/\bPSG\s*[-_]?\s*(\d+)(?!\d)/gi)].map(m=>`PSG${m[1]}`);
 const positive=value=>{try{return dimension(value)>0;}catch{return false;}};
+
+// A simple one-page-per-file brief must account for every uploaded logo once.
+function checkArtworkPages(brief,artworks,request) {
+  const intent=artworkPageRequest(request),products=brief.products||[];
+  if(!intent || !products.length || !artworks.length || artworks.some(a=>/\.(ttf|otf)$/i.test(a.originalName)))return null;
+  const first=products[0];
+  if(products.some(p=>p.code!==first.code || p.colour!==first.colour || p.personalisation))return null;
+  if(intent.count!==null && intent.count!==artworks.length)return `The request specifies ${intent.count} versions for ${artworks.length} artwork files. Check the version count and uploads.`;
+  const marks=products.flatMap(p=>p.decorations||[]);
+  if(marks.some(d=>d.text || !d.artworkId) || new Set(marks.map(d=>positionName(d.position))).size>1)return null;
+  const ids=new Set(marks.map(d=>d.artworkId));
+  if(products.length!==artworks.length || products.some(p=>p.decorations?.length!==1) || !artworks.every(a=>ids.has(a.id))){
+    return 'The brief does not assign one proof page to each supplied artwork. List each version with its artwork filename in the request and check again.';
+  }
+  return null;
+}
 
 // Read-only checks: never repair a brief by guessing or replace supplied artwork.
 function assess(brief,artworks=[],request='') {
@@ -12,16 +28,20 @@ function assess(brief,artworks=[],request='') {
     if(!brief.preflightAcknowledgements?.includes(key))issues.push({path,message,ack:key});
   };
   if(!brief.products?.length)add('products','Add at least one garment to the request.');
+  const pageIssue=checkArtworkPages(brief,artworks,request);
+  if(pageIssue)add('products',pageIssue);
   (brief.products||[]).forEach((p,pi)=>{
     const base=`products.${pi}`,label=p.code||`Garment ${pi+1}`;
     if(!p.code)add(`${base}.code`,`${label}: enter the supplier product code.`);
     if(!p.colour||p.visual?.matched===false)add(`${base}.colour`,`${label}: select the exact catalogue colour${p.visual?.lookupIssue?' ('+p.visual.lookupIssue.replaceAll('_',' ')+')':''}.`,p.visual?.availableColours);
     if(!p.decorations?.length)add(base,`${label}: add decoration details to the request.`);
+    const headwearIssues=require('./proofHeadwearViews').headwearIssues(p,p.decorations||[]);
+    for(const issue of headwearIssues)add(issue.path?base+'.'+issue.path:base,issue.message,issue.options);
     (p.decorations||[]).forEach((d,di)=>{
       const path=`${base}.decorations.${di}`,name=`${label} · ${d.position||'decoration '+(di+1)}`;
       const options=positionOptions(p), allowed=options.map(option=>typeof option==='string'?option:option.value);
       const legacyShortsHem=typeof options[0]==='object' && ['left hem','right hem'].includes(positionName(d.position));
-      if(!allowed.includes(positionName(d.position))&&!legacyShortsHem)add(`${path}.position`,`${name}: select the position as worn.`,options);
+      if(!allowed.includes(positionName(d.position))&&!legacyShortsHem&&!headwearIssues.some(issue=>issue.path===`decorations.${di}.position`))add(`${path}.position`,`${name}: select the position as worn.`,options);
       if(!d.method)add(`${path}.method`,`${name}: specify the decoration method.`,['embroidery','transfer print']);
       const sizeValid=positive(d.widthMm)||positive(d.heightMm);
       if((!sizeValid&&d.sizeTbc!==true)|| (d.widthMm&&!positive(d.widthMm)) || (d.heightMm&&!positive(d.heightMm)) || d.dimensionIssues?.length)add(`${path}.widthMm`,`${name}: confirm artwork width or height in mm; one axis is sufficient.`);

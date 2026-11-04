@@ -1,5 +1,6 @@
 // Deterministic brief resolution and geometry. All coordinates refer to the
 // visible garment bounds, not the supplier photograph's surrounding canvas.
+const { randomUUID } = require('node:crypto');
 const { automaticTop, garmentSizeProfile, placementProfile } = require('./proofPlacementProfiles');
 const SHORTS_POSITIONS = ['left leg', 'right leg', 'bottom left leg', 'bottom right leg'];
 const SHORTS_OPTIONS = SHORTS_POSITIONS.map((value,i)=>({value,label:['Left','Right','Bottom left','Bottom right'][i]}));
@@ -158,8 +159,39 @@ function applyChildBreastSize(d, product, input = {}, inherited = false) {
   }
 }
 
+// Recognise explicit page instructions, not mentions like "one logo per sleeve".
+function artworkPageRequest(request) {
+  const numbered = /^(\d+|two|three|four|separate) versions?[\s,:—–-]+(?:one|1) (?:per|for each) (?:uploaded )?(?:artwork|logo|design file)\b/i;
+  const perFile = /^(?:one|1) (?:version|proof|page|sheet) (?:per|for each) (?:uploaded )?(?:artwork|logo|design file)\b/i;
+  for (const clause of String(request || '').split(/[\n.!?;]/)) {
+    const line = clause.trim().replace(/^(?:please )?(?:create|make|produce)\s+/i,'');
+    if (perFile.test(line)) return {count:null};
+    const count = line.match(numbered)?.[1]?.toLowerCase();
+    if (count) return {count:count === 'separate' ? null : ({two:2,three:3,four:4})[count] ?? Number(count)};
+  }
+  return null;
+}
+
+// Recover a merged group on fresh briefs only when the position and every
+// assigned upload are unambiguous. Saved placements keep their existing sheets.
+function separateArtworkVersions(brief, input) {
+  if (brief.products.length !== 1 || brief.proofDesignId || brief.testProofId || brief.sharedDecorations?.length) return;
+  const intent = artworkPageRequest([input.requestText,input.specialInstructions].filter(Boolean).join('\n'));
+  const uploads = input.artworks || [];
+  if (!intent || (intent.count !== null && intent.count !== uploads.length)) return;
+  const product = brief.products[0], marks = product.decorations || [];
+  const ids = new Set(uploads.map(a => a.id));
+  if (product.personalisation || product.quantity || product.calibrations || marks.length < 2 || marks.length > 20) return;
+  if (marks.length !== uploads.length || ids.size !== uploads.length || new Set(marks.map(d => d.artworkId)).size !== marks.length) return;
+  const position = positionName(marks[0].position, product), view = marks[0].view || 'auto';
+  if (!position || marks.some(d => !d.artworkId || !ids.has(d.artworkId) || d.text || d.omit || d.placement || d.manualScale ||
+      (d.view || 'auto') !== view || positionName(d.position, product) !== position)) return;
+  brief.products = marks.map(d => ({...structuredClone(product), instanceId:randomUUID(), decorations:[d]}));
+}
+
 function prepareBrief(brief, input = {}) {
   if (!Array.isArray(brief?.products) || !brief.products.length || brief.products.length > 20) throw new Error('A proof needs 1-20 products.');
+  separateArtworkVersions(brief,input);
   brief.products.forEach((product, pi) => {
     product.decorations = resolveDecorations(brief, product).map((original, di) => {
       const d = JSON.parse(JSON.stringify(original));
@@ -339,4 +371,4 @@ function placementFor(d, asset, garment, calibration = {}) {
 function fitsRegion(p) {
   return p.x-p.width/2 >= p.region.left-.001 && p.x+p.width/2 <= p.region.left+p.region.width+.001 && p.y >= p.region.top-.001 && p.y+p.height <= p.region.top+p.region.height+.001;
 }
-module.exports = {POSITIONS,SHORTS_POSITIONS,positionOptions,positionName,dimension,dimensionsInText,textClauses,recoverDimensions,resolveDecorations,findArtwork,recoverProductCodes,prepareBrief,repairRetainedDimensions,preferredView,regionFor,artworkSize,placementFor,fitsRegion};
+module.exports = {POSITIONS,SHORTS_POSITIONS,positionOptions,positionName,dimension,dimensionsInText,textClauses,recoverDimensions,resolveDecorations,findArtwork,recoverProductCodes,artworkPageRequest,prepareBrief,repairRetainedDimensions,preferredView,regionFor,artworkSize,placementFor,fitsRegion};

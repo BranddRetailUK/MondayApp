@@ -859,7 +859,7 @@
       const label=document.createElement('label');label.className='proof-control proof-missing-detail';label.textContent=issue.message.replace('confirm artwork width or height in mm; one axis is sufficient.','Artwork size needed (mm).').replace('specify the decoration method.','Print or embroidery type needed.');
       if(issue.ack){
         const input=document.createElement('input');input.type='checkbox';input.addEventListener('change',()=>{currentBrief.preflightAcknowledgements=(currentBrief.preflightAcknowledgements||[]).filter(k=>k!==issue.ack);if(input.checked)currentBrief.preflightAcknowledgements.push(issue.ack);});label.append(input);
-      }else if(/^products\.\d+\.(code|colour|decorations\.\d+\.(position|method|widthMm|artworkId|fontArtworkId|textColour))$/.test(issue.path)){
+      }else if(/^products\.\d+\.(code|colour|decorations\.\d+\.(position|view|method|widthMm|artworkId|fontArtworkId|textColour))$/.test(issue.path)){
         const keys=issue.path.split('.'),field=keys.pop();let target=currentBrief;for(const key of keys)target=target[key];
         const input=document.createElement(issue.options?.length?'select':'input');
         if(issue.options?.length){const blank=document.createElement('option');blank.value='';blank.textContent='Choose…';input.append(blank);for(const option of issue.options){const o=document.createElement('option');o.value=typeof option==='string'?option:option.value;o.textContent=typeof option==='string'?option:option.label;input.append(o);}}

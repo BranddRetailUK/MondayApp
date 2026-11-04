@@ -6,8 +6,12 @@ const QUEST_URL = 'proof-headwear:r369x-black-front-v1';
 function headwearKind(product = {}) {
   const name = `${product.name || ''} ${product.visual?.name || ''}`;
   if (B45.test(product.code || '') || /^R369X$/i.test(product.code || '')) return 'cuffed-beanie';
+  // Keep existing beanie identities stable for retained image-bound templates.
   if (/\bbeanie\b/i.test(name)) return /cuff|turn[ -]?up/i.test(name) ? 'cuffed-beanie' : 'beanie';
   if (/\b(?:baseball cap|snapback|trucker cap|cap)\b/i.test(name) && !/cap[ -]?sleeve/i.test(name)) return 'cap';
+  if (/\b(?:knit(?:ted)?|bobble|pom[ -]?pom) hats?\b/i.test(name) && !/\b(?:bucket|brimmed|trilby|fedora|peaked)\b/i.test(name)) {
+    return /\bcuffed\b|\bturn[ -]?up\b|\bfold(?:ed|able) (?:cuff|hem)\b/i.test(name) ? 'cuffed-beanie' : 'beanie';
+  }
   if (/headwear|\bhats?\b/i.test(`${name} ${product.visual?.garmentType || ''}`)) return 'headwear';
   return null;
 }
