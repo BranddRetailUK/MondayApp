@@ -27,6 +27,8 @@ function garmentSizeProfile(product = {}) {
 }
 
 function placementProfile(product = {}) {
+  const armband = require('./proofArmband').armbandProfile(product);
+  if(armband)return armband;
   const headwear = require('./proofHeadwear').headwearKind(product);
   if(headwear)return {family:'headwear',kind:headwear};
   const code = String(product.code || '').trim().toUpperCase();
@@ -68,6 +70,7 @@ function placementProfile(product = {}) {
 
 
 function automaticTop(position, view, height, profile = PROFILES.tee) {
+  if (profile.family==='armband') return profile.printableRegions.front.y-height/2;
   if (/breast/.test(position)) return (profile.fixedBreastAnchors && profile.printableRegions?.[position] ? profile.printableRegions[position].y : profile.breastCentre) - height / 2;
   if (/sleeve/.test(position)) {
     const centre = ['left', 'right'].includes(view) ? (profile.sideSleeveCentre ?? 0.335) : profile.sleeveCentre;

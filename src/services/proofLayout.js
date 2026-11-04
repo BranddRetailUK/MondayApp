@@ -4,7 +4,7 @@ const { randomUUID } = require('node:crypto');
 const { automaticTop, garmentSizeProfile, placementProfile } = require('./proofPlacementProfiles');
 const SHORTS_POSITIONS = ['left leg', 'right leg', 'bottom left leg', 'bottom right leg'];
 const SHORTS_OPTIONS = SHORTS_POSITIONS.map((value,i)=>({value,label:['Left','Right','Bottom left','Bottom right'][i]}));
-function positionOptions(product) { return placementProfile(product).family === 'shorts' ? SHORTS_OPTIONS : POSITIONS.filter(p=>!SHORTS_POSITIONS.includes(p)); }
+function positionOptions(product) { const family=placementProfile(product).family; return family==='armband' ? ['front'] : family === 'shorts' ? SHORTS_OPTIONS : POSITIONS.filter(p=>!SHORTS_POSITIONS.includes(p)); }
 const POSITIONS = ['left breast', 'right breast', 'front', 'back', 'upper back', 'nape', 'left sleeve', 'right sleeve', 'left hem', 'right hem', ...SHORTS_POSITIONS];
 const ALIASES = { 'left':'left leg', 'right':'right leg', 'bottom left':'bottom left leg', 'bottom right':'bottom right leg', 'left pocket':'left leg', 'right pocket':'right leg', 'bottom of left leg':'bottom left leg', 'bottom of right leg':'bottom right leg', 'front cuff':'front', 'front turn-up':'front', 'front turn up':'front', 'cuff':'front', 'turn up':'front', 'turn-up':'front', lb: 'left breast', rb: 'right breast', ls: 'left sleeve', rs: 'right sleeve', 'left chest': 'left breast', 'right chest': 'right breast', chest: 'front', 'centre chest': 'front', 'center chest': 'front', 'full chest': 'front', 'front chest': 'front', 'centre front': 'front', 'center front': 'front', 'full front': 'front', 'centre back': 'back', 'center back': 'back', 'full back': 'back', rear: 'back', 'back neck': 'nape' };
 function normalise(value) { return String(value || '').toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim(); }
@@ -271,6 +271,7 @@ function preferredView(d, views) {
 function regionFor(position, view, profile) {
   const p = positionName(position);
   if (profile?.printableRegions?.[p]) return {...profile.printableRegions[p]};
+  if (profile?.family==='armband') return null;
   if (profile?.family==='shorts') {
     const leg = {'left hem':'bottom left leg','right hem':'bottom right leg'}[p] || p;
     if (!SHORTS_POSITIONS.includes(leg)) return null;
@@ -315,7 +316,8 @@ function placementFor(d, asset, garment, calibration = {}) {
   for (const key of ['x','y','left','top','width','height']) if (!Number.isFinite(region[key]) || region[key] < 0 || region[key] > 1) throw new Error('Printable region coordinates must be between 0 and 1.');
   if (region.width <= 0 || region.height <= 0 || region.left+region.width>1.001 || region.top+region.height>1.001) throw new Error('Printable region must fit inside the garment.');
   const size = artworkSize(d, asset.width / asset.height);
-  let pxPerMm = garment.estimatedPxPerMm || garment.width / 700;
+  const armband=garment.placementProfile?.family==='armband';
+  let pxPerMm = garment.estimatedPxPerMm || (armband ? null : garment.width / 700);
   let calibrated = false;
   if (calibration.referenceMm !== '' && calibration.referenceMm != null) {
     const mm = dimension(calibration.referenceMm);
@@ -336,6 +338,7 @@ function placementFor(d, asset, garment, calibration = {}) {
     else if(d.scaleVersion===3) pxPerMm=garment.referencePxPerMm || pxPerMm;
     else if(d.scaleVersion!==4) pxPerMm=garment.legacyPxPerMm || pxPerMm;
   }
+  if(armband && !pxPerMm)throw new Error('Armband scale needs review: supply an image calibration or a reviewed front photo with a known band depth.');
   const visualScale = d.visualScale ?? 1;
   if (!Number.isFinite(visualScale) || visualScale <= 0 || visualScale > 30000) throw new Error('Invalid visual artwork scale.');
   pxPerMm *= visualScale;

@@ -178,6 +178,7 @@ function fitSleeve(garment,p) {
 
 function automaticGarmentProfile(product, garment, view, referenceGarment) {
   const profile=placementProfile(product);
+  if(profile.family==='armband')return require('./proofArmband').armbandScale(profile,garment,view);
   if(profile.family==='headwear'){
     const template=garment.headwearTemplate;
     const pxPerMm=garment.width/(template?.flatWidthMm || 200);

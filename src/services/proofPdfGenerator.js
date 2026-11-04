@@ -247,7 +247,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
         calibration = {};
       }
       const pageData = {productIndex,pdfPageIndex:productIndex,view,sourceHash:garment?.sourceHash || '',width:garment?.width || 400,height:garment?.height || 500,
-        image:garment ? `data:image/png;base64,${garment.bytes.toString('base64')}` : '',generatedView:Boolean(source?.generated),calibration,scaleSource:garment?.scaleSource,flatChestWidthMm:garment?.estimatedTorsoMm,flatHeadwearWidthMm:garment?.estimatedFlatWidthMm,landmarks:garment?.landmarks,placements:[]};
+        image:garment ? `data:image/png;base64,${garment.bytes.toString('base64')}` : '',generatedView:Boolean(source?.generated),calibration,scaleSource:garment?.scaleSource,bandHeightMm:garment?.bandHeightMm,flatChestWidthMm:garment?.estimatedTorsoMm,flatHeadwearWidthMm:garment?.estimatedFlatWidthMm,landmarks:garment?.landmarks,placements:[]};
       const cellWidth=774/groups.size, cellX=34+viewIndex*cellWidth;
       const garmentBox = garment ? drawAsset(page,garment,cellX+8,148,cellWidth-16,decorations.length>3?288:300) : null;
       drawText(page,`${view.toUpperCase()} VIEW`,cellX+8,104,10,bold,NAVY,cellWidth-16);
@@ -292,7 +292,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
           if (!p.explicit && !fitsRegion(p)) issue(productIndex,d.id,`${d.position}: artwork exceeds the printable region. Adjust its placement, region or calibration; its size has been preserved.`,true);
           if (!p.explicit && garment.confident && coverage(garment,p) < .96) issue(productIndex,d.id,`${d.position}: artwork crosses the detected garment edge.`,true);
           if (!p.calibrated && garment.headwear) issue(productIndex,d.id,garment.headwearTemplate?.acceptedScale?'Artwork scale uses the accepted B45 proof reference.':'Headwear scale uses an indicative 200 mm flat width; no supplier measurement is available.');
-          if (!p.calibrated && !garment.headwear && garment.scaleSource !== 'flat-chest-measurement') issue(productIndex,d.id,'Estimated garment scale. Supply a flat chest measurement or measured image calibration for a physical reference.');
+          if (!p.calibrated && !garment.headwear && garment.placementProfile.family!=='armband' && garment.scaleSource !== 'flat-chest-measurement') issue(productIndex,d.id,'Estimated garment scale. Supply a flat chest measurement or measured image calibration for a physical reference.');
           if (!p.size.confirmed) issue(productIndex,d.id,'Size to confirm: an 80 mm estimated width is used only for the preview.');
           const retained=product.decorations?.find(item=>item.id===d.id);
           if(retained){

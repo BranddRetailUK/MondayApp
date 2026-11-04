@@ -91,7 +91,9 @@ async function ensureGeneratedViews(brief,{allowGenerate=false,onProgress=()=>{}
   };
   for(const product of brief.products){
     const visual=product.visual;
-    if(!visual?.matched)continue;
+    // Armband scale is tied to the supplier photograph. Leave missing angles
+    // for the renderer to report instead of synthesising a torso-shaped view.
+    if(!visual?.matched || require('./proofArmband').armbandProfile(product))continue;
     const reference=visual.views.find(v=>v.view==='front'&&!v.generated)||visual.views.find(v=>!v.generated&&['back','left','right'].includes(v.view));
     if(!reference)continue;
     for(const view of requiredViews(brief,product)) {
