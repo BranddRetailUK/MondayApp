@@ -1157,7 +1157,7 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 
 
 ### Proof visual scale override (2026-10-23)
-- The styled “Keep print dimensions when resizing” checkbox beside “Adjust artwork position” defaults off and persists as `brief.keepPrintDimensions`. When checked, corner resizing changes only each decoration’s `visualScale`, leaving its specified width/height and PDF dimensions unchanged. This supports towels, bags and other irregular product mockups. Unchecked resizing continues to update print dimensions; toggling the checkbox alone does not change existing geometry.
+- Updated 4 November 2026. The **Keep print dimensions on regeneration** checkbox defaults off and persists as `brief.keepPrintDimensions`. Dragging changes the artwork on the garment immediately. On regeneration, checked preserves the existing width or height specification and unchecked updates the print width proportionally. Either choice keeps the visible layout. Placement-only previews retain pending edits, and subsequent regenerations apply a resize only once.
 - Visual scale persists with saved source, applies to both estimated and calibrated views, and is returned in placement previews so repeated edits/regeneration do not compound scale. Image-bound `manualScale` stores the underlying scale without the visual multiplier. Existing dimension/aspect checks remain active. Regression coverage checks both checkbox modes, saved-brief regeneration and calibrated geometry.
 
 

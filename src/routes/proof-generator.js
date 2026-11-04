@@ -11,7 +11,7 @@ const { randomUUID } = require('crypto');
 const { searchProofProducts } = require('../services/proofPencarrieVisuals');
 const {createService:designService,UUID}=require('../services/proofDesignJobs');
 
-const { prepareBrief, recoverProductCodes, repairRetainedDimensions } = require('../services/proofLayout');
+const { prepareBrief, recoverProductCodes, applyPendingResizes, repairRetainedDimensions } = require('../services/proofLayout');
 
 const { isProofGeneratorUser, prepareSandboxBrief } = require('../services/proofAccess');
 
@@ -337,6 +337,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       // Only server-retained visuals are trusted; changed products are resolved normally.
       const retained=design&&designJobs().source?await designJobs().source(design.id):null;
       const savedProducts=retained?.source?.brief?.products||[];
+      if(req.path!=='/placement-preview')applyPendingResizes(brief);
       repairRetainedDimensions(brief,retained?.source);
       const preparedHeadwear=structuredClone(brief.products);
       await enrich(brief);

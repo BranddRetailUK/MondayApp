@@ -367,11 +367,11 @@ test('test history retains sources and regeneration renders only into the test s
 });
 
 for(const sandbox of [false,true])test(`placement preview restores ${sandbox?'test':'production'} geometry without writes or generated views`,async()=>{
- const products=[{code:'RX350',colour:'Black',decorations:[{id:'mark',placement:{x:.4,y:.2}}]}];
+ const products=[{code:'RX350',colour:'Black',decorations:[{id:'mark',placement:{x:.4,y:.2},heightMm:25,visualScale:3,pendingResize:{previousVisualScale:1.5,widthMm:100}}]}];
  const noWrite=async()=>{throw Error('Opening a proof must not save');};
  const store={get:async()=>({id:'saved',designNumber:'123',folderName:'123 Test'}),source:async()=>({source:{brief:{products}}}),setPreview:noWrite,queueSave:noWrite};
  await serve(createRouter({designs:store,tests:store,enrich:async()=>{},generateViews:async(_brief,options)=>{assert.equal(options.allowGenerate,false);},build:async(brief,_art,options)=>{
-  assert.equal(options.strict,false);assert.deepEqual(brief.products[0].decorations[0].placement,{x:.4,y:.2});
+  assert.equal(options.strict,false);assert.deepEqual(brief.products[0].decorations,products[0].decorations);
   return {bytes:Buffer.from('pdf'),pages:[{image:'garment',placements:[{id:'mark',x:.4,y:.2}]}],issues:[]};
  }}),async url=>{
   const form=new FormData();form.append('brief',JSON.stringify({[sandbox?'testProofId':'proofDesignId']:'saved',products}));form.append('artworkDetails','[]');
@@ -385,10 +385,10 @@ test('production generate renders once, forces the reserved number and atomicall
  let builds=0,queued=0;
  await serve(createRouter({
   designs:{get:async()=>({id:'saved',designNumber:'30001',folderName:'30001 QA'}),source:async()=>null,queueSave:async(id,key,revision,output,brief,originals,png)=>{
-   queued++;assert.equal(id,'saved');assert.equal(key,'key');assert.equal(revision,2);assert.deepEqual(output,bytes);assert.equal(brief.reference,'30001');assert.equal(originals[0].originalname,'original.svg');assert.equal(originals[0].buffer.toString(),'<svg/>');assert.ok(png.length>0);return {id,status:'save_queued',hasPdf:true,hasPreview:true,revision:3,designNumber:'30001'};
+   queued++;assert.equal(id,'saved');assert.equal(key,'key');assert.equal(revision,2);assert.deepEqual(output,bytes);assert.equal(brief.reference,'30001');assert.deepEqual(brief.products[0].decorations,[{heightMm:25,visualScale:3}]);assert.equal(originals[0].originalname,'original.svg');assert.equal(originals[0].buffer.toString(),'<svg/>');assert.ok(png.length>0);return {id,status:'save_queued',hasPdf:true,hasPreview:true,revision:3,designNumber:'30001'};
   }},enrich:async()=>{},generateViews:async()=>{},build:async(brief,_art,options)=>{builds++;assert.equal(options.strict,true);assert.equal(brief.reference,'30001');return {bytes,pages:[],issues:[]};}
  }),async url=>{
-  const form=new FormData();form.append('brief',JSON.stringify({proofDesignId:'saved',reference:'WRONG',proofSaveKey:'key',proofRevision:2,products:[{code:'TEST'}]}));form.append('artworkDetails',JSON.stringify([{id:'art',originalName:'original.svg'}]));form.append('artworks',new Blob(['png']),'prepared.png');form.append('originalArtworks',new Blob(['<svg/>']),'original.svg');
+  const form=new FormData();form.append('brief',JSON.stringify({proofDesignId:'saved',reference:'WRONG',proofSaveKey:'key',proofRevision:2,keepPrintDimensions:true,products:[{code:'TEST',decorations:[{heightMm:25,visualScale:3,pendingResize:{previousVisualScale:1.5,widthMm:100}}]}]}));form.append('artworkDetails',JSON.stringify([{id:'art',originalName:'original.svg'}]));form.append('artworks',new Blob(['png']),'prepared.png');form.append('originalArtworks',new Blob(['<svg/>']),'original.svg');
   const response=await fetch(url+'/generate',{method:'POST',headers:production,body:form});assert.equal(response.status,200,await response.clone().text());const data=await response.json();assert.equal(data.design.status,'save_queued');assert.equal(data.design.hasPdf,true);assert.deepEqual(Buffer.from(data.pdf,'base64'),bytes);
  });assert.equal(builds,1);assert.equal(queued,1);
 });

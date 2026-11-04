@@ -223,6 +223,29 @@ function prepareBrief(brief, input = {}) {
   return brief;
 }
 
+// Resolve a canvas drag once per submitted generation. Placement previews may
+// reopen a draft and must keep both choices available until regeneration.
+function applyPendingResizes(brief) {
+  for (const product of brief.products) {
+    for (const mark of product.decorations || []) {
+      const resize = mark.pendingResize;
+      if (!resize) continue;
+      if (brief.keepPrintDimensions !== true) {
+        const width = dimension(resize.widthMm);
+        if (!width || !Number.isFinite(resize.previousVisualScale) || resize.previousVisualScale <= 0 || resize.previousVisualScale > 30000) {
+          throw new Error('The pending artwork resize is invalid. Reopen the proof and resize the artwork again.');
+        }
+        mark.widthMm = width;
+        mark.heightMm = '';
+        mark.dimensionIssues = [];
+        mark.dimensionSource = 'user-confirmed';
+        mark.visualScale = resize.previousVisualScale;
+      }
+      delete mark.pendingResize;
+    }
+  }
+}
+
 function repairRetainedDimensions(brief, source) {
   if(!source?.request)return;
   for(const product of brief.products || [])for(const d of product.decorations || []) {
@@ -371,4 +394,4 @@ function placementFor(d, asset, garment, calibration = {}) {
 function fitsRegion(p) {
   return p.x-p.width/2 >= p.region.left-.001 && p.x+p.width/2 <= p.region.left+p.region.width+.001 && p.y >= p.region.top-.001 && p.y+p.height <= p.region.top+p.region.height+.001;
 }
-module.exports = {POSITIONS,SHORTS_POSITIONS,positionOptions,positionName,dimension,dimensionsInText,textClauses,recoverDimensions,resolveDecorations,findArtwork,recoverProductCodes,artworkPageRequest,prepareBrief,repairRetainedDimensions,preferredView,regionFor,artworkSize,placementFor,fitsRegion};
+module.exports = {POSITIONS,SHORTS_POSITIONS,positionOptions,positionName,dimension,dimensionsInText,textClauses,recoverDimensions,resolveDecorations,findArtwork,recoverProductCodes,artworkPageRequest,prepareBrief,applyPendingResizes,repairRetainedDimensions,preferredView,regionFor,artworkSize,placementFor,fitsRegion};

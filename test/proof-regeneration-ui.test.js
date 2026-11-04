@@ -65,12 +65,12 @@ test('placement tiles share one grid across products without per-decoration drop
   assert.equal(checkbox.checked,false);checkbox.checked=true;checkbox.listeners.change();assert.equal(context.currentBrief.keepPrintDimensions,true);
   assert.ok(grid.children.every(tile=>tile.children.length===1 && tile.children[0].tag==='canvas'));
 });
-for(const keepPrintDimensions of [false,true])test(`canvas movement and scaling with dimension override ${keepPrintDimensions}`,()=>{
+for(const keepPrintDimensions of [false,true])test(`regeneration uses final dimension checkbox ${keepPrintDimensions} after resizing`,()=>{
   const canvas=element('canvas');let dirtyCount=0;
   Object.assign(canvas,{getContext:()=>({fillRect(){},drawImage(){},strokeRect(){}}),getBoundingClientRect:()=>({left:0,top:0,width:600,height:600}),setPointerCapture(){},hasPointerCapture:()=>false,focus(){}});
   const product={code:'GD001',decorations:[{id:'mark',widthMm:100}]};
   const page={view:'front',image:'garment',width:600,height:600,placements:[{id:'mark',x:.5,y:.3,width:.2,height:.1,size:{width:100,height:50},preview:'art'}]};
-  const context={document:{createElement:tag=>tag==='canvas'?canvas:element(tag)},Image:class{complete=true;},currentBrief:{keepPrintDimensions},busy:false,markDirty(){dirtyCount++;},product,page};
+  const context={document:{createElement:tag=>tag==='canvas'?canvas:element(tag)},Image:class{complete=true;},currentBrief:{keepPrintDimensions:!keepPrintDimensions,products:[product]},busy:false,markDirty(){dirtyCount++;},product,page};
   createContext(context);
   const view=source.slice(source.indexOf('  function viewEditor('),source.indexOf('  const epsPreviews='));
   vm.runInContext(view+'\nviewEditor(product,page);',context);
@@ -79,7 +79,18 @@ for(const keepPrintDimensions of [false,true])test(`canvas movement and scaling 
   assert.ok(Math.abs(product.decorations[0].placement.x-.55)<.0001);
   assert.ok(Math.abs(product.decorations[0].placement.y-.35)<.0001);
   canvas.listeners.pointerdown(event(390,270));canvas.listeners.pointermove(event(450,300));canvas.listeners.pointerup(event(450,300));
-  if(keepPrintDimensions){assert.equal(product.decorations[0].widthMm,100);assert.equal(product.decorations[0].heightMm,undefined);assert.ok(product.decorations[0].visualScale>1);}else{assert.ok(product.decorations[0].widthMm>100);assert.equal(product.decorations[0].heightMm,'');}assert.equal(dirtyCount,2);assert.equal(product.decorations[0].manualScale.widthPerMm,.002);assert.equal(product.decorations[0].manualScale.view,'front');
+  const mark=product.decorations[0];
+  assert.equal(mark.widthMm,100);assert.ok(mark.visualScale>1);
+  const visualWidth=mark.widthMm*mark.visualScale;
+  context.currentBrief.keepPrintDimensions=keepPrintDimensions;
+  const {applyPendingResizes}=require('../src/services/proofLayout');
+  applyPendingResizes(context.currentBrief);
+  assert.equal(mark.widthMm,keepPrintDimensions?100:visualWidth);
+  assert.ok(Math.abs(mark.widthMm*mark.visualScale-visualWidth)<1e-8);
+  assert.equal(mark.pendingResize,undefined);
+  applyPendingResizes(context.currentBrief);
+  assert.equal(mark.widthMm,keepPrintDimensions?100:visualWidth);
+  assert.equal(dirtyCount,2);assert.equal(mark.manualScale.widthPerMm,.002);assert.equal(mark.manualScale.view,'front');
 });
 
 test('customer and title edits retain manual geometry while updating the saved brief names',()=>{
