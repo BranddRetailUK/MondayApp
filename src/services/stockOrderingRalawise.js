@@ -38,6 +38,7 @@ function allowsNonLiveRalawiseSku(line) {
 }
 
 function exactRalawiseSku(line) {
+  if (line?.pencarrie_sku) return '';
   const sku = trimText(
     line?.ralawise_sku
     || line?.supplier_sku
@@ -62,7 +63,8 @@ function buildJobBasketPlan(job, lineItems, options = {}) {
     const status = normalizedCatalogStatus(line);
     const nonLiveOverride = allowsNonLiveRalawiseSku(line);
     let reason = '';
-    if (!sku) reason = 'Exact Ralawise colour/size SKU is missing';
+    if (line.pencarrie_sku) reason = 'PenCarrie item. Order this SKU with PenCarrie.';
+    else if (!sku) reason = 'Exact Ralawise colour/size SKU is missing';
     else if ((status === 'discontinued' || status === 'inactive') && !nonLiveOverride) {
       reason = 'Ralawise SKU is not live';
     }
@@ -107,6 +109,7 @@ function buildJobBasketPlan(job, lineItems, options = {}) {
 }
 
 function basketAuditMatchesPlan(auditLines, plan) {
+  if (plan?.unresolved?.length) return false;
   const normalize = (line) => ({
     source_order_item_id: Number(line?.source_order_item_id),
     ralawise_sku: exactRalawiseSku(line),

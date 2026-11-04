@@ -230,3 +230,14 @@ test('matchBasketedJobToPlacedOrders does not confirm a partial placed order', (
   assert.equal(match.matched, false);
   assert.deepEqual(match.missing_line_ids, [2]);
 });
+
+test('a saved PenCarrie fallback prevents an older Ralawise basket from completing the whole job', () => {
+  const job = {source_order_id: 42, order_no: 10500};
+  const original = {source_order_item_id: 1, style_code: 'JH501', ralawise_sku: 'JH501ABLUXS', quantity: 3};
+  const fallback = {source_order_item_id: 2, style_code: 'OTHER', pencarrie_sku: 'OTHER-BLK-M', supplier_sku: 'OTHER-BLK-M', quantity: 1};
+  const plan = buildJobBasketPlan(job, [original, fallback]);
+  assert.equal(plan.eligible, false);
+  assert.deepEqual(plan.items.map(item => item.code), ['JH501ABLUXS']);
+  assert.match(plan.unresolved[0].reason, /PenCarrie/);
+  assert.equal(basketAuditMatchesPlan([original], plan), false);
+});

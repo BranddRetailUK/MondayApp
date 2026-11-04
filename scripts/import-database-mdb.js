@@ -169,6 +169,9 @@ const CANONICAL_PRODUCT_FIELD_COLUMNS = [
 ];
 
 const CANONICAL_LINE_FIELD_COLUMNS = [
+  'source_product_id', 'supplier_name', 'style_code', 'alt_style_code', 'style_name',
+  'colour', 'size', 'style_id', 'product_type', 'unit_cost', 'line_description',
+  'pencarrie_sku',
   'legacy_source_product_id',
   'ralawise_catalog_variant_id',
   'ralawise_sku',
@@ -1623,6 +1626,7 @@ async function fetchCanonicalLineFieldSnapshot(client) {
     FROM database_job_line_items
     WHERE ralawise_catalog_variant_id IS NOT NULL
        OR item_reference IS NOT NULL
+       OR pencarrie_sku IS NOT NULL
   `);
   return result.rows;
 }
@@ -1632,7 +1636,19 @@ async function restoreCanonicalLineFieldSnapshot(client, rows) {
     const batch = rows.slice(start, start + INSERT_BATCH_SIZE);
     await client.query(`
       UPDATE database_job_line_items li
-      SET legacy_source_product_id = x.legacy_source_product_id,
+      SET pencarrie_sku = x.pencarrie_sku,
+          source_product_id = CASE WHEN x.pencarrie_sku IS NOT NULL THEN x.source_product_id ELSE li.source_product_id END,
+          supplier_name = CASE WHEN x.pencarrie_sku IS NOT NULL THEN x.supplier_name ELSE li.supplier_name END,
+          style_code = CASE WHEN x.pencarrie_sku IS NOT NULL THEN x.style_code ELSE li.style_code END,
+          alt_style_code = CASE WHEN x.pencarrie_sku IS NOT NULL THEN x.alt_style_code ELSE li.alt_style_code END,
+          style_name = CASE WHEN x.pencarrie_sku IS NOT NULL THEN x.style_name ELSE li.style_name END,
+          colour = CASE WHEN x.pencarrie_sku IS NOT NULL THEN x.colour ELSE li.colour END,
+          size = CASE WHEN x.pencarrie_sku IS NOT NULL THEN x.size ELSE li.size END,
+          style_id = CASE WHEN x.pencarrie_sku IS NOT NULL THEN x.style_id ELSE li.style_id END,
+          product_type = CASE WHEN x.pencarrie_sku IS NOT NULL THEN x.product_type ELSE li.product_type END,
+          unit_cost = CASE WHEN x.pencarrie_sku IS NOT NULL THEN x.unit_cost ELSE li.unit_cost END,
+          line_description = CASE WHEN x.pencarrie_sku IS NOT NULL THEN x.line_description ELSE li.line_description END,
+          legacy_source_product_id = x.legacy_source_product_id,
           ralawise_catalog_variant_id = x.ralawise_catalog_variant_id,
           ralawise_sku = x.ralawise_sku,
           supplier_style_code = x.supplier_style_code,
@@ -1644,6 +1660,9 @@ async function restoreCanonicalLineFieldSnapshot(client, rows) {
           ralawise_allow_non_live = x.ralawise_allow_non_live
       FROM jsonb_to_recordset($1::jsonb) AS x(
         source_order_item_id integer,
+        source_product_id integer, supplier_name text, style_code text, alt_style_code text, style_name text,
+        colour text, size text, style_id integer, product_type text, unit_cost numeric, line_description text,
+        pencarrie_sku text,
         legacy_source_product_id integer,
         ralawise_catalog_variant_id bigint,
         ralawise_sku text,

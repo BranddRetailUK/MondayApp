@@ -40,6 +40,7 @@ const {
 } = require('../services/productStyleSearch');
 const { resolveAuditedProductStyleAlias } = require('../services/productStyleAliases');
 const { buildJobFilters } = require('../services/databaseJobFilters');
+const {colourKey, sizeKey} = require('../db/orderCatalogue');
 const { sortSizes } = require('../../public/product-size-order');
 
 const DASHBOARD_STATUS_COLORS = buildDashboardStatusColors(STATUS_SETTINGS);
@@ -400,6 +401,15 @@ async function performRalawisePlacedOrderSync({ source = 'manual' } = {}) {
         let jobCostUpdates = 0;
         await client.query('BEGIN');
         await client.query('SELECT pg_advisory_xact_lock($1, $2)', [71060219, job.source_order_id]);
+        // Line edits lock the same order row. Recheck the whole order inside
+        // that lock before applying supplier costs or advancing the job.
+        await client.query('SELECT source_order_id FROM database_jobs WHERE source_order_id=$1 FOR UPDATE', [job.source_order_id]);
+        const currentLines = await selectStockOrderingLinesForBasket(client, job.source_order_id);
+        const currentPlan = buildJobBasketPlan(job, currentLines.rows);
+        if (!basketAuditMatchesPlan(auditLines, currentPlan)) {
+          await client.query('ROLLBACK');
+          continue;
+        }
         const currentAudit = await client.query(
           `SELECT status
            FROM database_ralawise_basket_jobs
@@ -4047,6 +4057,7 @@ router.post('/api/database/jobs/:id/repeat', async (req, res) => {
            created_at_source,
            updated_at_source,
            legacy_source_product_id,
+           pencarrie_sku,
            ralawise_catalog_variant_id,
            ralawise_sku,
            supplier_style_code,
@@ -4083,6 +4094,7 @@ router.post('/api/database/jobs/:id/repeat', async (req, res) => {
            CURRENT_TIMESTAMP,
            CURRENT_TIMESTAMP,
            source_lines.legacy_source_product_id,
+           source_lines.pencarrie_sku,
            source_lines.ralawise_catalog_variant_id,
            source_lines.ralawise_sku,
            source_lines.supplier_style_code,
@@ -4725,6 +4737,8 @@ router.get('/api/database/products/search', async (req, res) => {
   const search = cleanQuery(req.query.q);
   const field = cleanQuery(req.query.field).toLowerCase() === 'code' ? 'code' : 'style';
   const auditedAliasStyleCode = search ? resolveAuditedProductStyleAlias(search) : null;
+  const pcAlias = `s.id IN (SELECT style_id FROM database_pc_style_map WHERE code ILIKE $1 ${field === 'style' ? 'OR name ILIKE $1' : 'UNION SELECT style_id FROM database_pc_order_offers WHERE sku ILIKE $1'})`;
+  const exactPcAlias = 's.id IN (SELECT style_id FROM database_pc_style_map WHERE lower(code)=lower($2))';
   const usesUsageSort = !search;
   const params = [];
   let whereSql = 'WHERE v.is_active IS TRUE';
@@ -4747,6 +4761,7 @@ router.get('/api/database/products/search', async (req, res) => {
           OR s.manufacturer_style_code ILIKE $1
           OR v.sku_code ILIKE $1
           OR v.alpha_sku_code ILIKE $1
+          OR ${pcAlias}
           OR COALESCE(la.search_text, '') ILIKE $1
           OR ${normalizedStyleCode} = $4
           OR ${normalizedManufacturerStyleCode} = $4
@@ -4761,6 +4776,7 @@ router.get('/api/database/products/search', async (req, res) => {
           WHEN LOWER(COALESCE(s.manufacturer_style_code, '')) = LOWER($2) THEN 0
           WHEN ${normalizedStyleCode} = $4 THEN 0
           WHEN ${normalizedManufacturerStyleCode} = $4 THEN 0
+          WHEN ${exactPcAlias} THEN 1
           WHEN UPPER($2) = ANY(COALESCE(la.style_codes, ARRAY[]::text[])) THEN 1
           WHEN UPPER($2) = ANY(COALESCE(la.alt_style_codes, ARRAY[]::text[])) THEN 2
           WHEN v.sku_code ILIKE $3 THEN 1
@@ -4777,6 +4793,7 @@ router.get('/api/database/products/search', async (req, res) => {
           OR s.brand ILIKE $1
           OR s.style_code ILIKE $1
           OR s.manufacturer_style_code ILIKE $1
+          OR ${pcAlias}
           OR COALESCE(la.search_text, '') ILIKE $1
           OR ${normalizedStyleCode} = $4
           OR ${normalizedManufacturerStyleCode} = $4
@@ -4788,6 +4805,7 @@ router.get('/api/database/products/search', async (req, res) => {
           WHEN LOWER(COALESCE(s.style_name, '')) = LOWER($2) THEN 0
           WHEN ${normalizedStyleCode} = $4 THEN 0
           WHEN ${normalizedManufacturerStyleCode} = $4 THEN 0
+          WHEN ${exactPcAlias} THEN 1
           WHEN UPPER($2) = ANY(COALESCE(la.style_codes, ARRAY[]::text[])) THEN 1
           WHEN UPPER($2) = ANY(COALESCE(la.alt_style_codes, ARRAY[]::text[])) THEN 2
           WHEN s.style_name ILIKE $3 THEN 1
@@ -4801,7 +4819,7 @@ router.get('/api/database/products/search', async (req, res) => {
   }
 
   const requestedPreferredStyleId = search ? null : nullableInt(req.query.preferredStyleId);
-  const preferredStyleId = requestedPreferredStyleId > 0 ? requestedPreferredStyleId : null;
+  const preferredStyleId = requestedPreferredStyleId !== 0 ? requestedPreferredStyleId : null;
   if (preferredStyleId) {
     params.push(preferredStyleId);
   }
@@ -4811,6 +4829,7 @@ router.get('/api/database/products/search', async (req, res) => {
   const productOrderSql = [
     preferredRankSql,
     'MIN(match_rank) ASC',
+    search ? "CASE WHEN bool_or(supplier_name='Ralawise') THEN 0 ELSE 1 END ASC" : '',
     usesUsageSort ? 'MAX(usage_count) DESC' : '',
     usesUsageSort ? 'MAX(usage_quantity) DESC' : '',
     'LOWER(MIN(style_name)) ASC NULLS LAST',
@@ -4819,13 +4838,14 @@ router.get('/api/database/products/search', async (req, res) => {
   ].filter(Boolean).join(',\n                ');
   const styleUsageCteSql = usesUsageSort
     ? `style_usage AS (
-         SELECT v.style_id::int AS style_id,
+         SELECT COALESCE(v.style_id,pc.style_id)::int AS style_id,
                 COUNT(*)::int AS usage_count,
                 COALESCE(SUM(COALESCE(li.quantity, 0)), 0)::int AS usage_quantity
          FROM database_job_line_items li
-         JOIN database_ralawise_catalog_variants v
-           ON v.id = li.ralawise_catalog_variant_id
-         GROUP BY v.style_id
+         LEFT JOIN database_ralawise_catalog_variants v ON v.id = li.ralawise_catalog_variant_id
+         LEFT JOIN database_pc_order_offers pc ON pc.sku = li.pencarrie_sku
+         WHERE li.ralawise_catalog_variant_id IS NOT NULL OR li.pencarrie_sku IS NOT NULL
+         GROUP BY COALESCE(v.style_id,pc.style_id)
        ),`
     : '';
   const styleUsageJoinSql = usesUsageSort
@@ -4872,6 +4892,7 @@ router.get('/api/database/products/search', async (req, res) => {
                 v.sku_code,
                 v.alpha_sku_code,
                 v.sku_status,
+                v.supplier_name,
                 v.primary_image_url,
                 v.colour_image_url,
                 v.carton_price,
@@ -4883,21 +4904,21 @@ router.get('/api/database/products/search', async (req, res) => {
                 ${usageCountSql}::int AS usage_count,
                 ${usageQuantitySql}::int AS usage_quantity,
                 ${rankSql} AS match_rank
-         FROM database_ralawise_catalog_styles s
-         JOIN database_ralawise_catalog_variants v ON v.style_id = s.id
-         JOIN database_ralawise_catalog_colours c ON c.id = v.colour_id
+         FROM database_order_styles s
+         JOIN database_order_variants v ON v.style_id = s.id
+         JOIN database_order_colours c ON c.id = v.colour_id
          LEFT JOIN legacy_style_aliases la ON la.style_id = s.id
          ${styleUsageJoinSql}
          ${whereSql}
        )
        SELECT style_id::int,
-              style_id::int AS ralawise_catalog_style_id,
+              (CASE WHEN style_id>0 THEN style_id END)::int AS ralawise_catalog_style_id,
               MIN(database_product_source_id)::int AS sample_product_id,
               MIN(style_code) AS style_code,
               MIN(manufacturer_style_code) AS alt_style_code,
               MIN(style_name) AS style_name,
               MIN(product_type) AS product_type,
-              'Ralawise'::text AS supplier_name,
+              CASE WHEN bool_or(supplier_name='Ralawise') THEN 'Ralawise' ELSE 'PenCarrie' END AS supplier_name,
               MIN(sku_code) AS supplier_sku,
               MIN(alpha_sku_code) AS supplier_alpha_sku,
               MIN(sku_status) AS catalogue_status,
@@ -4934,7 +4955,7 @@ router.get('/api/database/products/styles', async (req, res) => {
   const auditedAliasStyleCode = search ? resolveAuditedProductStyleAlias(search) : null;
   const requestedStyleId = cleanQuery(req.query.styleId);
   const selectedStyleId = requestedStyleId ? Number(requestedStyleId) : null;
-  if (requestedStyleId && (!Number.isInteger(selectedStyleId) || selectedStyleId < 1)) {
+  if (requestedStyleId && (!Number.isInteger(selectedStyleId) || selectedStyleId === 0)) {
     return res.status(400).json({ error: 'Invalid style id' });
   }
   const requestedSort = cleanQuery(req.query.sort).toLowerCase();
@@ -4950,7 +4971,7 @@ router.get('/api/database/products/styles', async (req, res) => {
          SELECT v.style_id::int AS style_id,
                 MIN(v.carton_price) FILTER (WHERE v.carton_price > 0) AS min_positive_unit_cost,
                 MAX(v.carton_price) FILTER (WHERE v.carton_price > 0) AS max_positive_unit_cost
-         FROM database_ralawise_catalog_variants v
+         FROM database_order_variants v
          JOIN candidate_styles cs ON cs.style_id = v.style_id
          GROUP BY v.style_id
        )`
@@ -4966,6 +4987,7 @@ router.get('/api/database/products/styles', async (req, res) => {
     'most-used': 'COALESCE(su.usage_count, 0) DESC, COALESCE(su.usage_quantity, 0) DESC',
   }[sort];
   const orderSql = `cs.search_rank ASC,
+                    ${search ? 'CASE WHEN cs.style_id>0 THEN 0 ELSE 1 END,' : ''}
                     ${sortSql},
                     LOWER(COALESCE(cs.style_name, '')) ASC,
                     LOWER(COALESCE(cs.style_code, '')) ASC,
@@ -5008,15 +5030,17 @@ router.get('/api/database/products/styles', async (req, res) => {
                   WHEN $7::text IS NOT NULL AND UPPER(BTRIM(s.style_code)) = $7 THEN -1
                   WHEN ${normalizedStyleCode} = $3 THEN 0
                   WHEN ${normalizedManufacturerStyleCode} = $3 THEN 1
+                  WHEN s.id IN (SELECT style_id FROM database_pc_style_map WHERE lower(code)=lower($2)) THEN 2
                   WHEN UPPER($2) = ANY(COALESCE(aliases.style_code_aliases, ARRAY[]::text[])) THEN 2
                   WHEN UPPER($2) = ANY(COALESCE(aliases.alt_style_code_aliases, ARRAY[]::text[])) THEN 3
                   ELSE 4
                 END::int AS search_rank
-         FROM database_ralawise_catalog_styles s
+         FROM database_order_styles s
          LEFT JOIN style_aliases aliases ON aliases.style_id = s.id
          WHERE ($6::int IS NULL OR s.id = $6)
            AND (
              $1::text IS NULL
+             OR s.id IN (SELECT style_id FROM database_pc_style_map WHERE code ILIKE $1 OR name ILIKE $1)
              OR s.style_name ILIKE $1
              OR s.brand ILIKE $1
              OR s.product_type ILIKE $1
@@ -5030,14 +5054,14 @@ router.get('/api/database/products/styles', async (req, res) => {
            )
        ),
        style_usage AS (
-         SELECT v.style_id::int AS style_id,
+         SELECT COALESCE(v.style_id,pc.style_id)::int AS style_id,
                 COUNT(*)::int AS usage_count,
                 COALESCE(SUM(COALESCE(li.quantity, 0)), 0)::int AS usage_quantity
          FROM database_job_line_items li
-         JOIN database_ralawise_catalog_variants v
-           ON v.id = li.ralawise_catalog_variant_id
-         JOIN candidate_styles cs ON cs.style_id = v.style_id
-         GROUP BY v.style_id
+         LEFT JOIN database_ralawise_catalog_variants v ON v.id = li.ralawise_catalog_variant_id
+         LEFT JOIN database_pc_order_offers pc ON pc.sku = li.pencarrie_sku
+         JOIN candidate_styles cs ON cs.style_id = COALESCE(v.style_id,pc.style_id)
+         GROUP BY COALESCE(v.style_id,pc.style_id)
        )${stylePriceCteSql},
        ordered_styles AS (
          SELECT cs.*,
@@ -5059,7 +5083,7 @@ router.get('/api/database/products/styles', async (req, res) => {
                 os.style_name,
                 os.product_type,
                 os.brand,
-                'Ralawise'::text AS supplier_name,
+                CASE WHEN bool_or(v.supplier_name='Ralawise' AND v.is_active) OR NOT bool_or(v.is_active) THEN 'Ralawise' ELSE 'PenCarrie' END AS supplier_name,
                 MIN(NULLIF(BTRIM(v.primary_image_url), '')) FILTER (
                   WHERE LOWER(BTRIM(COALESCE(v.primary_image_url, ''))) <> 'not available'
                 ) AS primary_image_url,
@@ -5089,7 +5113,7 @@ router.get('/api/database/products/styles', async (req, res) => {
                 os.total_count,
                 os.page_order
          FROM ordered_styles os
-         JOIN database_ralawise_catalog_variants v ON v.style_id = os.style_id
+         JOIN database_order_variants v ON v.style_id = os.style_id
          GROUP BY os.style_id,
                   os.style_code,
                   os.alt_style_code,
@@ -5124,7 +5148,7 @@ router.get('/api/database/products/styles', async (req, res) => {
            SELECT NULLIF(BTRIM(v.size_name), '') AS size,
                   MIN(NULLIF(BTRIM(v.size_code), '')) AS size_order,
                   COUNT(*)::int AS variant_count
-           FROM database_ralawise_catalog_variants v
+           FROM database_order_variants v
            WHERE v.style_id = ps.style_id
              AND v.is_active IS TRUE
              AND NULLIF(BTRIM(v.size_name), '') IS NOT NULL
@@ -5162,8 +5186,8 @@ router.get('/api/database/products/styles', async (req, res) => {
                   ) FILTER (
                     WHERE NULLIF(BTRIM(v.size_name), '') IS NOT NULL
                   ) AS sizes
-           FROM database_ralawise_catalog_variants v
-           JOIN database_ralawise_catalog_colours c ON c.id = v.colour_id
+           FROM database_order_variants v
+           JOIN database_order_colours c ON c.id = v.colour_id
            WHERE v.style_id = ps.style_id
              AND v.is_active IS TRUE
              AND NULLIF(BTRIM(c.colour_name), '') IS NOT NULL
@@ -5230,11 +5254,11 @@ router.get('/api/database/products/styles/:styleId/variants', async (req, res) =
     const result = await pool.query(
       `SELECT v.database_product_source_id::int AS source_product_id,
               s.id::int AS style_id,
-              s.id::int AS ralawise_catalog_style_id,
+              (CASE WHEN s.id>0 THEN s.id END)::int AS ralawise_catalog_style_id,
               s.database_product_style_id AS legacy_product_style_id,
               c.id::int AS colour_id,
               NULL::int AS size_id,
-              'Ralawise'::text AS supplier_name,
+              v.supplier_name,
               s.style_code,
               s.manufacturer_style_code AS alt_style_code,
               s.style_name,
@@ -5244,12 +5268,15 @@ router.get('/api/database/products/styles/:styleId/variants', async (req, res) =
               v.carton_price AS unit_cost,
               NULL::int AS stock,
               v.is_active AS is_product_active,
-              'Ralawise'::text AS catalog_source,
+              v.supplier_name AS catalog_source,
+              v.pencarrie_sku,
+              ${colourKey('c.colour_name')} AS colour_key,
+              ${sizeKey('v.size_name')} AS size_key,
               v.id AS ralawise_catalog_variant_id,
-              v.sku_code AS ralawise_sku,
+              CASE WHEN v.id IS NOT NULL THEN v.sku_code END AS ralawise_sku,
               v.sku_code AS supplier_sku,
               v.alpha_sku_code AS supplier_alpha_sku,
-              s.style_code AS supplier_style_code,
+              COALESCE(pc.style_code,s.style_code) AS supplier_style_code,
               c.colour_code AS supplier_colour_code,
               v.size_code AS supplier_size_code,
               v.sku_status AS catalogue_status,
@@ -5258,9 +5285,10 @@ router.get('/api/database/products/styles/:styleId/variants', async (req, res) =
               v.carton_price AS supplier_carton_price,
               v.pack_price AS supplier_pack_price,
               v.single_price AS supplier_single_price
-       FROM database_ralawise_catalog_variants v
-       JOIN database_ralawise_catalog_styles s ON s.id = v.style_id
-       JOIN database_ralawise_catalog_colours c ON c.id = v.colour_id
+       FROM database_order_variants v
+       JOIN database_order_styles s ON s.id = v.style_id
+       JOIN database_order_colours c ON c.id = v.colour_id
+       LEFT JOIN database_pc_order_offers pc ON pc.sku=v.pencarrie_sku
        WHERE s.id = $1
          ${visibilitySql}
        ORDER BY LOWER(COALESCE(c.colour_name, '')) ASC,
@@ -5274,6 +5302,14 @@ router.get('/api/database/products/styles/:styleId/variants', async (req, res) =
       return res.status(404).json({ error: 'Product style not found' });
     }
 
+    // For shared styles the suppliers use different shade/size codes for the
+    // same labels. Use those labels for selection, retain the precise SKU on save.
+    if (result.rows.some(row => row.pencarrie_sku)) {
+      for (const row of result.rows) {
+        row.order_colour_key = 'colour:' + row.colour_key;
+        row.order_size_key = 'size:' + row.size_key;
+      }
+    }
     const colourGroups = new Map();
     for (const product of result.rows) {
       const colourKey = String(product.colour_id ?? '');
@@ -5341,10 +5377,12 @@ router.post('/api/database/jobs/:id/line-items', async (req, res) => {
     return res.status(400).json({ error: 'Invalid job id' });
   }
 
+  const pcSku = cleanNullable(req.body?.pencarrie_sku);
   const variantId = nullableInt(req.body?.ralawise_catalog_variant_id);
   const productId = nullableInt(req.body?.source_product_id);
-  if (!variantId && !productId) {
-    return res.status(400).json({ error: 'A Ralawise product variant is required' });
+  if (pcSku && (variantId || productId)) return res.status(400).json({error:'Select one catalogue variant.'});
+  if (!variantId && !productId && !pcSku) {
+    return res.status(400).json({ error: 'A catalogue product variant is required' });
   }
 
   const quantity = nullableInt(req.body?.quantity) || 1;
@@ -5368,17 +5406,17 @@ router.post('/api/database/jobs/:id/line-items', async (req, res) => {
     }
 
     let productRow;
-    if (variantId) {
-      const variant = await selectRalawiseOrderVariant(client, variantId);
+    if (variantId || pcSku) {
+      const variant = pcSku ? await selectPenCarrieOrderVariant(client,pcSku) : await selectRalawiseOrderVariant(client, variantId);
       if (!variant) {
         await client.query('ROLLBACK');
-        return res.status(404).json({ error: 'Live Ralawise product variant not found' });
+        return res.status(404).json({ error: 'Selected catalogue variant is no longer available. Refresh and select it again.' });
       }
       productRow = {
         ...variant,
         source_product_id: variant.canonical_source_product_id,
         style_id: variant.legacy_product_style_id,
-        supplier_name: 'Ralawise',
+        supplier_name: variant.supplier_name || 'Ralawise',
         stock: null,
       };
     } else {
@@ -5441,13 +5479,14 @@ router.post('/api/database/jobs/:id/line-items', async (req, res) => {
          catalogue_status,
          item_reference,
          catalogue_synced_at,
+         pencarrie_sku,
          created_at_source,
          updated_at_source
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9,
          FALSE, FALSE, $10, $11, $12, $13, $14, $15, $16, $17,
          $18, $19, $20, $21, $22, $23, $24, $25, $26,
-         CASE WHEN $20::bigint IS NULL THEN NULL ELSE NOW() END,
+         CASE WHEN $20::bigint IS NULL AND $27::text IS NULL THEN NULL ELSE NOW() END, $27,
          NOW(), NOW()
        )`,
       [
@@ -5477,6 +5516,7 @@ router.post('/api/database/jobs/:id/line-items', async (req, res) => {
         productRow.supplier_size_code || null,
         productRow.catalogue_status || null,
         itemReference,
+        pcSku,
       ]
     );
 
@@ -5668,6 +5708,8 @@ router.put('/api/database/jobs/:id/line-items/:lineItemId', async (req, res) => 
   }
 
   const payload = req.body || {};
+  const pcSku = cleanNullable(payload.pencarrie_sku);
+  if (hasOwn(payload,'pencarrie_sku') && (!pcSku || payload.ralawise_catalog_variant_id || payload.source_product_id)) return res.status(400).json({error:'Select one catalogue variant.'});
   const requestedVariantId = hasOwn(payload, 'ralawise_catalog_variant_id')
     ? nullableInt(payload.ralawise_catalog_variant_id)
     : null;
@@ -5702,9 +5744,11 @@ router.put('/api/database/jobs/:id/line-items/:lineItemId', async (req, res) => 
               li.legacy_source_product_id,
               li.style_id,
               COALESCE(li.ralawise_catalog_variant_id, p.ralawise_catalog_variant_id) AS current_variant_id,
-              current_variant.style_id AS current_catalog_style_id
+              li.pencarrie_sku,
+              COALESCE(current_variant.style_id,pc.style_id) AS current_catalog_style_id
        FROM database_job_line_items li
        LEFT JOIN database_products p ON p.source_product_id = li.source_product_id
+       LEFT JOIN database_pc_order_offers pc ON pc.sku=li.pencarrie_sku
        LEFT JOIN database_ralawise_catalog_variants current_variant
          ON current_variant.id = COALESCE(li.ralawise_catalog_variant_id, p.ralawise_catalog_variant_id)
        WHERE li.source_order_id = $1
@@ -5727,25 +5771,25 @@ router.put('/api/database/jobs/:id/line-items/:lineItemId', async (req, res) => 
       'supplier_name',
     ];
     if (
-      (existing.rows[0].current_variant_id || requestedVariantId)
+      (existing.rows[0].current_variant_id || existing.rows[0].pencarrie_sku || requestedVariantId || pcSku)
       && canonicalLockedFields.some((field) => hasOwn(payload, field))
     ) {
       await client.query('ROLLBACK');
       return res.status(400).json({
-        error: 'Catalogue product identity fields can only be changed by selecting another Ralawise variant',
+        error: 'Catalogue product identity fields can only be changed by selecting another catalogue variant',
       });
     }
 
-    if (requestedVariantId) {
-      const variant = await selectRalawiseOrderVariant(client, requestedVariantId);
+    if (requestedVariantId || pcSku) {
+      const variant = pcSku ? await selectPenCarrieOrderVariant(client,pcSku) : await selectRalawiseOrderVariant(client, requestedVariantId);
       if (!variant) {
         await client.query('ROLLBACK');
-        return res.status(404).json({ error: 'Live Ralawise product variant not found' });
+        return res.status(404).json({ error: 'Selected catalogue variant is no longer available. Refresh and select it again.' });
       }
       const currentCatalogStyleId = nullableInt(existing.rows[0].current_catalog_style_id);
       if (
         currentCatalogStyleId
-        && currentCatalogStyleId !== nullableInt(variant.ralawise_catalog_style_id)
+        && currentCatalogStyleId !== nullableInt(variant.catalogue_style_id ?? variant.ralawise_catalog_style_id)
       ) {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: 'Selected product is not a variant of this line item style' });
@@ -5756,7 +5800,15 @@ router.put('/api/database/jobs/:id/line-items/:lineItemId', async (req, res) => 
       ) {
         addLineItemUpdateField(update, 'legacy_source_product_id', existing.rows[0].source_product_id);
       }
-      appendLineItemRalawiseVariantUpdate(update, variant);
+      if (pcSku || existing.rows[0].pencarrie_sku) {
+        addLineItemUpdateField(update, 'pencarrie_sku', pcSku);
+        addLineItemUpdateField(update, 'source_product_id', variant.canonical_source_product_id ?? null);
+        addLineItemUpdateField(update, 'style_id', variant.legacy_product_style_id ?? null);
+      }
+      appendLineItemCatalogueVariantUpdate(update, variant);
+    } else if (requestedProductId && existing.rows[0].pencarrie_sku) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({error:'Select a catalogue variant for this line.'});
     } else if (requestedProductId) {
       const product = await client.query(
         `SELECT *
@@ -6486,10 +6538,10 @@ function appendLineItemProductUpdate(update, productRow) {
   addLineItemUpdateField(update, 'is_product_active', productRow.is_product_active);
 }
 
-function appendLineItemRalawiseVariantUpdate(update, variantRow) {
+function appendLineItemCatalogueVariantUpdate(update, variantRow) {
   addLineItemUpdateField(update, 'line_description', variantRow.style_name);
   addLineItemUpdateField(update, 'unit_cost', variantRow.unit_cost);
-  addLineItemUpdateField(update, 'supplier_name', 'Ralawise');
+  addLineItemUpdateField(update, 'supplier_name', variantRow.supplier_name || 'Ralawise');
   addLineItemUpdateField(update, 'style_code', variantRow.style_code);
   addLineItemUpdateField(update, 'alt_style_code', variantRow.alt_style_code);
   addLineItemUpdateField(update, 'style_name', variantRow.style_name);
@@ -6506,6 +6558,18 @@ function appendLineItemRalawiseVariantUpdate(update, variantRow) {
   addLineItemUpdateField(update, 'catalogue_status', variantRow.catalogue_status);
   addLineItemUpdateField(update, 'ralawise_allow_non_live', false);
   update.assignments.push('catalogue_synced_at = NOW()');
+}
+
+async function selectPenCarrieOrderVariant(db, sku) {
+  const result = await db.query(
+    `SELECT o.sku AS pencarrie_sku, 'PenCarrie' AS supplier_name, o.style_id AS catalogue_style_id,
+            p.code AS style_code, p.supplier_code AS alt_style_code, p.name AS style_name,
+            p.garment_type AS product_type, o.colour, o.size, o.list_price AS unit_cost,
+            o.style_code AS supplier_style_code, o.colour_code AS supplier_colour_code, o.size AS supplier_size_code,
+            true AS is_product_active, CASE WHEN o.special_order THEN 'Special order' ELSE 'Active' END AS catalogue_status
+     FROM database_pc_order_offers o JOIN proof_pencarrie_styles p ON p.code=o.style_code
+     WHERE o.sku=$1 AND o.available`, [sku]);
+  return result.rows[0] || null;
 }
 
 async function selectRalawiseOrderVariant(db, variantId, options = {}) {
@@ -6578,10 +6642,12 @@ async function fetchLineItems(db, sourceOrderId) {
             COALESCE(NULLIF(BTRIM(li.ralawise_sku), ''), v.sku_code) AS ralawise_sku,
             COALESCE(NULLIF(BTRIM(li.catalogue_status), ''), v.sku_status) AS catalogue_status,
             v.style_id::int AS ralawise_catalog_style_id,
+            COALESCE(v.style_id,pc.style_id)::int AS catalogue_style_id,
             s.style_code AS ralawise_catalog_style_code,
             c.colour_code AS ralawise_catalog_colour_code,
             v.size_code AS ralawise_catalog_size_code
      FROM database_job_line_items li
+     LEFT JOIN database_pc_order_offers pc ON pc.sku=li.pencarrie_sku
      LEFT JOIN database_products p ON p.source_product_id = li.source_product_id
      LEFT JOIN database_ralawise_catalog_variants v
        ON v.id = COALESCE(li.ralawise_catalog_variant_id, p.ralawise_catalog_variant_id)

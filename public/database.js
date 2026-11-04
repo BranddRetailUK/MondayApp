@@ -6251,22 +6251,24 @@
     const needsUpdate = ralawise.alreadyBasketed && ralawise.needsUpdate;
     const basketInSync = ralawise.alreadyBasketed && !needsUpdate;
     const unresolvedCount = Array.isArray(ralawise.unresolved) ? ralawise.unresolved.length : 0;
+    const supplierOrder = lineItems.some(item => item.pencarrie_sku);
+    const unresolvedLabel = supplierOrder ? 'Order by supplier' : 'Needs SKU';
     const buttonLabel = syncing
       ? ralawise.alreadyBasketed ? 'Updating...' : 'Adding...'
       : needsUpdate
         ? unresolvedCount
-          ? 'Needs SKU'
+          ? unresolvedLabel
           : ralawise.syncStatus === 'failed'
             ? 'Retry update'
             : 'Update basket'
         : ralawise.alreadyBasketed
           ? 'Added to basket'
           : unresolvedCount
-            ? 'Needs SKU'
+            ? unresolvedLabel
             : ralawise.status === 'failed'
               ? 'Retry Ralawise'
               : 'Add to Ralawise';
-    const buttonTitle = unresolvedCount
+    const buttonTitle = supplierOrder ? 'This job includes PenCarrie stock. Order its lines with the suppliers shown below.' : unresolvedCount
       ? `${formatNumber(unresolvedCount)} product line${unresolvedCount === 1 ? '' : 's'} need an exact live Ralawise colour/size SKU`
       : ralawise.error || (needsUpdate
         ? 'The saved order items have changed since this job was added to Ralawise'
@@ -6361,7 +6363,7 @@
           <tr>
             <th>Type</th>
             <th>Code</th>
-            <th>Ralawise SKU</th>
+            <th>Supplier SKU</th>
             <th>Description</th>
             <th>Colour</th>
             <th>Size</th>
@@ -6379,12 +6381,12 @@
   }
 
   function renderStockOrderingLineColgroup(lineItems) {
-    const headers = ['Type', 'Code', 'Ralawise SKU', 'Description', 'Colour', 'Size', 'Qty', 'Supplier'];
+    const headers = ['Type', 'Code', 'Supplier SKU', 'Description', 'Colour', 'Size', 'Qty', 'Supplier'];
     const minChars = [6, 6, 12, 12, 8, 6, 4, 8];
     const rows = (lineItems || []).map((item) => [
       isStockItem(item) ? 'Stock' : 'Non-stock',
       orderDocumentItemCode(item),
-      item.ralawise_sku || (isStockItem(item) ? 'Needs mapping' : '-'),
+      item.pencarrie_sku || item.ralawise_sku || (isStockItem(item) ? 'Needs mapping' : '-'),
       orderDocumentItemDescription(item),
       item.colour || '',
       item.size || '',
@@ -6406,7 +6408,7 @@
       <tr>
         <td>${escapeHtml(isStockItem(item) ? 'Stock' : 'Non-stock')}</td>
         <td>${escapeHtml(orderDocumentItemCode(item))}</td>
-        <td>${escapeHtml(item.ralawise_sku || (isStockItem(item) ? 'Needs mapping' : '-'))}</td>
+        <td>${escapeHtml(item.pencarrie_sku || item.ralawise_sku || (isStockItem(item) ? 'Needs mapping' : '-'))}</td>
         <td>${escapeHtml(orderDocumentItemDescription(item))}</td>
         <td>${escapeHtml(item.colour || '')}</td>
         <td>${escapeHtml(item.size || '')}</td>
@@ -11669,7 +11671,7 @@
 
     // A design title (for example Sonic Youth) is not the catalogue garment age.
     const titleText = normalizeChildProductText([
-      item.ralawise_catalog_variant_id ? null : item.line_description,
+      (item.ralawise_catalog_variant_id || item.pencarrie_sku) ? null : item.line_description,
       item.style_name,
       item.product_type,
       item.style_code,
@@ -11756,7 +11758,7 @@
   function renderStockRow(item, index) {
     const lineId = item.source_order_item_id || '';
     return `
-      <tr class="db-line-row db-stock-line-row" data-line-id="${escapeAttr(lineId)}" data-stock-index="${escapeAttr(index)}">
+      <tr class="db-line-row db-stock-line-row" data-line-id="${escapeAttr(lineId)}" data-stock-index="${escapeAttr(index)}" title="${escapeAttr([item.supplier_name,item.pencarrie_sku || item.ralawise_sku].filter(Boolean).join(' · '))}">
         ${renderLineDeleteCell(lineId)}
         <td class="db-row-selector">
           <button class="db-line-drag-handle" type="button" data-db-line-drag="true" aria-label="Reorder line item">&#9654;</button>
@@ -11784,7 +11786,7 @@
 
   function renderLineItemInput(item, field, className = '') {
     const value = lineItemEditDisplayValue(item, field);
-    const canonicalReadonly = Boolean(item?.ralawise_catalog_variant_id)
+    const canonicalReadonly = Boolean(item?.ralawise_catalog_variant_id || item?.pencarrie_sku)
       && ['style_code', 'style_name'].includes(field);
     return `
       <input
@@ -11799,7 +11801,7 @@
 
   function renderStockVariantSelect(item, field) {
     const lineId = item?.source_order_item_id || '';
-    const styleId = Number.parseInt(item?.ralawise_catalog_style_id, 10);
+    const styleId = Number.parseInt(item?.catalogue_style_id ?? item?.ralawise_catalog_style_id, 10);
     if (!lineId || !Number.isFinite(styleId)) return renderLineItemInput(item, field);
 
     const variants = getCachedStyleVariants(styleId);
@@ -11868,7 +11870,7 @@
   function renderLineDraftRow() {
     const draft = state.lineDraft || createLineDraft();
     const product = selectedDraftProduct(draft);
-    const status = draft.error || (draft.loadingVariants ? 'Loading variants' : '');
+    const status = draft.error || (draft.loadingVariants ? 'Loading variants' : product?.supplier_name || '');
 
     return `
       <tr class="db-add-line-edit-row">
@@ -11967,8 +11969,8 @@
   function lastStockCatalogueStyleId() {
     const stockItems = (state.selectedLineItems || []).filter(isStockItem);
     for (let index = stockItems.length - 1; index >= 0; index -= 1) {
-      const styleId = Number.parseInt(stockItems[index]?.ralawise_catalog_style_id, 10);
-      if (Number.isFinite(styleId) && styleId > 0) return styleId;
+      const styleId = Number.parseInt(stockItems[index]?.catalogue_style_id ?? stockItems[index]?.ralawise_catalog_style_id, 10);
+      if (Number.isFinite(styleId) && styleId !== 0) return styleId;
     }
     return null;
   }
@@ -12132,20 +12134,20 @@
     }
 
     const product = selectLineItemVariantProduct(item, variants, field, select.value);
-    if (!product?.ralawise_catalog_variant_id) {
+    if (!product?.ralawise_catalog_variant_id && !product?.pencarrie_sku) {
       renderItemsPanel();
       return;
     }
 
     if (
-      String(product.ralawise_catalog_variant_id)
-      === String(item.ralawise_catalog_variant_id || '')
+      product.pencarrie_sku ? product.pencarrie_sku === item.pencarrie_sku
+        : String(product.ralawise_catalog_variant_id) === String(item.ralawise_catalog_variant_id || '')
     ) return;
     await saveStockVariantSelection(select, lineItemId, product);
   }
 
   async function saveStockVariantSelection(select, lineItemId, product) {
-    if (!select || !Number.isFinite(lineItemId) || !product?.ralawise_catalog_variant_id) return;
+    if (!select || !Number.isFinite(lineItemId) || (!product?.ralawise_catalog_variant_id && !product?.pencarrie_sku)) return;
     const savingKey = String(lineItemId);
     if (state.stockVariantSavingIds.has(savingKey)) return;
 
@@ -12161,7 +12163,7 @@
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            ralawise_catalog_variant_id: product.ralawise_catalog_variant_id,
+            ...catalogueVariantIdentity(product),
           }),
         }
       );
@@ -12185,7 +12187,7 @@
   function preloadStockItemVariants() {
     const styleIds = unique((state.selectedLineItems || [])
       .filter(isStockItem)
-      .map((item) => Number.parseInt(item.ralawise_catalog_style_id, 10))
+      .map((item) => Number.parseInt(item.catalogue_style_id ?? item.ralawise_catalog_style_id, 10))
       .filter(Number.isFinite));
     const missing = styleIds.filter((styleId) => {
       const key = styleVariantCacheKey(styleId);
@@ -12248,7 +12250,7 @@
     const cleanQuery = String(query || '').trim();
     const params = new URLSearchParams({ field, q: cleanQuery });
     const preferredStyleId = Number.parseInt(state.lineDraft?.preferredStyleId, 10);
-    if (!cleanQuery && Number.isFinite(preferredStyleId) && preferredStyleId > 0) {
+    if (!cleanQuery && Number.isFinite(preferredStyleId) && preferredStyleId !== 0) {
       params.set('preferredStyleId', String(preferredStyleId));
     }
 
@@ -12307,6 +12309,7 @@
       const code = product.style_code || product.alt_style_code || '';
       const name = product.style_name || '';
       const meta = [
+        product.supplier_name,
         product.colour_count ? `${product.colour_count} colours` : '',
         product.size_count ? `${product.size_count} sizes` : '',
       ].filter(Boolean).join(' | ');
@@ -12338,6 +12341,7 @@
       product.ralawise_catalog_style_id || product.style_id,
       10
     );
+    const selectedStyleId = draft.selectedStyleId;
     draft.codeQuery = product.style_code || '';
     draft.styleQuery = product.style_name || '';
     draft.variants = [];
@@ -12351,8 +12355,8 @@
     renderItemsPanel();
 
     try {
-      const data = await fetchJson(`/api/database/products/styles/${encodeURIComponent(draft.selectedStyleId)}/variants`);
-      if (!state.lineDraft || state.lineDraft.selectedStyleId !== draft.selectedStyleId) return;
+      const data = await fetchJson(`/api/database/products/styles/${encodeURIComponent(selectedStyleId)}/variants`);
+      if (state.lineDraft !== draft || draft.selectedStyleId !== selectedStyleId) return;
       draft.variants = Array.isArray(data.products) ? data.products : [];
       state.productVariantCache.set(styleVariantCacheKey(draft.selectedStyleId), draft.variants);
       draft.loadingVariants = false;
@@ -12362,7 +12366,7 @@
         els.itemsPanel.querySelector('[data-line-select="colour"]')?.focus();
       });
     } catch (err) {
-      if (!state.lineDraft) return;
+      if (state.lineDraft !== draft || draft.selectedStyleId !== selectedStyleId) return;
       draft.loadingVariants = false;
       draft.error = err.message || 'Failed to load product variants';
       renderItemsPanel();
@@ -12418,7 +12422,7 @@
     ));
     if (byVariantId) return byVariantId;
 
-    const byId = draft.variants.find((product) => String(product.source_product_id) === String(draft.productId));
+    const byId = draft.productId && draft.variants.find((product) => String(product.source_product_id) === String(draft.productId));
     if (byId) return byId;
 
     return draft.variants.find((product) => variantColourValue(product) === draft.colourValue)
@@ -12471,10 +12475,19 @@
     return variantValueFromText(item?.[field]);
   }
 
+  function catalogueVariantIdentity(product) {
+    return product.pencarrie_sku ? { pencarrie_sku: product.pencarrie_sku }
+      : { ralawise_catalog_variant_id: product.ralawise_catalog_variant_id };
+  }
+
   function findLineItemVariantProduct(item, variants) {
     const products = Array.isArray(variants) ? variants : [];
     if (!item || !products.length) return null;
 
+    if (item.pencarrie_sku) {
+      const saved = products.find(product => product.pencarrie_sku === item.pencarrie_sku);
+      return saved || null;
+    }
     const productId = item.source_product_id == null ? '' : String(item.source_product_id);
     const variantId = item.ralawise_catalog_variant_id == null
       ? ''
@@ -12558,6 +12571,7 @@
 
   function variantColourValue(product) {
     if (!product) return '';
+    if (product.order_colour_key) return product.order_colour_key;
     if (product.supplier_colour_code) return `code:${product.supplier_colour_code}`;
     if (product.colour_id !== null && product.colour_id !== undefined) return `id:${product.colour_id}`;
     return product.colour ? `name:${product.colour}` : '';
@@ -12565,6 +12579,7 @@
 
   function variantSizeValue(product) {
     if (!product) return '';
+    if (product.order_size_key) return product.order_size_key;
     if (product.supplier_size_code) return `code:${product.supplier_size_code}`;
     if (product.size_id !== null && product.size_id !== undefined) return `id:${product.size_id}`;
     return product.size ? `name:${product.size}` : '';
@@ -12591,7 +12606,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ralawise_catalog_variant_id: product.ralawise_catalog_variant_id,
+          ...catalogueVariantIdentity(product),
           quantity: lineInteger(draft.quantity, 1),
           unit_price: lineNumber(draft.unitPrice),
           vat_rate: lineVatRate(draft.vatPercent),

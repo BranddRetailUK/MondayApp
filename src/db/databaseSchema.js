@@ -346,6 +346,7 @@ async function ensureDatabaseTables(db) {
   `);
 
   await db.query('ALTER TABLE database_job_line_items ADD COLUMN IF NOT EXISTS line_sort_order INTEGER;');
+  await db.query('ALTER TABLE database_job_line_items ADD COLUMN IF NOT EXISTS pencarrie_sku TEXT;');
   await db.query('ALTER TABLE database_job_line_items ADD COLUMN IF NOT EXISTS item_reference TEXT;');
   await db.query('ALTER TABLE database_job_line_items ADD COLUMN IF NOT EXISTS ralawise_allow_non_live BOOLEAN NOT NULL DEFAULT FALSE;');
   await db.query('ALTER TABLE database_job_line_items ADD COLUMN IF NOT EXISTS legacy_source_product_id INTEGER;');

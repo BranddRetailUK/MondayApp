@@ -1,4 +1,4 @@
-// Proof-only supplier catalogue. No links or writes to DATABASE products/order lines.
+// Imported supplier catalogue used by proof generation and database order entry.
 async function ensureProofPencarrieTables(db) {
   const sql=`CREATE TABLE IF NOT EXISTS proof_pencarrie_imports (
     id UUID PRIMARY KEY, source_name TEXT NOT NULL, source_hash TEXT NOT NULL,

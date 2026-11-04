@@ -546,7 +546,7 @@ async function enrichExistingProducts(client, matches, batchSize) {
   return affected;
 }
 
-async function upsertCatalogueProducts(client, supplierCode) {
+async function upsertCatalogueProducts(client, supplierCode, styleCode = null) {
   const result = await client.query(`
     INSERT INTO database_products (
       source_product_id, style_id, supplier_name, supplier_code, product_type,
@@ -575,6 +575,7 @@ async function upsertCatalogueProducts(client, supplierCode) {
     JOIN database_ralawise_catalog_styles s ON s.id = v.style_id
     JOIN database_ralawise_catalog_colours c ON c.id = v.colour_id
     WHERE v.database_product_source_id IS NOT NULL
+      AND ($2::text IS NULL OR s.style_code = $2)
       AND s.database_product_style_id IS NOT NULL
       AND NOT EXISTS (
         SELECT 1
@@ -612,7 +613,7 @@ async function upsertCatalogueProducts(client, supplierCode) {
       supplier_single_price = EXCLUDED.supplier_single_price,
       imported_at = NOW()
     RETURNING (xmax = 0) AS inserted
-  `, [supplierCode]);
+  `, [supplierCode, styleCode]);
   return result.rows.reduce((counts, row) => {
     if (row.inserted) counts.inserted += 1;
     else counts.updated += 1;
@@ -648,6 +649,7 @@ async function applyImport(client, options, catalogue, report) {
       client,
       report.products.supplierCodeConvention
     );
+    await require('../src/db/orderCatalogue').refreshOrderCatalogue(client);
     await client.query('COMMIT');
 
     const appliedReport = {
@@ -781,4 +783,5 @@ module.exports = {
   printableReport,
   run,
   upsertCatalogueBatch,
+  upsertCatalogueProducts,
 };

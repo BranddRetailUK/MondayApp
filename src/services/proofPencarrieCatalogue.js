@@ -72,6 +72,7 @@ async function applyCatalogue(db,data,sourceName) {
         ON CONFLICT(${key}) DO UPDATE SET ${update}`,[JSON.stringify(data[table].slice(i,i+750)),id]);
     }
     await db.query('UPDATE proof_pencarrie_variants SET is_active=false WHERE import_id<>$1 AND is_active',[id]);
+    await require('../db/orderCatalogue').refreshOrderCatalogue(db);
     await db.query('COMMIT');return id;
   } catch(error){await db.query('ROLLBACK');throw error;}
 }
