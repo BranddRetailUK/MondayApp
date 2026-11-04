@@ -262,12 +262,15 @@
     for(const row of rows){
       const job=row.id===designId&&design?{...row,...design}:row;
       const item=document.createElement('article');item.className='proof-history-row';
+      const [label,message]=historyState(job);
+      const needsAttention=['Failed','Needs attention','Save needs attention','Interrupted','Needs review'].includes(label);
       const thumb=document.createElement('div');thumb.className='proof-history-thumb';
       if(job.hasPreview&&!standalonePreview){
         const img=document.createElement('img');img.loading='lazy';img.alt=`Proof preview for ${job.customer||job.designNumber||'pending design'}`;img.src=`/api/proof-generator/${historyEndpoint}/${encodeURIComponent(job.id)}/preview?v=${encodeURIComponent(job.updatedAt||job.revision)}`;
         const button=document.createElement('button');button.type='button';button.className='proof-history-image';button.setAttribute('aria-label',`Open proof preview ${job.designNumber||''}`);button.append(img);
         button.addEventListener('click',()=>openSavedProof(job));thumb.append(button);
       }else if(localPreview&&job.id===designId&&currentPreview?.pdf){renderDocument(currentPreview.pdf,thumb,[],{onlyPage:1,clickable:false});}
+      else if(needsAttention){thumb.textContent=label;}
       else{thumb.textContent=job.status==='saved'?'Preview unavailable':'Preview pending';}
       const info=document.createElement('div');info.className='proof-history-info';
       for(const [label,value] of [['Customer',job.customer],['Title',job.jobTitle],['Des No',job.designNumber||job.reference],['Date created',job.createdAt?new Date(job.createdAt).toLocaleDateString('en-GB',{timeZone:'Europe/London',day:'2-digit',month:'2-digit',year:'numeric'}):'—']]){
@@ -298,7 +301,12 @@
       const alreadyLinked=Boolean(job.sourceOrderId||job.linkedJobs?.length||job.linkedOrders?.length);
       const linkButton=document.createElement('button');linkButton.type='button';linkButton.className='proof-secondary-button proof-history-link-button';linkButton.textContent='Link to job';linkButton.disabled=busy||['save_queued','saving','allocating'].includes(job.status);
       linkButton.addEventListener('click',async()=>{try{const target=await window.ProofLinks.picker('jobs',{customer:job.customer});if(!target)return;if(!await window.ProofLinks.link(job.id,target.source_order_id))return;if(designId===job.id){design=null;designId=null;}await refreshHistory();window.ProofLinks.refresh();}catch(error){historyStatus.textContent=error.message;}});
-      const state=document.createElement('div');state.className='proof-history-state';const [label,message]=historyState(job);
+      const state=document.createElement('div');state.className='proof-history-state';
+      if(needsAttention){
+        const detail=document.createElement('p');detail.className='proof-history-error';
+        detail.textContent=message?label+' · '+reviewMessage(message):label;
+        state.append(detail);
+      }
       if(message)state.title=reviewMessage(message);
 
       const actions=document.createElement('div');actions.className='proof-history-actions';

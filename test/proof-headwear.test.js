@@ -128,3 +128,19 @@ test('headwear never generates a front image for a requested back or side view',
   const record=await readTemplate(BUILTIN_URL);
   await assert.rejects(()=>generateView(record.bytes,product(),'back',{apiKey:'test',fetchImpl:async()=>{throw Error('Unexpected AI call');}}),/side and back views require/);
 });
+
+test('black R369X uses the reviewed supplier cuff for a 100 mm front logo',async()=>{
+  const p=product({code:'R369X',name:'HDI quest knitted hat'});
+  p.decorations[0].widthMm=100;
+  assert.equal(builtinFor({...p,colour:'Navy'}),null);
+  await ensureGeneratedViews({products:[p]});
+  const front=p.visual.views[0];
+  assert.equal(front.generated,false);
+  const out=await buildProof({products:[p]},[await asset()],{strict:true});
+  const mark=out.pages[0].placements[0];
+  assert.equal(mark.width,.5);
+  assert.ok(Math.abs(mark.y+mark.height/2-.85)<1e-10);
+  assert.match(out.issues[0].message,/indicative 200 mm/);
+  const {meta}=await readTemplate(front.url);
+  await assert.rejects(()=>templateGeometry(product(),front,meta.imageHash),/different product/);
+});

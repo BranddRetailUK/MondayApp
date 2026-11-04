@@ -2,16 +2,19 @@
 const B45 = /^(?:B0?45|BB0?45|BC0?45)$/i;
 const BUILTIN_URL = 'proof-headwear:b45-black-front-v1';
 const BUILTIN_HASH = '9058975bf52b24039287d9f4cf526e7439f94b48f1e20d54705ba5f13bc03577';
+const QUEST_URL = 'proof-headwear:r369x-black-front-v1';
 function headwearKind(product = {}) {
   const name = `${product.name || ''} ${product.visual?.name || ''}`;
-  if (B45.test(product.code || '')) return 'cuffed-beanie';
+  if (B45.test(product.code || '') || /^R369X$/i.test(product.code || '')) return 'cuffed-beanie';
   if (/\bbeanie\b/i.test(name)) return /cuff|turn[ -]?up/i.test(name) ? 'cuffed-beanie' : 'beanie';
   if (/\b(?:baseball cap|snapback|trucker cap|cap)\b/i.test(name) && !/cap[ -]?sleeve/i.test(name)) return 'cap';
   if (/headwear|\bhats?\b/i.test(`${name} ${product.visual?.garmentType || ''}`)) return 'headwear';
   return null;
 }
 function builtinFor(product) {
-  return B45.test(product.code || '') && /^black\s*[*†‡]*$/i.test(product.colour || '') ? BUILTIN_URL : null;
+  if (!/^black\s*[*†‡]*$/i.test(product.colour || '')) return null;
+  if (B45.test(product.code || '')) return BUILTIN_URL;
+  return /^R369X$/i.test(product.code || '') ? QUEST_URL : null;
 }
 function productIdentity(product) {
   return {code:String(product.code || '').toUpperCase(), colour:String(product.colour || '').toLowerCase(), kind:headwearKind(product)};
@@ -29,4 +32,4 @@ function validateSurface(surface, kind) {
   }
   return {left:r.left,top:r.top,width:r.width,height:r.height,x:r.left+r.width/2,y:r.top+r.height/2};
 }
-module.exports={headwearKind,builtinFor,productIdentity,hasManualGeometry,validateSurface,BUILTIN_URL,BUILTIN_HASH};
+module.exports={headwearKind,builtinFor,productIdentity,hasManualGeometry,validateSurface,BUILTIN_URL,BUILTIN_HASH,QUEST_URL};

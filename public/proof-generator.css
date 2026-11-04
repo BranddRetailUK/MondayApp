@@ -156,6 +156,7 @@ body.proof-preview .proof-preview-badge{display:block}
 .proof-history-info>div{display:grid;gap:1px;min-width:0;align-content:start}
 .proof-history-info span{color:#94cafa;font-size:12px;font-weight:700}
 .proof-history-info strong{color:#fff;font-size:15px;overflow-wrap:anywhere}
+.proof-history-state p.proof-history-error{color:#ffa79e}
 .proof-history-state{display:grid;gap:8px;justify-items:start;color:#94cafa}
 .proof-history-state p,.proof-history-state time{margin:0;font-size:12px;color:#bec8d3;overflow-wrap:anywhere}
 #proof-history-status{color:#ffaaaa;font-size:13px}

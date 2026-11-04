@@ -1,16 +1,22 @@
 const {createHash}=require('crypto');
 const fs=require('fs/promises');
 const path=require('path');
-const {headwearKind,builtinFor,productIdentity,hasManualGeometry,validateSurface,BUILTIN_URL,BUILTIN_HASH}=require('./proofHeadwear');
+const {headwearKind,builtinFor,productIdentity,hasManualGeometry,validateSurface,BUILTIN_URL,BUILTIN_HASH,QUEST_URL}=require('./proofHeadwear');
 const VERSION='headwear-front-v1';
 const memory=new Map();
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
-const builtInRegion={left:.10,top:.615,width:.80,height:.385,x:.5,y:.8075};
+const reviewedTemplates=new Map([
+  [BUILTIN_URL,{file:'b45-black-front-v1.png',hash:BUILTIN_HASH,generated:true,acceptedScale:true,
+    region:{left:.10,top:.615,width:.80,height:.385,x:.5,y:.8075}}],
+  [QUEST_URL,{file:'r369x-black-front-v1.jpg',hash:'ff01b5a0bf11f10fa6076e6c414590c6b347cc0f6a7635625d9c25c44a964522',generated:false,acceptedScale:false,
+    region:{left:.15,top:.76,width:.70,height:.18,x:.5,y:.85}}]
+]);
 async function readTemplate(url) {
-  if(url===BUILTIN_URL){
-    const bytes=await fs.readFile(path.join(__dirname,'../../assets/proof-generator/headwear/b45-black-front-v1.png'));
-    if(digest(bytes)!==BUILTIN_HASH)throw Error('The reviewed B45 image has changed. Review its cuff template before use.');
-    return {bytes,meta:{imageHash:BUILTIN_HASH,kind:'cuffed-beanie',region:builtInRegion,flatWidthMm:200,generated:true,builtin:true}};
+  const reviewed=reviewedTemplates.get(url);
+  if(reviewed){
+    const bytes=await fs.readFile(path.join(__dirname,'../../assets/proof-generator/headwear',reviewed.file));
+    if(digest(bytes)!==reviewed.hash)throw Error('The reviewed headwear image has changed. Review its cuff template before use.');
+    return {bytes,meta:{imageHash:reviewed.hash,kind:'cuffed-beanie',region:reviewed.region,flatWidthMm:200,generated:reviewed.generated,builtin:true,acceptedScale:reviewed.acceptedScale}};
   }
   if(!/^proof-headwear:[a-f0-9]{64}$/.test(url))throw Error('Invalid headwear template.');
   const key=url.slice('proof-headwear:'.length);
@@ -59,7 +65,7 @@ async function prepareHeadwearViews(brief, {allowGenerate=false,onProgress=()=>{
     if(kind==='headwear')throw Error(`${product.code}: this headwear needs a reviewed decoration template.`);
     if(decorations.some(d=>positionName(d.position)!=='front'||preferredView(d,visual.views)!=='front'))throw Error(`${product.code}: automatic headwear proofs currently support the front decoration surface only.`);
     const builtin=builtinFor(product);
-    if(builtin){visual.views=visual.views.filter(v=>v.view!=='front');visual.views.unshift({view:'front',url:builtin,generated:true});continue;}
+    if(builtin){visual.views=visual.views.filter(v=>v.view!=='front');visual.views.unshift({view:'front',url:builtin,generated:reviewedTemplates.get(builtin).generated});continue;}
     if(front?.url?.startsWith('proof-headwear:')){if(!await read(front.url))throw Error('The headwear template is unavailable. Prepare the garment view again.');continue;}
     const reference=front||visual.views.find(v=>!v.generated&&['back','left','right'].includes(v.view));
     if(!reference)throw Error(`${product.code}: a verified supplier image is needed for headwear.`);

@@ -319,3 +319,20 @@ for(const outcome of ['linked','cancel','failure'])test(`existing proof editor l
   }else{assert.equal(context.design.sourceOrderId,undefined);assert.equal(context.selectedLinkJob,null);}
   if(outcome==='failure')assert.match(context.officeStatus.textContent,/already has a visual/);
 });
+
+test('failed proof history row visibly explains the failure with no pending thumbnail',()=>{
+  const historyList=element('div');
+  const document={createElement(tag){
+    return {...element(tag),classList:{toggle(){}}};
+  }};
+  const context={document,historyList,design:null,designId:null,busy:false,progressMessage:'',progressError:false,
+    historyRows:[{id:'failed',status:'folder_ready',generationStatus:'error',generationMessage:'R369X needs a reviewed template.'}],
+    historyWaiting:false,nextOffset:null,historyLoading:false,createNew:{},loadMore:{},currentBrief:null,currentPreview:null,
+    lastHistory:'',reviewMessage:value=>value};
+  createContext(context);
+  const render=source.slice(source.indexOf('  function renderHistory()'),source.indexOf('  async function openSavedProof('));
+  vm.runInContext(history+render+'\nrenderHistory();',context);
+  const [thumb,,state]=historyList.children[0].children;
+  assert.equal(thumb.textContent,'Failed');
+  assert.match(state.children[0].textContent,/R369X needs a reviewed template/);
+});
