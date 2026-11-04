@@ -272,6 +272,11 @@ Run only the full product catalogue:
 railway run --service DB node scripts/import-database-mdb.js PS_XP_tab.mdb --products-only
 ```
 
+### Order stock lines
+
+- Duplicate last line appends a new stock line from the last displayed stock row, retaining quantity, prices, VAT, reference and supplier variant details. The new line has its own identity and no prior supplier order.
+- Typed stock-line searches query active Ralawise products first. When there are no matches, search also resolves PenCarrie products and aliases. Empty searches retain combined usage-ranked suggestions.
+
 ### Ralawise Catalogue Import
 
 - Source files use `Sku Code` as the canonical and unique supplier-variant identity. `Style Code + Colour Code + Size Code` is not treated as unique. Blank Size Code is accepted when Size Name is present.

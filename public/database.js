@@ -842,6 +842,24 @@
     }
 
     const lineAction = button.dataset.dbLineAction;
+    if (lineAction === 'duplicate') {
+      const orderId = state.selectedJob.source_order_id;
+      button.disabled = true;
+      try {
+        await flushLineOrderAutosave();
+        const data = await fetchJson(`/api/database/jobs/${encodeURIComponent(orderId)}/line-items/${encodeURIComponent(button.dataset.lineId)}/duplicate`, {method:'POST'});
+        if (state.selectedJob?.source_order_id !== orderId) return;
+        state.selectedLineItems = data.lineItems;
+        syncSelectedJobLineSummary();
+        renderItemsPanel();
+        renderOutstandingOrders();
+      } catch (error) {
+        window.alert(error.message || 'Failed to duplicate stock line');
+      } finally {
+        button.disabled = false;
+      }
+      return;
+    }
     if (lineAction === 'add') {
       startLineDraft();
       return;
@@ -7976,7 +7994,7 @@
 
     const stockRows = [
       stockItems.length ? stockItems.map(renderStockRow).join('') : (state.lineDraft ? '' : renderItemEmptyRow(11)),
-      state.lineDraft ? renderLineDraftRow() : renderAddLineButtonRow(),
+      state.lineDraft ? renderLineDraftRow() : renderAddLineButtonRow(stockItems.at(-1)),
     ].join('');
 
     els.itemsPanel.innerHTML = `
@@ -11857,10 +11875,11 @@
     return item[field] || '';
   }
 
-  function renderAddLineButtonRow() {
+  function renderAddLineButtonRow(lastStockItem) {
     return `
       <tr class="db-add-line-button-row">
         <td colspan="11">
+          <button class="db-add-line-button" type="button" data-db-line-action="duplicate" data-line-id="${escapeAttr(lastStockItem?.source_order_item_id || '')}" ${lastStockItem ? '' : 'disabled'}>Duplicate last line</button>
           <button class="db-add-line-button" type="button" data-db-line-action="add">Add line</button>
         </td>
       </tr>

@@ -4733,12 +4733,10 @@ router.put('/api/database/jobs/:id/positions', async (req, res) => {
   }
 });
 
-router.get('/api/database/products/search', async (req, res) => {
-  const search = cleanQuery(req.query.q);
-  const field = cleanQuery(req.query.field).toLowerCase() === 'code' ? 'code' : 'style';
+async function findOrderProducts({search, field, preferred, includePenCarrie}) {
   const auditedAliasStyleCode = search ? resolveAuditedProductStyleAlias(search) : null;
-  const pcAlias = `s.id IN (SELECT style_id FROM database_pc_style_map WHERE code ILIKE $1 ${field === 'style' ? 'OR name ILIKE $1' : 'UNION SELECT style_id FROM database_pc_order_offers WHERE sku ILIKE $1'})`;
-  const exactPcAlias = 's.id IN (SELECT style_id FROM database_pc_style_map WHERE lower(code)=lower($2))';
+  const pcAlias = includePenCarrie ? `s.id IN (SELECT style_id FROM database_pc_style_map WHERE code ILIKE $1 ${field === 'style' ? 'OR name ILIKE $1' : 'UNION SELECT style_id FROM database_pc_order_offers WHERE sku ILIKE $1'})` : 'FALSE';
+  const exactPcAlias = includePenCarrie ? 's.id IN (SELECT style_id FROM database_pc_style_map WHERE lower(code)=lower($2))' : 'FALSE';
   const usesUsageSort = !search;
   const params = [];
   let whereSql = 'WHERE v.is_active IS TRUE';
@@ -4818,7 +4816,7 @@ router.get('/api/database/products/search', async (req, res) => {
     }
   }
 
-  const requestedPreferredStyleId = search ? null : nullableInt(req.query.preferredStyleId);
+  const requestedPreferredStyleId = search ? null : nullableInt(preferred);
   const preferredStyleId = requestedPreferredStyleId !== 0 ? requestedPreferredStyleId : null;
   if (preferredStyleId) {
     params.push(preferredStyleId);
@@ -4854,8 +4852,7 @@ router.get('/api/database/products/search', async (req, res) => {
   const usageCountSql = usesUsageSort ? 'COALESCE(su.usage_count, 0)' : '0';
   const usageQuantitySql = usesUsageSort ? 'COALESCE(su.usage_quantity, 0)' : '0';
 
-  try {
-    const result = await pool.query(
+  return pool.query(
       `WITH ${styleUsageCteSql}
        legacy_style_aliases AS (
          SELECT v.style_id,
@@ -4892,7 +4889,7 @@ router.get('/api/database/products/search', async (req, res) => {
                 v.sku_code,
                 v.alpha_sku_code,
                 v.sku_status,
-                v.supplier_name,
+                ${includePenCarrie ? 'v.supplier_name' : "'Ralawise'::text"} AS supplier_name,
                 v.primary_image_url,
                 v.colour_image_url,
                 v.carton_price,
@@ -4904,9 +4901,9 @@ router.get('/api/database/products/search', async (req, res) => {
                 ${usageCountSql}::int AS usage_count,
                 ${usageQuantitySql}::int AS usage_quantity,
                 ${rankSql} AS match_rank
-         FROM database_order_styles s
-         JOIN database_order_variants v ON v.style_id = s.id
-         JOIN database_order_colours c ON c.id = v.colour_id
+         FROM ${includePenCarrie ? 'database_order_styles' : 'database_ralawise_catalog_styles'} s
+         JOIN ${includePenCarrie ? 'database_order_variants' : 'database_ralawise_catalog_variants'} v ON v.style_id = s.id
+         JOIN ${includePenCarrie ? 'database_order_colours' : 'database_ralawise_catalog_colours'} c ON c.id = v.colour_id
          LEFT JOIN legacy_style_aliases la ON la.style_id = s.id
          ${styleUsageJoinSql}
          ${whereSql}
@@ -4939,7 +4936,16 @@ router.get('/api/database/products/search', async (req, res) => {
        LIMIT 20`,
       params
     );
+}
 
+router.get('/api/database/products/search', async (req, res) => {
+  const search = cleanQuery(req.query.q);
+  const field = cleanQuery(req.query.field).toLowerCase() === 'code' ? 'code' : 'style';
+  const options = {search, field, preferred:req.query.preferredStyleId};
+
+  try {
+    let result = await findOrderProducts({...options, includePenCarrie:!search});
+    if (search && !result.rows.length) result = await findOrderProducts({...options, includePenCarrie:true});
     res.json({ products: result.rows });
   } catch (err) {
     console.error('GET /api/database/products/search', err);
@@ -5533,6 +5539,46 @@ router.post('/api/database/jobs/:id/line-items', async (req, res) => {
   }
 });
 
+router.post('/api/database/jobs/:id/line-items/:lineItemId/duplicate', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(71060218)');
+    const job = await resolveDatabaseJobForMutation(client, Number(req.params.id), { forUpdate: true });
+    const columns = `source_product_id, legacy_source_product_id, line_description, item_reference,
+                     ralawise_allow_non_live, quantity, unit_price, unit_cost,
+                     vat_rate, is_non_deliverable, is_internal, supplier_name,
+                     style_id, style_code, alt_style_code, style_name,
+                     colour, size, product_type, stock,
+                     is_product_active, ralawise_catalog_variant_id, ralawise_sku, supplier_style_code,
+                     supplier_colour_code, supplier_size_code, catalogue_status, catalogue_synced_at,
+                     pencarrie_sku`;
+    const copy = job && await client.query(`
+      INSERT INTO database_job_line_items (source_order_id, source_order_item_id, line_sort_order,
+                                          created_at_source, updated_at_source, ${columns})
+      SELECT source_order_id, (SELECT MAX(source_order_item_id)+1 FROM database_job_line_items),
+             (SELECT MAX(COALESCE(line_sort_order,source_order_item_id))+1 FROM database_job_line_items WHERE source_order_id=$1),
+             NOW(), NOW(), ${columns}
+      FROM database_job_line_items WHERE source_order_id=$1 AND source_order_item_id=$2
+        AND NOT COALESCE(is_non_deliverable,false) AND NOT COALESCE(is_internal,false)
+        AND (NULLIF(source_product_id,0) IS NOT NULL OR NULLIF(style_code,'') IS NOT NULL OR NULLIF(style_name,'') IS NOT NULL)`,
+      [job.source_order_id, req.params.lineItemId]);
+    if (!copy?.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({error:'Stock line not found on this order'});
+    }
+    const lineItems = await fetchLineItems(client, job.source_order_id);
+    await client.query('COMMIT');
+    res.status(201).json({lineItems});
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Duplicate stock line failed', error);
+    res.status(500).json({error:'Failed to duplicate stock line'});
+  } finally {
+    client.release();
+  }
+});
+
 router.post('/api/database/jobs/:id/line-items/custom', async (req, res) => {
   const id = Number.parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) {
@@ -5562,7 +5608,7 @@ router.post('/api/database/jobs/:id/line-items/custom', async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query('SELECT pg_advisory_xact_lock(71060220)');
+    await client.query('SELECT pg_advisory_xact_lock(71060218)');
 
     const job = await resolveDatabaseJobForMutation(client, id, { forUpdate: true });
     if (!job) {
