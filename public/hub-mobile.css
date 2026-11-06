@@ -74,7 +74,7 @@
  #holiday-board .hb-people [data-person-name=charlie]{grid-area:2 / 3 / 3 / 5}
  #holiday-board .hb-people [data-person-name=lubos]{grid-area:2 / 5 / 3 / 7}
  #holiday-board .hb-legend{margin:8px 0;justify-content:center}
- #holiday-board .hb-scroll{height:calc(100dvh - 310px);max-height:calc(100dvh - 310px);min-height:220px}
+ #holiday-board .hb-scroll{height:clamp(170px,26dvh,230px);max-height:230px;min-height:170px}
  #insights-root .ins-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:12px}
  #insights-root .ins-filters>label{width:auto;min-width:0;max-width:100%;font-size:12px}
  #insights-root .ins-filters select{width:100%;min-width:0;max-width:100%;font-size:14px;min-height:44px}
@@ -105,3 +105,9 @@
 
 @media(max-width:720px),(max-width:960px) and (max-height:520px){#proof-generator-root .proof-history-info{grid-template-columns:minmax(0,1fr)} #proof-generator-root .proof-history-info strong{word-break:normal;overflow-wrap:break-word}}
 @media(max-width:720px),(max-width:960px) and (max-height:520px){.hub-proof-download{display:none!important}}
+
+@media(max-width:720px),(max-width:960px) and (max-height:520px){
+ #tab-test-dashboard #test-board{padding-top:clamp(40px,10dvh,96px)}
+ #tab-test-dashboard .group.collapsed .group-summary-row{margin:0 0 14px;width:100%;max-width:100%;box-sizing:border-box}
+ #tab-test-dashboard .group.collapsed .group-summary.simple-closed-summary{width:100%;max-width:100%;min-width:0;box-sizing:border-box}
+}

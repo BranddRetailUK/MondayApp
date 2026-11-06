@@ -1334,3 +1334,9 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Mobile proof history is always two columns with full-width previews, single-column information beneath and no Download actions. Dashboard PDF previews fit inside the safe-area-adjusted viewport with a 44px close target kept inside the dialog.
 - Versioned `hub-icon-v2-{180,192,512}.png` installation/header/push icons use the supplied UPC circle branding: a white circle with dark cutout UPC letters on a dark background, without HUB, BRANDING or a strapline. The final icon supersedes the earlier wordmark/full-logo concepts. Existing iOS installations may retain their previous icon until re-added to the Home Screen.
 - Validation: 100 targeted dashboard, holiday, proof-access, proof UI and customer-insights tests pass; local Chrome checks at 320/390px verify collapsed groups, Holiday placement, Alerts access, two-column layouts, 48px inputs and reachable/working PDF close controls with no page errors or horizontal overflow.
+
+### Mobile dashboard spacing and Holiday fit (2026-11-06)
+
+- Closed mobile Dashboard group cards fill the content width with equal 12px page gutters; the old asymmetric summary margin is removed. The board has responsive 40–96px top spacing (10dvh).
+- Holiday initially fits the complete year to its container on all devices. Fit mode follows container resizing and survives board edits; manually zooming still preserves the chosen scale. The mobile calendar container is reduced to 26dvh, bounded to 170–230px, while pinch zoom remains available.
+- Verified at 320/390px: equal left/right margins, whole-year fit, no horizontal page overflow and fit recalculation on resize. Dashboard mobile and Holiday tests: 28 passed.

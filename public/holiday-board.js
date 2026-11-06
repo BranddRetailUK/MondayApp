@@ -1,7 +1,7 @@
 (() => {
   const root = document.getElementById('holiday-board');
   let year = new Date().getFullYear(), data = { users: [], members: [], days: [] }, loading = false;
-  let calendarZoom = 1, zoomObserver, zoomInitialized = false;
+  let calendarZoom = 1, zoomObserver, zoomInitialized = false, calendarFit = true;
   let selectedMember = null, saving = false, suppressClickUntil = 0;
   const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const weekdays = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
@@ -120,7 +120,8 @@
     zoomObserver?.disconnect();
     const calendar = viewport.querySelector('.hb-calendar');
     const minimum = () => Math.min(1, (viewport.clientWidth - 24) / calendar.offsetWidth, (viewport.clientHeight - 28) / calendar.offsetHeight);
-    const change = (next, x, y) => {
+    const change = (next, x, y, fit = false) => {
+      calendarFit = fit;
       hideDayPopup();
       const box = viewport.getBoundingClientRect();
       const anchorX = x == null ? viewport.clientWidth / 2 : x - box.left;
@@ -134,14 +135,14 @@
       root.querySelector('#hb-zoom-in').disabled = calendarZoom >= 1;
     };
     if (!zoomInitialized) {
-      calendarZoom = window.matchMedia('(min-width: 961px) and (pointer: fine)').matches ? minimum() : 1;
+      calendarZoom = minimum();
       zoomInitialized = true;
     }
     calendar.style.zoom = String(calendarZoom);
-    change(calendarZoom);
+    change(calendarFit ? minimum() : calendarZoom, undefined, undefined, calendarFit);
     root.querySelector('#hb-zoom-out').onclick = () => change(calendarZoom / 1.2);
     root.querySelector('#hb-zoom-in').onclick = () => change(calendarZoom * 1.2);
-    root.querySelector('#hb-zoom-fit').onclick = () => { change(minimum()); viewport.scrollLeft = 0; viewport.scrollTop = 0; };
+    root.querySelector('#hb-zoom-fit').onclick = () => { change(minimum(), undefined, undefined, true); viewport.scrollLeft = 0; viewport.scrollTop = 0; };
     let gestureActive = false, gestureZoom = 1, touchDistance = 0, touchZoom = 1;
     // Chromium trackpads emit pinch gestures as Ctrl+wheel; ordinary wheel scrolling is unchanged.
     viewport.addEventListener('wheel', event => {
@@ -165,7 +166,7 @@
     }, { passive:false });
     const endTouch = () => { if (touchDistance) suppressClickUntil = Date.now() + 500; touchDistance = 0; };
     viewport.addEventListener('touchend', endTouch); viewport.addEventListener('touchcancel', endTouch);
-    zoomObserver = new ResizeObserver(() => { if (viewport.clientWidth) change(calendarZoom); });
+    zoomObserver = new ResizeObserver(() => { if (viewport.clientWidth && viewport.clientHeight) change(calendarFit ? minimum() : calendarZoom, undefined, undefined, calendarFit); });
     zoomObserver.observe(viewport);
   }
   function feedback(message, error = false) {
