@@ -54,6 +54,10 @@
   nav.addEventListener('click',event=>{
     const button=event.target.closest('[data-hub-nav]');if(!button)return;
     if(button.dataset.hubNav==='more'){document.getElementById('mobileNavToggle')?.click();return;}
+    if(button.dataset.hubNav==='database' && document.querySelector('.nav-tabs li.active')?.dataset.tab==='database'){
+      document.querySelector('[data-db-go="home"]')?.click();
+      window.scrollTo({top:0});sync();return;
+    }
     if(button.dataset.hubNav==='create'){
       document.querySelector('.nav-tabs li[data-tab="database"]')?.click();
       if(!document.getElementById('db-new-order-view')?.classList.contains('active'))document.querySelector('[data-db-action="new-order"]')?.click();

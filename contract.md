@@ -1386,3 +1386,7 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 ### Webapp document button row (2026-11-06)
 
 - Order info's four standard document buttons use one equal-width row, 10px rounded corners and 48px minimum height in the webapp layout. Compact labels fit at 320px; desktop presentation is unchanged.
+
+### Webapp Database navigation retap (2026-11-06)
+
+- Selecting Database from another top-level tab restores the existing database view. Selecting Database while already inside the database uses the existing Home action to return to its homepage. Verified at 320/390px, including returning from Dashboard and from New Order.
