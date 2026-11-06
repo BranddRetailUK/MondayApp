@@ -1351,3 +1351,10 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 # Dashboard print export button visibility (2026-11-06)
 
 - The dashboard Print exports button is hidden for all users on desktop and mobile. Export automation and its existing sidebar setting are unchanged.
+
+### Webapp compact database records (2026-11-06)
+
+- Only the webapp/mobile layout compacts Open Orders, All Orders, To Invoice, customer orders, stock ordering, customer lists and design-number lists. Essential job/customer/title fields and existing status/completion information stay visible; secondary cells use a keyboard-accessible More details toggle that does not trigger row navigation. All Orders also exposes its available dashboard status on mobile.
+- Customer information keeps the customer name visible and collapses account details/overview behind the same toggle. Contact cards show name and populated email/telephone/mobile values, with editable fields and deletion in the expanded section. Summary values track local contact edits; existing autosave remains intact.
+- Contact form rows grow around 48px inputs, with comfortable spacing, and lists scroll with the page. Desktop tables, contact fields and customer information remain fully displayed without the webapp toggles.
+- Verified at 320px, 390px and 1440px: expansion by keyboard, retained status, customer account details, repeat-order access, contact field heights, no horizontal overflow or browser errors. Existing database UI/mobile regression suite: 37 passing tests.

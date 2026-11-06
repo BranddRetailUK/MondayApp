@@ -758,6 +758,13 @@
 
   function setupDatabaseMobileTableLabels() {
     syncDatabaseMobileTableLabels();
+    const header = els.root?.querySelector('.db-customer-header');
+    if (header) {
+      header.classList.add('db-compact-record');
+      header.querySelector('.db-customer-code-line')?.classList.add('db-record-secondary');
+      els.customerHeaderStats?.classList.add('db-record-secondary');
+      header.append(createDatabaseRecordToggle(header));
+    }
     if (!els.root || typeof MutationObserver !== 'function') return;
     mobileTableObserver?.disconnect();
     mobileTableObserver = new MutationObserver(scheduleDatabaseMobileTableLabels);
@@ -788,9 +795,39 @@
           if (label) cell.dataset.mobileLabel = label;
           else cell.removeAttribute('data-mobile-label');
         });
+        const compactTables = ['db-outstanding-table', 'db-to-invoice-table', 'db-customer-orders-table', 'db-stock-ordering-table', 'db-customers-table', 'db-customer-design-numbers-table'];
+        if (compactTables.includes(table.id) && !row.querySelector('td[colspan]')) {
+          row.classList.add('db-compact-record');
+          Array.from(row.children).forEach((cell) => {
+            const essential = /^(Order no|Customer|Job title|Status|Completed|Design number)$/i.test(cell.dataset.mobileLabel || '')
+              || cell.classList.contains('db-dashboard-status-cell')
+              || (cell.classList.contains('db-row-selector') && cell.querySelector('input,button'));
+            if (!essential) cell.classList.add('db-record-secondary');
+          });
+          const cell = document.createElement('td');
+          cell.className = 'db-record-toggle-cell';
+          cell.append(createDatabaseRecordToggle(row));
+          row.append(cell);
+        }
         row.dataset.mobileLabelReady = 'true';
       });
     });
+  }
+
+  function createDatabaseRecordToggle(record) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'db-record-toggle';
+    button.textContent = 'More details ▾';
+    button.setAttribute('aria-expanded', 'false');
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const expanded = record.classList.toggle('db-record-expanded');
+      button.setAttribute('aria-expanded', String(expanded));
+      button.textContent = expanded ? 'Less details ▴' : 'More details ▾';
+    });
+    button.addEventListener('keydown', (event) => event.stopPropagation());
+    return button;
   }
 
   function isDatabaseMobileLayout() {
@@ -5196,6 +5233,12 @@
         <button class="db-toolbar-button db-contact-add-button" type="button" data-db-action="add-contact">Add Contact</button>
       </div>
     `;
+    els.customerContactsBody.querySelectorAll('.db-contact-card').forEach((card) => {
+      card.classList.add('db-compact-record');
+      card.insertBefore(createDatabaseRecordToggle(card), card.querySelector('.db-record-secondary'));
+      card.addEventListener('input', () => updateContactCompactSummary(card));
+      updateContactCompactSummary(card);
+    });
     hydrateContactAutosaveSignatures();
   }
 
@@ -5205,6 +5248,8 @@
     const rowId = contact.contact_row_id || contact.manual_contact_id || '';
     return `
       <article class="db-contact-card" data-contact-key="${escapeAttr(contactKey)}" data-contact-row-id="${escapeAttr(rowId)}" data-source-contact-id="${escapeAttr(contact.contact_id || '')}">
+        <div class="db-contact-compact-summary"></div>
+        <div class="db-record-secondary">
         <button class="db-contact-delete-button" type="button" data-db-contact-delete="${escapeAttr(contactKey)}" aria-label="Delete contact" title="Delete contact">X</button>
         <div class="db-contact-card-row db-contact-name-row">
           <label>Contact:</label>
@@ -5228,8 +5273,18 @@
           <label>Address:</label>
           <input data-contact-field="contact_address" value="${escapeAttr(contact.contact_address || '')}">
         </div>
+        </div>
       </article>
     `;
+  }
+
+  function updateContactCompactSummary(card) {
+    const value = (field) => card.querySelector(`[data-contact-field="${field}"]`)?.value.trim() || '';
+    const name = ['contact_title', 'contact_first_name', 'contact_last_name'].map(value).filter(Boolean).join(' ');
+    const summary = card.querySelector('.db-contact-compact-summary');
+    summary.innerHTML = `<strong>${escapeHtml(name || 'Unnamed contact')}</strong>`
+      + ['contact_email', 'contact_phone', 'contact_mobile'].map(value).filter(Boolean)
+        .map((text) => `<span>${escapeHtml(text)}</span>`).join('');
   }
 
   function contactNameParts(contact) {
@@ -7451,7 +7506,7 @@
         <td>${escapeHtml(outstandingTakenByFirstName(job))}</td>
         <td>${escapeHtml(formatDate(job.order_date, 'long'))}</td>
         <td>${escapeHtml(outstandingDeliveryLabel(job))}</td>
-        ${state.orderMode === 'all' ? '' : renderOutstandingStatusCell(statusLabel)}
+        ${state.orderMode === 'all' ? renderOutstandingStatusCell(statusLabel).replace('db-dashboard-status-cell', 'db-dashboard-status-cell db-webapp-status') : renderOutstandingStatusCell(statusLabel)}
       </tr>
     `;
   }
