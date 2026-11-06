@@ -803,3 +803,21 @@ test('YK102 breast anchors stay in yellow chest panels without changing print sc
  const manual=layout.placementFor({...d,placement:{x:.8,y:.5}},{width:100,height:24},g);
  assert.equal(manual.x,.8);assert.equal(manual.y,.5);
 });
+
+
+test('legacy decoration IDs survive rendering, editor moves and regeneration',async()=>{
+ const b=brief([mark({id:undefined,placement:{x:.68,y:.25}}),mark({id:'existing-back',position:'back',widthMm:'240'})]);
+ const files=[await artFile()],fetchImpl=await fixtureFetch();
+ const first=await buildProof(b,files,{fetchImpl,strict:true});
+ for(const page of first.pages)for(const placement of page.placements){
+   const d=b.products[page.productIndex].decorations.find(d=>d.id===placement.id);
+   assert.ok(d,'rendered placements must map back to editable decorations');
+ }
+ assert.equal(b.products[0].decorations[1].id,'existing-back');
+ const front=b.products[0].decorations[0];assert.deepEqual(front.placement,{x:.68,y:.25});
+ front.placement={x:.6,y:.3};
+ const reopened=JSON.parse(JSON.stringify(b));
+ const second=await buildProof(reopened,files,{fetchImpl,strict:true});
+ const placed=second.pages.flatMap(p=>p.placements).find(p=>p.id===front.id);
+ assert.equal(placed.x,.6);assert.equal(placed.y,.3);assert.equal(placed.size.width,100);
+});

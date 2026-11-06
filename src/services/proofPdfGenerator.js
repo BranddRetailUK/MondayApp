@@ -129,6 +129,14 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
   if (!Array.isArray(brief?.products) || !brief.products.length || brief.products.length > 20) throw new Error('A proof needs 1-20 products.');
   const ids = artworks.map(a => a.id);
   if (ids.some(id => !id) || new Set(ids).size !== ids.length) throw new Error('Each uploaded artwork needs a unique ID.');
+  // Persist the same decoration identities used by the placement editor, including
+  // older/imported briefs which did not pass through the brief parser.
+  brief.products.forEach((product, pi) => {
+    product.decorations = resolveDecorations(brief, product).map((d, di) => ({
+      ...d, id: d.id || `product-${pi}-decoration-${di}`,
+    }));
+  });
+  brief.sharedDecorations = [];
   artworks=[...artworks];
   const textArtworks=new Map();
   const hasUploadedArtwork=d=>{const asset=findArtwork(d,artworks);return asset && !isFont(asset.file);};
