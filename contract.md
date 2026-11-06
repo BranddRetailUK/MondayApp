@@ -1407,3 +1407,8 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Dashboard proof/file preview buttons are exempt from rounded webapp button styling and retain square corners.
 - Reports uses two-column overview/KPI cards, wrapping values/legends, compact range controls and improved spacing. The chart retains a readable 900px canvas inside a horizontal swipe area, with at most eight webapp axis labels; desktop chart layout is unchanged.
 - Populated browser fixtures at 320/390/1440px validate item fields/actions, titles, reports/comparison layout, unclipped chart labels and square previews. Item/report regression suite: 30 passing tests.
+
+### Webapp item action refinement (2026-11-06)
+
+- Order Items visually places Add Line before Duplicate. Reorder controls and Supplier fields are hidden only in the webapp. Each persisted/draft card retains its existing delete/cancel handler behind an accessible red X at top-right, without the visible Delete label.
+- Item-table backgrounds are transparent between cards, exposing the blue section container. Add-line footers and section bottoms have extra padding. Verified at 320/390px with add/cancel flows and at 1440px for unchanged desktop presentation.

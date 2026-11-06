@@ -307,3 +307,17 @@
  #tab-database #db-reports-view .db-report-order-filters label{display:flex;flex-direction:column;align-items:stretch;gap:6px}
  #tab-database #db-reports-view .db-report-order-filters :is(input,select){width:100%;max-width:none}
 }
+
+@media(max-width:720px),(max-width:960px) and (max-height:520px){
+ #tab-database #db-order-items-panel :is(.db-mobile-card-table,.db-mobile-card-table>tbody,.db-custom-table-scroll){background:transparent}
+ #tab-database #db-order-items-panel .db-mobile-card-table>tbody>tr:is(.db-line-row,.db-add-line-edit-row,.db-custom-line-edit-row){position:relative;padding-top:52px}
+ #tab-database #db-order-items-panel .db-mobile-card-table>tbody>tr>.db-row-selector:has(.db-line-drag-handle){display:none}
+ #tab-database #db-order-items-panel .db-mobile-card-table>tbody>tr>.db-line-delete-cell:has(button){position:absolute;top:6px;right:6px;width:40px!important;height:40px;display:block;padding:0;border:0}
+ #tab-database #db-order-items-panel .db-line-delete-cell::before{display:none}
+ #tab-database #db-order-items-panel .db-line-delete-button{color:#d32f2f;background:transparent;border:0;font:700 20px/1 system-ui;box-shadow:none}
+ #tab-database #db-order-items-panel .db-add-line-button-row>td{padding:4px 0 10px!important}
+ #tab-database #db-order-items-panel [data-db-line-action=add]{order:-1}
+ #tab-database #db-order-items-panel :is(.db-items-stock-frame,.db-small-item-box,.db-nonstock-box){padding-bottom:16px}
+ #tab-database #db-order-items-panel .db-supplier-row,
+ #tab-database #db-order-items-panel td:has([data-line-item-field=supplier_name],[data-custom-line-field=supplier_name]){display:none}
+}
