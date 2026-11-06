@@ -1,4 +1,4 @@
-#print-export-controls { display:flex; justify-content:flex-end; margin:8px 12px; }
+#print-export-controls { display:none; }
 #print-export-controls button,.print-exports-dialog button { cursor:pointer; padding:8px 14px; border:1px solid #666; border-radius:5px; color:#fff; background:#303030; }
 .print-exports-dialog { width:min(820px,90vw); max-height:80vh; overflow:auto; padding:24px; background:#202020; color:#fff; border:1px solid #666; border-radius:8px; }
 .print-exports-dialog::backdrop { background:#0009; }

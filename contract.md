@@ -1348,3 +1348,6 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - The mobile header no longer displays the Live/Offline pill. Its logo is 10% larger (35.2px) inside a 44px accessible button that opens the More sidebar and exposes its expanded state.
 - Mobile DATABASE inputs/selects are 48px tall, textareas have an 80px minimum, and form/address/postcode rows grow with their controls. Logs, Styles, Lami DTF and Users entries are hidden on mobile DATABASE home, without removing their routes or changing access permissions.
 - Browser verification at 320/390px covers sidebar opening from the logo, Files PDF preview, equal Proof/Files strips, zero upload-plus controls, full-width status, one Holiday icon row, hidden database home entries and customer form spacing, with no page errors or horizontal overflow.
+# Dashboard print export button visibility (2026-11-06)
+
+- The dashboard Print exports button is hidden for all users on desktop and mobile. Export automation and its existing sidebar setting are unchanged.
