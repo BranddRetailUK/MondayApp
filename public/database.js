@@ -7756,7 +7756,7 @@
     els.detailsPanel.innerHTML = `
       <div class="db-details-layout">
         <div class="db-detail-box db-customer-box">
-          ${detailRow('Customer:', `${customerOpenButton(job)}<input class="db-legacy-input db-code-input" readonly value="${escapeAttr(job.customer_code || '')}">`)}
+          ${detailRow('Customer:', `${customerOpenButton(job)}<input class="db-legacy-input db-code-input db-customer-code-field" readonly value="${escapeAttr(job.customer_code || '')}">`)}
           ${detailRow('Contact:', orderContactSelect(job))}
           ${detailRow('Order type:', orderTypeSelect(job))}
           ${detailRow('Taken by:', inputBox(takenByLabel(job)))}

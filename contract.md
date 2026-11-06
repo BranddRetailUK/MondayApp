@@ -1390,3 +1390,9 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 ### Webapp Database navigation retap (2026-11-06)
 
 - Selecting Database from another top-level tab restores the existing database view. Selecting Database while already inside the database uses the existing Home action to return to its homepage. Verified at 320/390px, including returning from Dashboard and from New Order.
+
+### Webapp rounded controls and customer list spacing (2026-11-06)
+
+- Webapp buttons use consistent 10px corners. Customer-code fields/labels are hidden on existing customer and order detail pages without removing stored values or the account-manager control. Desktop fields remain visible.
+- Customer search fills its row, Add Customer uses accent blue/white, and customer names form a continuous list with one separator per row and no grid gaps. Home/Open Orders tabs have a 6px gap.
+- Browser checks at 320/390/1440px verify full-width search, contiguous rows, code visibility, rounded buttons, tab spacing and no overflow. Database UI regression checks: 17 passing.
