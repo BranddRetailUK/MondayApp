@@ -7,9 +7,10 @@
   const nav=document.createElement('nav');nav.className='hub-bottom-nav';nav.setAttribute('aria-label','App navigation');
   nav.innerHTML=[['dashboard','Dashboard'],['database','Database'],['holiday','Holiday'],['more','More']].map(([key,label])=>`<button type="button" data-hub-nav="${key}"><span aria-hidden="true">${icons[key]}</span>${label}</button>`).join('');
   document.body.append(nav);
-  const header=document.createElement('header');header.className='hub-app-header';header.innerHTML='<img src="/hub-icon-v2-192.png" alt=""><strong>Ultimate Hub</strong><span id="hub-connection">Live</span>';document.body.append(header);
-  function connection(){const online=navigator.onLine;document.getElementById('hub-connection').textContent=online?'Live':'Offline';document.body.classList.toggle('hub-offline',!online);}
-  window.addEventListener('online',connection);window.addEventListener('offline',connection);connection();
+  const header=document.createElement('header');header.className='hub-app-header';header.innerHTML='<button type="button" class="hub-brand-menu" aria-label="Open navigation" aria-controls="appSidebar" aria-expanded="false"><img src="/hub-icon-v2-192.png" alt=""></button><strong>Ultimate Hub</strong>';document.body.append(header);
+  const brandMenu=header.querySelector('.hub-brand-menu');
+  brandMenu.onclick=()=>{if(!document.body.classList.contains('mobile-nav-open'))document.getElementById('mobileNavToggle')?.click();};
+  new MutationObserver(()=>brandMenu.setAttribute('aria-expanded',String(document.body.classList.contains('mobile-nav-open')))).observe(document.body,{attributes:true,attributeFilter:['class']});
   const dialog=document.createElement('dialog');dialog.className='hub-settings';dialog.innerHTML=`<div class="hub-sheet-head"><h2>Notifications</h2><button type="button" data-close aria-label="Close notifications">×</button></div>
     <p>Get updates on this device, even when Ultimate Hub is closed.</p>
     <div class="hub-install-help"><strong>Install on iPhone</strong><p>Open this site in Safari, tap Share → Add to Home Screen, then open Ultimate Hub from your Home Screen. Notifications require iOS 16.4 or later.</p></div>

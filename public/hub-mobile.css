@@ -111,3 +111,48 @@
  #tab-test-dashboard .group.collapsed .group-summary-row{margin:0 0 14px;width:100%;max-width:100%;box-sizing:border-box}
  #tab-test-dashboard .group.collapsed .group-summary.simple-closed-summary{width:100%;max-width:100%;min-width:0;box-sizing:border-box}
 }
+@media(max-width:720px),(max-width:960px) and (max-height:520px){
+ #tab-test-dashboard #test-board{padding-top:clamp(20px,5dvh,48px)}
+ #tab-test-dashboard .job-row{grid-template-columns:repeat(6,minmax(0,1fr))!important}
+ #tab-test-dashboard .job-row>.job-number-cell{grid-column:1;grid-row:1;padding-left:4px;padding-right:0;font-size:12px}
+ #tab-test-dashboard .job-row>.title-cell{grid-column:2 / -1;grid-row:1}
+ #tab-test-dashboard .job-row>[data-mobile-label="PROOF"],#tab-test-dashboard .job-row>[data-mobile-label="FILES"]{display:flex!important;grid-row:2;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:6px;min-height:64px;padding:8px;overflow:hidden}
+ #tab-test-dashboard .job-row>[data-mobile-label="PROOF"]{grid-column:1 / 4}
+ #tab-test-dashboard .job-row>[data-mobile-label="FILES"]{grid-column:4 / -1;border-left:1px solid #ffffff25}
+ #tab-test-dashboard .job-row>:is([data-mobile-label="PROOF"],[data-mobile-label="FILES"])::before{min-width:0;max-width:none;width:100%;text-align:center}
+ #tab-test-dashboard .job-row .dashboard-file-strip{width:100%;min-height:28px;flex:none;overflow-x:auto;justify-content:safe center}
+ #tab-test-dashboard .job-row :is(.test-file-upload-empty-button,.test-file-upload-add-button){display:none!important}
+ #tab-test-dashboard .job-row>[data-mobile-label="STATUS"]{grid-column:1 / -1;grid-row:3;padding:0;min-height:42px;border:0}
+ #tab-test-dashboard .job-row>[data-mobile-label="STATUS"]::before{display:none}
+ #tab-test-dashboard .job-row>[data-mobile-label="STATUS"] .dashboard-status-badge{min-height:42px;border-radius:8px;box-sizing:border-box}
+ #holiday-board{padding:0;text-align:center}
+ #holiday-board .hb-head{display:none}
+ #holiday-board .hb-legend{padding:0;margin:2px 0 12px;border:0;justify-content:center}
+ #holiday-board .hb-people{display:flex;flex-wrap:nowrap;justify-content:center;align-items:center;gap:4px;margin:0 auto;width:100%}
+ #holiday-board .hb-people button{flex:0 0 48px;width:48px;height:46px;padding:4px;justify-content:center}
+ #holiday-board .hb-feedback{min-height:0;margin:0 0 8px;text-align:center}
+ #holiday-board .hb-feedback:empty{display:none}
+ #holiday-board .hb-month>strong{justify-content:center;text-align:center;padding-left:0}
+ #holiday-board .hb-number{align-self:center;text-align:center;margin-left:0;margin-right:0}
+ #holiday-board .hb-date-number text{text-anchor:middle;transform:translateX(13px)}
+ #tab-database :is(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=hidden]),select){height:48px!important;min-height:48px!important;max-height:none;padding:10px 8px;line-height:1.4;box-sizing:border-box}
+ #tab-database textarea{height:auto!important;min-height:80px!important;max-height:none;padding:10px 8px;line-height:1.4;box-sizing:border-box}
+ #tab-database :is(.db-new-order-row,.db-add-contact-row,.db-order-line,.db-customer-line,.db-order-number-line,.db-customer-code-line,.db-form-row,.db-comments-row,.db-customer-address-row){height:auto;min-height:0;gap:7px;margin-bottom:12px}
+}
+@media(max-width:720px),(max-width:960px) and (max-height:520px){
+ #holiday-board .hb-people [data-person-name=melvyn]{order:1}
+ #holiday-board .hb-people [data-person-name=julia]{order:2}
+ #holiday-board .hb-people [data-person-name=scott]{order:3}
+ #holiday-board .hb-people [data-person-name=charlie]{order:4}
+ #holiday-board .hb-people [data-person-name=lubos]{order:5}
+}
+.hub-brand-menu{display:flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;padding:0;border:0;background:transparent;border-radius:10px;cursor:pointer}
+.hub-app-header .hub-brand-menu img{width:35.2px;height:35.2px}
+.hub-brand-menu:focus-visible{outline:2px solid #b6e2ff;outline-offset:2px}
+@media(max-width:720px),(max-width:960px) and (max-height:520px){
+ #tab-database .db-new-customer-address{height:auto;min-height:0;padding:8px;margin-bottom:16px}
+ #tab-database .db-new-customer-address>input{display:block;width:100%;margin:0 0 8px}
+ #tab-database .db-new-customer-postcode{height:auto;min-height:48px;gap:8px;margin:0;align-items:center}
+ #tab-database .db-new-customer-postcode input{flex:1;min-width:0;width:100%}
+ #db-home-view :is([data-db-action=logs],[data-db-action=styles],[data-db-action=dtf-admin],[data-db-action=users],[data-db-action=toggle-home-logs]){display:none!important}
+}

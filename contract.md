@@ -1340,3 +1340,11 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Closed mobile Dashboard group cards fill the content width with equal 12px page gutters; the old asymmetric summary margin is removed. The board has responsive 40–96px top spacing (10dvh).
 - Holiday initially fits the complete year to its container on all devices. Fit mode follows container resizing and survives board edits; manually zooming still preserves the chosen scale. The mobile calendar container is reduced to 26dvh, bounded to 170–230px, while pinch zoom remains available.
 - Verified at 320/390px: equal left/right margins, whole-year fit, no horizontal page overflow and fit recalculation on resize. Dashboard mobile and Holiday tests: 28 passed.
+
+### Mobile dashboard file strips and compact navigation (2026-11-06)
+
+- Dashboard top spacing is halved to 20–48px (5dvh). Job cards show equal-width Proof and Files preview strips separated by a divider, including Print/Embroidery groups. Upload-plus buttons are hidden on these mobile card strips; existing file previews and other upload workflows remain. The status label is hidden and the status control fills the card width.
+- Holiday's title/header and excess legend spacing are hidden on mobile. Member icons use one centred row, ordered Melvyn, Julia, Scott, Charlie, Lubos. Calendar month/date text is centred, and the fitted calendar sits directly below the icons.
+- The mobile header no longer displays the Live/Offline pill. Its logo is 10% larger (35.2px) inside a 44px accessible button that opens the More sidebar and exposes its expanded state.
+- Mobile DATABASE inputs/selects are 48px tall, textareas have an 80px minimum, and form/address/postcode rows grow with their controls. Logs, Styles, Lami DTF and Users entries are hidden on mobile DATABASE home, without removing their routes or changing access permissions.
+- Browser verification at 320/390px covers sidebar opening from the logo, Files PDF preview, equal Proof/Files strips, zero upload-plus controls, full-width status, one Holiday icon row, hidden database home entries and customer form spacing, with no page errors or horizontal overflow.
