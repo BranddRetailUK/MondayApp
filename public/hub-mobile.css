@@ -223,3 +223,21 @@
 @media(max-width:720px),(max-width:960px) and (max-height:520px){
  #tab-database #db-home-view .db-outstanding-actions .db-panel-title{text-align:center;width:100%}
 }
+
+.db-webapp-type-filters{display:none}
+@media(max-width:720px),(max-width:960px) and (max-height:520px){
+ #tab-database #db-home-view .db-outstanding-actions .db-panel-title{display:none}
+ #tab-database .db-action-title{height:auto;min-height:0;margin-bottom:3px;line-height:16px}
+ #tab-database .db-search-label{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+ #tab-database .db-webapp-order-search{padding-bottom:8px;gap:0}
+ #tab-database .db-webapp-type-filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;margin:0 0 10px}
+ #tab-database .db-webapp-type-filters .db-toolbar-button{width:100%;min-width:0;min-height:34px;height:auto;padding:5px 2px;font:600 11px/1.2 system-ui;border-radius:7px;white-space:normal}
+ #tab-database .db-webapp-type-filters .active{outline:2px solid #1876b4;outline-offset:-2px}
+ #tab-database .db-outstanding-controls :is([data-db-group=print],[data-db-group=print_embroidery],[data-db-group=embroidery],[data-db-group=gifts]){display:none}
+ #tab-database #db-new-order-cancel{background:#d6dde2;border:1px solid #b7c3cd;border-radius:10px;color:#243c49;box-shadow:none;text-shadow:none;min-height:48px;min-width:110px;font:600 16px system-ui}
+ #tab-database .db-stage-nav .db-main-tabs{height:50px}
+ #tab-database .db-stage-nav .db-main-tab{min-height:50px;font-size:15px}
+ #tab-database #db-order-stats-drawer,#tab-database .db-pre-completion-invoice-button{display:none!important}
+ #tab-database .db-customer-open-button{height:auto;min-height:48px;padding:10px 8px;line-height:1.4;font-size:16px;white-space:normal;overflow-wrap:anywhere;border-radius:6px;box-sizing:border-box}
+ #tab-database .db-document-buttons{grid-template-columns:repeat(2,minmax(0,1fr))}
+}

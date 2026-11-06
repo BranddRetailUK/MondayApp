@@ -1375,3 +1375,10 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Webapp Customers hides sorting and shows only clickable customer names, without secondary fields or expansion controls. Existing customer navigation and search remain.
 - New Order customer suggestions use full-width, wrapping, touch-sized rows in the webapp form flow. Its submit button reads Create with a blue background and white text; desktop retains Accept. Delivery/Invoice address labels are fully spelled out. The webapp homepage Open Orders count-panel heading is centred.
 - Browser verification at 320/390/1440px covers both search requests, names-only customer navigation, customer selection, submit labels/style and home heading alignment. Database UI and pagination checks: 23 passing tests, including open-search pagination and desktop isolation.
+
+### Webapp compact filters and order controls (2026-11-06)
+
+- Only in the webapp layout: the homepage count panel omits its Open Orders heading and uses a 3px gap between job-type labels and counts. Database search labels are visually hidden while retaining accessible names; customer/style inputs have descriptive placeholders.
+- Four compact job-type buttons (Print, Print + Emb, Embroidery, Gifts) sit in one row directly below the order search. They reuse existing filtering and active-state logic; duplicate type buttons in the lower controls are hidden, while approval/all controls remain.
+- New Order Cancel matches Create sizing and rounded styling with grey fill/dark text. Home/Open Orders top tabs are 50px high with 15px text. Order info hides its customer overview drawer/toggle and Pre-Completion Invoice, leaving the four standard document actions; the customer-name link grows to at least 48px and wraps.
+- Desktop controls retain their existing presentation. Browser checks at 320/390/1440px cover filters, document actions, customer field height, tabs, buttons and overflow. Database regression checks: 23 passing.

@@ -529,8 +529,8 @@
             <section id="db-customers-view" class="db-view db-customers-view" aria-label="Database customers">
               <div class="db-customers-toolbar">
                 <div class="db-customers-filter-group">
-                  <label>Search:
-                    <input id="db-customers-search" class="db-legacy-input" type="search" autocomplete="off">
+                  <label><span class="db-search-label">Search:</span>
+                    <input id="db-customers-search" class="db-legacy-input" placeholder="Search customers…" type="search" autocomplete="off">
                   </label>
                   <label>Sort by:
                     <select id="db-customers-sort" class="db-legacy-input">
@@ -695,7 +695,7 @@
                   <div class="db-customer-gray-fill"></div>
                 </div>
                 <label class="db-customer-orders-search" for="db-customer-orders-search">
-                  <span>Search orders:</span>
+                  <span class="db-search-label">Search orders:</span>
                   <input
                     id="db-customer-orders-search"
                     class="db-legacy-input"
@@ -799,9 +799,15 @@
 
             <section id="db-outstanding-view" class="db-view db-outstanding-view" aria-label="Outstanding orders">
               <label class="db-webapp-order-search" for="db-webapp-order-search">
-                <span>Search:</span>
+                <span class="db-search-label">Search:</span>
                 <input id="db-webapp-order-search" class="db-legacy-input" type="search" autocomplete="off" placeholder="Search orders…">
               </label>
+              <div class="db-webapp-type-filters" role="group" aria-label="Job type">
+                <button type="button" class="db-toolbar-button db-type-print" data-db-group="print">Print</button>
+                <button type="button" class="db-toolbar-button db-type-print_embroidery" data-db-group="print_embroidery">Print + Emb</button>
+                <button type="button" class="db-toolbar-button db-type-embroidery" data-db-group="embroidery">Embroidery</button>
+                <button type="button" class="db-toolbar-button db-type-gifts" data-db-group="gifts">Gifts</button>
+              </div>
               <div class="db-table-frame db-outstanding-table-frame">
                 <table id="db-outstanding-table" class="db-legacy-table db-mobile-card-table">
                   <thead>
@@ -835,7 +841,7 @@
                   <button class="db-toolbar-button active" type="button" data-db-group="all">All outstanding</button>
                 </div>
                 <label class="db-order-search" hidden>
-                  <span>Search:</span>
+                  <span class="db-search-label">Search:</span>
                   <input id="db-order-search" type="search" autocomplete="off">
                 </label>
                 <button class="db-toolbar-button db-outstanding-print-button" type="button" data-db-action="print-outstanding">Print PDF</button>
@@ -893,8 +899,8 @@
             <section id="db-styles-view" class="db-view db-styles-view" aria-label="Styles">
               <div class="db-styles-toolbar">
                 <label>
-                  <span>Search:</span>
-                  <input id="db-styles-search" type="search" autocomplete="off">
+                  <span class="db-search-label">Search:</span>
+                  <input id="db-styles-search" placeholder="Search styles…" type="search" autocomplete="off">
                 </label>
                 <label>
                   <span>Sort by:</span>
