@@ -3154,7 +3154,7 @@
     const points = values.map((value, index) => ({ x: xFor(index), y: yFor(value), value, index }));
     const path = points.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ');
     const area = `M ${points[0].x.toFixed(2)} ${zeroY.toFixed(2)} ${points.map((point) => `L ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ')} L ${points[points.length - 1].x.toFixed(2)} ${zeroY.toFixed(2)} Z`;
-    const maximumLabels = grain === 'month' || grain === 'day' ? series.length : 9;
+    const maximumLabels = isDatabaseMobileLayout() ? 8 : (grain === 'month' || grain === 'day' ? series.length : 9);
     const labelIndexes = reportChartLabelIndexes(series.length, maximumLabels);
     const tickMarkup = Array.from({ length: 5 }, (_, index) => {
       const value = bounds.min + ((bounds.max - bounds.min) * index / 4);
@@ -3250,7 +3250,7 @@
         <text class="db-report-chart-y-label" x="${margin.left - 8}" y="${(y + 3.5).toFixed(2)}">${escapeHtml(formatReportAxisValue(value, metric))}</text>
       `;
     }).join('');
-    const maximumLabels = comparison.mode === 'year' ? 12 : pointCount;
+    const maximumLabels = isDatabaseMobileLayout() ? 8 : (comparison.mode === 'year' ? 12 : pointCount);
     const xMarkup = Array.from(reportChartLabelIndexes(pointCount, maximumLabels)).sort((a, b) => a - b).map((index) => {
       const x = xFor(index);
       return `
@@ -8059,6 +8059,7 @@
     els.itemsPanel.innerHTML = `
       <div class="db-items-layout">
         <div class="db-items-stock-frame" data-db-item-scroll>
+          <h3 class="db-webapp-item-heading">Stock items</h3>
           <table class="db-legacy-table db-items-table db-mobile-card-table">
             <thead>
               <tr>
@@ -8086,6 +8087,7 @@
           </div>
           <div class="db-edit-spine">E<br>D<br>I<br>T</div>
           <div class="db-nonstock-box">
+            <h3 class="db-webapp-item-heading">Non-stock items</h3>
             <div class="db-custom-table-scroll" data-db-item-scroll>
               <table class="db-legacy-table db-nonstock-table db-mobile-card-table ${showNonStockSupplier ? 'has-supplier' : ''}">
                 ${renderNonStockColgroup(showNonStockSupplier)}
@@ -13710,6 +13712,7 @@
     const lineType = normalizeCustomLineType(type);
     return `
       <div class="db-small-item-box">
+        <h3 class="db-webapp-item-heading">${lineType === 'internal' ? 'Internal items' : 'Non-deliverable items'}</h3>
         <div class="db-custom-table-scroll" data-db-item-scroll>
           <table class="db-legacy-table db-mobile-card-table">
             <thead>

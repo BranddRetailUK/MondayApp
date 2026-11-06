@@ -1400,3 +1400,10 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 ### Webapp dashboard neutral cards (2026-11-06)
 
 - Expanded dashboard boards have transparent, borderless backgrounds so the dark page shows between cards. Webapp order cards use neutral grey `#2b2b2b` with grey borders instead of blue-tinted fills. Desktop styling is unchanged; verified at 320/390px.
+
+### Webapp item editor and reports cleanup (2026-11-06)
+
+- Order Items shows titled Stock, Non-stock, Non-deliverable and Internal sections. Fields use a two-column webapp grid with full-width descriptions, aligned delete/reorder controls and centred Add Line actions. Draft add/cancel and existing editing handlers are retained; desktop table presentation is unchanged.
+- Dashboard proof/file preview buttons are exempt from rounded webapp button styling and retain square corners.
+- Reports uses two-column overview/KPI cards, wrapping values/legends, compact range controls and improved spacing. The chart retains a readable 900px canvas inside a horizontal swipe area, with at most eight webapp axis labels; desktop chart layout is unchanged.
+- Populated browser fixtures at 320/390/1440px validate item fields/actions, titles, reports/comparison layout, unclipped chart labels and square previews. Item/report regression suite: 30 passing tests.
