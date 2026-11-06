@@ -239,7 +239,7 @@ test('AI input labels images and defines global method and supplier inheritance'
  await parseProofBrief({requestText:'All print to be transfer',artworks:[{id:'apg',fileName:'scan.png'}]}, {
   apiKey:'test',artworkImages:[{id:'apg',url:'data:image/png;base64,dGVzdA=='}],fetchImpl:async(_url,options)=>{
    const body=JSON.parse(options.body);assert.match(body.instructions,/brief.method/);assert.match(body.instructions,/always as worn/);
-   assert.deepEqual(body.text.format.schema.properties.products.items.properties.supplier.enum,['auto','ralawise','pencarrie']);
+   assert.deepEqual(body.text.format.schema.properties.products.items.properties.supplier.enum,['auto','ralawise','pencarrie','portwest']);
    assert.equal(body.input[0].content[1].text,'Artwork upload ID: apg');assert.equal(body.input[0].content[2].type,'input_image');
    return {ok:true,json:async()=>({output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({products:[],questions:[]})}]}]})};
   }

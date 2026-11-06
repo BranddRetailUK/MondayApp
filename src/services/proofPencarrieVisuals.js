@@ -38,6 +38,6 @@ async function searchProofProducts(query,db) {
  db ||= require('../db/pool');
  const [rala,pc]=await Promise.all([require('./proofRalawiseVisuals').searchRalawiseProducts(query,db),searchPencarrieProducts(query,db)]);
  const rank=p=>p.code.toUpperCase()===String(query).toUpperCase()?0:normaliseCode(p.code)===normaliseCode(query)?1:2;
- return [...rala.map(p=>({...p,supplier:'ralawise'})),...pc].sort((a,b)=>rank(a)-rank(b)||a.code.localeCompare(b.code)|| (a.supplier==='ralawise'?-1:1)).slice(0,12);
+ return [...rala.map(p=>({...p,supplier:'ralawise'})),...pc,...require('./proofPortwestCatalogue').searchPortwestProducts(query)].sort((a,b)=>rank(a)-rank(b)||a.code.localeCompare(b.code)|| (a.supplier==='ralawise'?-1:1)).slice(0,12);
 }
 module.exports={fetchPencarrieRows,selectPencarrieCatalogueVisual,searchPencarrieProducts,searchProofProducts};

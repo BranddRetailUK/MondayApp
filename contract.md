@@ -1309,3 +1309,9 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 ### Proof generator form layout (2026-11-06)
 
 - Customer name and job title precede product search. Request and artwork sections share a centred, single-column editor within the space beside navigation, with the Create/Regenerate proof button right-aligned above them. The editor no longer has a Link to existing job section; history and Dashboard linking remain available. Clothing proof stays hidden until a generated/restored preview exists. Missing-detail questions appear in a separate form card, without revealing an empty proof panel.
+
+### Direct Portwest proof catalogue (2026-11-06)
+
+- `data/proof-generator/portwest.json` records five manufacturer-verified proof-only styles: CD861, T500, PW318, DX483 and PW312. Their official colour pages provide 11 colourways and 22 front/rear photographs, verified at 1100 × 1100 pixels. T500 has Orange/Black, Yellow/Black and Yellow/Navy; the other four have Orange/Black and Yellow/Black. Source page URLs and verification date are retained.
+- Product search includes these additions with supplier Portwest; the parser, mixed-supplier enrichment, colour review and image fetching preserve that identity. Exact curated codes/names resolve directly for automatic selection; explicit Ralawise/PenCarrie choices remain scoped to those suppliers. Unsupported colours expose the verified choices without substituting another colour. Only exact image URLs in the reviewed manifest are permitted for Portwest downloads, with redirects rejected. Missing side views retain the existing generated-view workflow.
+- These curated additions are deployed with the service and do not modify PenCarrie/Ralawise import tables, stock ordering, prices or availability claims. They do not claim manufacturer stock or automatic feed updates.

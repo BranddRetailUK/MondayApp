@@ -1,0 +1,259 @@
+{
+  "verifiedOn": "2026-11-06",
+  "products": [
+    {
+      "code": "CD861",
+      "name": "WX2 Eco Hi-Vis Work Jacket",
+      "brand": "Portwest",
+      "supplier": "portwest",
+      "sourceUrl": "https://www.portwest.com/products/view/CD861",
+      "colours": [
+        {
+          "code": "OBR",
+          "name": "Orange/Black",
+          "sourceUrl": "https://www.portwest.com/products/view/CD861/OBR",
+          "images": [
+            {
+              "view": "front",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/CD861OBR.jpg",
+              "width": 1100,
+              "height": 1100
+            },
+            {
+              "view": "back",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/CD861OBR_R.jpg",
+              "width": 1100,
+              "height": 1100
+            }
+          ]
+        },
+        {
+          "code": "YBR",
+          "name": "Yellow/Black",
+          "sourceUrl": "https://www.portwest.com/products/view/CD861/YBR",
+          "images": [
+            {
+              "view": "front",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/CD861YBR.jpg",
+              "width": 1100,
+              "height": 1100
+            },
+            {
+              "view": "back",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/CD861YBR_R.jpg",
+              "width": 1100,
+              "height": 1100
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "T500",
+      "name": "PW3 Hi-Vis Work Jacket",
+      "brand": "Portwest",
+      "supplier": "portwest",
+      "sourceUrl": "https://www.portwest.com/products/view/T500",
+      "colours": [
+        {
+          "code": "OBR",
+          "name": "Orange/Black",
+          "sourceUrl": "https://www.portwest.com/products/view/T500/OBR",
+          "images": [
+            {
+              "view": "front",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/T500OBR.jpg",
+              "width": 1100,
+              "height": 1100
+            },
+            {
+              "view": "back",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/T500OBR_R.jpg",
+              "width": 1100,
+              "height": 1100
+            }
+          ]
+        },
+        {
+          "code": "YBR",
+          "name": "Yellow/Black",
+          "sourceUrl": "https://www.portwest.com/products/view/T500/YBR",
+          "images": [
+            {
+              "view": "front",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/T500YBR.jpg",
+              "width": 1100,
+              "height": 1100
+            },
+            {
+              "view": "back",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/T500YBR_R.jpg",
+              "width": 1100,
+              "height": 1100
+            }
+          ]
+        },
+        {
+          "code": "YNR",
+          "name": "Yellow/Navy",
+          "sourceUrl": "https://www.portwest.com/products/view/T500/YNR",
+          "images": [
+            {
+              "view": "front",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/T500YNR.jpg",
+              "width": 1100,
+              "height": 1100
+            },
+            {
+              "view": "back",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/T500YNR_R.jpg",
+              "width": 1100,
+              "height": 1100
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "PW318",
+      "name": "PW3 Hi-Vis Cotton Comfort T-Shirt S/S",
+      "brand": "Portwest",
+      "supplier": "portwest",
+      "sourceUrl": "https://www.portwest.com/products/view/PW318",
+      "colours": [
+        {
+          "code": "OBR",
+          "name": "Orange/Black",
+          "sourceUrl": "https://www.portwest.com/products/view/PW318/OBR",
+          "images": [
+            {
+              "view": "front",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/PW318OBR.jpg",
+              "width": 1100,
+              "height": 1100
+            },
+            {
+              "view": "back",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/PW318OBR_R.jpg",
+              "width": 1100,
+              "height": 1100
+            }
+          ]
+        },
+        {
+          "code": "YBR",
+          "name": "Yellow/Black",
+          "sourceUrl": "https://www.portwest.com/products/view/PW318/YBR",
+          "images": [
+            {
+              "view": "front",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/PW318YBR.jpg",
+              "width": 1100,
+              "height": 1100
+            },
+            {
+              "view": "back",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/PW318YBR_R.jpg",
+              "width": 1100,
+              "height": 1100
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "DX483",
+      "name": "DX4 Hi-Vis Overhead Hoodie",
+      "brand": "Portwest",
+      "supplier": "portwest",
+      "sourceUrl": "https://www.portwest.com/products/view/DX483",
+      "colours": [
+        {
+          "code": "OBR",
+          "name": "Orange/Black",
+          "sourceUrl": "https://www.portwest.com/products/view/DX483/OBR",
+          "images": [
+            {
+              "view": "front",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/DX483OBR.jpg",
+              "width": 1100,
+              "height": 1100
+            },
+            {
+              "view": "back",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/DX483OBR_R.jpg",
+              "width": 1100,
+              "height": 1100
+            }
+          ]
+        },
+        {
+          "code": "YBR",
+          "name": "Yellow/Black",
+          "sourceUrl": "https://www.portwest.com/products/view/DX483/YBR",
+          "images": [
+            {
+              "view": "front",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/DX483YBR.jpg",
+              "width": 1100,
+              "height": 1100
+            },
+            {
+              "view": "back",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/DX483YBR_R.jpg",
+              "width": 1100,
+              "height": 1100
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "PW312",
+      "name": "PW3 Hi-Vis Cotton Comfort Class 1 T-Shirt L/S",
+      "brand": "Portwest",
+      "supplier": "portwest",
+      "sourceUrl": "https://www.portwest.com/products/view/PW312",
+      "colours": [
+        {
+          "code": "OBR",
+          "name": "Orange/Black",
+          "sourceUrl": "https://www.portwest.com/products/view/PW312/OBR",
+          "images": [
+            {
+              "view": "front",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/PW312OBR.jpg",
+              "width": 1100,
+              "height": 1100
+            },
+            {
+              "view": "back",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/PW312OBR_R.jpg",
+              "width": 1100,
+              "height": 1100
+            }
+          ]
+        },
+        {
+          "code": "YBR",
+          "name": "Yellow/Black",
+          "sourceUrl": "https://www.portwest.com/products/view/PW312/YBR",
+          "images": [
+            {
+              "view": "front",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/PW312YBR.jpg",
+              "width": 1100,
+              "height": 1100
+            },
+            {
+              "view": "back",
+              "url": "https://d11ak7fd9ypfb7.cloudfront.net/styles1100px/PW312YBR_R.jpg",
+              "width": 1100,
+              "height": 1100
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

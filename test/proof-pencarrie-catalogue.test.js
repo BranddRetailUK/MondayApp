@@ -47,13 +47,13 @@ test('proof picker finds PenCarrie brands and multiword names alongside Ralawise
    INSERT INTO database_ralawise_catalog_variants VALUES(1,1,true);`);
   const {searchProofProducts}=require('../src/services/proofPencarrieVisuals');
   const results=await searchProofProducts(' portwest ',pool);
-  assert.deepEqual(results.map(p=>[p.code,p.supplier]),[['01436','pencarrie'],['PW001','ralawise']]);
+  assert.deepEqual(results.filter(p=>p.supplier!=='portwest').map(p=>[p.code,p.supplier]),[['01436','pencarrie'],['PW001','ralawise']]);
   assert.deepEqual(results[0].colours,['Navy']);
   for(const query of ['hi vis','Portwest Hi Vis'])assert.equal((await searchProofProducts(query,pool))[0].code,'01436');
   assert.equal((await searchProofProducts('safety jacket',pool))[0].code,'PW001');
   assert.equal((await searchProofProducts('01436',pool))[0].code,'01436');
   await db.exec('UPDATE proof_pencarrie_variants SET is_active=false');
-  assert.deepEqual((await searchProofProducts('Portwest',pool)).map(p=>p.supplier),['ralawise']);
+  assert.deepEqual((await searchProofProducts('Portwest',pool)).filter(p=>p.supplier!=='portwest').map(p=>p.supplier),['ralawise']);
   for(const query of ['%','PW_','x'.repeat(65)])assert.deepEqual(await searchProofProducts(query,pool),[]);
  }finally{await db.close();}
 });

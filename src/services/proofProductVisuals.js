@@ -1,3 +1,4 @@
+const {findPortwestProduct,enrichPortwestProducts}=require('./proofPortwestCatalogue');
 const { fetchRalawiseRows, selectRalawiseVisual } = require('./proofRalawiseVisuals');
 const PENCARRIE_ORIGIN = 'https://www.pencarrie.com';
 
@@ -76,7 +77,7 @@ async function enrichProofProducts(brief, { fetchImpl = fetch, pool, provider = 
   if (!routed) {
     const resolved = [];
     brief.products.forEach((product,index)=>{product.proofInputOrder=index;});
-    const groups = ['ralawise','pencarrie'].map(selected => ({selected, products:brief.products.filter(p => (['ralawise','pencarrie'].includes(p.supplier) ? p.supplier : provider) === selected)}));
+    const groups = ['ralawise','pencarrie','portwest'].map(selected => ({selected, products:brief.products.filter(p => (['ralawise','pencarrie','portwest'].includes(p.supplier) ? p.supplier : findPortwestProduct(p) ? 'portwest' : provider) === selected)}));
     for (const {selected,products} of groups) {
       if (!products.length) continue;
       const group = {products};
@@ -93,6 +94,7 @@ async function enrichProofProducts(brief, { fetchImpl = fetch, pool, provider = 
     if (brief.products.length > 20) throw new Error('A proof supports at most 20 garment colourways.');
     return brief;
   }
+  if (provider === 'portwest') {enrichPortwestProducts(brief.products,matchColour);return brief;}
   if (provider === 'ralawise') {
     let rows = [];
     let failed = false;

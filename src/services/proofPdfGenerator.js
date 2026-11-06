@@ -194,6 +194,8 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
       pencarrie_catalogue_unavailable: 'The PenCarrie proof catalogue is unavailable. Please try again shortly.',
       pencarrie_ambiguous_code: 'This name matches several PenCarrie garments. Specify the product code.',
       pencarrie_product_not_found: 'This style code was not found in the PenCarrie catalogue. Check the product code.',
+      portwest_product_not_found: 'This style code was not found in the Portwest proof catalogue.',
+      portwest_colour_not_found: 'This colour is not available in the Portwest proof catalogue.',
       pencarrie_colour_not_found: 'This colour is not available.',
       ambiguous_code: 'This manufacturer code matches several Ralawise garments. Include the exact Ralawise style code in the brief.',
       colour_not_found: 'This colour is not available.',
