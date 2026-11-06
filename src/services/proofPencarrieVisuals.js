@@ -25,11 +25,11 @@ function selectPencarrieCatalogueVisual(rows,product,matchColour) {
   gender:colour.gender,garmentType:colour.garment_type,views:colour.images.filter(i=>['front','back','left','right'].includes(i.view)&&isPencarrieCatalogueImage(i.url))};
 }
 async function searchPencarrieProducts(query,db) {
- const code=String(query||'').trim().toUpperCase();if(!/^[A-Z0-9-]{2,24}$/.test(code))return [];
+ const code=String(query||'').trim().toUpperCase();if(!/^[A-Z0-9 -]{2,64}$/.test(code))return [];
  const {rows}=await db.query({text:`SELECT s.code,s.name,s.brand,'pencarrie' AS supplier,
   (SELECT jsonb_agg(c.name ORDER BY c.name) FROM proof_pencarrie_colours c WHERE c.style_code=s.code
    AND EXISTS(SELECT 1 FROM proof_pencarrie_variants v WHERE v.style_code=s.code AND v.colour_code=c.code AND v.is_active)) AS colours
-  FROM proof_pencarrie_styles s WHERE (UPPER(s.code) LIKE $1 OR ${codeSql}=$3)
+  FROM proof_pencarrie_styles s WHERE (UPPER(s.code) LIKE $1 OR ${codeSql}=$3 OR POSITION(REGEXP_REPLACE($2,'[^A-Z0-9]+',' ','g') IN REGEXP_REPLACE(UPPER(CONCAT_WS(' ',s.brand,s.name)),'[^A-Z0-9]+',' ','g'))>0)
   AND EXISTS(SELECT 1 FROM proof_pencarrie_variants v WHERE v.style_code=s.code AND v.is_active)
   ORDER BY CASE WHEN UPPER(s.code)=$2 THEN 0 WHEN ${codeSql}=$3 THEN 1 ELSE 2 END,s.code LIMIT 12`,values:[`${code}%`,code,normaliseCode(code)],query_timeout:5000});return rows;
 }

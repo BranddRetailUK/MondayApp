@@ -188,7 +188,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
     if(!allowed(req,res))return;
     res.set('Cache-Control','no-store');
     const query=typeof req.query.q==='string'?req.query.q.trim():'';
-    if(!/^[a-z0-9-]{2,24}$/i.test(query))return res.json({products:[]});
+    if(!/^[a-z0-9 -]{2,64}$/i.test(query))return res.json({products:[]});
     try{return res.json({products:await searchProducts(query)});}
     catch(error){console.error('Proof catalogue search failed:',error.message);return res.status(503).json({error:'Catalogue search is unavailable. You can still type the product code in your request.'});}
   });

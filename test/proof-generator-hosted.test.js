@@ -39,6 +39,8 @@ test('production catalogue search returns product choices and handles unavailabl
    assert.deepEqual((await response.json()).products,[{code:'RX350',name:'Pro hoodie'}]);
    assert.deepEqual(await (await fetch(`${url}/products?q=%25`,{headers:production})).json(),{products:[]});
    assert.equal(calls,1);
+   assert.equal((await (await fetch(`${url}/products?q=Portwest%20Hi%20Vis`,{headers:production})).json()).products.length,1);
+   assert.equal(calls,2);
    assert.equal((await fetch(`${url}/products?q=BAD`,{headers:production})).status,503);
  });
 });

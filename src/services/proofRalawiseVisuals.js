@@ -85,7 +85,7 @@ function selectRalawiseVisual(rows, code, requestedColour, matchColour, requeste
 
 async function searchRalawiseProducts(query, pool) {
   const code=String(query || '').trim().toUpperCase();
-  if(!/^[A-Z0-9-]{2,24}$/.test(code))return [];
+  if(!/^[A-Z0-9 -]{2,64}$/.test(code))return [];
   if(!pool){
     if(!process.env.DATABASE_URL)throw new Error('Catalogue search requires the hosted catalogue connection.');
     pool=require('../db/pool');
@@ -96,7 +96,7 @@ async function searchRalawiseProducts(query, pool) {
         AND EXISTS (SELECT 1 FROM database_ralawise_catalog_variants cv
           WHERE cv.style_id=s.id AND cv.colour_id=c.id AND cv.is_active IS TRUE)), '[]'::jsonb) AS colours
     FROM database_ralawise_catalog_styles s
-    WHERE (UPPER(s.style_code) LIKE $1 OR UPPER(s.manufacturer_style_code) LIKE $1 OR ${styleCodeSql}=$3)
+    WHERE (UPPER(s.style_code) LIKE $1 OR UPPER(s.manufacturer_style_code) LIKE $1 OR ${styleCodeSql}=$3 OR POSITION(REGEXP_REPLACE($2,'[^A-Z0-9]+',' ','g') IN REGEXP_REPLACE(UPPER(CONCAT_WS(' ',s.brand,s.style_name)),'[^A-Z0-9]+',' ','g'))>0)
       AND EXISTS (SELECT 1 FROM database_ralawise_catalog_variants v WHERE v.style_id=s.id AND v.is_active IS TRUE)
     ORDER BY CASE WHEN UPPER(s.style_code)=$2 THEN 0 WHEN ${styleCodeSql}=$3 THEN 1 WHEN UPPER(s.manufacturer_style_code)=$2 THEN 2 ELSE 3 END,
       s.style_code LIMIT 12`,values:[`${code}%`,code,normaliseStyleCode(code)],query_timeout:5000});

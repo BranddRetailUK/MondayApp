@@ -62,7 +62,7 @@
             <div class="proof-product-search">
               <div class="proof-product-picker">
                 <div><label class="proof-label" for="proof-product-query">Find a product</label>
-                <input id="proof-product-query" type="search" maxlength="24" autocomplete="off" aria-describedby="proof-product-status" aria-controls="proof-product-results"></div>
+                <input id="proof-product-query" type="search" maxlength="64" placeholder="Product code, brand or name" autocomplete="off" aria-describedby="proof-product-status" aria-controls="proof-product-results"></div>
                 <div><label class="proof-label" for="proof-product-colour">Colour</label>
                 <select id="proof-product-colour" disabled><option value="">Select a product first</option></select></div>
               </div>
@@ -584,7 +584,7 @@
     clearTimeout(searchTimer);searchController?.abort();const version=++searchVersion;
     productResults.replaceChildren();resetProductPicker();
     const query=productQuery.value.trim();
-    if(!/^[a-z0-9-]{2,24}$/i.test(query)){productStatus.textContent='';return;}
+    if(!/^[a-z0-9 -]{2,64}$/i.test(query)){productStatus.textContent='';return;}
     productStatus.textContent='Searching catalogue…';
     searchTimer=setTimeout(async()=>{
       const controller=new AbortController();searchController=controller;
