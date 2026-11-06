@@ -51,6 +51,11 @@ function createService(pool){
     await get(id);const row=(await query('SELECT source,source_artworks FROM proof_design_jobs WHERE id=$1',[id])).rows[0];
     return row.source?{source:row.source,artworks:row.source_artworks}:null;
   }
+  async function retainedSource(id){
+    await get(id);
+    const row=(await query("SELECT COALESCE(saved_snapshot->'source',source) AS source FROM proof_design_jobs WHERE id=$1",[id])).rows[0];
+    return row?.source?{source:row.source}:null;
+  }
   async function garmentLoader(id){
     await get(id);
     const assets=(await query('SELECT garment_assets FROM proof_design_jobs WHERE id=$1',[id])).rows[0].garment_assets||{};
@@ -144,6 +149,6 @@ function createService(pool){
     }else throw new Error('Invalid file worker result.');
     return {accepted:true};
   }
-  return {get,list,progress,setPreview,garmentLoader,preview,saveSource,source,document,reserve,queueSave,retry,claim,report};
+  return {get,list,progress,setPreview,retainedSource,garmentLoader,preview,saveSource,source,document,reserve,queueSave,retry,claim,report};
 }
 module.exports={createService,UUID};

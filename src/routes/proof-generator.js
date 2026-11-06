@@ -18,6 +18,16 @@ const { isProofGeneratorUser, prepareSandboxBrief } = require('../services/proof
 function createRouter({ requireProduction = true, parse = parseProofBrief, enrich = enrichProofProducts, build = buildProof, status = proofRuntimeStatus, generateViews = ensureGeneratedViews, searchProducts = searchProofProducts, convertEps = require('../services/digitisingEps').rasterize, designs, tests, promotions } = {}) {
   const router = express.Router();
   const designJobs=()=>designs || (designs=designService(require('../db/pool')));
+  async function restoreRetainedVisuals(brief){
+    if(!brief.proofDesignId)return null;
+    const service=designJobs();
+    const retained=await (service.retainedSource?service.retainedSource(brief.proofDesignId):service.source?.(brief.proofDesignId));
+    for(const product of brief.products){
+      const saved=retained?.source?.brief?.products?.find(item=>item.code===product.code&&item.colour===product.colour&&item.supplier===product.supplier&&(product.instanceId?item.instanceId===product.instanceId:item.name===product.name));
+      if(saved?.visual?.matched)product.visual=structuredClone(saved.visual);
+    }
+    return service.garmentLoader?service.garmentLoader(brief.proofDesignId):null;
+  }
   const testJobs=()=>tests || (tests=require('../services/proofTestJobs').createService(require('../db/pool')));
   const sandboxFor=req=>req.query.test==='1';
   const sandboxBrief=(req,brief)=>sandboxFor(req)?prepareSandboxBrief(brief):brief;
@@ -221,9 +231,10 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
     Promise.resolve().then(async()=>{
       const preparedHeadwear=structuredClone(brief.products);
       await enrich(brief);
+      const retainedLoader=await restoreRetainedVisuals(brief);
       await require('../services/proofHeadwearViews').restorePreparedHeadwearViews(brief,preparedHeadwear);
       if(brief.preflightVersion===1){const check=require('../services/proofPreflight').assess(brief,brief.preflightAssets||[],brief.preflightRequest);if(!check.ready)throw Error(check.issues.map(i=>i.message).join(' '));}
-      await generateViews(brief,{allowGenerate:true,onProgress:progress=>Object.assign(job,progress)});
+      await generateViews(brief,{allowGenerate:true,...(retainedLoader?{download:retainedLoader}:{}),onProgress:progress=>Object.assign(job,progress)});
       job.brief=brief;job.state='complete';
     }).catch(error=>{job.state='failed';job.error=error.message;console.error('Proof garment views failed:',error.message);})
       .finally(()=>{state.active=false;});
@@ -244,6 +255,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       if(req.files.reduce((n,f)=>n+f.size,0)>50*1024*1024)throw Error('Artwork uploads exceed 50 MB.');
       const preparedHeadwear=structuredClone(brief.products);
       await enrich(brief);
+      await restoreRetainedVisuals(brief);
       await require('../services/proofHeadwearViews').restorePreparedHeadwearViews(brief,preparedHeadwear);
       const {assess,inspect}=require('../services/proofPreflight');
       const assets=await Promise.all(req.files.map((file,i)=>inspect(file,details[i]).catch(error=>({...details[i],error:error.message}))));
@@ -336,15 +348,11 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       // Reuse the saved supplier selection when reopening an unchanged product.
       // Only server-retained visuals are trusted; changed products are resolved normally.
       const retained=design&&designJobs().source?await designJobs().source(design.id):null;
-      const savedProducts=retained?.source?.brief?.products||[];
       if(req.path!=='/placement-preview')applyPendingResizes(brief);
       repairRetainedDimensions(brief,retained?.source);
       const preparedHeadwear=structuredClone(brief.products);
       await enrich(brief);
-      for(const product of brief.products){
-        const saved=savedProducts.find(item=>item.code===product.code&&item.colour===product.colour&&item.supplier===product.supplier&&(product.instanceId?item.instanceId===product.instanceId:item.name===product.name));
-        if(saved?.visual?.matched)product.visual=saved.visual;
-      }
+      await restoreRetainedVisuals(brief);
       await require('../services/proofHeadwearViews').restorePreparedHeadwearViews(brief,preparedHeadwear);
       if(brief.preflightVersion===1&&req.path!=='/placement-preview'){
         const {assess,inspect}=require('../services/proofPreflight');

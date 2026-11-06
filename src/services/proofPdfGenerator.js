@@ -331,7 +331,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
     // Match the garment view order, not the order positions appeared in the request.
     orderedGroups.flatMap(([,marks])=>marks).forEach((d,index)=>{const artwork=findArtwork(d,artworks);drawCallout(page,d,assetFor(artwork,d),regular,bold,index,decorations.length,garmentColour);});
     page.pushOperators(popGraphicsState());
-    const details=[product.quantity ? 'Qty '+product.quantity : '',product.size,product.personalisation].filter(Boolean).join(' | ');
+    const details=[product.quantity ? 'Qty '+product.quantity : '',product.personalisation].filter(Boolean).join(' | ');
     if(details){
       const {lines,size}=fittedLines(details,bold,774,8);
       lines.forEach((text,i)=>drawText(page,text,34,98+i*9,size,bold,NAVY,774));

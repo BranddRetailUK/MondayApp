@@ -642,14 +642,14 @@ test('back and right-sleeve callouts follow their garment columns despite sleeve
  }finally{await doc.destroy();}
 });
 
-test('proof details show quantity and sizes without inventing personalisation',async()=>{
+test('proof details retain quantity but omit garment sizes from visuals',async()=>{
  const b=brief();Object.assign(b.products[0],{quantity:'27',size:'Sizes: 13.5 x2, 14 x1, 15.5 x2, 16 x3, 16.5 x3, 17 x9, 17.5 x1, 18 x5, 18.5 x1',personalisation:''});
  const out=await buildProof(b,[await artFile()],{fetchImpl:await fixtureFetch(),strict:true});
  const pdfjs=await import('pdfjs-dist/legacy/build/pdf.mjs');
  for(const bytes of [out.bytes,out.documents[0].bytes]){
   const doc=await pdfjs.getDocument({data:new Uint8Array(bytes),isEvalSupported:false}).promise;
   try{const text=(await (await doc.getPage(1)).getTextContent()).items.map(i=>i.str).join(' ');
-   assert.ok(text.includes('Qty 27'));assert.ok(text.includes('18.5 x1'));
+   assert.ok(text.includes('Qty 27'));assert.ok(!text.includes('18.5 x1'));
    for(const stale of ['00/00/25','GD01','TBC','240mm','Date Approved:'])assert.ok(!text.includes(stale),stale);
   }finally{await doc.destroy();}
  }
@@ -662,7 +662,7 @@ test('long canonical garment names fit without losing gender, sleeve length or f
  const pdfjs=await import('pdfjs-dist/legacy/build/pdf.mjs');const doc=await pdfjs.getDocument({data:new Uint8Array(out.bytes),isEvalSupported:false}).promise;
  try{const items=(await (await doc.getPage(1)).getTextContent()).items;
   const text=items.map(i=>i.str).join(' ');
-  for(const part of ['KK360',"Women's",'short-sleeved','(tailored fit)','Qty 15','UK 8 x2','Team A'])assert.ok(text.includes(part),part);
+  for(const part of ['KK360',"Women's",'short-sleeved','(tailored fit)','Qty 15','Team A'])assert.ok(text.includes(part),part);
   const garment=items.filter(i=>i.transform?.[4]>=694 && i.transform?.[5]>545);
   assert.ok(garment.length>=2);assert.ok(garment.every(i=>i.transform[4]+i.width<=822),JSON.stringify(garment));
  }finally{await doc.destroy();}

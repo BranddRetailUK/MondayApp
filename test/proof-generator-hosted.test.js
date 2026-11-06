@@ -460,3 +460,17 @@ test('test proof deletion is restricted to proof users and passes the version gu
   assert.equal(calls.length,3);assert.deepEqual(calls[0],['test-id','2026-10-23T12:00:00Z']);
  });
 });
+
+test('regeneration view preparation keeps saved images and edited image-bound placements',async()=>{
+ const saved={code:'PW424',colour:'Yellow/Black',supplier:'ralawise',name:'Sweatshirt',visual:{matched:true,source:'Ralawise catalog',views:[{view:'back',url:'retained-official-back'}]}};
+ const download=async()=>Buffer.from('retained bytes');
+ let resolve;const generated=new Promise(r=>resolve=r);
+ await serve(createRouter({designs:{retainedSource:async()=>({source:{brief:{products:[saved]}}}),garmentLoader:async()=>download},enrich:async b=>{b.products[0].visual={matched:true,views:[{view:'back',url:'different-catalogue-image'}]};},generateViews:async(b,o)=>{
+  assert.deepEqual(b.products[0].visual,saved.visual);assert.equal(o.download,download);
+  assert.deepEqual(b.products[0].decorations[0].placement,{x:.6,y:.3});
+  assert.equal(b.products[0].decorations[0].manualScale.sourceHash,'retained-image-hash');resolve();
+ }}),async url=>{
+  const response=await fetch(`${url}/views`,{method:'POST',headers:{...production,'Content-Type':'application/json'},body:JSON.stringify({brief:{proofDesignId:'existing',products:[{...saved,visual:{views:[{url:'untrusted'}]},decorations:[{placement:{x:.6,y:.3},manualScale:{sourceHash:'retained-image-hash'}}]}]}})});
+  assert.equal(response.status,202);await generated;
+ });
+});
