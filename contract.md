@@ -802,13 +802,13 @@ No external work-management token, OAuth, board, column, or webhook environment 
 
 ### Optional OFFICE job selection before proof allocation (2026-10-12)
 
-- Create proof offers an optional searchable OFFICE job dropdown showing job number, customer/title and numeric Designs references. With no job selected, existing number/folder allocation and post-save automatic customer matching remain unchanged. Explicit selection fills customer/title, reserves the job association before allocation, and takes precedence over automatic matching. Selection is locked once creation starts. One numeric reference is selected automatically; multiple references require a choice. Jobs without a numeric reference use ordinary new-number allocation while retaining their explicit job link; PSG/stitch references are not folder numbers.
+- The former optional OFFICE job dropdown was removed from the proof editor on 2026-11-06. New proofs use ordinary number/folder allocation and post-save automatic customer matching. Dashboard-provided job context and the explicit association API remain supported; PSG/stitch references are not folder numbers.
 - `GET /api/proof-generator/link-jobs?office=1&q=` lists up to 100 matching unapproved open printing/embroidery OFFICE jobs without visuals or pending generator links, using the shared group resolver. `POST /api/proof-generator/designs` accepts optional `sourceOrderId` and `designReference`; one transaction rechecks eligibility, reference membership and unique generator ownership and reserves the association/reference. Invalid selections roll back without allocating a number. Job details also expose numeric `designRefs` for job-first creation. Existing generator-owned design numbers require opening that proof rather than creating a second owner.
 - `proof_design_jobs.reuse_existing` distinguishes adoption from new allocation. Worker 1.25 / proof-files protocol 5 resolves exactly one existing folder under its configured root; missing or ambiguous folders fail without creating a replacement. It retains the existing folder name and unrelated artwork. On first save, legacy direct files ending PROOF.pdf/PROOF.ai are retained beneath `proof-history/<proof UUID>/` using a hashed, restart-safe manifest, leaving one current generator proof for artwork export. Subsequent saves retain existing ownership/hash and approval protections. Numeric folder names must start with the number followed by a space.
 - Protocol-4 workers continue ordinary proof operations but cannot claim adoption or subsequent saves of adopted designs. Install the complete updated worker folder on ARTWORK-PC, preserve its private config.json and restart it before using existing-folder reuse. This code change does not update the workstation automatically. Native Windows/OneDrive acceptance remains required.
 - Validation covers existing-reference inheritance, transactional rollback, multiple references, no-reference allocation, old-worker exclusion, exact folder resolution, unchanged names/artwork, legacy-proof retention, repeated saves and unchanged no-job request payloads. Browser fixture checks cover single/multiple/no-reference jobs and clearing selection.
 
-- Proof editor layout (2026-10-12): the optional OFFICE job search, job dropdown and design-reference selector occupy their own “Link to existing job” card immediately above Clothing proof in the right-hand column (stacked with it on narrow screens). Selection and allocation behaviour are unchanged.
+- The former right-column Link to existing job card was removed on 2026-11-06; the current centred layout is described below.
 
 - Dashboard artwork-column visibility (2026-10-12): the production@ultimatepromotions.co.uk account no longer receives the ARTWORK action column in the dashboard grid, on desktop or mobile. Its reserved width is removed with the column. Existing proof access, artwork-export services and packing LABEL column remain unchanged.
 
@@ -1216,7 +1216,7 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 
 
 ### Immediate regeneration navigation (2026-10-23)
-- Clicking Regenerate on an existing proof returns synchronously to its history list before asynchronous artwork/preflight checks or linked-job confirmation. The existing row displays the busy sweep immediately; the history refresh runs in the background instead of hiding rows behind a page loader.
+- Creating or regenerating a proof stays in the editor under a modal dark overlay. A linear progress bar advances at request review, product lookup, artwork preparation, garment imagery and proof rendering milestones, with plain-language status text. Linked-job approval confirmation temporarily replaces the overlay. Missing details and errors dismiss it and retain the editable form. Only a successfully generated proof shows the animated success tick and then returns to the proof list; background design-folder saving retains its separate history status. Reduced-motion preferences disable decorative animation.
 - Unresolved preflight or cancelled/failed linked-job confirmation returns to the editor for correction without allocating or saving. Basic missing-request/artwork validation remains immediate, and creating a new proof retains its existing review flow.
 
 ### YK102 chest placement and supplier-image quality (2026-10-23)
@@ -1277,8 +1277,8 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 
 ### Link an existing proof to a later job (2026-10-29)
 
-- The existing-proof editor offers **Link to job** for unlinked live proofs. It fetches the current open-job list through the same picker as proof history, including approved jobs without visuals; it is not limited to unapproved OFFICE jobs. The new-design OFFICE selector and design-reference allocation remain unchanged and are hidden for existing unlinked proofs.
-- Successful linking updates the editor's job identity and brief together, preserving unsaved artwork/layout edits and the existing design number. Cancelled or rejected linking leaves that identity unchanged. Busy saves and existing associations remain protected. Publication attaches the workstation-confirmed saved PDF; subsequent regeneration uses the normal linked-job approval confirmation.
+- Unlinked live proofs can be linked from proof history, including to approved jobs without visuals. The Link to job editor section and new-design OFFICE selector were removed on 2026-11-06.
+- Successful linking preserves the existing design number. Busy saves and existing associations remain protected. Publication attaches the workstation-confirmed saved PDF; subsequent regeneration uses the normal linked-job approval confirmation.
 
 ### Ultimate Promotions SendGrid foundation (2026-10-29)
 
@@ -1305,3 +1305,7 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 
 - Explicit alternative artwork versions are parsed as separate garment sheets. For a simple single-garment request such as “2 versions 1 for each artwork”, fresh brief preparation can split a merged same-position assignment when each supplied logo is identified exactly once. Preflight flags mismatched counts, omitted versions and repeated artwork in simple one-page-per-file requests.
 - Knitted, bobble and pom-pom hats can use the beanie front-surface assessment. The supplier image or generated blank must still pass the existing suitability checks. Automatic headwear review now reports unsupported styles, positions, views and missing supplier references during preflight, before the normal generation and allocation workflow. Existing manual geometry stays bound to its source image.
+
+### Proof generator form layout (2026-11-06)
+
+- Customer name and job title precede product search. Request and artwork sections share a centred, single-column editor within the space beside navigation, with the Create/Regenerate proof button right-aligned above them. The editor no longer has a Link to existing job section; history and Dashboard linking remain available. Clothing proof stays hidden until a generated/restored preview exists. Missing-detail questions appear in a separate form card, without revealing an empty proof panel.

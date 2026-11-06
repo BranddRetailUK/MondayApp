@@ -7,7 +7,7 @@ const review = source.slice(source.indexOf('  async function reviewBrief()'), so
 const http = source.slice(source.indexOf('  // Retry only reads:'),source.indexOf('  root.innerHTML'));
 const history = source.slice(source.indexOf('  function historyState(job)'), source.indexOf('  function renderHistory()'));
 function createContext(context){
-  for(const [key,value] of Object.entries({sandbox:false,localPreview:false,standalonePreview:false,historyEndpoint:'designs'}))if(!(key in context))context[key]=value;
+  for(const [key,value] of Object.entries({sandbox:false,localPreview:false,standalonePreview:false,historyEndpoint:'designs',generationRevision:4,createNew:{focus(){}},syncProofVisibility(){},updateGenerationProgress(){},closeGenerationProgress(){},startGenerationProgress(){}}))if(!(key in context))context[key]=value;
   vm.createContext(context);
 }
 function harness({ fail=false }={}) {
@@ -25,26 +25,28 @@ function harness({ fail=false }={}) {
     async recordProgress(state){calls.push(state);},async prepareArtworkFile(){},async saveProofSource(){calls.push('source');},
     async prepareMissingViews(){calls.push('views');},
     async reserveDesign(brief){calls.push('identity');brief.proofDesignId=context.designId;brief.proofRevision=4;},
-    async updatePreview(){calls.push('save');context.savedBrief=structuredClone(context.currentBrief);context.currentPreview={issues:[]};},
+    async finishGenerationProgress(){calls.push('success');context.showProofList();},
+    async updatePreview(){context.readyThisRun=true;calls.push('save');context.savedBrief=structuredClone(context.currentBrief);context.currentPreview={issues:[]};},
   };
   createContext(context);vm.runInContext(review+history+'\nthis.run=reviewBrief;this.rowState=historyState;',context);
   return {context,calls,release};
 }
-test('regeneration returns to list before networking and keeps row busy until the numbered proof is queued',async()=>{
+test('regeneration keeps the editor busy and returns to the list only after proof success',async()=>{
   const {context,calls,release}=harness();const pending=context.run();await new Promise(resolve=>setImmediate(resolve));
-  assert.deepEqual(calls,['list','reserve-request']);assert.equal(context.busy,true);
+  assert.deepEqual(calls,['reserve-request']);assert.equal(context.busy,true);
   assert.equal(context.rowState({id:'existing-design',status:'saved'})[0],'Pending');
   release();await pending;
   assert.equal(context.busy,false);assert.equal(context.generatingProof,false);
   assert.deepEqual(context.savedBrief.products[0].decorations[0].placement,{x:.37,y:.22});
   assert.equal(context.savedBrief.products[0].decorations[0].widthMm,125);
   assert.equal(context.savedBrief.proofDesignId,'existing-design');assert.equal(context.savedBrief.proofRevision,4);
-  assert.ok(calls.indexOf('save')>calls.indexOf('source'));assert.equal(calls.at(-1),'complete');
+  assert.ok(calls.indexOf('save')>calls.indexOf('source'));assert.deepEqual(calls.slice(-2),['success','list']);
 });
-test('regeneration failures stop the spinner and leave a failed row on the list',async()=>{
+test('regeneration failures return to the editor without a success tick',async()=>{
   const {context,release}=harness({fail:true});const pending=context.run();release();await pending;
   assert.equal(context.busy,false);assert.equal(context.rowState(context.design)[0],'Failed');
   assert.equal(context.rowState(context.design)[1],'Service unavailable');
+  assert.equal(context.progressMessage,'Service unavailable');
 });
 
 function element(tag) {
@@ -123,13 +125,13 @@ for(const sandbox of [false,true])test(`opening a saved ${sandbox?'test':'produc
   assert.equal(context.results.children[0].alt,'Previously saved proof');
 });
 
-test('optional job selection sends a reference only when explicitly starting a job-linked proof',()=>{
+test('dashboard linked proof context preserves the job without the removed reference picker',()=>{
   const fn=source.slice(source.indexOf('  function jobReservation()'),source.indexOf('  window.openLinkedProof='));
   const context={selectedLinkJob:null,design:null,existingReference:{value:'29123'}};createContext(context);
   vm.runInContext(fn+'\nthis.reservation=jobReservation;',context);
   assert.equal(JSON.stringify(context.reservation()),'{}');
   context.selectedLinkJob={source_order_id:50600};
-  assert.equal(JSON.stringify(context.reservation()),JSON.stringify({sourceOrderId:50600,designReference:'29123'}));
+  assert.equal(JSON.stringify(context.reservation()),JSON.stringify({sourceOrderId:50600}));
   context.design={sourceOrderId:50600};assert.equal(JSON.stringify(context.reservation()),'{}');
 });
 
@@ -139,15 +141,15 @@ test('approved linked proofs reach the approval gate only when submitting regene
     assert.equal(id,50587);assert.equal(proofId,'existing-design');h.calls.push('approval');
     return new Promise(resolve=>{resolveApproval=resolve;});
   }}};
-  const pending=h.context.run();await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(h.calls,['list','approval']);assert.equal(h.context.busy,true);
-  await h.context.run();assert.deepEqual(h.calls,['list','approval']); // Repeated clicks cannot start a second action.
+  const pending=h.context.run();await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(h.calls,['approval']);assert.equal(h.context.busy,true);
+  await h.context.run();assert.deepEqual(h.calls,['approval']); // Repeated clicks cannot start a second action.
   resolveApproval(true);h.release();await pending;
-  assert.equal(h.calls[1],'approval');assert.ok(h.calls.includes('save'));assert.equal(h.context.busy,false);
+  assert.equal(h.calls[0],'approval');assert.ok(h.calls.includes('save'));assert.equal(h.context.busy,false);
 });
 for(const failed of [false,true])test(`regeneration ${failed?'approval-save failure':'cancel'} leaves the editor and saved proof alone`,async()=>{
   const h=harness();h.context.design.sourceOrderId=50587;
   h.context.window={ProofLinks:{beginRegeneration:async()=>{if(failed)throw Error('Approval save failed');return false;}}};
-  await h.context.run();assert.deepEqual(h.calls,['list','editor']);assert.equal(h.context.busy,false);
+  await h.context.run();assert.deepEqual(h.calls,['editor']);assert.equal(h.context.busy,false);
   assert.equal(h.context.design.status,'saved');assert.equal(h.context.design.generationStatus,undefined);
   assert.equal(h.context.savedBrief,undefined);
   if(failed)assert.equal(h.context.progressMessage,'Approval save failed');
@@ -193,7 +195,7 @@ test('cancelled requests are not retried',async()=>{
   const h=harness();h.context.preflightBrief=async()=>false;
   h.context.design.sourceOrderId=50587;
   h.context.window={ProofLinks:{beginRegeneration(){throw Error('Preflight must happen first');}}};
-  await h.context.run();assert.deepEqual(h.calls,['list','editor']);assert.equal(h.context.busy,false);assert.equal(h.context.design.status,'saved');
+  await h.context.run();assert.deepEqual(h.calls,['editor']);assert.equal(h.context.busy,false);assert.equal(h.context.design.status,'saved');
  });
 
 test('real preflight collects review issues before allocation and retains manual edits',async()=>{
@@ -297,38 +299,18 @@ test('placement loading waits for rendered image readiness',async()=>{
  let done=false;const pending=context.load().then(()=>done=true);await new Promise(resolve=>setImmediate(resolve));assert.equal(done,false);release();await pending;assert.equal(done,true);
 });
 
-test('regenerate returns to the list synchronously before delayed preflight, with the existing row busy',async()=>{
+test('regenerate stays busy in the editor during delayed preflight',async()=>{
  const h=harness();let releaseCheck;const check=new Promise(resolve=>releaseCheck=resolve);
  h.context.preflightBrief=()=>check;
- h.context.showProofList=foreground=>{assert.equal(foreground,false);h.calls.push('list');};
+ h.context.showProofList=()=>h.calls.push('list');
  const pending=h.context.run();
- assert.deepEqual(h.calls,['list']);assert.equal(h.context.busy,true);assert.equal(h.context.rowState(h.context.design)[0],'Pending');
+ assert.deepEqual(h.calls,[]);assert.equal(h.context.busy,true);assert.equal(h.context.rowState(h.context.design)[0],'Pending');
  releaseCheck(true);h.release();await pending;assert.equal(h.calls.filter(x=>x==='list').length,1);
 });
 test('linked regeneration cancellation returns to the editor without reservation or writes',async()=>{
  const h=harness();h.context.design.sourceOrderId=123;
  h.context.window={ProofLinks:{beginRegeneration:async()=>false}};
- await h.context.run();assert.deepEqual(h.calls,['list','editor']);assert.equal(h.context.busy,false);
-});
-
-for(const outcome of ['linked','cancel','failure'])test(`existing proof editor links to a later job: ${outcome}`,async()=>{
-  const calls=[];
-  const target={source_order_id:50631,order_no:51384};
-  const context={busy:false,designId:'existing-proof',design:{status:'saved',revision:5},customer:{value:'JIBWORX'},selectedLinkJob:null,
-    currentBrief:{products:[{decorations:[{widthMm:100,placement:{x:.4,y:.3}}]}]},officeStatus:{textContent:''},showJobSelection(){},
-    refreshHistory:async()=>calls.push('history'),window:{ProofLinks:{picker:async(kind,options)=>{calls.push([kind,options.customer]);return outcome==='cancel'?null:target;},link:async(id,job)=>{calls.push([id,job]);if(outcome==='failure')throw Error('Job already has a visual');return target;},refresh:()=>calls.push('refresh')}}};
-  const layout=JSON.stringify(context.currentBrief.products);
-  createContext(context);
-  const fn=source.slice(source.indexOf('  async function linkExistingDesign()'),source.indexOf('  function showJobSelection()'));
-  vm.runInContext(fn+'\nthis.run=linkExistingDesign;',context);await context.run();
-  assert.equal(context.busy,false);assert.equal(JSON.stringify(context.currentBrief.products),layout);
-  assert.deepEqual(calls[0],['jobs','JIBWORX']);
-  if(outcome==='linked'){
-    assert.equal(context.currentBrief.proofSourceOrderId,50631);assert.equal(context.design.sourceOrderId,50631);
-    assert.equal(context.design.revision,5);assert.equal(context.selectedLinkJob.order_no,51384);
-    await context.run();assert.equal(calls.filter(x=>Array.isArray(x)&&x[0]==='existing-proof').length,1);
-  }else{assert.equal(context.design.sourceOrderId,undefined);assert.equal(context.selectedLinkJob,null);}
-  if(outcome==='failure')assert.match(context.officeStatus.textContent,/already has a visual/);
+ await h.context.run();assert.deepEqual(h.calls,['editor']);assert.equal(h.context.busy,false);
 });
 
 test('failed proof history row visibly explains the failure with no pending thumbnail',()=>{
@@ -346,4 +328,26 @@ test('failed proof history row visibly explains the failure with no pending thum
   const [thumb,,state]=historyList.children[0].children;
   assert.equal(thumb.textContent,'Failed');
   assert.match(state.children[0].textContent,/R369X needs a reviewed template/);
+});
+
+test('progress dialog advances monotonically, blocks dismissal, then shows success before returning to the list',async()=>{
+ const events=[],classes=new Set(),title={},message={},fill={style:{}},track={setAttribute(k,v){this[k]=v;},querySelector:()=>fill};
+ const dialog={open:false,classList:{add:v=>classes.add(v),remove:v=>classes.delete(v)},querySelector:s=>s==='h2'?title:message,showModal(){this.open=true;events.push('open');},close(){this.open=false;events.push('close');}};
+ let release;
+ const context={progressValue:0,progressDialog:dialog,progressTrack:track,designId:null,showProofList(){events.push('list');},setTimeout(fn){release=fn;}};
+ const code=source.slice(source.indexOf('  function startGenerationProgress()'),source.indexOf('  function syncProofVisibility()'));
+ vm.runInNewContext(code,context);
+ context.startGenerationProgress();assert.equal(dialog.open,true);assert.equal(track['aria-valuenow'],'5');
+ context.updateGenerationProgress(55,'Product images ready');context.updateGenerationProgress(40,'Getting your proof number ready');
+ assert.equal(fill.style.width,'55%');assert.equal(message.textContent,'Getting your proof number ready');
+ const done=context.finishGenerationProgress();assert.equal(dialog.open,true);assert.ok(classes.has('is-complete'));assert.equal(track['aria-valuenow'],'100');assert.equal(title.textContent,'Your proof is ready');assert.deepEqual(events,['open']);
+ release();await done;assert.deepEqual(events,['open','close','list']);
+});
+
+test('proof panel stays hidden without a preview and appears for generated or saved previews',()=>{
+ const context={reviewColumn:{},currentPreview:null,design:null};
+ const code=source.slice(source.indexOf('  function syncProofVisibility()'),source.indexOf('  const artworks ='));
+ vm.runInNewContext(code,context);context.syncProofVisibility();assert.equal(context.reviewColumn.hidden,true);
+ context.currentPreview={pages:[{image:'garment'}]};context.syncProofVisibility();assert.equal(context.reviewColumn.hidden,false);
+ context.currentPreview=null;context.design={hasPreview:true};context.syncProofVisibility();assert.equal(context.reviewColumn.hidden,false);
 });

@@ -59,6 +59,14 @@
         <div class="proof-form-column">
           <section class="proof-card">
             <div class="proof-review-title proof-section-title"><h2>Proof request</h2></div>
+            <div class="proof-job-fields">
+              <div class="proof-customer-picker">
+                <label class="proof-control">Customer name<input id="proof-customer" type="search" maxlength="200" autocomplete="off" aria-controls="proof-customer-results" aria-describedby="proof-customer-status"></label>
+                <div id="proof-customer-status" class="proof-search-status" role="status" aria-live="polite"></div>
+                <div id="proof-customer-results" class="proof-search-results" aria-label="Matching customers"></div>
+              </div>
+              <label class="proof-control">Job title<input id="proof-job-title" autocomplete="off" type="text" maxlength="200"></label>
+            </div>
             <div class="proof-product-search">
               <div class="proof-product-picker">
                 <div><label class="proof-label" for="proof-product-query">Find a product</label>
@@ -68,14 +76,6 @@
               </div>
               <div id="proof-product-status" class="proof-search-status" role="status" aria-live="polite"></div>
               <div id="proof-product-results" class="proof-search-results"></div>
-            </div>
-            <div class="proof-job-fields">
-              <div class="proof-customer-picker">
-                <label class="proof-control">Customer name<input id="proof-customer" type="search" maxlength="200" autocomplete="off" aria-controls="proof-customer-results" aria-describedby="proof-customer-status"></label>
-                <div id="proof-customer-status" class="proof-search-status" role="status" aria-live="polite"></div>
-                <div id="proof-customer-results" class="proof-search-results" aria-label="Matching customers"></div>
-              </div>
-              <label class="proof-control">Job title<input id="proof-job-title" autocomplete="off" type="text" maxlength="200"></label>
             </div>
             <div id="proof-design-status" class="proof-design-status" role="status"></div>
             <label class="proof-label" for="proof-request">Request</label>
@@ -87,25 +87,27 @@
             <button id="proof-dropzone" class="proof-dropzone" type="button"><span class="proof-upload-icon" aria-hidden="true">↥</span><strong>Choose artwork files</strong></button>
             <div id="proof-artworks" class="proof-artwork-list"></div>
           </section>
+          <section id="proof-preflight-details" class="proof-card" hidden></section>
           <div class="proof-form-actions"><button id="proof-review" class="proof-primary-button" type="button"><span class="proof-button-spinner" aria-hidden="true" hidden></span><span data-proof-button-label>Create proof</span></button><button id="proof-retry-save" class="proof-secondary-button" type="button" hidden>Retry folder/save</button><span id="proof-feedback" role="status" aria-live="polite"></span></div>
         </div>
-        <aside class="proof-review-column">
-            <section id="proof-job-picker" class="proof-card">
-              <div class="proof-review-title proof-section-title"><h2>Link to existing job</h2></div>
-              <label class="proof-control">Find an OFFICE job (optional)<input id="proof-office-search" type="search" autocomplete="off" placeholder="Search job number, customer or title"></label>
-              <label class="proof-control">Link to job<select id="proof-office-job"><option value="">No job selected — create a new design</option></select></label>
-              <label id="proof-reference-control" class="proof-control" hidden>Design reference<select id="proof-existing-reference"></select></label>
-              <div id="proof-office-status" class="proof-search-status" role="status"></div>
-            </section>
+        <aside class="proof-review-column" hidden>
           <section class="proof-card proof-review-card" aria-live="polite">
             <div class="proof-review-title proof-section-title"><h2>Clothing proof</h2></div>
-            <div id="proof-results" class="proof-results-empty"><div class="proof-empty-mark" aria-hidden="true">✦</div><strong>Ready when you are</strong></div>
+            <div id="proof-results"></div>
           </section>
           <div id="proof-placement-loading" class="proof-placement-loading" role="status" aria-label="Loading artwork position previews" hidden><span class="board-loading-spinner" aria-hidden="true"></span></div>
         </aside>
       </div>
       </div>
-    </div>`;
+    </div>
+    <dialog id="proof-generation-progress" class="proof-generation-progress" aria-labelledby="proof-progress-title" aria-describedby="proof-progress-message">
+      <div class="proof-progress-content">
+        <svg class="proof-progress-tick" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="28"/><path d="m18 32 9 9 19-20"/></svg>
+        <h2 id="proof-progress-title">Creating your proof</h2>
+        <div class="proof-progress-track" role="progressbar" aria-label="Proof creation" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
+        <p id="proof-progress-message" role="status" aria-live="polite">Checking your request…</p>
+      </div>
+    </dialog>`;
 
   const request = root.querySelector('#proof-request');
   const customer=root.querySelector('#proof-customer'),jobTitle=root.querySelector('#proof-job-title');
@@ -121,6 +123,34 @@
   const editorToolbar = root.querySelector('.proof-editor-toolbar');
   const feedback = root.querySelector('#proof-feedback');
   const placementLoading = root.querySelector('#proof-placement-loading');
+  const reviewColumn=root.querySelector('.proof-review-column');
+  const preflightDetails=root.querySelector('#proof-preflight-details');
+  const progressDialog=root.querySelector('#proof-generation-progress');
+  const progressTrack=progressDialog.querySelector('[role="progressbar"]');
+  let progressValue=0;
+  progressDialog.addEventListener('cancel',event=>event.preventDefault());
+  function startGenerationProgress(){
+    progressValue=0;progressDialog.classList.remove('is-complete');
+    progressDialog.querySelector('h2').textContent=designId?'Updating your proof':'Creating your proof';
+    updateGenerationProgress(5,'Checking your request…');
+    if(!progressDialog.open)progressDialog.showModal();
+  }
+  function updateGenerationProgress(value,message){
+    progressValue=Math.max(progressValue,value);
+    progressTrack.setAttribute('aria-valuenow',String(progressValue));
+    progressTrack.querySelector('span').style.width=`${progressValue}%`;
+    progressDialog.querySelector('#proof-progress-message').textContent=message;
+  }
+  function closeGenerationProgress(){if(progressDialog.open)progressDialog.close();}
+  async function finishGenerationProgress(){
+    updateGenerationProgress(100,'Taking you back to your proofs…');
+    progressDialog.querySelector('h2').textContent='Your proof is ready';
+    progressDialog.classList.add('is-complete');
+    await new Promise(resolve=>setTimeout(resolve,1100));
+    closeGenerationProgress();showProofList();
+  }
+  function syncProofVisibility(){reviewColumn.hidden=!(currentPreview?.pages?.length||design?.hasPreview);}
+
   const artworks = [];
   let currentBrief = null;
   let currentPreview = null;
@@ -144,76 +174,19 @@
   setHistoryView(savedView);
   for(const button of viewButtons)button.addEventListener('click',()=>setHistoryView(button.dataset.proofView));
   let selectedLinkJob=null;
-  const officeSearch=root.querySelector('#proof-office-search'),officeSelect=root.querySelector('#proof-office-job'),existingReference=root.querySelector('#proof-existing-reference'),referenceControl=root.querySelector('#proof-reference-control'),officeStatus=root.querySelector('#proof-office-status');
-  let officeRows=[],officeRequest=0,officeTimer;
-  const linkExistingProof=document.createElement('button');
-  linkExistingProof.type='button';linkExistingProof.className='proof-secondary-button';linkExistingProof.textContent='Link to job';
-  root.querySelector('#proof-job-picker').append(linkExistingProof);
-  linkExistingProof.addEventListener('click',linkExistingDesign);
-  async function linkExistingDesign(){
-    if(busy||!designId||design?.sourceOrderId||design?.linkedJobs?.length)return;
-    const id=designId;busy=true;showJobSelection();
-    try{
-      const target=await window.ProofLinks.picker('jobs',{customer:customer.value});
-      if(!target)return;
-      if(!await window.ProofLinks.link(id,target.source_order_id))return;
-      // Update the open editor's identity without discarding unsaved artwork/layout edits.
-      selectedLinkJob=target;
-      design={...design,sourceOrderId:target.source_order_id,linkedJobs:[target.source_order_id],linkedOrders:[{sourceOrderId:target.source_order_id,orderNo:target.order_no}]};
-      if(currentBrief)currentBrief.proofSourceOrderId=target.source_order_id;
-      officeStatus.textContent=`Linked to job ${target.order_no||target.source_order_id}.`;
-      window.ProofLinks.refresh();await refreshHistory();
-    }catch(error){officeStatus.textContent=error.message;}
-    finally{busy=false;showJobSelection();}
-  }
-  function showJobSelection(){
-    officeSelect.replaceChildren(new Option('No job selected — create a new design',''));
-    const rows=selectedLinkJob?[selectedLinkJob,...officeRows.filter(row=>row.source_order_id!==selectedLinkJob.source_order_id)]:officeRows;
-    for(const row of rows)officeSelect.add(new Option(`${row.order_no||row.source_order_id} · ${row.customer_name||''} · ${row.job_title||''}${row.designRefs?.length?' · '+row.designRefs.join(', '):''}`,String(row.source_order_id)));
-    officeSelect.value=selectedLinkJob?String(selectedLinkJob.source_order_id):'';
-    referenceControl.hidden=!!designId||!selectedLinkJob?.designRefs?.length;
-    officeSearch.parentElement.hidden=!!designId;
-    officeSelect.parentElement.hidden=!!designId&&!selectedLinkJob;
-    const previous=existingReference.value;existingReference.replaceChildren();
-    const refs=selectedLinkJob?.designRefs||[];
-    if(refs.length>1)existingReference.add(new Option('Select a design reference',''));
-    for(const ref of refs)existingReference.add(new Option(ref,ref));
-    if(refs.includes(previous))existingReference.value=previous;
-    for(const control of [officeSearch,officeSelect,existingReference])control.disabled=busy||!!designId;
-    linkExistingProof.hidden=localPreview||!designId||!!design?.sourceOrderId||!!design?.linkedJobs?.length;
-    linkExistingProof.disabled=busy||['saving','save_queued','allocating'].includes(design?.status);
-    if(designId&&!design?.sourceOrderId&&!design?.linkedJobs?.length&&!officeStatus.textContent)officeStatus.textContent='Use Link to job to find a job added after this proof was created.';
-    root.querySelector('#proof-job-picker').hidden=localPreview;
-  }
-  async function loadOfficeJobs(){
-    if(localPreview||designId)return;
-    const token=++officeRequest;officeStatus.innerHTML='<span class="app-section-loading is-compact" role="status" aria-label="Loading OFFICE jobs"><span class="board-loading-spinner" aria-hidden="true"></span></span>';
-    try{
-      const data=await window.ProofLinks.api(`/link-jobs?office=1&q=${encodeURIComponent(officeSearch.value)}`);
-      if(token!==officeRequest||designId)return;
-      officeRows=data.jobs;showJobSelection();officeStatus.textContent=officeRows.length===100?'Showing 100 jobs. Type to narrow the list.':officeRows.length?'':'No eligible OFFICE jobs found.';
-    }catch(error){if(token===officeRequest)officeStatus.textContent=error.message;}
-  }
-  officeSearch.addEventListener('input',()=>{clearTimeout(officeTimer);++officeRequest;officeTimer=setTimeout(loadOfficeJobs,250);});
-  officeSelect.addEventListener('change',()=>{
-    selectedLinkJob=officeRows.find(row=>String(row.source_order_id)===officeSelect.value)||null;
-    existingReference.replaceChildren();
-    if(selectedLinkJob){customer.value=selectedLinkJob.customer_name||'';jobTitle.value=selectedLinkJob.job_title||'';clearCustomerSearch();sourceChanged();}
-    showJobSelection();officeStatus.textContent=selectedLinkJob?(selectedLinkJob.designRefs.length?'The proof will use this job’s existing design folder.':'This job has no numeric design reference. A new design will be created.') : '';
-  });
-  function jobReservation(){return selectedLinkJob&&!design?.sourceOrderId?{sourceOrderId:selectedLinkJob.source_order_id,designReference:existingReference.value}:{};}
+  function jobReservation(){return selectedLinkJob&&!design?.sourceOrderId?{sourceOrderId:selectedLinkJob.source_order_id}:{};}
 
   window.openLinkedProof=async({design:linkedDesign,job})=>{
     if(busy)throw new Error('Wait for the current proof to finish.');
     startNewProof();
     if(linkedDesign)await openHistoryProof(linkedDesign);
     else{customer.value=job.customer_name||'';jobTitle.value=job.job_title||'';showProofEditor();}
-    selectedLinkJob=job;showJobSelection();
+    selectedLinkJob=job;
   };
   function showProofList(foreground=true){
     editorScreen.hidden=true;historyScreen.hidden=false;listControls.hidden=false;renderHistory();refreshHistory(foreground);
   }
-  function showProofEditor(){historyScreen.hidden=true;editorScreen.hidden=false;listControls.hidden=true;showJobSelection();loadOfficeJobs();}
+  function showProofEditor(){historyScreen.hidden=true;editorScreen.hidden=false;listControls.hidden=true;}
   root.querySelector('#proof-back-list').addEventListener('click',showProofList);
   createNew.addEventListener('click',()=>{if(busy)return;startNewProof();showProofEditor();});
   loadMore.addEventListener('click',()=>{historyLimit+=50;refreshHistory(true);});
@@ -515,7 +488,7 @@
   });
   customer.addEventListener('input',metadataChanged);jobTitle.addEventListener('input',metadataChanged);
   function showDesign(){
-    showJobSelection();
+
     editorToolbar.append(reviewButton);
     retrySave.hidden=localPreview||!designId||design?.status!=='error';
     designStatus.textContent=sandbox?'':design?.designNumber?`Design ${design.designNumber} · ${design.folderName||'Preparing folder'}${design.status==='saved'?' · Saved':design.status==='error'?' · Save needs attention':''}`:designId?'Waiting for ARTWORK-PC to allocate the design folder.':'';
@@ -533,6 +506,7 @@
       if(saved&&design.status==='saved'){try{const synced=await window.ProofLinks.api(`/designs/${id}/sync`,{});design=synced.design;if(design.sourceOrderId)selectedLinkJob={source_order_id:design.sourceOrderId,order_no:design.linkedOrders?.find(order=>order.sourceOrderId===design.sourceOrderId)?.orderNo};window.ProofLinks.refresh();}catch(error){throw new Error('Proof saved, but Dashboard sync needs attention: '+error.message);}}
       if(design.status==='error')throw new Error(design.message||'The design folder needs attention.');
       if(saved?design.status==='saved':!!(design.designNumber&&design.folderName))return;
+      if(progressDialog.open)updateGenerationProgress(40,saved?'Saving your proof…':'Getting your proof number ready…');
       setFeedback(saved?'Waiting for ARTWORK-PC to save the proof…':'Waiting for ARTWORK-PC to reserve the next design number…');
       await new Promise(resolve=>setTimeout(resolve,2000));
     }
@@ -549,11 +523,10 @@
   }
   function startNewProof(){
     if(busy)return;selectedLinkJob=null;design=null;designId=null;try{if(!localPreview)sessionStorage.removeItem('proof-design-id');}catch(_){}
-    ++officeRequest;officeSearch.value='';officeStatus.textContent='';existingReference.replaceChildren();showJobSelection();
     request.value='';customer.value='';clearCustomerSearch();jobTitle.value='';
     for(const art of artworks)if(art.url)URL.revokeObjectURL(art.url);artworks.length=0;artworksNode.replaceChildren();
     resetProductPicker();productQuery.value='';productResults.replaceChildren();productStatus.textContent='';
-    sourceChanged();results.replaceChildren();showDesign();setFeedback('Enter a new proof request.');request.focus();
+    sourceChanged();results.replaceChildren();syncProofVisibility();preflightDetails.hidden=true;showDesign();setFeedback('Enter a new proof request.');request.focus();
   }
   retrySave.addEventListener('click',async()=>{
     if(busy||!designId)return;busy=true;retrySave.disabled=true;
@@ -817,12 +790,12 @@
   function setCreating(creating) {
     reviewButton.disabled = creating || (!localPreview&&['save_queued','saving'].includes(design?.status));
     reviewButton.setAttribute('aria-busy', String(creating));
-    reviewButton.querySelector('.proof-button-spinner').hidden = !creating;
+    reviewButton.querySelector('.proof-button-spinner').hidden = true;
     reviewButton.querySelector('[data-proof-button-label]').textContent = creating ? (designId?'Regenerating proof…':'Creating proof…') : designId?'Regenerate proof':'Create proof';
     retrySave.disabled=creating;createNew.disabled=creating;
     editorScreen.querySelectorAll('input,textarea,select,#proof-dropzone,.proof-runout-dropzone,.proof-remove').forEach(control=>{control.disabled=creating;});
     productColour.disabled=creating||!selectedProduct||productColour.options.length<2;
-    showJobSelection();
+
   }
 
   // Parsing and preflight never allocate a folder, clear approval or generate garment views.
@@ -832,6 +805,7 @@
       const submittedSource=JSON.stringify([request.value,customer.value,jobTitle.value,artworks.map(a=>[a.id,a.file.name,a.assignment,a.notes])]);
       const unchanged=()=>submittedSource===JSON.stringify([request.value,customer.value,jobTitle.value,artworks.map(a=>[a.id,a.file.name,a.assignment,a.notes])]);
       setFeedback('Checking all proof details before generation…');
+      updateGenerationProgress(10,'Reading your request and artwork…');
       const prepared=await Promise.allSettled(artworks.map(a=>prepareArtworkFile(a.file,true)));
       const failures=prepared.flatMap((r,i)=>r.status==='rejected'?[`${artworks[i].file.name}: ${r.reason.message}`]:[]);
       if(failures.length){setFeedback(failures.join(' '),true);return false;}
@@ -844,18 +818,21 @@
         currentBrief=payload.brief;currentPreview=null;dirty=true;
       }
       currentBrief.preflightRequest=request.value;
+      updateGenerationProgress(20,'Finding products and checking colours…');
       const response=await proofFetch('/api/proof-generator/preflight',{method:'POST',body:await uploadForm(currentBrief,false,true)}),payload=await proofJson(response);
       if(!response.ok)throw Error(payload.error||'Could not check the brief.');
       if(!unchanged())throw Error('The request changed during review. Check the details again.');
       currentBrief=payload.brief;
       if(!payload.ready){renderPreflight(payload.issues);setFeedback('Resolve the details below together, then create the proof. Nothing has been allocated or generated.',true);return false;}
-      return true;
+      updateGenerationProgress(30,'Products found. Your details are checked.');
+      preflightDetails.hidden=true;return true;
     }catch(error){setFeedback(error.message,true);return false;}
     finally{busy=false;setCreating(false);}
   }
 
   function renderPreflight(issues){
-    results.className='proof-results proof-editor';results.replaceChildren();
+    const results=preflightDetails;results.hidden=false;
+    results.className='proof-card proof-editor';results.replaceChildren();
     const title=document.createElement('h3');title.textContent='Confirm proof details';results.append(title);
     for(const issue of issues){
       const label=document.createElement('label');label.className='proof-control proof-missing-detail';label.textContent=issue.message.replace('confirm artwork width or height in mm; one axis is sufficient.','Artwork size needed (mm).').replace('specify the decoration method.','Print or embroidery type needed.');
@@ -883,26 +860,25 @@
   async function reviewBrief() {
     if (busy) return;
     if(!localPreview&&['save_queued','saving'].includes(design?.status)){setFeedback('This proof is still saving to its design folder. You can view or download it now.',true);return;}
-    if(selectedLinkJob?.designRefs?.length&&!existingReference.value&&!designId){setFeedback('Select the design reference for this job.',true);existingReference.focus();return;}
     if (!request.value.trim()) { request.focus(); setFeedback('Enter the proof request first.', true); return; }
     if (!artworks.length) { setFeedback('Attach artwork first so each decoration can be assigned to a file.', true); return; }
-    const returningToList=Boolean(designId);
-    if(returningToList){busy=true;setCreating(true);showProofList(false);}
+    busy=true;setCreating(true);startGenerationProgress();
     if(!await preflightBrief()){
-      if(returningToList){busy=false;setCreating(false);showProofEditor();renderHistory();}
+      busy=false;setCreating(false);closeGenerationProgress();showProofEditor();renderHistory();
       return;
     }
     if(!localPreview&&design?.sourceOrderId){
-      busy=true;setCreating(true);
-      try{if(!await window.ProofLinks.beginRegeneration(design.sourceOrderId,designId)){if(returningToList)showProofEditor();return;}}
-      catch(error){if(returningToList)showProofEditor();setFeedback(error.message,true);return;}
+      closeGenerationProgress();busy=true;setCreating(true);
+      try{if(!await window.ProofLinks.beginRegeneration(design.sourceOrderId,designId)){showProofEditor();return;}}
+      catch(error){showProofEditor();setFeedback(error.message,true);return;}
       finally{busy=false;setCreating(false);}
+      startGenerationProgress();
     }
     generationRevision = design?.revision ?? 0;
     busy = true; generatingProof = true; readyThisRun = false; setCreating(true);
     if(!designId){designId=crypto.randomUUID();try{if(!localPreview)sessionStorage.setItem('proof-design-id',designId);}catch(_){} }
     design={...design,id:designId,customer:customer.value,jobTitle:jobTitle.value,createdAt:design?.createdAt||new Date().toISOString(),generationStatus:'generating'};
-    if(!returningToList)showProofList();
+    updateGenerationProgress(35,'Preparing your artwork…');
     setFeedback('Preparing the confirmed proof…');
     try {
       design=localPreview?{id:designId,customer:customer.value,jobTitle:jobTitle.value,status:'folder_ready',createdAt:new Date().toISOString()}:await designRequest('',{id:designId,customer:customer.value,jobTitle:jobTitle.value,deferAllocation:true,...jobReservation()});
@@ -918,7 +894,9 @@
       const preparation=await Promise.allSettled([reserveDesign(numberedBrief),prepareMissingViews()]);
       const failed=preparation.find(result=>result.status==='rejected');if(failed)throw failed.reason;
       if(!localPreview)for(const key of ['proofSourceOrderId','proofDesignId','reference','proofRevision'])currentBrief[key]=numberedBrief[key];
+      updateGenerationProgress(75,'Placing artwork and building your proof…');
       await updatePreview(true,true,true);
+      if(localPreview&&!dirty&&currentPreview?.pdf&&!currentPreview.issues.some(issue=>issue.blocking))readyThisRun=true;
       if(!readyThisRun)await recordProgress(currentPreview?.issues.some(issue=>issue.blocking)?'review':'complete');
       if(localPreview){design.status='saved';if(sandbox){design.hasPdf=!currentPreview?.issues.some(issue=>issue.blocking);design.hasPreview=true;design.reference='SANDBOX';setFeedback('Proof saved.');}}
     } catch(error) {
@@ -930,7 +908,12 @@
       if(design)design={...design,generationStatus:'error',generationMessage:error.message};
       setFeedback(error.message, true);try{await recordProgress('error',error.message);}catch(_){}
     }
-    finally { generatingProof = false; busy = false; setCreating(false);renderHistory();refreshHistory(); }
+    finally {
+      const complete=readyThisRun;
+      if(complete)await finishGenerationProgress();
+      else{closeGenerationProgress();showProofEditor();}
+      generatingProof = false; busy = false; setCreating(false);renderHistory();refreshHistory();if(complete)createNew.focus();
+    }
   }
 
   async function uploadForm(brief,includeOriginals=false,preflight=false) {
@@ -993,6 +976,7 @@
   async function prepareMissingViews() {
     const target = currentBrief;
     const snapshot = JSON.stringify(target);
+    updateGenerationProgress(45,'Preparing product images…');
     setFeedback('Loading garment views and checking for missing angles…');
     const response = await proofFetch('/api/proof-generator/views', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brief:target})});
     const task = await proofJson(response);
@@ -1005,6 +989,7 @@
       const job = await proofJson(poll);
       if(!poll.ok || job.state==='failed')throw new Error(job.error || 'Could not prepare garment views.');
       if(currentBrief!==target || JSON.stringify(target)!==snapshot)return;
+      if(progressDialog.open)updateGenerationProgress(55,job.state==='complete'?'Product images ready. Preparing artwork placement…':'Preparing product images. This can take a few minutes…');
       setFeedback(job.message || 'Generating missing garment views…');
       if(job.state==='complete'){currentBrief=job.brief;return;}
     }
@@ -1060,6 +1045,7 @@
 
   function renderEditor() {
     if(!currentBrief)return;
+    syncProofVisibility();
     results.className='proof-results proof-editor';results.replaceChildren();
     if(!designId&&currentBrief.products.length===1){
       const download=action('Download PDF',()=>downloadPdf());download.dataset.download='true';download.disabled=dirty||!currentPreview||currentPreview.issues.some(i=>i.blocking);results.append(download);
