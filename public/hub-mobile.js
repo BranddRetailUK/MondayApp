@@ -3,9 +3,9 @@
   if(!user || user.access_scope==='dtf_only')return;
   document.body.classList.toggle('hub-production-user',String(user.email||'').trim().toLowerCase()==='production@ultimatepromotions.co.uk');
   const svg=path=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
-  const icons={dashboard:svg('<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>'),database:svg('<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 4 16 4 16 0V5M4 12c0 4 16 4 16 0"/>'),holiday:svg('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 11h18"/>'),more:svg('<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>')};
+  const icons={create:svg('<path d="M12 5v14M5 12h14"/>'),dashboard:svg('<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>'),database:svg('<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 4 16 4 16 0V5M4 12c0 4 16 4 16 0"/>'),holiday:svg('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 11h18"/>'),more:svg('<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>')};
   const nav=document.createElement('nav');nav.className='hub-bottom-nav';nav.setAttribute('aria-label','App navigation');
-  nav.innerHTML=[['dashboard','Dashboard'],['database','Database'],['holiday','Holiday'],['more','More']].map(([key,label])=>`<button type="button" data-hub-nav="${key}"><span aria-hidden="true">${icons[key]}</span>${label}</button>`).join('');
+  nav.innerHTML=[['dashboard','Dashboard'],['database','Database'],['create','Create'],['holiday','Holiday'],['more','More']].map(([key,label])=>`<button type="button" data-hub-nav="${key}"><span aria-hidden="true">${icons[key]}</span>${label}</button>`).join('');
   document.body.append(nav);
   const header=document.createElement('header');header.className='hub-app-header';header.innerHTML='<button type="button" class="hub-brand-menu" aria-label="Open navigation" aria-controls="appSidebar" aria-expanded="false"><img src="/hub-icon-v2-192.png" alt=""></button><strong>Ultimate Hub</strong>';document.body.append(header);
   const brandMenu=header.querySelector('.hub-brand-menu');
@@ -54,9 +54,16 @@
   nav.addEventListener('click',event=>{
     const button=event.target.closest('[data-hub-nav]');if(!button)return;
     if(button.dataset.hubNav==='more'){document.getElementById('mobileNavToggle')?.click();return;}
+    if(button.dataset.hubNav==='create'){
+      document.querySelector('.nav-tabs li[data-tab="database"]')?.click();
+      if(!document.getElementById('db-new-order-view')?.classList.contains('active'))document.querySelector('[data-db-action="new-order"]')?.click();
+      window.scrollTo({top:0});sync();return;
+    }
     document.querySelector(`.nav-tabs li[data-tab="${button.dataset.hubNav==='database'?'database':button.dataset.hubNav==='holiday'?'holiday-board':'test-dashboard'}"]`)?.click();window.scrollTo({top:0});sync();
   });
-  function sync(){const tab=document.querySelector('.nav-tabs li.active')?.dataset.tab;nav.querySelectorAll('button').forEach(b=>b.setAttribute('aria-current',String(b.dataset.hubNav===(tab==='database'?'database':tab==='test-dashboard'?'dashboard':tab==='holiday-board'?'holiday':'more'))));}
+  function sync(){const tab=document.querySelector('.nav-tabs li.active')?.dataset.tab;nav.querySelectorAll('button').forEach(b=>b.setAttribute('aria-current',String(b.dataset.hubNav===(tab==='database'?(document.getElementById('db-new-order-view')?.classList.contains('active')?'create':'database'):tab==='test-dashboard'?'dashboard':tab==='holiday-board'?'holiday':'more'))));}
   new MutationObserver(sync).observe(document.querySelector('.nav-tabs'),{subtree:true,attributes:true,attributeFilter:['class']});sync();
+  const newOrderView=document.getElementById('db-new-order-view');
+  if(newOrderView)new MutationObserver(sync).observe(newOrderView,{attributes:true,attributeFilter:['class']});
   if('serviceWorker' in navigator)navigator.serviceWorker.register('/hub-sw.js').catch(()=>{});
 })();

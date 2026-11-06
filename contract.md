@@ -1358,3 +1358,9 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Customer information keeps the customer name visible and collapses account details/overview behind the same toggle. Contact cards show name and populated email/telephone/mobile values, with editable fields and deletion in the expanded section. Summary values track local contact edits; existing autosave remains intact.
 - Contact form rows grow around 48px inputs, with comfortable spacing, and lists scroll with the page. Desktop tables, contact fields and customer information remain fully displayed without the webapp toggles.
 - Verified at 320px, 390px and 1440px: expansion by keyboard, retained status, customer account details, repeat-order access, contact field heights, no horizontal overflow or browser errors. Existing database UI/mobile regression suite: 37 passing tests.
+
+### Webapp Create navigation and order status (2026-11-06)
+
+- The webapp bottom bar is Dashboard, Database, Create, Holiday, More. Create uses a larger 44×36px rounded accent-blue box with a 28px plus icon; other icons are accent blue and all labels remain white, equally sized and aligned. Create opens the existing New Order form, retaining entered values when that form is already active.
+- Webapp Open/All Orders status appears above the order number, without a Status field label and with centred text. Desktop presentation remains unchanged.
+- Browser checks at 320/390px verify status placement, centred text, icon order/size, label alignment, Create routing and retention of entered values; 1440px verifies desktop navigation stays hidden. No browser errors or horizontal overflow.
