@@ -608,6 +608,7 @@ function collectBoardUiState(boardDiv) {
 
 function isDefaultCollapsedGroup(groupName, context = BOARD_CONTEXT_TEST) {
   const normalized = String(groupName || '').trim().toUpperCase();
+  if (isMobileNavLayout()) return true;
   if (context === BOARD_CONTEXT_TEST) {
     return !(isProductionArtworkUser() && (normalized === 'PRE-PRODUCTION' || normalized === 'PRINT'));
   }

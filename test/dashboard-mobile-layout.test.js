@@ -493,7 +493,7 @@ test('row menu exposes the destructive REMOVE VISUAL action', () => {
   );
 });
 
-test('production account opens only Pre-production and Print on initial load', () => {
+test('mobile groups start collapsed while desktop production opens Pre-production and Print', () => {
   const ui = loadDashboardFrontend();
   const groups = ['HOLD', 'OFFICE', 'PRE-PRODUCTION', 'PRINT', 'EMBROIDERY', 'COMPLETED'];
   for (const mobile of [true, false]) {
@@ -505,7 +505,7 @@ test('production account opens only Pre-production and Print on initial load', (
       const production = user?.email.startsWith(' Production');
       for (const group of groups) {
         assert.equal(ui.isDefaultCollapsedGroup(group),
-          !(production && ['PRE-PRODUCTION', 'PRINT'].includes(group)),
+          mobile || !(production && ['PRE-PRODUCTION', 'PRINT'].includes(group)),
           `${user?.email} / ${mobile} / ${group}`);
       }
     }

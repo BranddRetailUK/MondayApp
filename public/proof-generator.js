@@ -295,9 +295,9 @@
         promote.addEventListener('click',()=>addTestToLive(job));actions.append(promote);
       }
       if(!sandbox){
-      if(standalonePreview&&job.id===designId&&currentPreview?.pdf){const download=action('Download PDF',()=>downloadPdf());download.disabled=busy||dirty||currentPreview.issues.some(i=>i.blocking);actions.append(download);}
-      else if(job.hasPdf){const download=document.createElement('a');download.className='proof-secondary-button';download.textContent='Download';download.href=`/api/proof-generator/${historyEndpoint}/${encodeURIComponent(job.id)}/pdf?download=1`;actions.append(download);}
-      else{const download=document.createElement('button');download.type='button';download.className='proof-secondary-button';download.textContent='Download';download.disabled=true;download.title='Available after a proof PDF has been generated and retained.';actions.append(download);}
+      if(standalonePreview&&job.id===designId&&currentPreview?.pdf){const download=action('Download PDF',()=>downloadPdf());download.classList.add('hub-proof-download');download.disabled=busy||dirty||currentPreview.issues.some(i=>i.blocking);actions.append(download);}
+      else if(job.hasPdf){const download=document.createElement('a');download.className='proof-secondary-button hub-proof-download';download.textContent='Download';download.href=`/api/proof-generator/${historyEndpoint}/${encodeURIComponent(job.id)}/pdf?download=1`;actions.append(download);}
+      else{const download=document.createElement('button');download.type='button';download.className='proof-secondary-button hub-proof-download';download.textContent='Download';download.disabled=true;download.title='Available after a proof PDF has been generated and retained.';actions.append(download);}
       }
       const regenerate=document.createElement('button');regenerate.type='button';regenerate.className='proof-secondary-button';regenerate.textContent='Regenerate proof';regenerate.disabled=busy||!!job.liveDesignId||['save_queued','saving'].includes(job.status);
       if(job.liveDesignId)regenerate.title='This proof is moving to live. Use ADD TO LIVE to resume.';
@@ -323,7 +323,7 @@
     const previousFocus=document.activeElement,dialog=document.createElement('dialog');dialog.className='proof-fullscreen';dialog.setAttribute('aria-label','Proof preview');
     const bar=document.createElement('div');bar.className='proof-fullscreen-bar';
     const title=document.createElement('strong');title.textContent=[job.designNumber,job.customer,job.jobTitle].filter(Boolean).join(' · ');bar.append(title);
-    if(job.hasPdf&&!sandbox){const download=document.createElement('a');download.className='proof-secondary-button';download.textContent='Download PDF';download.href=`/api/proof-generator/${historyEndpoint}/${encodeURIComponent(job.id)}/pdf?download=1`;bar.append(download);}
+    if(job.hasPdf&&!sandbox){const download=document.createElement('a');download.className='proof-secondary-button hub-proof-download';download.textContent='Download PDF';download.href=`/api/proof-generator/${historyEndpoint}/${encodeURIComponent(job.id)}/pdf?download=1`;bar.append(download);}
     const close=document.createElement('button');close.type='button';close.className='proof-secondary-button';close.textContent='Close preview';close.addEventListener('click',()=>dialog.close());bar.append(close);
     const viewer=document.createElement('div');viewer.className='proof-fullscreen-pages';viewer.innerHTML='<div class="workspace-loading" role="status" aria-label="Loading proof"><span class="board-loading-spinner" aria-hidden="true"></span></div>';dialog.append(bar,viewer);document.body.append(dialog);
     dialog.addEventListener('close',()=>{dialog.remove();previousFocus?.focus();});dialog.showModal();close.focus();

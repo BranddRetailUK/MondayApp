@@ -1,12 +1,13 @@
 (async function(){
   const user=await window.ultimateHubUserPromise;
   if(!user || user.access_scope==='dtf_only')return;
+  document.body.classList.toggle('hub-production-user',String(user.email||'').trim().toLowerCase()==='production@ultimatepromotions.co.uk');
   const svg=path=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
-  const icons={dashboard:svg('<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>'),database:svg('<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 4 16 4 16 0V5M4 12c0 4 16 4 16 0"/>'),alerts:svg('<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>'),more:svg('<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>')};
+  const icons={dashboard:svg('<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>'),database:svg('<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 4 16 4 16 0V5M4 12c0 4 16 4 16 0"/>'),holiday:svg('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 11h18"/>'),more:svg('<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>')};
   const nav=document.createElement('nav');nav.className='hub-bottom-nav';nav.setAttribute('aria-label','App navigation');
-  nav.innerHTML=[['dashboard','Dashboard'],['database','Database'],['alerts','Alerts'],['more','More']].map(([key,label])=>`<button type="button" data-hub-nav="${key}"><span aria-hidden="true">${icons[key]}</span>${label}</button>`).join('');
+  nav.innerHTML=[['dashboard','Dashboard'],['database','Database'],['holiday','Holiday'],['more','More']].map(([key,label])=>`<button type="button" data-hub-nav="${key}"><span aria-hidden="true">${icons[key]}</span>${label}</button>`).join('');
   document.body.append(nav);
-  const header=document.createElement('header');header.className='hub-app-header';header.innerHTML='<img src="/hub-icon-192.png" alt=""><strong>Ultimate Hub</strong><span id="hub-connection">Live</span>';document.body.append(header);
+  const header=document.createElement('header');header.className='hub-app-header';header.innerHTML='<img src="/hub-icon-v2-192.png" alt=""><strong>Ultimate Hub</strong><span id="hub-connection">Live</span>';document.body.append(header);
   function connection(){const online=navigator.onLine;document.getElementById('hub-connection').textContent=online?'Live':'Offline';document.body.classList.toggle('hub-offline',!online);}
   window.addEventListener('online',connection);window.addEventListener('offline',connection);connection();
   const dialog=document.createElement('dialog');dialog.className='hub-settings';dialog.innerHTML=`<div class="hub-sheet-head"><h2>Notifications</h2><button type="button" data-close aria-label="Close notifications">×</button></div>
@@ -46,13 +47,15 @@
   });
   test.onclick=()=>run(test,async()=>{const sub=await registration.pushManager.getSubscription();await api('test',{endpoint:sub?.endpoint});status.textContent='Test queued. It should arrive shortly.';});
   disable.onclick=()=>run(disable,async()=>{const sub=await registration.pushManager.getSubscription();if(sub){await api('unsubscribe',{endpoint:sub.endpoint});await sub.unsubscribe();}enabled=false;status.textContent='Notifications are off on this device.';});
+  const alerts=document.createElement('button');alerts.type='button';alerts.className='hub-more-alerts';alerts.textContent='Alerts';
+  document.querySelector('#sidebarDashboardControls')?.prepend(alerts);
+  alerts.onclick=()=>{document.getElementById('mobileNavToggle')?.click();dialog.showModal();void setup();};
   nav.addEventListener('click',event=>{
     const button=event.target.closest('[data-hub-nav]');if(!button)return;
-    if(button.dataset.hubNav==='alerts'){dialog.showModal();void setup();return;}
     if(button.dataset.hubNav==='more'){document.getElementById('mobileNavToggle')?.click();return;}
-    document.querySelector(`.nav-tabs li[data-tab="${button.dataset.hubNav==='database'?'database':'test-dashboard'}"]`)?.click();window.scrollTo({top:0});sync();
+    document.querySelector(`.nav-tabs li[data-tab="${button.dataset.hubNav==='database'?'database':button.dataset.hubNav==='holiday'?'holiday-board':'test-dashboard'}"]`)?.click();window.scrollTo({top:0});sync();
   });
-  function sync(){const tab=document.querySelector('.nav-tabs li.active')?.dataset.tab;nav.querySelectorAll('button').forEach(b=>b.setAttribute('aria-current',String(b.dataset.hubNav===(tab==='database'?'database':tab==='test-dashboard'?'dashboard':'more'))));}
+  function sync(){const tab=document.querySelector('.nav-tabs li.active')?.dataset.tab;nav.querySelectorAll('button').forEach(b=>b.setAttribute('aria-current',String(b.dataset.hubNav===(tab==='database'?'database':tab==='test-dashboard'?'dashboard':tab==='holiday-board'?'holiday':'more'))));}
   new MutationObserver(sync).observe(document.querySelector('.nav-tabs'),{subtree:true,attributes:true,attributeFilter:['class']});sync();
   if('serviceWorker' in navigator)navigator.serviceWorker.register('/hub-sw.js').catch(()=>{});
 })();

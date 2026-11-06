@@ -4,8 +4,8 @@ self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));
 self.addEventListener('push',event=>{
   let data={};try{data=event.data.json();}catch{}
   event.waitUntil(self.registration.showNotification('Ultimate Hub',{
-    body:data.body||'There is an update in Ultimate Hub.',icon:'/hub-icon-192.png',
-    badge:'/hub-icon-192.png',tag:data.tag||'hub-update',data:{url:'/mobile?tab=test-dashboard'}
+    body:data.body||'There is an update in Ultimate Hub.',icon:'/hub-icon-v2-192.png',
+    badge:'/hub-icon-v2-192.png',tag:data.tag||'hub-update',data:{url:'/mobile?tab=test-dashboard'}
   }));
 });
 self.addEventListener('notificationclick',event=>{
