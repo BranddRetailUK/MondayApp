@@ -1382,3 +1382,7 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Four compact job-type buttons (Print, Print + Emb, Embroidery, Gifts) sit in one row directly below the order search. They reuse existing filtering and active-state logic; duplicate type buttons in the lower controls are hidden, while approval/all controls remain.
 - New Order Cancel matches Create sizing and rounded styling with grey fill/dark text. Home/Open Orders top tabs are 50px high with 15px text. Order info hides its customer overview drawer/toggle and Pre-Completion Invoice, leaving the four standard document actions; the customer-name link grows to at least 48px and wraps.
 - Desktop controls retain their existing presentation. Browser checks at 320/390/1440px cover filters, document actions, customer field height, tabs, buttons and overflow. Database regression checks: 23 passing.
+
+### Webapp document button row (2026-11-06)
+
+- Order info's four standard document buttons use one equal-width row, 10px rounded corners and 48px minimum height in the webapp layout. Compact labels fit at 320px; desktop presentation is unchanged.
