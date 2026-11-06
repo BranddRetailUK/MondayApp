@@ -9,6 +9,7 @@ const databaseRoutes = require('./src/routes/database');
     await initDb(); // identical schema bootstrap as your old server.js
     app.listen(PORT, () => console.log(`Modular server running on :${PORT}`));
     databaseRoutes.initRalawiseOrderHistoryPoller();
+    require('./src/services/hubPush').start(require('./src/db/pool'));
   } catch (e) {
     console.error('Failed to start server:', e);
     process.exit(1);

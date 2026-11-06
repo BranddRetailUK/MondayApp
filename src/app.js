@@ -35,6 +35,10 @@ app.use(require('./routes/hub-auth'));
 app.get(['/', '/index.html'], requireHubPageAuth, (_req, res) => {
   res.sendFile(path.join(publicDir, 'index.html'));
 });
+app.get('/mobile', requireHubFullPageAccess, (_req, res) => {
+  res.sendFile(path.join(publicDir, 'index.html'));
+});
+app.use('/api/hub-push', requireHubFullApiAccess, require('./routes/hub-push').createRouter(require('./db/pool')));
 app.get('/database-job.html', requireHubFullPageAccess, (req, res) => {
   res.sendFile(path.join(publicDir, path.basename(req.path)));
 });

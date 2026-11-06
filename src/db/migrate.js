@@ -99,6 +99,7 @@ async function initDb() {
   await require('./orderCatalogue').ensureOrderCatalogue(pool);
   await require('../services/designFolders').ensureTables(pool);
   await require('../routes/test-dashboard').initializeDashboardData();
+  await require('./hubPushSchema').ensureHubPushTables(pool);
 }
 
 module.exports = { initDb };

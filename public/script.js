@@ -2160,6 +2160,7 @@ function buildColumnValueCell(entity, column, { subitem = false, context = BOARD
   const cell = document.createElement('div');
   cell.className = `grid-cell dashboard-value-cell ${subitem ? 'subitem-value-cell' : ''} column-${column.type}`;
   cell.dataset.columnId = column.id;
+  cell.dataset.mobileLabel = column.title || "";
   if (entity?.id) cell.dataset.itemId = String(entity.id);
   if (!subitem && entity?.dashboard_production_parent && isDesignBoardTextWidthColumn(column.title)) return cell;
   const value = findColumnValue(entity, column.id);
