@@ -495,12 +495,12 @@
                 </div>
 
                 <div class="db-new-order-row db-new-wide-combo-row">
-                  <label>Delivery adds:</label>
+                  <label>Delivery address:</label>
                   <select id="db-new-delivery-address" name="delivery_address"></select>
                 </div>
 
                 <div class="db-new-order-row db-new-wide-combo-row">
-                  <label>Invoice adds:</label>
+                  <label>Invoice address:</label>
                   <select id="db-new-invoice-address" name="invoice_address"></select>
                 </div>
 
@@ -521,7 +521,7 @@
 
                 <div class="db-new-order-actions">
                   <button id="db-new-order-cancel" class="db-new-action-button" type="button">Cancel</button>
-                  <button id="db-new-order-accept" class="db-new-action-button" type="submit" disabled>Accept</button>
+                  <button id="db-new-order-accept" class="db-new-action-button" type="submit" disabled><span class="db-desktop-accept-label">Accept</span><span class="db-webapp-create-label">Create</span></button>
                 </div>
               </form>
             </section>
@@ -798,6 +798,10 @@
             </section>
 
             <section id="db-outstanding-view" class="db-view db-outstanding-view" aria-label="Outstanding orders">
+              <label class="db-webapp-order-search" for="db-webapp-order-search">
+                <span>Search:</span>
+                <input id="db-webapp-order-search" class="db-legacy-input" type="search" autocomplete="off" placeholder="Search orders…">
+              </label>
               <div class="db-table-frame db-outstanding-table-frame">
                 <table id="db-outstanding-table" class="db-legacy-table db-mobile-card-table">
                   <thead>

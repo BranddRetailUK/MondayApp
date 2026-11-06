@@ -1368,3 +1368,10 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 ### Invoiced status in Open Orders (2026-11-06)
 
 - Open Orders and its open-order selectors exclude normalized dashboard status `INVOICED` even when legacy invoice/printed flags are absent. The browser removal rule matches the API. This status alone does not generate an invoice or alter financial records. Completed jobs still require financial finalization; pre-completion invoices with active production status remain open. All Orders retains every record.
+
+### Webapp order search and customer simplification (2026-11-06)
+
+- Open Orders and All Orders have a search input above their webapp lists. Debounced server-side queries preserve the open-status/group filters and pagination, invalidate cached results when the query changes, and carry the search into PDF context. The desktop search placement and open-order behavior are unchanged.
+- Webapp Customers hides sorting and shows only clickable customer names, without secondary fields or expansion controls. Existing customer navigation and search remain.
+- New Order customer suggestions use full-width, wrapping, touch-sized rows in the webapp form flow. Its submit button reads Create with a blue background and white text; desktop retains Accept. Delivery/Invoice address labels are fully spelled out. The webapp homepage Open Orders count-panel heading is centred.
+- Browser verification at 320/390/1440px covers both search requests, names-only customer navigation, customer selection, submit labels/style and home heading alignment. Database UI and pagination checks: 23 passing tests, including open-search pagination and desktop isolation.

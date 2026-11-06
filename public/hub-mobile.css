@@ -194,3 +194,32 @@
  .hub-bottom-nav button[data-hub-nav=create]>span{width:44px;background:#a7d9f6;border-radius:10px;color:#172636}
  .hub-bottom-nav button[data-hub-nav=create] svg{width:28px;height:28px;stroke-width:2.3}
 }
+
+.db-webapp-order-search{display:none}
+@media(max-width:720px),(max-width:960px) and (max-height:520px){
+ #tab-database .db-webapp-order-search{display:flex;flex-direction:column;gap:7px;padding:10px 0 12px;color:#243c49;font-size:14px;font-weight:600}
+ #tab-database .db-webapp-order-search input{width:100%;min-width:0;font-weight:400}
+ #tab-database .db-outstanding-controls .db-order-search{display:none!important}
+ #tab-database .db-customers-filter-group label:has(#db-customers-sort){display:none}
+ #tab-database #db-customers-table>tbody>tr[data-customer-key]>td:not(.db-customer-link){display:none!important}
+ #tab-database #db-customers-table>tbody>tr[data-customer-key]>.db-customer-link{display:block;min-height:48px;padding:14px 12px;font-size:15px;line-height:20px;text-decoration:none}
+ #tab-database #db-customers-table .db-customer-link::before{display:none}
+ #tab-database #db-customers-table>tbody>tr[data-customer-key]{margin:0;border-radius:0;border-width:0 0 1px;box-shadow:none}
+}
+
+.db-webapp-create-label{display:none}
+@media(max-width:720px),(max-width:960px) and (max-height:520px){
+ #db-new-order-accept .db-desktop-accept-label{display:none}
+ #db-new-order-accept .db-webapp-create-label{display:inline}
+ #tab-database #db-new-order-accept{background:#1876b4;border:1px solid #1876b4;border-radius:10px;color:#fff;box-shadow:none;text-shadow:none;min-height:48px;min-width:110px;font:600 16px system-ui}
+ #tab-database #db-new-order-accept:disabled{opacity:.55}
+ #tab-database #db-new-order-form .db-customer-results{position:static;grid-column:1/-1;width:100%;max-height:min(34dvh,280px);margin:0;border:1px solid #b7cbd7;border-radius:10px;box-shadow:0 4px 12px #17324712;overscroll-behavior:contain}
+ #tab-database #db-new-order-form .db-customer-result{display:flex;flex-direction:column;gap:5px;min-height:60px;padding:12px 14px;font:15px/1.4 system-ui;border-bottom:1px solid #d8e2e9;background:#f9fcff;color:#243c49}
+ #tab-database #db-new-order-form .db-customer-result:is(:hover,:focus-visible,.active){background:#d9effc;color:#143b56;outline-offset:-2px}
+ #tab-database #db-new-order-form .db-customer-result-name{font-weight:600;white-space:normal;overflow-wrap:anywhere}
+ #tab-database #db-new-order-form .db-customer-result-contact{font-size:13px;color:#526b76;white-space:normal;overflow-wrap:anywhere}
+ #tab-database #db-new-order-form .db-customer-result-empty{padding:16px;font:14px system-ui}
+}
+@media(max-width:720px),(max-width:960px) and (max-height:520px){
+ #tab-database #db-home-view .db-outstanding-actions .db-panel-title{text-align:center;width:100%}
+}

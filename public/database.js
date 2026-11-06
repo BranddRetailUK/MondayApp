@@ -524,6 +524,7 @@
       usersBody: document.getElementById('db-users-body'),
       signupRequestsBody: document.getElementById('db-signup-requests-body'),
       orderSearch: document.getElementById('db-order-search'),
+      webappOrderSearch: document.getElementById('db-webapp-order-search'),
       selectOrder: document.getElementById('db-select-order'),
       footerTitle: document.getElementById('db-footer-title'),
       orderTitle: document.getElementById('db-order-job-title'),
@@ -625,6 +626,7 @@
     els.customersSort?.addEventListener('change', handleDatabaseCustomerSortChange);
     els.customerAccountManager?.addEventListener('change', handleCustomerAccountManagerChange);
     els.orderSearch?.addEventListener('input', handleOrderSearchInput);
+    els.webappOrderSearch?.addEventListener('input', handleOrderSearchInput);
     els.selectOrder?.addEventListener('change', () => openSelectedOrder(els.selectOrder.value));
     els.headerJobSelect?.addEventListener('change', () => openSelectedOrder(els.headerJobSelect.value));
     els.headerOrderSelect?.addEventListener('change', () => openSelectedOrder(els.headerOrderSelect.value));
@@ -795,7 +797,7 @@
           if (label) cell.dataset.mobileLabel = label;
           else cell.removeAttribute('data-mobile-label');
         });
-        const compactTables = ['db-outstanding-table', 'db-to-invoice-table', 'db-customer-orders-table', 'db-stock-ordering-table', 'db-customers-table', 'db-customer-design-numbers-table'];
+        const compactTables = ['db-outstanding-table', 'db-to-invoice-table', 'db-customer-orders-table', 'db-stock-ordering-table', 'db-customer-design-numbers-table'];
         if (compactTables.includes(table.id) && !row.querySelector('td[colspan]')) {
           row.classList.add('db-compact-record');
           Array.from(row.children).forEach((cell) => {
@@ -6119,9 +6121,10 @@
     loadOutstandingOrders({ force: false });
   }
 
-  function handleOrderSearchInput() {
-    state.orderSearchQuery = els.orderSearch?.value.trim() || '';
-    if (state.orderMode !== 'all') return;
+  function handleOrderSearchInput(event) {
+    state.orderSearchQuery = (event?.target || els.orderSearch)?.value.trim() || '';
+    if (state.orderMode !== 'all' && !isDatabaseMobileLayout()) return;
+    syncOrderSearchVisibility();
     persistDatabaseRoute();
 
     orderLoadController?.abort();
@@ -6129,7 +6132,7 @@
     state.loadingOrders = false;
     clearTimeout(orderSearchTimer);
     orderSearchTimer = window.setTimeout(() => {
-      if (state.orderMode !== 'all') return;
+      if (state.orderMode !== 'all' && !isDatabaseMobileLayout()) return;
       state.visibleOrderLimit = PAGE_LIMIT;
       loadOutstandingOrders({ force: true });
     }, CUSTOMER_SEARCH_DELAY);
@@ -6139,6 +6142,7 @@
     const wrapper = els.orderSearch?.closest('.db-order-search');
     if (!wrapper) return;
 
+    if (els.webappOrderSearch && els.webappOrderSearch.value !== state.orderSearchQuery) els.webappOrderSearch.value = state.orderSearchQuery;
     const visible = state.orderMode === 'all';
     wrapper.hidden = !visible;
     if (visible && els.orderSearch.value !== state.orderSearchQuery) {
@@ -7208,7 +7212,7 @@
   }
 
   function currentOrderQueryKey() {
-    return JSON.stringify([state.orderMode, state.orderMode === 'all' ? state.orderSearchQuery : '', state.activeGroup, state.activeSort]);
+    return JSON.stringify([state.orderMode, (state.orderMode === 'all' || isDatabaseMobileLayout()) ? state.orderSearchQuery : '', state.activeGroup, state.activeSort]);
   }
 
   async function loadOutstandingOrders(options = {}) {
@@ -7284,7 +7288,7 @@
   async function fetchJobsPage(mode, offset, options = {}) {
     if (offset > 100000) throw new Error('This result is too large. Narrow the search before continuing.');
     const includeTotal = options.includeTotal !== false;
-    const hasActiveSearch = mode === 'all' && Boolean(state.orderSearchQuery);
+    const hasActiveSearch = (mode === 'all' || isDatabaseMobileLayout()) && Boolean(state.orderSearchQuery);
     const params = new URLSearchParams({
       limit: String(PAGE_LIMIT),
       offset: String(offset),
@@ -9328,7 +9332,7 @@
       filenameTitle: `${modeLabel}${filterSuffix}`,
       modeLabel,
       filterLabel,
-      searchQuery: state.orderMode === 'all' ? state.orderSearchQuery : '',
+      searchQuery: (state.orderMode === 'all' || isDatabaseMobileLayout()) ? state.orderSearchQuery : '',
       generatedAt: new Date(),
       groups,
       jobs,

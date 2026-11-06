@@ -92,3 +92,24 @@ test('printing explicitly fetches every matching page without changing the brows
   assert.deepEqual(calls.map(c=>c.offset),[0,100]);
   assert.equal(printed.jobs.length,200);
 });
+
+test('webapp open-order searches retain the open filter and query across pages without changing desktop open orders', async () => {
+  const {context,state,requests}=ui(async url=>page(Number(new URL(url,'http://test').searchParams.get('offset'))));
+  context.isDatabaseMobileLayout=()=>true;
+  state.orderMode='open';state.orderSearchQuery='staff';
+  await context.loadOutstandingOrders();
+  await context.loadNextOrdersPage();
+  for(const request of requests){
+    const params=new URL(request.url,'http://test').searchParams;
+    assert.equal(params.get('q'),'staff');
+    assert.equal(params.get('status'),'open');
+  }
+  state.orderSearchQuery='uniform';
+  await context.loadOutstandingOrders();
+  const changed=new URL(requests.at(-1).url,'http://test').searchParams;
+  assert.equal(changed.get('q'),'uniform');assert.equal(changed.get('offset'),'0');
+  context.isDatabaseMobileLayout=()=>false;
+  await context.loadOutstandingOrders();
+  const desktop=new URL(requests.at(-1).url,'http://test').searchParams;
+  assert.equal(desktop.get('q'),null);assert.equal(desktop.get('status'),'open');
+});
