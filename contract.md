@@ -1396,3 +1396,7 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Webapp buttons use consistent 10px corners. Customer-code fields/labels are hidden on existing customer and order detail pages without removing stored values or the account-manager control. Desktop fields remain visible.
 - Customer search fills its row, Add Customer uses accent blue/white, and customer names form a continuous list with one separator per row and no grid gaps. Home/Open Orders tabs have a 6px gap.
 - Browser checks at 320/390/1440px verify full-width search, contiguous rows, code visibility, rounded buttons, tab spacing and no overflow. Database UI regression checks: 17 passing.
+
+### Webapp dashboard neutral cards (2026-11-06)
+
+- Expanded dashboard boards have transparent, borderless backgrounds so the dark page shows between cards. Webapp order cards use neutral grey `#2b2b2b` with grey borders instead of blue-tinted fills. Desktop styling is unchanged; verified at 320/390px.
