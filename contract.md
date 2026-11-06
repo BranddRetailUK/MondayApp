@@ -1364,3 +1364,7 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - The webapp bottom bar is Dashboard, Database, Create, Holiday, More. Create uses a larger 44×36px rounded accent-blue box with a 28px plus icon; other icons are accent blue and all labels remain white, equally sized and aligned. Create opens the existing New Order form, retaining entered values when that form is already active.
 - Webapp Open/All Orders status appears above the order number, without a Status field label and with centred text. Desktop presentation remains unchanged.
 - Browser checks at 320/390px verify status placement, centred text, icon order/size, label alignment, Create routing and retention of entered values; 1440px verifies desktop navigation stays hidden. No browser errors or horizontal overflow.
+
+### Invoiced status in Open Orders (2026-11-06)
+
+- Open Orders and its open-order selectors exclude normalized dashboard status `INVOICED` even when legacy invoice/printed flags are absent. The browser removal rule matches the API. This status alone does not generate an invoice or alter financial records. Completed jobs still require financial finalization; pre-completion invoices with active production status remain open. All Orders retains every record.

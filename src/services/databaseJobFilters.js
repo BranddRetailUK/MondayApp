@@ -163,6 +163,7 @@ function buildJobFilters(query = {}) {
   let orderSql = `ORDER BY COALESCE(j.order_date, j.created_at_source) DESC NULLS LAST,
                          j.order_no DESC`;
   if (status === 'open') {
+    where.push("COALESCE(UPPER(TRIM(j.dashboard_status)), '') <> 'INVOICED'");
     where.push('j.is_complete IS NOT TRUE');
     where.push(`NOT (
       (
