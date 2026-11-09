@@ -86,10 +86,6 @@
   const ORDER_ACK_PAGE_SPLIT_BUFFER_MM = 3;
   const ORDER_ACK_ROW_MEASURE_BUFFER_MM = 0.8;
   const ORDER_ACK_SUMMARY_MM = 22;
-  const ORDER_ACK_COMMENTS_TOP_MM = 6;
-  const ORDER_ACK_COMMENTS_BASE_MM = 11;
-  const ORDER_ACK_COMMENTS_LINE_MM = 4.2;
-  const ORDER_ACK_COMMENTS_CHARS_PER_LINE = 95;
   const ORDER_DOC_PAGE_CONTENT_MAX_MM = 140;
   const ORDER_DOC_CONTINUATION_PAGE_CONTENT_MAX_MM = 220;
   const ORDER_DOC_TABLE_TOP_MM = 5;
@@ -10760,7 +10756,7 @@
       yourRef,
       salutation,
     };
-    const pages = buildOrderAckPages({ items, totals, comments: job.comments });
+    const pages = buildOrderAckPages({ items, totals });
 
     return pages.map((pageContent, index) => renderOrderAckPage(context, pageContent, index)).join('');
   }
@@ -10815,7 +10811,6 @@
         ? renderOrderAckItemsTable(pageContent.itemEntries, context.items, { empty: pageContent.showEmptyItems })
         : ''}
       ${pageContent.showSummary ? renderOrderAckSummaryRows(context.totals) : ''}
-      ${pageContent.comments ? renderOrderAckComments(pageContent.comments) : ''}
     `;
   }
 
@@ -11450,7 +11445,7 @@
     return renderOrderAckItemRow(entry.item);
   }
 
-  function buildOrderAckPages({ items, totals, comments }) {
+  function buildOrderAckPages({ items, totals }) {
     const pages = [];
     let page = emptyOrderAckPageContent();
     let usedMm = 0;
@@ -11490,13 +11485,6 @@
     page.showSummary = true;
     usedMm += ORDER_ACK_SUMMARY_MM;
 
-    if (comments) {
-      const commentsHeight = orderAckCommentsHeight(comments);
-      ensureSpace(commentsHeight);
-      page.comments = comments;
-      usedMm += commentsHeight;
-    }
-
     if (pageHasOrderAckContent(page) || !pages.length) pushPage();
     return pages;
   }
@@ -11506,7 +11494,6 @@
       itemEntries: [],
       showEmptyItems: false,
       showSummary: false,
-      comments: '',
     };
   }
 
@@ -11515,7 +11502,6 @@
       page.itemEntries.length
       || page.showEmptyItems
       || page.showSummary
-      || page.comments
     );
   }
 
@@ -11606,14 +11592,6 @@
     }
   }
 
-  function orderAckCommentsHeight(comments) {
-    const text = String(comments || '');
-    const explicitLines = text.split(/\r?\n/).reduce((count, line) => (
-      count + Math.max(1, Math.ceil(line.length / ORDER_ACK_COMMENTS_CHARS_PER_LINE))
-    ), 0);
-    return ORDER_ACK_COMMENTS_TOP_MM + ORDER_ACK_COMMENTS_BASE_MM + (explicitLines * ORDER_ACK_COMMENTS_LINE_MM);
-  }
-
   function renderOrderAckItemRow(item) {
     const quantity = orderAckQuantity(item);
     const price = orderAckNumber(item.unit_price);
@@ -11646,15 +11624,6 @@
           <span class="db-order-ack-summary-label">Total</span>
           <span class="db-order-ack-summary-amount">${escapeHtml(formatCurrency(totals.gross))}</span>
         </div>
-      </section>
-    `;
-  }
-
-  function renderOrderAckComments(comments) {
-    return `
-      <section class="db-order-ack-comments">
-        <strong>Comments</strong>
-        <p>${escapeHtml(comments)}</p>
       </section>
     `;
   }

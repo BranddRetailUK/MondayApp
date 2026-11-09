@@ -5726,15 +5726,6 @@ body.modal-open{overflow:hidden}
 .db-order-ack-positions.has-design td:nth-child(2){
   width:48mm;
 }
-.db-order-ack-comments{
-  width:153mm;
-  margin:6mm 0 0 7.5mm;
-  font-size:12px;
-}
-.db-order-ack-comments p{
-  margin:2mm 0 0;
-  white-space:pre-wrap;
-}
 .db-order-doc-page-content{
   height:140mm;
   overflow:hidden;
