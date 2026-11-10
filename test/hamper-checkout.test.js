@@ -73,6 +73,12 @@ test('sandbox checkout persistence, retries, signed webhook validation and monot
   assert.equal((await db.query("SELECT count(*)::int AS n FROM hamper_payment_events WHERE id='evt_duplicate'")).rows[0].n, 1);
   const disabled = createService({ db, env: { ...env, HAMPER_STRIPE_SECRET_KEY: 'sk_live_fake' }, stripe: fake });
   await assert.rejects(disabled.create(input), /being prepared/);
+  await db.query('INSERT INTO hamper_cleared_orders(id) VALUES($1)', [id]);
+  await db.query('DELETE FROM hamper_payment_events WHERE order_id=$1', [id]);
+  await db.query('DELETE FROM hamper_orders WHERE id=$1', [id]);
+  await send('checkout.session.completed');
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM hamper_orders')).rows[0].n, 0);
+  await assert.rejects(service.status(id), /not found/);
   await pg.close();
 });
 test('every SKU uses its independently extracted brochure VAT rate', () => {

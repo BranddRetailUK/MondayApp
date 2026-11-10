@@ -113,7 +113,11 @@ function createService({ db, env = process.env, stripe: injectedStripe } = {}) {
     try {
       await conn.query('BEGIN');
       const { rows: [order] } = await conn.query('SELECT * FROM hamper_orders WHERE id=$1 FOR UPDATE', [id]);
-      if (!order) throw new Error('Webhook order missing');
+      if (!order) {
+        const { rows: cleared } = await conn.query('SELECT id FROM hamper_cleared_orders WHERE id=$1', [id]);
+        if (cleared.length) { await conn.query('COMMIT'); return; }
+        throw new Error('Webhook order missing');
+      }
       if (order.stripe_session_id && order.stripe_session_id !== session.id) throw new Error('Webhook session mismatch');
       if (session.amount_total !== order.snapshot.totalPence || session.currency !== 'gbp' || session.client_reference_id !== id) throw new Error('Webhook order total mismatch');
       const { rowCount } = await conn.query('INSERT INTO hamper_payment_events(id,order_id,type) VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [event.id, id, event.type]);

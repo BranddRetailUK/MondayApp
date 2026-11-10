@@ -17,6 +17,9 @@ async function ensureHamperTables(db) {
       id TEXT PRIMARY KEY, order_id UUID REFERENCES hamper_orders(id),
       type TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS hamper_cleared_orders (
+      id UUID PRIMARY KEY, cleared_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     CREATE TABLE IF NOT EXISTS hamper_checkout_limits (
       key TEXT PRIMARY KEY, count INTEGER NOT NULL, expires_at TIMESTAMPTZ NOT NULL
     );

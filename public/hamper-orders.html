@@ -7,9 +7,9 @@
   <title>Ultimate Hub · Hamper Orders</title>
   <link rel="icon" type="image/png" href="https://res.cloudinary.com/brandduk/image/upload/v1783932861/UPC_FAV_all5bl.png">
   <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/hamper-orders.css?v=1">
+  <link rel="stylesheet" href="/hamper-orders.css?v=3">
   <script src="/auth-session.js" defer></script>
-  <script src="/hamper-orders.js?v=2" defer></script>
+  <script src="/hamper-orders.js?v=3" defer></script>
 </head>
 <body class="hamper-admin">
 <div class="app-container">
@@ -27,13 +27,19 @@
   </nav>
   <main class="main-content">
     <header class="page-header">
-      <div class="header-left"><p class="eyebrow">DATABASE</p><h1>Hamper orders</h1><p class="muted">Christmas hamper payments and delivery details.</p></div>
+      <div class="header-left"><p class="eyebrow">DATABASE</p><h1>Hamper orders</h1><p class="muted">View payments, customer details and delivery information.</p></div>
       <div class="header-actions"><a class="btn outline" href="/?tab=database">Back to database</a><button id="refresh" class="btn primary" type="button">Refresh orders</button></div>
     </header>
     <div class="hamper-sandbox-note"><span class="pill">Sandbox</span><span>Test payments only. These orders must not be fulfilled.</span></div>
+    <div class="hamper-overview" aria-label="Order overview"><div><span>Total orders</span><strong id="count-all">—</strong></div><div><span>Paid</span><strong id="count-paid">—</strong></div><div><span>Awaiting payment</span><strong id="count-pending">—</strong></div></div>
     <section class="card">
-      <div class="card-head"><h2>Recent checkouts</h2><span class="muted small">Latest 200 orders</span></div>
-      <div class="card-body"><p id="message" class="muted" role="status" aria-live="polite"></p><div class="hamper-table-wrap"><table class="data-table hamper-orders-table"><thead><tr><th>Created</th><th>Hamper</th><th>Customer & delivery</th><th>Total</th><th>Payment</th></tr></thead><tbody id="orders"></tbody></table></div></div>
+      <div class="card-head"><h2>Orders</h2><span class="muted small">Latest 200 orders</span></div>
+      <div class="card-body">
+        <div class="hamper-filters"><label>Search orders<input id="order-search" type="search" placeholder="Customer, hamper or order reference"></label><label>Payment status<select id="order-status"><option value="all">All statuses</option><option value="paid">Paid</option><option value="pending">Awaiting payment</option><option value="expired">Expired</option><option value="failed">Failed</option></select></label></div>
+        <p id="message" class="muted" role="status" aria-live="polite"></p>
+        <div id="empty-orders" class="hamper-empty" hidden><h2>No orders yet</h2><p>New hamper checkouts will appear here, with their payment status and delivery details.</p></div>
+        <div id="orders-table" class="hamper-table-wrap" hidden><table class="data-table hamper-orders-table"><thead><tr><th>Date</th><th>Customer</th><th>Hamper</th><th>Total incl. VAT</th><th>Payment status</th><th><span class="muted">Details</span></th></tr></thead><tbody id="orders"></tbody></table></div>
+      </div>
     </section>
   </main>
 </div>
