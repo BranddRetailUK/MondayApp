@@ -14,6 +14,8 @@ const priceFilter = document.querySelector('#price-filter');
 if (priceFilter) {
   const range = document.querySelector('#price-range');
   const count = document.querySelector('#price-filter-count');
+  const sort = document.querySelector('#price-sort');
+  const grid = document.querySelector('#collection .grid');
   const cards = [...document.querySelectorAll('#collection .card[data-price]')];
   const applyPriceFilter = () => {
     const [minimum, maximum] = range.value === 'all' ? [0, Infinity] : range.value.split(':').map((value, index) => value === '' && index === 1 ? Infinity : Number(value));
@@ -25,6 +27,14 @@ if (priceFilter) {
     });
     count.textContent = `${visible} ${visible === 1 ? 'gift' : 'gifts'}${range.value === 'all' ? '' : ' in this price range'}`;
   };
+  sort.addEventListener('change', () => {
+    const sorted = [...cards];
+    if (sort.value !== 'featured') {
+      const direction = sort.value === 'ascending' ? 1 : -1;
+      sorted.sort((a, b) => direction * (Number(a.dataset.price) - Number(b.dataset.price)));
+    }
+    grid.append(...sorted);
+  });
   range.addEventListener('change', applyPriceFilter);
   priceFilter.hidden = false;
   applyPriceFilter();
