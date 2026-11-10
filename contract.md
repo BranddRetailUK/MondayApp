@@ -1454,3 +1454,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - The first Christmas email now spans £29.99–£580.99 ex VAT with Christmas Treats Basket, The Christmas Gift Box, The Sparkle Hamper, A Cosy Christmas, The Holly & The Ivy and The Extravaganza, in ascending order. The two other campaign selections remain unchanged.
 
 - Latest 10 November test: the first campaign with the wider six-product £29.99–£580.99 range passed sandbox validation and was accepted for scott@brandd.co.uk (SendGrid message `o5AL1KE6RlO3PDVYhU-mvA`). This supersedes the earlier narrow-range test for review; inbox delivery remains unverified.
+
+- Product pages omit the standalone Explore the collection link above the product title. Header navigation and the related-products collection link remain available.
