@@ -46,3 +46,5 @@ body>header{max-width:none;width:100%;display:grid;grid-template-columns:minmax(
 /* Contact and cart share the right-hand header actions. */
 .header-actions{display:flex;align-items:center;justify-content:flex-end;gap:16px}.header-actions .cart-trigger{border:0}.header-actions .nav-contact{white-space:nowrap}
 @media(max-width:600px){body>header{column-gap:12px}body>header>a img{width:clamp(120px,32vw,200px)}.header-actions{gap:4px}.header-actions .nav-contact{font-size:13px;padding:8px 10px}.header-actions .cart-trigger{min-width:40px;padding:8px 4px}}
+
+.header-actions .nav-contact{background:var(--green);color:white;border:0;border-radius:999px;height:48px;padding:6px 20px;line-height:1.2}.header-actions .nav-contact:hover{background:#3b594a}

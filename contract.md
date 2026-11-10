@@ -1504,3 +1504,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Christmas storefront navigation spans the full page width. Desktop uses independent logo/centred-link/cart columns, and narrower screens place centred navigation below the logo and cart.
 
 - Storefront header keeps the collection/help links centred, with Get in touch beside the borderless cart button in the right-hand actions group.
+
+- The storefront header contact button uses the same filled green, white-text, 48px rounded treatment as Buy now.
