@@ -1,1 +1,41 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Hamper orders | Ultimate Hub</title><link rel="stylesheet" href="/hamper-checkout.css"></head><body><div class="sandbox">SANDBOX ORDERS · Test payments only · Do not fulfil</div><main><a href="/">Back to Ultimate Hub</a><h1>Hamper orders</h1><p>Latest 200 sandbox checkouts. Payment status is confirmed by Stripe. Refresh to see updates.</p><button id="refresh" type="button">Refresh orders</button><p id="message" role="status"></p><section id="orders" class="orders"></section></main><script src="/hamper-orders.js" defer></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Ultimate Hub · Hamper Orders</title>
+  <link rel="icon" type="image/png" href="https://res.cloudinary.com/brandduk/image/upload/v1783932861/UPC_FAV_all5bl.png">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/hamper-orders.css?v=1">
+  <script src="/auth-session.js" defer></script>
+  <script src="/hamper-orders.js?v=2" defer></script>
+</head>
+<body class="hamper-admin">
+<div class="app-container">
+  <nav class="sidebar" aria-label="Ultimate Hub navigation">
+    <div class="sidebar-top">
+      <img class="sidebar-brand-icon" src="https://res.cloudinary.com/brandduk/image/upload/v1783932861/UPC_FAV_all5bl.png" alt="" aria-hidden="true">
+      <div class="logo-text"><div class="sidebar-logo">Ultimate Hub</div><div class="sidebar-sub">User</div></div>
+    </div>
+    <div class="nav-group"><div class="nav-heading">Home</div><ul class="nav-tabs">
+      <li><a href="/?tab=test-dashboard">Dashboard</a></li>
+      <li><a href="/?tab=database">Database</a></li>
+      <li class="active"><a href="/hamper-orders.html" aria-current="page">Hamper orders</a></li>
+    </ul></div>
+    <div class="nav-footer"><span class="nav-foot-label">Workspace</span><span class="pill pill-muted">Ultimate Promotions</span></div>
+  </nav>
+  <main class="main-content">
+    <header class="page-header">
+      <div class="header-left"><p class="eyebrow">DATABASE</p><h1>Hamper orders</h1><p class="muted">Christmas hamper payments and delivery details.</p></div>
+      <div class="header-actions"><a class="btn outline" href="/?tab=database">Back to database</a><button id="refresh" class="btn primary" type="button">Refresh orders</button></div>
+    </header>
+    <div class="hamper-sandbox-note"><span class="pill">Sandbox</span><span>Test payments only. These orders must not be fulfilled.</span></div>
+    <section class="card">
+      <div class="card-head"><h2>Recent checkouts</h2><span class="muted small">Latest 200 orders</span></div>
+      <div class="card-body"><p id="message" class="muted" role="status" aria-live="polite"></p><div class="hamper-table-wrap"><table class="data-table hamper-orders-table"><thead><tr><th>Created</th><th>Hamper</th><th>Customer & delivery</th><th>Total</th><th>Payment</th></tr></thead><tbody id="orders"></tbody></table></div></div>
+    </section>
+  </main>
+</div>
+</body>
+</html>
