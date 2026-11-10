@@ -20,27 +20,47 @@ function renderHamperOrders() {
   root.querySelector('#orders-table').hidden = !visible.length;
   const container = root.querySelector('#orders'); container.replaceChildren();
   for (const order of visible) {
-    const row = document.createElement('tr'); row.className = 'hamper-summary-row';
-    const cells = ['PO / Date', 'Customer', 'Hamper', 'Total incl. VAT', 'Payment status', ''].map(label => { const td = document.createElement('td'); td.dataset.label = label; return td; });
-    const q = order.snapshot; const d = order.delivery;
-    cells[0].append(paragraph(poNumber(order), 'order-primary'), paragraph(new Date(order.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })), paragraph(new Date(order.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }), 'muted small'));
-    cells[1].append(paragraph(d.name, 'order-primary'), paragraph(d.email, 'muted small'));
-    for (const item of (q.items || [q])) cells[2].append(paragraph(item.name, 'order-primary'), paragraph(`Quantity: ${item.quantity} · VAT ${item.vatPercent}%`, 'muted small'));
-    cells[3].append(paragraph(money(q.totalPence), 'order-amount'));
-    const badge = document.createElement('span'); badge.className = `pill status-${order.status}`; badge.textContent = statuses[order.status] || order.status; cells[4].append(badge);
+    const q = order.snapshot; const d = order.delivery; const items = q.items || [q];
+    const labels = ['PO number', 'Date / time', 'Customer', 'Delivery address', 'Hamper', 'Qty', 'VAT', 'Total incl. VAT', 'Payment status', 'Details'];
+    const rows = items.map((item, index) => {
+      const row = document.createElement('tr'); row.className = 'hamper-summary-row';
+      const cells = labels.map(label => { const td = document.createElement('td'); td.dataset.label = label; return td; });
+      cells[4].append(paragraph(item.name, 'order-primary'));
+      cells[5].textContent = item.quantity; cells[5].className = 'hamper-number';
+      cells[6].textContent = `${item.vatPercent}%`; cells[6].className = 'hamper-number';
+      if (index === 0) {
+        cells[0].append(paragraph(poNumber(order), 'order-primary'));
+        cells[1].append(paragraph(new Date(order.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })), paragraph(new Date(order.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }), 'muted small'));
+        cells[2].append(paragraph(d.name, 'order-primary'), paragraph(d.email, 'muted small'));
+        cells[3].append(paragraph([d.line1, d.line2, d.city].filter(Boolean).join(', ')), paragraph(d.postcode));
+        cells[7].append(paragraph(money(q.totalPence), 'order-amount'));
+        const badge = document.createElement('span'); badge.className = `pill status-${order.status}`; badge.textContent = statuses[order.status] || order.status; cells[8].append(badge);
+        for (const i of [0, 1, 2, 3, 7, 8, 9]) cells[i].rowSpan = items.length;
+        row.append(...cells);
+      } else row.append(cells[4], cells[5], cells[6]);
+      return { row, cells };
+    });
     const detailsRow = document.createElement('tr'); detailsRow.className = 'hamper-detail-row'; detailsRow.hidden = true; detailsRow.id = `details-${order.id}`;
-    const detailCell = document.createElement('td'); detailCell.colSpan = 6;
+    const detailCell = document.createElement('td'); detailCell.colSpan = labels.length;
     const detailGrid = document.createElement('div'); detailGrid.className = 'hamper-detail-grid';
-    for (const [heading, lines] of [
-      ['Delivery address', [d.name, d.line1, d.line2, d.city, d.postcode].filter(Boolean)],
-      ['Price breakdown', [...(q.items || [q]).flatMap(item => [`${item.quantity} × ${item.name}: ${money(item.subtotalPence)} ex. VAT`, `Product VAT (${item.vatPercent}%): ${money(item.productVatPence)}`]), `Delivery: ${money(q.shippingPence)} ex. VAT`, `Delivery VAT (20%): ${money(q.shippingVatPence)}`]],
-      ['Order information', [`PO number: ${poNumber(order)}`, `Product codes: ${(q.items || [q]).map(item => item.sku).join(", ")}`, `Order reference: ${order.id}`]]
-    ]) { const section = document.createElement('section'); const h = document.createElement('h3'); h.textContent = heading; section.append(h); lines.forEach(line => section.append(paragraph(line))); detailGrid.append(section); }
-    if (order.stripe_payment_intent) { const link = document.createElement('a'); link.href = `https://dashboard.stripe.com/acct_1UaBAa7O9atIxBPe/test/payments/${encodeURIComponent(order.stripe_payment_intent)}`; link.textContent = 'View payment in Stripe'; link.className = 'order-link'; link.target = '_blank'; link.rel = 'noopener'; detailGrid.lastElementChild.append(link); }
-    detailCell.append(detailGrid); detailsRow.append(detailCell);
+    const lineItems = document.createElement('section');
+    const heading = document.createElement('h3'); heading.textContent = 'Line items'; lineItems.append(heading);
+    for (const item of items) {
+      const line = document.createElement('div'); line.className = 'hamper-detail-item';
+      const image = document.createElement('img'); image.src = `/assets/hamper-thumbnails/product-${Number(item.page)}.webp`; image.alt = item.name;
+      image.width = 64; image.height = 64; image.loading = 'lazy'; image.decoding = 'async';
+      const info = document.createElement('div');
+      info.append(paragraph(item.name, 'order-primary'), paragraph(`${item.quantity} × ${money(item.unitPence)} ex. VAT · Line total ${money(item.subtotalPence)}`), paragraph(`VAT (${item.vatPercent}%): ${money(item.productVatPence)}`));
+      line.append(image, info); lineItems.append(line);
+    }
+    const totals = document.createElement('section');
+    const totalsHeading = document.createElement('h3'); totalsHeading.textContent = 'Order totals';
+    totals.append(totalsHeading, paragraph(`Hampers: ${money(q.subtotalPence)} ex. VAT`), paragraph(`Hamper VAT: ${money(q.productVatPence)}`), paragraph(`Delivery: ${money(q.shippingPence)} ex. VAT`), paragraph(`Delivery VAT (20%): ${money(q.shippingVatPence)}`), paragraph(`Total: ${money(q.totalPence)}`, 'order-primary'));
+    if (order.stripe_payment_intent) { const link = document.createElement('a'); link.href = `https://dashboard.stripe.com/acct_1UaBAa7O9atIxBPe/test/payments/${encodeURIComponent(order.stripe_payment_intent)}`; link.textContent = 'View payment in Stripe'; link.className = 'order-link'; link.target = '_blank'; link.rel = 'noopener'; totals.append(link); }
+    detailGrid.append(lineItems, totals); detailCell.append(detailGrid); detailsRow.append(detailCell);
     const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'proof-secondary-button'; toggle.textContent = 'View details'; toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-controls', detailsRow.id);
     toggle.addEventListener('click', () => { detailsRow.hidden = !detailsRow.hidden; toggle.setAttribute('aria-expanded', String(!detailsRow.hidden)); toggle.textContent = detailsRow.hidden ? 'View details' : 'Hide details'; });
-    cells[5].append(toggle); row.append(...cells); container.append(row, detailsRow);
+    rows[0].cells[9].append(toggle); container.append(...rows.map(r => r.row), detailsRow);
   }
 }
 async function loadHamperOrders() {

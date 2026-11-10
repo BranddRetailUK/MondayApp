@@ -21,16 +21,23 @@
 #tab-hamper-orders #message{font-size:14px;color:#fff}
 #tab-hamper-orders #message:empty{display:none}
 #tab-hamper-orders .hamper-table-wrap{overflow-x:auto}
-#tab-hamper-orders .hamper-orders-table{min-width:940px;table-layout:fixed}
-#tab-hamper-orders .hamper-orders-table th{font-size:11px;font-weight:800;letter-spacing:.08em;color:#94cafa}
-#tab-hamper-orders .hamper-orders-table th:nth-child(1){width:12%}
-#tab-hamper-orders .hamper-orders-table th:nth-child(2){width:23%}
-#tab-hamper-orders .hamper-orders-table th:nth-child(3){width:25%}
-#tab-hamper-orders .hamper-orders-table th:nth-child(4){width:13%}
-#tab-hamper-orders .hamper-orders-table th:nth-child(5){width:15%}
-#tab-hamper-orders .hamper-orders-table th:nth-child(6){width:12%}
-#tab-hamper-orders .hamper-summary-row td{padding:18px 12px;vertical-align:middle;font-size:14px;color:#fff;overflow-wrap:anywhere}
-#tab-hamper-orders .hamper-orders-table p{margin:0 0 6px}
+#tab-hamper-orders .hamper-orders-table{width:100%;min-width:1320px;table-layout:fixed}
+#tab-hamper-orders .hamper-orders-table th{font-size:11px;font-weight:800;letter-spacing:.04em;color:#94cafa;padding:10px 8px}
+#tab-hamper-orders .col-po{width:108px}
+#tab-hamper-orders .col-date{width:108px}
+#tab-hamper-orders .col-customer{width:180px}
+#tab-hamper-orders .col-address{width:180px}
+#tab-hamper-orders .col-qty{width:48px}
+#tab-hamper-orders .col-vat{width:68px}
+#tab-hamper-orders .col-total{width:110px}
+#tab-hamper-orders .col-status{width:125px}
+#tab-hamper-orders .col-details{width:110px}
+#tab-hamper-orders .hamper-summary-row td{padding:8px;vertical-align:middle;font-size:14px;line-height:1.35;color:#fff;overflow-wrap:anywhere}
+#tab-hamper-orders .hamper-orders-table p{margin:0 0 2px}
+#tab-hamper-orders .hamper-orders-table p:last-child{margin-bottom:0}
+#tab-hamper-orders .hamper-number{white-space:nowrap;text-align:center}
+#tab-hamper-orders .hamper-orders-table th:nth-child(6),#tab-hamper-orders .hamper-orders-table th:nth-child(7){text-align:center}
+#tab-hamper-orders .hamper-summary-row .proof-secondary-button{min-height:32px;padding:6px 10px;white-space:nowrap}
 #tab-hamper-orders .order-primary{font-size:13px;font-weight:700;color:#fff}
 #tab-hamper-orders .muted.small{font-size:14px;color:#fff;font-weight:400}
 #tab-hamper-orders .order-amount{font-size:16px;font-weight:700;color:#fff}
@@ -39,11 +46,15 @@
 #tab-hamper-orders .status-failed{color:#ff8585;background:#412526;border-color:#744041}
 #tab-hamper-orders .status-expired{font-size:14px;color:#fff;background:#181a1d}
 #tab-hamper-orders .status-pending{color:#94cafa;background:#142d48;border-color:#3d4c58}
-#tab-hamper-orders .hamper-detail-grid{display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:28px;padding:8px 10px;color:#fff;font-size:15px;line-height:1.5}
+#tab-hamper-orders .hamper-detail-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(240px,1fr);gap:28px;padding:12px 8px;color:#fff;font-size:14px;line-height:1.4}
 #tab-hamper-orders .hamper-detail-grid h3{font-size:12px;font-weight:800;color:#94cafa;margin:0 0 12px}
 #tab-hamper-orders .hamper-detail-grid p{margin-bottom:5px;overflow-wrap:anywhere}
 #tab-hamper-orders .order-link{display:block;color:#84c3f7;margin-top:10px;font-size:12px;font-weight:700}
-@media(max-width:700px){#tab-hamper-orders .proof-page-header{flex-direction:column;gap:16px}#tab-hamper-orders .hamper-overview{gap:8px}#tab-hamper-orders .hamper-overview>div{padding:12px}#tab-hamper-orders .hamper-overview span{font-size:11px}#tab-hamper-orders .hamper-filters{flex-direction:column;align-items:stretch}#tab-hamper-orders .hamper-filters label:first-child{max-width:none}#tab-hamper-orders .card-body,#tab-hamper-orders .card-head{padding:16px}#tab-hamper-orders .hamper-orders-table{min-width:0;border:0}#tab-hamper-orders .hamper-orders-table thead{display:none}#tab-hamper-orders .hamper-orders-table,#tab-hamper-orders .hamper-orders-table tbody{display:block}#tab-hamper-orders .hamper-summary-row{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--border);border-radius:8px;margin-top:14px;overflow:hidden}#tab-hamper-orders .hamper-summary-row td{border:0;padding:12px;display:block}#tab-hamper-orders .hamper-summary-row td:before{content:attr(data-label);display:block;font-size:11px;font-weight:700;color:#94cafa;margin-bottom:6px}#tab-hamper-orders .hamper-detail-row,#tab-hamper-orders .hamper-detail-row td{display:block}#tab-hamper-orders .hamper-detail-grid{grid-template-columns:1fr;gap:20px}#tab-hamper-orders .hamper-empty{padding:40px 10px}}
+#tab-hamper-orders .hamper-detail-item{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+#tab-hamper-orders .hamper-detail-item:last-child{margin-bottom:0}
+#tab-hamper-orders .hamper-detail-item img{flex:0 0 64px;width:64px;height:64px;object-fit:contain;background:#fff;border-radius:8px}
+#tab-hamper-orders .hamper-detail-row>td{padding:8px}
+@media(max-width:700px){#tab-hamper-orders .hamper-overview{gap:8px}#tab-hamper-orders .hamper-overview>div{padding:12px}#tab-hamper-orders .hamper-filters{flex-direction:column;align-items:stretch}#tab-hamper-orders .hamper-filters label:first-child{max-width:none}#tab-hamper-orders .card-body,#tab-hamper-orders .card-head{padding:16px}}
 .nav-tabs li[data-tab="hamper-orders"]{order:3}
 
 #tab-hamper-orders .muted{color:#fff;opacity:1}

@@ -17,8 +17,8 @@
   <link rel="stylesheet" href="digitising-studio.css">
   <script src="file-viewer.js" defer></script>
   <link rel="stylesheet" href="proof-generator.css">
-  <link rel="stylesheet" href="hamper-orders.css?v=5">
-  <script src="hamper-orders.js?v=5" defer></script>
+  <link rel="stylesheet" href="hamper-orders.css?v=6">
+  <script src="hamper-orders.js?v=6" defer></script>
   <script src="holiday-board.js" defer></script>
   <link rel="stylesheet" href="insights.css">
   <script src="insights.js" defer></script>
@@ -123,7 +123,7 @@
         <div class="hamper-filters"><label class="proof-control">Search orders<input id="order-search" type="search" placeholder="PO number, customer or hamper"></label><label class="proof-control">Payment status<select id="order-status"><option value="all">All statuses</option><option value="paid">Paid</option><option value="pending">Awaiting payment</option><option value="expired">Expired</option><option value="failed">Failed</option></select></label></div>
         <p id="message" class="muted" role="status" aria-live="polite"></p>
         <div id="empty-orders" class="hamper-empty" hidden><h2>No orders yet</h2><p>New hamper checkouts will appear here, with their payment status and delivery details.</p></div>
-        <div id="orders-table" class="hamper-table-wrap" hidden><table class="data-table hamper-orders-table"><thead><tr><th>PO / Date</th><th>Customer</th><th>Hamper</th><th>Total incl. VAT</th><th>Payment status</th><th><span class="muted">Details</span></th></tr></thead><tbody id="orders"></tbody></table></div>
+        <div id="orders-table" class="hamper-table-wrap" hidden><table class="data-table hamper-orders-table"><colgroup><col class="col-po"><col class="col-date"><col class="col-customer"><col class="col-address"><col class="col-hamper"><col class="col-qty"><col class="col-vat"><col class="col-total"><col class="col-status"><col class="col-details"></colgroup><thead><tr><th>PO number</th><th>Date / time</th><th>Customer</th><th>Delivery address</th><th>Hamper</th><th>Qty</th><th>VAT</th><th>Total incl. VAT</th><th>Payment status</th><th>Details</th></tr></thead><tbody id="orders"></tbody></table></div>
       </div>
     </section>
 
