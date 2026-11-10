@@ -37,7 +37,7 @@
       tab.hidden = (dtfOnly && tab.dataset.tab !== 'dtf-uploader')
         || (tab.dataset.tab === 'digitising-studio' && (!isProductionProofUser(user) || tab.dataset.available !== 'true'))
         || (tab.dataset.tab === 'proof-generator' && !isProofGeneratorUser(user))
-        || (tab.dataset.tab === 'dtf-uploader' && String(user?.email || '').trim().toLowerCase() !== 'production@ultimatepromotions.co.uk');
+        || (tab.dataset.tab === 'dtf-uploader' && !dtfOnly);
     });
   }
 
