@@ -36,7 +36,7 @@ app.use(attachHubUser);
 
 app.use(require('./routes/hub-auth'));
 app.get('/api/hamper-orders', requireHubFullApiAccess, hamperRoutes.admin);
-app.get('/hamper-orders.html', requireHubFullPageAccess, (_req, res) => res.sendFile(path.join(publicDir, 'hamper-orders.html')));
+app.get('/hamper-orders.html', requireHubFullPageAccess, (_req, res) => res.redirect(302, '/?tab=hamper-orders'));
 
 app.get(['/', '/index.html'], requireHubPageAuth, (_req, res) => {
   res.sendFile(path.join(publicDir, 'index.html'));

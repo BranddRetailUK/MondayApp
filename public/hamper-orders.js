@@ -1,20 +1,23 @@
 'use strict';
+(() => {
+const root = document.querySelector('#tab-hamper-orders');
+if (!root) return;
 let hamperOrders = [];
 const money = pence => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(pence / 100);
 const statuses = { paid: 'Paid', pending: 'Awaiting payment', expired: 'Expired', failed: 'Failed' };
 function paragraph(text, className = '') { const p = document.createElement('p'); p.textContent = text; p.className = className; return p; }
 function renderHamperOrders() {
-  const search = document.querySelector('#order-search').value.trim().toLowerCase();
-  const statusFilter = document.querySelector('#order-status').value;
+  const search = root.querySelector('#order-search').value.trim().toLowerCase();
+  const statusFilter = root.querySelector('#order-status').value;
   const visible = hamperOrders.filter(o => (statusFilter === 'all' || o.status === statusFilter) && `${o.delivery.name} ${o.delivery.email} ${o.snapshot.name} ${o.snapshot.sku} ${o.id}`.toLowerCase().includes(search));
-  document.querySelector('#count-all').textContent = hamperOrders.length;
-  document.querySelector('#count-paid').textContent = hamperOrders.filter(o => o.status === 'paid').length;
-  document.querySelector('#count-pending').textContent = hamperOrders.filter(o => o.status === 'pending').length;
-  const empty = document.querySelector('#empty-orders'); empty.hidden = visible.length > 0;
+  root.querySelector('#count-all').textContent = hamperOrders.length;
+  root.querySelector('#count-paid').textContent = hamperOrders.filter(o => o.status === 'paid').length;
+  root.querySelector('#count-pending').textContent = hamperOrders.filter(o => o.status === 'pending').length;
+  const empty = root.querySelector('#empty-orders'); empty.hidden = visible.length > 0;
   empty.querySelector('h2').textContent = hamperOrders.length ? 'No matching orders' : 'No orders yet';
   empty.querySelector('p').textContent = hamperOrders.length ? 'Try a different search or payment status.' : 'New hamper checkouts will appear here, with their payment status and delivery details.';
-  document.querySelector('#orders-table').hidden = !visible.length;
-  const container = document.querySelector('#orders'); container.replaceChildren();
+  root.querySelector('#orders-table').hidden = !visible.length;
+  const container = root.querySelector('#orders'); container.replaceChildren();
   for (const order of visible) {
     const row = document.createElement('tr'); row.className = 'hamper-summary-row';
     const cells = ['Date', 'Customer', 'Hamper', 'Total incl. VAT', 'Payment status', ''].map(label => { const td = document.createElement('td'); td.dataset.label = label; return td; });
@@ -34,13 +37,13 @@ function renderHamperOrders() {
     ]) { const section = document.createElement('section'); const h = document.createElement('h3'); h.textContent = heading; section.append(h); lines.forEach(line => section.append(paragraph(line))); detailGrid.append(section); }
     if (order.stripe_payment_intent) { const link = document.createElement('a'); link.href = `https://dashboard.stripe.com/acct_1UaBAa7O9atIxBPe/test/payments/${encodeURIComponent(order.stripe_payment_intent)}`; link.textContent = 'View payment in Stripe'; link.className = 'order-link'; link.target = '_blank'; link.rel = 'noopener'; detailGrid.lastElementChild.append(link); }
     detailCell.append(detailGrid); detailsRow.append(detailCell);
-    const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'btn outline small'; toggle.textContent = 'View details'; toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-controls', detailsRow.id);
+    const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'proof-secondary-button'; toggle.textContent = 'View details'; toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-controls', detailsRow.id);
     toggle.addEventListener('click', () => { detailsRow.hidden = !detailsRow.hidden; toggle.setAttribute('aria-expanded', String(!detailsRow.hidden)); toggle.textContent = detailsRow.hidden ? 'View details' : 'Hide details'; });
     cells[5].append(toggle); row.append(...cells); container.append(row, detailsRow);
   }
 }
 async function loadHamperOrders() {
-  const message = document.querySelector('#message'); const refresh = document.querySelector('#refresh');
+  const message = root.querySelector('#message'); const refresh = root.querySelector('#refresh');
   message.textContent = 'Loading orders…'; refresh.disabled = true;
   try {
     const response = await fetch('/api/hamper-orders', { cache: 'no-store' });
@@ -50,7 +53,8 @@ async function loadHamperOrders() {
   } catch (error) { message.textContent = error.message; }
   finally { refresh.disabled = false; }
 }
-document.querySelector('#refresh').addEventListener('click', loadHamperOrders);
-document.querySelector('#order-search').addEventListener('input', renderHamperOrders);
-document.querySelector('#order-status').addEventListener('change', renderHamperOrders);
-loadHamperOrders();
+root.querySelector('#refresh').addEventListener('click', loadHamperOrders);
+root.querySelector('#order-search').addEventListener('input', renderHamperOrders);
+root.querySelector('#order-status').addEventListener('change', renderHamperOrders);
+window.loadHamperOrders = loadHamperOrders;
+})();

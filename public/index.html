@@ -17,6 +17,8 @@
   <link rel="stylesheet" href="digitising-studio.css">
   <script src="file-viewer.js" defer></script>
   <link rel="stylesheet" href="proof-generator.css">
+  <link rel="stylesheet" href="hamper-orders.css?v=4">
+  <script src="hamper-orders.js?v=4" defer></script>
   <script src="holiday-board.js" defer></script>
   <link rel="stylesheet" href="insights.css">
   <script src="insights.js" defer></script>
@@ -71,7 +73,7 @@
           <li data-tab="file-viewer">FILE VIEWER</li>
           <li data-tab="digitising-studio" id="digitising-studio-nav" hidden>DIGITISING STUDIO</li>
           <li data-tab="proof-generator" hidden>PROOF GENERATOR</li>
-          <li class="nav-route" data-full-hub-access hidden><a href="/hamper-orders.html">HAMPER ORDERS</a></li>
+          <li data-tab="hamper-orders">HAMPER ORDERS</li>
         </ul>
       </div>
       <div id="sidebarDashboardControls" class="sidebar-dashboard-controls" aria-label="Dashboard controls">
@@ -108,6 +110,25 @@
       <section id="tab-holiday-board" class="tab-content" aria-label="Holiday Board"><div id="holiday-board"></div></section>
 
       <section id="tab-proof-generator" class="tab-content" aria-label="Proof Generator"><div id="proof-generator-root"><div class="workspace-loading" role="status" aria-label="Loading proofs"><span class="board-loading-spinner" aria-hidden="true"></span></div></div></section>
+
+      <section id="tab-hamper-orders" class="tab-content" aria-label="Hamper Orders"><div class="proof-page hamper-page">
+    <header class="proof-page-header">
+      <div class="header-left"><h1 class="proof-page-title">Hamper orders</h1><p class="muted">View payments, customer details and delivery information.</p></div>
+      <div class="header-actions"><a class="proof-secondary-button" href="/?tab=database">Back to database</a><button id="refresh" class="proof-primary-button" type="button">Refresh orders</button></div>
+    </header>
+    <div class="hamper-sandbox-note"><span class="proof-sandbox-pill">Sandbox</span><span>Test payments only. These orders must not be fulfilled.</span></div>
+    <div class="hamper-overview" aria-label="Order overview"><div><span>Total orders</span><strong id="count-all">—</strong></div><div><span>Paid</span><strong id="count-paid">—</strong></div><div><span>Awaiting payment</span><strong id="count-pending">—</strong></div></div>
+    <section class="proof-card hamper-orders-panel">
+      <div class="card-head"><h2>Orders</h2><span class="muted small">Latest 200 orders</span></div>
+      <div class="card-body">
+        <div class="hamper-filters"><label class="proof-control">Search orders<input id="order-search" type="search" placeholder="Customer, hamper or order reference"></label><label class="proof-control">Payment status<select id="order-status"><option value="all">All statuses</option><option value="paid">Paid</option><option value="pending">Awaiting payment</option><option value="expired">Expired</option><option value="failed">Failed</option></select></label></div>
+        <p id="message" class="muted" role="status" aria-live="polite"></p>
+        <div id="empty-orders" class="hamper-empty" hidden><h2>No orders yet</h2><p>New hamper checkouts will appear here, with their payment status and delivery details.</p></div>
+        <div id="orders-table" class="hamper-table-wrap" hidden><table class="data-table hamper-orders-table"><thead><tr><th>Date</th><th>Customer</th><th>Hamper</th><th>Total incl. VAT</th><th>Payment status</th><th><span class="muted">Details</span></th></tr></thead><tbody id="orders"></tbody></table></div>
+      </div>
+    </section>
+
+      </div></section>
 
       <section id="tab-digitising-studio" class="tab-content" aria-label="Digitising Studio"><div id="digitising-studio-root"></div></section>
       <section id="tab-file-viewer" class="tab-content" aria-label="File Viewer"><div id="file-viewer-root"></div></section>
@@ -292,7 +313,7 @@
               <div class="db-menu-column db-menu-right">
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="users" disabled>Users</button>
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="dtf-admin">Lami DTF</button>
-                <a class="db-raised-button db-blue-link" href="/hamper-orders.html">Hamper Orders</a>
+                <a class="db-raised-button db-blue-link" href="/?tab=hamper-orders">Hamper Orders</a>
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="visuals">Visuals</button>
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="logs">Logs</button>
                 <button class="db-raised-button db-blue-link" type="button" data-db-action="reports" disabled>Reports</button>
