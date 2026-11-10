@@ -21,6 +21,6 @@ header img{width:260px}footer img{width:230px}@media(max-width:750px){header img
 
 .collection .section-title{display:block;text-align:center}.collection .price-filter{justify-content:center}.collection .price-filter label,.collection .price-filter select{text-align:center}
 
-.price small,.product-price small,.hero-product-price small{display:inline-block;white-space:nowrap;padding-left:0;margin-left:0;letter-spacing:0;word-spacing:-1px}
+.price small,.product-price small,.hero-product-price small{display:inline-block;white-space:nowrap;padding-left:0;margin-left:3px;letter-spacing:0;word-spacing:-1px}
 
 .hero-image{padding-bottom:150px}.hero-caption{flex-direction:column;justify-content:center;gap:12px;text-align:center}.hero-caption .hero-product-name{font:inherit;line-height:1.2;margin:0}.hero-caption .hero-product-action{justify-content:center;gap:12px;margin:0}.hero-caption .hero-product-price{white-space:nowrap;margin:0}.hero-caption .view-hamper-button{margin:0;padding:11px 16px}@media(max-width:750px){.hero-caption{display:flex;left:16px;right:16px}.hero-caption .hero-product-action{margin:0}.hero-image{padding-bottom:145px}}
