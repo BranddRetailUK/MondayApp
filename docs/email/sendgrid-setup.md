@@ -49,3 +49,5 @@ November 2026 styling: all three emails use the site’s cream background across
 - 10 November 2026: all three restyled mailers passed SendGrid sandbox validation. One user-requested test of the first campaign was accepted for scott@brandd.co.uk (subject `[TEST] A little thank you for your team this Christmas`, provider message ID `ZeoRMLlySGOIXFq1hn3YKw`). Inbox delivery/rendering is not independently confirmed. Sending was enabled only in the test process; the shared production sending flag remains disabled.
 
 Each email now contains six products in ascending price order, recorded in `campaigns.json`; the original three gifts remain in each campaign. Product prices round upwards to .49/.99 after the 30% markup. Previous test sends described above predate this six-product revision.
+
+- Latest 10 November test: the first campaign with the wider six-product £29.99–£580.99 range passed sandbox validation and was accepted for scott@brandd.co.uk (SendGrid message `o5AL1KE6RlO3PDVYhU-mvA`). This supersedes the earlier narrow-range test for review; inbox delivery remains unverified.
