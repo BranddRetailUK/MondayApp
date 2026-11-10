@@ -21,6 +21,20 @@ function quote(sku, quantity, deliveryPence = 725) {
     subtotalPence, productVatPence, deliveryUnitPence: deliveryPence, shippingPence, shippingVatPence,
     totalPence: subtotalPence + productVatPence + shippingPence + shippingVatPence, currency: 'gbp', mode: 'sandbox' };
 }
+function quoteCart(input, deliveryPence = 725) {
+  if (!Array.isArray(input) || !input.length || input.length > 10) throw new CheckoutError('Choose between 1 and 10 hampers for your cart.');
+  const merged = new Map();
+  for (const item of input) {
+    if (!item || typeof item.sku !== 'string' || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 10) throw new CheckoutError('Choose a whole number of hampers between 1 and 10.');
+    merged.set(item.sku, (merged.get(item.sku) || 0) + item.quantity);
+  }
+  if ([...merged.values()].reduce((sum, n) => sum + n, 0) > 10) throw new CheckoutError('For more than 10 hampers, please contact our team for bulk options.');
+  const items = [...merged].sort(([a], [b]) => a.localeCompare(b)).map(([sku, quantity]) => quote(sku, quantity, deliveryPence));
+  const total = field => items.reduce((sum, item) => sum + item[field], 0);
+  return { ...items[0], sku: items.length === 1 ? items[0].sku : null, name: items.length === 1 ? items[0].name : `${total('quantity')} hampers`,
+    vatPercent: items.length === 1 ? items[0].vatPercent : null, items, quantity: total('quantity'), subtotalPence: total('subtotalPence'),
+    productVatPence: total('productVatPence'), shippingPence: total('shippingPence'), shippingVatPence: total('shippingVatPence'), totalPence: total('totalPence') };
+}
 function validateDelivery(input) {
   const clean = {};
   for (const key of ['name', 'email', 'line1', 'line2', 'city', 'postcode']) {
@@ -53,6 +67,8 @@ function createService({ db, env = process.env, stripe: injectedStripe } = {}) {
     return stripe;
   }
   function getQuote(sku, quantity) { return quote(sku, quantity, Number(env.HAMPER_DELIVERY_PENCE || 725)); }
+  function getCartQuote(items) { return quoteCart(items, Number(env.HAMPER_DELIVERY_PENCE || 725)); }
+  function catalogue() { return { products: products.map(({ sku, name, price, vatPercent, page, slug }) => ({ sku, name, price, vatPercent, page, slug })), deliveryPence: Number(env.HAMPER_DELIVERY_PENCE || 725) }; }
   async function taxRate(percent) {
     if (!taxRates.has(percent)) taxRates.set(percent, (async () => {
       const s = await client();
@@ -63,7 +79,7 @@ function createService({ db, env = process.env, stripe: injectedStripe } = {}) {
   }
   async function create(input) {
     if (!UUID.test(input?.requestId || '')) throw new CheckoutError('Please reload checkout and try again.');
-    const snapshot = getQuote(input.sku, input.quantity);
+    const snapshot = input.items !== undefined ? getCartQuote(input.items) : getQuote(input.sku, input.quantity);
     const delivery = validateDelivery(input.delivery);
     const hash = crypto.createHash('sha256').update(JSON.stringify({ snapshot, delivery })).digest('hex');
     const s = await client();
@@ -71,13 +87,15 @@ function createService({ db, env = process.env, stripe: injectedStripe } = {}) {
     const { rows: [order] } = await db.query('SELECT * FROM hamper_orders WHERE id=$1', [input.requestId]);
     if (order.request_hash !== hash) throw new CheckoutError('Your order details changed. Please reload checkout and try again.', 409);
     if (order.stripe_session_id) return { url: order.checkout_url, id: order.id };
-    const [productTax, shippingTax] = await Promise.all([taxRate(snapshot.vatPercent), taxRate(20)]);
+    const lines = snapshot.items || [snapshot];
+    const productTaxes = await Promise.all(lines.map(item => taxRate(item.vatPercent)));
+    const shippingTax = await taxRate(20);
     const session = await s.checkout.sessions.create({
       mode: 'payment', customer_email: delivery.email,
       client_reference_id: order.id, metadata: { hamper_order_id: order.id, integration: 'ultimate-hampers-sandbox' },
       payment_intent_data: { metadata: { hamper_order_id: order.id }, shipping: { name: delivery.name, address: { line1: delivery.line1, line2: delivery.line2, city: delivery.city, postal_code: delivery.postcode, country: 'GB' } } },
       line_items: [
-        { price_data: { currency: 'gbp', unit_amount: snapshot.unitPence, product_data: { name: snapshot.name, metadata: { sku: snapshot.sku } }, tax_behavior: 'exclusive' }, quantity: snapshot.quantity, tax_rates: [productTax] },
+        ...lines.map((item, index) => ({ price_data: { currency: 'gbp', unit_amount: item.unitPence, product_data: { name: item.name, metadata: { sku: item.sku } }, tax_behavior: 'exclusive' }, quantity: item.quantity, tax_rates: [productTaxes[index]] })),
         { price_data: { currency: 'gbp', unit_amount: snapshot.deliveryUnitPence, product_data: { name: 'UK mainland delivery (per hamper)' }, tax_behavior: 'exclusive' }, quantity: snapshot.quantity, tax_rates: [shippingTax] }
       ],
       success_url: `${HUB}/hamper-checkout.html?order=${order.id}`,
@@ -131,6 +149,6 @@ function createService({ db, env = process.env, stripe: injectedStripe } = {}) {
       await conn.query('COMMIT');
     } catch (e) { await conn.query('ROLLBACK'); throw e; } finally { conn.release(); }
   }
-  return { configured, getQuote, create, status, webhook };
+  return { configured, getQuote, getCartQuote, catalogue, create, status, webhook };
 }
-module.exports = { createService, quote, validateDelivery, CheckoutError, SITE, HUB, ACCOUNT };
+module.exports = { createService, quote, quoteCart, validateDelivery, CheckoutError, SITE, HUB, ACCOUNT };

@@ -2,80 +2,86 @@
 (async () => {
   const params = new URLSearchParams(location.search);
   const message = document.querySelector('#message');
+  const cart = window.HamperCart;
   const money = n => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(n / 100);
+  const SITE = 'https://ultimatechristmas-production.up.railway.app';
   async function api(path, options) {
     const response = await fetch(`/api/hamper-checkout/${path}`, { cache: 'no-store', ...options });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Please try again.');
-    return data;
+    const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Please try again.'); return data;
   }
   const showError = error => { message.textContent = error.message; message.className = 'error'; };
+  function productRows(container, lines) {
+    container.replaceChildren();
+    for (const item of lines) {
+      const row = document.createElement('div'); row.className = 'confirmation-product';
+      const image = document.createElement('img'); image.src = `${SITE}/assets/product-${item.page}.jpg`; image.alt = item.name;
+      const info = document.createElement('div'); const name = document.createElement('h2'); name.textContent = item.name;
+      const quantity = document.createElement('p'); quantity.textContent = `Quantity: ${item.quantity} · ${money(item.unitPence)} each ex. VAT`;
+      const vat = document.createElement('p'); vat.textContent = `Product VAT: ${item.vatPercent}%`;
+      info.append(name, quantity, vat); row.append(image, info); container.append(row);
+    }
+  }
+  function totals(container, quote, totalLabel) {
+    container.replaceChildren();
+    const lines = quote.items || [quote];
+    const rows = [['Hampers (ex. VAT)', quote.subtotalPence], ...lines.map(item => [`${item.name} VAT (${item.vatPercent}%)`, item.productVatPence]), [`Delivery (${money(quote.deliveryUnitPence)} × ${quote.quantity})`, quote.shippingPence], ['Delivery VAT (20%)', quote.shippingVatPence], [totalLabel, quote.totalPence]];
+    for (const [label, amount] of rows) {
+      const row = document.createElement('div'); const dt = document.createElement('dt'); const dd = document.createElement('dd'); dt.textContent = label; dd.textContent = money(amount); if (label === totalLabel) row.className = 'total'; row.append(dt, dd); container.append(row);
+    }
+  }
   try {
     if (params.has('order')) {
       document.body.classList.add('order-result');
-      const confirmation = document.querySelector('#confirmation');
-      const title = document.querySelector('h1');
-      const subtitle = document.querySelector('header p');
-      const backLink = document.querySelector('#collection-return a');
-      backLink.classList.add('button');
-      title.textContent = 'Checking your payment';
-      subtitle.textContent = 'Please keep this page open while we confirm your payment.';
-      message.textContent = '';
-      const cancelled = params.has('cancelled');
-      let attempts = 0;
-      let summaryRendered = false;
+      const confirmation = document.querySelector('#confirmation'); const title = document.querySelector('h1'); const subtitle = document.querySelector('header>p');
+      title.textContent = 'Checking your payment'; subtitle.textContent = 'Please keep this page open while we confirm your payment.'; message.textContent = '';
+      const cancelled = params.has('cancelled'); let attempts = 0;
       const poll = async () => {
-        const order = await api(`orders/${encodeURIComponent(params.get('order'))}`);
-        const paid = order.status === 'paid';
+        const order = await api(`orders/${encodeURIComponent(params.get('order'))}`); const paid = order.status === 'paid';
         title.textContent = paid ? 'Thank you for your order' : order.status === 'expired' ? 'Your checkout has expired' : order.status === 'failed' ? 'Payment unsuccessful' : cancelled ? 'Payment cancelled' : 'Checking your payment';
-        subtitle.textContent = paid ? 'Your test payment has been received.' : order.status === 'expired' ? 'Return to the collection to start again.' : order.status === 'failed' ? 'Please return to the collection to try again.' : cancelled ? 'No order has been confirmed. You can return to the collection or go back to resume payment.' : 'We’re waiting for confirmation from Stripe. Please do not pay again.';
-        document.querySelector('#confirmation-icon').textContent = paid ? '✓' : order.status === 'pending' && !cancelled ? '…' : '–';
-        document.querySelector('#confirmation-icon').classList.toggle('confirmed', paid);
-        if (!summaryRendered) {
-          const q = order.snapshot;
-          const image = document.querySelector('#confirmation-image');
-          image.src = `https://ultimatechristmas-production.up.railway.app/assets/product-${q.page}.jpg`;
-          image.alt = q.name;
-          document.querySelector('#confirmation-product-name').textContent = q.name;
-          document.querySelector('#confirmation-quantity').textContent = `Quantity: ${q.quantity} · ${money(q.unitPence)} each ex. VAT`;
-          document.querySelector('#confirmation-reference').textContent = order.id;
-          const rows = [['Hampers (ex. VAT)', q.subtotalPence], [`Hamper VAT (${q.vatPercent}%)`, q.productVatPence], ['Delivery (ex. VAT)', q.shippingPence], ['Delivery VAT (20%)', q.shippingVatPence], ['Order total', q.totalPence]];
-          for (const [label, amount] of rows) {
-            const row = document.createElement('div'); const dt = document.createElement('dt'); const dd = document.createElement('dd');
-            dt.textContent = label; dd.textContent = money(amount);
-            if (label === 'Order total') { row.className = 'total'; dt.id = 'confirmation-total-label'; }
-            row.append(dt, dd); document.querySelector('#confirmation-totals').append(row);
+        subtitle.textContent = paid ? 'Your test payment has been received.' : order.status === 'expired' ? 'Open your cart to start again.' : order.status === 'failed' ? 'Open your cart to try again.' : cancelled ? 'No order has been confirmed. Open your cart to review your hampers.' : 'We’re waiting for confirmation from Stripe. Please do not pay again.';
+        document.querySelector('#confirmation-icon').textContent = paid ? '✓' : order.status === 'pending' && !cancelled ? '…' : '–'; document.querySelector('#confirmation-icon').classList.toggle('confirmed', paid);
+        productRows(document.querySelector('#confirmation-products'), order.snapshot.items || [order.snapshot]);
+        totals(document.querySelector('#confirmation-totals'), order.snapshot, paid ? 'Total paid' : 'Order total');
+        document.querySelector('#confirmation-reference').textContent = order.id; confirmation.hidden = false;
+        if (paid) {
+          const key = `hamper-paid-${order.id}`;
+          if (!sessionStorage.getItem(key)) {
+            const purchased = order.snapshot.items || [order.snapshot];
+            cart.setItems(cart.getItems().map(item => ({ sku: item.sku, quantity: Math.max(0, item.quantity - (purchased.find(p => p.sku === item.sku)?.quantity || 0)) })).filter(item => item.quantity), false);
+            sessionStorage.setItem(key, '1');
           }
-          summaryRendered = true;
         }
-        document.querySelector('#confirmation-total-label').textContent = paid ? 'Total paid' : 'Order total';
-        confirmation.hidden = false;
         if (order.status === 'pending' && !cancelled && ++attempts < 20) setTimeout(() => poll().catch(showError), 2000);
         else if (order.status === 'pending' && !cancelled) subtitle.textContent = 'Confirmation is still pending. Please refresh this page shortly; do not pay again.';
       };
       await poll(); return;
     }
-    const sku = params.get('sku');
-    const quantity = Number(params.get('quantity') || 1);
-    const quote = await api(`quote?sku=${encodeURIComponent(sku)}&quantity=${quantity}`);
-    document.querySelector('#checkout').hidden = false;
-    document.querySelector('#product-name').textContent = quote.name;
-    document.querySelector('#quantity-label').textContent = `${quantity} × ${money(quote.unitPence)} ex. VAT`;
-    const image = document.querySelector('#product-image');
-    image.src = `https://ultimatechristmas-production.up.railway.app/assets/product-${quote.page}.jpg`; image.alt = quote.name;
-    const totals = [['Hampers (ex. VAT)', quote.subtotalPence], [`Hamper VAT (${quote.vatPercent}%)`, quote.productVatPence], [`Delivery (${money(quote.deliveryUnitPence)} × ${quantity})`, quote.shippingPence], ['Delivery VAT (20%)', quote.shippingVatPence], ['Total to pay', quote.totalPence]];
-    for (const [label, amount] of totals) { const row = document.createElement('div'); const dt = document.createElement('dt'); const dd = document.createElement('dd'); dt.textContent = label; dd.textContent = money(amount); if (label === 'Total to pay') row.className = 'total'; row.append(dt, dd); document.querySelector('#totals').append(row); }
-    message.textContent = quote.available ? '' : 'Checkout is being prepared. Please contact our team to order.';
-    const pay = document.querySelector('#pay'); pay.disabled = !quote.available;
-    let requestId = crypto.randomUUID();
-    let lastPayload;
-    document.querySelector('#delivery-form').addEventListener('submit', async event => {
-      event.preventDefault(); pay.disabled = true; message.className = ''; message.textContent = 'Opening secure sandbox checkout…';
-      const delivery = Object.fromEntries(new FormData(event.target)); delivery.mainland = document.querySelector('#mainland').checked;
-      const payload = JSON.stringify({ sku, quantity, delivery });
-      if (lastPayload && lastPayload !== payload) requestId = crypto.randomUUID();
-      lastPayload = payload;
-      try { const session = await api('sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku, quantity, delivery, requestId }) }); location.assign(session.url); }
+    await cart.ready;
+    const pay = document.querySelector('#pay'); const form = document.querySelector('#delivery-form');
+    let requestId = crypto.randomUUID(); let lastPayload; let latestQuote; let quoteVersion = 0;
+    async function updateQuote() {
+      const version = ++quoteVersion; pay.disabled = true; latestQuote = null; message.className = ''; message.textContent = 'Updating your order…';
+      const items = cart.getItems();
+      if (!items.length) { document.querySelector('#checkout').hidden = true; message.textContent = 'Your cart is empty. Use the logo above to browse the collection.'; return; }
+      try {
+        const quote = await api('quote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) });
+        if (version !== quoteVersion) return;
+        latestQuote = quote; document.querySelector('#checkout').hidden = false;
+        document.querySelector('h1').textContent = quote.items.length > 1 ? 'Your Christmas hampers' : 'Your Christmas hamper';
+        productRows(document.querySelector('#checkout-items'), quote.items); totals(document.querySelector('#totals'), quote, 'Total to pay');
+        message.textContent = quote.available ? '' : 'Checkout is being prepared. Please contact our team to order.'; pay.disabled = !quote.available;
+        history.replaceState(null, '', `?cart=${encodeURIComponent(JSON.stringify(items))}`);
+      } catch (error) { if (version === quoteVersion) { document.querySelector('#checkout').hidden = true; showError(error); } }
+    }
+    window.addEventListener('hampercartchange', updateQuote);
+    await updateQuote();
+    form.addEventListener('submit', async event => {
+      event.preventDefault(); if (!latestQuote || pay.disabled) return;
+      pay.disabled = true; message.className = ''; message.textContent = 'Opening secure checkout…';
+      const delivery = Object.fromEntries(new FormData(form)); delivery.mainland = document.querySelector('#mainland').checked;
+      const items = cart.getItems(); const payload = JSON.stringify({ items, delivery });
+      if (lastPayload && lastPayload !== payload) requestId = crypto.randomUUID(); lastPayload = payload;
+      try { const session = await api('sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items, delivery, requestId }) }); location.assign(session.url); }
       catch (error) { showError(error); pay.disabled = false; }
     });
   } catch (error) { showError(error); }

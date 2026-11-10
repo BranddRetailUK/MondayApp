@@ -92,3 +92,37 @@ test('every SKU uses its independently extracted brochure VAT rate', () => {
     assert.equal(quote(source.sku, 1).vatPercent, source.vatPercent, `${source.sku} VAT`);
   }
 });
+test('mixed cart preserves per-product VAT and enforces ten hampers across all lines', () => {
+  const { quoteCart } = require('../src/services/hamperCheckout');
+  const cart = quoteCart([{ sku: 'H26002', quantity: 2, price: 1 }, { sku: 'H26063', quantity: 1 }, { sku: 'H26001', quantity: 1 }]);
+  assert.equal(cart.quantity, 4);
+  assert.equal(cart.items.length, 3);
+  assert.equal(cart.items.find(i => i.sku === 'H26063').productVatPence, 0);
+  assert.equal(cart.items.find(i => i.sku === 'H26002').vatPercent, 8.2);
+  assert.equal(cart.items.find(i => i.sku === 'H26001').vatPercent, 10.9);
+  assert.equal(cart.shippingPence, 2900);
+  assert.equal(cart.shippingVatPence, 580);
+  assert.equal(cart.totalPence, cart.subtotalPence + cart.items.reduce((sum, i) => sum + i.productVatPence, 0) + 3480);
+  assert.deepEqual(quoteCart([{ sku: 'H26002', quantity: 1 }, { sku: 'H26002', quantity: 2 }]), quoteCart([{ sku: 'H26002', quantity: 3 }]));
+  for (const items of [[], null, [{sku:'H26002',quantity:6},{sku:'H26063',quantity:5}], [{sku:'H26002',quantity:5},{sku:'H26002',quantity:6}], [{sku:'invalid',quantity:1}], [{sku:'H26002',quantity:1.5}]]) assert.throws(() => quoteCart(items));
+});
+test('cart Stripe line items use each product rate and server-resolved prices', async () => {
+  const { quoteCart } = require('../src/services/hamperCheckout');
+  const pg = new PGlite();
+  const db = { query: async (sql, params) => !params && sql.includes('CREATE TABLE') ? pg.exec(sql) : pg.query(sql, params) };
+  await ensureHamperTables(db);
+  let sent;
+  const items = [{sku:'H26002',quantity:2},{sku:'H26063',quantity:1}];
+  const expected = quoteCart(items);
+  const stripe = { accounts:{retrieve:async()=>({id:ACCOUNT})}, taxRates:{create:async data=>({id:`vat_${data.percentage}`})}, checkout:{sessions:{create:async data=>{sent=data;return {id:'cs_test_cart',url:'https://checkout.stripe.com/test',livemode:false,currency:'gbp',amount_total:expected.totalPence};},expire:async()=>{}}} };
+  const env = {HAMPER_CHECKOUT_MODE:'sandbox',HAMPER_STRIPE_SECRET_KEY:'sk_test_fake',HAMPER_STRIPE_WEBHOOK_SECRET:'whsec_test'};
+  const service=createService({db,env,stripe});
+  await service.create({requestId:crypto.randomUUID(),items,delivery});
+  const productLines=sent.line_items.slice(0,-1);
+  assert.equal(productLines.length,2);
+  assert.deepEqual(productLines.map(l=>l.tax_rates[0]),['vat_8.2','vat_0']);
+  assert.deepEqual(productLines.map(l=>l.price_data.unit_amount),[2999,3649]);
+  assert.equal(sent.line_items.at(-1).quantity,3);
+  assert.equal(sent.line_items.at(-1).tax_rates[0],'vat_20');
+  await pg.close();
+});

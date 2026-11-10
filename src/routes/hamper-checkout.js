@@ -1,6 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
-const { createService, CheckoutError, HUB } = require('../services/hamperCheckout');
+const { createService, CheckoutError, HUB, SITE } = require('../services/hamperCheckout');
 function createRoutes(db, options = {}) {
   const service = createService({ db, ...options });
   const router = express.Router();
@@ -12,6 +12,8 @@ function createRoutes(db, options = {}) {
       res.status(e.status || 503).json({ error: e instanceof CheckoutError ? e.message : 'Checkout is temporarily unavailable. Please try again or contact our team.' });
     }
   };
+  router.get('/catalogue', handle(async (_req, res) => { res.set('Access-Control-Allow-Origin', SITE); res.json(service.catalogue()); }));
+  router.post('/quote', handle(async (req, res) => res.json({ ...service.getCartQuote(req.body.items), available: service.configured() })));
   router.get('/quote', handle(async (req, res) => {
     res.json({ ...service.getQuote(req.query.sku, Number(req.query.quantity)), available: service.configured() });
   }));
