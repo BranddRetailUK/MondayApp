@@ -5,14 +5,17 @@ A little something to say thank you.
 If you’re thinking about Christmas gifts for your team or customers, we’ve picked out a few you might like. A box of treats is a lovely way to thank someone for their help throughout the year.
 
 The Christmas Gift Box
+£31.07 ex. VAT
 https://ultimatechristmas-production.up.railway.app/the-christmas-gift-box.html
 A festive gift box with a mix of sweet and savoury treats. A lovely surprise to take home at the end of the working day.
 
 Christmas Treats Basket
+£29.98 ex. VAT
 https://ultimatechristmas-production.up.railway.app/christmas-treats-basket.html
 A basket of Christmas treats for someone you’d like to thank. A nice choice for colleagues and customers alike.
 
 The Sparkle Hamper
+£46.54 ex. VAT
 https://ultimatechristmas-production.up.railway.app/the-sparkle-hamper.html
 With its gold details and a bottle of fizz, this one feels ready for a Christmas celebration.
 
@@ -27,5 +30,6 @@ Explore the full range: https://ultimatechristmas-production.up.railway.app/
 Ultimate Promotions
 Unicorn House, Northbridge Road, Berkhamsted, HP4 1EH
 Featuring the Spicers of Hythe Christmas collection.
+Prices exclude VAT. Individual delivery to one UK mainland address: £7.25 + VAT. Bulk delivery POA.
 Email preferences: <%asm_preferences_raw_url%>
 Unsubscribe: <%asm_group_unsubscribe_raw_url%>

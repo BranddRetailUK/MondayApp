@@ -1294,9 +1294,9 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 
 ### Ultimate Christmas website and campaign links (2026-10-29)
 
-- `web/hamper-collection/` contains the landing page and nine product pages, with brochure VAT-inclusive RRPs (£24.95–£499.95), source page/SKU records in `products.json`, local imagery and a Christmas logo retaining the black company lettering. It uses green, cream and burgundy styling, readable type, rounded image boxes and centered button labels. No arrows, filters, counts or breadcrumbs. Quantity and enquiry button sit side by side; the bulk-order CTA opens an email to sales@ultimatepromotions.co.uk.
+- `web/hamper-collection/` contains the landing page and nine product pages, with ex-VAT selling prices (£29.98–£580.81), calculated from brochure ex-VAT RRPs × 1.30, source page/SKU records in `products.json`, local imagery and a Christmas logo retaining the black company lettering. It uses green, cream and burgundy styling, readable type, rounded image boxes and centered button labels. No arrows, filters, counts or breadcrumbs. Quantity and enquiry button sit side by side; the bulk-order CTA opens an email to sales@ultimatepromotions.co.uk.
 - Public site: https://ultimatechristmas-production.up.railway.app/. Dedicated `ultimatechristmas` Railway service 3334c04d-0daa-4359-95b8-c881561e2d37 in UltimateHub production, environment 25edd9ec-8cf4-499c-b136-da2a1828b1b6. Docker/nginx serves only public assets on port 8080 with `/health`; no database or secrets are required. Deploy using a scoped `railway up web/hamper-collection --path-as-root` upload; GitHub autodeploy is not configured. Operator command is in the site's README. Local preview remains on port 3119.
-- All three emails use live HTTPS product/homepage links, three View hamper buttons, one Explore the full range button, rounded imagery and matching fonts/colours. No prices are included in emails. All three updated payloads passed SendGrid sandbox validation, and exactly one updated test (first campaign) was accepted for scott@brandd.co.uk at 13:16 UTC on 29 October 2026. Acceptance is not inbox-delivery confirmation. Production bulk sending remains disabled.
+- All three emails use live HTTPS product/homepage links, three View hamper buttons, one Explore the full range button, rounded imagery and matching fonts/colours. All three HTML/plain-text mailers now include matching ex-VAT selling prices and delivery terms (updated 10 November 2026). All three updated payloads passed SendGrid sandbox validation, and exactly one updated test (first campaign) was accepted for scott@brandd.co.uk at 13:16 UTC on 29 October 2026. Acceptance is not inbox-delivery confirmation. Production bulk sending remains disabled.
 
 ### R369X cuff placement and proof history errors (2026-11-04)
 
@@ -1412,3 +1412,10 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 
 - Order Items visually places Add Line before Duplicate. Reorder controls and Supplier fields are hidden only in the webapp. Each persisted/draft card retains its existing delete/cancel handler behind an accessible red X at top-right, without the visible Delete label.
 - Item-table backgrounds are transparent between cards, exposing the blue section container. Add-line footers and section bottoms have extra padding. Verified at 320/390px with add/cancel flows and at 1440px for unchanged desktop presentation.
+
+### Christmas hamper pricing and delivery (2026-11-10)
+
+- All nine hamper prices use the supplied brochure ex-VAT RRP plus a 30% markup, rounded once to pennies. The supplier 15% discount through 16 November is retained by Ultimate; published prices do not change at expiry. Homepage hero, collection cards, related products, product pages and all three HTML/plain-text mailers agree and label prices excluding VAT.
+- `web/hamper-collection/products.json` retains brochure ex-VAT bases, source pages/SKUs and unique product VAT percentages for a future orders backend. This enquiry-only release does not calculate or collect product VAT.
+- Customer delivery wording is £7.25 + VAT for individual delivery to one UK mainland address; bulk delivery POA. The £6.25 supplier cost is internal only. Product help notes that an included printed gift card uses the same message across all hampers in the order, without individual personalisation.
+- Mailer templates are updated only; this change does not authorize or trigger test or bulk sends.
