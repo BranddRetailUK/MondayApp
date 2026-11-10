@@ -6,3 +6,5 @@
 @keyframes cart-shade-out{from{opacity:1}to{opacity:0}}
 .cart-drawer[open]{animation:cart-slide-in .28s cubic-bezier(.22,1,.36,1) both}.cart-drawer[open]::backdrop{animation:cart-shade-in .28s ease both}.cart-drawer.is-closing{animation:cart-slide-out .22s ease-in both;pointer-events:none}.cart-drawer.is-closing::backdrop{animation:cart-shade-out .22s ease-in both}
 @media(prefers-reduced-motion:reduce){.cart-drawer[open],.cart-drawer[open]::backdrop{animation:none}}
+
+@media(max-width:750px){.cart-item-controls input{font-size:16px;height:40px;width:40px}.cart-item-controls>button:not(.cart-remove){height:40px;width:36px}.cart-remove{min-height:40px}.cart-close{width:44px;height:44px}}
