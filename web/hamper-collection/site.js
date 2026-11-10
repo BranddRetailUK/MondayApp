@@ -4,13 +4,19 @@ if(form){const quantity=document.querySelector('#quantity');
  document.querySelector('#minus').addEventListener('click',()=>quantity.value=Math.max(1,(Number(quantity.value)||1)-1));
  document.querySelector('#plus').addEventListener('click',()=>quantity.value=Math.min(10000,(Number(quantity.value)||1)+1));
  form.addEventListener('submit',e=>{e.preventDefault();if(!form.reportValidity())return;
- if(Number(quantity.value)<=10){window.HamperCart.add(form.dataset.sku,Number(quantity.value)).catch(()=>{window.HamperCart.open();});return;}
+ if(Number(quantity.value)<=10){
+   if(e.submitter?.value==='add'){window.HamperCart.add(form.dataset.sku,Number(quantity.value)).catch(()=>{window.HamperCart.open();});}
+   else {window.location.href=`https://www.ultimatehub.co.uk/hamper-checkout.html?sku=${encodeURIComponent(form.dataset.sku)}&quantity=${Number(quantity.value)}`;}
+   return;
+ }
+
  const subject=`Christmas hamper enquiry — ${form.dataset.product}`;
  const body=`Hello,\n\nI’m interested in ${form.dataset.product} (${form.dataset.sku}).\nQuantity: ${quantity.value}\n\nPreferred delivery date:\nDelivery postcode(s):\nAny dietary requirements:\n\nPlease let me know availability and the total including delivery.\n\nThank you`;
  window.location.href=`mailto:sales@ultimatepromotions.co.uk?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
  });
- const buyButton=form.querySelector('button[type=submit]');
- const updateBuyButton=()=>{buyButton.textContent=Number(quantity.value)>10?'Contact us for bulk options':'Buy now';};
+ const buyButton=form.querySelector('[value=buy]');
+ const addButton=form.querySelector('[value=add]');
+ const updateBuyButton=()=>{const bulk=Number(quantity.value)>10;buyButton.textContent=bulk?'Contact us for bulk options':'Buy now';addButton.hidden=bulk;};
  form.addEventListener('input',updateBuyButton);
  form.addEventListener('click',updateBuyButton);
  updateBuyButton();}

@@ -38,8 +38,19 @@
     document.querySelectorAll('[data-cart-home]').forEach(link => { link.href = `${SITE}/?cart=${encodeURIComponent(JSON.stringify(items))}`; });
     if (notify) dispatch();
   }
-  function close() { drawer.close(); document.body.classList.remove('cart-open'); opener?.focus(); }
-  function open() { opener = document.activeElement; render(); if (!drawer.open) drawer.showModal(); document.body.classList.add('cart-open'); }
+  let closeTimer;
+  function finishClose() { clearTimeout(closeTimer); drawer.classList.remove('is-closing'); if (drawer.open) drawer.close(); document.body.classList.remove('cart-open'); opener?.focus(); }
+  function close() {
+    if (!drawer.open || drawer.classList.contains('is-closing')) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { finishClose(); return; }
+    drawer.classList.add('is-closing'); closeTimer = setTimeout(finishClose, 240);
+  }
+  function open() {
+    clearTimeout(closeTimer); drawer.classList.remove('is-closing');
+    if (!drawer.open) opener = document.activeElement;
+    render(); if (!drawer.open) drawer.showModal(); document.body.classList.add('cart-open');
+  }
+  drawer.addEventListener('animationend', event => { if (event.target === drawer && event.animationName === 'cart-slide-out' && drawer.classList.contains('is-closing')) finishClose(); });
   function setItems(next, notify = true) { items = normalise(next); save(notify); render(); }
   function render() {
     const list = drawer.querySelector('.cart-items'); list.replaceChildren();
@@ -86,7 +97,7 @@
   ready.catch(error => { feedback.textContent = error.message; drawer.querySelector('.cart-checkout').hidden = true; });
   trigger.addEventListener('click', () => { open(); ready.catch(error => { feedback.textContent = error.message; }); });
   drawer.querySelector('.cart-close').addEventListener('click', close); drawer.querySelector('.cart-continue').addEventListener('click', close);
-  drawer.addEventListener('cancel', () => { document.body.classList.remove('cart-open'); });
+  drawer.addEventListener('cancel', event => { event.preventDefault(); close(); });
   drawer.addEventListener('click', event => { if (event.target === drawer && event.clientX < drawer.getBoundingClientRect().left) close(); });
   window.addEventListener('storage', event => { if (event.key === KEY) { try { setItems(JSON.parse(event.newValue || '[]')); } catch {} } });
   window.HamperCart = { ready, getItems: () => items.map(i => ({ ...i })), setItems, open, add: async (sku, quantity) => { await ready; setItems([...items, { sku, quantity }]); open(); } };
