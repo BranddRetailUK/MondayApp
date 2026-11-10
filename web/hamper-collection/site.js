@@ -28,37 +28,14 @@ if (priceFilter) {
   const sort = document.querySelector('#price-sort');
   const grid = document.querySelector('#collection .grid');
   const cards = [...document.querySelectorAll('#collection .card[data-price]')];
-  const categoryLinks = [...document.querySelectorAll('header [data-category]')];
-  const validCategories = new Set(categoryLinks.map(link => link.dataset.category));
-  let category = 'all';
   const applyPriceFilter = () => {
     const [minimum, maximum] = range.value === 'all' ? [0, Infinity] : range.value.split(':').map((value, index) => value === '' && index === 1 ? Infinity : Number(value));
     cards.forEach(card => {
       const price = Number(card.dataset.price);
-      card.hidden = !(price >= minimum && price < maximum && (category === 'all' || (card.dataset.categories || '').split(' ').includes(category)));
+      card.hidden = !(price >= minimum && price < maximum);
     });
     document.querySelector('.collection-empty').hidden = cards.some(card => !card.hidden);
   };
-  const readCategory = () => {
-    const requested = new URL(location.href).searchParams.get('category');
-    category = validCategories.has(requested) ? requested : 'all';
-    categoryLinks.forEach(link => {
-      if (link.dataset.category === category) link.setAttribute('aria-current', 'page');
-      else link.removeAttribute('aria-current');
-    });
-    applyPriceFilter();
-  };
-  categoryLinks.forEach(link => link.addEventListener('click', event => {
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    event.preventDefault();
-    const url = new URL(location.href);
-    url.searchParams.set('category', link.dataset.category);
-    url.hash = 'collection';
-    history.pushState(null, '', url);
-    readCategory();
-    document.querySelector('#collection').scrollIntoView({behavior: 'instant'});
-  }));
-  window.addEventListener('popstate', readCategory);
   sort.addEventListener('change', () => {
     const sorted = [...cards];
     if (sort.value !== 'featured') {
@@ -69,5 +46,47 @@ if (priceFilter) {
   });
   range.addEventListener('change', applyPriceFilter);
   priceFilter.hidden = false;
-  readCategory();
+  applyPriceFilter();
 }
+
+// One shared gold indicator follows hover/focus and returns to the current page.
+const categoryNav = document.querySelector('header nav');
+if (categoryNav) {
+  const links = [...categoryNav.querySelectorAll('[data-category]')];
+  const active = links.find(link => link.dataset.category === document.body.dataset.category);
+  if (active) active.setAttribute('aria-current', 'page');
+  const indicator = document.createElement('span');
+  indicator.className = 'nav-indicator';
+  indicator.setAttribute('aria-hidden', 'true');
+  categoryNav.append(indicator);
+  let target = active;
+  const positionIndicator = link => {
+    target = link;
+    if (!link) { indicator.style.opacity = '0'; return; }
+    const navRect = categoryNav.getBoundingClientRect();
+    const rect = link.getBoundingClientRect();
+    indicator.style.width = `${rect.width}px`;
+    indicator.style.transform = `translate(${rect.left - navRect.left}px, ${rect.bottom - navRect.top - 3}px)`;
+    indicator.style.opacity = '1';
+  };
+  links.forEach(link => {
+    link.addEventListener('pointerenter', () => positionIndicator(link));
+    link.addEventListener('focus', () => positionIndicator(link));
+  });
+  categoryNav.addEventListener('pointerleave', () => positionIndicator(links.includes(document.activeElement) ? document.activeElement : active));
+  categoryNav.addEventListener('focusout', event => { if (!categoryNav.contains(event.relatedTarget)) positionIndicator(active); });
+  new ResizeObserver(() => positionIndicator(target)).observe(categoryNav);
+  positionIndicator(active);
+  requestAnimationFrame(() => requestAnimationFrame(() => indicator.classList.add('is-ready')));
+}
+// Preserve previously shared collection links using the new standalone pages.
+const legacyCategory = new URL(location.href).searchParams.get('category');
+const groupPages = {all:'all-hampers', 'sweet-treats':'sweet-treats', 'cheese-savoury':'cheese-savoury', 'wine-fizz':'wine-fizz', luxury:'luxury-hampers'};
+if (legacyCategory && Object.hasOwn(groupPages, legacyCategory) && /(?:\/|\/index.html)$/.test(location.pathname)) {
+  location.replace(`${groupPages[legacyCategory]}.html`);
+}
+
+// A short capped stagger keeps large collections quick to browse.
+document.querySelectorAll(".grid .card").forEach((card, index) => {
+  card.style.setProperty("--card-delay", `${Math.min(index, 5) * 45}ms`);
+});

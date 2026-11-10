@@ -57,3 +57,11 @@ body>header>nav{gap:24px}body>header>nav a{white-space:nowrap;padding-block:8px;
 /* Compact header spacing with stronger navigation labels. */
 body>header{padding-block:12px}body>header>nav a{font-weight:600}
 @media(max-width:1400px){body>header{row-gap:10px}body>header>nav{row-gap:2px}body>header>nav a{padding-block:6px}}
+
+/* Shared sliding gold indicator; links never receive text underlines. */
+body>header>nav{position:relative}body>header>nav a,body>header>nav a:hover,body>header>nav a[aria-current="page"]{text-decoration:none;border:0;padding-block:4px}.nav-indicator{position:absolute;left:0;top:0;height:2px;background:#b79b65;border-radius:2px;pointer-events:none;opacity:0}.nav-indicator.is-ready{transition:transform 240ms ease,width 240ms ease,opacity 160ms ease}.category-page .collection{padding-top:42px}.category-page h1{font:normal clamp(32px,4vw,48px)/1.15 Georgia,serif;margin:0 0 16px}
+@media(prefers-reduced-motion:reduce){.nav-indicator.is-ready{transition:none}}
+
+@keyframes card-arrive{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.grid .card{animation:card-arrive 460ms ease-out both;animation-delay:var(--card-delay,0ms)}
+@media(prefers-reduced-motion:reduce){.grid .card{animation:none}}
