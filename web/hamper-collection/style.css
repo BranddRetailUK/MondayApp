@@ -53,3 +53,7 @@ body>header{max-width:none;width:100%;display:grid;grid-template-columns:minmax(
 body>header>nav{gap:24px}body>header>nav a{white-space:nowrap;padding-block:8px;text-decoration:none;border-bottom:2px solid transparent}body>header>nav a[aria-current="page"]{border-bottom-color:var(--green)}body>header>nav a:hover{border-bottom-color:#b79b65}.collection-empty{text-align:center;margin:24px 0 40px}.collection-empty[hidden]{display:none}.footer-help{display:inline-block;margin-top:14px}
 @media(max-width:1400px){body>header{grid-template-columns:minmax(0,1fr) auto;gap:18px;padding:20px}body>header>.header-actions{grid-column:2}body>header>nav{grid-column:1/-1;grid-row:2;width:100%;gap:12px 24px}}
 @media(max-width:600px){body>header{column-gap:12px}body>header>nav{gap:4px 18px}body>header>nav a{font-size:14px}.header-actions .nav-contact{padding-inline:10px}}
+
+/* Compact header spacing with stronger navigation labels. */
+body>header{padding-block:12px}body>header>nav a{font-weight:600}
+@media(max-width:1400px){body>header{row-gap:10px}body>header>nav{row-gap:2px}body>header>nav a{padding-block:6px}}

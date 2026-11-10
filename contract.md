@@ -1508,3 +1508,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - The storefront header contact button uses the same filled green, white-text, 48px rounded treatment as Buy now.
 
 - Christmas catalogue navigation filters All hampers, Sweet treats, Cheese & savoury, Wine & fizz, and Luxury hampers using curated overlapping categories in products.json and card data attributes. Category URLs use ?category=…#collection, support browser history, and combine with the existing price range and sort controls. Empty combinations show a clear message. Help with gifting is linked in the footer on every storefront page; navigation wraps onto a second row below 1400px.
+
+- Storefront header uses compact 12px vertical padding, tighter stacked navigation spacing, and semibold category labels.
