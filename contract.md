@@ -1496,3 +1496,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Christmas site footers and all three HTML/plain-text campaign email footers display the company name “The Ultimate Promotions Company Ltd”.
 
 - Hamper invoice PDFs show “The Ultimate Promotions Company Ltd” in the logo caption, footer, document title and author metadata. Footer contact, bank, VAT and registration details are retained from the Database letterhead.
+
+- The Christmas homepage hero uses three separate transparent WebP hamper cutouts (Fireside Feast, Frosted Gift Hamper and Sparkle Hamper) layered directly over the green banner. Each is independently linked and animated with staggered 9/10/11-second gentle floating motion. The white image card/caption is removed; mobile stacks the composition below the copy, and reduced-motion preferences disable movement.
