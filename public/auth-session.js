@@ -32,6 +32,7 @@
   function applyAccessScope(user) {
     const dtfOnly = user?.access_scope === 'dtf_only';
     document.body.classList.toggle('hub-access-dtf-only', dtfOnly);
+    document.querySelectorAll('[data-full-hub-access]').forEach(element => { element.hidden = dtfOnly; });
     document.querySelectorAll('.nav-tabs li[data-tab]').forEach((tab) => {
       tab.hidden = (dtfOnly && tab.dataset.tab !== 'dtf-uploader')
         || (tab.dataset.tab === 'digitising-studio' && (!isProductionProofUser(user) || tab.dataset.available !== 'true'))

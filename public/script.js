@@ -5617,7 +5617,7 @@ function refreshPackingControlVisibility() {
 // --------------------------- TAB NAVIGATION (sidebar) ---------------------------
 
 document.addEventListener("DOMContentLoaded", () => {
-  const tabs = document.querySelectorAll(".nav-tabs li");
+  const tabs = document.querySelectorAll(".nav-tabs li[data-tab]");
   tabs.forEach(tab => {
     tab.addEventListener("click", () => {
       activateDashboardTab(tab.getAttribute("data-tab"));
