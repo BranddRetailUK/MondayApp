@@ -1516,3 +1516,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Price filter and sorting controls appear only on all-hampers.html, not the homepage or curated group pages. Their visible labels are removed while accessible select labels remain; controls remain centred with the original 20px gap above the product grid.
 
 - Mobile storefront audit covered 320, 375, 390, 430 and 768px widths, all curated categories, All hampers filters, long product titles, cart and checkout. Mobile price selects use 16px text and 44px height; shared cart quantity/remove controls use 40px touch targets, 16px quantity text and a 44px close button.
+
+- On storefront screens up to 750px, a hamburger opens a native modal navigation drawer containing all five category links, gifting help and contact. The compact header retains centred logo and cart. Drawer and backdrop animate open/closed, support Escape, outside click, focus restoration and reduced motion, and close when resizing to desktop. All hampers now defaults to ascending price sorting.

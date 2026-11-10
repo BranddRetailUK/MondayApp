@@ -36,14 +36,16 @@ if (priceFilter) {
     });
     document.querySelector('.collection-empty').hidden = cards.some(card => !card.hidden);
   };
-  sort.addEventListener('change', () => {
+  const applyPriceSort = () => {
     const sorted = [...cards];
     if (sort.value !== 'featured') {
       const direction = sort.value === 'ascending' ? 1 : -1;
       sorted.sort((a, b) => direction * (Number(a.dataset.price) - Number(b.dataset.price)));
     }
     grid.append(...sorted);
-  });
+  };
+  sort.addEventListener('change', applyPriceSort);
+  applyPriceSort();
   range.addEventListener('change', applyPriceFilter);
   priceFilter.hidden = false;
   applyPriceFilter();
@@ -90,3 +92,60 @@ if (legacyCategory && Object.hasOwn(groupPages, legacyCategory) && /(?:\/|\/inde
 document.querySelectorAll(".grid .card").forEach((card, index) => {
   card.style.setProperty("--card-delay", `${Math.min(index, 5) * 45}ms`);
 });
+
+// Native dialog provides focus trapping and makes the page inert while open.
+if (categoryNav) {
+  const header = document.querySelector('body > header');
+  const menuButton = document.createElement('button');
+  menuButton.type = 'button';
+  menuButton.className = 'mobile-menu-trigger';
+  menuButton.setAttribute('aria-label', 'Open navigation');
+  menuButton.setAttribute('aria-haspopup', 'dialog');
+  menuButton.setAttribute('aria-expanded', 'false');
+  menuButton.setAttribute('aria-controls', 'mobile-navigation');
+  menuButton.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>';
+  header.prepend(menuButton);
+  const menu = document.createElement('dialog');
+  menu.id = 'mobile-navigation';
+  menu.className = 'mobile-nav-drawer';
+  menu.setAttribute('aria-labelledby', 'mobile-nav-title');
+  menu.innerHTML = '<div class="mobile-nav-heading"><h2 id="mobile-nav-title">Explore the collection</h2><button type="button" class="mobile-nav-close" aria-label="Close navigation">×</button></div><nav aria-label="Mobile navigation"></nav><div class="mobile-nav-footer"><a href="index.html#help">Help with gifting</a><a class="button" href="mailto:sales@ultimatepromotions.co.uk">Get in touch</a></div>';
+  const drawerNav = menu.querySelector('nav');
+  categoryNav.querySelectorAll('a').forEach(link => drawerNav.append(link.cloneNode(true)));
+  document.body.append(menu);
+  document.body.classList.add('mobile-nav-ready');
+  const mobile = matchMedia('(max-width:750px)');
+  const reducedMotion = matchMedia('(prefers-reduced-motion:reduce)');
+  let menuCloseTimer;
+  const finishMenuClose = () => {
+    clearTimeout(menuCloseTimer);
+    menu.classList.remove('is-closing');
+    if (menu.open) menu.close();
+    document.body.classList.remove('mobile-nav-open');
+    menuButton.setAttribute('aria-expanded', 'false');
+    if (mobile.matches) menuButton.focus();
+  };
+  const closeMenu = () => {
+    if (!menu.open || menu.classList.contains('is-closing')) return;
+    if (reducedMotion.matches) { finishMenuClose(); return; }
+    menu.classList.add('is-closing');
+    menuCloseTimer = setTimeout(finishMenuClose, 230);
+  };
+  menuButton.addEventListener('click', () => {
+    if (!mobile.matches || menu.open) return;
+    clearTimeout(menuCloseTimer);
+    menu.classList.remove('is-closing');
+    menu.showModal();
+    document.body.classList.add('mobile-nav-open');
+    menuButton.setAttribute('aria-expanded', 'true');
+  });
+  menu.querySelector('.mobile-nav-close').addEventListener('click', closeMenu);
+  menu.addEventListener('cancel', event => { event.preventDefault(); closeMenu(); });
+  menu.addEventListener('click', event => {
+    const rect = menu.getBoundingClientRect();
+    if (event.target === menu && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom)) closeMenu();
+  });
+  menu.querySelectorAll('a').forEach(link => link.addEventListener('click', closeMenu));
+  mobile.addEventListener('change', () => { if (!mobile.matches && menu.open) finishMenuClose(); });
+  window.addEventListener('pagehide', finishMenuClose);
+}
