@@ -20,8 +20,10 @@ Enquiry controls open the user's email client with the chosen product and quanti
 
 The full brochure catalogue is available on the website: 90 product pages with exact SKU/source-page records and extracted product photographs. The original nine featured products retain their URLs and lead the collection; remaining products follow brochure order. Similar-price related products link to valid catalogue pages. The three mailers retain only their original nine products. Clock-only and tree-only listings explicitly exclude drinks.
 
-The homepage offers an accessible price-band filter based on displayed ex-VAT selling prices, with a live result count. All prices restores the full collection; without JavaScript the full collection remains visible.
+The homepage offers an accessible price-band filter based on displayed ex-VAT selling prices. All prices restores the full collection; without JavaScript the full collection remains visible.
 
 Sort by offers Featured, Price: low to high and Price: high to low. Sorting and price filtering work together, with stable original ordering for equal prices.
 
 Cache handling: nginx sends `Cache-Control: no-cache` for revalidation, and HTML references `site.js` / `style.css` with the first 12 SHA-256 hex characters in `?v=`. Refresh those hashes across all HTML pages whenever either asset changes, so browsers holding older unversioned assets request the new release.
+
+Filter and sort use small, unboxed controls aligned with the collection, with no gift-count text.
