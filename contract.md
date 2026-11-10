@@ -1502,3 +1502,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - The animated Christmas hero background spans the full viewport width, with centred content constrained to 1440px for readable text and balanced hamper composition.
 
 - Christmas storefront navigation spans the full page width. Desktop uses independent logo/centred-link/cart columns, and narrower screens place centred navigation below the logo and cart.
+
+- Storefront header keeps the collection/help links centred, with Get in touch beside the borderless cart button in the right-hand actions group.

@@ -40,5 +40,9 @@ header img{width:260px}footer img{width:230px}@media(max-width:750px){header img
 .hero-collection{width:100%;max-width:none;padding-inline:max(0px,calc((100% - 1440px)/2))}
 
 /* Full-width navigation with links centred independently of logo and cart. */
-body>header{max-width:none;width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);padding:26px clamp(20px,3vw,48px);gap:24px}body>header>a{justify-self:start}body>header>nav{justify-content:center;justify-self:center;flex-wrap:wrap}body>header>.cart-trigger{justify-self:end;grid-column:3;grid-row:1}
-@media(max-width:1000px){body>header{grid-template-columns:minmax(0,1fr) auto;gap:18px;padding:20px}body>header>.cart-trigger{grid-column:2}body>header>nav{grid-column:1/-1;grid-row:2;width:100%;gap:20px}}
+body>header{max-width:none;width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);padding:26px clamp(20px,3vw,48px);gap:24px}body>header>a{justify-self:start}body>header>nav{justify-content:center;justify-self:center;flex-wrap:wrap}body>header>.header-actions{justify-self:end;grid-column:3;grid-row:1}
+@media(max-width:1000px){body>header{grid-template-columns:minmax(0,1fr) auto;gap:18px;padding:20px}body>header>.header-actions{grid-column:2}body>header>nav{grid-column:1/-1;grid-row:2;width:100%;gap:20px}}
+
+/* Contact and cart share the right-hand header actions. */
+.header-actions{display:flex;align-items:center;justify-content:flex-end;gap:16px}.header-actions .cart-trigger{border:0}.header-actions .nav-contact{white-space:nowrap}
+@media(max-width:600px){body>header{column-gap:12px}body>header>a img{width:clamp(120px,32vw,200px)}.header-actions{gap:4px}.header-actions .nav-contact{font-size:13px;padding:8px 10px}.header-actions .cart-trigger{min-width:40px;padding:8px 4px}}
