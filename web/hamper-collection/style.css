@@ -21,4 +21,4 @@ header img{width:260px}footer img{width:230px}@media(max-width:750px){header img
 
 .collection .section-title{display:block;text-align:center}.collection .price-filter{justify-content:center}.collection .price-filter label,.collection .price-filter select{text-align:center}
 
-.price small,.product-price small,.hero-product-price small{display:inline-block;white-space:nowrap;padding-left:0;margin-left:4px;letter-spacing:0;word-spacing:-1px}
+.price small,.product-price small,.hero-product-price small{display:inline-block;white-space:nowrap;padding-left:0;margin-left:0;letter-spacing:0;word-spacing:-1px}

@@ -1447,4 +1447,4 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 
 - Public website and email copy omits all Spicers of Hythe references, including footer credits and product descriptions. Internal brochure provenance and supplier pricing records remain available for auditing.
 
-- Website prices use a compact `ex. VAT` label with a 4px gap from the amount, reduced internal word spacing and a nonbreaking label. This applies to collection/related cards, product prices and the homepage hero.
+- Website prices use a compact `ex. VAT` label with no added gap from the amount (only natural glyph spacing), reduced internal word spacing and a nonbreaking label. This applies to collection/related cards, product prices and the homepage hero.
