@@ -7,7 +7,7 @@ async function read(bytes){const {getDocument}=await import('pdfjs-dist/legacy/b
 test('invoice includes immutable snapshot prices, individual taxes, delivery and stable reference',async()=>{
  const before=JSON.stringify(order);const bytes=await generateHamperInvoice(order);const text=await read(bytes);
  for(const value of ['HINV-000001','PO-000001','£84.77','£75.98','£8.79','10.9%','8.2%','20%','£14.50','£2.90','NOT A VAT INVOICE'])assert.ok(text.includes(value),value);
- assert.equal(invoiceNumber(order),'HINV-000001');assert.equal(JSON.stringify(order),before);assert.equal((await PDFDocument.load(bytes)).getPageCount(),1);
+ assert.ok(!text.includes('Tax analysis'));assert.ok(!text.includes('Net at'));assert.equal(invoiceNumber(order),'HINV-000001');assert.equal(JSON.stringify(order),before);assert.equal((await PDFDocument.load(bytes)).getPageCount(),1);
 });
 test('long mixed carts paginate and unpaid orders are proformas',async()=>{
  const products=require('../web/hamper-collection/products.json');const snapshot=quoteCart(products.slice(0,10).map(p=>({sku:p.sku,quantity:1})));

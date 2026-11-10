@@ -63,3 +63,5 @@
 
 #tab-hamper-orders .hamper-invoice-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
 #tab-hamper-orders .hamper-invoice-actions a{text-decoration:none;display:inline-flex;align-items:center}
+
+#tab-hamper-orders .hamper-summary-row td[data-label="Payment status"]{text-align:center}

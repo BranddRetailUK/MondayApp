@@ -58,11 +58,8 @@ async function generateHamperInvoice(order) {
   }
   tableRow(['Description','Qty','Price','Total','VAT','Rate'],true);
   for(const item of lines)tableRow([item.name,item.quantity,money(item.unitPence),money(item.subtotalPence),money(item.productVatPence),`${item.vatPercent}%`]);
-  const groups = new Map(); for(const item of lines) groups.set(item.vatPercent,(groups.get(item.vatPercent)||0)+item.subtotalPence);
-  const summaryHeight=Math.max(groups.size*16+20,68);
-  if(y+summaryHeight+18>mm(245))newPage();
-  y+=18; text('Tax analysis',left,y,8,true); let taxY=y+16;
-  for(const [rate,net] of groups){text(`Net at ${rate}% VAT`,left,taxY,8);text(money(net),left+mm(40),taxY,8);taxY+=16;}
+  if(y+86>mm(245))newPage();
+  y+=18;
   const net=q.subtotalPence+q.shippingPence,vat=q.productVatPence+q.shippingVatPence;
   for(const [label,value] of [['TOTAL EXCLUDING VAT',net],['VAT',vat],['TOTAL',q.totalPence]]){text(label,left+mm(65),y+5,8,true);page.drawRectangle({x:left+mm(118),y:height-y-22,width:mm(35),height:22,borderWidth:.6,color:rgb(1,1,1),borderColor:rgb(.2,.2,.2)});text(money(value),left+mm(121),y+5,10,true);y+=22;}
   pdf.setTitle(`Ultimate Promotions ${invoiceNumber(order)}`);pdf.setAuthor('Ultimate Promotions');
