@@ -66,5 +66,6 @@ body>header>nav{position:relative}body>header>nav a,body>header>nav a:hover,body
 .grid .card{animation:card-arrive 460ms ease-out both;animation-delay:var(--card-delay,0ms)}
 @media(prefers-reduced-motion:reduce){.grid .card{animation:none}}
 
-/* Price controls belong to All hampers and align with the product grid. */
-.collection .price-filter{justify-content:flex-start;gap:12px;margin-bottom:12px;text-align:left}.collection .price-filter select{text-align:left}
+/* Price controls appear only on All hampers, centred above the grid. */
+.collection .price-filter{justify-content:center;gap:18px;margin-bottom:20px;text-align:center}.collection .price-filter select{text-align:center}
+@media(max-width:750px){.collection .price-filter{gap:12px}}
