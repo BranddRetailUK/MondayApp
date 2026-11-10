@@ -23,3 +23,5 @@ The full brochure catalogue is available on the website: 90 product pages with e
 The homepage offers an accessible price-band filter based on displayed ex-VAT selling prices, with a live result count. All prices restores the full collection; without JavaScript the full collection remains visible.
 
 Sort by offers Featured, Price: low to high and Price: high to low. Sorting and price filtering work together, with stable original ordering for equal prices.
+
+Cache handling: nginx sends `Cache-Control: no-cache` for revalidation, and HTML references `site.js` / `style.css` with the first 12 SHA-256 hex characters in `?v=`. Refresh those hashes across all HTML pages whenever either asset changes, so browsers holding older unversioned assets request the new release.
