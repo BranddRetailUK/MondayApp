@@ -84,6 +84,7 @@ function createService({ db, env = process.env, stripe: injectedStripe } = {}) {
     const hash = crypto.createHash('sha256').update(JSON.stringify({ snapshot, delivery })).digest('hex');
     const s = await client();
     await db.query(`INSERT INTO hamper_orders(id,request_hash,mode,snapshot,delivery) VALUES($1,$2,'sandbox',$3,$4) ON CONFLICT(id) DO NOTHING`, [input.requestId, hash, snapshot, delivery]);
+    await db.query("UPDATE hamper_orders SET po_number=nextval('hamper_po_sequence') WHERE id=$1 AND po_number IS NULL", [input.requestId]);
     const { rows: [order] } = await db.query('SELECT * FROM hamper_orders WHERE id=$1', [input.requestId]);
     if (order.request_hash !== hash) throw new CheckoutError('Your order details changed. Please reload checkout and try again.', 409);
     if (order.stripe_session_id) return { url: order.checkout_url, id: order.id };

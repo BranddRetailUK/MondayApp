@@ -30,7 +30,7 @@ function createRoutes(db, options = {}) {
     router,
     webhook: handle(async (req, res) => { await service.webhook(req.body, req.get('stripe-signature')); res.json({ received: true }); }),
     admin: handle(async (_req, res) => {
-      const { rows } = await db.query('SELECT id,status,snapshot,delivery,stripe_session_id,stripe_payment_intent,created_at,updated_at FROM hamper_orders ORDER BY created_at DESC LIMIT 200');
+      const { rows } = await db.query('SELECT id,po_number,status,snapshot,delivery,stripe_session_id,stripe_payment_intent,created_at,updated_at FROM hamper_orders ORDER BY created_at DESC LIMIT 200');
       res.json({ orders: rows, mode: 'sandbox' });
     })
   };

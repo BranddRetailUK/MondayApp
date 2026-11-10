@@ -38,13 +38,18 @@ test('sandbox checkout persistence, retries, signed webhook validation and monot
   let createCalls = 0;
   let sent;
   const fake = { accounts: { retrieve: async () => ({ id: ACCOUNT }) }, taxRates: { create: async r => ({ id: `txr_${r.percentage}` }) }, webhooks: real.webhooks,
-    checkout: { sessions: { create: async data => { createCalls++; sent = data; return { id: 'cs_test_123', url: 'https://checkout.stripe.com/test', currency: 'gbp', amount_total: quote('H26002', 2).totalPence, livemode: false }; }, expire: async () => {} } } };
+    checkout: { sessions: { create: async data => { createCalls++; sent = data; return { id: createCalls === 1 ? 'cs_test_123' : `cs_test_${createCalls}`, url: 'https://checkout.stripe.com/test', currency: 'gbp', amount_total: quote('H26002', 2).totalPence, livemode: false }; }, expire: async () => {} } } };
   const env = { HAMPER_CHECKOUT_MODE: 'sandbox', HAMPER_STRIPE_SECRET_KEY: 'sk_test_fake', HAMPER_STRIPE_WEBHOOK_SECRET: 'whsec_test' };
   const service = createService({ db, env, stripe: fake });
   const id = crypto.randomUUID();
   const input = { requestId: id, sku: 'H26002', quantity: 2, delivery, price: 1, vat: 0 };
   const first = await service.create(input); const retry = await service.create(input);
   assert.deepEqual(first, retry); assert.equal(createCalls, 1);
+  assert.equal(Number((await db.query('SELECT po_number FROM hamper_orders WHERE id=$1', [id])).rows[0].po_number), 1);
+  const nextId = crypto.randomUUID();
+  await service.create({ ...input, requestId: nextId });
+  assert.equal(Number((await db.query('SELECT po_number FROM hamper_orders WHERE id=$1', [nextId])).rows[0].po_number), 2);
+  await db.query('DELETE FROM hamper_orders WHERE id=$1', [nextId]);
   assert.equal(sent.line_items[0].price_data.unit_amount, 2999);
   assert.equal(sent.line_items[1].price_data.unit_amount, 725);
   assert.equal(sent.line_items[1].quantity, 2);
@@ -124,5 +129,23 @@ test('cart Stripe line items use each product rate and server-resolved prices', 
   assert.deepEqual(productLines.map(l=>l.price_data.unit_amount),[2999,3649]);
   assert.equal(sent.line_items.at(-1).quantity,3);
   assert.equal(sent.line_items.at(-1).tax_rates[0],'vat_20');
+  await pg.close();
+});
+
+test('PO migration backfills older orders chronologically and retains numbers on restart', async () => {
+  const pg = new PGlite();
+  const db = { query: async (sql, params) => !params && sql.includes('CREATE TABLE') ? pg.exec(sql) : pg.query(sql, params) };
+  await ensureHamperTables(db);
+  await pg.exec('ALTER TABLE hamper_orders DROP COLUMN po_number');
+  const older = crypto.randomUUID(), newer = crypto.randomUUID();
+  for (const [id, created] of [[newer, '2026-11-10'], [older, '2026-11-09']]) {
+    await db.query("INSERT INTO hamper_orders(id,request_hash,mode,snapshot,delivery,created_at) VALUES($1,'test','sandbox','{}','{}',$2)", [id, created]);
+  }
+  await ensureHamperTables(db);
+  await ensureHamperTables(db);
+  const rows = (await db.query('SELECT id,po_number FROM hamper_orders ORDER BY po_number')).rows;
+  assert.deepEqual(rows.map(r => r.id), [older, newer]);
+  assert.deepEqual(rows.map(r => Number(r.po_number)), [1, 2]);
+  await assert.rejects(db.query('UPDATE hamper_orders SET po_number=1 WHERE id=$1', [newer]), /unique/);
   await pg.close();
 });

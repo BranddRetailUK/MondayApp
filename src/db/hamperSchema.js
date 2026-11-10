@@ -13,6 +13,14 @@ async function ensureHamperTables(db) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE SEQUENCE IF NOT EXISTS hamper_po_sequence;
+    ALTER TABLE hamper_orders ADD COLUMN IF NOT EXISTS po_number BIGINT;
+    CREATE UNIQUE INDEX IF NOT EXISTS hamper_orders_po_unique ON hamper_orders(po_number);
+    DO $$ DECLARE existing_order RECORD; BEGIN
+      FOR existing_order IN SELECT id FROM hamper_orders WHERE po_number IS NULL ORDER BY created_at,id FOR UPDATE LOOP
+        UPDATE hamper_orders SET po_number=nextval('hamper_po_sequence') WHERE id=existing_order.id AND po_number IS NULL;
+      END LOOP;
+    END $$;
     CREATE TABLE IF NOT EXISTS hamper_payment_events (
       id TEXT PRIMARY KEY, order_id UUID REFERENCES hamper_orders(id),
       type TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

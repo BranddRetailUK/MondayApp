@@ -4,12 +4,13 @@ const root = document.querySelector('#tab-hamper-orders');
 if (!root) return;
 let hamperOrders = [];
 const money = pence => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(pence / 100);
+const poNumber = order => order.po_number == null ? 'Awaiting PO' : `PO-${String(order.po_number).padStart(6, '0')}`;
 const statuses = { paid: 'Paid', pending: 'Awaiting payment', expired: 'Expired', failed: 'Failed' };
 function paragraph(text, className = '') { const p = document.createElement('p'); p.textContent = text; p.className = className; return p; }
 function renderHamperOrders() {
   const search = root.querySelector('#order-search').value.trim().toLowerCase();
   const statusFilter = root.querySelector('#order-status').value;
-  const visible = hamperOrders.filter(o => (statusFilter === 'all' || o.status === statusFilter) && `${o.delivery.name} ${o.delivery.email} ${(o.snapshot.items || [o.snapshot]).map(i => `${i.name} ${i.sku}`).join(" ")} ${o.id}`.toLowerCase().includes(search));
+  const visible = hamperOrders.filter(o => (statusFilter === 'all' || o.status === statusFilter) && `${o.delivery.name} ${o.delivery.email} ${(o.snapshot.items || [o.snapshot]).map(i => `${i.name} ${i.sku}`).join(" ")} ${o.id} ${poNumber(o)}`.toLowerCase().includes(search));
   root.querySelector('#count-all').textContent = hamperOrders.length;
   root.querySelector('#count-paid').textContent = hamperOrders.filter(o => o.status === 'paid').length;
   root.querySelector('#count-pending').textContent = hamperOrders.filter(o => o.status === 'pending').length;
@@ -20,9 +21,9 @@ function renderHamperOrders() {
   const container = root.querySelector('#orders'); container.replaceChildren();
   for (const order of visible) {
     const row = document.createElement('tr'); row.className = 'hamper-summary-row';
-    const cells = ['Date', 'Customer', 'Hamper', 'Total incl. VAT', 'Payment status', ''].map(label => { const td = document.createElement('td'); td.dataset.label = label; return td; });
+    const cells = ['PO / Date', 'Customer', 'Hamper', 'Total incl. VAT', 'Payment status', ''].map(label => { const td = document.createElement('td'); td.dataset.label = label; return td; });
     const q = order.snapshot; const d = order.delivery;
-    cells[0].append(paragraph(new Date(order.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })), paragraph(new Date(order.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }), 'muted small'));
+    cells[0].append(paragraph(poNumber(order), 'order-primary'), paragraph(new Date(order.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })), paragraph(new Date(order.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }), 'muted small'));
     cells[1].append(paragraph(d.name, 'order-primary'), paragraph(d.email, 'muted small'));
     for (const item of (q.items || [q])) cells[2].append(paragraph(item.name, 'order-primary'), paragraph(`Quantity: ${item.quantity} · VAT ${item.vatPercent}%`, 'muted small'));
     cells[3].append(paragraph(money(q.totalPence), 'order-amount'));
@@ -33,7 +34,7 @@ function renderHamperOrders() {
     for (const [heading, lines] of [
       ['Delivery address', [d.name, d.line1, d.line2, d.city, d.postcode].filter(Boolean)],
       ['Price breakdown', [...(q.items || [q]).flatMap(item => [`${item.quantity} × ${item.name}: ${money(item.subtotalPence)} ex. VAT`, `Product VAT (${item.vatPercent}%): ${money(item.productVatPence)}`]), `Delivery: ${money(q.shippingPence)} ex. VAT`, `Delivery VAT (20%): ${money(q.shippingVatPence)}`]],
-      ['Order information', [`Product codes: ${(q.items || [q]).map(item => item.sku).join(", ")}`, `Order reference: ${order.id}`]]
+      ['Order information', [`PO number: ${poNumber(order)}`, `Product codes: ${(q.items || [q]).map(item => item.sku).join(", ")}`, `Order reference: ${order.id}`]]
     ]) { const section = document.createElement('section'); const h = document.createElement('h3'); h.textContent = heading; section.append(h); lines.forEach(line => section.append(paragraph(line))); detailGrid.append(section); }
     if (order.stripe_payment_intent) { const link = document.createElement('a'); link.href = `https://dashboard.stripe.com/acct_1UaBAa7O9atIxBPe/test/payments/${encodeURIComponent(order.stripe_payment_intent)}`; link.textContent = 'View payment in Stripe'; link.className = 'order-link'; link.target = '_blank'; link.rel = 'noopener'; detailGrid.lastElementChild.append(link); }
     detailCell.append(detailGrid); detailsRow.append(detailCell);
