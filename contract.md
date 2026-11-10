@@ -1490,3 +1490,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Cart drawers slide in/out with a fading backdrop, including close-button, Continue shopping and Escape dismissal; reduced-motion preferences disable animations. Product purchase buttons share the rounded 48px height, with outlined Add to cart and filled Buy now. Above 10 hampers the product action remains a bulk enquiry.
 
 - All three Christmas email templates use 180×48px pill-shaped product buttons, including Outlook VML rounded-button fallbacks. Product cards use square 576px contained image assets, equal-width columns and 84px title areas so prices/buttons align across all six products. No test emails are sent for this styling update.
+
+- Christmas storefront and hamper checkout use transparent PNG favicons showing the red Ultimate U with its Christmas hat, framed to fill the square canvas. Sizes: 32px browser icon, 512px large icon and 180px touch icon.
