@@ -1433,3 +1433,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Christmas site cache handling: every HTML page references content-versioned CSS/JavaScript URLs. nginx sends `Cache-Control: no-cache` so repeat visits revalidate content rather than heuristically reusing stale pages or scripts. This prevents an old enquiry-only script from leaving the newer collection filter/sort controls hidden. Update asset URL hashes when CSS or JavaScript changes.
 
 - Collection filter/sort styling is compact and unboxed: two subtle 40px-high selects with small muted labels, transparent backgrounds and thin neutral borders, aligned with the product grid. The gift-count text is removed. Both controls remain side by side on mobile, and filtering/sorting behavior is unchanged.
+
+- The collection grid omits all product descriptions and uses tighter vertical spacing: 12px between images and titles (10px on mobile), 6px before prices, and 28px row gaps (24px on mobile). Collection heading/control spacing is also reduced. Product-detail and related-product descriptions remain unchanged.
