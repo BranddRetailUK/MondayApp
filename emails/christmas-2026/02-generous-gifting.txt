@@ -36,7 +36,7 @@ You can also reply to this email — we’re happy to help.
 
 Explore the full range: https://ultimatechristmas-production.up.railway.app/
 
-Ultimate Promotions
+The Ultimate Promotions Company Ltd
 Unicorn House, Northbridge Road, Berkhamsted, HP4 1EH
 Prices exclude VAT. UK mainland delivery: £7.25 + VAT per hamper. More than 10 hampers: bulk delivery POA.
 Email preferences: <%asm_preferences_raw_url%>

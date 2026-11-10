@@ -1492,3 +1492,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - All three Christmas email templates use 180×48px pill-shaped product buttons, including Outlook VML rounded-button fallbacks. Product cards use square 576px contained image assets, equal-width columns and 84px title areas so prices/buttons align across all six products. No test emails are sent for this styling update.
 
 - Christmas storefront and hamper checkout use transparent PNG favicons showing the red Ultimate U with its Christmas hat, framed to fill the square canvas. Sizes: 32px browser icon, 512px large icon and 180px touch icon.
+
+- Christmas site footers and all three HTML/plain-text campaign email footers display the company name “The Ultimate Promotions Company Ltd”.
