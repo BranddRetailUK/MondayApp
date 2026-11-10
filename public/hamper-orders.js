@@ -43,17 +43,15 @@ function renderHamperOrders() {
   }
 }
 async function loadHamperOrders() {
-  const message = root.querySelector('#message'); const refresh = root.querySelector('#refresh');
-  message.textContent = 'Loading orders…'; refresh.disabled = true;
+  const message = root.querySelector('#message');
+  message.textContent = 'Loading orders…';
   try {
     const response = await fetch('/api/hamper-orders', { cache: 'no-store' });
     if (!response.ok) throw new Error(response.status === 401 ? 'Please sign in to Ultimate Hub to view orders.' : 'Unable to load orders. Please try again.');
     hamperOrders = (await response.json()).orders;
     renderHamperOrders(); message.textContent = '';
   } catch (error) { message.textContent = error.message; }
-  finally { refresh.disabled = false; }
 }
-root.querySelector('#refresh').addEventListener('click', loadHamperOrders);
 root.querySelector('#order-search').addEventListener('input', renderHamperOrders);
 root.querySelector('#order-status').addEventListener('change', renderHamperOrders);
 window.loadHamperOrders = loadHamperOrders;
