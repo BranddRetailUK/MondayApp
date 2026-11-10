@@ -36,3 +36,5 @@ header img{width:260px}footer img{width:230px}@media(max-width:750px){header img
 @media(prefers-reduced-motion:reduce){.hero-hamper{animation:none}.hero-hamper img{transition:none}}
 
 .hero-collection .hero-copy{position:static}.hero-collection .hanging-stars{right:55%}@media(max-width:750px){.hero-collection .hero-copy{padding-top:110px}.hero-collection .hanging-stars{right:30px}}
+
+.hero-collection{width:100%;max-width:none;padding-inline:max(0px,calc((100% - 1440px)/2))}
