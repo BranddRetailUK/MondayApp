@@ -2,13 +2,13 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 const money = n => `£${(n / 100).toFixed(2)}`;
+const COMPANY_NAME = 'The Ultimate Promotions Company Ltd';
 const invoiceNumber = order => `HINV-${String(order.po_number).padStart(6, '0')}`;
 async function generateHamperInvoice(order) {
   const pdf = await PDFDocument.create();
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
   const logo = await pdf.embedPng(await fs.readFile(path.join(__dirname, '../assets/invoices/logo.png')));
-  const footer = await pdf.embedPng(await fs.readFile(path.join(__dirname, '../assets/invoices/footer.png')));
   const q = order.snapshot, d = order.delivery;
   const lines = [...(q.items || [q]), { name: 'UK mainland delivery (per hamper)', quantity: q.quantity, unitPence: q.deliveryUnitPence, subtotalPence: q.shippingPence, productVatPence: q.shippingVatPence, vatPercent: 20 }];
   const mm = n => n * 72 / 25.4;
@@ -35,8 +35,21 @@ async function generateHamperInvoice(order) {
   function newPage(first = false) {
     page = pdf.addPage([width,height]);
     const logoWidth = mm(60.5); page.drawImage(logo,{x:width-mm(24)-logoWidth,y:height-mm(12)-logoWidth*logo.height/logo.width,width:logoWidth,height:logoWidth*logo.height/logo.width});
-    const fw = mm(146), fh = fw*footer.height/footer.width;
-    page.drawImage(footer,{x:(width-fw)/2,y:mm(5),width:fw,height:fh});
+    // Replace the old company wording embedded in the logo's lower caption.
+    const logoX = width-mm(24)-logoWidth, logoBottom = height-mm(12)-logoWidth*logo.height/logo.width;
+    page.drawRectangle({x:logoX+logoWidth*.335,y:logoBottom,width:logoWidth*.665,height:logoWidth*logo.height/logo.width*.235,color:rgb(1,1,1)});
+    const captionSize = Math.min(6.5, logoWidth*.665 / regular.widthOfTextAtSize(COMPANY_NAME,1));
+    page.drawText(COMPANY_NAME,{x:logoX+logoWidth*.335,y:logoBottom+2,size:captionSize,font:regular});
+    const footerLines = [
+      ['Bank details: Account No. 12279919 | Sort Code: 60-10-33 | email: accounts@ultimatepromotions.co.uk', 270, false],
+      [`${COMPANY_NAME}, Unicorn House, Northbridge Road, Berkhamsted, Herts, HP4 1EH`, 280, true],
+      ['Tel: 01442 264 288 / 0845 199 778 | sales@ultimatepromotions.co.uk | www.ultimatepromotions.co.uk', 284, true],
+      ['VAT No. 984 5655 65 | Registered in England: 7009087 | Registered office: Abbey House, 342 Regents Park Road, London N3 2LJ', 293, true]
+    ];
+    for (const [line, top, muted] of footerLines) {
+      const size = Math.min(7.5, mm(146) / regular.widthOfTextAtSize(line,1));
+      page.drawText(line,{x:(width-regular.widthOfTextAtSize(line,size))/2,y:height-mm(top)-size,size,font:regular,color:muted?rgb(.68,.68,.7):rgb(0,0,0)});
+    }
     text(order.status === 'paid' ? 'INVOICE' : 'PRO-FORMA INVOICE',mm(21),mm(12),18.75,true);
     text(`Page ${pdf.getPageCount()}`,left,mm(263),7);
     if (order.mode === 'sandbox') text('SANDBOX - TEST DOCUMENT - NOT A VAT INVOICE',left,mm(255),8,true);
@@ -62,7 +75,7 @@ async function generateHamperInvoice(order) {
   y+=18;
   const net=q.subtotalPence+q.shippingPence,vat=q.productVatPence+q.shippingVatPence;
   for(const [label,value] of [['TOTAL EXCLUDING VAT',net],['VAT',vat],['TOTAL',q.totalPence]]){text(label,left+mm(65),y+5,8,true);page.drawRectangle({x:left+mm(118),y:height-y-22,width:mm(35),height:22,borderWidth:.6,color:rgb(1,1,1),borderColor:rgb(.2,.2,.2)});text(money(value),left+mm(121),y+5,10,true);y+=22;}
-  pdf.setTitle(`Ultimate Promotions ${invoiceNumber(order)}`);pdf.setAuthor('Ultimate Promotions');
+  pdf.setTitle(`${COMPANY_NAME} ${invoiceNumber(order)}`);pdf.setAuthor(COMPANY_NAME);
   return Buffer.from(await pdf.save());
 }
 module.exports = { generateHamperInvoice, invoiceNumber };

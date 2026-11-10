@@ -1494,3 +1494,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Christmas storefront and hamper checkout use transparent PNG favicons showing the red Ultimate U with its Christmas hat, framed to fill the square canvas. Sizes: 32px browser icon, 512px large icon and 180px touch icon.
 
 - Christmas site footers and all three HTML/plain-text campaign email footers display the company name “The Ultimate Promotions Company Ltd”.
+
+- Hamper invoice PDFs show “The Ultimate Promotions Company Ltd” in the logo caption, footer, document title and author metadata. Footer contact, bank, VAT and registration details are retained from the Database letterhead.
