@@ -1475,3 +1475,4 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - DTF Uploader is hidden from full-access Hub navigation; dedicated DTF-only accounts retain their uploader tab and existing access. Hamper Orders remains the final visible main navigation tab.
 - Hamper Orders has no Back to database or Refresh orders header buttons; shared navigation handles switching and entering the tab automatically reloads its order list.
 - The Hamper Orders sandbox banner uses a solid Proof Generator accent-blue background (`#94cafa`) and dark text (`#102337`).
+- Product-page checkout buttons read “Buy now” without a sandbox suffix, use fully rounded corners, and match the quantity selector at 48px high. The separate sandbox notice and checkout sandbox banner remain visible.

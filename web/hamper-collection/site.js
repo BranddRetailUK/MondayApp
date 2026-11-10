@@ -10,7 +10,7 @@ if(form){const quantity=document.querySelector('#quantity');
  window.location.href=`mailto:sales@ultimatepromotions.co.uk?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
  });
  const buyButton=form.querySelector('button[type=submit]');
- const updateBuyButton=()=>{buyButton.textContent=Number(quantity.value)>10?'Contact us for bulk options':'Buy now — sandbox test';};
+ const updateBuyButton=()=>{buyButton.textContent=Number(quantity.value)>10?'Contact us for bulk options':'Buy now';};
  form.addEventListener('input',updateBuyButton);
  form.addEventListener('click',updateBuyButton);
  updateBuyButton();}
