@@ -20,3 +20,5 @@ header img{width:260px}footer img{width:230px}@media(max-width:750px){header img
 .collection .grid{row-gap:28px}.collection .card-title{margin-top:12px}.collection .price{margin:6px 0 0}.collection .section-title{margin-bottom:24px}.collection .price-filter{margin-bottom:20px}@media(max-width:750px){.collection .grid{row-gap:24px}.collection .card-title{margin-top:10px}}
 
 .collection .section-title{display:block;text-align:center}.collection .price-filter{justify-content:center}.collection .price-filter label,.collection .price-filter select{text-align:center}
+
+.price small,.product-price small,.hero-product-price small{display:inline-block;white-space:nowrap;padding-left:0;margin-left:4px;letter-spacing:0;word-spacing:-1px}
