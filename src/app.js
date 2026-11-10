@@ -35,6 +35,7 @@ app.use(express.json());
 app.use(attachHubUser);
 
 app.use(require('./routes/hub-auth'));
+app.get('/api/hamper-orders/:id/invoice', requireHubFullApiAccess, hamperRoutes.invoice);
 app.get('/api/hamper-orders', requireHubFullApiAccess, hamperRoutes.admin);
 app.get('/hamper-orders.html', requireHubFullPageAccess, (_req, res) => res.redirect(302, '/?tab=hamper-orders'));
 

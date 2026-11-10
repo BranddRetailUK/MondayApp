@@ -29,6 +29,16 @@ function createRoutes(db, options = {}) {
   return {
     router,
     webhook: handle(async (req, res) => { await service.webhook(req.body, req.get('stripe-signature')); res.json({ received: true }); }),
+    invoice: handle(async (req, res) => {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(req.params.id)) throw new CheckoutError('Order not found.', 404);
+      const { rows: [order] } = await db.query('SELECT * FROM hamper_orders WHERE id=$1', [req.params.id]);
+      if (!order) throw new CheckoutError('Order not found.', 404);
+      const { generateHamperInvoice, invoiceNumber } = require('../services/hamperInvoice');
+      const bytes = await generateHamperInvoice(order);
+      res.set('Content-Type', 'application/pdf');
+      res.set('Content-Disposition', `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="${invoiceNumber(order)}.pdf"`);
+      res.send(bytes);
+    }),
     admin: handle(async (_req, res) => {
       const { rows } = await db.query('SELECT id,po_number,status,snapshot,delivery,stripe_session_id,stripe_payment_intent,created_at,updated_at FROM hamper_orders ORDER BY created_at DESC LIMIT 200');
       res.json({ orders: rows, mode: 'sandbox' });

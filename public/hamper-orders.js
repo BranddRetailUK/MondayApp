@@ -57,6 +57,14 @@ function renderHamperOrders() {
     const totalsHeading = document.createElement('h3'); totalsHeading.textContent = 'Order totals';
     totals.append(totalsHeading, paragraph(`Hampers: ${money(q.subtotalPence)} ex. VAT`), paragraph(`Hamper VAT: ${money(q.productVatPence)}`), paragraph(`Delivery: ${money(q.shippingPence)} ex. VAT`), paragraph(`Delivery VAT (20%): ${money(q.shippingVatPence)}`), paragraph(`Total: ${money(q.totalPence)}`, 'order-primary'));
     if (order.stripe_payment_intent) { const link = document.createElement('a'); link.href = `https://dashboard.stripe.com/acct_1UaBAa7O9atIxBPe/test/payments/${encodeURIComponent(order.stripe_payment_intent)}`; link.textContent = 'View payment in Stripe'; link.className = 'order-link'; link.target = '_blank'; link.rel = 'noopener'; totals.append(link); }
+    const invoiceActions = document.createElement('div'); invoiceActions.className = 'hamper-invoice-actions';
+    for (const [label, download] of [['View invoice', false], ['Download invoice', true]]) {
+      const link = document.createElement('a'); link.className = 'proof-secondary-button'; link.textContent = label;
+      link.href = `/api/hamper-orders/${encodeURIComponent(order.id)}/invoice${download ? '?download=1' : ''}`;
+      if (download) link.download = ''; else { link.target = '_blank'; link.rel = 'noopener'; }
+      invoiceActions.append(link);
+    }
+    totals.append(invoiceActions);
     detailGrid.append(lineItems, totals); detailCell.append(detailGrid); detailsRow.append(detailCell);
     const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'proof-secondary-button'; toggle.textContent = 'View details'; toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-controls', detailsRow.id);
     toggle.addEventListener('click', () => { detailsRow.hidden = !detailsRow.hidden; toggle.setAttribute('aria-expanded', String(!detailsRow.hidden)); toggle.textContent = detailsRow.hidden ? 'View details' : 'Hide details'; });
