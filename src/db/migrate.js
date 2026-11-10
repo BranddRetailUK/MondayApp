@@ -84,6 +84,7 @@ async function initDb() {
   await run('CREATE INDEX IF NOT EXISTS hub_sessions_user_idx ON hub_sessions(user_id);');
   await run('CREATE INDEX IF NOT EXISTS hub_sessions_expires_idx ON hub_sessions(expires_at);');
 
+  await require('./hamperSchema').ensureHamperTables(pool);
   await ensureDtfTables(pool);
   await require('./holidaySchema').ensureHolidayTables(pool);
   await require('./holidayReference').importHolidayReference(pool);

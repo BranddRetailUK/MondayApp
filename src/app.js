@@ -26,11 +26,17 @@ app.use((req, res, next) => {
   next();
 });
 
+const hamperRoutes = require('./routes/hamper-checkout').createRoutes(require('./db/pool'));
+app.post('/api/hamper-checkout/webhook', express.raw({ type: 'application/json', limit: '256kb' }), hamperRoutes.webhook);
+app.use('/api/hamper-checkout', express.json({ limit: '16kb' }), hamperRoutes.router);
+
 // ---- parse JSON BEFORE routes
 app.use(express.json());
 app.use(attachHubUser);
 
 app.use(require('./routes/hub-auth'));
+app.get('/api/hamper-orders', requireHubFullApiAccess, hamperRoutes.admin);
+app.get('/hamper-orders.html', requireHubFullPageAccess, (_req, res) => res.sendFile(path.join(publicDir, 'hamper-orders.html')));
 
 app.get(['/', '/index.html'], requireHubPageAuth, (_req, res) => {
   res.sendFile(path.join(publicDir, 'index.html'));
