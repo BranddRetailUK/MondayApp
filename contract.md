@@ -1500,3 +1500,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - The Christmas homepage hero uses three separate transparent WebP hamper cutouts (Fireside Feast, Frosted Gift Hamper and Sparkle Hamper) layered directly over the green banner. Each is independently linked and animated with staggered 9/10/11-second gentle floating motion. The white image card/caption is removed; mobile stacks the composition below the copy, and reduced-motion preferences disable movement.
 
 - The animated Christmas hero background spans the full viewport width, with centred content constrained to 1440px for readable text and balanced hamper composition.
+
+- Christmas storefront navigation spans the full page width. Desktop uses independent logo/centred-link/cart columns, and narrower screens place centred navigation below the logo and cart.
