@@ -75,3 +75,14 @@ test('sandbox checkout persistence, retries, signed webhook validation and monot
   await assert.rejects(disabled.create(input), /being prepared/);
   await pg.close();
 });
+test('every SKU uses its independently extracted brochure VAT rate', () => {
+  const brochure = require('./fixtures/hamper-brochure-vat.json');
+  assert.equal(brochure.products.length, 90);
+  assert.equal(new Set(brochure.products.map(p => p.sku)).size, 90);
+  for (const source of brochure.products) {
+    const product = catalogue.find(p => p.sku === source.sku);
+    assert.ok(product, source.sku);
+    assert.equal(product.page, source.page, `${source.sku} source page`);
+    assert.equal(quote(source.sku, 1).vatPercent, source.vatPercent, `${source.sku} VAT`);
+  }
+});

@@ -1,0 +1,457 @@
+{
+  "source": "AW26 Spicers of Hythe- Corporate Brochure May 2026.pdf",
+  "sha256": "69a613254c2c885c680ce600da6e2c5be75febac0dd90822384a67142332b510",
+  "verifiedAt": "2026-11-10",
+  "products": [
+    {
+      "sku": "H26001",
+      "page": 2,
+      "vatPercent": 10.9
+    },
+    {
+      "sku": "H26002",
+      "page": 3,
+      "vatPercent": 8.2
+    },
+    {
+      "sku": "H26003",
+      "page": 4,
+      "vatPercent": 13.3
+    },
+    {
+      "sku": "H26004",
+      "page": 5,
+      "vatPercent": 13.6
+    },
+    {
+      "sku": "H26006",
+      "page": 6,
+      "vatPercent": 11.7
+    },
+    {
+      "sku": "H25008",
+      "page": 7,
+      "vatPercent": 16.2
+    },
+    {
+      "sku": "H25009",
+      "page": 8,
+      "vatPercent": 16.2
+    },
+    {
+      "sku": "H25011",
+      "page": 9,
+      "vatPercent": 11.6
+    },
+    {
+      "sku": "H26016",
+      "page": 10,
+      "vatPercent": 9.7
+    },
+    {
+      "sku": "H25017",
+      "page": 11,
+      "vatPercent": 8.8
+    },
+    {
+      "sku": "H26018",
+      "page": 12,
+      "vatPercent": 11.6
+    },
+    {
+      "sku": "H26019",
+      "page": 13,
+      "vatPercent": 13.9
+    },
+    {
+      "sku": "H26020",
+      "page": 14,
+      "vatPercent": 14.4
+    },
+    {
+      "sku": "H25021",
+      "page": 15,
+      "vatPercent": 14.0
+    },
+    {
+      "sku": "H26022",
+      "page": 16,
+      "vatPercent": 10.9
+    },
+    {
+      "sku": "H26023",
+      "page": 17,
+      "vatPercent": 13.5
+    },
+    {
+      "sku": "H26024",
+      "page": 18,
+      "vatPercent": 13.8
+    },
+    {
+      "sku": "H26025",
+      "page": 19,
+      "vatPercent": 13.1
+    },
+    {
+      "sku": "H26026",
+      "page": 20,
+      "vatPercent": 10.1
+    },
+    {
+      "sku": "H26027",
+      "page": 21,
+      "vatPercent": 14.3
+    },
+    {
+      "sku": "H25028",
+      "page": 22,
+      "vatPercent": 14.8
+    },
+    {
+      "sku": "H26029",
+      "page": 23,
+      "vatPercent": 15.2
+    },
+    {
+      "sku": "H26030",
+      "page": 24,
+      "vatPercent": 15.1
+    },
+    {
+      "sku": "H25031",
+      "page": 25,
+      "vatPercent": 15.1
+    },
+    {
+      "sku": "H26032",
+      "page": 26,
+      "vatPercent": 14.9
+    },
+    {
+      "sku": "H26033",
+      "page": 27,
+      "vatPercent": 14.7
+    },
+    {
+      "sku": "H26034",
+      "page": 28,
+      "vatPercent": 15.6
+    },
+    {
+      "sku": "H26035",
+      "page": 29,
+      "vatPercent": 14.7
+    },
+    {
+      "sku": "H26036",
+      "page": 30,
+      "vatPercent": 15.6
+    },
+    {
+      "sku": "H26037",
+      "page": 31,
+      "vatPercent": 14.2
+    },
+    {
+      "sku": "H26038",
+      "page": 32,
+      "vatPercent": 14.5
+    },
+    {
+      "sku": "H26039",
+      "page": 33,
+      "vatPercent": 16.8
+    },
+    {
+      "sku": "H26040",
+      "page": 34,
+      "vatPercent": 15.1
+    },
+    {
+      "sku": "H26041",
+      "page": 35,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "H25050",
+      "page": 36,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "H25060",
+      "page": 37,
+      "vatPercent": 5.9
+    },
+    {
+      "sku": "H26062",
+      "page": 38,
+      "vatPercent": 7.3
+    },
+    {
+      "sku": "H26063",
+      "page": 39,
+      "vatPercent": 0.0
+    },
+    {
+      "sku": "H25064",
+      "page": 40,
+      "vatPercent": 8.2
+    },
+    {
+      "sku": "H26065",
+      "page": 41,
+      "vatPercent": 10.9
+    },
+    {
+      "sku": "H25066",
+      "page": 42,
+      "vatPercent": 13.1
+    },
+    {
+      "sku": "H26067",
+      "page": 43,
+      "vatPercent": 0.0
+    },
+    {
+      "sku": "H26068",
+      "page": 44,
+      "vatPercent": 11.7
+    },
+    {
+      "sku": "H26069",
+      "page": 45,
+      "vatPercent": 11.9
+    },
+    {
+      "sku": "H26073",
+      "page": 46,
+      "vatPercent": 7.7
+    },
+    {
+      "sku": "H21080",
+      "page": 47,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "H26102",
+      "page": 48,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "H26103",
+      "page": 49,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "H26111",
+      "page": 50,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "H25112",
+      "page": 51,
+      "vatPercent": 8.3
+    },
+    {
+      "sku": "H26115",
+      "page": 52,
+      "vatPercent": 15.0
+    },
+    {
+      "sku": "H25118",
+      "page": 53,
+      "vatPercent": 0.0
+    },
+    {
+      "sku": "H26129",
+      "page": 54,
+      "vatPercent": 14.3
+    },
+    {
+      "sku": "H26132",
+      "page": 55,
+      "vatPercent": 15.1
+    },
+    {
+      "sku": "H26137",
+      "page": 56,
+      "vatPercent": 0.0
+    },
+    {
+      "sku": "H25152",
+      "page": 57,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "H25156",
+      "page": 58,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "H25157",
+      "page": 59,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "H26160",
+      "page": 60,
+      "vatPercent": 9.8
+    },
+    {
+      "sku": "H26161",
+      "page": 61,
+      "vatPercent": 5.7
+    },
+    {
+      "sku": "H26228",
+      "page": 62,
+      "vatPercent": 8.8
+    },
+    {
+      "sku": "MOON148",
+      "page": 63,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "MOON305",
+      "page": 64,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "MOON306",
+      "page": 65,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "TTTF18",
+      "page": 66,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "TTTW18",
+      "page": 67,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "WINE2426",
+      "page": 68,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "FIZZ2426",
+      "page": 69,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "BEER2426",
+      "page": 70,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "CASE6001",
+      "page": 71,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "CASE6002",
+      "page": 72,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "CLOF18",
+      "page": 73,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "CLOG18",
+      "page": 74,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "CLOGNA18",
+      "page": 75,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "TTTNA18",
+      "page": 76,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "TTSNA18",
+      "page": 77,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "P19007",
+      "page": 78,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "P25043",
+      "page": 79,
+      "vatPercent": 0.0
+    },
+    {
+      "sku": "P25001",
+      "page": 80,
+      "vatPercent": 8.9
+    },
+    {
+      "sku": "P25046",
+      "page": 81,
+      "vatPercent": 14.0
+    },
+    {
+      "sku": "H26204",
+      "page": 82,
+      "vatPercent": 15.4
+    },
+    {
+      "sku": "H26206",
+      "page": 83,
+      "vatPercent": 13.5
+    },
+    {
+      "sku": "H26208",
+      "page": 84,
+      "vatPercent": 7.9
+    },
+    {
+      "sku": "H26237",
+      "page": 85,
+      "vatPercent": 16.3
+    },
+    {
+      "sku": "H26238",
+      "page": 86,
+      "vatPercent": 13.8
+    },
+    {
+      "sku": "H26240",
+      "page": 87,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "BTL001",
+      "page": 88,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "BTL002",
+      "page": 89,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "BTL003",
+      "page": 90,
+      "vatPercent": 20.0
+    },
+    {
+      "sku": "BTL004",
+      "page": 91,
+      "vatPercent": 20.0
+    }
+  ]
+}

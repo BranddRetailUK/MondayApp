@@ -21,5 +21,13 @@ const Stripe = require('stripe');
     assert.equal(session.amount_total, service.getQuote(input.sku, quantity).totalPence);
     console.log(JSON.stringify({ order: result.id, session: session.id, quantity, totalPence: session.amount_total, testMode: !session.livemode, retrySameSession: true }));
     await stripe.checkout.sessions.expire(session.id);
+    let final;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      final = await service.status(result.id);
+      if (final.status === 'expired') break;
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    assert.equal(final.status, 'expired', 'The deployed webhook must persist the expiration');
+    console.log(JSON.stringify({ order: result.id, webhookStatus: final.status }));
   }
 })().catch(error => { console.error(error.message); process.exitCode = 1; }).finally(() => pool.end());
