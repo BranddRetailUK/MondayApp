@@ -1,7 +1,8 @@
 'use strict';
 (async () => {
   const params = new URLSearchParams(location.search);
-  const discountCode = params.get('discount') || '';
+  let discountCode = '';
+  const discountPanel = document.querySelector('#discount-panel');
   const message = document.querySelector('#message');
   const cart = window.HamperCart;
   const money = n => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(n / 100);
@@ -37,6 +38,7 @@
   }
   try {
     if (params.has('order')) {
+      discountPanel.hidden = true;
       document.body.classList.add('order-result');
       const confirmation = document.querySelector('#confirmation'); const title = document.querySelector('h1'); const subtitle = document.querySelector('header>p');
       title.textContent = 'Checking your payment'; subtitle.textContent = 'Please keep this page open while we confirm your payment.'; message.textContent = '';
@@ -76,9 +78,10 @@
         document.querySelector('h1').textContent = quote.items.length > 1 ? 'Your Christmas hampers' : 'Your Christmas hamper';
         productRows(document.querySelector('#checkout-items'), quote.items); totals(document.querySelector('#totals'), quote, 'Total to pay');
         message.textContent = quote.available ? '' : 'Checkout is being prepared. Please contact our team to order.'; pay.disabled = !quote.available;
-        history.replaceState(null, '', `?cart=${encodeURIComponent(JSON.stringify(items))}${discountCode ? `&discount=${encodeURIComponent(discountCode)}` : ''}`);
+        history.replaceState(null, '', `?cart=${encodeURIComponent(JSON.stringify(items))}`);
       } catch (error) { if (version === quoteVersion) { document.querySelector('#checkout').hidden = true; showError(error); } }
     }
+    document.querySelector('#apply-discount').addEventListener('click', () => { discountCode = document.querySelector('#discount-code').value.trim(); updateQuote(); });
     window.addEventListener('hampercartchange', updateQuote);
     await updateQuote();
     form.addEventListener('submit', async event => {
