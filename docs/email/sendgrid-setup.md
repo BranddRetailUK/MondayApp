@@ -2,7 +2,7 @@
 
 Railway: UltimateHub / production / UltimateHub. Uses the existing Good Game Apparel SendGrid account and API key, copied directly between Railway services without saving the secret in the repository.
 
-Sender: sales@upcbranding.co.uk. Confirmed reply-to: sales@ultimatepromotions.co.uk; UPC DNS has no MX records. Sender name: Ultimate Promotions.
+Sender: hampers@ultimatepromotions.co.uk (updated 11 November 2026). Reply-to: sales@ultimatepromotions.co.uk. Sender name: Ultimate Promotions. The ultimatepromotions.co.uk SendGrid domain authentication 33726409 is verified. Campaign sending remains disabled by default; individual tests require explicit authorization.
 
 ## Domain authentication
 
