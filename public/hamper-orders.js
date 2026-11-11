@@ -66,6 +66,7 @@ function renderHamperOrders() {
       invoiceActions.append(link);
     }
     totals.append(invoiceActions);
+    if(order.confirmation_email_status) totals.append(paragraph('Confirmation email: '+({pending:'Queued',sending:'Sending',sent:'Accepted by SendGrid',failed:'Failed — review required',unknown:'Delivery uncertain — check SendGrid before retrying'}[order.confirmation_email_status]||order.confirmation_email_status)));
     detailGrid.append(lineItems, totals); detailCell.append(detailGrid); detailsRow.append(detailCell);
     const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'proof-secondary-button'; toggle.textContent = 'View details'; toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-controls', detailsRow.id);
     toggle.addEventListener('click', () => { detailsRow.hidden = !detailsRow.hidden; toggle.setAttribute('aria-expanded', String(!detailsRow.hidden)); toggle.textContent = detailsRow.hidden ? 'View details' : 'Hide details'; });

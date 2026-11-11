@@ -51,3 +51,11 @@ November 2026 styling: all three emails use the site’s cream background across
 Each email now contains six products in ascending price order, recorded in `campaigns.json`; the original three gifts remain in each campaign. Product prices round upwards to .49/.99 after the 30% markup. Previous test sends described above predate this six-product revision.
 
 - Latest 10 November test: the first campaign with the wider six-product £29.99–£580.99 range passed sandbox validation and was accepted for scott@brandd.co.uk (SendGrid message `o5AL1KE6RlO3PDVYhU-mvA`). This supersedes the earlier narrow-range test for review; inbox delivery remains unverified.
+
+## Hamper transactional confirmations — 11 November 2026
+
+The existing ultimatepromotions.co.uk authentication **33726409** is now verified. Approved CNAMEs added in GoDaddy: `em9126` → `u59884118.wl119.sendgrid.net`, `s1._domainkey` → `s1.domainkey.u59884118.wl119.sendgrid.net`, `s2._domainkey` → `s2.domainkey.u59884118.wl119.sendgrid.net`. Existing DMARC and other records were preserved.
+
+Paid live hamper confirmations use hampers@ultimatepromotions.co.uk as From and Reply-To, with the generated invoice PDF attached. The worker uses the existing private SendGrid API key and a separate `HAMPER_EMAIL_ENABLED` flag. Marketing sending remains disabled. Charlie receives a hidden BCC controlled by `HAMPER_EMAIL_MONITOR_ENABLED` and `HAMPER_EMAIL_MONITOR_BCC`; turn the former off to disable monitoring. A sent outbox status means SendGrid accepted the message; inbox delivery needs provider/inbox evidence. Never automatically resend unknown deliveries, as a timeout may follow provider acceptance.
+
+- 11 November 2026: confirmation preview accepted by SendGrid for scott@brandd.co.uk with hidden monitoring copy to charlie@ultimatepromotions.co.uk, message ID `UrxGVxMmSu-tlhXIz43yeg`. Attached HINV-000000.pdf is explicitly a sandbox preview, not a live VAT invoice. No charge, Hub order or discount redemption was created. Browser preview checked; inbox delivery is not independently confirmed. Fifteen checkout/invoice/email tests passed.

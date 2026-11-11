@@ -186,9 +186,10 @@ test('live mode isolates orders, validates account readiness and authenticates b
   const eventId='evt_live_duplicate';await send(liveSession,true,'whsec_live',eventId);await send(liveSession,true,'whsec_live',eventId);
   await send(liveSession,true,'whsec_live','evt_late_expired','checkout.session.expired');
   assert.equal((await service.status(id)).status,'paid');
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM hamper_confirmation_emails WHERE order_id=$1',[id])).rows[0].n,1);
   assert.equal((await db.query('SELECT count(*)::int AS n FROM hamper_payment_events WHERE id=$1',[eventId])).rows[0].n,1);
   const oldSession={...liveSession,id:'cs_test_old',livemode:false,metadata:{hamper_order_id:oldId,integration:'ultimate-hampers-sandbox'},client_reference_id:oldId};
-  await send(oldSession,false,'whsec_test');assert.equal((await service.status(oldId)).status,'paid');
+  await send(oldSession,false,'whsec_test');assert.equal((await service.status(oldId)).status,'paid');assert.equal((await db.query('SELECT count(*)::int AS n FROM hamper_confirmation_emails WHERE order_id=$1',[oldId])).rows[0].n,0);
   await assert.rejects(send({...liveSession,metadata:{hamper_order_id:oldId,integration:'ultimate-hampers-live'},client_reference_id:oldId},true,'whsec_live'),/order mode mismatch/);
   for(const overrides of [{HAMPER_STRIPE_LIVE_SECRET_KEY:'sk_test_wrong'},{HAMPER_STRIPE_LIVE_WEBHOOK_SECRET:''},{HAMPER_STRIPE_LIVE_ACCOUNT_ID:''},{HAMPER_CHECKOUT_MODE:'unexpected'}]) {
     const invalid=createService({db,env:{...env,...overrides},stripe:fake});assert.equal(invalid.configured(),false);await assert.rejects(invalid.create(input),/being prepared/);

@@ -31,6 +31,12 @@ async function ensureHamperTables(db) {
       id TEXT PRIMARY KEY, order_id UUID REFERENCES hamper_orders(id),
       type TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS hamper_confirmation_emails (
+      order_id UUID PRIMARY KEY REFERENCES hamper_orders(id),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','sending','sent','failed','unknown')),
+      provider_message_id TEXT, last_error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     CREATE TABLE IF NOT EXISTS hamper_cleared_orders (
       id UUID PRIMARY KEY, cleared_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );

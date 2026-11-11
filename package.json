@@ -23,7 +23,7 @@
     "test:suppliers": "node --test test/supplier-integrations.test.js test/ralawise-basket.test.js test/stock-ordering-ralawise.test.js",
     "test:database-addresses": "node --test test/database-customer-addresses.test.js test/database-saved-addresses.test.js",
     "test:labels": "node --test test/label-layout.test.js",
-    "test:hampers": "node --test test/hamper-checkout.test.js test/hamper-invoice.test.js",
+    "test:hampers": "node --test test/hamper-checkout.test.js test/hamper-invoice.test.js test/hamper-email.test.js",
     "test:dtf": "node --test test/dtf.test.js test/dtf-routes.test.js",
     "preflight:dtf-cloudinary": "node scripts/preflight-dtf-cloudinary.js",
     "preflight:dtf-cloudinary:large": "node scripts/preflight-dtf-cloudinary.js --large",

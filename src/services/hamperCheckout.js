@@ -192,6 +192,7 @@ function createService({ db, env = process.env, stripe: injectedStripe } = {}) {
         if ((event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') && session.payment_status === 'paid') next = 'paid';
         else if (order.status !== 'paid' && event.type === 'checkout.session.expired') next = 'expired';
         else if (order.status !== 'paid' && event.type === 'checkout.session.async_payment_failed') next = 'failed';
+        if(next === 'paid' && order.mode === 'live') await conn.query('INSERT INTO hamper_confirmation_emails(order_id) VALUES($1) ON CONFLICT DO NOTHING',[id]);
         await conn.query('UPDATE hamper_orders SET status=$2,stripe_session_id=$3,stripe_payment_intent=$4,updated_at=NOW() WHERE id=$1', [id, next, session.id, session.payment_intent || null]);
       }
       await conn.query('COMMIT');
