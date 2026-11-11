@@ -23,6 +23,10 @@ async function ensureHamperTables(db) {
         UPDATE hamper_orders SET po_number=nextval('hamper_po_sequence') WHERE id=existing_order.id AND po_number IS NULL;
       END LOOP;
     END $$;
+    CREATE TABLE IF NOT EXISTS hamper_discount_redemptions (
+      code_hash TEXT PRIMARY KEY, order_id UUID NOT NULL UNIQUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     CREATE TABLE IF NOT EXISTS hamper_payment_events (
       id TEXT PRIMARY KEY, order_id UUID REFERENCES hamper_orders(id),
       type TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

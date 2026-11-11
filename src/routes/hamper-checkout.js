@@ -13,7 +13,7 @@ function createRoutes(db, options = {}) {
     }
   };
   router.get('/catalogue', handle(async (_req, res) => { res.set('Access-Control-Allow-Origin', SITE); res.json(service.catalogue()); }));
-  router.post('/quote', handle(async (req, res) => res.json({ ...service.getCartQuote(req.body.items), available: service.configured() })));
+  router.post('/quote', handle(async (req, res) => res.json({ ...service.checkoutQuote(req.body.items, req.body.discountCode), available: service.configured() })));
   router.get('/quote', handle(async (req, res) => {
     res.json({ ...service.getQuote(req.query.sku, Number(req.query.quantity)), available: service.configured() });
   }));

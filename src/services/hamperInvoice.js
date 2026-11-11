@@ -69,6 +69,7 @@ async function generateHamperInvoice(order) {
     let x=left;
     values.forEach((v,i)=>{page.drawRectangle({x,y:height-y-rh,width:widths[i],height:rh,borderWidth:.5,borderColor:rgb(.2,.2,.2)});chunks[i].forEach((part,j)=>text(part,x+4,y+5+j*10,8,headings));x+=widths[i];}); y+=rh;
   }
+  if(q.discountLabel) { text(`${q.discountLabel}: saved ${money(q.discountPence)} including VAT.`,left,y,8,true); y+=14; text('All line prices below include this discount.',left,y,8); y+=18; }
   tableRow(['Description','Qty','Price','Total','VAT','Rate'],true);
   for(const item of lines)tableRow([item.name,item.quantity,money(item.unitPence),money(item.subtotalPence),money(item.productVatPence),`${item.vatPercent}%`]);
   if(y+86>mm(245))newPage();

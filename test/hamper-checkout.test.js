@@ -202,3 +202,27 @@ test('live mode isolates orders, validates account readiness and authenticates b
   await assert.rejects(createService({db,env,stripe:wrongSession}).create({...input,requestId:crypto.randomUUID()}),/mismatch/);assert.equal(expires,1);
   await pg.close();
 });
+
+test('single-use live test discount preserves VAT, rejects other carts and prevents a second checkout', async () => {
+  const pg = new PGlite();
+  const db = {query: async (sql, params) => !params && sql.includes('CREATE TABLE') ? pg.exec(sql) : pg.query(sql,params)};
+  await ensureHamperTables(db);
+  const code='PRIVATE-TEST-CODE';
+  const env={HAMPER_CHECKOUT_MODE:'live',HAMPER_STRIPE_LIVE_SECRET_KEY:'rk_live_fake',HAMPER_STRIPE_LIVE_WEBHOOK_SECRET:'whsec_live',HAMPER_STRIPE_LIVE_ACCOUNT_ID:'acct_expected',HAMPER_TEST_DISCOUNT_SHA256:crypto.createHash('sha256').update(code).digest('hex'),HAMPER_TEST_DISCOUNT_EXPIRES:new Date(Date.now()+3600000).toISOString()};
+  let calls=0;
+  const stripe={accounts:{retrieve:async()=>({id:'acct_expected',charges_enabled:true,details_submitted:true})},taxRates:{create:async r=>({id:`vat_${r.percentage}`})},checkout:{sessions:{create:async p=>{calls++;assert.equal(p.line_items[0].price_data.unit_amount,22);assert.equal(p.line_items[1].price_data.unit_amount,5);assert.deepEqual(p.line_items.map(l=>l.tax_rates[0]),['vat_8.2','vat_20']);return{id:'cs_live_discount',url:'https://checkout.stripe.com/discount',amount_total:30,currency:'gbp',livemode:true};},expire:async()=>{}}}};
+  const svc=createService({db,env,stripe}), items=[{sku:'H26002',quantity:1}];
+  const q=svc.checkoutQuote(items,code);assert.equal(q.totalPence,30);assert.equal(q.productVatPence,2);assert.equal(q.shippingVatPence,1);assert.equal(q.discountPence,4085);assert.equal(q.items[0].unitPence,22);
+  assert.equal(svc.checkoutQuote(items).totalPence,4115);
+  for(const invalid of [[{sku:'H26002',quantity:2}],[{sku:'H26001',quantity:1}]]) assert.throws(()=>svc.checkoutQuote(invalid,code),/one Christmas/);
+  assert.throws(()=>svc.checkoutQuote(items,'wrong'),/invalid/);
+  assert.throws(()=>createService({db,env:{...env,HAMPER_TEST_DISCOUNT_EXPIRES:'2020-01-01'},stripe}).checkoutQuote(items,code),/expired/);
+  const input={requestId:crypto.randomUUID(),items,delivery,discountCode:code};
+  await svc.create(input);await svc.create(input);assert.equal(calls,1);
+  await assert.rejects(svc.create({...input,requestId:crypto.randomUUID()}),/already been used/);
+  assert.equal(Number((await db.query('SELECT count(*) AS n FROM hamper_orders')).rows[0].n),1);
+  assert.equal((await svc.status(input.requestId)).snapshot.totalPence,30);
+  const {generateHamperInvoice}=require('../src/services/hamperInvoice');
+  const pdf=await generateHamperInvoice({...((await db.query('SELECT * FROM hamper_orders')).rows[0]),status:'paid'});assert.ok(pdf.length>1000);
+  await pg.close();
+});

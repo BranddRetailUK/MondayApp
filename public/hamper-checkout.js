@@ -1,6 +1,7 @@
 'use strict';
 (async () => {
   const params = new URLSearchParams(location.search);
+  const discountCode = params.get('discount') || '';
   const message = document.querySelector('#message');
   const cart = window.HamperCart;
   const money = n => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(n / 100);
@@ -27,6 +28,7 @@
   }
   function totals(container, quote, totalLabel) {
     container.replaceChildren();
+    if (quote.discountLabel) { const note = document.createElement('p'); note.textContent = `${quote.discountLabel}: saved ${money(quote.discountPence)} including VAT. Prices below include the discount.`; container.append(note); }
     const lines = quote.items || [quote];
     const rows = [['Hampers (ex. VAT)', quote.subtotalPence], ...lines.map(item => [`${item.name} VAT (${item.vatPercent}%)`, item.productVatPence]), [`Delivery (${money(quote.deliveryUnitPence)} × ${quote.quantity})`, quote.shippingPence], ['Delivery VAT (20%)', quote.shippingVatPence], [totalLabel, quote.totalPence]];
     for (const [label, amount] of rows) {
@@ -68,13 +70,13 @@
       const items = cart.getItems();
       if (!items.length) { document.querySelector('#checkout').hidden = true; message.textContent = 'Your cart is empty. Use the logo above to browse the collection.'; return; }
       try {
-        const quote = await api('quote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) });
+        const quote = await api('quote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items, discountCode }) });
         if (version !== quoteVersion) return;
         showMode(quote.mode); latestQuote = quote; document.querySelector('#checkout').hidden = false;
         document.querySelector('h1').textContent = quote.items.length > 1 ? 'Your Christmas hampers' : 'Your Christmas hamper';
         productRows(document.querySelector('#checkout-items'), quote.items); totals(document.querySelector('#totals'), quote, 'Total to pay');
         message.textContent = quote.available ? '' : 'Checkout is being prepared. Please contact our team to order.'; pay.disabled = !quote.available;
-        history.replaceState(null, '', `?cart=${encodeURIComponent(JSON.stringify(items))}`);
+        history.replaceState(null, '', `?cart=${encodeURIComponent(JSON.stringify(items))}${discountCode ? `&discount=${encodeURIComponent(discountCode)}` : ''}`);
       } catch (error) { if (version === quoteVersion) { document.querySelector('#checkout').hidden = true; showError(error); } }
     }
     window.addEventListener('hampercartchange', updateQuote);
@@ -83,9 +85,9 @@
       event.preventDefault(); if (!latestQuote || pay.disabled) return;
       pay.disabled = true; message.className = ''; message.textContent = 'Opening secure checkout…';
       const delivery = Object.fromEntries(new FormData(form)); delivery.mainland = document.querySelector('#mainland').checked;
-      const items = cart.getItems(); const payload = JSON.stringify({ items, delivery });
+      const items = cart.getItems(); const payload = JSON.stringify({ items, delivery, discountCode });
       if (lastPayload && lastPayload !== payload) requestId = crypto.randomUUID(); lastPayload = payload;
-      try { const session = await api('sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items, delivery, requestId }) }); location.assign(session.url); }
+      try { const session = await api('sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items, delivery, requestId, discountCode }) }); location.assign(session.url); }
       catch (error) { showError(error); pay.disabled = false; }
     });
   } catch (error) { showError(error); }

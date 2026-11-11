@@ -54,6 +54,7 @@ function renderHamperOrders() {
       line.append(image, info); lineItems.append(line);
     }
     const totals = document.createElement('section');
+    if(q.discountLabel) totals.append(paragraph(`${q.discountLabel}: saved ${money(q.discountPence)} including VAT. All amounts include the discount.`));
     const totalsHeading = document.createElement('h3'); totalsHeading.textContent = 'Order totals';
     totals.append(totalsHeading, paragraph(`Hampers: ${money(q.subtotalPence)} ex. VAT`), paragraph(`Hamper VAT: ${money(q.productVatPence)}`), paragraph(`Delivery: ${money(q.shippingPence)} ex. VAT`), paragraph(`Delivery VAT (20%): ${money(q.shippingVatPence)}`), paragraph(`Total: ${money(q.totalPence)}`, 'order-primary'));
     if (order.stripe_payment_intent) { const link = document.createElement('a'); link.href = `https://dashboard.stripe.com/${encodeURIComponent(q.stripeAccountId || 'acct_1UaBAa7O9atIxBPe')}/${order.mode === 'live' ? '' : 'test/'}payments/${encodeURIComponent(order.stripe_payment_intent)}`; link.textContent = 'View payment in Stripe'; link.className = 'order-link'; link.target = '_blank'; link.rel = 'noopener'; totals.append(link); }
