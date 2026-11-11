@@ -2,7 +2,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 const money = n => `£${(n / 100).toFixed(2)}`;
-const COMPANY_NAME = 'The Ultimate Promotions Company Ltd';
+const COMPANY_NAME = 'The Ultimate Promotion Company Ltd';
 const invoiceNumber = order => `HINV-${String(order.po_number).padStart(6, '0')}`;
 async function generateHamperInvoice(order) {
   const pdf = await PDFDocument.create();

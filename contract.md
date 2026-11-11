@@ -1518,3 +1518,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 - Mobile storefront audit covered 320, 375, 390, 430 and 768px widths, all curated categories, All hampers filters, long product titles, cart and checkout. Mobile price selects use 16px text and 44px height; shared cart quantity/remove controls use 40px touch targets, 16px quantity text and a 44px close button.
 
 - On storefront screens up to 750px, a hamburger opens a native modal navigation drawer containing all five category links, gifting help and contact. The compact header retains centred logo and cart. Drawer and backdrop animate open/closed, support Escape, outside click, focus restoration and reduced motion, and close when resizing to desktop. All hampers now defaults to ascending price sorting.
+
+- Customer-facing Christmas storefront/email company name is The Ultimate Promotion Company Ltd (singular Promotion), also reflected in hamper invoice captions and metadata. All storefront footers, the mobile navigation drawer and all three HTML/plain-text email templates include 01442 264288; web/HTML phone links use tel:+441442264288.
