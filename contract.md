@@ -1540,3 +1540,5 @@ Latest live Smiley job `ce6324a2-80da-4e24-91ab-7c1cc981dcb3` (2026-10-14T14:22:
 
 - The dedicated ultimatechristmas storefront uses `https://christmashampers.ultimatepromotions.co.uk`, connected to its existing Railway service on port 8080. Only the subdomain CNAME and Railway ownership TXT records are added; the apex, www, nameservers and email DNS remain unchanged.
 - Storefront/cart links, checkout return-to-shop links and images, order-confirmation email assets, and all three HTML/plain-text Christmas campaign templates use the new storefront domain. Catalogue CORS permits the new storefront origin. Checkout and Stripe webhooks remain on the existing Ultimate Hub host. Template updates do not send campaigns.
+
+- Hamper footer wording (11 November 2026): every storefront footer and all three HTML/plain-text campaign templates show “Bulk delivery POA.” on its own line, followed by “Subject to availability - Alternative products will be offered.” The footer phrase “More than 10 hampers” is removed. Product purchase guidance and the checkout quantity limit remain unchanged.
