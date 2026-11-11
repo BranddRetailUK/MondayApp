@@ -1,6 +1,6 @@
 # Ultimate Christmas
 
-Live site: https://ultimatechristmas-production.up.railway.app/
+Live site: https://christmashampers.ultimatepromotions.co.uk/
 
 Dedicated Railway service `ultimatechristmas` (3334c04d-0daa-4359-95b8-c881561e2d37) in UltimateHub production (25edd9ec-8cf4-499c-b136-da2a1828b1b6), project b51fde69-eb1d-4b68-b772-a895c9676c31. Docker uses nginx on port 8080; only HTML, CSS, JS and public assets are served. `/health` returns 200. No credentials or database access are required.
 

@@ -1,6 +1,6 @@
 'use strict';
 const { generateHamperInvoice, invoiceNumber } = require('./hamperInvoice');
-const SITE = 'https://ultimatechristmas-production.up.railway.app';
+const SITE = 'https://christmashampers.ultimatepromotions.co.uk';
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = n => `£${(n/100).toFixed(2)}`;
 const company = 'The Ultimate Promotion Company Ltd';

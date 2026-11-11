@@ -6,7 +6,7 @@
   const message = document.querySelector('#message');
   const cart = window.HamperCart;
   const money = n => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(n / 100);
-  const SITE = 'https://ultimatechristmas-production.up.railway.app';
+  const SITE = 'https://christmashampers.ultimatepromotions.co.uk';
   async function api(path, options) {
     const response = await fetch(`/api/hamper-checkout/${path}`, { cache: 'no-store', ...options });
     const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Please try again.'); return data;

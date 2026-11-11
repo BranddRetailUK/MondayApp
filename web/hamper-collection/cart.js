@@ -1,6 +1,6 @@
 'use strict';
 (() => {
-  const SITE = 'https://ultimatechristmas-production.up.railway.app';
+  const SITE = 'https://christmashampers.ultimatepromotions.co.uk';
   const HUB = 'https://www.ultimatehub.co.uk';
   const KEY = 'ultimate-hamper-cart-v1';
   const money = n => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(n / 100);

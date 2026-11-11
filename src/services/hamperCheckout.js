@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const Stripe = require('stripe');
 const products = require('../../web/hamper-collection/products.json');
 const ACCOUNT = 'acct_1UaBAa7O9atIxBPe';
-const SITE = 'https://ultimatechristmas-production.up.railway.app';
+const SITE = 'https://christmashampers.ultimatepromotions.co.uk';
 const HUB = 'https://www.ultimatehub.co.uk';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 class CheckoutError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
