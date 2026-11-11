@@ -65,7 +65,7 @@ test('sandbox checkout persistence, retries, signed webhook validation and monot
   }
   await assert.rejects(service.webhook(Buffer.from('{}'), 'bad'), /signature/);
   await assert.rejects(send('checkout.session.completed', { ...session, amount_total: 1 }), /total mismatch/);
-  await assert.rejects(send('checkout.session.completed', session, { livemode: true }), /Live payments/);
+  await assert.rejects(send('checkout.session.completed', session, { livemode: true }), /payment mode mismatch/);
   await send('checkout.session.completed', { ...session, payment_status: 'unpaid' });
   assert.equal((await service.status(id)).status, 'pending');
   await send('checkout.session.async_payment_failed');
@@ -147,5 +147,58 @@ test('PO migration backfills older orders chronologically and retains numbers on
   assert.deepEqual(rows.map(r => r.id), [older, newer]);
   assert.deepEqual(rows.map(r => Number(r.po_number)), [1, 2]);
   await assert.rejects(db.query('UPDATE hamper_orders SET po_number=1 WHERE id=$1', [newer]), /unique/);
+  await pg.close();
+});
+
+test('live mode isolates orders, validates account readiness and authenticates both endpoint secrets', async () => {
+  const pg = new PGlite();
+  const db = { query: async (sql, params) => {
+    if (!params && sql.includes('CREATE TABLE')) return pg.exec(sql);
+    const r = await pg.query(sql, params); return { rows: r.rows, rowCount: r.affectedRows };
+  } };
+  db.connect = async () => ({query:db.query,release(){}});
+  // Exercise an existing sandbox-only schema upgrade, preserving its records.
+  await pg.exec("CREATE TABLE hamper_orders(id UUID PRIMARY KEY,request_hash TEXT NOT NULL,mode TEXT NOT NULL CHECK(mode='sandbox'),status TEXT NOT NULL DEFAULT 'pending',snapshot JSONB NOT NULL,delivery JSONB NOT NULL,stripe_session_id TEXT UNIQUE,stripe_payment_intent TEXT,checkout_url TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
+  const oldId=crypto.randomUUID();
+  await db.query("INSERT INTO hamper_orders(id,request_hash,mode,snapshot,delivery) VALUES($1,'old','sandbox',$2,$3)",[oldId,quote('H26002',1),delivery]);
+  await ensureHamperTables(db); await ensureHamperTables(db);
+  const env={HAMPER_CHECKOUT_MODE:'live',HAMPER_STRIPE_LIVE_SECRET_KEY:'sk_live_fake',HAMPER_STRIPE_LIVE_WEBHOOK_SECRET:'whsec_live',HAMPER_STRIPE_LIVE_ACCOUNT_ID:'acct_liveExpected',HAMPER_STRIPE_SECRET_KEY:'sk_test_fake',HAMPER_STRIPE_WEBHOOK_SECRET:'whsec_test'};
+  const real=new Stripe('sk_test_fake'); let sent, calls=0, expires=0;
+  let account={id:'acct_liveExpected',charges_enabled:true,details_submitted:true};
+  const fake={accounts:{retrieve:async()=>account},webhooks:real.webhooks,taxRates:{create:async r=>({id:`txr_${r.percentage}`})},checkout:{sessions:{create:async data=>{calls++;sent=data;return {id:'cs_live_123',url:'https://checkout.stripe.com/live',livemode:true,amount_total:quote('H26002',1).totalPence,currency:'gbp'};},expire:async()=>{expires++;}}}};
+  assert.equal(createService({db,env:{...env,HAMPER_STRIPE_LIVE_SECRET_KEY:'rk_live_fake'},stripe:fake}).configured(),true);
+  const service=createService({db,env,stripe:fake});
+  assert.equal(service.configured(),true); assert.equal(service.catalogue().mode,'live'); assert.equal(service.getCartQuote([{sku:'H26002',quantity:1}]).items[0].mode,'live');
+  const id=crypto.randomUUID(),input={requestId:id,sku:'H26002',quantity:1,delivery};
+  await service.create(input);await service.create(input);assert.equal(calls,1);
+  assert.equal(sent.custom_text,undefined);assert.equal(sent.metadata.integration,'ultimate-hampers-live');
+  assert.equal((await service.status(id)).mode,'live');assert.equal((await service.status(oldId)).mode,'sandbox');
+  assert.equal((await service.status(id)).snapshot.stripeAccountId,'acct_liveExpected');
+  await assert.rejects(service.create({...input,requestId:oldId}),/changed/);
+  const liveSession={id:'cs_live_123',livemode:true,metadata:{hamper_order_id:id,integration:'ultimate-hampers-live'},client_reference_id:id,currency:'gbp',amount_total:quote('H26002',1).totalPence,payment_status:'paid',payment_intent:'pi_live_123'};
+  const send=async(object,livemode,secret,eventId=crypto.randomUUID(),type='checkout.session.completed')=>{
+    const payload=JSON.stringify({id:eventId,type,livemode,data:{object}});
+    await service.webhook(Buffer.from(payload),real.webhooks.generateTestHeaderString({payload,secret}));
+  };
+  await assert.rejects(send(liveSession,true,'whsec_test'),/mode mismatch/);
+  await assert.rejects(send({...liveSession,amount_total:1},true,'whsec_live'),/total mismatch/);
+  await assert.rejects(send({...liveSession,livemode:false},true,'whsec_live'),/order mode mismatch/);
+  const eventId='evt_live_duplicate';await send(liveSession,true,'whsec_live',eventId);await send(liveSession,true,'whsec_live',eventId);
+  await send(liveSession,true,'whsec_live','evt_late_expired','checkout.session.expired');
+  assert.equal((await service.status(id)).status,'paid');
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM hamper_payment_events WHERE id=$1',[eventId])).rows[0].n,1);
+  const oldSession={...liveSession,id:'cs_test_old',livemode:false,metadata:{hamper_order_id:oldId,integration:'ultimate-hampers-sandbox'},client_reference_id:oldId};
+  await send(oldSession,false,'whsec_test');assert.equal((await service.status(oldId)).status,'paid');
+  await assert.rejects(send({...liveSession,metadata:{hamper_order_id:oldId,integration:'ultimate-hampers-live'},client_reference_id:oldId},true,'whsec_live'),/order mode mismatch/);
+  for(const overrides of [{HAMPER_STRIPE_LIVE_SECRET_KEY:'sk_test_wrong'},{HAMPER_STRIPE_LIVE_WEBHOOK_SECRET:''},{HAMPER_STRIPE_LIVE_ACCOUNT_ID:''},{HAMPER_CHECKOUT_MODE:'unexpected'}]) {
+    const invalid=createService({db,env:{...env,...overrides},stripe:fake});assert.equal(invalid.configured(),false);await assert.rejects(invalid.create(input),/being prepared/);
+  }
+  account={...account,id:'acct_wrong'};
+  await assert.rejects(createService({db,env,stripe:fake}).create(input),/Unexpected Stripe account/);
+  account={id:'acct_liveExpected',charges_enabled:false,details_submitted:true};
+  await assert.rejects(createService({db,env,stripe:fake}).create(input),/not ready/);
+  account={...account,charges_enabled:true};
+  const wrongSession={...fake,checkout:{sessions:{create:async()=>({id:'cs_test_wrong',livemode:false,amount_total:quote('H26002',1).totalPence,currency:'gbp'}),expire:fake.checkout.sessions.expire}}};
+  await assert.rejects(createService({db,env,stripe:wrongSession}).create({...input,requestId:crypto.randomUUID()}),/mismatch/);assert.equal(expires,1);
   await pg.close();
 });

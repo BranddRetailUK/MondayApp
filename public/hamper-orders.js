@@ -56,7 +56,7 @@ function renderHamperOrders() {
     const totals = document.createElement('section');
     const totalsHeading = document.createElement('h3'); totalsHeading.textContent = 'Order totals';
     totals.append(totalsHeading, paragraph(`Hampers: ${money(q.subtotalPence)} ex. VAT`), paragraph(`Hamper VAT: ${money(q.productVatPence)}`), paragraph(`Delivery: ${money(q.shippingPence)} ex. VAT`), paragraph(`Delivery VAT (20%): ${money(q.shippingVatPence)}`), paragraph(`Total: ${money(q.totalPence)}`, 'order-primary'));
-    if (order.stripe_payment_intent) { const link = document.createElement('a'); link.href = `https://dashboard.stripe.com/acct_1UaBAa7O9atIxBPe/test/payments/${encodeURIComponent(order.stripe_payment_intent)}`; link.textContent = 'View payment in Stripe'; link.className = 'order-link'; link.target = '_blank'; link.rel = 'noopener'; totals.append(link); }
+    if (order.stripe_payment_intent) { const link = document.createElement('a'); link.href = `https://dashboard.stripe.com/${encodeURIComponent(q.stripeAccountId || 'acct_1UaBAa7O9atIxBPe')}/${order.mode === 'live' ? '' : 'test/'}payments/${encodeURIComponent(order.stripe_payment_intent)}`; link.textContent = 'View payment in Stripe'; link.className = 'order-link'; link.target = '_blank'; link.rel = 'noopener'; totals.append(link); }
     const invoiceActions = document.createElement('div'); invoiceActions.className = 'hamper-invoice-actions';
     for (const [label, download] of [['View invoice', false], ['Download invoice', true]]) {
       const link = document.createElement('a'); link.className = 'proof-secondary-button'; link.textContent = label;
@@ -77,7 +77,9 @@ async function loadHamperOrders() {
   try {
     const response = await fetch('/api/hamper-orders', { cache: 'no-store' });
     if (!response.ok) throw new Error(response.status === 401 ? 'Please sign in to Ultimate Hub to view orders.' : 'Unable to load orders. Please try again.');
-    hamperOrders = (await response.json()).orders;
+    const data = await response.json();
+    hamperOrders = data.orders;
+    root.querySelector('.hamper-sandbox-note').hidden = data.mode !== 'sandbox';
     renderHamperOrders(); message.textContent = '';
   } catch (error) { message.textContent = error.message; }
 }

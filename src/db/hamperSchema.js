@@ -3,7 +3,7 @@ async function ensureHamperTables(db) {
     CREATE TABLE IF NOT EXISTS hamper_orders (
       id UUID PRIMARY KEY,
       request_hash TEXT NOT NULL,
-      mode TEXT NOT NULL CHECK (mode = 'sandbox'),
+      mode TEXT NOT NULL CHECK (mode IN ('sandbox', 'live')),
       status TEXT NOT NULL DEFAULT 'pending',
       snapshot JSONB NOT NULL,
       delivery JSONB NOT NULL,
@@ -13,6 +13,8 @@ async function ensureHamperTables(db) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE hamper_orders DROP CONSTRAINT IF EXISTS hamper_orders_mode_check;
+    ALTER TABLE hamper_orders ADD CONSTRAINT hamper_orders_mode_check CHECK (mode IN ('sandbox', 'live'));
     CREATE SEQUENCE IF NOT EXISTS hamper_po_sequence;
     ALTER TABLE hamper_orders ADD COLUMN IF NOT EXISTS po_number BIGINT;
     CREATE UNIQUE INDEX IF NOT EXISTS hamper_orders_po_unique ON hamper_orders(po_number);

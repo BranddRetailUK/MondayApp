@@ -10,6 +10,10 @@
     const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Please try again.'); return data;
   }
   const showError = error => { message.textContent = error.message; message.className = 'error'; };
+  function showMode(mode) {
+    document.querySelector('.sandbox').hidden = mode !== 'sandbox';
+    document.querySelector('.confirmation-note').hidden = mode !== 'sandbox';
+  }
   function productRows(container, lines) {
     container.replaceChildren();
     for (const item of lines) {
@@ -36,9 +40,9 @@
       title.textContent = 'Checking your payment'; subtitle.textContent = 'Please keep this page open while we confirm your payment.'; message.textContent = '';
       const cancelled = params.has('cancelled'); let attempts = 0;
       const poll = async () => {
-        const order = await api(`orders/${encodeURIComponent(params.get('order'))}`); const paid = order.status === 'paid';
+        const order = await api(`orders/${encodeURIComponent(params.get('order'))}`); const paid = order.status === 'paid'; showMode(order.mode);
         title.textContent = paid ? 'Thank you for your order' : order.status === 'expired' ? 'Your checkout has expired' : order.status === 'failed' ? 'Payment unsuccessful' : cancelled ? 'Payment cancelled' : 'Checking your payment';
-        subtitle.textContent = paid ? 'Your test payment has been received.' : order.status === 'expired' ? 'Open your cart to start again.' : order.status === 'failed' ? 'Open your cart to try again.' : cancelled ? 'No order has been confirmed. Open your cart to review your hampers.' : 'We’re waiting for confirmation from Stripe. Please do not pay again.';
+        subtitle.textContent = paid ? (order.mode === 'sandbox' ? 'Your test payment has been received.' : 'Your payment has been received.') : order.status === 'expired' ? 'Open your cart to start again.' : order.status === 'failed' ? 'Open your cart to try again.' : cancelled ? 'No order has been confirmed. Open your cart to review your hampers.' : 'We’re waiting for confirmation from Stripe. Please do not pay again.';
         document.querySelector('#confirmation-icon').textContent = paid ? '✓' : order.status === 'pending' && !cancelled ? '…' : '–'; document.querySelector('#confirmation-icon').classList.toggle('confirmed', paid);
         productRows(document.querySelector('#confirmation-products'), order.snapshot.items || [order.snapshot]);
         totals(document.querySelector('#confirmation-totals'), order.snapshot, paid ? 'Total paid' : 'Order total');
@@ -56,7 +60,7 @@
       };
       await poll(); return;
     }
-    await cart.ready;
+    const catalogue = await cart.ready; showMode(catalogue.mode);
     const pay = document.querySelector('#pay'); const form = document.querySelector('#delivery-form');
     let requestId = crypto.randomUUID(); let lastPayload; let latestQuote; let quoteVersion = 0;
     async function updateQuote() {
@@ -66,7 +70,7 @@
       try {
         const quote = await api('quote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) });
         if (version !== quoteVersion) return;
-        latestQuote = quote; document.querySelector('#checkout').hidden = false;
+        showMode(quote.mode); latestQuote = quote; document.querySelector('#checkout').hidden = false;
         document.querySelector('h1').textContent = quote.items.length > 1 ? 'Your Christmas hampers' : 'Your Christmas hamper';
         productRows(document.querySelector('#checkout-items'), quote.items); totals(document.querySelector('#totals'), quote, 'Total to pay');
         message.textContent = quote.available ? '' : 'Checkout is being prepared. Please contact our team to order.'; pay.disabled = !quote.available;

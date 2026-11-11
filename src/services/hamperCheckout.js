@@ -53,22 +53,33 @@ function validateDelivery(input) {
   return clean;
 }
 function createService({ db, env = process.env, stripe: injectedStripe } = {}) {
+  const mode = env.HAMPER_CHECKOUT_MODE;
+  const configFor = value => value === 'live' ? {
+    key: env.HAMPER_STRIPE_LIVE_SECRET_KEY?.trim(), secret: env.HAMPER_STRIPE_LIVE_WEBHOOK_SECRET?.trim(),
+    account: env.HAMPER_STRIPE_LIVE_ACCOUNT_ID?.trim()
+  } : { key: env.HAMPER_STRIPE_SECRET_KEY, secret: env.HAMPER_STRIPE_WEBHOOK_SECRET, account: ACCOUNT };
+  const config = configFor(mode);
   let stripe;
   let accountCheck;
   const taxRates = new Map();
   function configured() {
-    return env.HAMPER_CHECKOUT_MODE === 'sandbox' && /^sk_test_/.test(env.HAMPER_STRIPE_SECRET_KEY || '') && !!env.HAMPER_STRIPE_WEBHOOK_SECRET;
+    return ['sandbox', 'live'].includes(mode) && (mode === 'live' ? /^(sk|rk)_live_/ : /^sk_test_/).test(config.key || '') &&
+      /^acct_[a-zA-Z0-9]+$/.test(config.account || '') && /^whsec_/.test(config.secret || '');
   }
   async function client() {
     if (!configured()) throw new CheckoutError('Checkout is being prepared. Please contact our team to order.', 503);
-    stripe ||= injectedStripe || new Stripe(env.HAMPER_STRIPE_SECRET_KEY, { maxNetworkRetries: 2, timeout: 20000 });
-    accountCheck ||= stripe.accounts.retrieve().then(a => { if (a.id !== ACCOUNT) throw new Error('Unexpected Stripe account'); }).catch(e => { accountCheck = null; throw e; });
+    stripe ||= injectedStripe || new Stripe(config.key, { maxNetworkRetries: 2, timeout: 20000 });
+    accountCheck ||= stripe.accounts.retrieve().then(a => {
+      if (a.id !== config.account) throw new Error('Unexpected Stripe account');
+      if (mode === 'live' && (!a.charges_enabled || !a.details_submitted)) throw new Error('Stripe account is not ready for payments');
+    }).catch(e => { accountCheck = null; throw e; });
     await accountCheck;
     return stripe;
   }
-  function getQuote(sku, quantity) { return quote(sku, quantity, Number(env.HAMPER_DELIVERY_PENCE || 725)); }
-  function getCartQuote(items) { return quoteCart(items, Number(env.HAMPER_DELIVERY_PENCE || 725)); }
-  function catalogue() { return { products: products.map(({ sku, name, price, vatPercent, page, slug }) => ({ sku, name, price, vatPercent, page, slug })), deliveryPence: Number(env.HAMPER_DELIVERY_PENCE || 725) }; }
+  function withMode(q) { return { ...q, mode, ...(q.items ? { items: q.items.map(item => ({ ...item, mode })) } : {}) }; }
+  function getQuote(sku, quantity) { return withMode(quote(sku, quantity, Number(env.HAMPER_DELIVERY_PENCE || 725))); }
+  function getCartQuote(items) { return withMode(quoteCart(items, Number(env.HAMPER_DELIVERY_PENCE || 725))); }
+  function catalogue() { return { mode, available: configured(), products: products.map(({ sku, name, price, vatPercent, page, slug }) => ({ sku, name, price, vatPercent, page, slug })), deliveryPence: Number(env.HAMPER_DELIVERY_PENCE || 725) }; }
   async function taxRate(percent) {
     if (!taxRates.has(percent)) taxRates.set(percent, (async () => {
       const s = await client();
@@ -80,20 +91,21 @@ function createService({ db, env = process.env, stripe: injectedStripe } = {}) {
   async function create(input) {
     if (!UUID.test(input?.requestId || '')) throw new CheckoutError('Please reload checkout and try again.');
     const snapshot = input.items !== undefined ? getCartQuote(input.items) : getQuote(input.sku, input.quantity);
+    snapshot.stripeAccountId = config.account;
     const delivery = validateDelivery(input.delivery);
     const hash = crypto.createHash('sha256').update(JSON.stringify({ snapshot, delivery })).digest('hex');
     const s = await client();
-    await db.query(`INSERT INTO hamper_orders(id,request_hash,mode,snapshot,delivery) VALUES($1,$2,'sandbox',$3,$4) ON CONFLICT(id) DO NOTHING`, [input.requestId, hash, snapshot, delivery]);
+    await db.query(`INSERT INTO hamper_orders(id,request_hash,mode,snapshot,delivery) VALUES($1,$2,$5,$3,$4) ON CONFLICT(id) DO NOTHING`, [input.requestId, hash, snapshot, delivery, mode]);
     await db.query("UPDATE hamper_orders SET po_number=nextval('hamper_po_sequence') WHERE id=$1 AND po_number IS NULL", [input.requestId]);
     const { rows: [order] } = await db.query('SELECT * FROM hamper_orders WHERE id=$1', [input.requestId]);
-    if (order.request_hash !== hash) throw new CheckoutError('Your order details changed. Please reload checkout and try again.', 409);
+    if (order.mode !== mode || order.request_hash !== hash) throw new CheckoutError('Your order details changed. Please reload checkout and try again.', 409);
     if (order.stripe_session_id) return { url: order.checkout_url, id: order.id };
     const lines = snapshot.items || [snapshot];
     const productTaxes = await Promise.all(lines.map(item => taxRate(item.vatPercent)));
     const shippingTax = await taxRate(20);
     const session = await s.checkout.sessions.create({
       mode: 'payment', customer_email: delivery.email,
-      client_reference_id: order.id, metadata: { hamper_order_id: order.id, integration: 'ultimate-hampers-sandbox' },
+      client_reference_id: order.id, metadata: { hamper_order_id: order.id, integration: `ultimate-hampers-${mode}` },
       payment_intent_data: { metadata: { hamper_order_id: order.id }, shipping: { name: delivery.name, address: { line1: delivery.line1, line2: delivery.line2, city: delivery.city, postal_code: delivery.postcode, country: 'GB' } } },
       line_items: [
         ...lines.map((item, index) => ({ price_data: { currency: 'gbp', unit_amount: item.unitPence, product_data: { name: item.name, metadata: { sku: item.sku } }, tax_behavior: 'exclusive' }, quantity: item.quantity, tax_rates: [productTaxes[index]] })),
@@ -101,10 +113,10 @@ function createService({ db, env = process.env, stripe: injectedStripe } = {}) {
       ],
       success_url: `${HUB}/hamper-checkout.html?order=${order.id}`,
       cancel_url: `${HUB}/hamper-checkout.html?order=${order.id}&cancelled=1`,
-      custom_text: { submit: { message: 'Sandbox test only. No real order will be dispatched.' } },
+      ...(mode === 'sandbox' ? { custom_text: { submit: { message: 'Sandbox test only. No real order will be dispatched.' } } } : {}),
       expires_at: Math.floor(new Date(order.created_at).getTime() / 1000) + 3600
     }, { idempotencyKey: `hamper-checkout-${order.id}` });
-    if (session.livemode || session.amount_total !== snapshot.totalPence || session.currency !== 'gbp') {
+    if (session.livemode !== (mode === 'live') || session.amount_total !== snapshot.totalPence || session.currency !== 'gbp') {
       await s.checkout.sessions.expire(session.id);
       throw new Error('Stripe checkout total mismatch');
     }
@@ -113,21 +125,31 @@ function createService({ db, env = process.env, stripe: injectedStripe } = {}) {
   }
   async function status(id) {
     if (!UUID.test(id || '')) throw new CheckoutError('Order not found.', 404);
-    const { rows: [order] } = await db.query('SELECT id,status,snapshot FROM hamper_orders WHERE id=$1', [id]);
+    const { rows: [order] } = await db.query('SELECT id,status,mode,snapshot FROM hamper_orders WHERE id=$1', [id]);
     if (!order) throw new CheckoutError('Order not found.', 404);
     return order;
   }
   async function webhook(raw, signature) {
-    const s = await client();
-    let event;
-    try { event = s.webhooks.constructEvent(raw, signature, env.HAMPER_STRIPE_WEBHOOK_SECRET); }
-    catch { throw new CheckoutError('Invalid webhook signature.', 400); }
-    if (event.livemode) throw new CheckoutError('Live payments are not enabled.', 400);
+    // Verify against independent endpoint secrets so outstanding sandbox events
+    // remain safe to process after the storefront switches to live mode.
+    let event, eventMode;
+    for (const candidate of ['sandbox', 'live']) {
+      const c = configFor(candidate);
+      if (!c.secret || !c.key) continue;
+      try {
+        const verifier = injectedStripe || new Stripe(c.key);
+        event = verifier.webhooks.constructEvent(raw, signature, c.secret);
+        eventMode = candidate;
+        break;
+      } catch {}
+    }
+    if (!event) throw new CheckoutError('Invalid webhook signature.', 400);
+    if (event.livemode !== (eventMode === 'live')) throw new CheckoutError('Webhook payment mode mismatch.', 400);
     const allowed = ['checkout.session.completed', 'checkout.session.async_payment_succeeded', 'checkout.session.async_payment_failed', 'checkout.session.expired'];
     if (!allowed.includes(event.type)) return;
     const session = event.data.object;
     const id = session.metadata?.hamper_order_id;
-    if (!UUID.test(id || '') || session.metadata?.integration !== 'ultimate-hampers-sandbox') return;
+    if (!UUID.test(id || '') || session.metadata?.integration !== `ultimate-hampers-${eventMode}`) return;
     const conn = await db.connect();
     try {
       await conn.query('BEGIN');
@@ -137,6 +159,7 @@ function createService({ db, env = process.env, stripe: injectedStripe } = {}) {
         if (cleared.length) { await conn.query('COMMIT'); return; }
         throw new Error('Webhook order missing');
       }
+      if (order.mode !== eventMode || (session.livemode !== undefined && session.livemode !== event.livemode)) throw new Error('Webhook order mode mismatch');
       if (order.stripe_session_id && order.stripe_session_id !== session.id) throw new Error('Webhook session mismatch');
       if (session.amount_total !== order.snapshot.totalPence || session.currency !== 'gbp' || session.client_reference_id !== id) throw new Error('Webhook order total mismatch');
       const { rowCount } = await conn.query('INSERT INTO hamper_payment_events(id,order_id,type) VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [event.id, id, event.type]);
@@ -150,6 +173,6 @@ function createService({ db, env = process.env, stripe: injectedStripe } = {}) {
       await conn.query('COMMIT');
     } catch (e) { await conn.query('ROLLBACK'); throw e; } finally { conn.release(); }
   }
-  return { configured, getQuote, getCartQuote, catalogue, create, status, webhook };
+  return { mode, configured, getQuote, getCartQuote, catalogue, create, status, webhook };
 }
 module.exports = { createService, quote, quoteCart, validateDelivery, CheckoutError, SITE, HUB, ACCOUNT };

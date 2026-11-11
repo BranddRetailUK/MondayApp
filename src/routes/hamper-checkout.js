@@ -40,8 +40,8 @@ function createRoutes(db, options = {}) {
       res.send(bytes);
     }),
     admin: handle(async (_req, res) => {
-      const { rows } = await db.query('SELECT id,po_number,status,snapshot,delivery,stripe_session_id,stripe_payment_intent,created_at,updated_at FROM hamper_orders ORDER BY created_at DESC LIMIT 200');
-      res.json({ orders: rows, mode: 'sandbox' });
+      const { rows } = await db.query('SELECT id,po_number,status,mode,snapshot,delivery,stripe_session_id,stripe_payment_intent,created_at,updated_at FROM hamper_orders WHERE mode=$1 ORDER BY created_at DESC LIMIT 200', [service.mode]);
+      res.json({ orders: rows, mode: service.mode });
     })
   };
 }
