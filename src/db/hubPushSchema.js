@@ -16,6 +16,25 @@ async function ensureHubPushTables(db) {
       UNIQUE(endpoint,event_key)
     );
     INSERT INTO hub_push_events(event_key) SELECT 'proof:' || id FROM proof_design_jobs WHERE proof_ready ON CONFLICT DO NOTHING;
+    -- Baseline already-paid orders so deploying notifications never sends old sales.
+    INSERT INTO hub_push_events(event_key) SELECT 'hamper:' || id FROM hamper_orders WHERE mode='live' AND status='paid' ON CONFLICT DO NOTHING;
+    CREATE OR REPLACE FUNCTION enqueue_hamper_sale_push() RETURNS TRIGGER AS $$
+    DECLARE sale_key TEXT;
+    BEGIN
+      IF NEW.mode<>'live' OR NEW.status<>'paid' THEN RETURN NEW; END IF;
+      sale_key := 'hamper:' || NEW.id;
+      INSERT INTO hub_push_events(event_key) VALUES(sale_key) ON CONFLICT DO NOTHING;
+      IF NOT FOUND THEN RETURN NEW; END IF;
+      INSERT INTO hub_push_deliveries(endpoint,kind,event_key)
+        SELECT p.endpoint,'hamper',sale_key FROM hub_push_subscriptions p
+        JOIN hub_sessions s ON s.id=p.session_id AND s.expires_at>now()
+        JOIN hub_users u ON u.id=p.user_id AND u.access_scope='full'
+        WHERE p.preferences->>'hamper'='true' ON CONFLICT DO NOTHING;
+      RETURN NEW;
+    END; $$ LANGUAGE plpgsql;
+    DROP TRIGGER IF EXISTS hub_push_hamper_sale ON hamper_orders;
+    CREATE TRIGGER hub_push_hamper_sale AFTER INSERT OR UPDATE OF status ON hamper_orders
+      FOR EACH ROW EXECUTE FUNCTION enqueue_hamper_sale_push();
     CREATE INDEX IF NOT EXISTS hub_push_delivery_due ON hub_push_deliveries(available_at);
     CREATE OR REPLACE FUNCTION enqueue_hub_push() RETURNS TRIGGER AS $$
     DECLARE kind TEXT; push_event_key TEXT;

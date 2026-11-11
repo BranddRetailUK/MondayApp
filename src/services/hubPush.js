@@ -4,6 +4,7 @@ const types = {
   completed: 'A job has been completed.',
   approved: 'A job has been approved.',
   proof: 'A new proof has been created.',
+  hamper: 'You have sold a Hamper!',
   test: 'Notifications are working on this device.',
 };
 function configuration(env = process.env) {
@@ -27,11 +28,11 @@ function validateSubscription(value) {
   return { endpoint: value.endpoint, keys: {p256dh:value.keys.p256dh,auth:value.keys.auth} };
 }
 function validatePreferences(value) {
-  if (!value || ['completed','approved','proof'].some(k=>typeof value[k]!=='boolean') || Object.keys(value).length!==3) throw Error('Choose your notification preferences.');
-  return value;
+  if (!value || ['completed','approved','proof'].some(k=>typeof value[k]!=='boolean') || Object.keys(value).some(k=>!['completed','approved','proof','hamper'].includes(k)) || ('hamper' in value && typeof value.hamper!=='boolean')) throw Error('Choose your notification preferences.');
+  return {...value,hamper:value.hamper===true};
 }
 function payload(kind, key) {
-  return {title:'Ultimate Hub', body:types[kind], tag:`hub-${crypto.createHash('sha256').update(key).digest('hex').slice(0,32)}`, url:'/mobile?tab=test-dashboard'};
+  return {title:'Ultimate Hub', body:types[kind], tag:`hub-${crypto.createHash('sha256').update(key).digest('hex').slice(0,32)}`, url:kind==='hamper'?'/mobile?tab=hamper-orders':'/mobile?tab=test-dashboard'};
 }
 async function deliver(subscription, data) {
   const webpush = require('web-push');

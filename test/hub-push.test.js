@@ -13,12 +13,15 @@ test('subscriptions reject arbitrary hosts and invalid curve keys',()=>{
   assert.throws(()=>push.validateSubscription({...sub,keys:{...sub.keys,p256dh:Buffer.alloc(65).toString('base64url')}}));
   assert.throws(()=>push.validatePreferences({completed:true}));
   assert.equal(push.configuration({}).enabled,false);
+  assert.equal(push.validatePreferences({completed:true,approved:true,proof:true}).hamper,false);
+  assert.throws(()=>push.validatePreferences({completed:true,approved:true,proof:true,hamper:'yes'}));
 });
 
 test('transactional events, opt-in, first-ready proofs, retries, revocation and logout',async()=>{
   const db=new PGlite();
   try{
-    await db.exec(`CREATE TABLE hub_users(id INTEGER PRIMARY KEY,access_scope TEXT);
+    await db.exec(`CREATE TABLE hamper_orders(id UUID PRIMARY KEY,mode TEXT,status TEXT);
+      CREATE TABLE hub_users(id INTEGER PRIMARY KEY,access_scope TEXT);
       CREATE TABLE hub_sessions(id TEXT PRIMARY KEY,user_id INTEGER REFERENCES hub_users(id),expires_at TIMESTAMPTZ);
       CREATE TABLE database_job_status_updates(id BIGSERIAL PRIMARY KEY,event_type TEXT,status TEXT);
       CREATE TABLE test_dashboard_private_jobs(id TEXT PRIMARY KEY,column_values JSONB,archived BOOLEAN DEFAULT false);
@@ -26,14 +29,16 @@ test('transactional events, opt-in, first-ready proofs, retries, revocation and 
       CREATE TABLE proof_design_jobs(id UUID PRIMARY KEY,proof_ready BOOLEAN DEFAULT false,revision INTEGER DEFAULT 0);
       INSERT INTO hub_users VALUES(1,'full'),(2,'dtf_only');
       INSERT INTO hub_sessions VALUES('session',1,now()+interval '1 day'),('restricted',2,now()+interval '1 day');`);
+    const historicalSale=crypto.randomUUID();await db.query("INSERT INTO hamper_orders VALUES($1,'live','paid')",[historicalSale]);
     // PGlite requires exec for schema batches; queries still use real Postgres semantics.
     await ensureHubPushTables({query:sql=>db.exec(sql)});
     await ensureHubPushTables({query:sql=>db.exec(sql)});
     await db.query("INSERT INTO database_job_status_updates(event_type,status) VALUES('status','COMPLETED')");
-    const preferences={completed:true,approved:true,proof:true};
+    const preferences={completed:true,approved:true,proof:true,hamper:true};
     await db.query(`INSERT INTO hub_push_subscriptions(endpoint,user_id,session_id,subscription,preferences) VALUES('device',1,'session','{}',$1),('restricted',2,'restricted','{}',$1)`,[preferences]);
     const count=async()=>Number((await db.query('SELECT count(*) AS count FROM hub_push_deliveries')).rows[0].count);
     assert.equal(await count(),0,'no historical backlog');
+    await db.query("UPDATE hamper_orders SET status='paid' WHERE id=$1",[historicalSale]);assert.equal(await count(),0,'historical sale stays silent');
     await db.query("INSERT INTO database_job_status_updates(event_type,status) VALUES('status','PRINTING'),('approved','APPROVED'),('status','COMPLETED')");
     assert.equal(await count(),2,'only requested events and full users');
     await db.exec("BEGIN; INSERT INTO database_job_status_updates(event_type,status) VALUES('status','COMPLETED'); ROLLBACK;");assert.equal(await count(),2);
@@ -45,6 +50,12 @@ test('transactional events, opt-in, first-ready proofs, retries, revocation and 
     let sent=[];
     await push.drain(pool,async(_,data)=>sent.push(data));assert.equal(sent.length,3);assert.equal(await count(),0);
     assert.deepEqual(sent.map(s=>s.body).sort(),['A job has been approved.','A job has been completed.','A new proof has been created.'].sort());
+    const saleId=crypto.randomUUID(),sandboxId=crypto.randomUUID();
+    await db.query("INSERT INTO hamper_orders VALUES($1,'live','pending'),($2,'sandbox','paid')",[saleId,sandboxId]);assert.equal(await count(),0);
+    await db.exec(`BEGIN; UPDATE hamper_orders SET status='paid' WHERE id='${saleId}'; ROLLBACK;`);assert.equal(await count(),0);
+    await db.query("UPDATE hamper_orders SET status='paid' WHERE id=$1",[saleId]);assert.equal(await count(),1);
+    await db.query("UPDATE hamper_orders SET status='paid' WHERE id=$1",[saleId]);assert.equal(await count(),1,'one notification per sale');
+    let salePayload;await push.drain(pool,async(_,p)=>{salePayload=p;});assert.equal(salePayload.url,'/mobile?tab=hamper-orders');assert.equal(salePayload.body,'You have sold a Hamper!');
     await db.query("INSERT INTO test_dashboard_private_jobs(id,column_values) VALUES('private','{}'),('linked','{}')");
     await db.query("INSERT INTO dashboard_production_jobs VALUES('linked')");
     await db.query(`UPDATE test_dashboard_private_jobs SET column_values=$1`,[{label__1:{text:'COMPLETED'},checkbox1__1:{text:'v'}}]);
@@ -81,4 +92,14 @@ test('notification routes reject cross-origin writes and scope device reads to u
   const req={body:{endpoint:'https://web.push.apple.com/device'},headers:{cookie:''},hubUser:{id:91}};
   const result=response();await device(req,result,e=>{throw e;});
   assert.equal(result.data.enabled,false);assert.match(calls[0][0],/user_id=\$2 AND session_id=\$3/);assert.equal(calls[0][1][1],91);
+});
+
+test('hamper notifications navigate to orders and reject arbitrary destinations',async()=>{
+ const vm=require('node:vm'),fs=require('node:fs');let shown,opened;const handlers={};
+ const self={location:{origin:'https://www.ultimatehub.co.uk'},addEventListener:(name,fn)=>handlers[name]=fn,registration:{showNotification:async(title,data)=>{shown=data;}},clients:{matchAll:async()=>[],openWindow:async url=>{opened=url;}}};
+ vm.runInNewContext(fs.readFileSync(require.resolve('../public/hub-sw.js'),'utf8'),{self,URL});
+ let pending;handlers.push({data:{json:()=>push.payload('hamper','hamper:test')},waitUntil:p=>pending=p});await pending;
+ assert.equal(shown.body,'You have sold a Hamper!');assert.equal(shown.data.url,'/mobile?tab=hamper-orders');
+ handlers.notificationclick({notification:{data:shown.data,close(){}},waitUntil:p=>pending=p});await pending;assert.equal(opened,'https://www.ultimatehub.co.uk/mobile?tab=hamper-orders');
+ handlers.push({data:{json:()=>({url:'https://attacker.example'})},waitUntil:p=>pending=p});await pending;assert.equal(shown.data.url,'/mobile?tab=test-dashboard');
 });

@@ -17,7 +17,8 @@
     <fieldset><legend>Notify me when</legend>
     <label><span>A job is completed</span><input type="checkbox" data-kind="completed" checked></label>
     <label><span>A job is approved</span><input type="checkbox" data-kind="approved" checked></label>
-    <label><span>A proof is created</span><input type="checkbox" data-kind="proof" checked></label></fieldset>
+    <label><span>A proof is created</span><input type="checkbox" data-kind="proof" checked></label>
+    <label><span>A hamper order is paid</span><input type="checkbox" data-kind="hamper" checked></label></fieldset>
     <p id="hub-push-status" role="status" aria-live="polite"></p>
     <button type="button" data-enable>Enable notifications</button><button type="button" data-test disabled>Send test notification</button><button type="button" data-disable disabled>Turn off on this device</button>`;
   document.body.append(dialog);dialog.querySelector('[data-close]').onclick=()=>dialog.close();
