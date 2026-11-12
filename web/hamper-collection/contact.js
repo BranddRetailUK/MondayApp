@@ -10,7 +10,7 @@
   e.preventDefault();if(button.disabled||!form.reportValidity())return;button.disabled=true;button.textContent='Sending…';status.textContent='';
   try {await ready;const fields=new FormData(form),body={name:fields.get('name'),email:fields.get('email'),phone:fields.get('phone'),message:fields.get('message'),website:fields.get('website'),items};const signature=JSON.stringify(body);if(lastBody!==null&&lastBody!==signature)id=crypto.randomUUID();lastBody=signature;
    const response=await fetch('https://www.ultimatehub.co.uk/api/hamper-enquiries',{method:'POST',credentials:'omit',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,id}),signal:AbortSignal.timeout(25000)});const data=await response.json();if(!response.ok)throw Error(data.error||'Your enquiry could not be sent. Please call 01442 264288.');
-   form.querySelectorAll('input,textarea').forEach(el=>el.disabled=true);button.textContent='Enquiry sent';status.textContent='Thank you — your enquiry has been sent. Our team will be in touch.';window.HamperAnalytics?.track('enquiry');
+   form.querySelectorAll('input,textarea').forEach(el=>el.disabled=true);button.classList.add('contact-sent');button.innerHTML='<svg class="contact-tick" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 9.5 17 19 7"/></svg><span>Enquiry sent</span>';status.textContent='Thank you — your enquiry has been sent. Our team will be in touch.';window.HamperAnalytics?.track('enquiry');
   }catch(e){status.textContent=e.name==='TimeoutError'||e.name==='TypeError'?'We could not confirm delivery. Please try once more or call 01442 264288.':e.message;button.disabled=false;button.textContent='Send enquiry';}
  });
 })();
