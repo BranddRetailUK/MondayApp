@@ -33,14 +33,23 @@ function dateRange(query,now=new Date()){
 }
 async function report(db,range){
  const params=[range.from,range.to];
+ const hourly=range.from===range.to;
  const period="created_at >= ($1::date::timestamp AT TIME ZONE 'Europe/London') AND created_at < (($2::date+1)::timestamp AT TIME ZONE 'Europe/London')";
  const salesPeriod=period.replaceAll('created_at','o.created_at');
  const salesFilter=`o.mode='live' AND COALESCE(o.snapshot->>'discountLabel','') <> 'Single-use live test discount' AND ${salesPeriod}`;
  const [totals,trend,pages,landing,productRows,sources,devices,sales,topSales,config]=await Promise.all([
   db.query(`SELECT COUNT(*) FILTER(WHERE event='pageview')::int AS views,COUNT(*) FILTER(WHERE landing)::int AS entries,COUNT(DISTINCT page_id) FILTER(WHERE event='engaged')::int AS engaged,COUNT(*) FILTER(WHERE event='pageview' AND sku IS NOT NULL)::int AS product_views,COUNT(*) FILTER(WHERE event='add_cart')::int AS adds,COUNT(*) FILTER(WHERE event='checkout_start')::int AS checkouts,COUNT(*) FILTER(WHERE event='payment_start')::int AS payments,COUNT(*) FILTER(WHERE event='enquiry')::int AS enquiries FROM hub_site_events WHERE ${period}`,params),
+  hourly ? db.query(`WITH hours AS (
+   SELECT generate_series($1::date::timestamp AT TIME ZONE 'Europe/London', (($2::date+1)::timestamp AT TIME ZONE 'Europe/London')-INTERVAL '1 hour', INTERVAL '1 hour') AS hour
+  ), activity AS (
+   SELECT date_trunc('hour',created_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS hour,
+    COUNT(*) FILTER(WHERE event='pageview')::int AS views,COUNT(*) FILTER(WHERE landing)::int AS entries
+   FROM hub_site_events WHERE ${period} GROUP BY 1
+  ) SELECT hours.hour,COALESCE(activity.views,0)::int AS views,COALESCE(activity.entries,0)::int AS entries
+   FROM hours LEFT JOIN activity USING(hour) ORDER BY hours.hour`,params) :
   db.query(`SELECT (created_at AT TIME ZONE 'Europe/London')::date::text AS day,COUNT(*) FILTER(WHERE event='pageview')::int AS views,COUNT(*) FILTER(WHERE landing)::int AS entries FROM hub_site_events WHERE ${period} GROUP BY 1 ORDER BY 1`,params),
-  db.query(`SELECT path,COUNT(*)::int AS views FROM hub_site_events WHERE ${period} AND event='pageview' GROUP BY path ORDER BY views DESC,path LIMIT 30`,params),
-  db.query(`SELECT path,COUNT(*)::int AS entries FROM hub_site_events WHERE ${period} AND landing GROUP BY path ORDER BY entries DESC,path LIMIT 30`,params),
+  db.query(`SELECT path,COUNT(*)::int AS views FROM hub_site_events WHERE ${period} AND event='pageview' GROUP BY path ORDER BY views DESC,path LIMIT 10`,params),
+  db.query(`SELECT path,COUNT(*)::int AS entries FROM hub_site_events WHERE ${period} AND landing GROUP BY path ORDER BY entries DESC,path LIMIT 10`,params),
   db.query(`SELECT sku,COUNT(*) FILTER(WHERE event='pageview')::int AS views,COUNT(*) FILTER(WHERE event='add_cart')::int AS adds FROM hub_site_events WHERE ${period} AND sku IS NOT NULL GROUP BY sku ORDER BY views DESC,adds DESC,sku`,params),
   db.query(`SELECT source,COUNT(*)::int AS entries FROM hub_site_events WHERE ${period} AND landing GROUP BY source ORDER BY entries DESC,source LIMIT 30`,params),
   db.query(`SELECT device,COUNT(*)::int AS views FROM hub_site_events WHERE ${period} AND event='pageview' GROUP BY device ORDER BY views DESC`,params),
@@ -49,8 +58,8 @@ async function report(db,range){
   db.query('SELECT started_at FROM hub_site_analytics_config WHERE id=1')
  ]);
  const merged=new Map(productRows.rows.map(r=>[r.sku,{...r,sold:0}]));for(const r of topSales.rows){if(!merged.has(r.sku))merged.set(r.sku,{sku:r.sku,views:0,adds:0,sold:0});merged.get(r.sku).sold=r.sold;}
- const days=new Map(trend.rows.map(r=>[r.day,r]));const series=[];for(let t=Date.parse(range.from);t<=Date.parse(range.to);t+=86400000){const day=new Date(t).toISOString().slice(0,10);series.push(days.get(day)||{day,views:0,entries:0});}
- return {range,startedAt:config.rows[0]?.started_at,totals:totals.rows[0],trend:series,pages:pages.rows,landing:landing.rows,sources:sources.rows,devices:devices.rows,sales:sales.rows[0],products:[...merged.values()].map(r=>({...r,name:productBySku.get(r.sku)?.name||r.sku})).sort((a,b)=>b.views-a.views||b.sold-a.sold)};
+ const days=new Map(trend.rows.map(r=>[r.day,r]));const series=hourly?trend.rows:[];for(let t=Date.parse(range.from);!hourly&&t<=Date.parse(range.to);t+=86400000){const day=new Date(t).toISOString().slice(0,10);series.push(days.get(day)||{day,views:0,entries:0});}
+ return {range,startedAt:config.rows[0]?.started_at,totals:totals.rows[0],trend:series,trendGranularity:hourly?'hour':'day',pages:pages.rows,landing:landing.rows,sources:sources.rows,devices:devices.rows,sales:sales.rows[0],products:[...merged.values()].map(r=>({...r,name:productBySku.get(r.sku)?.name||r.sku})).sort((a,b)=>b.views-a.views||b.sold-a.sold)};
 }
 function startRetention(db){const clean=()=>db.query("DELETE FROM hub_site_events WHERE id IN (SELECT id FROM hub_site_events WHERE created_at<NOW()-INTERVAL '180 days' LIMIT 10000)").catch(()=>console.error('Site analytics retention cleanup failed'));setInterval(clean,3600000).unref();void clean();}
 module.exports={normalize,record,dateRange,report,startRetention,ORIGINS};
