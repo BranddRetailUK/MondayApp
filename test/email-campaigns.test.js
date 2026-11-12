@@ -38,6 +38,20 @@ test('activity polling preserves unique recipients across repeated snapshots and
  await pollBatch(db,{id:'test-0',campaign_id:'test',poll_step:0},{},fetchImpl);await pollBatch(db,{id:'test-0',campaign_id:'test',poll_step:0},{},fetchImpl);
  const data=await overview(db);assert.equal(data.campaigns[0].metrics.open,1);assert.equal(data.campaigns[0].metrics.click,1);assert.equal(data.campaigns[0].metrics.delivered,1);await pg.close();
 });
+test('confirmed post-send opt-outs count before activity polling catches up, without duplicates or unrelated exclusions',async()=>{
+ const pg=new PGlite(),db={query:async(s,p)=>!p&&s.includes('CREATE TABLE')?pg.exec(s):pg.query(s,p)};
+ await ensureEmailCampaignTables(db);
+ await db.query("INSERT INTO hub_email_campaigns(id,name,subject) VALUES('test','Test','Subject')");
+ for(const email of ['delayed@example.com','both@example.com','old@example.com']) await db.query("INSERT INTO hub_email_recipients(campaign_id,email,status,sent_at) VALUES('test',$1,'sent','2026-11-12T10:00:00Z')",[email]);
+ await db.query("INSERT INTO hub_email_recipients(campaign_id,email) VALUES('test','pending@example.com')");
+ for(const email of ['delayed@example.com','both@example.com','pending@example.com','unrelated@example.com']) await db.query("INSERT INTO hub_email_suppressions(email,kind,source,occurred_at) VALUES($1,'unsubscribed','sendgrid','2026-11-12T11:00:00Z')",[email]);
+ await db.query("INSERT INTO hub_email_suppressions(email,kind,source,occurred_at) VALUES('old@example.com','unsubscribed','sendgrid','2026-11-11T11:00:00Z')");
+ await recordEvents(db,[{ultimate_campaign_id:'test',email:'both@example.com',event:'unsubscribe',timestamp:1794481200,sg_event_id:'both'}]);
+ assert.equal((await overview(db)).campaigns[0].metrics.unsubscribe_count,2);
+ await recordEvents(db,[{ultimate_campaign_id:'test',email:'delayed@example.com',event:'group_unsubscribe',timestamp:1794481200,sg_event_id:'later'}]);
+ assert.equal((await overview(db)).campaigns[0].metrics.unsubscribe_count,2);
+ await pg.close();
+});
 test('audience splits multiple addresses, deduplicates case and holds malformed entries',async()=>{
  const {audience}=require('../src/services/emailCampaignDelivery');
  const result=await audience({query:async()=>({rows:[{contact_email:'One@example.com; two@example.com'},{contact_email:'one@EXAMPLE.com'},{contact_email:'bad @example.com'}]})});

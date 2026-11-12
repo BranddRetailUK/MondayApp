@@ -45,7 +45,15 @@ async function overview(db) {
     (SELECT COUNT(*)::int FROM hub_email_recipients r WHERE r.campaign_id=c.id AND r.sent_at IS NOT NULL) AS submitted,
     COALESCE((SELECT jsonb_object_agg(event,total) FROM (
       SELECT CASE WHEN event IN ('unsubscribe','group_unsubscribe') THEN 'unsubscribe_count' ELSE event END AS event,COUNT(DISTINCT email)::int AS total FROM hub_email_events WHERE campaign_id=c.id GROUP BY 1
-    ) metrics),'{}') AS metrics FROM hub_email_campaigns c ORDER BY c.created_at DESC`);
+    ) metrics),'{}') || jsonb_build_object('unsubscribe_count',(
+      SELECT COUNT(*)::int FROM (
+        SELECT email FROM hub_email_events WHERE campaign_id=c.id AND event IN ('unsubscribe','group_unsubscribe')
+        UNION
+        SELECT s.email FROM hub_email_suppressions s
+        JOIN hub_email_recipients r ON r.email=s.email AND r.campaign_id=c.id
+        WHERE s.kind='unsubscribed' AND r.sent_at IS NOT NULL AND s.occurred_at>=r.sent_at
+      ) opted_out
+    )) AS metrics FROM hub_email_campaigns c ORDER BY c.created_at DESC`);
   const last = await db.query('SELECT MAX(occurred_at) AS latest FROM hub_email_events');
   return { campaigns: campaigns.rows, latestEvent: last.rows[0].latest };
 }
