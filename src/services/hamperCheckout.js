@@ -37,7 +37,7 @@ function quoteCart(input, deliveryPence = 725) {
 }
 function validateDelivery(input) {
   const clean = {};
-  for (const key of ['name', 'email', 'line1', 'line2', 'city', 'postcode']) {
+  for (const key of ['name', 'company', 'email', 'line1', 'line2', 'city', 'postcode']) {
     clean[key] = String(input?.[key] || '').trim();
     if (clean[key].length > (key === 'email' ? 254 : 150) || /[\x00-\x1f]/.test(clean[key])) throw new CheckoutError('Please check your delivery details.');
   }

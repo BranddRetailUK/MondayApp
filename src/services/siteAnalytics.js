@@ -2,7 +2,7 @@
 const products=require('../../web/hamper-collection/products.json');
 const productByPath=new Map(products.map(p=>['/'+p.slug+'.html',p]));
 const productBySku=new Map(products.map(p=>[p.sku,p]));
-const paths=new Set(['/', '/all-hampers.html','/sweet-treats.html','/cheese-savoury.html','/wine-fizz.html','/luxury-hampers.html','/hamper-checkout.html','/order-confirmation',...productByPath.keys()]);
+const paths=new Set(['/', '/contact.html', '/all-hampers.html','/sweet-treats.html','/cheese-savoury.html','/wine-fizz.html','/luxury-hampers.html','/hamper-checkout.html','/order-confirmation',...productByPath.keys()]);
 const ORIGINS=new Set(['https://christmashampers.ultimatepromotions.co.uk','https://ultimatechristmas-production.up.railway.app','https://www.ultimatehub.co.uk','https://mondayapp-refactor-production.up.railway.app']);
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function normalize(input,origin,userAgent=''){

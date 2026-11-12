@@ -11,6 +11,7 @@ test('confirmation uses branded sender, hidden optional monitor, escaped content
  await assert.rejects(send({...order,mode:'sandbox'},{env,fetchImpl}),/paid live/);
  await assert.rejects(send(order,{env:{...env,HAMPER_EMAIL_ENABLED:'false'},fetchImpl}),/disabled/);
  assert.match(render(order,{preview:true}).subject,/TEST/);
+ assert.match(render({...order,delivery:{...order.delivery,company:'Example <Company>'}}).html,/Example &lt;Company&gt;/);
 });
 test('queue is claimed once across workers; accepted and uncertain sends are not automatically repeated',async()=>{
  const pg=new PGlite(),db={query:async(s,p)=>!p&&s.includes('CREATE TABLE')?pg.exec(s):pg.query(s,p)};await ensureHamperTables(db);

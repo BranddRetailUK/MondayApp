@@ -22,6 +22,9 @@ test('all 90 catalogue prices, VAT and quantity boundaries are authoritative', (
 });
 test('delivery requires mainland confirmation and excludes islands and Northern Ireland', () => {
   assert.equal(validateDelivery(delivery).postcode, 'SW1A 1AA');
+  assert.equal(validateDelivery(delivery).company,'');
+  assert.equal(validateDelivery({...delivery,company:'  Example Ltd  '}).company,'Example Ltd');
+  assert.throws(()=>validateDelivery({...delivery,company:'x'.repeat(151)}));
   for (const postcode of ['BT1 1AA', 'JE1 1AA', 'GY1 1AA', 'IM1 1AA', 'PO30 1AA', 'HS1 1AA', 'ZE1 1AA', 'TR21 1AA', 'invalid']) assert.throws(() => validateDelivery({ ...delivery, postcode }));
   assert.throws(() => validateDelivery({ ...delivery, mainland: false }));
   assert.throws(() => validateDelivery({ ...delivery, email: 'invalid' }));

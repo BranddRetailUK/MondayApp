@@ -56,7 +56,7 @@ async function generateHamperInvoice(order) {
     y = mm(first ? 46 : 40);
   }
   newPage(true);
-  for (const line of [d.name,d.line1,d.line2,d.city,d.postcode].filter(Boolean)) for (const part of wrap(line,tableWidth,9)) { text(part,left,y,9); y+=11; }
+  for (const line of [d.name,d.company,d.line1,d.line2,d.city,d.postcode].filter(Boolean)) for (const part of wrap(line,tableWidth,9)) { text(part,left,y,9); y+=11; }
   y=Math.max(y+12,mm(81));
   const meta = [['Invoice No.',invoiceNumber(order)],['ULT Ref:',`PO-${String(order.po_number).padStart(6,'0')}`],['VAT No.:','984 5655 65'],['Invoice date:',new Date(order.created_at).toLocaleDateString('en-GB',{timeZone:'Europe/London'})],['Payment terms:',order.status === 'paid' ? 'Paid via Stripe' : 'Payment required'],['Delivery address:','(as above)']];
   for(const [label,value] of meta){text(label,left,y);text(value,left+mm(33),y);y+=mm(4.5);}

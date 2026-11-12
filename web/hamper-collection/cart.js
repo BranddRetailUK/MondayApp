@@ -90,7 +90,7 @@
     totals.hidden = !items.length;
     const action = drawer.querySelector('.cart-checkout'); action.hidden = !items.length;
     action.textContent = totalQty > 10 ? 'Contact the team for bulk options' : 'Continue to checkout';
-    action.href = totalQty > 10 ? `mailto:sales@ultimatepromotions.co.uk?subject=Bulk%20hamper%20enquiry&body=${encodeURIComponent(items.map(item => `${item.quantity} × ${products.get(item.sku)?.name || item.sku}`).join('\n'))}` : `${HUB}/hamper-checkout.html?cart=${encodeURIComponent(JSON.stringify(items))}`;
+    action.href = totalQty > 10 ? `https://christmashampers.ultimatepromotions.co.uk/contact.html?items=${encodeURIComponent(JSON.stringify(items))}` : `${HUB}/hamper-checkout.html?cart=${encodeURIComponent(JSON.stringify(items))}`;
     drawer.querySelector('.cart-delivery-note').textContent = totalQty > 10 ? 'Online checkout is available for up to 10 hampers. Our team can help with larger orders.' : `${money(deliveryPence)} + VAT delivery per hamper to one UK mainland address.`;
   }
   const ready = fetch(`${HUB}/api/hamper-checkout/catalogue`, { cache: 'no-store' }).then(async r => { if (!r.ok) throw Error('Unable to load your cart. Please try again.'); const data = await r.json(); document.querySelectorAll('[data-sandbox-notice]').forEach(el => { el.hidden = data.mode !== 'sandbox'; }); products = new Map(data.products.map(p => [p.sku, p])); deliveryPence = data.deliveryPence; items = normalise(items); save(false); render(); return data; });

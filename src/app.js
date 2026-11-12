@@ -26,6 +26,8 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use('/api/hamper-enquiries', require('./routes/hamper-enquiries').createRouter(require('./db/pool')));
+
 const hamperRoutes = require('./routes/hamper-checkout').createRoutes(require('./db/pool'));
 app.post('/api/hamper-checkout/webhook', express.raw({ type: 'application/json', limit: '256kb' }), hamperRoutes.webhook);
 app.use('/api/hamper-checkout', express.json({ limit: '16kb' }), hamperRoutes.router);

@@ -9,7 +9,7 @@ function render(order, { preview = false } = {}) {
   const items=q.items||[q];
   const title=preview?'Preview of your order confirmation':'Thank you for your order';
   const summary=[['Hampers (ex. VAT)',q.subtotalPence],['Hamper VAT',q.productVatPence],['Delivery (ex. VAT)',q.shippingPence],['Delivery VAT (20%)',q.shippingVatPence],['Total paid',q.totalPence]];
-  const address=[d.name,d.line1,d.line2,d.city,d.postcode].filter(Boolean);
+  const address=[d.name,d.company,d.line1,d.line2,d.city,d.postcode].filter(Boolean);
   const text=[preview?'TEST PREVIEW — no order has been placed.':'Your payment has been received.',`Hello ${d.name},`,`${po} — your invoice PDF is attached.`,...items.map(i=>`${i.quantity} × ${i.name}: ${money(i.subtotalPence)} ex. VAT; VAT ${i.vatPercent}%: ${money(i.productVatPence)}`),...(q.discountLabel?[`${q.discountLabel}: saved ${money(q.discountPence)} including VAT. Prices include the discount.`]:[]),...summary.map(([k,v])=>`${k}: ${money(v)}`),'Delivery address:',...address,'Questions about your order? Reply to this email or call 01442 264288.',company].join('\n');
   const html=`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="supported-color-schemes" content="light dark"><style>
 :root{color-scheme:light dark;supported-color-schemes:light dark}body{margin:0!important}table{border-collapse:collapse}a{color:inherit}

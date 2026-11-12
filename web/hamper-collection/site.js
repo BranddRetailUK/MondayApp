@@ -11,9 +11,7 @@ if(form){const quantity=document.querySelector('#quantity');
    return;
  }
 
- const subject=`Christmas hamper enquiry — ${form.dataset.product}`;
- const body=`Hello,\n\nI’m interested in ${form.dataset.product} (${form.dataset.sku}).\nQuantity: ${quantity.value}\n\nPreferred delivery date:\nDelivery postcode(s):\nAny dietary requirements:\n\nPlease let me know availability and the total including delivery.\n\nThank you`;
- window.location.href=`mailto:sales@ultimatepromotions.co.uk?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+ window.location.href=`contact.html?sku=${encodeURIComponent(form.dataset.sku)}&quantity=${Number(quantity.value)}`;
  });
  const buyButton=form.querySelector('[value=buy]');
  const addButton=form.querySelector('[value=add]');
@@ -110,7 +108,7 @@ if (categoryNav) {
   menu.id = 'mobile-navigation';
   menu.className = 'mobile-nav-drawer';
   menu.setAttribute('aria-labelledby', 'mobile-nav-title');
-  menu.innerHTML = '<div class="mobile-nav-heading"><h2 id="mobile-nav-title">Explore the collection</h2><button type="button" class="mobile-nav-close" aria-label="Close navigation">×</button></div><nav aria-label="Mobile navigation"></nav><div class="mobile-nav-footer"><a href="index.html#help">Help with gifting</a><a href="tel:+441442264288">01442 264288</a><a class="button" href="mailto:sales@ultimatepromotions.co.uk">Get in touch</a></div>';
+  menu.innerHTML = '<div class="mobile-nav-heading"><h2 id="mobile-nav-title">Explore the collection</h2><button type="button" class="mobile-nav-close" aria-label="Close navigation">×</button></div><nav aria-label="Mobile navigation"></nav><div class="mobile-nav-footer"><a href="index.html#help">Help with gifting</a><a href="tel:+441442264288">01442 264288</a><a class="button" href="contact.html">Get in touch</a></div>';
   const drawerNav = menu.querySelector('nav');
   categoryNav.querySelectorAll('a').forEach(link => drawerNav.append(link.cloneNode(true)));
   document.body.append(menu);

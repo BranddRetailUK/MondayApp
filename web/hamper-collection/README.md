@@ -16,7 +16,7 @@ Prices exclude VAT and use each brochure ex-VAT RRP × 1.30, rounded upwards to 
 
 Individual delivery to one UK mainland address costs clients £7.25 + VAT; bulk delivery is POA. Ultimate's supplier delivery cost is £6.25 and is not customer-facing. A printed gift card may use one shared message across all hampers in the order, with no individual personalisation.
 
-Enquiry controls open the user's email client with the chosen product and quantity. There is no checkout. All three email campaigns show the same ex-VAT selling prices and delivery terms and link directly to the live product pages and homepage. Updating these templates does not send any emails.
+Contact links open contact.html and send enquiries directly to charlie@ultimatepromotions.co.uk through the Hub API, with customer Reply-To and selected hampers/quantities. Checkout supports up to 10 hampers; larger orders use the enquiry form. All three email campaigns show the same ex-VAT selling prices and delivery terms and link directly to the live product pages and homepage. Updating these templates does not send any emails.
 
 The full brochure catalogue is available on the website: 90 product pages with exact SKU/source-page records and extracted product photographs. The original nine featured products retain their URLs and lead the collection; remaining products follow brochure order. Similar-price related products link to valid catalogue pages. Each of the three mailers contains six products, retaining its original three and adding three complementary products, ordered by ascending selling price. Clock-only and tree-only listings explicitly exclude drinks.
 

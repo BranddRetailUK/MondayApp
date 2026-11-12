@@ -8,6 +8,7 @@ test('collector accepts only known pages/products and stores no form contents or
  const raw={...input(),email:'private@example.com',name:'Private name',delivery:{postcode:'secret'},query:'secret'};
  const e=normalize(raw,origin,'Mozilla Mobile');assert.equal(e.source,'example.com');assert.equal(e.sku,'H26002');assert.equal(e.device,'Mobile');assert.equal(e.landing,true);assert.equal(e.email,undefined);assert.ok(!JSON.stringify(e).includes('secret'));
  assert.equal(normalize({...raw,path:'/private-person@example.com'},origin),null);
+ assert.equal(normalize({...raw,path:'/contact.html',event:'enquiry'},origin).path,'/contact.html');
  assert.equal(normalize(raw,'https://evil.example'),null);
  assert.equal(normalize(raw,origin,'Googlebot'),null);
  assert.equal(normalize({...raw,excluded:true},origin),null);

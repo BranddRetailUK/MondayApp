@@ -10,7 +10,7 @@ function paragraph(text, className = '') { const p = document.createElement('p')
 function renderHamperOrders() {
   const search = root.querySelector('#order-search').value.trim().toLowerCase();
   const statusFilter = root.querySelector('#order-status').value;
-  const visible = hamperOrders.filter(o => (statusFilter === 'all' || o.status === statusFilter) && `${o.delivery.name} ${o.delivery.email} ${(o.snapshot.items || [o.snapshot]).map(i => `${i.name} ${i.sku}`).join(" ")} ${o.id} ${poNumber(o)}`.toLowerCase().includes(search));
+  const visible = hamperOrders.filter(o => (statusFilter === 'all' || o.status === statusFilter) && `${o.delivery.name} ${o.delivery.company||''} ${o.delivery.email} ${(o.snapshot.items || [o.snapshot]).map(i => `${i.name} ${i.sku}`).join(" ")} ${o.id} ${poNumber(o)}`.toLowerCase().includes(search));
   root.querySelector('#count-all').textContent = hamperOrders.length;
   root.querySelector('#count-paid').textContent = hamperOrders.filter(o => o.status === 'paid').length;
   root.querySelector('#count-pending').textContent = hamperOrders.filter(o => o.status === 'pending').length;
@@ -31,7 +31,7 @@ function renderHamperOrders() {
       if (index === 0) {
         cells[0].append(paragraph(poNumber(order), 'order-primary'));
         cells[1].append(paragraph(new Date(order.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })), paragraph(new Date(order.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }), 'muted small'));
-        cells[2].append(paragraph(d.name, 'order-primary'), paragraph(d.email, 'muted small'));
+        cells[2].append(paragraph(d.name, 'order-primary'), ...(d.company?[paragraph(d.company)]:[]), paragraph(d.email, 'muted small'));
         cells[3].append(paragraph([d.line1, d.line2, d.city].filter(Boolean).join(', ')), paragraph(d.postcode));
         cells[7].append(paragraph(money(q.totalPence), 'order-amount'));
         const badge = document.createElement('span'); badge.className = `pill status-${order.status}`; badge.textContent = statuses[order.status] || order.status; cells[8].append(badge);
