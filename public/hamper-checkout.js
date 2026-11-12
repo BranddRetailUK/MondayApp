@@ -90,7 +90,7 @@
       const delivery = Object.fromEntries(new FormData(form)); delivery.mainland = document.querySelector('#mainland').checked;
       const items = cart.getItems(); const payload = JSON.stringify({ items, delivery, discountCode });
       if (lastPayload && lastPayload !== payload) requestId = crypto.randomUUID(); lastPayload = payload;
-      try { const session = await api('sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items, delivery, requestId, discountCode }) }); location.assign(session.url); }
+      try { const session = await api('sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items, delivery, requestId, discountCode }) }); window.HamperAnalytics?.track('payment_start'); location.assign(session.url); }
       catch (error) { showError(error); pay.disabled = false; }
     });
   } catch (error) { showError(error); }

@@ -12,6 +12,7 @@ const databaseRoutes = require('./src/routes/database');
     require('./src/services/hubPush').start(require('./src/db/pool'));
     require('./src/services/hamperEmail').start(require('./src/db/pool'));
     require('./src/services/emailCampaignDelivery').start(require('./src/db/pool'));
+    require('./src/services/siteAnalytics').startRetention(require('./src/db/pool'));
   } catch (e) {
     console.error('Failed to start server:', e);
     process.exit(1);

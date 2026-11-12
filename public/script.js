@@ -22,7 +22,7 @@ const MOBILE_NAV_MEDIA = '(max-width: 720px), (max-width: 960px) and (max-height
 const PROOF_PDF_ZOOM_MIN = 0.5;
 const PROOF_PDF_ZOOM_MAX = 3;
 const PROOF_PDF_ZOOM_STEP = 0.25;
-const DASHBOARD_TAB_NAMES = ['database', 'test-dashboard', 'insights', 'holiday-board', 'dtf-uploader', 'proof-generator', 'file-viewer', 'digitising-studio', 'hamper-orders', 'email-campaigns'];
+const DASHBOARD_TAB_NAMES = ['database', 'test-dashboard', 'insights', 'holiday-board', 'dtf-uploader', 'proof-generator', 'file-viewer', 'digitising-studio', 'hamper-orders', 'email-campaigns', 'site-analytics'];
 const BOARD_AUTO_REFRESH_MS = 3000;
 const BOARD_CONTEXT_TEST = 'test-dashboard';
 const PRIVATE_DASHBOARD_TOTAL_COLUMN = Object.freeze({ id: 'private_total', title: 'TOTAL', type: 'text' });
@@ -5656,6 +5656,7 @@ function activateDashboardTab(target) {
   setStoredDashboardTab(activeTab);
   if (activeTab === 'hamper-orders') window.loadHamperOrders?.();
   if (activeTab === 'email-campaigns') window.loadEmailCampaigns?.();
+  if (activeTab === 'site-analytics') window.loadSiteAnalytics?.();
   if (activeTab === 'insights') window.loadInsights?.();
   if (activeTab === 'holiday-board') window.loadHolidayBoard?.();
   if (activeTab === 'test-dashboard') {

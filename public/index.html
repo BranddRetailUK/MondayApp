@@ -22,6 +22,8 @@
   <script src="holiday-board.js" defer></script>
   <link rel="stylesheet" href="email-campaigns.css">
   <script src="email-campaigns.js" defer></script>
+  <link rel="stylesheet" href="site-analytics.css">
+  <script src="site-analytics.js" defer></script>
   <link rel="stylesheet" href="insights.css">
   <script src="insights.js" defer></script>
   <script src="auth-session.js" defer></script>
@@ -77,6 +79,7 @@
           <li data-tab="proof-generator" hidden>PROOF GENERATOR</li>
           <li data-tab="hamper-orders">HAMPER ORDERS</li>
           <li data-tab="email-campaigns">EMAIL CAMPAIGNS</li>
+          <li data-tab="site-analytics">SITE ANALYTICS</li>
         </ul>
       </div>
       <div id="sidebarDashboardControls" class="sidebar-dashboard-controls" aria-label="Dashboard controls">
@@ -110,6 +113,17 @@
 
       <section id="tab-insights" class="tab-content" aria-label="Customer Insights"><div id="insights-root"></div></section>
 
+      <section id="tab-site-analytics" class="tab-content" aria-label="Site Analytics"><div class="proof-page">
+        <header class="site-header"><h1>Site Analytics</h1><div class="site-controls"><select id="site-range" aria-label="Date range"><option value="1">Today</option><option value="7" selected>Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="custom">Custom dates</option></select><div id="site-custom" hidden><label>From<input type="date" id="site-from"></label><label>To<input type="date" id="site-to"></label><button class="proof-secondary-button" id="site-apply">Apply</button></div><button class="proof-secondary-button" id="site-refresh">Refresh</button></div></header>
+        <p id="site-status" role="status"></p><div id="site-metrics" class="site-metrics"></div>
+        <section class="site-panel"><div class="site-panel-head"><h2>Daily page views</h2><span id="site-since"></span><span id="site-chart-peak"></span></div><div id="site-chart"></div><div class="site-chart-labels"><span id="site-chart-start"></span><span id="site-chart-end"></span></div></section>
+        <section class="site-panel"><h2>Products</h2><div class="site-table-wrap"><table class="site-products-table"><thead><tr><th>Product</th><th>Views</th><th>Basket adds</th><th>Sold</th></tr></thead><tbody id="site-products"></tbody></table></div></section><div class="site-grid">
+<section class="site-panel"><h2>Landing pages</h2><div class="site-table-wrap"><table><thead><tr><th>Page</th><th>Entries</th></tr></thead><tbody id="site-landing"></tbody></table></div></section>
+<section class="site-panel"><h2>Traffic sources</h2><div class="site-table-wrap"><table><thead><tr><th>Source</th><th>Entries</th></tr></thead><tbody id="site-sources"></tbody></table></div></section>
+<section class="site-panel"><h2>Pages viewed</h2><div class="site-table-wrap"><table><thead><tr><th>Page</th><th>Views</th></tr></thead><tbody id="site-pages"></tbody></table></div></section>
+<section class="site-panel"><h2>Devices</h2><div class="site-table-wrap"><table><thead><tr><th>Device</th><th>Views</th></tr></thead><tbody id="site-devices"></tbody></table></div></section>
+<section class="site-panel"><h2>Shopping activity</h2><div class="site-table-wrap"><table><thead><tr><th>Activity</th><th>Total</th></tr></thead><tbody id="site-shopping"></tbody></table></div></section>
+</div></div></section>
       <section id="tab-email-campaigns" class="tab-content" aria-label="Email Campaigns"><div class="proof-page">
         <header class="proof-page-header"><h1>Email Campaigns</h1><button class="proof-secondary-button" id="campaign-refresh">Refresh</button></header>
         <p id="campaign-status" role="status"></p><div id="campaign-list"></div>

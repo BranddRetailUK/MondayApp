@@ -86,6 +86,7 @@ async function initDb() {
 
   await require('./hamperSchema').ensureHamperTables(pool);
   await require('./emailCampaignSchema').ensureEmailCampaignTables(pool);
+  await require('./siteAnalyticsSchema').ensureSiteAnalyticsTables(pool);
   await ensureDtfTables(pool);
   await require('./holidaySchema').ensureHolidayTables(pool);
   await require('./holidayReference').importHolidayReference(pool);

@@ -100,6 +100,6 @@
   drawer.addEventListener('cancel', event => { event.preventDefault(); close(); });
   drawer.addEventListener('click', event => { if (event.target === drawer && event.clientX < drawer.getBoundingClientRect().left) close(); });
   window.addEventListener('storage', event => { if (event.key === KEY) { try { setItems(JSON.parse(event.newValue || '[]')); } catch {} } });
-  window.HamperCart = { ready, getItems: () => items.map(i => ({ ...i })), setItems, open, add: async (sku, quantity) => { await ready; setItems([...items, { sku, quantity }]); open(); } };
+  window.HamperCart = { ready, getItems: () => items.map(i => ({ ...i })), setItems, open, add: async (sku, quantity) => { await ready; setItems([...items, { sku, quantity }]); window.HamperAnalytics?.track('add_cart', {sku,quantity}); open(); } };
   save(false);
 })();

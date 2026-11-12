@@ -33,11 +33,15 @@ app.use('/api/hamper-checkout', express.json({ limit: '16kb' }), hamperRoutes.ro
 const emailCampaignRoutes = require('./routes/email-campaigns');
 app.post('/api/email-campaigns/webhook', express.raw({ type: 'application/json', limit: '1mb' }), emailCampaignRoutes.webhook(require('./db/pool')));
 
+const siteAnalyticsRoutes = require('./routes/site-analytics');
+app.use('/api/site-analytics/events', siteAnalyticsRoutes.createPublicRouter(require('./db/pool')));
+
 // ---- parse JSON BEFORE routes
 app.use(express.json());
 app.use(attachHubUser);
 
 app.use(require('./routes/hub-auth'));
+app.use('/api/site-analytics', requireHubFullApiAccess, siteAnalyticsRoutes.createAdminRouter(require('./db/pool')));
 app.use('/api/email-campaigns', requireHubFullApiAccess, emailCampaignRoutes.createRouter(require('./db/pool')));
 app.get('/api/hamper-orders/:id/invoice', requireHubFullApiAccess, hamperRoutes.invoice);
 app.get('/api/hamper-orders', requireHubFullApiAccess, hamperRoutes.admin);

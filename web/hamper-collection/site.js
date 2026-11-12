@@ -1,4 +1,5 @@
 'use strict';
+const analyticsScript=document.createElement('script');analyticsScript.src='analytics.js';document.head.append(analyticsScript);
 const form=document.querySelector('#enquiry');
 if(form){const quantity=document.querySelector('#quantity');
  document.querySelector('#minus').addEventListener('click',()=>quantity.value=Math.max(1,(Number(quantity.value)||1)-1));
@@ -6,7 +7,7 @@ if(form){const quantity=document.querySelector('#quantity');
  form.addEventListener('submit',e=>{e.preventDefault();if(!form.reportValidity())return;
  if(Number(quantity.value)<=10){
    if(e.submitter?.value==='add'){window.HamperCart.add(form.dataset.sku,Number(quantity.value)).catch(()=>{window.HamperCart.open();});}
-   else {window.location.href=`https://www.ultimatehub.co.uk/hamper-checkout.html?sku=${encodeURIComponent(form.dataset.sku)}&quantity=${Number(quantity.value)}`;}
+   else {const url=`https://www.ultimatehub.co.uk/hamper-checkout.html?sku=${encodeURIComponent(form.dataset.sku)}&quantity=${Number(quantity.value)}`;window.location.href=window.HamperAnalytics?.decorateUrl(url)||url;}
    return;
  }
 
