@@ -28,3 +28,23 @@ test('duplicate and unrelated account events cannot inflate unique analytics or 
  assert.equal((await db.query('SELECT * FROM hub_email_suppressions')).rows.length,1);
  await pg.close();
 });
+test('activity polling preserves unique recipients across repeated snapshots and scopes every request',async()=>{
+ const {pollBatch}=require('../src/services/emailCampaignDelivery');
+ const pg=new PGlite(),db={query:async(s,p)=>!p&&s.includes('CREATE TABLE')?pg.exec(s):pg.query(s,p)};await ensureEmailCampaignTables(db);
+ await db.query("INSERT INTO hub_email_campaigns(id,name,subject) VALUES('test','Test','Subject')");
+ await db.query("INSERT INTO hub_email_batches(id,campaign_id) VALUES('test-0','test')");
+ await db.query("INSERT INTO hub_email_recipients(campaign_id,email,tracking_batch) VALUES('test','one@example.com','test-0')");
+ const fetchImpl=async url=>{assert.match(decodeURIComponent(url),/ultimate_campaign_id.*test/);assert.match(decodeURIComponent(url),/ultimate_batch_id.*test-0/);return{ok:true,json:async()=>({messages:[{msg_id:'message',to_email:'one@example.com',status:'delivered',opens_count:6,clicks_count:2,last_event_time:'2026-11-12T10:00:00Z'}]})};};
+ await pollBatch(db,{id:'test-0',campaign_id:'test',poll_step:0},{},fetchImpl);await pollBatch(db,{id:'test-0',campaign_id:'test',poll_step:0},{},fetchImpl);
+ const data=await overview(db);assert.equal(data.campaigns[0].metrics.open,1);assert.equal(data.campaigns[0].metrics.click,1);assert.equal(data.campaigns[0].metrics.delivered,1);await pg.close();
+});
+test('audience splits multiple addresses, deduplicates case and holds malformed entries',async()=>{
+ const {audience}=require('../src/services/emailCampaignDelivery');
+ const result=await audience({query:async()=>({rows:[{contact_email:'One@example.com; two@example.com'},{contact_email:'one@EXAMPLE.com'},{contact_email:'bad @example.com'}]})});
+ assert.deepEqual(result.emails,['one@example.com','two@example.com']);assert.equal(result.invalid.length,1);
+});
+test('tracking is explicitly scoped to campaign messages; ordinary sends remain untracked',async()=>{
+ const {sendMarketingEmail}=require('../src/services/sendgrid');let payload;
+ await sendMarketingEmail({to:'one@example.com',subject:'Test',html:'<p>Test</p>',text:'Test',campaignId:'test',batchId:'test-0'},{env:{SENDGRID_API_KEY:'key',SENDGRID_FROM_EMAIL:'sender@example.com'},fetchImpl:async(_,o)=>{payload=JSON.parse(o.body);return{status:200,headers:new Headers()};}});
+ assert.deepEqual(payload.custom_args,{ultimate_campaign_id:'test',ultimate_batch_id:'test-0'});assert.equal(payload.tracking_settings.open_tracking.enable,true);
+});

@@ -14,7 +14,7 @@ function createRouter(db, env = process.env) {
   const router = express.Router();
   router.use((_req,res,next)=>{res.set('Cache-Control','no-store');next();});
   router.get('/',async(_req,res,next)=>{
-    try { res.json({ ...await service.overview(db), trackingConfigured: Boolean(env.SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY) }); } catch(e) { next(e); }
+    try { res.json({ ...await service.overview(db), trackingConfigured: Boolean(env.SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY) || env.SENDGRID_CAMPAIGN_POLL_ENABLED === 'true' }); } catch(e) { next(e); }
   });
   router.get('/suppressions',async(req,res,next)=>{
     const kind = req.query.kind || 'unsubscribed';

@@ -22,3 +22,5 @@
 @media(max-width:1100px){#tab-email-campaigns .campaign-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:600px){#tab-email-campaigns .campaign-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}#tab-email-campaigns .campaign-card,#tab-email-campaigns .campaign-suppressions{padding:18px}#tab-email-campaigns h1{font-size:25px}#tab-email-campaigns .campaign-heading{align-items:flex-start}}
 .nav-tabs li[data-tab="email-campaigns"]{order:4}
+
+#tab-email-campaigns .campaign-sync{color:#c4cbd2;font-size:13px;margin:0 0 20px}

@@ -29,6 +29,7 @@ async function sendMarketingEmail(input, { env = process.env, fetchImpl = fetch 
   if (/\{\{[^}]+\}\}/.test(input.html + input.text) || /(?:src|href)\s*=\s*["'](?:assets\/|#|http:\/\/(?:localhost|127\.0\.0\.1))/i.test(input.html)) throw new Error('Replace preview placeholders and local links before sending');
   if (!sandbox && (!Number.isInteger(c.group) || c.group <= 0)) throw new Error('A marketing unsubscribe group is required');
   if (!sandbox && (!input.html.includes('<%asm_group_unsubscribe_raw_url%>') || !input.text.includes('<%asm_group_unsubscribe_raw_url%>'))) throw new Error('Include the SendGrid unsubscribe link in HTML and plain text');
+  if (input.campaignId && (!/^[a-z0-9-]{1,100}$/.test(input.campaignId) || !/^[a-z0-9-]{1,120}$/.test(input.batchId || ''))) throw new Error('Valid campaign and batch IDs are required');
   const payload = {
     personalizations: [{ to: [{ email: input.to }] }],
     from: { email: c.from, name: c.name }, reply_to: { email: c.replyTo, name: c.name },
@@ -37,6 +38,10 @@ async function sendMarketingEmail(input, { env = process.env, fetchImpl = fetch 
     mail_settings: { sandbox_mode: { enable: sandbox } },
     tracking_settings: { click_tracking: { enable: false, enable_text: false }, open_tracking: { enable: false } },
   };
+  if (input.campaignId) {
+    payload.custom_args = { ultimate_campaign_id: input.campaignId, ultimate_batch_id: input.batchId };
+    payload.tracking_settings = { click_tracking: { enable: true, enable_text: true }, open_tracking: { enable: true } };
+  }
   if (Number.isInteger(c.group) && c.group > 0) payload.asm = { group_id: c.group, groups_to_display: [c.group] };
   let response;
   try {

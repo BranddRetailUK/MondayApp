@@ -16,6 +16,10 @@ async function ensureEmailCampaignTables(db) {
       FOREIGN KEY(campaign_id,email) REFERENCES hub_email_recipients(campaign_id,email)
     );
     CREATE INDEX IF NOT EXISTS hub_email_events_campaign ON hub_email_events(campaign_id,event,email);
+    ALTER TABLE hub_email_campaigns ADD COLUMN IF NOT EXISTS sync_at TIMESTAMPTZ;
+    ALTER TABLE hub_email_campaigns ADD COLUMN IF NOT EXISTS sync_error TEXT;
+    ALTER TABLE hub_email_recipients ADD COLUMN IF NOT EXISTS tracking_batch TEXT;
+    CREATE TABLE IF NOT EXISTS hub_email_batches (id TEXT PRIMARY KEY,campaign_id TEXT NOT NULL REFERENCES hub_email_campaigns(id),polled_at TIMESTAMPTZ,poll_step INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS hub_email_suppressions (
       email TEXT NOT NULL, kind TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '',
       source TEXT NOT NULL, occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
