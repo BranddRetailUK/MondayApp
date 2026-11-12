@@ -3,11 +3,11 @@
   if (!root) return;
   const escape=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let data={customers:[],groups:[]}, loaded=false, loading=false, page=1;
-  const size=100;
+  const size=50;
   const pending=new Map();
   const membershipKey=(key,id)=>JSON.stringify([key,id]);
   const customerCount=n=>`${n} customer${n===1?'':'s'}`;
-  root.innerHTML=`<h1>Customers</h1><div class="customer-group-cards"></div><div class="customer-group-tools"><input type="search" aria-label="Search customers" placeholder="Search customers"><label><input type="checkbox" id="customers-ungrouped"> Ungrouped only</label><select data-filter aria-label="Filter by group"><option value="">All groups</option></select><label>Sort by <select data-sort aria-label="Sort by"><option value="newest">Newest to Oldest</option><option value="active">Most Active</option><option value="az">A–Z</option></select></label><button type="button" data-refresh>Refresh</button></div><p class="customer-group-progress"></p><p class="customer-group-status" role="status" aria-live="polite"></p><div class="customer-group-table"></div><div class="customer-group-pager"><button data-prev>Previous</button><span></span><button data-next>Next</button></div>`;
+  root.innerHTML=`<h1>Customers</h1><div class="customer-group-cards"></div><div class="customer-group-tools"><input type="search" aria-label="Search customers" placeholder="Search customers"><label><input type="checkbox" id="customers-ungrouped"> Ungrouped only</label><select data-filter aria-label="Filter by group"><option value="">All groups</option></select><label>Sort by <select data-sort aria-label="Sort by"><option value="newest">Newest to Oldest</option><option value="active">Most Active</option><option value="az">A–Z</option></select></label><button type="button" data-refresh>Refresh</button></div><p class="customer-group-status" role="status" aria-live="polite"></p><div class="customer-group-table"></div><div class="customer-group-pager"><button data-prev>Previous</button><span></span><button data-next>Next</button></div>`;
   const $=s=>root.querySelector(s);
   const status=message=>$('.customer-group-status').textContent=message;
   async function api(path='',method='GET',body) {
@@ -28,8 +28,6 @@
     const sort=$('[data-sort]').value;
     rows.sort((a,b)=>(sort==='newest'?(Date.parse(b.added_at)||0)-(Date.parse(a.added_at)||0):sort==='active'?b.order_count-a.order_count:0)||a.name.localeCompare(b.name)||a.key.localeCompare(b.key));
     const pages=Math.max(1,Math.ceil(rows.length/size));page=Math.min(page,pages);
-    const remaining=data.customers.filter(c=>!c.groups.length).length;
-    $('.customer-group-progress').textContent=`${data.customers.length} customers · ${data.customers.length-remaining} grouped · ${remaining} ungrouped`;
     $('.customer-group-table').innerHTML=rows.length?`<table><thead><tr><th>Customer</th>${data.groups.map(g=>`<th>${escape(g.title)}</th>`).join('')}</tr></thead><tbody>${rows.slice((page-1)*size,page*size).map(c=>`<tr><th scope="row">${escape(c.name)}</th>${data.groups.map(g=>`<td><input type="checkbox" data-key="${escape(c.key)}" data-group="${g.id}" aria-label="${escape(c.name)}: ${escape(g.title)}" ${(pending.get(membershipKey(c.key,g.id))??c.groups.includes(g.id))?'checked':''} ${pending.has(membershipKey(c.key,g.id))?'disabled':''}></td>`).join('')}</tr>`).join('')}</tbody></table>`:'<p class="customer-group-empty">No customers match.</p>';
     $('.customer-group-pager span').textContent=`Page ${page} of ${pages} · ${customerCount(rows.length)}`;
     $('[data-prev]').disabled=page<=1;$('[data-next]').disabled=page>=pages;
