@@ -22,6 +22,8 @@
   <script src="holiday-board.js" defer></script>
   <link rel="stylesheet" href="email-campaigns.css">
   <script src="email-campaigns.js" defer></script>
+  <link rel="stylesheet" href="customers.css">
+  <script src="customers.js" defer></script>
   <link rel="stylesheet" href="site-analytics.css">
   <script src="site-analytics.js" defer></script>
   <link rel="stylesheet" href="insights.css">
@@ -80,6 +82,7 @@
           <li data-tab="hamper-orders">HAMPER ORDERS</li>
           <li data-tab="email-campaigns">EMAIL CAMPAIGNS</li>
           <li data-tab="site-analytics">SITE ANALYTICS</li>
+          <li data-tab="customers">CUSTOMERS</li>
         </ul>
       </div>
       <div id="sidebarDashboardControls" class="sidebar-dashboard-controls" aria-label="Dashboard controls">
@@ -113,6 +116,7 @@
 
       <section id="tab-insights" class="tab-content" aria-label="Customer Insights"><div id="insights-root"></div></section>
 
+      <section id="tab-customers" class="tab-content" aria-label="Customers"><div class="proof-page" id="customer-groups-page"></div></section>
       <section id="tab-site-analytics" class="tab-content" aria-label="Site Analytics"><div class="proof-page">
         <header class="site-header"><h1>Site Analytics</h1><div class="site-controls"><select id="site-range" aria-label="Date range"><option value="1">Today</option><option value="7" selected>Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="custom">Custom dates</option></select><div id="site-custom" hidden><label>From<input type="date" id="site-from"></label><label>To<input type="date" id="site-to"></label><button class="proof-secondary-button" id="site-apply">Apply</button></div><button class="proof-secondary-button" id="site-refresh">Refresh</button></div></header>
         <p id="site-status" role="status"></p><div id="site-metrics" class="site-metrics"></div>

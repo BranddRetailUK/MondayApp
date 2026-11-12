@@ -41,6 +41,7 @@ app.use(express.json());
 app.use(attachHubUser);
 
 app.use(require('./routes/hub-auth'));
+app.use('/api/customer-groups', requireHubFullApiAccess, require('./routes/customer-groups').createRouter(require('./db/pool')));
 app.use('/api/site-analytics', requireHubFullApiAccess, siteAnalyticsRoutes.createAdminRouter(require('./db/pool')));
 app.use('/api/email-campaigns', requireHubFullApiAccess, emailCampaignRoutes.createRouter(require('./db/pool')));
 app.get('/api/hamper-orders/:id/invoice', requireHubFullApiAccess, hamperRoutes.invoice);
