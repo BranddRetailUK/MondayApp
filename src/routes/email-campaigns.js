@@ -16,7 +16,14 @@ function createRouter(db, env = process.env) {
   router.get('/',async(_req,res,next)=>{
     try { res.json({ ...await service.overview(db), trackingConfigured: Boolean(env.SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY) || env.SENDGRID_CAMPAIGN_POLL_ENABLED === 'true' }); } catch(e) { next(e); }
   });
-  router.get('/suppressions',async(req,res,next)=>{
+  router.get('/:id/preview',async(req,res,next)=>{
+    try {
+      const result=await db.query('SELECT html FROM hub_email_campaigns WHERE id=$1',[req.params.id]);
+      if(!result.rows.length)return res.status(404).send('Campaign not found.');
+      res.set('Content-Security-Policy', "default-src 'none'; img-src https:; style-src 'unsafe-inline'; sandbox").type('html').send(result.rows[0].html);
+    }catch(e){next(e);}
+  });
+  router.get('/suppressions' ,async(req,res,next)=>{
     const kind = req.query.kind || 'unsubscribed';
     if (!['unsubscribed','invalid','undeliverable','complaint'].includes(kind)) return res.status(400).json({error:'Choose a valid list.'});
     const page = Math.max(0,Math.min(100000,parseInt(req.query.page,10)||0));

@@ -27,7 +27,11 @@ async function suppressions(env=process.env,fetchImpl=fetch) {
   for(let offset=0;;offset+=500) {
    const rows=await providerGet(path+(unpaged?'':`?limit=500&offset=${offset}`),env,fetchImpl);
    if(!Array.isArray(rows))throw Error('Unexpected SendGrid suppression response.');
-   for(const row of rows)result.push({email:String(typeof row==='string'?row:row.email||'').trim().toLowerCase(),kind,reason:String(row.reason||kind),source:path,created:Number(row.created)||null});
+   for(const row of rows){
+    const reason=String(row.reason||kind);
+    const confirmed=path==='/v3/suppression/bounces' && /(?:^|\s)5\.1\.[1236](?:\s|$)/.test(reason);
+    result.push({email:String(typeof row==='string'?row:row.email||'').trim().toLowerCase(),kind:confirmed?'invalid':kind,reason,source:path,created:Number(row.created)||null});
+   }
    if(unpaged||rows.length<500)break;
    if(offset>=100000)throw Error('Suppression list exceeded safe paging limit.');
   }
@@ -67,6 +71,12 @@ function start(db,env=process.env) {
   try {
    client=await db.connect();
    if(!(await client.query('SELECT pg_try_advisory_lock(73104261) AS locked')).rows[0].locked)return;
+   const due=(await client.query("SELECT id FROM hub_email_campaigns WHERE status IN ('sending','sent','paused') AND (suppression_sync_at IS NULL OR suppression_sync_at<NOW()-INTERVAL '10 minutes') LIMIT 1")).rows[0];
+   if(due){
+    const recipients=(await client.query('SELECT DISTINCT email FROM hub_email_recipients')).rows;
+    await importSuppressions(client,await suppressions(env),new Set(recipients.map(r=>r.email)));
+    await client.query("UPDATE hub_email_campaigns SET suppression_sync_at=NOW() WHERE status IN ('sending','sent','paused')");
+   }
    const result=await client.query(`SELECT b.* FROM hub_email_batches b JOIN hub_email_campaigns c ON c.id=b.campaign_id
      WHERE c.status IN ('sending','sent','paused') AND EXISTS(SELECT 1 FROM hub_email_recipients r WHERE r.tracking_batch=b.id AND r.sent_at IS NOT NULL)
      AND (b.polled_at IS NULL OR b.polled_at<NOW()-INTERVAL '60 seconds') ORDER BY b.polled_at NULLS FIRST,b.id LIMIT 1`);

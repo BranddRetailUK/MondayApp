@@ -12,6 +12,12 @@ async function main() {
  const db=new Pool({connectionString:process.env.DATABASE_PUBLIC_URL||process.env.DATABASE_URL,ssl:process.env.PGSSLMODE==='disable'?false:{rejectUnauthorized:false},connectionTimeoutMillis:10000});
  try {
   const list=await audience(db),provider=await suppressions();
+  if(process.env.CAMPAIGN_DOMAIN_REPORT){
+   const report=JSON.parse(fs.readFileSync(process.env.CAMPAIGN_DOMAIN_REPORT,'utf8'));
+   if(!Number.isFinite(Date.parse(report.checkedAt))||Math.abs(Date.now()-Date.parse(report.checkedAt))>86400000)throw Error('Domain check must be less than 24 hours old.');
+   const bad=new Map(report.domains.filter(r=>['nonexistent','null_mx','no_mail_route'].includes(r.status)).map(r=>[r.domain,r.status]));
+   for(const email of list.emails){const status=bad.get(email.split('@')[1]);if(status)provider.push({email,kind:'invalid',source:'dns_domain_check',created:Math.floor(Date.parse(report.checkedAt)/1000),reason:({nonexistent:'Email domain does not exist (DNS NXDOMAIN).',null_mx:'Domain explicitly refuses email (null MX).',no_mail_route:'Domain has no MX or fallback address records.'})[status]});}
+  }
   const local=(await db.query('SELECT email,kind FROM hub_email_suppressions')).rows;
   const blocked=new Set([...provider,...local].map(r=>r.email));
   const recipients=list.emails.filter(email=>!blocked.has(email));

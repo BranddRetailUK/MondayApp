@@ -24,3 +24,5 @@
 .nav-tabs li[data-tab="email-campaigns"]{order:4}
 
 #tab-email-campaigns .campaign-sync{color:#c4cbd2;font-size:13px;margin:0 0 20px}
+
+#tab-email-campaigns .campaign-review{font-size:13px;color:#c4cbd2}#tab-email-campaigns .campaign-review a{color:#94cafa}

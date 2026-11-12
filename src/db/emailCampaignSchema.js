@@ -16,6 +16,7 @@ async function ensureEmailCampaignTables(db) {
       FOREIGN KEY(campaign_id,email) REFERENCES hub_email_recipients(campaign_id,email)
     );
     CREATE INDEX IF NOT EXISTS hub_email_events_campaign ON hub_email_events(campaign_id,event,email);
+    ALTER TABLE hub_email_campaigns ADD COLUMN IF NOT EXISTS suppression_sync_at TIMESTAMPTZ;
     ALTER TABLE hub_email_campaigns ADD COLUMN IF NOT EXISTS sync_at TIMESTAMPTZ;
     ALTER TABLE hub_email_campaigns ADD COLUMN IF NOT EXISTS sync_error TEXT;
     ALTER TABLE hub_email_recipients ADD COLUMN IF NOT EXISTS tracking_batch TEXT;
