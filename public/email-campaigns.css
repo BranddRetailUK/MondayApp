@@ -1,0 +1,24 @@
+#tab-email-campaigns .proof-page-header,#tab-email-campaigns .campaign-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}
+#tab-email-campaigns .proof-page-header{margin-bottom:20px}
+#tab-email-campaigns h1{font-size:30px;margin:0;color:#fff}
+#tab-email-campaigns h2{font-size:19px;margin:0;color:#fff}
+#tab-email-campaigns .campaign-card,#tab-email-campaigns .campaign-suppressions,#tab-email-campaigns .campaign-empty{padding:24px;margin-bottom:22px;background:#181a1d;border:1px solid #373b40;border-radius:14px}
+#tab-email-campaigns .campaign-badge{color:#94cafa;background:#142d48;border:1px solid #3d4c58;border-radius:30px;padding:6px 12px;text-transform:capitalize;font-size:13px}
+#tab-email-campaigns .campaign-subject{color:#fff;margin:14px 0 24px;font-size:15px}
+#tab-email-campaigns .campaign-metrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:22px 18px}
+#tab-email-campaigns .campaign-metrics span{display:block;color:#94cafa;font-size:12px;font-weight:800;margin-bottom:8px}
+#tab-email-campaigns .campaign-metrics strong{display:block;font-size:28px;color:#fff}
+#tab-email-campaigns .campaign-metrics small{display:block;font-size:12px;color:#c4cbd2;margin-top:5px}
+#tab-email-campaigns #campaign-status,#tab-email-campaigns #campaign-list-note,#tab-email-campaigns .campaign-empty p{font-size:14px;line-height:1.5;color:#c4cbd2}
+#tab-email-campaigns .campaign-filters{display:flex;gap:18px;margin:22px 0;flex-wrap:wrap}
+#tab-email-campaigns .campaign-filters label{display:flex;flex:1;flex-direction:column;gap:8px;min-width:200px;color:#94cafa;font-size:13px}
+#tab-email-campaigns input,#tab-email-campaigns select{font:inherit;font-size:16px;min-height:44px;background:#101214;color:#fff;border:1px solid #535a63;border-radius:7px;padding:10px}
+#tab-email-campaigns .campaign-table-wrap{overflow-x:auto}
+#tab-email-campaigns table{width:100%;min-width:600px;text-align:left}
+#tab-email-campaigns th{color:#94cafa;font-size:12px;padding:12px 8px}
+#tab-email-campaigns td{color:#fff;font-size:14px;padding:14px 8px;border-top:1px solid #373b40;overflow-wrap:anywhere;max-width:440px}
+#tab-email-campaigns .campaign-pagination{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:20px;font-size:13px;color:#c4cbd2}
+#tab-email-campaigns button:disabled{opacity:.45;cursor:default}
+@media(max-width:1100px){#tab-email-campaigns .campaign-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:600px){#tab-email-campaigns .campaign-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}#tab-email-campaigns .campaign-card,#tab-email-campaigns .campaign-suppressions{padding:18px}#tab-email-campaigns h1{font-size:25px}#tab-email-campaigns .campaign-heading{align-items:flex-start}}
+.nav-tabs li[data-tab="email-campaigns"]{order:4}

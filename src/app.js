@@ -30,11 +30,15 @@ const hamperRoutes = require('./routes/hamper-checkout').createRoutes(require('.
 app.post('/api/hamper-checkout/webhook', express.raw({ type: 'application/json', limit: '256kb' }), hamperRoutes.webhook);
 app.use('/api/hamper-checkout', express.json({ limit: '16kb' }), hamperRoutes.router);
 
+const emailCampaignRoutes = require('./routes/email-campaigns');
+app.post('/api/email-campaigns/webhook', express.raw({ type: 'application/json', limit: '1mb' }), emailCampaignRoutes.webhook(require('./db/pool')));
+
 // ---- parse JSON BEFORE routes
 app.use(express.json());
 app.use(attachHubUser);
 
 app.use(require('./routes/hub-auth'));
+app.use('/api/email-campaigns', requireHubFullApiAccess, emailCampaignRoutes.createRouter(require('./db/pool')));
 app.get('/api/hamper-orders/:id/invoice', requireHubFullApiAccess, hamperRoutes.invoice);
 app.get('/api/hamper-orders', requireHubFullApiAccess, hamperRoutes.admin);
 app.get('/hamper-orders.html', requireHubFullPageAccess, (_req, res) => res.redirect(302, '/?tab=hamper-orders'));

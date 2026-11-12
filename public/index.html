@@ -20,6 +20,8 @@
   <link rel="stylesheet" href="hamper-orders.css?v=04d0468ee5b3">
   <script src="hamper-orders.js?v=d8ba16534e7e" defer></script>
   <script src="holiday-board.js" defer></script>
+  <link rel="stylesheet" href="email-campaigns.css">
+  <script src="email-campaigns.js" defer></script>
   <link rel="stylesheet" href="insights.css">
   <script src="insights.js" defer></script>
   <script src="auth-session.js" defer></script>
@@ -74,6 +76,7 @@
           <li data-tab="digitising-studio" id="digitising-studio-nav" hidden>DIGITISING STUDIO</li>
           <li data-tab="proof-generator" hidden>PROOF GENERATOR</li>
           <li data-tab="hamper-orders">HAMPER ORDERS</li>
+          <li data-tab="email-campaigns">EMAIL CAMPAIGNS</li>
         </ul>
       </div>
       <div id="sidebarDashboardControls" class="sidebar-dashboard-controls" aria-label="Dashboard controls">
@@ -107,6 +110,15 @@
 
       <section id="tab-insights" class="tab-content" aria-label="Customer Insights"><div id="insights-root"></div></section>
 
+      <section id="tab-email-campaigns" class="tab-content" aria-label="Email Campaigns"><div class="proof-page">
+        <header class="proof-page-header"><h1>Email Campaigns</h1><button class="proof-secondary-button" id="campaign-refresh">Refresh</button></header>
+        <p id="campaign-status" role="status"></p><div id="campaign-list"></div>
+        <section class="proof-card campaign-suppressions"><h2>Email exclusions</h2>
+          <div class="campaign-filters"><label>List<select id="campaign-kind"><option value="unsubscribed">Unsubscribed</option><option value="invalid">Confirmed dead emails</option><option value="undeliverable">Other undeliverable emails</option><option value="complaint">Spam complaints</option></select></label><label>Search email<input id="campaign-search" type="search" placeholder="Search email address"></label></div>
+          <p id="campaign-list-note"></p><div class="campaign-table-wrap"><table class="data-table"><thead><tr><th>Email address</th><th>Reason</th><th>Recorded</th></tr></thead><tbody id="campaign-exclusions"></tbody></table></div>
+          <div class="campaign-pagination"><button id="campaign-prev" class="proof-secondary-button">Previous</button><span id="campaign-page" aria-live="polite"></span><button id="campaign-next" class="proof-secondary-button">Next</button></div>
+        </section>
+      </div></section>
       <section id="tab-holiday-board" class="tab-content" aria-label="Holiday Board"><div id="holiday-board"></div></section>
 
       <section id="tab-proof-generator" class="tab-content" aria-label="Proof Generator"><div id="proof-generator-root"><div class="workspace-loading" role="status" aria-label="Loading proofs"><span class="board-loading-spinner" aria-hidden="true"></span></div></div></section>
