@@ -31,7 +31,7 @@ test('analytics deduplicates event retries, fills empty days and excludes sandbo
  const order={items:[{sku:'H26002',quantity:2}],totalPence:5000};
  for(const [mode,extra] of [['live',{}],['sandbox',{}],['live',{discountLabel:'Single-use live test discount'}]])await db.query("INSERT INTO hamper_orders VALUES($1,$2,'paid',$3,'2026-11-12T10:00:00Z')",[crypto.randomUUID(),mode,{...order,...extra}]);
  const data=await report(db,{from:'2026-11-11',to:'2026-11-12'});
- assert.equal(data.totals.views,1);assert.equal(data.totals.entries,1);assert.equal(data.totals.adds,1);assert.equal(data.totals.engaged,1);assert.equal(data.trend.length,2);assert.equal(data.trend[0].views,0);assert.equal(data.sales.paid,1);assert.equal(data.sales.revenue,'5000');assert.equal(data.products[0].sold,2);assert.equal(data.trendGranularity,'day');
+ assert.equal(data.totals.views,1);assert.equal(data.totals.entries,1);assert.equal(data.totals.adds,1);assert.equal(data.totals.engaged,1);assert.equal(data.trend.length,2);assert.equal(data.trend[0].views,0);assert.equal(data.sales.paid,1);assert.equal(data.sales.revenue,'5000');assert.equal(data.products[0].sold,2);assert.equal(data.products[0].pricePence,2999);assert.equal(data.trendGranularity,'day');
  const hourly=await report(db,{from:'2026-11-12',to:'2026-11-12'});
  assert.equal(hourly.trendGranularity,'hour');assert.equal(hourly.trend.length,24);assert.equal(hourly.trend[10].views,1);assert.equal(hourly.trend[9].views,0);
  for(const timestamp of ['2026-10-25T00:30:00Z','2026-10-25T01:30:00Z'])await db.query("INSERT INTO hub_site_events(id,page_id,event,path,source,device,created_at) VALUES($1,$2,'pageview','/','direct / unknown','Desktop',$3)",[crypto.randomUUID(),crypto.randomUUID(),timestamp]);
@@ -39,6 +39,8 @@ test('analytics deduplicates event retries, fills empty days and excludes sandbo
  assert.equal(autumn.trend.length,25);assert.equal(autumn.trend.filter(r=>r.views===1).length,2);assert.equal(autumn.trend.reduce((n,r)=>n+r.views,0),2);
  assert.equal((await report(db,{from:'2026-03-29',to:'2026-03-29'})).trend.length,23);
  for(let i=0;i<12;i++)for(let j=0;j<=i;j++)await db.query("INSERT INTO hub_site_events(id,page_id,event,path,source,device,landing,created_at) VALUES($1,$2,'pageview',$3,'direct / unknown','Desktop',true,'2026-11-12T11:00:00Z')",[crypto.randomUUID(),crypto.randomUUID(),'/page-'+String(i).padStart(2,'0')]);
+ for(const [i,p] of require('../web/hamper-collection/products.json').slice(0,12).entries())for(let j=0;j<=i;j++)await db.query("INSERT INTO hub_site_events(id,page_id,event,path,sku,source,device,created_at) VALUES($1,$2,'pageview',$3,$4,'direct / unknown','Desktop','2026-11-10T11:00:00Z')",[crypto.randomUUID(),crypto.randomUUID(),'/'+p.slug+'.html',p.sku]);
+ const topProducts=await report(db,{from:'2026-11-10',to:'2026-11-10'});assert.equal(topProducts.products.length,10);assert.equal(topProducts.products[0].views,12);assert.equal(topProducts.products[9].views,3);
  const top=await report(db,{from:'2026-11-12',to:'2026-11-12'});
  assert.equal(top.pages.length,10);assert.equal(top.landing.length,10);assert.equal(top.pages[0].path,'/page-11');assert.equal(top.landing[9].path,'/page-02');
 

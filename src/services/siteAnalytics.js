@@ -59,7 +59,7 @@ async function report(db,range){
  ]);
  const merged=new Map(productRows.rows.map(r=>[r.sku,{...r,sold:0}]));for(const r of topSales.rows){if(!merged.has(r.sku))merged.set(r.sku,{sku:r.sku,views:0,adds:0,sold:0});merged.get(r.sku).sold=r.sold;}
  const days=new Map(trend.rows.map(r=>[r.day,r]));const series=hourly?trend.rows:[];for(let t=Date.parse(range.from);!hourly&&t<=Date.parse(range.to);t+=86400000){const day=new Date(t).toISOString().slice(0,10);series.push(days.get(day)||{day,views:0,entries:0});}
- return {range,startedAt:config.rows[0]?.started_at,totals:totals.rows[0],trend:series,trendGranularity:hourly?'hour':'day',pages:pages.rows,landing:landing.rows,sources:sources.rows,devices:devices.rows,sales:sales.rows[0],products:[...merged.values()].map(r=>({...r,name:productBySku.get(r.sku)?.name||r.sku})).sort((a,b)=>b.views-a.views||b.sold-a.sold)};
+ return {range,startedAt:config.rows[0]?.started_at,totals:totals.rows[0],trend:series,trendGranularity:hourly?'hour':'day',pages:pages.rows,landing:landing.rows,sources:sources.rows,devices:devices.rows,sales:sales.rows[0],products:[...merged.values()].map(r=>({...r,name:productBySku.get(r.sku)?.name||r.sku,pricePence:productBySku.has(r.sku)?Math.round(productBySku.get(r.sku).price*100):null})).sort((a,b)=>b.views-a.views||b.sold-a.sold||a.name.localeCompare(b.name)).slice(0,10)};
 }
 function startRetention(db){const clean=()=>db.query("DELETE FROM hub_site_events WHERE id IN (SELECT id FROM hub_site_events WHERE created_at<NOW()-INTERVAL '180 days' LIMIT 10000)").catch(()=>console.error('Site analytics retention cleanup failed'));setInterval(clean,3600000).unref();void clean();}
 module.exports={normalize,record,dateRange,report,startRetention,ORIGINS};

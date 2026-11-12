@@ -33,7 +33,7 @@
    $('metrics').innerHTML=metrics.map(([label,value])=>`<div><span>${label}</span><strong>${value}</strong></div>`).join('');
    $('since').textContent=data.startedAt?'Tracking from '+new Date(data.startedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short',timeZone:'Europe/London'}):'';
    chart(data.trend,data.trendGranularity);
-   table('products',data.products,[r=>r.name,r=>number(r.views),r=>number(r.adds),r=>number(r.sold)]);
+   table('products',data.products,[r=>r.name,r=>r.pricePence==null?'—':money(r.pricePence),r=>number(r.views),r=>number(r.adds),r=>number(r.sold)]);
    table('landing',data.landing,[r=>label(r.path),r=>number(r.entries)]);
    table('pages',data.pages,[r=>label(r.path),r=>number(r.views)]);
    table('devices',data.devices,[r=>r.device,r=>number(r.views)]);
