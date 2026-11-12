@@ -1139,7 +1139,7 @@ async function buildTestDashboardBoardPayload() {
   for (const privateJob of privateJobs) {
     if (privateJob.archived) continue;
     const link = linksById.get(privateJob.id);
-    if (link && (link.invoice_printed || link.pf_invoice_printed || (link.invoice_required === false && link.closed_without_invoice))) continue;
+    if (link && (link.invoice_printed || link.pf_invoice_printed || (link.invoice_required === false && (link.closed_without_invoice || ['COMPLETED', 'INVOICED'].includes(normalizeColumnTitle(link.dashboard_status)))))) continue;
     const item = buildPrivateBoardItem(privateJob, columns);
     if (link) {
       item.dashboard_private_job = false;
@@ -1192,7 +1192,7 @@ function isDashboardJobFinalized(job) {
   return Boolean(
     job?.invoice_printed
     || job?.pf_invoice_printed
-    || (job?.invoice_required === false && job?.closed_without_invoice)
+    || job?.invoice_required === false
   );
 }
 

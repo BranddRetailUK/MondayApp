@@ -1213,7 +1213,7 @@ router.get('/api/database/visuals/open-jobs', async (_req, res) => {
            AND (
              job.invoice_printed IS TRUE
              OR job.pf_invoice_printed IS TRUE
-             OR (job.invoice_required IS FALSE AND job.closed_without_invoice IS TRUE)
+             OR job.invoice_required IS FALSE
            )
          )
          AND (
@@ -6120,7 +6120,7 @@ async function fetchCustomerOverview(db, job) {
                     AND (
                       cj.invoice_printed IS TRUE
                       OR cj.pf_invoice_printed IS TRUE
-                      OR (cj.invoice_required IS FALSE AND cj.closed_without_invoice IS TRUE)
+                      OR cj.invoice_required IS FALSE
                     )
                   )
               )::int AS open_jobs,

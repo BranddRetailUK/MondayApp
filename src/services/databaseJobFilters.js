@@ -178,7 +178,7 @@ function buildJobFilters(query = {}) {
         AND (
           j.invoice_printed IS TRUE
           OR j.pf_invoice_printed IS TRUE
-          OR (j.invoice_required IS FALSE AND j.closed_without_invoice IS TRUE)
+          OR j.invoice_required IS FALSE
         )
       )
     )`);
@@ -189,7 +189,7 @@ function buildJobFilters(query = {}) {
     where.push('j.is_complete IS NOT TRUE');
     where.push('j.invoice_printed IS NOT TRUE');
     where.push('j.pf_invoice_printed IS NOT TRUE');
-    where.push('NOT (j.invoice_required IS FALSE AND j.closed_without_invoice IS TRUE)');
+    where.push('j.invoice_required IS NOT FALSE');
     orderSql = `ORDER BY COALESCE(j.dashboard_status_updated_at, j.updated_at_source, j.order_date) DESC NULLS LAST,
                          j.order_no DESC`;
   }

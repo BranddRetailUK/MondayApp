@@ -9918,7 +9918,7 @@
     return (status === 'COMPLETED' || status === 'INVOICED') && Boolean(
       job.invoice_printed
       || job.pf_invoice_printed
-      || (invoiceNotRequired(job) && truthy(job.closed_without_invoice))
+      || invoiceNotRequired(job)
     );
   }
 
@@ -10675,7 +10675,7 @@
     const closeOrderButton = document.querySelector('[data-db-no-invoice-close]');
     if (closeOrderButton) {
       const noSelectedJob = !job || (!job.source_order_id && !job.order_no);
-      const alreadyClosed = truthy(job?.closed_without_invoice) || truthy(job?.is_complete);
+      const alreadyClosed = truthy(job?.closed_without_invoice) || shouldRemoveFromOpenOrders(job);
       closeOrderButton.hidden = noSelectedJob || !invoiceNotRequired(job) || alreadyClosed;
       closeOrderButton.disabled = noSelectedJob || state.noInvoiceCloseSaving;
       closeOrderButton.closest('.db-document-buttons')?.classList.toggle(

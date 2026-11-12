@@ -42,7 +42,7 @@ test('Close Order removes finalized COMPLETED and INVOICED jobs from the browser
 
   const removalRule = database.slice(start, end);
   assert.match(removalRule, /status === 'COMPLETED' \|\| status === 'INVOICED'/);
-  assert.match(removalRule, /invoiceNotRequired\(job\) && truthy\(job\.closed_without_invoice\)/);
+  assert.match(removalRule, /invoiceNotRequired\(job\)/);
 });
 
 async function exerciseCloseRoute(invoiceRequired) {

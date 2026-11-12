@@ -70,7 +70,7 @@ async function ensureProductionJobTables(db) {
 
 async function fetchProductionLinks(db) {
   const { rows } = await db.query(`SELECT p.*, j.order_no, j.customer_name, j.job_title AS parent_title,
-      j.invoice_printed, j.pf_invoice_printed, j.closed_without_invoice, j.invoice_required,
+      j.invoice_printed, j.pf_invoice_printed, j.closed_without_invoice, j.invoice_required, j.dashboard_status,
       pos.position_name, pos.colour_notes, pos.design_ref,
       row_to_json(li) AS line
     FROM dashboard_production_jobs p JOIN database_jobs j USING(source_order_id)
