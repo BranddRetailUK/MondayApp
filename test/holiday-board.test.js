@@ -50,3 +50,30 @@ test('London day boundary respects summer time and today stays editable',async()
  assert.equal(londonToday(new Date('2026-01-01T23:30:00Z')),'2026-01-01');
  const res=response();await handler({async query(){return {rowCount:1,rows:[{}]};}},'/api/holiday-board/days','post')({body:{userId:1,start:londonToday(),end:londonToday(),action:'add'},hubUser:{id:7}},res,e=>{throw e;});assert.equal(res.statusCode,200);
 });
+
+test('only the three named full-access accounts can remove past dates, including half days and mixed ranges',async()=>{
+ const {canRemovePastHolidays}=require('../src/routes/holiday-board');
+ const today=londonToday(),yesterday=new Date(Date.parse(today)-86400000).toISOString().slice(0,10);
+ for(const email of ['melvyn@ultimatepromotions.co.uk',' JULIA@ULTIMATEPROMOTIONS.CO.UK ','production@ultimatepromotions.co.uk']) {
+   const hubUser={id:7,email,access_scope:'full'};assert.equal(canRemovePastHolidays(hubUser),true);
+   for(const end of [yesterday,today])for(const portion of ['full','am','pm']) {
+     const calls=[],res=response();
+     await handler({async query(sql,args){calls.push({sql,args});return {rowCount:1,rows:[{}]};}},'/api/holiday-board/days','post')({hubUser,body:{userId:2,start:yesterday,end,action:'remove',portion}},res,e=>{throw e;});
+     assert.equal(res.statusCode,200);assert.match(calls[1].sql,/^DELETE FROM holiday_board_days/);assert.equal(calls[1].args[0],2);assert.deepEqual(calls[1].args[1],dateRange({start:yesterday,end}));
+   }
+   for(const portion of ['full','am','pm']) {
+     const res=response();await handler({query(){assert.fail('Past additions must stay locked');}},'/api/holiday-board/days','post')({hubUser,body:{userId:2,start:yesterday,end:today,action:'add',portion}},res,e=>{throw e;});assert.equal(res.statusCode,403);
+   }
+ }
+ for(const hubUser of [null,{email:'scott@ultimatepromotions.co.uk',access_scope:'full'},{email:'melvyn@other.example',access_scope:'full'},{email:'julia@ultimatepromotions.co.uk.attacker.test',access_scope:'full'},{email:'production@ultimatepromotions.co.uk',access_scope:'dtf_only'}]) {
+   assert.equal(canRemovePastHolidays(hubUser),false);
+   const res=response();await handler({query(){assert.fail('Unauthorized removal must not access the database');}},'/api/holiday-board/days','post')({hubUser,body:{userId:2,start:yesterday,end:today,action:'remove',canRemovePastHolidays:true}},res,e=>{throw e;});assert.equal(res.statusCode,403);
+ }
+});
+test('board response exposes removal capability only to permitted callers',async()=>{
+ const run=handler({async query(){return {rows:[]};}},'/api/holiday-board','get');
+ for(const [email,expected] of [['julia@ultimatepromotions.co.uk',true],['office@ultimatepromotions.co.uk',false]]) {
+   const res=response();res.set=()=>res;
+   await run({query:{year:2026},hubUser:{email,access_scope:'full'}},res,e=>{throw e;});assert.equal(res.body.canRemovePastHolidays,expected);
+ }
+});

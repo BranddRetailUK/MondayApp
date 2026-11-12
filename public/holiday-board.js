@@ -41,7 +41,7 @@
           const members = data.days.filter(d=>d.day===date).map(d=>{const p=data.members.find(p=>Number(p.user_id)===Number(d.user_id));return p ? {...p,portion:d.portion || 'full'} : null;}).filter(Boolean);
           const today = londonToday() === date, locked = isPast(date);
           const label = `${day} ${month} ${year}${members.length ? ': '+members.map(p=>name(p.user_id)+' ('+portionName(p.portion)+')').join(', ') : ': no holiday'}`;
-          return `<div class="hb-day ${i%7>4?'hb-weekend':''} ${today?'hb-today':''} ${locked?'hb-past':''}" data-date="${date}" role="group" aria-label="${esc(label)}" title="${esc(label)}${locked ? ' · Past date — locked' : ''}"><button class="hb-number" ${locked ? 'disabled' : ''} aria-label="Edit ${day} ${month} ${year}"><svg class="hb-date-number" viewBox="0 0 26 20" width="26" height="20" aria-hidden="true" focusable="false"><text x="0" y="15">${day}</text></svg></button><span class="hb-dots">${members.map(p => `<button class="hb-grid-dot" ${locked ? 'disabled' : ''} data-person="${p.user_id}" aria-label="${esc(name(p.user_id))}, ${date}, ${portionName(p.portion)}. ${locked ? 'Past date — locked.' : 'Click for '+(p.portion === 'am' ? 'afternoon' : p.portion === 'pm' ? 'remove' : 'morning')+'.'}" title="${esc(name(p.user_id))}: ${portionName(p.portion)}">${dot(p)}</button>`).join('')}</span></div>`;
+          return `<div class="hb-day ${i%7>4?'hb-weekend':''} ${today?'hb-today':''} ${locked?'hb-past':''}" data-date="${date}" role="group" aria-label="${esc(label)}" title="${esc(label)}${locked ? (data.canRemovePastHolidays ? ' · Click a holiday dot to remove it' : ' · Past date — locked') : ''}"><button class="hb-number" ${locked ? 'disabled' : ''} aria-label="Edit ${day} ${month} ${year}"><svg class="hb-date-number" viewBox="0 0 26 20" width="26" height="20" aria-hidden="true" focusable="false"><text x="0" y="15">${day}</text></svg></button><span class="hb-dots">${members.map(p => `<button class="hb-grid-dot" ${locked && !data.canRemovePastHolidays ? 'disabled' : ''} data-person="${p.user_id}" aria-label="${esc(name(p.user_id))}, ${date}, ${portionName(p.portion)}. ${locked ? (data.canRemovePastHolidays ? 'Click to remove this past holiday.' : 'Past date — locked.') : 'Click for '+(p.portion === 'am' ? 'afternoon' : p.portion === 'pm' ? 'remove' : 'morning')+'.'}" title="${esc(name(p.user_id))}: ${portionName(p.portion)}">${dot(p)}</button>`).join('')}</span></div>`;
         }).join('')}</div>`;
       }).join('')}</div></div>`;
     root.querySelector('#hb-prev').onclick=()=>{year--;load();};
@@ -62,8 +62,12 @@
     root.querySelectorAll('[data-date]').forEach(cell => {
       cell.onclick = e => {
         if (Date.now() < suppressClickUntil) return;
-        if (isPast(cell.dataset.date)) { feedback('Past dates are locked. Only today and future dates can be changed.'); return; }
         const marker = e.target.closest('[data-person]');
+        if (isPast(cell.dataset.date)) {
+          if (marker && data.canRemovePastHolidays) cycleDay(Number(marker.dataset.person), cell.dataset.date);
+          else feedback(data.canRemovePastHolidays ? 'Click an existing holiday dot to remove it.' : 'Past dates are locked. Only today and future dates can be changed.');
+          return;
+        }
         if (marker) { cycleDay(Number(marker.dataset.person), cell.dataset.date); return; }
         if (selectedMember) placeDay(selectedMember, cell.dataset.date);
         else if (data.members.length) dayDialog(cell.dataset.date);
@@ -188,7 +192,12 @@
     return saveQuickly('/days', { userId, start:date, end:date, action:'add', portion:'full' });
   }
   function cycleDay(userId, date) {
-    if (isPast(date)) return;
+    if (isPast(date)) {
+      if (data.canRemovePastHolidays && data.days.some(d => Number(d.user_id) === userId && d.day === date)) {
+        return saveQuickly('/days', { userId, start:date, end:date, action:'remove' });
+      }
+      return;
+    }
     const entry = data.days.find(d => Number(d.user_id) === userId && d.day === date);
     if (!entry) return;
     const portion = entry.portion === 'am' ? 'pm' : entry.portion === 'pm' ? null : 'am';
