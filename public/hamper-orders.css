@@ -2,11 +2,12 @@
 #tab-hamper-orders .header-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 #tab-hamper-orders .header-actions a{text-decoration:none}
 #tab-hamper-orders .hamper-sandbox-note{display:flex;align-items:center;gap:12px;background:#94cafa;border:1px solid #94cafa;border-radius:10px;padding:14px 18px;margin-bottom:18px;color:#102337;font-size:13px;line-height:1.5}
+#tab-hamper-orders .hamper-page{max-width:none;padding-inline:0}
 #tab-hamper-orders .hamper-orders-panel{padding:0}
 #tab-hamper-orders .card-head{padding:20px 23px;border-color:#373b40}
 #tab-hamper-orders .card-head h2{font-size:19px;line-height:1.2;font-weight:700;margin:0;color:#fff}
 #tab-hamper-orders .card-head .small{font-size:14px;color:#fff}
-#tab-hamper-orders .card-body{padding:23px}
+#tab-hamper-orders .card-body{padding:20px 12px}
 #tab-hamper-orders .hamper-filters{display:flex;gap:16px;align-items:end;margin-bottom:18px}
 #tab-hamper-orders .hamper-filters label:first-child{flex:1;max-width:440px}
 #tab-hamper-orders .hamper-filters input,#tab-hamper-orders .hamper-filters select{min-height:40px;font-family:inherit;font-size:14px;font-weight:400}
@@ -17,12 +18,12 @@
 #tab-hamper-orders #message{font-size:14px;color:#fff}
 #tab-hamper-orders #message:empty{display:none}
 #tab-hamper-orders .hamper-table-wrap{overflow-x:auto}
-#tab-hamper-orders .hamper-orders-table{width:100%;min-width:1130px;table-layout:fixed;border-collapse:separate;border-spacing:0;background:transparent;border:0}
+#tab-hamper-orders .hamper-orders-table{width:100%;min-width:1190px;table-layout:fixed;border-collapse:separate;border-spacing:0;background:transparent;border:0}
 #tab-hamper-orders .hamper-orders-table th{font-size:11px;font-weight:800;letter-spacing:.04em;color:#94cafa;padding:10px 8px}
 #tab-hamper-orders .col-po{width:108px}
 #tab-hamper-orders .col-date{width:95px}
-#tab-hamper-orders .col-customer{width:21%}
-#tab-hamper-orders .col-address{width:21%}
+#tab-hamper-orders .col-customer{width:20%}
+#tab-hamper-orders .col-address{width:20%}
 #tab-hamper-orders .col-qty{width:48px}
 #tab-hamper-orders .col-total{width:110px}
 #tab-hamper-orders .col-details{width:110px}
@@ -92,11 +93,10 @@
 
 #tab-hamper-orders .hamper-sandbox-note[hidden]{display:none}
 
-#tab-hamper-orders .hamper-orders-table.has-matched-customer{min-width:1260px}
+#tab-hamper-orders .hamper-orders-table.has-matched-customer{min-width:1320px}
 #tab-hamper-orders .col-match{width:140px}
-#tab-hamper-orders .col-cost{width:120px}
+#tab-hamper-orders .col-cost{width:105px}
 #tab-hamper-orders .heading-qty{text-align:center}
 #tab-hamper-orders .hamper-customer-link{font-size:13px;text-decoration:none}
 #tab-hamper-orders .hamper-customer-link:hover,#tab-hamper-orders .hamper-customer-link:focus-visible{text-decoration:underline}
-#tab-hamper-orders .cost-with-vat{font-size:12px}
 @media(max-width:700px){#tab-hamper-orders .hamper-filters label:first-child{max-width:none}#tab-hamper-orders .card-body,#tab-hamper-orders .card-head{padding:16px}}

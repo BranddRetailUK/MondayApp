@@ -15,7 +15,7 @@ function renderHamperOrders() {
     ['po', 'PO number'], ['date', 'Date'], ['customer', 'Customer'],
     ...(showMatch ? [['match', 'Matched customer']] : []),
     ['address', 'Delivery address'], ['hamper', 'Hamper'], ['qty', 'Qty'],
-    ['cost', 'Cost'], ['total', 'Total incl. VAT'], ['details', 'Details']
+    ['cost', 'Cost inc VAT'], ['total', 'Total incl. VAT'], ['details', 'Details']
   ];
   const table = root.querySelector('.hamper-orders-table');
   table.classList.toggle('has-matched-customer', showMatch);
@@ -45,8 +45,7 @@ function renderHamperOrders() {
       cells.hamper.append(paragraph(item.name, 'order-primary'));
       cells.qty.textContent = item.quantity; cells.qty.className = 'hamper-number';
       const cost = order.line_costs?.[index];
-      if (cost) cells.cost.append(paragraph(`${money(cost.netPence)} ex. VAT`), paragraph(`${money(cost.grossPence)} incl. VAT`, 'cost-with-vat'));
-      else cells.cost.textContent = '—';
+      cells.cost.textContent = cost ? money(cost.grossPence) : '—';
       if (index === 0) {
         cells.po.append(paragraph(poNumber(order), 'order-primary'));
         cells.date.append(paragraph(date.format(new Date(order.created_at))));
