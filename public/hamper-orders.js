@@ -8,9 +8,7 @@ const poNumber = order => order.po_number == null ? 'Awaiting PO' : `PO-${String
 const date = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: 'Europe/London' });
 function paragraph(text, className = '') { const p = document.createElement('p'); p.textContent = text; p.className = className; return p; }
 function renderHamperOrders() {
-  const search = root.querySelector('#order-search').value.trim().toLowerCase();
-  const visible = hamperOrders.filter(o => `${o.delivery.name} ${o.delivery.company || ''} ${o.delivery.email} ${o.matched_customer?.name || ''} ${(o.snapshot.items || [o.snapshot]).map(i => `${i.name} ${i.sku}`).join(' ')} ${o.id} ${poNumber(o)}`.toLowerCase().includes(search));
-  const showMatch = visible.some(order => order.matched_customer);
+  const showMatch = hamperOrders.some(order => order.matched_customer);
   const columns = [
     ['po', 'PO number'], ['date', 'Date'], ['customer', 'Customer'],
     ...(showMatch ? [['match', 'Matched customer']] : []),
@@ -25,12 +23,10 @@ function renderHamperOrders() {
   table.querySelector('thead tr').replaceChildren(...columns.map(([key, label]) => {
     const th = document.createElement('th'); th.scope = 'col'; th.className = `heading-${key}`; th.textContent = label; return th;
   }));
-  const empty = root.querySelector('#empty-orders'); empty.hidden = visible.length > 0;
-  empty.querySelector('h2').textContent = hamperOrders.length ? 'No matching orders' : 'No orders yet';
-  empty.querySelector('p').textContent = hamperOrders.length ? 'Try a different search.' : 'Paid hamper orders will appear here.';
-  root.querySelector('#orders-table').hidden = !visible.length;
+  const empty = root.querySelector('#empty-orders'); empty.hidden = hamperOrders.length > 0;
+  root.querySelector('#orders-table').hidden = !hamperOrders.length;
   const container = root.querySelector('#orders'); container.replaceChildren();
-  for (const order of visible) {
+  for (const order of hamperOrders) {
     const q = order.snapshot; const d = order.delivery; const items = q.items || [q];
     const itemColumns = new Set(['hamper', 'qty', 'cost']);
     const rows = items.map((item, index) => {
@@ -145,6 +141,5 @@ async function loadHamperOrders() {
     renderHamperOrders(); message.textContent = '';
   } catch (error) { message.textContent = error.message; }
 }
-root.querySelector('#order-search').addEventListener('input', renderHamperOrders);
 window.loadHamperOrders = loadHamperOrders;
 })();

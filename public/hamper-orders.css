@@ -8,9 +8,6 @@
 #tab-hamper-orders .card-head h2{font-size:19px;line-height:1.2;font-weight:700;margin:0;color:#fff}
 #tab-hamper-orders .card-head .small{font-size:14px;color:#fff}
 #tab-hamper-orders .card-body{padding:20px 12px}
-#tab-hamper-orders .hamper-filters{display:flex;gap:16px;align-items:end;margin-bottom:18px}
-#tab-hamper-orders .hamper-filters label:first-child{flex:1;max-width:440px}
-#tab-hamper-orders .hamper-filters input,#tab-hamper-orders .hamper-filters select{min-height:40px;font-family:inherit;font-size:14px;font-weight:400}
 #tab-hamper-orders .hamper-empty{text-align:center;padding:64px 20px;color:#fff}
 #tab-hamper-orders .hamper-empty h2{font-size:18px;font-weight:700;color:#fff;margin:0 0 8px}
 #tab-hamper-orders .hamper-empty p{font-size:15px;line-height:1.5;max-width:420px;margin:0 auto}
@@ -86,7 +83,6 @@
 
 #tab-hamper-orders .muted{color:#fff;opacity:1}
 #tab-hamper-orders .header-left>p{font-size:16px;line-height:1.5}
-#tab-hamper-orders .hamper-filters input::placeholder{color:#fff;opacity:1}
 
 #tab-hamper-orders .hamper-invoice-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-bottom:12px}
 #tab-hamper-orders .hamper-invoice-actions a{text-decoration:none;display:inline-flex;align-items:center}
@@ -100,7 +96,6 @@
 #tab-hamper-orders .heading-qty{text-align:center}
 #tab-hamper-orders .hamper-customer-link{font-size:13px;text-decoration:none}
 #tab-hamper-orders .hamper-customer-link:hover,#tab-hamper-orders .hamper-customer-link:focus-visible{text-decoration:underline}
-@media(max-width:700px){#tab-hamper-orders .hamper-filters label:first-child{max-width:none}#tab-hamper-orders .card-body,#tab-hamper-orders .card-head{padding:16px}}
 
 @media (max-width: 960px) {
   #tab-hamper-orders .hamper-page { padding-top: 0; }
@@ -109,8 +104,6 @@
   #tab-hamper-orders .hamper-orders-panel { border: 0; background: transparent; box-shadow: none; }
   #tab-hamper-orders .card-head { padding: 0 0 10px; }
   #tab-hamper-orders .card-body { padding: 0; }
-  #tab-hamper-orders .hamper-filters label { max-width: none; }
-  #tab-hamper-orders #order-search { min-height: 44px; font-size: 16px; }
   #tab-hamper-orders .hamper-table-wrap { overflow: visible; }
   #tab-hamper-orders .hamper-orders-table,
   #tab-hamper-orders .hamper-orders-table.has-matched-customer,
