@@ -148,7 +148,16 @@
     font-size: 11px;
     font-weight: 700;
   }
-  #tab-hamper-orders .hamper-summary-row > td:empty { display: none; }
+  #tab-hamper-orders .hamper-orders-table .hamper-summary-row > td:empty { display: none; }
+  #tab-hamper-orders .hamper-order-start > :is([data-field="po"], [data-field="date"]) { order: -3; }
+  #tab-hamper-orders .hamper-order-start > [data-field="match"] { order: -2; }
+  #tab-hamper-orders .hamper-order-start > :is([data-field="customer"], [data-field="address"]) {
+    order: -1;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+  #tab-hamper-orders .hamper-order-start > [data-field="customer"] { grid-column: 1; }
+  #tab-hamper-orders .hamper-order-start > [data-field="address"] { grid-column: 2; }
   #tab-hamper-orders .hamper-summary-row > [data-field="date"] { text-align: right; }
   #tab-hamper-orders .hamper-summary-row > :is([data-field="match"], [data-field="hamper"]) { grid-column: 1 / -1; }
   #tab-hamper-orders .hamper-orders-table .hamper-summary-row > [data-field="hamper"] { border-top: 1px solid var(--border); padding-top: 8px; }
