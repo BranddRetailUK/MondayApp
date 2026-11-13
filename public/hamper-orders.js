@@ -63,11 +63,8 @@ function renderHamperOrders() {
       return { row, cells };
     });
     const detailsRow = document.createElement('tr'); detailsRow.className = 'hamper-detail-row'; detailsRow.hidden = true; detailsRow.id = `details-${order.id}`;
-    const detailInset = document.createElement('td');
-    detailInset.className = 'hamper-detail-inset';
-    detailInset.setAttribute('aria-hidden', 'true');
     const detailCell = document.createElement('td');
-    detailCell.colSpan = columns.length - 1;
+    detailCell.colSpan = columns.length;
     const detailGrid = document.createElement('div'); detailGrid.className = 'hamper-detail-grid';
     const lineItems = document.createElement('section');
     const heading = document.createElement('h3'); heading.textContent = 'Line items'; lineItems.append(heading);
@@ -120,7 +117,7 @@ function renderHamperOrders() {
     if (emailIssues[order.confirmation_email_status]) {
       totals.append(paragraph(`Confirmation email: ${emailIssues[order.confirmation_email_status]}`));
     }
-    detailGrid.append(lineItems, totals); detailCell.append(detailGrid); detailsRow.append(detailInset, detailCell);
+    detailGrid.append(lineItems, totals); detailCell.append(detailGrid); detailsRow.append(detailCell);
     const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'proof-secondary-button'; toggle.textContent = 'View details'; toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-label', `View details for ${poNumber(order)}`); toggle.setAttribute('aria-controls', detailsRow.id);
     toggle.addEventListener('click', () => { detailsRow.hidden = !detailsRow.hidden; toggle.setAttribute('aria-expanded', String(!detailsRow.hidden)); toggle.textContent = detailsRow.hidden ? 'View details' : 'Hide details'; toggle.setAttribute('aria-label', `${toggle.textContent} for ${poNumber(order)}`); });
     rows[0].cells.details.append(toggle);

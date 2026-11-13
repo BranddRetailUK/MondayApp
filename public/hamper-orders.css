@@ -44,8 +44,10 @@
   gap: 24px;
   padding: 16px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: #1b1c1e;
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: #161719;
+  box-shadow: inset 0 10px 12px -9px #000;
   color: #fff;
   font-size: 14px;
   line-height: 1.4;
@@ -79,7 +81,6 @@
   border: 0;
   background: transparent;
 }
-#tab-hamper-orders .hamper-orders-table .hamper-detail-row > td { padding-top: 8px; }
 #tab-hamper-orders .hamper-order-spacer > td { height: 14px; }
 .nav-tabs li[data-tab="hamper-orders"]{order:3}
 
@@ -118,8 +119,7 @@
   #tab-hamper-orders .hamper-detail-row > td,
   #tab-hamper-orders .hamper-order-spacer,
   #tab-hamper-orders .hamper-order-spacer > td { display: block; width: 100%; min-width: 0; }
-  #tab-hamper-orders .hamper-orders-table colgroup,
-  #tab-hamper-orders .hamper-orders-table .hamper-detail-inset { display: none; }
+  #tab-hamper-orders .hamper-orders-table colgroup { display: none; }
   #tab-hamper-orders .hamper-orders-table thead {
     position: absolute;
     width: 1px;
