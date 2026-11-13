@@ -34,11 +34,11 @@ function renderHamperOrders() {
     const q = order.snapshot; const d = order.delivery; const items = q.items || [q];
     const itemColumns = new Set(['hamper', 'qty', 'cost']);
     const rows = items.map((item, index) => {
-      const row = document.createElement('tr'); row.className = 'hamper-summary-row';
+      const row = document.createElement('tr'); row.className = index === 0 ? 'hamper-summary-row hamper-order-start' : 'hamper-summary-row hamper-order-extra';
       const cells = {};
       for (const [key, label] of columns) {
         if (index !== 0 && !itemColumns.has(key)) continue;
-        const td = document.createElement('td'); td.dataset.label = label;
+        const td = document.createElement('td'); td.dataset.label = label; td.dataset.field = key;
         if (!itemColumns.has(key)) td.rowSpan = items.length;
         row.append(td); cells[key] = td;
       }
@@ -63,16 +63,20 @@ function renderHamperOrders() {
       return { row, cells };
     });
     const detailsRow = document.createElement('tr'); detailsRow.className = 'hamper-detail-row'; detailsRow.hidden = true; detailsRow.id = `details-${order.id}`;
-    const detailCell = document.createElement('td'); detailCell.colSpan = columns.length - 1;
+    const detailInset = document.createElement('td');
+    detailInset.className = 'hamper-detail-inset';
+    detailInset.setAttribute('aria-hidden', 'true');
+    const detailCell = document.createElement('td');
+    detailCell.colSpan = columns.length - 1;
     const detailGrid = document.createElement('div'); detailGrid.className = 'hamper-detail-grid';
     const lineItems = document.createElement('section');
     const heading = document.createElement('h3'); heading.textContent = 'Line items'; lineItems.append(heading);
     for (const item of items) {
       const line = document.createElement('div'); line.className = 'hamper-detail-item';
       const image = document.createElement('img'); image.src = `/assets/hamper-thumbnails/product-${Number(item.page)}.webp`; image.alt = item.name;
-      image.width = 96; image.height = 96; image.loading = 'lazy'; image.decoding = 'async';
+      image.width = 115; image.height = 115; image.loading = 'lazy'; image.decoding = 'async';
       const info = document.createElement('div');
-      info.append(paragraph(item.name, 'order-primary'), paragraph(`${item.quantity} × ${money(item.unitPence)} ex. VAT`));
+      info.append(paragraph(item.name, 'hamper-detail-title'), paragraph(`${item.quantity} × ${money(item.unitPence)} ex. VAT`));
       line.append(image, info); lineItems.append(line);
     }
     const totals = document.createElement('section');
@@ -116,9 +120,9 @@ function renderHamperOrders() {
     if (emailIssues[order.confirmation_email_status]) {
       totals.append(paragraph(`Confirmation email: ${emailIssues[order.confirmation_email_status]}`));
     }
-    detailGrid.append(lineItems, totals); detailCell.append(detailGrid); detailsRow.append(detailCell);
-    const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'proof-secondary-button'; toggle.textContent = 'View details'; toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-controls', detailsRow.id);
-    toggle.addEventListener('click', () => { detailsRow.hidden = !detailsRow.hidden; toggle.setAttribute('aria-expanded', String(!detailsRow.hidden)); toggle.textContent = detailsRow.hidden ? 'View details' : 'Hide details'; });
+    detailGrid.append(lineItems, totals); detailCell.append(detailGrid); detailsRow.append(detailInset, detailCell);
+    const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'proof-secondary-button'; toggle.textContent = 'View details'; toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-label', `View details for ${poNumber(order)}`); toggle.setAttribute('aria-controls', detailsRow.id);
+    toggle.addEventListener('click', () => { detailsRow.hidden = !detailsRow.hidden; toggle.setAttribute('aria-expanded', String(!detailsRow.hidden)); toggle.textContent = detailsRow.hidden ? 'View details' : 'Hide details'; toggle.setAttribute('aria-label', `${toggle.textContent} for ${poNumber(order)}`); });
     rows[0].cells.details.append(toggle);
     if (container.childElementCount) {
       const spacer = document.createElement('tr');

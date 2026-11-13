@@ -32,3 +32,68 @@
 #tab-site-analytics button:disabled{opacity:.5}
 @media(max-width:1100px){#tab-site-analytics .site-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){#tab-site-analytics .site-grid{grid-template-columns:1fr}#tab-site-analytics .site-panel,#tab-site-analytics .site-metrics>div{padding:16px}#tab-site-analytics h1{font-size:25px}#tab-site-analytics .site-metrics strong{font-size:26px}#tab-site-analytics .site-metrics{gap:12px}#tab-site-analytics .site-products-table th,#tab-site-analytics .site-products-table td{padding:10px 4px;font-size:12px}}
+
+@media (max-width: 720px) {
+  #tab-site-analytics .proof-page { padding: 0; }
+  #tab-site-analytics .site-header { display: block; margin-bottom: 14px; }
+  #tab-site-analytics .site-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  #tab-site-analytics .site-controls :is(button, select, input) { min-height: 44px; font-size: 16px; }
+  #tab-site-analytics #site-custom {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  #tab-site-analytics #site-custom input { width: 100%; min-width: 0; padding-inline: 6px; }
+  #tab-site-analytics #site-apply { grid-column: 1 / -1; justify-self: end; }
+  #tab-site-analytics .site-metrics { gap: 8px; margin-bottom: 12px; }
+  #tab-site-analytics .site-metrics > div { padding: 10px 12px; }
+  #tab-site-analytics .site-metrics span { margin-bottom: 4px; }
+  #tab-site-analytics .site-metrics strong { font-size: 24px; }
+  #tab-site-analytics .site-panel { padding: 12px; margin-bottom: 12px; }
+  #tab-site-analytics .site-panel-head { justify-content: flex-start; gap: 6px 12px; margin-bottom: 10px; }
+  #tab-site-analytics .site-panel-head h2 { flex-basis: 100%; }
+  #tab-site-analytics #site-chart { height: 170px; }
+  #tab-site-analytics .site-table-wrap { margin-top: 8px; max-height: none; overflow: visible; }
+  #tab-site-analytics .site-products-table,
+  #tab-site-analytics .site-products-table tbody { display: block; }
+  #tab-site-analytics .site-products-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  #tab-site-analytics .site-products-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    border-top: 1px solid #373b40;
+    padding: 10px 0;
+  }
+  #tab-site-analytics .site-products-table td {
+    border: 0;
+    padding: 0;
+    text-align: left;
+    white-space: normal;
+    font-size: 14px;
+  }
+  #tab-site-analytics .site-products-table td:first-child {
+    grid-column: 1 / -1;
+    font-weight: 700;
+  }
+  #tab-site-analytics .site-products-table td[data-label]:not(:first-child)::before {
+    content: attr(data-label);
+    display: block;
+    color: #94cafa;
+    font-size: 11px;
+    margin-bottom: 3px;
+  }
+  #tab-site-analytics .site-products-table .site-empty { padding: 12px 0; font-weight: 400; }
+  #tab-site-analytics .site-top-pages th:last-child { width: 66px; }
+}

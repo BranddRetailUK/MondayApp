@@ -71,8 +71,9 @@
 #tab-hamper-orders .hamper-detail-grid h3{font-size:12px;font-weight:800;color:#94cafa;margin:0 0 12px}
 #tab-hamper-orders .hamper-detail-grid p{margin-bottom:5px;overflow-wrap:anywhere}
 #tab-hamper-orders .hamper-detail-item{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+#tab-hamper-orders .hamper-detail-title{font-size:16px;font-weight:800}
 #tab-hamper-orders .hamper-detail-item:last-child{margin-bottom:0}
-#tab-hamper-orders .hamper-detail-item img{flex:0 0 96px;width:96px;height:96px;object-fit:contain;background:#fff;border-radius:8px}
+#tab-hamper-orders .hamper-detail-item img{flex:0 0 115px;width:115px;height:115px;object-fit:contain;background:#fff;border-radius:8px}
 #tab-hamper-orders .hamper-orders-table :is(.hamper-detail-row, .hamper-order-spacer) > td {
   padding: 0;
   border: 0;
@@ -99,3 +100,70 @@
 #tab-hamper-orders .hamper-customer-link{font-size:13px;text-decoration:none}
 #tab-hamper-orders .hamper-customer-link:hover,#tab-hamper-orders .hamper-customer-link:focus-visible{text-decoration:underline}
 @media(max-width:700px){#tab-hamper-orders .hamper-filters label:first-child{max-width:none}#tab-hamper-orders .card-body,#tab-hamper-orders .card-head{padding:16px}}
+
+@media (max-width: 960px) {
+  #tab-hamper-orders .hamper-page { padding-top: 0; }
+  #tab-hamper-orders .proof-page-header { margin-bottom: 14px; }
+  #tab-hamper-orders .header-left > p { display: none; }
+  #tab-hamper-orders .hamper-orders-panel { border: 0; background: transparent; box-shadow: none; }
+  #tab-hamper-orders .card-head { padding: 0 0 10px; }
+  #tab-hamper-orders .card-body { padding: 0; }
+  #tab-hamper-orders .hamper-filters label { max-width: none; }
+  #tab-hamper-orders #order-search { min-height: 44px; font-size: 16px; }
+  #tab-hamper-orders .hamper-table-wrap { overflow: visible; }
+  #tab-hamper-orders .hamper-orders-table,
+  #tab-hamper-orders .hamper-orders-table.has-matched-customer,
+  #tab-hamper-orders .hamper-orders-table tbody,
+  #tab-hamper-orders .hamper-detail-row,
+  #tab-hamper-orders .hamper-detail-row > td,
+  #tab-hamper-orders .hamper-order-spacer,
+  #tab-hamper-orders .hamper-order-spacer > td { display: block; width: 100%; min-width: 0; }
+  #tab-hamper-orders .hamper-orders-table colgroup,
+  #tab-hamper-orders .hamper-orders-table .hamper-detail-inset { display: none; }
+  #tab-hamper-orders .hamper-orders-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  #tab-hamper-orders .hamper-summary-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    background: #181a1d;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    gap: 10px;
+  }
+  #tab-hamper-orders .hamper-order-start:has(+ .hamper-order-extra) { border-radius: 10px 10px 0 0; }
+  #tab-hamper-orders .hamper-order-extra { border-top: 0; border-radius: 0; }
+  #tab-hamper-orders .hamper-order-extra:not(:has(+ .hamper-order-extra)) { border-radius: 0 0 10px 10px; }
+  #tab-hamper-orders .hamper-orders-table .hamper-summary-row > td {
+    display: block;
+    min-width: 0;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    text-align: left;
+  }
+  #tab-hamper-orders .hamper-summary-row > td:not([data-field="details"], [data-field="po"], [data-field="date"]):not(:empty)::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 3px;
+    color: #94cafa;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  #tab-hamper-orders .hamper-summary-row > td:empty { display: none; }
+  #tab-hamper-orders .hamper-summary-row > [data-field="date"] { text-align: right; }
+  #tab-hamper-orders .hamper-summary-row > :is([data-field="match"], [data-field="hamper"]) { grid-column: 1 / -1; }
+  #tab-hamper-orders .hamper-orders-table .hamper-summary-row > [data-field="hamper"] { border-top: 1px solid var(--border); padding-top: 8px; }
+  #tab-hamper-orders .hamper-summary-row > [data-field="details"] { align-self: end; justify-self: end; }
+  #tab-hamper-orders .hamper-summary-row .proof-secondary-button,
+  #tab-hamper-orders .hamper-invoice-actions a { min-height: 44px; }
+  #tab-hamper-orders .hamper-detail-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 12px; }
+  #tab-hamper-orders .hamper-totals-breakdown { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #tab-hamper-orders .hamper-totals-breakdown > :last-child { grid-column: 1 / -1; }
+  #tab-hamper-orders .hamper-invoice-actions { margin-bottom: 0; }
+}
