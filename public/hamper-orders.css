@@ -45,7 +45,7 @@
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--panel-soft);
+  background: #1b1c1e;
   color: #fff;
   font-size: 14px;
   line-height: 1.4;
@@ -70,10 +70,9 @@
 }
 #tab-hamper-orders .hamper-detail-grid h3{font-size:12px;font-weight:800;color:#94cafa;margin:0 0 12px}
 #tab-hamper-orders .hamper-detail-grid p{margin-bottom:5px;overflow-wrap:anywhere}
-#tab-hamper-orders .order-link{display:block;color:#84c3f7;margin-top:10px;font-size:12px;font-weight:700}
 #tab-hamper-orders .hamper-detail-item{display:flex;align-items:center;gap:12px;margin-bottom:10px}
 #tab-hamper-orders .hamper-detail-item:last-child{margin-bottom:0}
-#tab-hamper-orders .hamper-detail-item img{flex:0 0 64px;width:64px;height:64px;object-fit:contain;background:#fff;border-radius:8px}
+#tab-hamper-orders .hamper-detail-item img{flex:0 0 96px;width:96px;height:96px;object-fit:contain;background:#fff;border-radius:8px}
 #tab-hamper-orders .hamper-orders-table :is(.hamper-detail-row, .hamper-order-spacer) > td {
   padding: 0;
   border: 0;
@@ -87,7 +86,7 @@
 #tab-hamper-orders .header-left>p{font-size:16px;line-height:1.5}
 #tab-hamper-orders .hamper-filters input::placeholder{color:#fff;opacity:1}
 
-#tab-hamper-orders .hamper-invoice-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+#tab-hamper-orders .hamper-invoice-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-bottom:12px}
 #tab-hamper-orders .hamper-invoice-actions a{text-decoration:none;display:inline-flex;align-items:center}
 
 

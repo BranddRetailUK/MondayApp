@@ -5,7 +5,7 @@ if (!root) return;
 let hamperOrders = [];
 const money = pence => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(pence / 100);
 const poNumber = order => order.po_number == null ? 'Awaiting PO' : `PO-${String(order.po_number).padStart(6, '0')}`;
-const date = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Europe/London' });
+const date = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: 'Europe/London' });
 function paragraph(text, className = '') { const p = document.createElement('p'); p.textContent = text; p.className = className; return p; }
 function renderHamperOrders() {
   const search = root.querySelector('#order-search').value.trim().toLowerCase();
@@ -63,16 +63,16 @@ function renderHamperOrders() {
       return { row, cells };
     });
     const detailsRow = document.createElement('tr'); detailsRow.className = 'hamper-detail-row'; detailsRow.hidden = true; detailsRow.id = `details-${order.id}`;
-    const detailCell = document.createElement('td'); detailCell.colSpan = columns.length;
+    const detailCell = document.createElement('td'); detailCell.colSpan = columns.length - 1;
     const detailGrid = document.createElement('div'); detailGrid.className = 'hamper-detail-grid';
     const lineItems = document.createElement('section');
     const heading = document.createElement('h3'); heading.textContent = 'Line items'; lineItems.append(heading);
     for (const item of items) {
       const line = document.createElement('div'); line.className = 'hamper-detail-item';
       const image = document.createElement('img'); image.src = `/assets/hamper-thumbnails/product-${Number(item.page)}.webp`; image.alt = item.name;
-      image.width = 64; image.height = 64; image.loading = 'lazy'; image.decoding = 'async';
+      image.width = 96; image.height = 96; image.loading = 'lazy'; image.decoding = 'async';
       const info = document.createElement('div');
-      info.append(paragraph(item.name, 'order-primary'), paragraph(`${item.quantity} × ${money(item.unitPence)} ex. VAT · Line total ${money(item.subtotalPence)}`), paragraph(`VAT (${item.vatPercent}%): ${money(item.productVatPence)}`));
+      info.append(paragraph(item.name, 'order-primary'), paragraph(`${item.quantity} × ${money(item.unitPence)} ex. VAT`));
       line.append(image, info); lineItems.append(line);
     }
     const totals = document.createElement('section');
@@ -98,11 +98,6 @@ function renderHamperOrders() {
       pair.append(term, amount);
       breakdown.append(pair);
     }
-    totals.append(totalsHeading, breakdown);
-    if (q.discountLabel) {
-      totals.append(paragraph(`${q.discountLabel}: saved ${money(q.discountPence)} including VAT. All amounts include the discount.`));
-    }
-    if (order.stripe_payment_intent) { const link = document.createElement('a'); link.href = `https://dashboard.stripe.com/${encodeURIComponent(q.stripeAccountId || 'acct_1UaBAa7O9atIxBPe')}/${order.mode === 'live' ? '' : 'test/'}payments/${encodeURIComponent(order.stripe_payment_intent)}`; link.textContent = 'View payment in Stripe'; link.className = 'order-link'; link.target = '_blank'; link.rel = 'noopener'; totals.append(link); }
     const invoiceActions = document.createElement('div'); invoiceActions.className = 'hamper-invoice-actions';
     for (const [label, download] of [['View invoice', false], ['Download invoice', true]]) {
       const link = document.createElement('a'); link.className = 'proof-secondary-button'; link.textContent = label;
@@ -110,8 +105,17 @@ function renderHamperOrders() {
       if (download) link.download = ''; else { link.target = '_blank'; link.rel = 'noopener'; }
       invoiceActions.append(link);
     }
-    totals.append(invoiceActions);
-    if(order.confirmation_email_status) totals.append(paragraph('Confirmation email: '+({pending:'Queued',sending:'Sending',sent:'Accepted by SendGrid',failed:'Failed — review required',unknown:'Delivery uncertain — check SendGrid before retrying'}[order.confirmation_email_status]||order.confirmation_email_status)));
+    totals.append(totalsHeading, breakdown, invoiceActions);
+    if (q.discountLabel) {
+      totals.append(paragraph(`${q.discountLabel}: saved ${money(q.discountPence)} including VAT. All amounts include the discount.`));
+    }
+    const emailIssues = {
+      failed: 'Failed — review required',
+      unknown: 'Delivery uncertain — check SendGrid before retrying'
+    };
+    if (emailIssues[order.confirmation_email_status]) {
+      totals.append(paragraph(`Confirmation email: ${emailIssues[order.confirmation_email_status]}`));
+    }
     detailGrid.append(lineItems, totals); detailCell.append(detailGrid); detailsRow.append(detailCell);
     const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'proof-secondary-button'; toggle.textContent = 'View details'; toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-controls', detailsRow.id);
     toggle.addEventListener('click', () => { detailsRow.hidden = !detailsRow.hidden; toggle.setAttribute('aria-expanded', String(!detailsRow.hidden)); toggle.textContent = detailsRow.hidden ? 'View details' : 'Hide details'; });
