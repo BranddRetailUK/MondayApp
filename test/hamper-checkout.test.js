@@ -230,3 +230,40 @@ test('single-use live test discount preserves VAT, rejects other carts and preve
   const pdf=await generateHamperInvoice({...((await db.query('SELECT * FROM hamper_orders')).rows[0]),status:'paid'});assert.ok(pdf.length>1000);
   await pg.close();
 });
+
+test('paid hamper admin orders resolve unique customer evidence and show brochure line costs', async t => {
+  const { ensureDatabaseTables } = require('../src/db/databaseSchema');
+  const { listPaidHamperOrders } = require('../src/services/hamperAdminOrders');
+  const db = new PGlite();
+  t.after(() => db.close());
+  const schema = { query: sql => db.exec(sql) };
+  await ensureHamperTables(schema);
+  await ensureDatabaseTables(schema);
+  await db.exec(`
+    INSERT INTO database_customer_profiles(customer_id,customer_name,contact_name,contact_email)
+      VALUES (7,'Example Physio','Alex Smith','old@example.com'),
+             (8,'Other Company','Alex Smith','other@example.com'),
+             (9,'Shared One','Jamie One','shared@example.com'),
+             (10,'Shared Two','Jamie Two','SHARED@example.com'),
+             (11,'Email Match','Someone Else','previous@example.com; BUYER@example.com');
+  `);
+  const snapshot = { items: [{ sku: 'H25011', quantity: 7 }, { sku: 'UNKNOWN', quantity: 1 }] };
+  for (const [po, status, mode, name, company, email] of [
+    [1, 'paid', 'live', 'Alex Smith', 'Example Physio& Sports Clinic', 'new@example.com'],
+    [2, 'paid', 'live', 'Alex Smith', 'Example Physio', 'buyer@example.com'],
+    [3, 'paid', 'live', 'Jamie One', 'Shared One', 'shared@example.com'],
+    [4, 'paid', 'live', 'Alex Smith', '', 'unmatched@example.com'],
+    [5, 'pending', 'live', 'Alex Smith', 'Example Physio', 'old@example.com'],
+    [6, 'paid', 'sandbox', 'Alex Smith', 'Example Physio', 'old@example.com']
+  ]) {
+    await db.query('INSERT INTO hamper_orders(id,request_hash,po_number,status,mode,snapshot,delivery) VALUES($1,$2,$3,$4,$5,$6,$7)',
+      [crypto.randomUUID(), 'fixture', po, status, mode, snapshot, { name, company, email }]);
+  }
+  const orders = new Map((await listPaidHamperOrders(db, 'live')).map(order => [Number(order.po_number), order]));
+  assert.deepEqual([...orders.keys()].sort(), [1, 2, 3, 4]);
+  assert.deepEqual(orders.get(1).matched_customer, { key: '7', name: 'Example Physio' });
+  assert.deepEqual(orders.get(2).matched_customer, { key: '11', name: 'Email Match' });
+  assert.equal(orders.get(3).matched_customer, null);
+  assert.equal(orders.get(4).matched_customer, null);
+  assert.deepEqual(orders.get(1).line_costs, [{ netPence: 25060, vatPence: 2907, grossPence: 27967 }, null]);
+});

@@ -5,43 +5,66 @@ if (!root) return;
 let hamperOrders = [];
 const money = pence => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(pence / 100);
 const poNumber = order => order.po_number == null ? 'Awaiting PO' : `PO-${String(order.po_number).padStart(6, '0')}`;
-const statuses = { paid: 'Paid', pending: 'Awaiting payment', expired: 'Expired', failed: 'Failed' };
+const date = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Europe/London' });
 function paragraph(text, className = '') { const p = document.createElement('p'); p.textContent = text; p.className = className; return p; }
 function renderHamperOrders() {
   const search = root.querySelector('#order-search').value.trim().toLowerCase();
-  const statusFilter = root.querySelector('#order-status').value;
-  const visible = hamperOrders.filter(o => (statusFilter === 'all' || o.status === statusFilter) && `${o.delivery.name} ${o.delivery.company||''} ${o.delivery.email} ${(o.snapshot.items || [o.snapshot]).map(i => `${i.name} ${i.sku}`).join(" ")} ${o.id} ${poNumber(o)}`.toLowerCase().includes(search));
-  root.querySelector('#count-all').textContent = hamperOrders.length;
-  root.querySelector('#count-paid').textContent = hamperOrders.filter(o => o.status === 'paid').length;
-  root.querySelector('#count-pending').textContent = hamperOrders.filter(o => o.status === 'pending').length;
+  const visible = hamperOrders.filter(o => `${o.delivery.name} ${o.delivery.company || ''} ${o.delivery.email} ${o.matched_customer?.name || ''} ${(o.snapshot.items || [o.snapshot]).map(i => `${i.name} ${i.sku}`).join(' ')} ${o.id} ${poNumber(o)}`.toLowerCase().includes(search));
+  const showMatch = visible.some(order => order.matched_customer);
+  const columns = [
+    ['po', 'PO number'], ['date', 'Date'], ['customer', 'Customer'],
+    ...(showMatch ? [['match', 'Matched customer']] : []),
+    ['address', 'Delivery address'], ['hamper', 'Hamper'], ['qty', 'Qty'],
+    ['cost', 'Cost'], ['total', 'Total incl. VAT'], ['details', 'Details']
+  ];
+  const table = root.querySelector('.hamper-orders-table');
+  table.classList.toggle('has-matched-customer', showMatch);
+  table.querySelector('colgroup').replaceChildren(...columns.map(([key]) => {
+    const col = document.createElement('col'); col.className = `col-${key}`; return col;
+  }));
+  table.querySelector('thead tr').replaceChildren(...columns.map(([key, label]) => {
+    const th = document.createElement('th'); th.scope = 'col'; th.className = `heading-${key}`; th.textContent = label; return th;
+  }));
   const empty = root.querySelector('#empty-orders'); empty.hidden = visible.length > 0;
   empty.querySelector('h2').textContent = hamperOrders.length ? 'No matching orders' : 'No orders yet';
-  empty.querySelector('p').textContent = hamperOrders.length ? 'Try a different search or payment status.' : 'New hamper checkouts will appear here, with their payment status and delivery details.';
+  empty.querySelector('p').textContent = hamperOrders.length ? 'Try a different search.' : 'Paid hamper orders will appear here.';
   root.querySelector('#orders-table').hidden = !visible.length;
   const container = root.querySelector('#orders'); container.replaceChildren();
   for (const order of visible) {
     const q = order.snapshot; const d = order.delivery; const items = q.items || [q];
-    const labels = ['PO number', 'Date / time', 'Customer', 'Delivery address', 'Hamper', 'Qty', 'VAT', 'Total incl. VAT', 'Payment status', 'Details'];
+    const itemColumns = new Set(['hamper', 'qty', 'cost']);
     const rows = items.map((item, index) => {
       const row = document.createElement('tr'); row.className = 'hamper-summary-row';
-      const cells = labels.map(label => { const td = document.createElement('td'); td.dataset.label = label; return td; });
-      cells[4].append(paragraph(item.name, 'order-primary'));
-      cells[5].textContent = item.quantity; cells[5].className = 'hamper-number';
-      cells[6].textContent = `${item.vatPercent}%`; cells[6].className = 'hamper-number';
+      const cells = {};
+      for (const [key, label] of columns) {
+        if (index !== 0 && !itemColumns.has(key)) continue;
+        const td = document.createElement('td'); td.dataset.label = label;
+        if (!itemColumns.has(key)) td.rowSpan = items.length;
+        row.append(td); cells[key] = td;
+      }
+      cells.hamper.append(paragraph(item.name, 'order-primary'));
+      cells.qty.textContent = item.quantity; cells.qty.className = 'hamper-number';
+      const cost = order.line_costs?.[index];
+      if (cost) cells.cost.append(paragraph(`${money(cost.netPence)} ex. VAT`), paragraph(`${money(cost.grossPence)} incl. VAT`, 'cost-with-vat'));
+      else cells.cost.textContent = '—';
       if (index === 0) {
-        cells[0].append(paragraph(poNumber(order), 'order-primary'));
-        cells[1].append(paragraph(new Date(order.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })), paragraph(new Date(order.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }), 'muted small'));
-        cells[2].append(paragraph(d.name, 'order-primary'), ...(d.company?[paragraph(d.company)]:[]), paragraph(d.email, 'muted small'));
-        cells[3].append(paragraph([d.line1, d.line2, d.city].filter(Boolean).join(', ')), paragraph(d.postcode));
-        cells[7].append(paragraph(money(q.totalPence), 'order-amount'));
-        const badge = document.createElement('span'); badge.className = `pill status-${order.status}`; badge.textContent = statuses[order.status] || order.status; cells[8].append(badge);
-        for (const i of [0, 1, 2, 3, 7, 8, 9]) cells[i].rowSpan = items.length;
-        row.append(...cells);
-      } else row.append(cells[4], cells[5], cells[6]);
+        cells.po.append(paragraph(poNumber(order), 'order-primary'));
+        cells.date.append(paragraph(date.format(new Date(order.created_at))));
+        cells.customer.append(paragraph(d.name, 'order-primary'), ...(d.company ? [paragraph(d.company)] : []), paragraph(d.email, 'muted small'));
+        if (cells.match && order.matched_customer) {
+          const link = document.createElement('a');
+          link.href = `/?${new URLSearchParams({ tab: 'database', customer: order.matched_customer.key })}`;
+          link.className = 'test-dashboard-job-number-link hamper-customer-link';
+          link.textContent = order.matched_customer.name;
+          cells.match.append(link);
+        }
+        cells.address.append(paragraph([d.line1, d.line2, d.city].filter(Boolean).join(', ')), paragraph(d.postcode));
+        cells.total.append(paragraph(money(q.totalPence), 'order-amount'));
+      }
       return { row, cells };
     });
     const detailsRow = document.createElement('tr'); detailsRow.className = 'hamper-detail-row'; detailsRow.hidden = true; detailsRow.id = `details-${order.id}`;
-    const detailCell = document.createElement('td'); detailCell.colSpan = labels.length;
+    const detailCell = document.createElement('td'); detailCell.colSpan = columns.length;
     const detailGrid = document.createElement('div'); detailGrid.className = 'hamper-detail-grid';
     const lineItems = document.createElement('section');
     const heading = document.createElement('h3'); heading.textContent = 'Line items'; lineItems.append(heading);
@@ -70,7 +93,7 @@ function renderHamperOrders() {
     detailGrid.append(lineItems, totals); detailCell.append(detailGrid); detailsRow.append(detailCell);
     const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'proof-secondary-button'; toggle.textContent = 'View details'; toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-controls', detailsRow.id);
     toggle.addEventListener('click', () => { detailsRow.hidden = !detailsRow.hidden; toggle.setAttribute('aria-expanded', String(!detailsRow.hidden)); toggle.textContent = detailsRow.hidden ? 'View details' : 'Hide details'; });
-    rows[0].cells[9].append(toggle); container.append(...rows.map(r => r.row), detailsRow);
+    rows[0].cells.details.append(toggle); container.append(...rows.map(r => r.row), detailsRow);
   }
 }
 async function loadHamperOrders() {
@@ -86,6 +109,5 @@ async function loadHamperOrders() {
   } catch (error) { message.textContent = error.message; }
 }
 root.querySelector('#order-search').addEventListener('input', renderHamperOrders);
-root.querySelector('#order-status').addEventListener('change', renderHamperOrders);
 window.loadHamperOrders = loadHamperOrders;
 })();

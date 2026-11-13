@@ -17,8 +17,8 @@
   <link rel="stylesheet" href="digitising-studio.css">
   <script src="file-viewer.js" defer></script>
   <link rel="stylesheet" href="proof-generator.css">
-  <link rel="stylesheet" href="hamper-orders.css?v=04d0468ee5b3">
-  <script src="hamper-orders.js?v=d8ba16534e7e" defer></script>
+  <link rel="stylesheet" href="hamper-orders.css?v=6696039b9d85">
+  <script src="hamper-orders.js?v=84ec5a03f4b2" defer></script>
   <script src="holiday-board.js" defer></script>
   <link rel="stylesheet" href="email-campaigns.css">
   <script src="email-campaigns.js" defer></script>
@@ -39,7 +39,7 @@
   <script src="product-size-order.js" defer></script>
   <script src="database-reports.js" defer></script>
   <script src="proof-links.js" defer></script>
-  <script src="database.js" defer></script>
+  <script src="database.js?v=9e2761d2a70b" defer></script>
   <script src="dtf-layout.js" defer></script>
   <script src="dtf-uploader.js" defer></script>
   <script src="proof-display.js" defer></script>
@@ -139,14 +139,13 @@
       <div class="header-left"><h1 class="proof-page-title">Hamper orders</h1><p class="muted">View payments, customer details and delivery information.</p></div>
     </header>
     <div class="hamper-sandbox-note" hidden><span class="proof-sandbox-pill">Sandbox</span><span>Test payments only. These orders must not be fulfilled.</span></div>
-    <div class="hamper-overview" aria-label="Order overview"><div><span>Total orders</span><strong id="count-all">—</strong></div><div><span>Paid</span><strong id="count-paid">—</strong></div><div><span>Awaiting payment</span><strong id="count-pending">—</strong></div></div>
     <section class="proof-card hamper-orders-panel">
-      <div class="card-head"><h2>Orders</h2><span class="muted small">Latest 200 orders</span></div>
+      <div class="card-head"><h2>Orders</h2><span class="muted small">Latest 200 paid orders</span></div>
       <div class="card-body">
-        <div class="hamper-filters"><label class="proof-control">Search orders<input id="order-search" type="search" placeholder="PO number, customer or hamper"></label><label class="proof-control">Payment status<select id="order-status"><option value="all">All statuses</option><option value="paid">Paid</option><option value="pending">Awaiting payment</option><option value="expired">Expired</option><option value="failed">Failed</option></select></label></div>
+        <div class="hamper-filters"><label class="proof-control">Search orders<input id="order-search" type="search" placeholder="PO number, customer or hamper"></label></div>
         <p id="message" class="muted" role="status" aria-live="polite"></p>
-        <div id="empty-orders" class="hamper-empty" hidden><h2>No orders yet</h2><p>New hamper checkouts will appear here, with their payment status and delivery details.</p></div>
-        <div id="orders-table" class="hamper-table-wrap" hidden><table class="data-table hamper-orders-table"><colgroup><col class="col-po"><col class="col-date"><col class="col-customer"><col class="col-address"><col class="col-hamper"><col class="col-qty"><col class="col-vat"><col class="col-total"><col class="col-status"><col class="col-details"></colgroup><thead><tr><th>PO number</th><th>Date / time</th><th>Customer</th><th>Delivery address</th><th>Hamper</th><th>Qty</th><th>VAT</th><th>Total incl. VAT</th><th>Payment status</th><th>Details</th></tr></thead><tbody id="orders"></tbody></table></div>
+        <div id="empty-orders" class="hamper-empty" hidden><h2>No orders yet</h2><p>Paid hamper orders will appear here.</p></div>
+        <div id="orders-table" class="hamper-table-wrap" hidden><table class="data-table hamper-orders-table"><colgroup></colgroup><thead><tr></tr></thead><tbody id="orders"></tbody></table></div>
       </div>
     </section>
 

@@ -1340,7 +1340,9 @@
   }
 
   async function restoreDatabaseRoute() {
-    const route = readStoredDatabaseRoute();
+    const params = new URLSearchParams(window.location.search);
+    const customerKey = params.get('tab') === 'database' && params.get('customer');
+    const route = customerKey ? { view: 'customer', customerKey, customerTab: 'orders' } : readStoredDatabaseRoute();
     if (!route?.view || !DATABASE_RESTORABLE_VIEWS.has(route.view)) {
       persistDatabaseRoute({ force: true });
       return;
@@ -1348,6 +1350,11 @@
 
     restoringDatabaseRoute = true;
     try {
+      if (customerKey) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('customer');
+        window.history.replaceState(window.history.state, '', url);
+      }
       await applyStoredDatabaseRoute(route);
     } catch (err) {
       console.warn('Failed to restore DATABASE route', err);

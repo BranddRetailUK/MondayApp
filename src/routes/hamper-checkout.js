@@ -1,5 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
+const { listPaidHamperOrders } = require('../services/hamperAdminOrders');
 const { createService, CheckoutError, HUB, SITE } = require('../services/hamperCheckout');
 function createRoutes(db, options = {}) {
   const service = createService({ db, ...options });
@@ -40,8 +41,8 @@ function createRoutes(db, options = {}) {
       res.send(bytes);
     }),
     admin: handle(async (_req, res) => {
-      const { rows } = await db.query('SELECT o.id,o.po_number,o.status,o.mode,o.snapshot,o.delivery,o.stripe_session_id,o.stripe_payment_intent,o.created_at,o.updated_at,e.status AS confirmation_email_status FROM hamper_orders o LEFT JOIN hamper_confirmation_emails e ON e.order_id=o.id WHERE o.mode=$1 ORDER BY o.created_at DESC LIMIT 200', [service.mode]);
-      res.json({ orders: rows, mode: service.mode });
+      const orders = await listPaidHamperOrders(db, service.mode);
+      res.json({ orders, mode: service.mode });
     })
   };
 }
