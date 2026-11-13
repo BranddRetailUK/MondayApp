@@ -77,9 +77,32 @@ function renderHamperOrders() {
       line.append(image, info); lineItems.append(line);
     }
     const totals = document.createElement('section');
-    if(q.discountLabel) totals.append(paragraph(`${q.discountLabel}: saved ${money(q.discountPence)} including VAT. All amounts include the discount.`));
-    const totalsHeading = document.createElement('h3'); totalsHeading.textContent = 'Order totals';
-    totals.append(totalsHeading, paragraph(`Hampers: ${money(q.subtotalPence)} ex. VAT`), paragraph(`Hamper VAT: ${money(q.productVatPence)}`), paragraph(`Delivery: ${money(q.shippingPence)} ex. VAT`), paragraph(`Delivery VAT (20%): ${money(q.shippingVatPence)}`), paragraph(`Total: ${money(q.totalPence)}`, 'order-primary'));
+    totals.className = 'hamper-detail-totals';
+    const totalsHeading = document.createElement('h3');
+    totalsHeading.textContent = 'Order totals';
+    const breakdown = document.createElement('dl');
+    breakdown.className = 'hamper-totals-breakdown';
+    const amounts = [
+      ['Hampers ex VAT', q.subtotalPence],
+      ['Hamper VAT', q.productVatPence],
+      ['Delivery ex VAT', q.shippingPence],
+      ['Delivery VAT (20%)', q.shippingVatPence],
+      ['Total incl. VAT', q.totalPence]
+    ];
+    for (const [index, [label, pence]] of amounts.entries()) {
+      const pair = document.createElement('div');
+      const term = document.createElement('dt');
+      term.textContent = label;
+      const amount = document.createElement('dd');
+      amount.textContent = money(pence);
+      if (index === amounts.length - 1) amount.className = 'order-amount';
+      pair.append(term, amount);
+      breakdown.append(pair);
+    }
+    totals.append(totalsHeading, breakdown);
+    if (q.discountLabel) {
+      totals.append(paragraph(`${q.discountLabel}: saved ${money(q.discountPence)} including VAT. All amounts include the discount.`));
+    }
     if (order.stripe_payment_intent) { const link = document.createElement('a'); link.href = `https://dashboard.stripe.com/${encodeURIComponent(q.stripeAccountId || 'acct_1UaBAa7O9atIxBPe')}/${order.mode === 'live' ? '' : 'test/'}payments/${encodeURIComponent(order.stripe_payment_intent)}`; link.textContent = 'View payment in Stripe'; link.className = 'order-link'; link.target = '_blank'; link.rel = 'noopener'; totals.append(link); }
     const invoiceActions = document.createElement('div'); invoiceActions.className = 'hamper-invoice-actions';
     for (const [label, download] of [['View invoice', false], ['Download invoice', true]]) {
@@ -93,7 +116,17 @@ function renderHamperOrders() {
     detailGrid.append(lineItems, totals); detailCell.append(detailGrid); detailsRow.append(detailCell);
     const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'proof-secondary-button'; toggle.textContent = 'View details'; toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-controls', detailsRow.id);
     toggle.addEventListener('click', () => { detailsRow.hidden = !detailsRow.hidden; toggle.setAttribute('aria-expanded', String(!detailsRow.hidden)); toggle.textContent = detailsRow.hidden ? 'View details' : 'Hide details'; });
-    rows[0].cells.details.append(toggle); container.append(...rows.map(r => r.row), detailsRow);
+    rows[0].cells.details.append(toggle);
+    if (container.childElementCount) {
+      const spacer = document.createElement('tr');
+      spacer.className = 'hamper-order-spacer';
+      spacer.setAttribute('aria-hidden', 'true');
+      const cell = document.createElement('td');
+      cell.colSpan = columns.length;
+      spacer.append(cell);
+      container.append(spacer);
+    }
+    container.append(...rows.map(r => r.row), detailsRow);
   }
 }
 async function loadHamperOrders() {

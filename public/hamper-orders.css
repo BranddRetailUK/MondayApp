@@ -17,7 +17,7 @@
 #tab-hamper-orders #message{font-size:14px;color:#fff}
 #tab-hamper-orders #message:empty{display:none}
 #tab-hamper-orders .hamper-table-wrap{overflow-x:auto}
-#tab-hamper-orders .hamper-orders-table{width:100%;min-width:1130px;table-layout:fixed}
+#tab-hamper-orders .hamper-orders-table{width:100%;min-width:1130px;table-layout:fixed;border-collapse:separate;border-spacing:0;background:transparent;border:0}
 #tab-hamper-orders .hamper-orders-table th{font-size:11px;font-weight:800;letter-spacing:.04em;color:#94cafa;padding:10px 8px}
 #tab-hamper-orders .col-po{width:108px}
 #tab-hamper-orders .col-date{width:95px}
@@ -26,6 +26,9 @@
 #tab-hamper-orders .col-qty{width:48px}
 #tab-hamper-orders .col-total{width:110px}
 #tab-hamper-orders .col-details{width:110px}
+#tab-hamper-orders .hamper-orders-table :is(th, .hamper-summary-row td) { border-right: 0; }
+#tab-hamper-orders .hamper-orders-table :is(th:last-child, .hamper-summary-row td[data-label="Details"]) { border-right: 1px solid var(--border); }
+#tab-hamper-orders .hamper-summary-row + .hamper-summary-row td { border-top: 0; }
 #tab-hamper-orders .hamper-summary-row td{padding:8px;vertical-align:middle;font-size:14px;line-height:1.35;color:#fff;overflow-wrap:anywhere}
 #tab-hamper-orders .hamper-orders-table p{margin:0 0 2px}
 #tab-hamper-orders .hamper-orders-table p:last-child{margin-bottom:0}
@@ -34,14 +37,49 @@
 #tab-hamper-orders .order-primary{font-size:13px;font-weight:700;color:#fff}
 #tab-hamper-orders .muted.small{font-size:14px;color:#fff;font-weight:400}
 #tab-hamper-orders .order-amount{font-size:16px;font-weight:700;color:#fff}
-#tab-hamper-orders .hamper-detail-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(240px,1fr);gap:28px;padding:12px 8px;color:#fff;font-size:14px;line-height:1.4}
+#tab-hamper-orders .hamper-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(0, 2fr);
+  gap: 24px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.4;
+}
+#tab-hamper-orders .hamper-totals-breakdown {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 10px 0;
+  border-block: 1px solid var(--border);
+}
+#tab-hamper-orders .hamper-totals-breakdown dt {
+  margin-bottom: 4px;
+  color: #94cafa;
+  font-size: 12px;
+  font-weight: 700;
+}
+#tab-hamper-orders .hamper-totals-breakdown dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
 #tab-hamper-orders .hamper-detail-grid h3{font-size:12px;font-weight:800;color:#94cafa;margin:0 0 12px}
 #tab-hamper-orders .hamper-detail-grid p{margin-bottom:5px;overflow-wrap:anywhere}
 #tab-hamper-orders .order-link{display:block;color:#84c3f7;margin-top:10px;font-size:12px;font-weight:700}
 #tab-hamper-orders .hamper-detail-item{display:flex;align-items:center;gap:12px;margin-bottom:10px}
 #tab-hamper-orders .hamper-detail-item:last-child{margin-bottom:0}
 #tab-hamper-orders .hamper-detail-item img{flex:0 0 64px;width:64px;height:64px;object-fit:contain;background:#fff;border-radius:8px}
-#tab-hamper-orders .hamper-detail-row>td{padding:8px}
+#tab-hamper-orders .hamper-orders-table :is(.hamper-detail-row, .hamper-order-spacer) > td {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+#tab-hamper-orders .hamper-orders-table .hamper-detail-row > td { padding-top: 8px; }
+#tab-hamper-orders .hamper-order-spacer > td { height: 14px; }
 .nav-tabs li[data-tab="hamper-orders"]{order:3}
 
 #tab-hamper-orders .muted{color:#fff;opacity:1}
