@@ -71,6 +71,8 @@ function start(db,env=process.env) {
   try {
    client=await db.connect();
    if(!(await client.query('SELECT pg_try_advisory_lock(73104261) AS locked')).rows[0].locked)return;
+   await client.query(`UPDATE hub_email_campaigns c SET status='sent' WHERE c.status='scheduled'
+     AND EXISTS (SELECT 1 FROM hub_email_recipients r WHERE r.campaign_id=c.id AND r.sent_at<=NOW())`);
    const due=(await client.query("SELECT id FROM hub_email_campaigns WHERE status IN ('sending','sent','paused') AND (suppression_sync_at IS NULL OR suppression_sync_at<NOW()-INTERVAL '10 minutes') LIMIT 1")).rows[0];
    if(due){
     const recipients=(await client.query('SELECT DISTINCT email FROM hub_email_recipients')).rows;

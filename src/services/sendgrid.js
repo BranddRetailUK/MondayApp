@@ -17,7 +17,7 @@ function status(env = process.env) {
     sendingEnabled: c.enabled, fromEmail: c.from, fromName: c.name, replyToEmail: c.replyTo,
     marketingGroupConfigured: Number.isInteger(c.group) && c.group > 0 };
 }
-async function sendMarketingEmail(input, { env = process.env, fetchImpl = fetch } = {}) {
+function marketingPayload(input, env) {
   const c = settings(env);
   if (!status(env).configured) throw new Error('SendGrid is not configured');
   const sandbox = input.sandbox !== false;
@@ -43,10 +43,14 @@ async function sendMarketingEmail(input, { env = process.env, fetchImpl = fetch 
     payload.tracking_settings = { click_tracking: { enable: true, enable_text: true }, open_tracking: { enable: true } };
   }
   if (Number.isInteger(c.group) && c.group > 0) payload.asm = { group_id: c.group, groups_to_display: [c.group] };
+  return payload;
+}
+async function submitMail(payload, env, fetchImpl) {
+  const sandbox = payload.mail_settings.sandbox_mode.enable;
   let response;
   try {
     response = await fetchImpl('https://api.sendgrid.com/v3/mail/send', {
-      method: 'POST', headers: { Authorization: `Bearer ${c.key}`, 'Content-Type': 'application/json' },
+      method: 'POST', headers: { Authorization: `Bearer ${settings(env).key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload), signal: AbortSignal.timeout(15000), redirect: 'error',
     });
   } catch {
@@ -57,4 +61,27 @@ async function sendMarketingEmail(input, { env = process.env, fetchImpl = fetch 
   if (response.status !== expected) throw new Error(`SendGrid rejected the request (HTTP ${response.status})`);
   return { sandbox, accepted: !sandbox, validated: sandbox, messageId: response.headers.get('x-message-id') || null };
 }
-module.exports = { status, sendMarketingEmail };
+async function sendMarketingEmail(input, { env = process.env, fetchImpl = fetch } = {}) {
+  return submitMail(marketingPayload(input, env), env, fetchImpl);
+}
+async function scheduleMarketingBatch(input, { env = process.env, fetchImpl = fetch, now = Date.now } = {}) {
+  const recipients = input.recipients;
+  if (!Array.isArray(recipients) || recipients.length < 1 || recipients.length > 500 ||
+      recipients.some(email => typeof email !== 'string' || email !== email.trim().toLowerCase() || !emailPattern.test(email)) ||
+      new Set(recipients).size !== recipients.length) {
+    throw new Error('Use 1–500 unique, normalized recipient addresses.');
+  }
+  const delay = input.sendAt * 1000 - now();
+  if (!Number.isSafeInteger(input.sendAt) || delay < 10000 || delay > 72 * 60 * 60 * 1000) {
+    throw new Error('Choose a send time at least 10 seconds ahead and within the next 72 hours.');
+  }
+  if (!/^[A-Za-z0-9._-]{10,100}$/.test(input.providerBatchId || '') || !input.campaignId) {
+    throw new Error('A provider batch and campaign tracking IDs are required.');
+  }
+  const payload = marketingPayload({ ...input, to: recipients[0] }, env);
+  payload.personalizations = recipients.map(email => ({ to: [{ email }] }));
+  payload.send_at = input.sendAt;
+  payload.batch_id = input.providerBatchId;
+  return submitMail(payload, env, fetchImpl);
+}
+module.exports = { status, sendMarketingEmail, scheduleMarketingBatch };

@@ -5,6 +5,9 @@
   const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const count = value => Number(value || 0).toLocaleString('en-GB');
   const date = value => value ? new Date(value).toLocaleString('en-GB',{timeZone:'Europe/London'}) : '—';
+  const scheduleDate = value => new Date(value).toLocaleString('en-GB', {
+    day:'numeric',month:'long',hour:'2-digit',minute:'2-digit',timeZone:'Europe/London',
+  });
   const rate = (value, total) => total ? `${(100 * value / total).toFixed(1)}% of delivered` : 'Awaiting delivery';
   let page = 0, generation = 0, loading = false, timer;
   async function get(path) { const response = await fetch(`/api/email-campaigns${path}`,{cache:'no-store'}); if (!response.ok) throw Error('Unable to load campaign data. Please refresh.'); return response.json(); }
@@ -26,9 +29,20 @@
     try {
       const data = await get('');
       $('status').textContent = !data.trackingConfigured ? 'Tracking setup pending. Campaigns have not been enabled for sending.' : data.latestEvent ? `Latest activity: ${date(data.latestEvent)}. Opens can include privacy-proxy activity; clicks can include security scans.` : 'No campaign activity received yet. Opens and clicks will appear after sending.';
-      $('list').innerHTML = data.campaigns.length ? data.campaigns.map(c=>{
+      const openCards = new Map([...$('list').querySelectorAll('details[data-campaign-id]')]
+        .map(card => [card.dataset.campaignId, card.open]));
+      $('list').innerHTML = data.campaigns.length ? data.campaigns.map((c,index)=>{
         const m=c.metrics, delivered=m.delivered || 0;
-        return `<article class="proof-card campaign-card"><div class="campaign-heading"><h2>${escape(c.name)}</h2></div><p class="campaign-subject">${escape(c.subject)}</p><p class="campaign-review"><a href="/api/email-campaigns/${encodeURIComponent(c.id)}/preview" target="_blank" rel="noopener">Preview email</a> · ${count(c.audience_review?.excluded)} excluded · ${count(c.audience_review?.malformed)} malformed entries held back</p>${c.sync_error ? `<p class="campaign-error" role="status">${escape(c.sync_error)}</p>` : ''}<div class="campaign-metrics">${metric('Audience',c.audience)}${metric('Submitted',c.submitted,'Provider acceptance')}${metric('Delivered',delivered)}${metric('Unique opens',m.open,rate(m.open||0,delivered))}${metric('Unique clicks',m.click,rate(m.click||0,delivered))}${metric('Unsubscribed',m.unsubscribe_count ?? m.unsubscribe ?? 0)}${metric('Bounced',m.bounce)}${metric('Deferred',m.deferred,'Temporary delivery delays')}${metric('Dropped',m.dropped)}${metric('Spam complaints',m.spamreport)}</div></article>`;
+        const open = openCards.get(c.id) ?? (index === 0 && c.id !== 'christmas-2026-first-shot');
+        const scheduled = c.status === 'scheduled' && c.audience_review?.scheduledAt
+          ? `<p class="campaign-review">Scheduled for ${escape(scheduleDate(c.audience_review.scheduledAt))} (London time)</p>` : '';
+        return `<details class="proof-card campaign-card" data-campaign-id="${escape(c.id)}"${open ? ' open' : ''}>
+          <summary class="campaign-heading"><h2>${escape(c.name)}</h2></summary>
+          <p class="campaign-subject">${escape(c.subject)}</p>${scheduled}
+          <p class="campaign-review"><a href="/api/email-campaigns/${encodeURIComponent(c.id)}/preview" target="_blank" rel="noopener">Preview email</a> · ${count(c.audience_review?.excluded)} excluded · ${count(c.audience_review?.malformed)} malformed entries held back</p>
+          ${c.sync_error ? `<p class="campaign-error" role="status">${escape(c.sync_error)}</p>` : ''}
+          <div class="campaign-metrics">${metric('Audience',c.audience)}${metric('Submitted',c.submitted,'Provider acceptance')}${metric('Delivered',delivered)}${metric('Unique opens',m.open,rate(m.open||0,delivered))}${metric('Unique clicks',m.click,rate(m.click||0,delivered))}${metric('Unsubscribed',m.unsubscribe_count ?? m.unsubscribe ?? 0)}${metric('Bounced',m.bounce)}${metric('Deferred',m.deferred,'Temporary delivery delays')}${metric('Dropped',m.dropped)}${metric('Spam complaints',m.spamreport)}</div>
+        </details>`;
       }).join('') : '<div class="proof-card campaign-empty"><h2>No campaigns yet</h2><p>Prepared campaigns and their delivery results will appear here.</p></div>';
       await exclusions();
     } catch(e) { $('status').textContent = e.message; }

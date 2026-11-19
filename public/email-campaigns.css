@@ -27,4 +27,8 @@
 #tab-email-campaigns .campaign-review{font-size:13px;color:#c4cbd2}#tab-email-campaigns .campaign-review a{color:#94cafa}
 
 #tab-email-campaigns .campaign-heading h2{font-size:26px;line-height:1.25}
+#tab-email-campaigns summary.campaign-heading{cursor:pointer;list-style:none}
+#tab-email-campaigns summary.campaign-heading::-webkit-details-marker{display:none}
+#tab-email-campaigns summary.campaign-heading::after{content:'';width:9px;height:9px;flex:none;border-right:2px solid #94cafa;border-bottom:2px solid #94cafa;transform:rotate(45deg);margin:0 4px 4px auto}
+#tab-email-campaigns details[open] > summary.campaign-heading::after{transform:rotate(225deg);margin-bottom:0}
 @media(max-width:600px){#tab-email-campaigns .campaign-heading h2{font-size:23px}#tab-email-campaigns .campaign-subject{font-size:18px}}

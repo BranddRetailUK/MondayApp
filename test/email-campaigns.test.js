@@ -62,3 +62,31 @@ test('tracking is explicitly scoped to campaign messages; ordinary sends remain 
  await sendMarketingEmail({to:'one@example.com',subject:'Test',html:'<p>Test</p>',text:'Test',campaignId:'test',batchId:'test-0'},{env:{SENDGRID_API_KEY:'key',SENDGRID_FROM_EMAIL:'sender@example.com'},fetchImpl:async(_,o)=>{payload=JSON.parse(o.body);return{status:200,headers:new Headers()};}});
  assert.deepEqual(payload.custom_args,{ultimate_campaign_id:'test',ultimate_batch_id:'test-0'});assert.equal(payload.tracking_settings.open_tracking.enable,true);
 });
+
+test('a scheduled campaign queues individually addressed messages with the correct schedule and tracking', async () => {
+ const {scheduleMarketingBatch}=require('../src/services/sendgrid');
+ const sendAt=1795086000;
+ const input={
+  recipients:['first@example.com','second@example.com'], subject:'Winter',
+  html:'<p>Winter</p><a href="<%asm_group_unsubscribe_raw_url%>">Unsubscribe</a>',
+  text:'Winter\nUnsubscribe: <%asm_group_unsubscribe_raw_url%>', sandbox:false,
+  campaignId:'winter-test', batchId:'winter-test-0', providerBatchId:'test-provider-batch', sendAt,
+ };
+ const env={SENDGRID_API_KEY:'key',SENDGRID_FROM_EMAIL:'sales@example.com',SENDGRID_UNSUBSCRIBE_GROUP_ID:'17',SENDGRID_SENDING_ENABLED:'true'};
+ let requests=0;
+ const options={env,now:()=>sendAt*1000-60000,fetchImpl:async (_url, request)=>{
+  requests++;
+  const payload=JSON.parse(request.body);
+  assert.deepEqual(payload.personalizations,[{to:[{email:'first@example.com'}]},{to:[{email:'second@example.com'}]}]);
+  assert.equal(payload.send_at,sendAt);
+  assert.equal(payload.batch_id,'test-provider-batch');
+  assert.equal(payload.from.email,'sales@example.com');
+  assert.equal(payload.asm.group_id,17);
+  assert.deepEqual(payload.custom_args,{ultimate_campaign_id:'winter-test',ultimate_batch_id:'winter-test-0'});
+  return {status:202,headers:new Headers({'x-message-id':'message'})};
+ }};
+ assert.deepEqual(await scheduleMarketingBatch(input,options),{accepted:true,sandbox:false,validated:false,messageId:'message'});
+ await assert.rejects(scheduleMarketingBatch({...input,recipients:['first@example.com','first@example.com']},options),/unique/);
+ await assert.rejects(scheduleMarketingBatch(input,{...options,now:()=>sendAt*1000}),/send time/);
+ assert.equal(requests,1);
+});

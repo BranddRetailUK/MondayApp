@@ -41,7 +41,7 @@ async function recordEvents(db, events) {
 }
 async function overview(db) {
   const campaigns = await db.query(`SELECT c.id,c.name,c.subject,c.status,c.created_at,c.audience_review,c.sync_at,c.sync_error,
-    (SELECT COUNT(*)::int FROM hub_email_recipients r WHERE r.campaign_id=c.id) AS audience,
+    (SELECT COUNT(*)::int FROM hub_email_recipients r WHERE r.campaign_id=c.id AND r.status<>'excluded') AS audience,
     (SELECT COUNT(*)::int FROM hub_email_recipients r WHERE r.campaign_id=c.id AND r.sent_at IS NOT NULL) AS submitted,
     COALESCE((SELECT jsonb_object_agg(event,total) FROM (
       SELECT CASE WHEN event IN ('unsubscribe','group_unsubscribe') THEN 'unsubscribe_count' ELSE event END AS event,COUNT(DISTINCT email)::int AS total FROM hub_email_events WHERE campaign_id=c.id GROUP BY 1
