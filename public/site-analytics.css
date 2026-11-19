@@ -24,6 +24,9 @@
 #tab-site-analytics .site-products-table th:not(:first-child){width:15%;white-space:normal}
 #tab-site-analytics .site-top-pages table{table-layout:fixed}
 #tab-site-analytics .site-top-pages th:last-child{width:80px}
+#tab-site-analytics .site-campaign-note{color:#d1d5db;font-size:13px;line-height:1.4;margin:8px 0 0}
+#tab-site-analytics .site-campaign-table th:nth-child(2),#tab-site-analytics .site-campaign-table td:nth-child(2){text-align:left;white-space:normal}
+#tab-site-analytics .site-campaign-table th:nth-child(3){width:65px}
 #tab-site-analytics table{width:100%;border-collapse:collapse;text-align:left}
 #tab-site-analytics th{color:#94cafa;font-size:13px;font-weight:700;padding:10px 8px;position:sticky;top:0;background:#181a1d}
 #tab-site-analytics td{padding:12px 8px;color:#fff;font-size:15px;border-top:1px solid #373b40;overflow-wrap:anywhere}
@@ -96,4 +99,7 @@
   }
   #tab-site-analytics .site-products-table .site-empty { padding: 12px 0; font-weight: 400; }
   #tab-site-analytics .site-top-pages th:last-child { width: 66px; }
+  #tab-site-analytics .site-campaign-table th:nth-child(3) { width: 43px; }
+  #tab-site-analytics .site-campaign-table th,
+  #tab-site-analytics .site-campaign-table td { padding-inline: 4px; }
 }

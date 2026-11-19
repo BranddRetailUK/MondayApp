@@ -2,6 +2,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),crypto=requ
 const {PGlite}=require('@electric-sql/pglite');
 const {normalize,record,dateRange,report}=require('../src/services/siteAnalytics');
 const {ensureSiteAnalyticsTables}=require('../src/db/siteAnalyticsSchema');
+const {ensureEmailCampaignTables}=require('../src/db/emailCampaignSchema');
 const origin='https://christmashampers.ultimatepromotions.co.uk';
 const input=()=>({id:crypto.randomUUID(),pageId:crypto.randomUUID(),event:'pageview',path:'/christmas-treats-basket.html',referrer:'https://example.com/private?email=person@example.com'});
 test('collector accepts only known pages/products and stores no form contents or referrer path',()=>{
@@ -25,6 +26,7 @@ test('date ranges use London calendar dates and reject invalid or oversized inte
 test('analytics deduplicates event retries, fills empty days and excludes sandbox/test sales',async()=>{
  const pg=new PGlite(),db={query:(s,p)=>!p&&s.includes('CREATE TABLE')?pg.exec(s):pg.query(s,p)};
  await ensureSiteAnalyticsTables(db);await ensureSiteAnalyticsTables(db);
+ await ensureEmailCampaignTables(db);
  await db.query('CREATE TABLE hamper_orders (id UUID,mode TEXT,status TEXT,snapshot JSONB,created_at TIMESTAMPTZ)');
  const e=normalize(input(),origin);await record(db,e);await record(db,e);
  await record(db,{...e,id:crypto.randomUUID(),event:'engaged',landing:false});await record(db,{...e,id:crypto.randomUUID(),event:'add_cart',landing:false,quantity:2});
@@ -44,6 +46,19 @@ test('analytics deduplicates event retries, fills empty days and excludes sandbo
  const topProducts=await report(db,{from:'2026-11-10',to:'2026-11-10'});assert.equal(topProducts.products.length,10);assert.equal(topProducts.products[0].views,12);assert.equal(topProducts.products[9].views,3);
  const top=await report(db,{from:'2026-11-12',to:'2026-11-12'});
  assert.equal(top.pages.length,10);assert.equal(top.landing.length,10);assert.equal(top.pages[0].path,'/page-11');assert.equal(top.landing[9].path,'/page-02');
+
+ await db.query(`INSERT INTO hub_email_campaigns(id,name,subject,status,audience_review,created_at)
+  VALUES ('winter','Winter essentials','Winter','sent','{"siteClickTracking":true}','2026-10-24T18:00:00Z')`);
+ await db.query("INSERT INTO hub_email_recipients(campaign_id,email) VALUES ('winter','one@example.com'),('winter','two@example.com')");
+ await db.query(`INSERT INTO hub_email_site_clicks(id,campaign_id,email,path,occurred_at) VALUES
+  ('1','winter','one@example.com','/','2026-10-24T23:45:00Z'),
+  ('2','winter','one@example.com','/','2026-10-25T10:01:00Z'),
+  ('3','winter','two@example.com','/','2026-10-25T12:10:00Z'),
+  ('4','winter','two@example.com','/','2026-10-26T00:00:00Z')`);
+ const clicks=await report(db,{from:'2026-10-25',to:'2026-10-25'});
+ assert.deepEqual(clicks.campaignClicks,[{id:'winter',name:'Winter essentials',pending:0,links:[{path:'/',clicks:3,recipients:2}]}]);
+ assert.equal(clicks.totals.views,2);
+ assert.ok(!JSON.stringify(clicks.campaignClicks).includes('@'));
 
  await pg.close();
 });

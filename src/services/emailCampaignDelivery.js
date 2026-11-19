@@ -1,6 +1,7 @@
 'use strict';
 const crypto=require('node:crypto');
 const {recordEvents}=require('./emailCampaigns');
+const {rememberSiteClickMessages,refreshSiteClick}=require('./emailCampaignSiteClicks');
 const EMAIL=/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/i;
 async function audience(db) {
  const result=await db.query(`SELECT contact_email FROM database_customer_profiles WHERE NULLIF(TRIM(contact_email),'') IS NOT NULL
@@ -47,9 +48,20 @@ async function importSuppressions(db,rows,allowed) {
  }
  return count;
 }
-const FILTERS=['summary','bounce','deferred','dropped','spamreport','unsubscribe','group_unsubscribe','processed'];
-async function pollBatch(db,batch,env=process.env,fetchImpl=fetch) {
- const filter=FILTERS[batch.poll_step%FILTERS.length];
+const FILTERS=['summary','bounce','deferred','dropped','spamreport','unsubscribe','group_unsubscribe','processed','delivered'];
+async function recordBatchDeliveries(db,batch,events) {
+ const delivered=events.filter(e=>e.event==='delivered'&&e.email&&Number.isFinite(e.timestamp));
+ if(!delivered.length)return;
+ await db.query(`INSERT INTO hub_email_events(id,campaign_id,email,event,occurred_at)
+  SELECT e.sg_event_id,$1,r.email,'delivered',to_timestamp(e."timestamp")
+  FROM jsonb_to_recordset($3::jsonb) AS e(sg_event_id text,email text,"timestamp" double precision)
+  JOIN hub_email_recipients r ON r.campaign_id=$1 AND r.tracking_batch=$2 AND r.email=lower(trim(e.email))
+  ON CONFLICT DO NOTHING`,[batch.campaign_id,batch.id,JSON.stringify(delivered)]);
+}
+async function pollBatch(db,batch,env=process.env,fetchImpl=fetch,options={}) {
+ const planned=FILTERS[batch.poll_step%FILTERS.length];
+ const filter=options.filter||(batch.refresh_summary?'summary':planned);
+ if(!FILTERS.includes(filter))throw Error('Invalid campaign activity filter.');
  const query=`(unique_args['ultimate_campaign_id']="${batch.campaign_id}") AND (unique_args['ultimate_batch_id']="${batch.id}")`+(filter==='summary'?'':` AND (Contains(events,"${filter}"))`);
  const data=await providerGet(`/v3/messages?limit=1000&query=${encodeURIComponent(query)}`,env,fetchImpl);
  if(!Array.isArray(data.messages)||data.messages.length>=1000)throw Error('Activity response exceeded the bounded campaign batch.');
@@ -58,8 +70,13 @@ async function pollBatch(db,batch,env=process.env,fetchImpl=fetch) {
   const types=filter==='summary'?[...(m.status==='delivered'?['delivered']:[]),...(m.opens_count>0?['open']:[]),...(m.clicks_count>0?['click']:[])]:[filter];
   for(const event of types) events.push({ultimate_campaign_id:batch.campaign_id,email:m.to_email,event,timestamp:Date.parse(m.last_event_time)/1000,sg_event_id:'activity:'+crypto.createHash('sha256').update(`${m.msg_id}:${event}`).digest('hex'),reason:event==='bounce'?'SendGrid reports a bounce; mailbox validity is unconfirmed.':''});
  }
- await recordEvents(db,events);
- await db.query('UPDATE hub_email_batches SET polled_at=NOW(),poll_step=poll_step+1 WHERE id=$1',[batch.id]);
+ await recordBatchDeliveries(db,batch,events);
+ await recordEvents(db,events.filter(e=>e.event!=='delivered'));
+ if(filter==='summary'&&batch.site_click_tracking)await rememberSiteClickMessages(db,batch,data.messages);
+ if(!options.recordOnly)await db.query(`UPDATE hub_email_batches SET polled_at=NOW(),
+  poll_step=poll_step+CASE WHEN $2::boolean THEN 1 ELSE 0 END,
+  summary_polled_at=CASE WHEN $3::boolean THEN NOW() ELSE summary_polled_at END
+  WHERE id=$1`,[batch.id,filter===planned,filter==='summary']);
  await db.query("UPDATE hub_email_campaigns SET sync_at=NOW(),sync_error=NULL WHERE id=$1",[batch.campaign_id]);
  return events.length;
 }
@@ -79,13 +96,22 @@ function start(db,env=process.env) {
     await importSuppressions(client,await suppressions(env),new Set(recipients.map(r=>r.email)));
     await client.query("UPDATE hub_email_campaigns SET suppression_sync_at=NOW() WHERE status IN ('sending','sent','paused')");
    }
-   const result=await client.query(`SELECT b.* FROM hub_email_batches b JOIN hub_email_campaigns c ON c.id=b.campaign_id
-     WHERE c.status IN ('sending','sent','paused') AND EXISTS(SELECT 1 FROM hub_email_recipients r WHERE r.tracking_batch=b.id AND r.sent_at IS NOT NULL)
-     AND (b.polled_at IS NULL OR b.polled_at<NOW()-INTERVAL '60 seconds') ORDER BY b.polled_at NULLS FIRST,b.id LIMIT 1`);
+   const result=await client.query(`SELECT b.*,c.audience_review @> '{"siteClickTracking":true}' AS site_click_tracking,
+     (b.summary_polled_at IS NULL OR b.summary_polled_at<NOW()-INTERVAL '5 minutes') AND EXISTS(
+       SELECT 1 FROM hub_email_recipients r WHERE r.tracking_batch=b.id
+        AND r.sent_at BETWEEN NOW()-INTERVAL '24 hours' AND NOW()
+     ) AS refresh_summary
+     FROM hub_email_batches b JOIN hub_email_campaigns c ON c.id=b.campaign_id
+     WHERE c.status IN ('sending','sent','paused') AND EXISTS(
+       SELECT 1 FROM hub_email_recipients r WHERE r.tracking_batch=b.id AND r.sent_at<=NOW()
+     ) AND (b.polled_at IS NULL OR b.polled_at<NOW()-INTERVAL '60 seconds')
+     ORDER BY refresh_summary DESC,b.polled_at NULLS FIRST,b.id LIMIT 1`);
    if(result.rows[0]) {
     try { await pollBatch(client,result.rows[0],env); }
     catch { await client.query("UPDATE hub_email_campaigns SET sync_error='Delivery analytics are temporarily unavailable; retrying automatically.' WHERE id=$1",[result.rows[0].campaign_id]); }
    }
+   try { await refreshSiteClick(client,path=>providerGet(path,env)); }
+   catch { console.error('Campaign site click refresh failed'); }
   } catch { console.error('Campaign activity refresh failed'); }
   finally {if(client){await client.query('SELECT pg_advisory_unlock(73104261)').catch(()=>{});client.release();}busy=false;}
  };

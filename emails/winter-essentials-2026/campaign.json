@@ -4,6 +4,7 @@
   "subject": "Winter essentials for your brand",
   "from": "sales@ultimatepromotions.co.uk",
   "replyTo": "sales@ultimatepromotions.co.uk",
+  "siteClickTracking": true,
   "html": "email.html",
   "text": "email.txt"
 }

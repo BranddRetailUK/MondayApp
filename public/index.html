@@ -24,8 +24,8 @@
   <script src="email-campaigns.js" defer></script>
   <link rel="stylesheet" href="customers.css">
   <script src="customers.js" defer></script>
-  <link rel="stylesheet" href="site-analytics.css?v=33e15041af24">
-  <script src="site-analytics.js?v=45b542347705" defer></script>
+  <link rel="stylesheet" href="site-analytics.css?v=d90361ba9269">
+  <script src="site-analytics.js?v=2df64a8afd9a" defer></script>
   <link rel="stylesheet" href="insights.css">
   <script src="insights.js" defer></script>
   <script src="auth-session.js" defer></script>
@@ -115,6 +115,12 @@
         <header class="site-header"><h1>Site Analytics</h1><div class="site-controls"><select id="site-range" aria-label="Date range"><option value="1">Today</option><option value="7" selected>Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="custom">Custom dates</option></select><button class="proof-secondary-button" id="site-refresh">Refresh</button><div id="site-custom" hidden><label>From<input type="date" id="site-from"></label><label>To<input type="date" id="site-to"></label><button class="proof-secondary-button" id="site-apply">Apply</button></div></div></header>
         <p id="site-status" role="status"></p><div id="site-metrics" class="site-metrics"></div>
         <section class="site-panel"><div class="site-panel-head"><h2 id="site-chart-title">Daily page views</h2><span id="site-since"></span><span id="site-chart-peak"></span></div><div id="site-chart"></div><div class="site-chart-labels"><span id="site-chart-start"></span><span id="site-chart-end"></span></div></section>
+        <section class="site-panel" id="site-campaign-panel" hidden>
+          <h2>Email campaign clicks</h2>
+          <p class="site-campaign-note">SendGrid link clicks may include security scans.</p>
+          <div class="site-table-wrap site-top-pages"><table class="site-campaign-table"><thead><tr><th>Campaign</th><th>Destination</th><th>Clicks</th><th>Recipients</th></tr></thead><tbody id="site-campaign-clicks"></tbody></table></div>
+          <p class="site-campaign-note" id="site-campaign-pending" role="status" hidden></p>
+        </section>
         <section class="site-panel"><h2>Products</h2><div class="site-table-wrap site-top-products"><table class="site-products-table"><thead><tr><th>Product</th><th>Price (ex VAT)</th><th>Views</th><th>Basket adds</th><th>Sold</th></tr></thead><tbody id="site-products"></tbody></table></div></section><div class="site-grid">
 <section class="site-panel"><h2>Landing pages</h2><div class="site-table-wrap site-top-pages"><table><thead><tr><th>Page</th><th>Entries</th></tr></thead><tbody id="site-landing"></tbody></table></div></section>
 <section class="site-panel"><h2>Pages viewed</h2><div class="site-table-wrap site-top-pages"><table><thead><tr><th>Page</th><th>Views</th></tr></thead><tbody id="site-pages"></tbody></table></div></section>

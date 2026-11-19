@@ -90,3 +90,66 @@ test('a scheduled campaign queues individually addressed messages with the corre
  await assert.rejects(scheduleMarketingBatch(input,{...options,now:()=>sendAt*1000}),/send time/);
  assert.equal(requests,1);
 });
+
+test('recent summaries keep their normal polling step and explicit delivery events count even after a later status change',async()=>{
+ const {pollBatch}=require('../src/services/emailCampaignDelivery');
+ const pg=new PGlite(),db={query:(s,p)=>!p&&s.includes('CREATE TABLE')?pg.exec(s):pg.query(s,p)};
+ await ensureEmailCampaignTables(db);
+ await db.query("INSERT INTO hub_email_campaigns(id,name,subject) VALUES('test','Test','Subject')");
+ await db.query("INSERT INTO hub_email_batches(id,campaign_id,poll_step) VALUES('test-0','test',3)");
+ await db.query("INSERT INTO hub_email_recipients(campaign_id,email,tracking_batch) VALUES('test','one@example.com','test-0')");
+ const batch={id:'test-0',campaign_id:'test',poll_step:3,refresh_summary:true};
+ const fetchImpl=async url=>{
+  const query=new URL(url).searchParams.get('query');
+  assert.ok(!query.includes('dropped'));
+  return {ok:true,json:async()=>({messages:[
+   {msg_id:'message',to_email:'one@example.com',status:'not_delivered',last_event_time:'2026-11-12T10:00:00Z'},
+   {msg_id:'foreign',to_email:'outside@example.com',status:'delivered',last_event_time:'2026-11-12T10:00:00Z'},
+  ]})};
+ };
+ await pollBatch(db,batch,{},fetchImpl);
+ const saved=(await db.query("SELECT poll_step,summary_polled_at FROM hub_email_batches WHERE id='test-0'")).rows[0];
+ assert.equal(saved.poll_step,3);assert(saved.summary_polled_at);
+ assert.equal((await overview(db)).campaigns[0].metrics.delivered,undefined);
+ await pollBatch(db,batch,{},async requested=>{
+  assert.match(new URL(requested).searchParams.get('query'),/Contains\(events,"delivered"\)/);
+  return fetchImpl(requested);
+ },{filter:'delivered',recordOnly:true});
+ assert.equal((await overview(db)).campaigns[0].metrics.delivered,1);
+ await pg.close();
+});
+
+test('site click lookups are scoped, drop off-site links and deduplicate repeated reads',async()=>{
+ const {rememberSiteClickMessages,refreshSiteClick}=require('../src/services/emailCampaignSiteClicks');
+ const pg=new PGlite(),db={query:(s,p)=>!p&&s.includes('CREATE TABLE')?pg.exec(s):pg.query(s,p)};
+ await ensureEmailCampaignTables(db);
+ await db.query(`INSERT INTO hub_email_campaigns(id,name,subject,audience_review)
+  VALUES ('winter','Winter','Subject','{"siteClickTracking":true}')`);
+ await db.query(`INSERT INTO hub_email_recipients(campaign_id,email,tracking_batch,status,sent_at)
+  VALUES ('winter','one@example.com','winter-0','sent',NOW()-INTERVAL '5 minutes')`);
+ const batch={id:'winter-0',campaign_id:'winter'};
+ const message={msg_id:'message-token',to_email:'ONE@example.com',clicks_count:3};
+ await rememberSiteClickMessages(db,{...batch,id:'wrong-batch'},[message]);
+ assert.equal(await refreshSiteClick(db,async()=>assert.fail('Wrong batch was queued')),0);
+ await rememberSiteClickMessages(db,batch,[message]);
+ const now=new Date().toISOString();
+ const detail={
+  msg_id:message.msg_id,to_email:message.to_email,
+  unique_args:JSON.stringify({ultimate_campaign_id:'winter',ultimate_batch_id:'winter-0'}),
+  events:[
+   {event_name:'click',processed:now,url:'https://christmashampers.ultimatepromotions.co.uk/?secret=value'},
+   {event_name:'click',processed:now,url:'https://christmashampers.ultimatepromotions.co.uk/index.html'},
+   {event_name:'click',processed:now,url:'https://sendgrid.example/unsubscribe'},
+  ],
+ };
+ const get=async endpoint=>{assert.equal(endpoint,'/v3/messages/message-token');return detail;};
+ assert.equal(await refreshSiteClick(db,get),2);
+ assert.equal(await refreshSiteClick(db,async()=>assert.fail('Rate limit was bypassed')),0);
+ const clicks=(await db.query('SELECT path FROM hub_email_site_clicks ORDER BY id')).rows;
+ assert.deepEqual(clicks,[{path:'/'},{path:'/'}]);
+ await db.query("UPDATE hub_email_recipients SET site_click_checked_at=NOW()-INTERVAL '40 seconds'");
+ await rememberSiteClickMessages(db,batch,[{...message,clicks_count:4}]);
+ assert.equal(await refreshSiteClick(db,get),2);
+ assert.equal((await db.query('SELECT COUNT(*)::int AS count FROM hub_email_site_clicks')).rows[0].count,2);
+ await pg.close();
+});

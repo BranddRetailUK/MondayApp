@@ -21,6 +21,19 @@ async function ensureEmailCampaignTables(db) {
     ALTER TABLE hub_email_campaigns ADD COLUMN IF NOT EXISTS sync_error TEXT;
     ALTER TABLE hub_email_recipients ADD COLUMN IF NOT EXISTS tracking_batch TEXT;
     CREATE TABLE IF NOT EXISTS hub_email_batches (id TEXT PRIMARY KEY,campaign_id TEXT NOT NULL REFERENCES hub_email_campaigns(id),polled_at TIMESTAMPTZ,poll_step INTEGER NOT NULL DEFAULT 0);
+    ALTER TABLE hub_email_batches ADD COLUMN IF NOT EXISTS summary_polled_at TIMESTAMPTZ;
+    ALTER TABLE hub_email_recipients ADD COLUMN IF NOT EXISTS site_click_message_id TEXT;
+    ALTER TABLE hub_email_recipients ADD COLUMN IF NOT EXISTS site_click_reported INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE hub_email_recipients ADD COLUMN IF NOT EXISTS site_click_verified INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE hub_email_recipients ADD COLUMN IF NOT EXISTS site_click_checked_at TIMESTAMPTZ;
+    CREATE INDEX IF NOT EXISTS hub_email_recipients_batch_sent ON hub_email_recipients(tracking_batch,sent_at);
+    CREATE INDEX IF NOT EXISTS hub_email_click_checked ON hub_email_recipients(site_click_checked_at DESC) WHERE site_click_checked_at IS NOT NULL;
+    CREATE TABLE IF NOT EXISTS hub_email_site_clicks (
+      id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL, email TEXT NOT NULL,
+      path TEXT NOT NULL, occurred_at TIMESTAMPTZ NOT NULL,
+      FOREIGN KEY(campaign_id,email) REFERENCES hub_email_recipients(campaign_id,email)
+    );
+    CREATE INDEX IF NOT EXISTS hub_email_site_clicks_campaign_date ON hub_email_site_clicks(campaign_id,occurred_at);
     CREATE TABLE IF NOT EXISTS hub_email_suppressions (
       email TEXT NOT NULL, kind TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '',
       source TEXT NOT NULL, occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

@@ -42,6 +42,14 @@
    $('since').textContent=data.startedAt?'Tracking from '+new Date(data.startedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short',timeZone:'Europe/London'}):'';
    latestTrend=[data.trend,data.trendGranularity];
    chart(...latestTrend);
+   const campaigns=data.campaignClicks||[];
+   $('campaign-panel').hidden=campaigns.length===0;
+   const campaignLinks=campaigns.flatMap(campaign=>(campaign.links.length?campaign.links:[{path:null,clicks:0,recipients:0}])
+    .map(link=>({...link,name:campaign.name})));
+   table('campaign-clicks',campaignLinks,[r=>r.name,r=>r.path==='/'?'Hamper shop home':r.path?label(r.path):'—',r=>number(r.clicks),r=>number(r.recipients)]);
+   const pending=campaigns.reduce((total,campaign)=>total+campaign.pending,0);
+   $('campaign-pending').hidden=pending===0;
+   $('campaign-pending').textContent=pending?`Checking link destinations for ${number(pending)} clicked ${pending===1?'email':'emails'}.`:'';
    table('products',data.products,[r=>r.name,r=>r.pricePence==null?'—':money(r.pricePence),r=>number(r.views),r=>number(r.adds),r=>number(r.sold)]);
    table('landing',data.landing,[r=>label(r.path),r=>number(r.entries)]);
    table('pages',data.pages,[r=>label(r.path),r=>number(r.views)]);

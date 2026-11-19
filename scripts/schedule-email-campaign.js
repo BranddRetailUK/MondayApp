@@ -72,6 +72,7 @@ async function prepare(client, campaign, addressList, provider, env) {
     unsubscribed: addressList.emails.filter(email => optedOut.has(email)).length,
     consent: 'User confirmed all campaign recipients are approved for marketing.',
     scheduledAt: campaign.scheduledAt.toISOString(), providerBatchId, from: campaign.from,
+    siteClickTracking: campaign.siteClickTracking === true,
   };
   const batches = [];
   await client.query('BEGIN');

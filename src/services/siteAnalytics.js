@@ -3,8 +3,18 @@ const products=require('../../web/hamper-collection/products.json');
 const productByPath=new Map(products.map(p=>['/'+p.slug+'.html',p]));
 const productBySku=new Map(products.map(p=>[p.sku,p]));
 const paths=new Set(['/', '/contact.html', '/all-hampers.html','/sweet-treats.html','/cheese-savoury.html','/wine-fizz.html','/luxury-hampers.html','/hamper-checkout.html','/order-confirmation',...productByPath.keys()]);
-const ORIGINS=new Set(['https://christmashampers.ultimatepromotions.co.uk','https://ultimatechristmas-production.up.railway.app','https://www.ultimatehub.co.uk','https://mondayapp-refactor-production.up.railway.app']);
+const STOREFRONT_ORIGINS=new Set(['https://christmashampers.ultimatepromotions.co.uk','https://ultimatechristmas-production.up.railway.app']);
+const ORIGINS=new Set([...STOREFRONT_ORIGINS,'https://www.ultimatehub.co.uk','https://mondayapp-refactor-production.up.railway.app']);
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function storefrontPath(value){
+ if(typeof value!=='string'||value.length>4096)return null;
+ try{
+  const url=new URL(value);
+  const path=url.pathname==='/index.html'?'/':url.pathname;
+  if(STOREFRONT_ORIGINS.has(url.origin)&&!url.username&&!url.password&&paths.has(path))return path;
+ }catch{}
+ return null;
+}
 function normalize(input,origin,userAgent=''){
  if(!input||typeof input!=='object'||!ORIGINS.has(origin)||input.excluded===true||/bot|crawler|spider|headless|preview|chatgpt|facebookexternalhit|lighthouse/i.test(userAgent))return null;
  if(!UUID.test(input.id||'')||!UUID.test(input.pageId||'')||!['pageview','engaged','add_cart','checkout_start','payment_start','enquiry'].includes(input.event))return null;
@@ -37,7 +47,7 @@ async function report(db,range){
  const period="created_at >= ($1::date::timestamp AT TIME ZONE 'Europe/London') AND created_at < (($2::date+1)::timestamp AT TIME ZONE 'Europe/London')";
  const salesPeriod=period.replaceAll('created_at','o.created_at');
  const salesFilter=`o.mode='live' AND COALESCE(o.snapshot->>'discountLabel','') <> 'Single-use live test discount' AND ${salesPeriod}`;
- const [totals,trend,pages,landing,productRows,sources,devices,sales,topSales,config]=await Promise.all([
+ const [totals,trend,pages,landing,productRows,sources,devices,sales,topSales,config,campaignClicks]=await Promise.all([
   db.query(`SELECT COUNT(*) FILTER(WHERE event='pageview')::int AS views,COUNT(*) FILTER(WHERE landing)::int AS entries,COUNT(DISTINCT page_id) FILTER(WHERE event='engaged')::int AS engaged,COUNT(*) FILTER(WHERE event='pageview' AND sku IS NOT NULL)::int AS product_views,COUNT(*) FILTER(WHERE event='add_cart')::int AS adds,COUNT(*) FILTER(WHERE event='checkout_start')::int AS checkouts,COUNT(*) FILTER(WHERE event='payment_start')::int AS payments,COUNT(*) FILTER(WHERE event='enquiry')::int AS enquiries FROM hub_site_events WHERE ${period}`,params),
   hourly ? db.query(`WITH hours AS (
    SELECT generate_series($1::date::timestamp AT TIME ZONE 'Europe/London', (($2::date+1)::timestamp AT TIME ZONE 'Europe/London')-INTERVAL '1 hour', INTERVAL '1 hour') AS hour
@@ -55,11 +65,29 @@ async function report(db,range){
   db.query(`SELECT device,COUNT(*)::int AS views FROM hub_site_events WHERE ${period} AND event='pageview' GROUP BY device ORDER BY views DESC`,params),
   db.query(`SELECT COUNT(*)::int AS started,COUNT(*) FILTER(WHERE o.status='paid')::int AS paid,COUNT(*) FILTER(WHERE o.status='pending')::int AS pending,COUNT(*) FILTER(WHERE o.status='expired')::int AS expired,COALESCE(SUM((o.snapshot->>'totalPence')::bigint) FILTER(WHERE o.status='paid'),0)::text AS revenue FROM hamper_orders o WHERE ${salesFilter}`,params),
   db.query(`SELECT item->>'sku' AS sku,SUM((item->>'quantity')::int)::int AS sold FROM hamper_orders o CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(o.snapshot->'items')='array' THEN o.snapshot->'items' ELSE jsonb_build_array(o.snapshot) END) item WHERE ${salesFilter} AND o.status='paid' GROUP BY 1`,params),
-  db.query('SELECT started_at FROM hub_site_analytics_config WHERE id=1')
+  db.query('SELECT started_at FROM hub_site_analytics_config WHERE id=1'),
+  db.query(`SELECT c.id,c.name,
+   (SELECT COUNT(*)::int FROM hub_email_recipients r WHERE r.campaign_id=c.id
+    AND r.sent_at>=NOW()-INTERVAL '30 days' AND r.site_click_reported>r.site_click_verified) AS pending,
+   COALESCE((SELECT jsonb_agg(links ORDER BY links.clicks DESC,links.path) FROM (
+     SELECT path,COUNT(*)::int AS clicks,COUNT(DISTINCT email)::int AS recipients
+     FROM hub_email_site_clicks WHERE campaign_id=c.id AND ${period.replaceAll('created_at','occurred_at')}
+     GROUP BY path
+   ) links),'[]'::jsonb) AS links
+   FROM hub_email_campaigns c WHERE c.status IN ('sent','sending','paused')
+    AND c.audience_review @> '{"siteClickTracking":true}'
+    AND c.created_at < (($2::date+1)::timestamp AT TIME ZONE 'Europe/London')
+   ORDER BY c.created_at DESC,c.id`,params)
  ]);
  const merged=new Map(productRows.rows.map(r=>[r.sku,{...r,sold:0}]));for(const r of topSales.rows){if(!merged.has(r.sku))merged.set(r.sku,{sku:r.sku,views:0,adds:0,sold:0});merged.get(r.sku).sold=r.sold;}
  const days=new Map(trend.rows.map(r=>[r.day,r]));const series=hourly?trend.rows:[];for(let t=Date.parse(range.from);!hourly&&t<=Date.parse(range.to);t+=86400000){const day=new Date(t).toISOString().slice(0,10);series.push(days.get(day)||{day,views:0,entries:0});}
- return {range,startedAt:config.rows[0]?.started_at,totals:totals.rows[0],trend:series,trendGranularity:hourly?'hour':'day',pages:pages.rows,landing:landing.rows,sources:sources.rows,devices:devices.rows,sales:sales.rows[0],products:[...merged.values()].map(r=>({...r,name:productBySku.get(r.sku)?.name||r.sku,pricePence:productBySku.has(r.sku)?Math.round(productBySku.get(r.sku).price*100):null})).sort((a,b)=>b.views-a.views||b.sold-a.sold||a.name.localeCompare(b.name)).slice(0,10)};
+ return {range,startedAt:config.rows[0]?.started_at,totals:totals.rows[0],trend:series,trendGranularity:hourly?'hour':'day',pages:pages.rows,landing:landing.rows,sources:sources.rows,devices:devices.rows,sales:sales.rows[0],campaignClicks:campaignClicks.rows,products:[...merged.values()].map(r=>({...r,name:productBySku.get(r.sku)?.name||r.sku,pricePence:productBySku.has(r.sku)?Math.round(productBySku.get(r.sku).price*100):null})).sort((a,b)=>b.views-a.views||b.sold-a.sold||a.name.localeCompare(b.name)).slice(0,10)};
 }
-function startRetention(db){const clean=()=>db.query("DELETE FROM hub_site_events WHERE id IN (SELECT id FROM hub_site_events WHERE created_at<NOW()-INTERVAL '180 days' LIMIT 10000)").catch(()=>console.error('Site analytics retention cleanup failed'));setInterval(clean,3600000).unref();void clean();}
-module.exports={normalize,record,dateRange,report,startRetention,ORIGINS};
+function startRetention(db){
+ const clean=()=>Promise.all([
+  db.query("DELETE FROM hub_site_events WHERE id IN (SELECT id FROM hub_site_events WHERE created_at<NOW()-INTERVAL '180 days' LIMIT 10000)"),
+  db.query("DELETE FROM hub_email_site_clicks WHERE id IN (SELECT id FROM hub_email_site_clicks WHERE occurred_at<NOW()-INTERVAL '180 days' LIMIT 10000)"),
+ ]).catch(()=>console.error('Site analytics retention cleanup failed'));
+ setInterval(clean,3600000).unref();void clean();
+}
+module.exports={normalize,record,dateRange,report,startRetention,ORIGINS,storefrontPath};
