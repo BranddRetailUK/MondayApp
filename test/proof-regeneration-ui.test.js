@@ -351,3 +351,17 @@ test('proof panel stays hidden without a preview and appears for generated or sa
  context.currentPreview={pages:[{image:'garment'}]};context.syncProofVisibility();assert.equal(context.reviewColumn.hidden,false);
  context.currentPreview=null;context.design={hasPreview:true};context.syncProofVisibility();assert.equal(context.reviewColumn.hidden,false);
 });
+
+test('slow brief reading advances two bounded stages and clears both timers on success or failure',async()=>{
+ const code=source.slice(source.indexOf('  async function readBriefWithProgress('),source.indexOf('  // Parsing and preflight'));
+ for(const fails of [false,true]){
+  const timers=[],cleared=[],updates=[];let settle;
+  const context={setTimeout(fn,delay){timers.push({fn,delay});return timers.length;},clearTimeout(id){cleared.push(id);},updateGenerationProgress:(...args)=>updates.push(args),proofFetch:()=>new Promise((resolve,reject)=>{settle=fails?reject:resolve;}),proofJson:r=>r.json()};
+  vm.runInNewContext(code,context);const pending=context.readBriefWithProgress({});
+  assert.deepEqual(timers.map(t=>t.delay),[4000,10000]);timers.forEach(t=>t.fn());
+  assert.deepEqual(updates.map(u=>u[0]),[18,26]);
+  if(fails){settle(Error('Parse failed'));await assert.rejects(pending,/Parse failed/);}
+  else{settle({ok:true,json:async()=>({brief:{products:[]}})});assert.ok((await pending).brief);}
+  assert.deepEqual(cleared,[1,2]);
+ }
+});

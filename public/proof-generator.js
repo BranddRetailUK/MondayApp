@@ -521,7 +521,7 @@
       if(saved&&design.status==='saved'){try{const synced=await window.ProofLinks.api(`/designs/${id}/sync`,{});design=synced.design;if(design.sourceOrderId)selectedLinkJob={source_order_id:design.sourceOrderId,order_no:design.linkedOrders?.find(order=>order.sourceOrderId===design.sourceOrderId)?.orderNo};window.ProofLinks.refresh();}catch(error){throw new Error('Proof saved, but Dashboard sync needs attention: '+error.message);}}
       if(design.status==='error')throw new Error(design.message||'The design folder needs attention.');
       if(saved?design.status==='saved':!!(design.designNumber&&design.folderName))return;
-      if(progressDialog.open)updateGenerationProgress(40,saved?'Saving your proof…':'Getting your proof number ready…');
+      if(progressDialog.open)updateGenerationProgress(45,saved?'Saving your proof…':'Getting your proof number ready…');
       setFeedback(saved?'Waiting for ARTWORK-PC to save the proof…':'Waiting for ARTWORK-PC to reserve the next design number…');
       await new Promise(resolve=>setTimeout(resolve,2000));
     }
@@ -817,6 +817,21 @@
 
   }
 
+  // Parsing is one server request: these are bounded estimated progress updates,
+  // not claims that a server subtask has completed. Never advance past preflight.
+  async function readBriefWithProgress(form){
+    const timers=[
+      setTimeout(()=>updateGenerationProgress(18,'Interpreting products and print methods…'),4000),
+      setTimeout(()=>updateGenerationProgress(26,'Reviewing artwork and size instructions…'),10000),
+    ];
+    try{
+      const response=await proofFetch('/api/proof-generator/parse',{method:'POST',body:form});
+      const payload=await proofJson(response);
+      if(!response.ok)throw Error(payload.error||'Could not read the brief.');
+      return payload;
+    }finally{timers.forEach(clearTimeout);}
+  }
+
   // Parsing and preflight never allocate a folder, clear approval or generate garment views.
   async function preflightBrief() {
     busy=true;setCreating(true);
@@ -831,19 +846,18 @@
       if(!currentBrief){
         const parseForm=await uploadForm({preflight:true,customer:customer.value,jobTitle:jobTitle.value,requestText:request.value,
           artworks:artworks.map(({id,file,assignment,notes,dstSize})=>({id,fileName:file.name,assignment,notes,dstSize})),answers:[]},false,true);
-        const response=await proofFetch('/api/proof-generator/parse',{method:'POST',body:parseForm}),payload=await proofJson(response);
-        if(!response.ok)throw Error(payload.error||'Could not read the brief.');
+        const payload=await readBriefWithProgress(parseForm);
         if(!unchanged())throw Error('The request changed during review. Check the details again.');
         currentBrief=payload.brief;currentPreview=null;dirty=true;
       }
       currentBrief.preflightRequest=request.value;
-      updateGenerationProgress(20,'Finding products and checking colours…');
+      updateGenerationProgress(30,'Finding products and checking colours…');
       const response=await proofFetch('/api/proof-generator/preflight',{method:'POST',body:await uploadForm(currentBrief,false,true)}),payload=await proofJson(response);
       if(!response.ok)throw Error(payload.error||'Could not check the brief.');
       if(!unchanged())throw Error('The request changed during review. Check the details again.');
       currentBrief=payload.brief;
       if(!payload.ready){renderPreflight(payload.issues);setFeedback('Resolve the details below together, then create the proof. Nothing has been allocated or generated.',true);return false;}
-      updateGenerationProgress(30,'Products found. Your details are checked.');
+      updateGenerationProgress(35,'Products found. Your details are checked.');
       preflightDetails.hidden=true;return true;
     }catch(error){setFeedback(error.message,true);return false;}
     finally{busy=false;setCreating(false);}
@@ -897,7 +911,7 @@
     busy = true; generatingProof = true; readyThisRun = false; setCreating(true);
     if(!designId){designId=crypto.randomUUID();try{if(!localPreview)sessionStorage.setItem('proof-design-id',designId);}catch(_){} }
     design={...design,id:designId,customer:customer.value,jobTitle:jobTitle.value,createdAt:design?.createdAt||new Date().toISOString(),generationStatus:'generating'};
-    updateGenerationProgress(35,'Preparing your artwork…');
+    updateGenerationProgress(40,'Preparing your artwork…');
     setFeedback('Preparing the confirmed proof…');
     try {
       design=localPreview?{id:designId,customer:customer.value,jobTitle:jobTitle.value,status:'folder_ready',createdAt:new Date().toISOString()}:await designRequest('',{id:designId,customer:customer.value,jobTitle:jobTitle.value,deferAllocation:true,...jobReservation()});
@@ -913,7 +927,7 @@
       const preparation=await Promise.allSettled([reserveDesign(numberedBrief),prepareMissingViews()]);
       const failed=preparation.find(result=>result.status==='rejected');if(failed)throw failed.reason;
       if(!localPreview)for(const key of ['proofSourceOrderId','proofDesignId','reference','proofRevision'])currentBrief[key]=numberedBrief[key];
-      updateGenerationProgress(75,'Placing artwork and building your proof…');
+      updateGenerationProgress(80,'Placing artwork and building your proof…');
       await updatePreview(true,true,true);
       if(localPreview&&!dirty&&currentPreview?.pdf&&!currentPreview.issues.some(issue=>issue.blocking))readyThisRun=true;
       if(!readyThisRun)await recordProgress(currentPreview?.issues.some(issue=>issue.blocking)?'review':'complete');
@@ -996,7 +1010,7 @@
     if(currentBrief?.uploadMode==='mockup')return;
     const target = currentBrief;
     const snapshot = JSON.stringify(target);
-    updateGenerationProgress(45,'Preparing product images…');
+    updateGenerationProgress(50,'Preparing product images…');
     setFeedback('Loading garment views and checking for missing angles…');
     const response = await proofFetch('/api/proof-generator/views', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brief:target})});
     const task = await proofJson(response);
@@ -1009,7 +1023,7 @@
       const job = await proofJson(poll);
       if(!poll.ok || job.state==='failed')throw new Error(job.error || 'Could not prepare garment views.');
       if(currentBrief!==target || JSON.stringify(target)!==snapshot)return;
-      if(progressDialog.open)updateGenerationProgress(55,job.state==='complete'?'Product images ready. Preparing artwork placement…':'Preparing product images. This can take a few minutes…');
+      if(progressDialog.open)updateGenerationProgress(65,job.state==='complete'?'Product images ready. Preparing artwork placement…':'Preparing product images. This can take a few minutes…');
       setFeedback(job.message || 'Generating missing garment views…');
       if(job.state==='complete'){currentBrief=job.brief;return;}
     }
