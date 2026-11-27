@@ -155,8 +155,6 @@
   let uploadMode='artwork';
   function setUploadMode(mode){
     uploadMode=mode==='mockup'?'mockup':'artwork';
-    root.querySelector('.proof-product-search').hidden=uploadMode==='mockup';
-    if(uploadMode==='mockup'){clearTimeout(searchTimer);searchController?.abort();searchVersion++;productResults.replaceChildren();productStatus.textContent='';}
     root.querySelector('.proof-upload-mode').dataset.mode=uploadMode;
     root.querySelectorAll('[data-upload-mode]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.uploadMode===uploadMode)));
     dropzone.querySelector('strong').textContent=uploadMode==='mockup'?'Upload mock up':'Choose artwork files';
@@ -575,7 +573,6 @@
   productQuery.addEventListener('input',()=>{
     clearTimeout(searchTimer);searchController?.abort();const version=++searchVersion;
     productResults.replaceChildren();resetProductPicker();
-    if(uploadMode==='mockup')return;
     const query=productQuery.value.trim();
     if(!/^[a-z0-9 -]{2,64}$/i.test(query)){productStatus.textContent='';return;}
     productStatus.textContent='Searching catalogue…';
