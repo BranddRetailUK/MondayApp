@@ -1,5 +1,23 @@
 const sharp=require('sharp');
 const {dimension}=require('./proofLayout');
+// A finished composite image is indivisible. Multiple depicted views of the
+// same product/colour must not duplicate that image onto multiple sheets.
+function normalize(brief){
+  if(brief?.uploadMode!=='mockup'||!Array.isArray(brief.products))return brief;
+  const groups=new Map(),products=[];
+  for(const p of brief.products){
+    p.decorations=require('./proofLayout').resolveDecorations(brief,p).map(d=>({...d,method:d.method||p.method||brief.method||''}));
+    const ids=[...new Set(p.decorations.map(d=>d.artworkId))];
+    const key=ids.length===1&&ids[0]?JSON.stringify([String(p.code||'').trim().toUpperCase(),String(p.colour||'').trim().toLowerCase(),ids[0]]):null;
+    const existing=key&&groups.get(key);
+    if(!existing){products.push(p);if(key)groups.set(key,p);continue;}
+    const signature=d=>JSON.stringify([d.artworkId,d.method||p.method||brief.method||'',d.widthMm||'',d.heightMm||'']);
+    for(const d of p.decorations)if(!existing.decorations.some(mark=>signature(mark)===signature(d)))existing.decorations.push({...d,method:d.method||p.method||brief.method||''});
+    if(!existing.mockupPlacement&&p.mockupPlacement)existing.mockupPlacement=p.mockupPlacement;
+  }
+  brief.products=products;brief.sharedDecorations=[];
+  return brief;
+}
 function sizeLabel(d){
   const width=dimension(d.widthMm),height=dimension(d.heightMm);
   if(width&&height)return `${width} x ${height} mm`;
@@ -32,4 +50,4 @@ async function prepare(pdf,artwork){
   const bytes=await sharp(artwork.file.buffer,{limitInputPixels:40_000_000}).rotate().flatten({background:'#ffffff'}).resize(1600,1600,{fit:'contain',background:'#ffffff'}).png().toBuffer();
   return {kind:'image',image:await pdf.embedPng(bytes),width:1600,height:1600,preview:`data:image/png;base64,${bytes.toString('base64')}`};
 }
-module.exports={assess,prepare,sizeLabel};
+module.exports={assess,prepare,sizeLabel,normalize};

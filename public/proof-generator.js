@@ -155,6 +155,8 @@
   let uploadMode='artwork';
   function setUploadMode(mode){
     uploadMode=mode==='mockup'?'mockup':'artwork';
+    root.querySelector('.proof-product-search').hidden=uploadMode==='mockup';
+    if(uploadMode==='mockup'){clearTimeout(searchTimer);searchController?.abort();searchVersion++;productResults.replaceChildren();productStatus.textContent='';}
     root.querySelector('.proof-upload-mode').dataset.mode=uploadMode;
     root.querySelectorAll('[data-upload-mode]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.uploadMode===uploadMode)));
     dropzone.querySelector('strong').textContent=uploadMode==='mockup'?'Upload mock up':'Choose artwork files';
@@ -573,6 +575,7 @@
   productQuery.addEventListener('input',()=>{
     clearTimeout(searchTimer);searchController?.abort();const version=++searchVersion;
     productResults.replaceChildren();resetProductPicker();
+    if(uploadMode==='mockup')return;
     const query=productQuery.value.trim();
     if(!/^[a-z0-9 -]{2,64}$/i.test(query)){productStatus.textContent='';return;}
     productStatus.textContent='Searching catalogue…';
@@ -851,13 +854,13 @@
         currentBrief=payload.brief;currentPreview=null;dirty=true;
       }
       currentBrief.preflightRequest=request.value;
-      updateGenerationProgress(30,'Finding products and checking colours…');
+      updateGenerationProgress(30,uploadMode==='mockup'?'Checking your product and print details…':'Finding products and checking colours…');
       const response=await proofFetch('/api/proof-generator/preflight',{method:'POST',body:await uploadForm(currentBrief,false,true)}),payload=await proofJson(response);
       if(!response.ok)throw Error(payload.error||'Could not check the brief.');
       if(!unchanged())throw Error('The request changed during review. Check the details again.');
       currentBrief=payload.brief;
       if(!payload.ready){renderPreflight(payload.issues);setFeedback('Resolve the details below together, then create the proof. Nothing has been allocated or generated.',true);return false;}
-      updateGenerationProgress(35,'Products found. Your details are checked.');
+      updateGenerationProgress(35,uploadMode==='mockup'?'Your mock up details are checked.':'Products found. Your details are checked.');
       preflightDetails.hidden=true;return true;
     }catch(error){setFeedback(error.message,true);return false;}
     finally{busy=false;setCreating(false);}
@@ -1091,8 +1094,20 @@
       results.append(list);
     }
     if(currentBrief.uploadMode==='mockup'){
-      if(currentPreview?.pdf){const container=document.createElement('div');container.className='proof-pdf-pages proof-auto-preview';results.append(container);return renderDocument(currentPreview.pdf,container,currentPreview.documents||[]);}
-      return;
+      if(currentPreview?.pdf){const container=document.createElement('div');container.className='proof-pdf-pages proof-auto-preview';results.append(container);renderDocument(currentPreview.pdf,container,currentPreview.documents||[]);}
+      const target=currentBrief,preview=currentPreview;
+      return import('/proof-mockup.js').then(()=>{
+        if(currentBrief!==target||currentPreview!==preview)return;
+        const section=document.createElement('section');section.className='proof-fallback';
+        const heading=document.createElement('h3');heading.textContent='Adjust mock up position';section.append(heading);
+        const ready=[];
+        for(const page of preview?.pages||[]){
+          const product=target.products[page.productIndex];if(!product)continue;
+          const editor=window.ProofMockup.createEditor({product,page,isBusy:()=>busy,onChange:()=>markDirty()});section.append(editor);ready.push(editor.previewReady);
+        }
+        if(preview?.pages?.length)results.append(section);
+        return Promise.all(ready);
+      });
     }
     const names=document.createElement('section');names.className='proof-product-editor';
     const heading=document.createElement('h3');heading.textContent='Individual names';names.append(heading);

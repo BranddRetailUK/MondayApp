@@ -19,7 +19,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
   const router = express.Router();
   const designJobs=()=>designs || (designs=designService(require('../db/pool')));
   async function restoreRetainedVisuals(brief){
-    if(!brief.proofDesignId)return null;
+    if(brief.uploadMode==='mockup'||!brief.proofDesignId)return null;
     const service=designJobs();
     const retained=await (service.retainedSource?service.retainedSource(brief.proofDesignId):service.source?.(brief.proofDesignId));
     for(const product of brief.products){
@@ -30,7 +30,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
   }
   const testJobs=()=>tests || (tests=require('../services/proofTestJobs').createService(require('../db/pool')));
   const sandboxFor=req=>req.query.test==='1';
-  const sandboxBrief=(req,brief)=>sandboxFor(req)?prepareSandboxBrief(brief):brief;
+  const sandboxBrief=(req,brief)=>require('../services/proofMockup').normalize(sandboxFor(req)?prepareSandboxBrief(brief):brief);
   const links=()=>require('../services/proofJobLinks').createService(require('../db/pool'));
   const upload = multer({ storage: multer.memoryStorage(), limits: { files: 40, fields: 2, parts: 42, fileSize: 10 * 1024 * 1024, fieldSize: 100 * 1024 } });
   const lanes={production:{active:false,source:false,eps:false},sandbox:{active:false,source:false,eps:false}};
@@ -291,7 +291,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
           }
         }
       }
-      if(req.body.uploadMode==='mockup')req.body.specialInstructions=[req.body.specialInstructions,'The uploaded files are complete finished mock ups. Assign each mock up to its requested product using artworkId. Do not infer print dimensions from the image. Read the product and print method from the request; leave missing methods empty. Missing print size is TBC.'].filter(Boolean).join('\n');
+      if(req.body.uploadMode==='mockup')req.body.specialInstructions=[req.body.specialInstructions,'The uploaded files are complete finished mock ups. Each uploaded image is indivisible: multiple products, angles or versions pictured inside one image must not create duplicate product entries or sheets for the same supplied product and colour. Preserve the product code and description supplied in the request; do not look up or infer alternative products. Assign each mock up to its requested product using artworkId. Do not infer print dimensions from the image. Read the product and print method from the request; leave missing methods empty. Missing print size is TBC.'].filter(Boolean).join('\n');
       const brief = sandboxBrief(req,await parse(req.body, {artworkImages}));
       if(req.body.uploadMode==='mockup')brief.uploadMode='mockup';
       if(String(req.body.customer||'').trim())brief.customer=String(req.body.customer).trim().slice(0,200);
@@ -299,6 +299,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       recoverProductCodes(brief, req.body);
       if(brief.uploadMode!=='mockup')await enrich(brief);
       prepareBrief(brief, req.body);
+      require('../services/proofMockup').normalize(brief);
       if(brief.uploadMode==='mockup')for(const product of brief.products)for(const d of product.decorations||[])if(!d.widthMm&&!d.heightMm)d.sizeTbc=true;
       return res.json({ brief });
     } catch (err) {
@@ -352,8 +353,10 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       // Reuse the saved supplier selection when reopening an unchanged product.
       // Only server-retained visuals are trusted; changed products are resolved normally.
       const retained=design&&designJobs().source?await designJobs().source(design.id):null;
-      if(req.path!=='/placement-preview')applyPendingResizes(brief);
-      repairRetainedDimensions(brief,retained?.source);
+      if(brief.uploadMode!=='mockup'){
+        if(req.path!=='/placement-preview')applyPendingResizes(brief);
+        repairRetainedDimensions(brief,retained?.source);
+      }
       const preparedHeadwear=structuredClone(brief.products);
       if(brief.uploadMode!=='mockup')await enrich(brief);
       await restoreRetainedVisuals(brief);
@@ -364,7 +367,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
         const check=assess(brief,assets,brief.preflightRequest);
         if(!check.ready)return res.status(422).json({error:check.issues.map(i=>i.message).join(' '),issues:check.issues});
       }
-      const retainedGarmentLoader=design&&designJobs().garmentLoader?await designJobs().garmentLoader(design.id):null;
+      const retainedGarmentLoader=brief.uploadMode!=='mockup'&&design&&designJobs().garmentLoader?await designJobs().garmentLoader(design.id):null;
       if(brief.uploadMode!=='mockup')await generateViews(brief, { allowGenerate: false, ...(retainedGarmentLoader?{download:retainedGarmentLoader}:{}) });
       const productIndex=req.query.productIndex;
       if(productIndex!==undefined && (typeof productIndex!=='string'||!/^\d+$/.test(productIndex)||Number(productIndex)>=brief.products.length))return res.status(400).json({error:'Choose a valid product PDF.'});

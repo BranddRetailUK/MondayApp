@@ -128,6 +128,7 @@ function drawCallout(page, decoration, asset, regular, bold, index, total, garme
 async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = fetchGarment, date = new Date(), strict = false } = {}) {
   if (!Array.isArray(brief?.products) || !brief.products.length || brief.products.length > 20) throw new Error('A proof needs 1-20 products.');
   const mockup=brief.uploadMode==='mockup';
+  if(mockup)require('./proofMockup').normalize(brief);
   if(mockup){const check=require('./proofMockup').assess(brief,artworks);if(!check.ready)throw new Error(check.issues.map(i=>i.message).join(' '));}
   const ids = artworks.map(a => a.id);
   if (ids.some(id => !id) || new Set(ids).size !== ids.length) throw new Error('Each uploaded artwork needs a unique ID.');
@@ -201,9 +202,11 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
       if(!asset)throw new Error(assetErrors.get(decorations[0]?.artworkId)||'Upload the finished mock up.');
       drawText(page,`Print method: ${[...new Set(decorations.map(d=>printMethod(d.method)))].join(' / ')}`,42,112,11,bold,NAVY,758);
       drawText(page,`Dimensions: ${decorations.map(d=>require('./proofMockup').sizeLabel(d)).join(' / ')}`,42,132,9,regular,NAVY,758);
-      drawAsset(page,asset,(PAGE_W-410)/2,152,410,410);
+      const mockupPlacement=require('../../public/proof-mockup').placement(product.mockupPlacement);
+      product.mockupPlacement=mockupPlacement;
+      drawAsset(page,asset,mockupPlacement.x,mockupPlacement.y,mockupPlacement.size,mockupPlacement.size);
       if(brief.productionNotes)drawText(page,brief.productionNotes,34,574,7,regular,GREY,774);
-      pages.push({productIndex,pdfPageIndex:productIndex,view:'mockup',width:1600,height:1600,image:asset.preview,placements:[]});
+      pages.push({productIndex,pdfPageIndex:productIndex,view:'mockup',width:1600,height:1600,image:asset.preview,mockupPlacement,placements:[]});
       continue;
     }
     const views = product.visual?.views || [];

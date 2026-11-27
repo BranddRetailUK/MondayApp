@@ -93,3 +93,15 @@ test('deleting a test proof removes its retained row, rejects stale edits and pr
   assert.equal((await promoted.designs.get(live.design.id)).id,live.design.id);
  }finally{await promoted.db.close();}
 });
+
+test('mock-up promotion preserves placement and never looks up or generates supplier products',async()=>{
+ const f=await fixture();try{
+  const saved=await f.tests.source(f.id);saved.source.brief.uploadMode='mockup';saved.source.brief.products[0].mockupPlacement={x:90,y:220,size:200};
+  await f.tests.saveSource(f.id,'charlie@ultimatepromotions.co.uk',saved.source,[f.file],[{id:'art',originalName:f.file.originalname}]);
+  await f.db.query('UPDATE proof_test_jobs SET ready=true WHERE id=$1',[f.id]);
+  const fail=async()=>{throw Error('Supplier lookup must not run');};
+  const service=createService(f.pool,{enrich:fail,generateViews:fail,build:async brief=>{assert.deepEqual(brief.products[0].mockupPlacement,{x:90,y:220,size:200});return {bytes:Buffer.from('mockup'),issues:[]};}});
+  const result=await service.promote(f.id,[f.file],(await f.tests.get(f.id)).updatedAt);
+  assert.equal(result.design.status,'awaiting_folder');
+ }finally{await f.db.close();}
+});

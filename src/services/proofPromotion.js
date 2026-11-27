@@ -23,17 +23,18 @@ function createService(pool, {enrich=require('./proofProductVisuals').enrichProo
     if(!brief?.products?.length||brief.products.length>20)throw Error('A proof needs 1-20 products.');
     for(const key of ['testProofId','proofDesignId','proofSourceOrderId','proofRevision','proofSaveKey'])delete brief[key];
     brief.reference='';brief.customer=source.customer;brief.jobTitle=source.jobTitle;
-    repairRetainedDimensions(brief,source);
+    require('./proofMockup').normalize(brief);
+    if(brief.uploadMode!=='mockup')repairRetainedDimensions(brief,source);
     const retained=structuredClone(brief.products);
-    await enrich(brief);
+    if(brief.uploadMode!=='mockup')await enrich(brief);
     for(const [i,p] of brief.products.entries())if(retained[i]?.visual?.matched)p.visual=retained[i].visual;
-    await require('./proofHeadwearViews').restorePreparedHeadwearViews(brief,retained);
+    if(brief.uploadMode!=='mockup')await require('./proofHeadwearViews').restorePreparedHeadwearViews(brief,retained);
     const details=detailsFor(originals);
     const assets=await Promise.all(files.map((file,i)=>inspect(file,details[i])));
     brief.preflightVersion=1;brief.preflightRequest=[source.request,source.instructions].filter(Boolean).join('\n');
     const review=assess(brief,assets,brief.preflightRequest);
     if(!review.ready)throw Error(review.issues.map(i=>i.message).join(' '));
-    await generateViews(brief,{allowGenerate:true});
+    if(brief.uploadMode!=='mockup')await generateViews(brief,{allowGenerate:true});
     // Use the same strict renderer before allocating a live identity.
     if(renderCheck){
       const result=await build(brief,files.map((file,i)=>({file,...details[i]})),{strict:true});

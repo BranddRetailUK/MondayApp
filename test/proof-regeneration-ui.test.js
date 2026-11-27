@@ -7,7 +7,7 @@ const review = source.slice(source.indexOf('  async function reviewBrief()'), so
 const http = source.slice(source.indexOf('  // Retry only reads:'),source.indexOf('  root.innerHTML'));
 const history = source.slice(source.indexOf('  function historyState(job)'), source.indexOf('  function renderHistory()'));
 function createContext(context){
-  for(const [key,value] of Object.entries({sandbox:false,localPreview:false,standalonePreview:false,historyEndpoint:'designs',generationRevision:4,createNew:{focus(){}},syncProofVisibility(){},updateGenerationProgress(){},closeGenerationProgress(){},startGenerationProgress(){}}))if(!(key in context))context[key]=value;
+  for(const [key,value] of Object.entries({uploadMode:'artwork',sandbox:false,localPreview:false,standalonePreview:false,historyEndpoint:'designs',generationRevision:4,createNew:{focus(){}},syncProofVisibility(){},updateGenerationProgress(){},closeGenerationProgress(){},startGenerationProgress(){}}))if(!(key in context))context[key]=value;
   vm.createContext(context);
 }
 function harness({ fail=false }={}) {

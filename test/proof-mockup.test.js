@@ -24,3 +24,15 @@ test('square fitting retains all edge pixels and renderer never loads a garment 
  const text=(await (await doc.getPage(1)).getTextContent()).items.map(i=>i.str).join(' ');await doc.destroy();
  assert.match(text,/Dimensions: TBC/);assert.match(text,/Print method:/);assert.doesNotMatch(text,/No artwork|FRONT VIEW|Estimated garment/);
 });
+
+test('composite mock ups render once and retain position independently of print dimensions',async()=>{
+ const b=brief();b.products[0].mockupPlacement={x:90,y:220,size:200};b.products[0].decorations[0].widthMm='100';
+ b.products.push(structuredClone(b.products[0]));b.products[1].decorations[0].notes='Second view inside the same uploaded image';
+ const file={originalname:'composite.png',buffer:await sharp({create:{width:300,height:100,channels:3,background:'#ff0000'}}).png().toBuffer()};
+ const result=await buildProof(b,[{id:'mock',file}],{strict:true});
+ assert.equal(result.documents.length,1);assert.equal((await PDFDocument.load(result.bytes)).getPageCount(),1);assert.equal(b.products.length,1);
+ assert.deepEqual(result.pages[0].mockupPlacement,{x:90,y:220,size:200});assert.equal(b.products[0].decorations[0].widthMm,'100');
+ const reopened=JSON.parse(JSON.stringify(b));const again=await buildProof(reopened,[{id:'mock',file}],{strict:true});assert.deepEqual(again.pages[0].mockupPlacement,result.pages[0].mockupPlacement);
+ const layout=require('../public/proof-mockup');const bounded=layout.placement({x:-100,y:999,size:900});assert.deepEqual(bounded,{x:34,y:152,size:410});
+ const distinct=brief();distinct.products.push({...structuredClone(distinct.products[0]),colour:'Blue'});require('../src/services/proofMockup').normalize(distinct);assert.equal(distinct.products.length,2);
+});
