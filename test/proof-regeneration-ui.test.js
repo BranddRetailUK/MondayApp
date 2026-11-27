@@ -109,7 +109,7 @@ test('customer and title edits retain manual geometry while updating the saved b
 for(const sandbox of [false,true])test(`opening a saved ${sandbox?'test':'production'} proof restores the editor without generating or saving`,async()=>{
   const calls=[];
   const context={sandbox,localPreview:sandbox,historyEndpoint:sandbox?'tests':'designs',busy:false,designId:null,artworks:[],customer:{},jobTitle:{},request:{},instructions:{},reviewButton:{querySelector:()=>({})},results:element('div'),document:{createElement:element},sessionStorage:{setItem(){}},
-    startNewProof(){},showProofEditor(){calls.push('editor');},showDesign(){},setCreating(){},renderHistory(){},renderEditor(){calls.push('restore');},setFeedback(){},
+    setUploadMode(){},startNewProof(){},showProofEditor(){calls.push('editor');},showDesign(){},setCreating(){},renderHistory(){},renderEditor(){calls.push('restore');},setFeedback(){},
     async fetch(url,options){calls.push([url,options]);return {ok:true,json:async()=>({source:{request:'Saved request',instructions:'Legacy instruction',brief:{products:[]}},artworks:[]})};},
     loadPlacementPreview:async()=>{calls.push('placement');},
     updatePreview(){throw Error('Opening must not save or generate garment views');}

@@ -82,7 +82,7 @@
             <textarea id="proof-request" class="proof-textarea proof-main-request" maxlength="20000"></textarea>
           </section>
           <section class="proof-card">
-            <div class="proof-review-title proof-section-title"><h2>Artwork</h2></div>
+            <div class="proof-review-title proof-section-title proof-upload-heading"><h2>Artwork</h2><div class="proof-upload-mode" role="group" aria-label="Upload mode" data-mode="artwork"><span aria-hidden="true"></span><button type="button" data-upload-mode="artwork" aria-pressed="true">Artwork</button><button type="button" data-upload-mode="mockup" aria-pressed="false">Mock up</button></div></div>
             <input id="proof-file-input" type="file" accept=".png,.jpg,.jpeg,.webp,.svg,.pdf,.eps,.ai,.ttf,.otf,.pxf,.dst" multiple hidden>
             <button id="proof-dropzone" class="proof-dropzone" type="button"><span class="proof-upload-icon" aria-hidden="true">↥</span><strong>Choose artwork files</strong></button>
             <div id="proof-artworks" class="proof-artwork-list"></div>
@@ -152,6 +152,20 @@
   function syncProofVisibility(){reviewColumn.hidden=!(currentPreview?.pages?.length||design?.hasPreview);}
 
   const artworks = [];
+  let uploadMode='artwork';
+  function setUploadMode(mode){
+    uploadMode=mode==='mockup'?'mockup':'artwork';
+    root.querySelector('.proof-upload-mode').dataset.mode=uploadMode;
+    root.querySelectorAll('[data-upload-mode]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.uploadMode===uploadMode)));
+    dropzone.querySelector('strong').textContent=uploadMode==='mockup'?'Upload mock up':'Choose artwork files';
+    input.accept=uploadMode==='mockup'?'.png,.jpg,.jpeg,.webp':'.png,.jpg,.jpeg,.webp,.svg,.pdf,.eps,.ai,.ttf,.otf,.pxf,.dst';
+  }
+  root.querySelectorAll('[data-upload-mode]').forEach(button=>button.addEventListener('click',()=>{
+    if(busy||uploadMode===button.dataset.uploadMode)return;
+    setUploadMode(button.dataset.uploadMode);
+    for(const item of artworks)if(item.url)URL.revokeObjectURL(item.url);
+    artworks.length=0;artworksNode.replaceChildren();input.value='';sourceChanged();
+  }));
   let currentBrief = null;
   let currentPreview = null;
   let busy = false, generatingProof = false;
@@ -409,6 +423,7 @@
       const response=await proofFetch(`/api/proof-generator/${historyEndpoint}/${encodeURIComponent(job.id)}/source`,{cache:'no-store'});const data=await proofJson(response);
       if(!response.ok)throw new Error(data.error||'Proof source is unavailable.');
       request.value=[data.source.request,data.source.instructions].filter(Boolean).join('\n\n');customer.value=data.source.customer||job.customer||'';jobTitle.value=data.source.jobTitle||job.jobTitle||'';
+      setUploadMode(data.source.brief?.uploadMode);
       for(const saved of data.artworks){
         const file=new File([Uint8Array.from(atob(saved.data),c=>c.charCodeAt(0))],saved.name,{type:saved.type||''});
         const item={id:saved.id,file,assignment:saved.assignment||'',notes:saved.notes||'',backgroundMode:saved.backgroundMode||'auto',threadColours:saved.threadColours||[],threadCodes:saved.threadCodes||[],runoutFilename:saved.runoutFilename||'',url:file.type.startsWith('image/')?URL.createObjectURL(file):''};artworks.push(item);renderArtwork(item);
@@ -522,7 +537,9 @@
     brief.proofSourceOrderId=selectedLinkJob?.source_order_id||null;brief.proofDesignId=design.id;brief.reference=design.designNumber;brief.proofRevision=design.revision;
   }
   function startNewProof(){
-    if(busy)return;selectedLinkJob=null;design=null;designId=null;try{if(!localPreview)sessionStorage.removeItem('proof-design-id');}catch(_){}
+    if(busy)return;
+    setUploadMode('artwork');
+    selectedLinkJob=null;design=null;designId=null;try{if(!localPreview)sessionStorage.removeItem('proof-design-id');}catch(_){}
     request.value='';customer.value='';clearCustomerSearch();jobTitle.value='';
     for(const art of artworks)if(art.url)URL.revokeObjectURL(art.url);artworks.length=0;artworksNode.replaceChildren();
     resetProductPicker();productQuery.value='';productResults.replaceChildren();productStatus.textContent='';
@@ -605,6 +622,7 @@
     const {pairRunoutFiles}=await import('/proof-thread-swatches.mjs');
     if(busy)return;
     for (const {file,runout} of pairRunoutFiles(Array.from(files || []))) {
+      if(uploadMode==='mockup'&&!/\.(png|jpe?g|webp)$/i.test(file.name)){setFeedback('Upload a PNG, JPG or WebP mock up.',true);continue;}
       if (artworks.length >= 20) { setFeedback('Add no more than 20 artwork files.', true); break; }
       if (!/\.(png|jpe?g|webp|svg|pdf|eps|ai|ttf|otf|pxf|dst)$/i.test(file.name)) { setFeedback(`Unsupported file: ${file.name}`, true); continue; }
       const item = { id: crypto.randomUUID(), backgroundMode: 'auto', file, pendingRunout:runout, assignment: '', notes: '', url: file.type.startsWith('image/') ? URL.createObjectURL(file) : '' };
@@ -663,6 +681,7 @@
     fileType.textContent = item.file.name.split('.').pop().toUpperCase();
     body.append(title);
     if(!/\.dst$/i.test(item.file.name))body.append(fileType);
+    if(uploadMode==='mockup'){card.append(thumb,body);artworksNode.append(card);return;}
     if (/\.(pxf|dst)$/i.test(item.file.name)) {
       const status=document.createElement('p');body.append(status);
       const refresh=async()=>{
@@ -918,7 +937,7 @@
 
   async function uploadForm(brief,includeOriginals=false,preflight=false) {
     const form = new FormData();
-    form.append('brief', JSON.stringify(brief));
+    form.append('brief', JSON.stringify({...brief,uploadMode}));
     form.append('artworkDetails', JSON.stringify(artworks.map(({id,file,assignment,notes,backgroundMode,threadColours,threadCodes,runoutFilename})=>({id,originalName:file.name,assignment,notes,backgroundMode,threadColours,threadCodes,runoutFilename}))));
     for (const item of artworks) {
       const file = await prepareArtworkFile(item.file,preflight);
@@ -974,6 +993,7 @@
   }
 
   async function prepareMissingViews() {
+    if(currentBrief?.uploadMode==='mockup')return;
     const target = currentBrief;
     const snapshot = JSON.stringify(target);
     updateGenerationProgress(45,'Preparing product images…');
@@ -1055,6 +1075,10 @@
       const list=document.createElement('ul');list.className='proof-issues';
       for(const issue of blockers){const li=document.createElement('li');li.className=issue.blocking?'blocking':'';const product=currentBrief.products[issue.productIndex];const mark=product.decorations.find(d=>d.id===issue.decorationId);li.textContent=`${product.code || product.name}${mark?' / '+mark.position:''}: ${reviewMessage(issue.message)}`;list.append(li);}
       results.append(list);
+    }
+    if(currentBrief.uploadMode==='mockup'){
+      if(currentPreview?.pdf){const container=document.createElement('div');container.className='proof-pdf-pages proof-auto-preview';results.append(container);return renderDocument(currentPreview.pdf,container,currentPreview.documents||[]);}
+      return;
     }
     const names=document.createElement('section');names.className='proof-product-editor';
     const heading=document.createElement('h3');heading.textContent='Individual names';names.append(heading);

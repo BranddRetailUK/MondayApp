@@ -127,6 +127,8 @@ function drawCallout(page, decoration, asset, regular, bold, index, total, garme
 
 async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = fetchGarment, date = new Date(), strict = false } = {}) {
   if (!Array.isArray(brief?.products) || !brief.products.length || brief.products.length > 20) throw new Error('A proof needs 1-20 products.');
+  const mockup=brief.uploadMode==='mockup';
+  if(mockup){const check=require('./proofMockup').assess(brief,artworks);if(!check.ready)throw new Error(check.issues.map(i=>i.message).join(' '));}
   const ids = artworks.map(a => a.id);
   if (ids.some(id => !id) || new Set(ids).size !== ids.length) throw new Error('Each uploaded artwork needs a unique ID.');
   // Persist the same decoration identities used by the placement editor, including
@@ -142,7 +144,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
   const hasUploadedArtwork=d=>{const asset=findArtwork(d,artworks);return asset && !isFont(asset.file);};
   for(const product of brief.products){
     for(const d of resolveDecorations(brief,product)){
-      if(!d.text || hasUploadedArtwork(d))continue;
+      if(mockup || !d.text || hasUploadedArtwork(d))continue;
       const key=JSON.stringify([d.text,d.fontArtworkId,d.textColour]);
       if(!textArtworks.has(key)){
         const id='name-'+createHash('sha256').update(key).digest('hex');
@@ -178,7 +180,7 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
   for (const artwork of artworks) {
     if(isFont(artwork.file))continue;
     try {
-      embedded.set(artwork.id, await prepareArtwork(pdf, artwork));
+      embedded.set(artwork.id, await (mockup?require('./proofMockup').prepare(pdf,artwork):prepareArtwork(pdf, artwork)));
       const usedForEmbroidery=brief.products.some(product=>resolveDecorations(brief,product).some(d=>findArtwork(d,artworks)?.id===artwork.id && /embroidery/i.test(d.method||product.method||brief.method||'')));
       if(/\.dst$/i.test(artwork.originalName||'')&&usedForEmbroidery)embroidered.set(artwork.id,await prepareArtwork(pdf,artwork,{embroideryFinish:true}));
     }
@@ -192,6 +194,18 @@ async function buildProof(brief, artworks, { fetchImpl = fetch, garmentLoader = 
   for (const [productIndex, product] of brief.products.entries()) {
     const decorations = resolveDecorations(brief, product).map(d => ({...d, ...(!hasUploadedArtwork(d) && textArtworks.has(JSON.stringify([d.text,d.fontArtworkId,d.textColour]))?{artworkId:textArtworks.get(JSON.stringify([d.text,d.fontArtworkId,d.textColour]))}:{}), method:d.method || product.method || brief.method || ''}));
     if (decorations.length > 6) throw new Error(`${product.code} has more than six decoration positions.`);
+    if(mockup){
+      const [page]=await pdf.copyPages(template,[0]);pdf.addPage(page);
+      drawHeader(page,brief,product,regular,bold,dateLabel);
+      const asset=embedded.get(decorations[0]?.artworkId);
+      if(!asset)throw new Error(assetErrors.get(decorations[0]?.artworkId)||'Upload the finished mock up.');
+      drawText(page,`Print method: ${[...new Set(decorations.map(d=>printMethod(d.method)))].join(' / ')}`,42,112,11,bold,NAVY,758);
+      drawText(page,`Dimensions: ${decorations.map(d=>require('./proofMockup').sizeLabel(d)).join(' / ')}`,42,132,9,regular,NAVY,758);
+      drawAsset(page,asset,(PAGE_W-410)/2,152,410,410);
+      if(brief.productionNotes)drawText(page,brief.productionNotes,34,574,7,regular,GREY,774);
+      pages.push({productIndex,pdfPageIndex:productIndex,view:'mockup',width:1600,height:1600,image:asset.preview,placements:[]});
+      continue;
+    }
     const views = product.visual?.views || [];
     const lookupIssue = product.visual?.lookupIssue;
     const supplierUnavailable = lookupIssue === 'supplier_unavailable' && !views.some(v => ['front','back','left','right'].includes(v.view));

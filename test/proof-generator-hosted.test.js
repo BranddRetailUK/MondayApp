@@ -474,3 +474,17 @@ test('regeneration view preparation keeps saved images and edited image-bound pl
   assert.equal(response.status,202);await generated;
  });
 });
+
+test('finished mock up parse, preflight and preview bypass supplier images and retain the mode', async()=>{
+  const png=await require('sharp')({create:{width:150,height:200,channels:3,background:'#222222'}}).png().toBuffer();
+  const fail=async()=>{throw Error('Mock ups must not prepare supplier images');};
+  await serve(createRouter({parse:async()=>({products:[{code:'B450',colour:'Black',decorations:[{method:'transfer print',artworkId:'mock',widthMm:'',heightMm:''}]}]}),enrich:fail,generateViews:fail}),async url=>{
+    const parsed=await fetch(url+'/parse',{method:'POST',headers:{...production,'Content-Type':'application/json'},body:JSON.stringify({uploadMode:'mockup',requestText:'B450 black transfer print',artworks:[{id:'mock',fileName:'mock.png'}]})});
+    assert.equal(parsed.status,200);let {brief}=await parsed.json();assert.equal(brief.uploadMode,'mockup');assert.equal(brief.products[0].decorations[0].sizeTbc,true);
+    for(const endpoint of ['preflight','preview','placement-preview']){
+      const form=new FormData();form.append('brief',JSON.stringify(brief));form.append('artworkDetails',JSON.stringify([{id:'mock',originalName:'mock.png'}]));form.append('artworks',new Blob([png],{type:'image/png'}),'mock.png');
+      const response=await fetch(url+'/'+endpoint,{method:'POST',headers:production,body:form});const data=await response.json();assert.equal(response.status,200,JSON.stringify(data));brief=data.brief;assert.equal(brief.uploadMode,'mockup');
+      if(endpoint==='preflight')assert.equal(data.ready,true);else{assert.equal(data.pages[0].view,'mockup');assert.deepEqual(data.pages[0].placements,[]);}
+    }
+  });
+});

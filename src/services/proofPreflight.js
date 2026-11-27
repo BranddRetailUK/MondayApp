@@ -28,6 +28,7 @@ function assess(brief,artworks=[],request='') {
     if(!brief.preflightAcknowledgements?.includes(key))issues.push({path,message,ack:key});
   };
   if(!brief.products?.length)add('products','Add at least one garment to the request.');
+  if(brief.uploadMode==='mockup')return require('./proofMockup').assess(brief,artworks);
   const pageIssue=checkArtworkPages(brief,artworks,request);
   if(pageIssue)add('products',pageIssue);
   (brief.products||[]).forEach((p,pi)=>{

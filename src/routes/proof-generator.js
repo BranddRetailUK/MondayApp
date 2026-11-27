@@ -230,11 +230,11 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
     res.status(202).json({jobId});
     Promise.resolve().then(async()=>{
       const preparedHeadwear=structuredClone(brief.products);
-      await enrich(brief);
+      if(brief.uploadMode!=='mockup')await enrich(brief);
       const retainedLoader=await restoreRetainedVisuals(brief);
-      await require('../services/proofHeadwearViews').restorePreparedHeadwearViews(brief,preparedHeadwear);
+      if(brief.uploadMode!=='mockup')await require('../services/proofHeadwearViews').restorePreparedHeadwearViews(brief,preparedHeadwear);
       if(brief.preflightVersion===1){const check=require('../services/proofPreflight').assess(brief,brief.preflightAssets||[],brief.preflightRequest);if(!check.ready)throw Error(check.issues.map(i=>i.message).join(' '));}
-      await generateViews(brief,{allowGenerate:true,...(retainedLoader?{download:retainedLoader}:{}),onProgress:progress=>Object.assign(job,progress)});
+      if(brief.uploadMode!=='mockup')await generateViews(brief,{allowGenerate:true,...(retainedLoader?{download:retainedLoader}:{}),onProgress:progress=>Object.assign(job,progress)});
       job.brief=brief;job.state='complete';
     }).catch(error=>{job.state='failed';job.error=error.message;console.error('Proof garment views failed:',error.message);})
       .finally(()=>{state.active=false;});
@@ -254,9 +254,9 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       if(!Array.isArray(details)||details.length!==req.files.length)throw Error('Artwork details do not match uploaded files.');
       if(req.files.reduce((n,f)=>n+f.size,0)>50*1024*1024)throw Error('Artwork uploads exceed 50 MB.');
       const preparedHeadwear=structuredClone(brief.products);
-      await enrich(brief);
+      if(brief.uploadMode!=='mockup')await enrich(brief);
       await restoreRetainedVisuals(brief);
-      await require('../services/proofHeadwearViews').restorePreparedHeadwearViews(brief,preparedHeadwear);
+      if(brief.uploadMode!=='mockup')await require('../services/proofHeadwearViews').restorePreparedHeadwearViews(brief,preparedHeadwear);
       const {assess,inspect}=require('../services/proofPreflight');
       const assets=await Promise.all(req.files.map((file,i)=>inspect(file,details[i]).catch(error=>({...details[i],error:error.message}))));
       for(const p of brief.products)for(const d of p.decorations||[]){
@@ -291,12 +291,16 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
           }
         }
       }
+      if(req.body.uploadMode==='mockup')req.body.specialInstructions=[req.body.specialInstructions,'The uploaded files are complete finished mock ups. Assign each mock up to its requested product using artworkId. Do not infer print dimensions from the image. Read the product and print method from the request; leave missing methods empty. Missing print size is TBC.'].filter(Boolean).join('\n');
       const brief = sandboxBrief(req,await parse(req.body, {artworkImages}));
+      if(req.body.uploadMode==='mockup')brief.uploadMode='mockup';
       if(String(req.body.customer||'').trim())brief.customer=String(req.body.customer).trim().slice(0,200);
       if(String(req.body.jobTitle||'').trim())brief.jobTitle=String(req.body.jobTitle).trim().slice(0,200);
       recoverProductCodes(brief, req.body);
-      await enrich(brief);
-      return res.json({ brief: prepareBrief(brief, req.body) });
+      if(brief.uploadMode!=='mockup')await enrich(brief);
+      prepareBrief(brief, req.body);
+      if(brief.uploadMode==='mockup')for(const product of brief.products)for(const d of product.decorations||[])if(!d.widthMm&&!d.heightMm)d.sizeTbc=true;
+      return res.json({ brief });
     } catch (err) {
       if (err.code === 'PROOF_ARTWORK_EDIT_UNSUPPORTED') {
         return res.status(422).json({ error: err.message });
@@ -351,9 +355,9 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
       if(req.path!=='/placement-preview')applyPendingResizes(brief);
       repairRetainedDimensions(brief,retained?.source);
       const preparedHeadwear=structuredClone(brief.products);
-      await enrich(brief);
+      if(brief.uploadMode!=='mockup')await enrich(brief);
       await restoreRetainedVisuals(brief);
-      await require('../services/proofHeadwearViews').restorePreparedHeadwearViews(brief,preparedHeadwear);
+      if(brief.uploadMode!=='mockup')await require('../services/proofHeadwearViews').restorePreparedHeadwearViews(brief,preparedHeadwear);
       if(brief.preflightVersion===1&&req.path!=='/placement-preview'){
         const {assess,inspect}=require('../services/proofPreflight');
         const assets=await Promise.all(req.files.map((file,i)=>inspect(file,details[i]).catch(error=>({...details[i],error:error.message}))));
@@ -361,7 +365,7 @@ function createRouter({ requireProduction = true, parse = parseProofBrief, enric
         if(!check.ready)return res.status(422).json({error:check.issues.map(i=>i.message).join(' '),issues:check.issues});
       }
       const retainedGarmentLoader=design&&designJobs().garmentLoader?await designJobs().garmentLoader(design.id):null;
-      await generateViews(brief, { allowGenerate: false, ...(retainedGarmentLoader?{download:retainedGarmentLoader}:{}) });
+      if(brief.uploadMode!=='mockup')await generateViews(brief, { allowGenerate: false, ...(retainedGarmentLoader?{download:retainedGarmentLoader}:{}) });
       const productIndex=req.query.productIndex;
       if(productIndex!==undefined && (typeof productIndex!=='string'||!/^\d+$/.test(productIndex)||Number(productIndex)>=brief.products.length))return res.status(400).json({error:'Choose a valid product PDF.'});
       const { bytes, documents = [], pages, issues } = await build(brief, artworks, { strict: !['/preview','/placement-preview'].includes(req.path), ...(retainedGarmentLoader?{garmentLoader:retainedGarmentLoader}:{}) });

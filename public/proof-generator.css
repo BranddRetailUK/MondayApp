@@ -313,3 +313,12 @@ body.proof-preview .proof-preview-badge{display:block}
 @keyframes proof-progress-shine{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
 @keyframes proof-progress-check{to{stroke-dashoffset:0}}
 @media(prefers-reduced-motion:reduce){.proof-progress-track span{transition:none}.proof-progress-track span::after{animation:none}.is-complete .proof-progress-tick,.proof-progress-tick path{animation:none}.proof-progress-tick path{stroke-dashoffset:0}}
+
+.proof-upload-mode{position:relative;display:flex;margin-left:auto;padding:3px;border:1px solid #536573;border-radius:20px;isolation:isolate}
+.proof-upload-mode>span{position:absolute;inset:3px auto 3px 3px;width:calc((100% - 6px)/2);border-radius:16px;background:#24577b;transition:transform .22s ease;z-index:-1}
+.proof-upload-mode[data-mode="mockup"]>span{transform:translateX(100%)}
+.proof-upload-mode button{width:80px;padding:6px 8px;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer}
+.proof-upload-mode button:focus-visible{outline:2px solid #82c8ff;border-radius:16px}
+@media(prefers-reduced-motion:reduce){.proof-upload-mode>span{transition:none}}
+
+.proof-upload-heading{display:flex;align-items:center;gap:12px}
